@@ -911,7 +911,7 @@ def faster_set_state_dict(model, state_dict, model_state_dict=None, strict_dtype
     return error_msgs
 
 
-def _load_state_dict_into_model(model_to_load, state_dict, start_prefix, model_to_load_state_dict):
+def _load_state_dict_into_model(model_to_load, state_dict, start_prefix, model_to_load_state_dict=None):
     # torch will cast dtype in load_state_dict, but paddle strictly check dtype
     if model_to_load_state_dict is None:
         model_to_load_state_dict = model_to_load.state_dict()
