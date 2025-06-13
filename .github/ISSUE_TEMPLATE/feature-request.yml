@@ -1,0 +1,30 @@
+name: "\U0001F680 Feature request"
+description: 请详细描述您所需功能
+labels: [ "feature" ]
+body:
+  - type: textarea
+    id: feature-request
+    validations:
+      required: true
+    attributes:
+      label: Feature request
+      description: |
+        对特性提案的清晰而简明的描述。如果论文和代码存在，请提供链接。 
+
+  - type: textarea
+    id: motivation
+    validations:
+      required: true
+    attributes:
+      label: Motivation
+      description: |
+        请概述这项建议的动机。您的特性要求与问题有关吗?
+        
+  - type: textarea
+    id: contribution
+    validations:
+      required: true
+    attributes:
+      label: Your contribution
+      description: |
+        Is there any way that you could help, e.g. by submitting a PR? Make sure to read the CONTRIBUTING.MD [readme](https://github.com/huggingface/transformers/blob/main/CONTRIBUTING.md)

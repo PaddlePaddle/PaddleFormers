@@ -1,0 +1,35 @@
+name: Stale
+
+on:
+  # Allow manual run via GitHub web or CLI
+  workflow_dispatch:
+  schedule:
+    # Run daily at midnight UTC
+    - cron: 0 0 * * *
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/stale@v6.0.1
+        with:
+          days-before-issue-stale: 60
+          days-before-issue-close: 14
+          stale-issue-label: "stale"
+          stale-issue-message: "This issue is stale because it has been open for 60 days with no activity. 当前issue 60天内无活动，被标记为stale。"
+          close-issue-message: "This issue was closed because it has been inactive for 14 days since being marked as stale. 当前issue 被标记为stale已有14天，即将关闭。"
+          exempt-issue-labels: 'triage,keep'
+          days-before-pr-stale: 60
+          days-before-pr-close: -1
+          stale-pr-label: "stale"
+          stale-pr-message: "This Pull Request is stale because it has been open for 60 days with no activity. 当前Pull Request 60天内无活动，被标记为stale。"
+          operations-per-run: 400

@@ -1,4 +1,0 @@
-scipy
-librosa
-soundfile
-ruamel.yaml >= 0.16.3

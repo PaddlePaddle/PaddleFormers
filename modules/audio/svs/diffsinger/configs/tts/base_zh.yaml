@@ -1,3 +1,0 @@
-pre_align_args:
-  txt_processor: zh_g2pM
-binarizer_cls: data_gen.tts.binarizer_zh.ZhBinarizer

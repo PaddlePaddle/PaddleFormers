@@ -1,1 +1,0 @@
-git+https://github.com/PaddlePaddle/Parakeet@8040cb0#egg=paddle-parakeet

@@ -1,0 +1,7 @@
+[flake8]
+ignore = E203, E402, E501, E731, E741, W503, W605, E722
+max-line-length = 119
+
+# E402: module level import not at top of file
+per-file-ignores =
+    __init__.py:F401,F403,E402
