@@ -1,20 +1,33 @@
-colorama
+jieba
+blobfile
 colorlog
-easydict
-filelock
-flask >= 1.1.0
-numpy
-matplotlib
-opencv-python
-packaging
-paddle2onnx >= 0.5.1
-paddlenlp >= 2.0.0
-Pillow
-pyyaml
-pyzmq
-rarfile
+colorama
+seqeval
+dill<0.3.5
+multiprocess<=0.70.12.2
+datasets >= 2.0.0
 tqdm
-visualdl >= 2.0.0
-# gunicorn not support windows
-gunicorn >= 19.10.0; sys_platform != "win32"
-gradio
+paddlefsl
+sentencepiece
+huggingface_hub>=0.19.2
+onnx>=1.10.0
+protobuf>=3.20.2
+paddle2onnx
+Flask-Babel
+visualdl
+fastapi
+uvicorn
+typer
+rich
+safetensors
+fast_dataindex>=0.1.1 ; platform_system == "Linux"
+aistudio-sdk>=0.3.0
+jinja2
+regex
+numpy<=1.26.4
+tiktoken
+ml_dtypes
+tokenizers<=0.20.3; python_version<="3.8"
+tokenizers>=0.21,<0.22; python_version>"3.8"
+omegaconf
+einops>=0.7.0

@@ -1,0 +1,32 @@
+name: 🐛 Docs Report
+description: PaddleFormers文档反馈
+title: "[Docs]: "
+labels: 
+  - documentation
+
+body: 
+  - type: textarea
+    id: environment
+    attributes:
+      label: 软件环境
+      description: |
+        请使用以下命令给出您本地Paddle相关包信息
+          ```sh
+          pip list | grep paddle
+          
+          ```
+      value: |
+          - paddlepaddle:
+          - paddlepaddle-gpu: 
+          - paddleformers: 
+      render: Markdown
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 详细描述
+      description: 请详细描述您想要反馈的具体问题
+      render: Markdown
+    validations:
+      required: true

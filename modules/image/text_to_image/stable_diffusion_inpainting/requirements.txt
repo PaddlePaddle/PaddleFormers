@@ -1,8 +1,0 @@
-numpy
-ftfy
-regex
-docarray>=0.13.29
-pyyaml
-regex
-tqdm
-ipywidgets

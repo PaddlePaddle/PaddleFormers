@@ -9,6 +9,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+build*
 develop-eggs/
 dist/
 downloads/
@@ -52,6 +53,7 @@ coverage.xml
 # Translations
 *.mo
 *.pot
+*.doctree
 
 # Django stuff:
 *.log
@@ -118,3 +120,24 @@ dmypy.json
 .DS_Store
 .idea/
 FETCH_HEAD
+
+# vscode
+.vscode
+./ppdiffusers/ppdiffusers/version.py
+
+# third party
+csrc/third_party/
+dataset/
+output/
+
+# gen codes
+autogen/
+
+# cutlass kernel
+!csrc/gpu/cutlass_kernels/gemm/collective/builders
+
+
+#fp8
+ops/csrc/fp8/deep_gemm/include/cutlass
+ops/csrc/fp8/deep_gemm/include/cute
+.ccls-cache

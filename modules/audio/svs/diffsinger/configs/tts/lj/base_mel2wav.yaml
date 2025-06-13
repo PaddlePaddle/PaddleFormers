@@ -1,3 +1,0 @@
-raw_data_dir: 'data/raw/LJSpeech-1.1'
-processed_data_dir: 'data/processed/ljspeech'
-binary_data_dir: 'data/binary/ljspeech_wav'

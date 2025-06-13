@@ -1,0 +1,13 @@
+codecov:
+  notify:
+    wait_for_ci: false
+
+coverage:
+  status:
+    project:
+      default: 
+        target: 58% # overall project Coverage 
+        threshold: 1% # Allow the coverage to drop by 1%, and posting a success status.
+    patch:
+      default: 
+        target: 80% # lines adjusted  Coverage < 80%  CI will fail

@@ -1,3 +1,0 @@
-paddlenlp>=2.1.0
-sacremoses
-subword-nmt

@@ -1,0 +1,45 @@
+name: 🐛 Bug Report
+description: PaddleFormers问题反馈
+title: "[Bug]: "
+labels: bug
+body: 
+  - type: textarea
+    id: environment
+    attributes:
+      label: 软件环境
+      description: |
+        请使用以下命令给出您本地Paddle相关包信息
+          ```sh
+          pip list | grep paddle
+          
+          ```
+      value: |
+          - paddlepaddle:
+          - paddlepaddle-gpu: 
+          - paddleformers: 
+      render: Markdown
+    validations:
+      required: true
+  - type: checkboxes
+    id: dumplicated-problem
+    attributes:
+      label: 重复问题
+      description: 是否已在issues中搜索相关问题
+      options:
+      - label: I have searched the existing issues
+        required: true
+  - type: textarea
+    id: descripton
+    attributes:
+      label: 错误描述
+      description: 给出错误详细描述，以便能够更好的追踪相关问题
+      render: Markdown
+    validations:
+      required: true
+  - type: textarea
+    id: mvp-code
+    attributes:
+      label: 稳定复现步骤 & 代码
+      description: 请给出稳定复现该问题的步骤 & 代码，以便相关人员能够快速定位到具体问题。
+    validations:
+      required: true

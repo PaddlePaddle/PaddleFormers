@@ -1,3 +1,0 @@
-base_config:
-  - configs/tts/fs2.yaml
-  - configs/singing/base.yaml

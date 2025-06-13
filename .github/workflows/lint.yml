@@ -1,0 +1,32 @@
+name: Lint
+
+on: [push, pull_request]
+
+jobs:
+  Lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: checkout develop
+        run: |
+          if ! git show-ref --quiet refs/heads/develop; then \
+              echo "local develop branch is missing, creating local develop branch that tracks remote develop branch"
+              git fetch origin develop
+              git branch develop --track origin/develop
+          else
+            echo "local develop branch exist, skipping"
+          fi
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip' # caching pip dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          make install
+      - name: run the command
+        run: make lint
+    

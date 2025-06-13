@@ -1,3 +1,0 @@
-@HUB_simnet_bow@emb
-@HUB_simnet_bow@tanh.b
-@HUB_simnet_bow@tanh.w
