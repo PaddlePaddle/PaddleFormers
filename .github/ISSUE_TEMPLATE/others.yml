@@ -1,0 +1,23 @@
+name: 🧩 其他 Others
+description: 提出其他问题。
+labels: [others]
+
+body:
+- type: markdown
+  attributes:
+    value: >
+      #### 你可以在这里提出任何前面几类模板不适用的问题，包括但不限于：优化性建议、框架使用体验反馈、版本兼容性问题、报错信息不清楚等。
+
+- type: textarea
+  id: others
+  attributes:
+    label: 问题描述
+  validations:
+    required: true
+    
+- type: markdown
+  attributes:
+    value: >
+      感谢你的贡献 🎉！
+
+

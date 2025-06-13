@@ -1,8 +1,0 @@
-numpy
-paddle_lpips==0.1.2
-ftfy
-docarray>=0.13.29
-pyyaml
-regex
-tqdm
-ipywidgets

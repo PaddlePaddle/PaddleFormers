@@ -1,38 +1,64 @@
--   repo: local
+exclude: ''
+repos:
+# For Python files
+-   repo: https://github.com/psf/black.git
+    rev: 22.8.0
     hooks:
-    -   id: yapf
-        name: yapf
-        entry: yapf
-        language: system
-        args: [-i, --style .style.yapf]
-        files: \.py$
-
+    -   id: black
+        files: \.(py|pyi)$
+        additional_dependencies: [toml]
+-   repo: https://github.com/PyCQA/isort
+    rev: 5.11.5
+    hooks:
+    -   id: isort
+-   repo: https://github.com/PyCQA/flake8
+    rev: 4.0.1
+    hooks:
+    -   id: flake8
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    sha: a11d9314b22d8f8c7556443875b731ef05965464
+    rev: v4.1.0
     hooks:
     -   id: check-merge-conflict
     -   id: check-symlinks
-    -   id: end-of-file-fixer
-    -   id: trailing-whitespace
     -   id: detect-private-key
-    -   id: check-symlinks
-    -   id: check-added-large-files
-
+        files: (?!.*paddle)^.*$
+    -   id: end-of-file-fixer
+        files: \.md$
+    -   id: trailing-whitespace
+        files: \.md$
+-   repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.1.14
+    hooks:
+    -   id: forbid-crlf
+        files: \.md$
+    -   id: remove-crlf
+        files: \.md$
+    -   id: forbid-tabs
+        files: \.md$
+    -   id: remove-tabs
+        files: \.md$
 -   repo: local
     hooks:
-    -   id: flake8
-        name: flake8
-        entry: flake8
+    -   id: copyright_checker
+        name: copyright_checker
+        entry: python .copyright.hook
         language: system
-        args:
-        -   --count
-        -   --select=E9,F63,F7,F82
-        -   --show-source
-        -   --statistics
-        files: \.py$
-
--   repo: https://github.com/asottile/reorder_python_imports
-    rev: v2.4.0
+        files: \.(c|cc|cxx|cpp|cu|h|hpp|hxx|proto|xpu|kps|py|sh)$
+# For Markdown files
+-   repo: local
     hooks:
-      - id: reorder-python-imports
-        exclude: (?=third_party).*(\.py)$
+    -   id: add-spaces-between-chinese-and-english
+        name: Add spaces between Chinese and English characters
+        entry: python scripts/codestyle/check_spaces.py
+        language: python
+        files: \.(md|markdown)$
+        pass_filenames: true
+# For dead links
+-   repo: local
+    hooks:
+    -   id: check-dead-links
+        name: Check dead links
+        entry: python scripts/codestyle/check_dead_links.py
+        language: python
+        files: \.(md|markdown|rst)$
+        pass_filenames: true

@@ -1,0 +1,28 @@
+name: "\U0001F31F 添加新模型"
+description: 请为新模型提交一份说明
+labels: [ "New model" ]
+
+body:
+  - type: textarea
+    id: description-request
+    validations:
+      required: true
+    attributes:
+      label: 简要描述
+      description: |
+        请简要描述模型的类型、解决的问题等。
+
+  - type: checkboxes
+    id: information-tasks
+    attributes:
+      label: 是否已开源
+      options:
+        - label: 已开源
+        - label: 未开源
+
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: 模型详细信息
+      description: |
+        请给出新模型相关信息，如论文地址、现存代码地址等。

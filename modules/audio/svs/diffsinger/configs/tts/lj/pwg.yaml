@@ -1,3 +1,0 @@
-base_config:
-  - configs/tts/pwg.yaml
-  - configs/tts/lj/base_mel2wav.yaml

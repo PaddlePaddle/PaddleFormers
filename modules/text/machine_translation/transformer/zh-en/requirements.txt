@@ -1,4 +1,0 @@
-paddlenlp>=2.1.0
-jieba
-sacremoses
-subword-nmt

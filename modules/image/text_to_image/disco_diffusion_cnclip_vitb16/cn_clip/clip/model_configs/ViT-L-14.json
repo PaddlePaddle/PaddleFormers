@@ -1,7 +1,0 @@
-{
-    "embed_dim": 768,
-    "image_resolution": 224,
-    "vision_layers": 24,
-    "vision_width": 1024,
-    "vision_patch_size": 14
-}
