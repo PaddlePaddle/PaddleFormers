@@ -45,7 +45,14 @@ __all__ = [
 MAPPING_NAMES = OrderedDict(
     [
         ("Bert", "bert"),
+        ("DeepseekV2", "deepseek_v2"),
+        ("DeepseekV3", "deepseek_v3"),
         ("Llama", "llama"),
+        ("QWen", "qwen"),
+        ("Qwen2", "qwen2"),
+        ("Qwen3", "qwen3"),
+        ("Qwen2Moe", "qwen2_moe"),
+        ("Qwen3Moe", "qwen3_moe"),
     ]
 )
 

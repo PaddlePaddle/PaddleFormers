@@ -53,10 +53,22 @@ else:
                 ),
             ),
             (
+                "deepseek_v2",
+                "DeepseekTokenizerFast" if is_tokenizers_available() else None,
+            ),
+            (
                 "llama",
                 (
                     ("LlamaTokenizer", "Llama3Tokenizer"),
                     "LlamaTokenizerFast" if is_tokenizers_available() else None,
+                ),
+            ),
+            ("qwen", "QWenTokenizer"),
+            (
+                "qwen2",
+                (
+                    "Qwen2Tokenizer",
+                    "Qwen2TokenizerFast" if is_tokenizers_available() else None,
                 ),
             ),
         ]

@@ -34,18 +34,32 @@ __all__ = [
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
         ("bert", "BertConfig"),
+        ("deepseek_v2", "DeepseekV2Config"),
+        ("deepseek_v3", "DeepseekV3Config"),
         ("llama", "LlamaConfig"),
+        ("qwen", "QWenConfig"),
+        ("qwen2", "Qwen2Config"),
+        ("qwen2_moe", "Qwen2MoeConfig"),
+        ("qwen3", "Qwen3Config"),
+        ("qwen3_moe", "Qwen3MoeConfig"),
     ]
 )
 
 
-# MODEL_NAMES_MAPPING = OrderedDict(
-#     # Base model mapping
-#     [
-#         ("bert", "Bert"),
-#         ("llama", "Llama"),
-#     ]
-# )
+MODEL_NAMES_MAPPING = OrderedDict(
+    # Base model mapping
+    [
+        ("bert", "Bert"),
+        ("deepseek_v2", "DeepseekV2"),
+        ("deepseek_v3", "DeepseekV3"),
+        ("llama", "Llama"),
+        ("qwen", "QWen"),
+        ("qwen2", "Qwen2"),
+        ("qwen2_moe", "Qwen2Moe"),
+        ("qwen3", "Qwen3"),
+        ("qwen3_moe", "Qwen3Moe"),
+    ]
+)
 
 MULTI_MODELS_MAPPING = OrderedDict(
     # multi models mapping
