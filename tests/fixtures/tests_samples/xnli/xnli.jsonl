@@ -1,0 +1,30 @@
+{
+    "premise": "从 概念 上 看 , 奶油 收入 有 两 个 基本 方面 产品 和 地理 .",
+    "hypothesis": "产品 和 地理 是 什么 使 奶油 抹 霜 工作 .",
+    "label": 0
+}
+{
+    "premise": "One of our number will carry out your instructions minutely .",
+    "hypothesis": "A member of my team will execute your orders with immense precision .",
+    "label": 2
+}
+{
+    "premise": "Conceptually cream skimming has two basic dimensions - product and geography .",
+    "hypothesis": "Product and geography are what make cream skimming work .",
+    "label": 1
+}
+{
+    "premise": "从 概念 上 看 , 奶油 收入 有 两 个 基本 方面 产品 和 地理 .",
+    "hypothesis": "产品 和 地理 是 什么 使 奶油 抹 霜 工作 .",
+    "label": 0
+}
+{
+    "premise": "One of our number will carry out your instructions minutely .",
+    "hypothesis": "A member of my team will execute your orders with immense precision .",
+    "label": 2
+}
+{
+    "premise": "Conceptually cream skimming has two basic dimensions - product and geography .",
+    "hypothesis": "Product and geography are what make cream skimming work .",
+    "label": 1
+}

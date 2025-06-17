@@ -1,0 +1,5 @@
+{
+    "system": "你是一个人工智能助手{{system}}-{{instruction}}\n",
+    "conversation": ["Human: {{user}}<sep> Bot:", "{{bot}}\n"],
+    "query": "Human: {{query}}<sep> Bot:"
+}

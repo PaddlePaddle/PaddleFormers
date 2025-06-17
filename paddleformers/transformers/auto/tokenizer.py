@@ -20,6 +20,7 @@ import os
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
 
+from ...utils import is_tokenizers_available
 from ...utils.download import resolve_file_path
 from ...utils.import_utils import import_module
 from ...utils.log import logger
@@ -42,7 +43,24 @@ __all__ = [
 if TYPE_CHECKING:
     TOKENIZER_MAPPING_NAMES: OrderedDict[str, Tuple[Optional[str], Optional[str]]] = OrderedDict()
 else:
-    TOKENIZER_MAPPING_NAMES = OrderedDict([])
+    TOKENIZER_MAPPING_NAMES = OrderedDict(
+        [
+            (
+                "bert",
+                (
+                    "BertTokenizer",
+                    "BertTokenizerFast" if is_tokenizers_available() else None,
+                ),
+            ),
+            (
+                "llama",
+                (
+                    ("LlamaTokenizer", "Llama3Tokenizer"),
+                    "LlamaTokenizerFast" if is_tokenizers_available() else None,
+                ),
+            ),
+        ]
+    )
 
 
 def get_mapping_tokenizers(tokenizers, with_fast=True):

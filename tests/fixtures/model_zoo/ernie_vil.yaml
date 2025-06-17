@@ -1,0 +1,35 @@
+finetune:
+  default:
+    model_type: ernie_vil-2.0-base-zh
+    train_data: ./tests/fixtures/Flickr30k-CN/lmdb/train
+    val_data: ./tests/fixtures/Flickr30k-CN/lmdb/valid
+    model_name_or_path: __internal_testing__/tiny-random-ernievil2
+    data_root: .
+    learning_rate: 5e-5
+    output_dir: ./output_dir/finetune
+    weight_decay: 0.01
+    max_steps: 2
+    save_steps: 2
+    warmup_steps: 5
+    warmup_ratio: 0.01
+    max_seq_len: 32
+    label_names: index
+    lr_scheduler_type: cosine
+    per_device_train_batch_size: 2
+    device: cpu
+    eval_steps: 5
+    do_train: true
+  
+  slow:
+    model_type: ernie_vil-2.0-base-zh
+    model_name_or_path: PaddlePaddle/ernie_vil-2.0-base-zh
+    warmup_ratio: 0.01
+    per_device_train_batch_size: 4
+    device: cpu
+    eval_steps: 100
+    do_train: true
+    label_names: index
+    lr_scheduler_type: cosine
+
+
+  

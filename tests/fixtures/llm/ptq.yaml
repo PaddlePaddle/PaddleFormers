@@ -1,0 +1,46 @@
+ptq:
+  base:
+    per_device_train_batch_size: 2
+    per_device_eval_batch_size: 2
+    eval_accumulation_steps: 16
+    src_length: 1024
+    max_length: 2048
+    fp16: true
+    fp16_opt_level: "O2"
+    dataset_name_or_path: "./data"
+    do_eval: false
+    eval_with_do_generation: false
+    do_ptq: true
+    ptq_step: 4
+
+  default:
+    llama:
+      model_name_or_path: __internal_testing__/tiny-fused-llama-inference5.2
+    chatglm:
+      model_name_or_path: __internal_testing__/tiny-fused-chatglm
+    chatglm2:
+      model_name_or_path: __internal_testing__/tiny-fused-chatglm2
+    bloom:
+      model_name_or_path: __internal_testing__/tiny-fused-bloom
+
+inference-predict:
+  default:
+    mode: dynamic 
+    max_length: 20
+    batch_size: 2
+    decode_strategy: greedy_search
+    dtype: float16
+
+inference-to-static:
+  default:
+    dtype: float16
+    max_length: 20
+
+
+inference-infer:
+  default:
+    mode: static
+    dtype: float16
+    batch_size: 2
+    decode_strategy: greedy_search
+    max_length: 20

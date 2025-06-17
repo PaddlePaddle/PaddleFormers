@@ -1,0 +1,53 @@
+classifier:
+  default:
+    do_train: True
+    do_eval: True
+    do_export: True
+    use_test_data: True
+    test_data_path: tests/fixtures/tests_samples/xnli/xnli.jsonl
+    task_type: cross-lingual-transfer
+    model_name_or_path: __internal_testing__/ernie-m
+    output_dir: ./output_dir
+    export_model_dir: ./output_dir
+    per_device_train_batch_size: 16
+    per_device_eval_batch_size: 16
+    max_seq_length: 256
+    learning_rate: 5e-5
+    classifier_dropout: 0.1
+    weight_decay: 0.0
+    layerwise_decay: 0.8
+    warmup_ratio: 0.1
+    max_steps: 2
+    logging_steps: 1
+    save_steps: 1
+    eval_steps: 1
+    device: cpu
+    fp16: False
+    load_best_model_at_end: True
+    metric_for_best_model: eval_accuracy
+    overwrite_output_dir: True
+  
+  slow:
+    do_train: True
+    do_eval: True
+    do_export: True
+    task_type: cross-lingual-transfer
+    model_name_or_path: ernie-m-base
+    output_dir: ./output_dir
+    export_model_dir: ./output_dir
+    per_device_train_batch_size: 16
+    per_device_eval_batch_size: 16
+    max_seq_length: 256
+    learning_rate: 5e-5
+    classifier_dropout: 0.1
+    weight_decay: 0.0
+    layerwise_decay: 0.8
+    num_train_epochs: 5
+    logging_steps: 767
+    save_steps: 12272
+    eval_steps: 767
+    device: gpu
+    fp16: False
+    load_best_model_at_end: Trues
+    metric_for_best_model: eval_accuracy
+    overwrite_output_dir: True

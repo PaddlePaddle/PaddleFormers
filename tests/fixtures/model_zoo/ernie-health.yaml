@@ -1,0 +1,42 @@
+pretrain:
+  default:
+    model_type: ernie-health
+    model_name_or_path: __internal_testing__/ernie-health-chinese
+    input_dir: model_zoo/ernie-health/data
+    output_dir: model_zoo/ernie-health/output/eheath-pretraining
+    max_seq_length: 32
+    gradient_accumulation_steps: 1
+    weight_decay: 0.01
+    max_steps: 2
+    num_train_epochs: 0.0005
+    save_steps: 5
+    warmup_steps: 5
+    warmup_ratio: 0.01
+    per_device_train_batch_size: 4
+    overwrite_output_dir: true
+    device: cpu
+    eval_steps: 10
+    do_train: true
+  
+  slow:
+    model_type: ernie-health
+    model_name_or_path: ernie-health-chinese
+    input_dir: model_zoo/ernie-health/data
+    output_dir: model_zoo/ernie-health/output/eheath-pretraining
+    max_seq_length: 512 
+    gradient_accumulation_steps: 1
+    per_device_train_batch_size: 8 
+    per_device_eval_batch_size: 8 
+    learning_rate: 0.001 
+    max_steps: 1000000
+    save_steps: 50000
+    weight_decay: 0.01 
+    warmup_ratio: 0.01 
+    max_grad_norm: 1.0 
+    logging_steps: 20 
+    dataloader_num_workers: 2 
+    device: gpu
+    fp16: true
+    fp16_opt_level: O1  
+    do_train: true
+    save_total_limit: 10

@@ -1,0 +1,58 @@
+pretrain:
+  base:
+    weight_decay: 0.01
+    max_steps: 2
+    save_steps: 2
+    eval_steps: 2
+    logging_steps: 1
+    warmup_steps: 2
+    warmup_ratio: 0.01
+    per_device_train_batch_size: 1
+    per_device_eval_batch_size: 1
+    device: gpu
+    data_impl: mmap
+    fp16: true
+    fp16_opt_level: O2
+    do_train: true
+    do_predict: true
+    use_flash_attention: 0
+    use_fused_rms_norm: 0
+    continue_training: 1
+
+  default:
+    llama:
+      model_name_or_path: __internal_testing__/tiny-random-llama
+    qwen:
+      model_name_or_path: __internal_testing__/tiny-fused-qwen
+    gpt:
+      model_name_or_path: __internal_testing__/gpt
+    qwen2:
+      model_name_or_path: __internal_testing__/tiny-random-qwen2
+    qwen2moe:
+      model_name_or_path: __internal_testing__/tiny-random-qwen2moe
+
+inference-predict:
+  default:
+    mode: dynamic
+    src_length: 512
+    max_length: 20
+    batch_size: 2
+    decode_strategy: greedy_search
+    dtype: float16
+    chat_template: none
+
+inference-to-static:
+  default:
+    dtype: float16
+    src_length: 512
+    max_length: 20
+
+inference-infer:
+  default:
+    mode: static
+    dtype: float16
+    batch_size: 2
+    decode_strategy: greedy_search
+    src_length: 512
+    max_length: 20
+    chat_template: none

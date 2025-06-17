@@ -1,0 +1,178 @@
+[
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Tony has $87. He needs to buy some cheese, which costs $7 a pound and a pound of beef that costs $5 a pound. After buying the beef and his cheese, he has $61 left. How many pounds of cheese did he buy? Step 1: He bought 7 / 5 = <<7/5=1.4>>1.4 pounds of beef.",
+            "Step 2: He spent 7 + 5 = <<7+5=12>>12 on beef and cheese.",
+            "Step 3: So, he spent 12 - 87 = 75.",
+            "Step 4: That means he bought 87 - 75 = <<87-75=12>>12 pounds of cheese. The answer is: 12"
+        ],
+        "labels": [
+            "+",
+            "+",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Let $f(x) = \\displaystyle \\frac{1}{ax+b}$ where $a$ and $b$ are nonzero constants. Find all solutions to $f^{-1}(x) = 0$. Express your answer in terms of $a$ and/or $b$. Step 1: I want to find the inverse function of $f(x)$ and then set it equal to zero and solve for $x$.",
+            "Step 2: To find the inverse function of $f(x)$, I need to switch $x$ and $y$ and then solve for $y$.",
+            "Step 3: So I start with $x = \\displaystyle \\frac{1}{ay+b}$ and then swap $x$ and $y$ to get $y = \\displaystyle \\frac{1}{ax+b}$.",
+            "Step 4: Now I need to isolate $y$.",
+            "Step 5: I can start by multiplying both sides by $ax+b$ to get $y(ax+b) = 1$.",
+            "Step 6: Then I can divide both sides by $ax+b$ to get $y = \\displaystyle \\frac{1}{ax+b}$.",
+            "Step 7: This is the same as the original function, so the inverse function is just the original function.",
+            "Step 8: I can write it as $f^{-1}(x) = \\displaystyle \\frac{1}{ax+b}$.",
+            "Step 9: Now I have $f^{-1}(x) = 0$, which means I need to find the values of $x$ that make the fraction zero.",
+            "Step 10: I can do this by setting the numerator equal to zero and solving for $x$.",
+            "Step 11: So I get $1 = 0$, which is always true, so any value of $x$ is a solution.",
+            "Step 12: But I can also set the denominator equal to zero and solve for $x$.",
+            "Step 13: So I get $ax+b = 0$, which gives me $x = -\\displaystyle \\frac{b}{a}$.",
+            "Step 14: This is another solution, but I need to make sure it is different from the first one, since they both make the fraction zero.",
+            "Step 15: So I need to find the conditions on $a$ and $b$ that make $x = -\\displaystyle \\frac{b}{a}$ different from $x = 0$.",
+            "Step 16: One way to do this is to compare the absolute values of these two solutions.",
+            "Step 17: If $|-\\displaystyle \\frac{b}{a}| < |0|$, then $-\\displaystyle \\frac{b}{a}$ is closer to zero than zero is, so it is a different solution.",
+            "Step 18: This means that $a$ and $b$ must satisfy $a > 0$ and $|b| < a$.",
+            "Step 19: These are the conditions that make $f^{-1}(x) = 0$ have more than one solution.",
+            "Step 20: Therefore, the final answer is that $f^{-1}(x) = 0$ has more than one solution if and only if $a > 0$ and $|b| < a$. The answer is: f^{-1}(x) = 0 has more than one solution if and only if a > 0 and |b| < a."
+        ],
+        "labels": [
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Four prime numbers are randomly selected without replacement from the first ten prime numbers. What is the probability that the sum of the four selected numbers is odd? Express your answer as a common fraction. Step 1: I need to find the number of ways to select four prime numbers from the first ten that add up to an odd number, and divide that by the total number of ways to select four prime numbers from the first ten.",
+            "Step 2: The first ten prime numbers are 2, 3, 5, 7, 11, 13, 17, 19, 23, and 29.",
+            "Step 3: To add up to an odd number, the four selected numbers must include either 3, 5, 7, and 9, or 3, 5, 7, and 11, or 3, 5, 11, and 13, or 5, 7, 11, and 13.",
+            "Step 4: There are four ways to choose four numbers from the first three groups, and one way to choose four numbers from the last group.",
+            "Step 5: The total number of ways to choose four prime numbers from the first ten is 4 + 1 = 5.",
+            "Step 6: Therefore, the probability of selecting four prime numbers that add up to an odd number is 4/5. The answer is: 4/5"
+        ],
+        "labels": [
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Marlon had 42 lollipops in the beginning. On his way home, he saw Emily and gave her 2/3 of his lollipops. Then, Marlon kept 4 lollipops and gave the rest to Lou. How many lollipops did Lou receive? Step 1: Marlon had 42 - 2/3 = <<42-2/3=12>>12 lollipops after he gave 2/3 of his lollipops to Emily.",
+            "Step 2: So, Marlon gave 42 - 12 = <<42-12=30>>30 lollipops to Lou. The answer is: 30"
+        ],
+        "labels": [
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Since Jason started investing, he has earned the same amount he invested twice over in 5 months. If Jason's investment currently is worth $90, how much has he been earning per month from his investment assuming he has been earning an equal amount of returns each month? Step 1: If Jason has earned twice the amount he invested in five months, he has earned 2*$90 = $<<2*90=180>>180",
+            "Step 2: If he started investing $90, he has earned $180-$90 = $90",
+            "Step 3: Since Jason has been earning the same amount each month, he has been earning 12*$90 = $<<12*90=1080>>1080 each month. The answer is: 1080"
+        ],
+        "labels": [
+            "-",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "For what ordered pair $(a,b)$ are there infinite solutions $(x,y)$ to the system \\begin{align*}\n2ax+2y&=b,\\\\\n5x+y&=-3?\n\\end{align*} Step 1: To have infinite solutions, the two equations must represent the same line.",
+            "Step 2: That means they must have the same slope and the same y-intercept.",
+            "Step 3: The slope of the first equation is $-\\frac{2a}{2}=-a$, and the slope of the second equation is $-\\frac{5}{1}=-5$.",
+            "Step 4: So I need $-a=-5$, which implies $a=5$.",
+            "Step 5: The y-intercept of the first equation is $\\frac{b}{2}$, and the y-intercept of the second equation is $3$.",
+            "Step 6: So I need $\\frac{b}{2}=3$, which implies $b=6$.",
+            "Step 7: Therefore, the ordered pair $(a,b)$ that makes the system have infinite solutions is $(5,6)$.\n\n# Answer\n\n(5,6)"
+        ],
+        "labels": [
+            "+",
+            "+",
+            "+",
+            "+",
+            "-",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "What integer is closest to the value of $\\sqrt[3]{6^3+8^3}$? Step 1: I notice that the expression inside the cube root is the sum of two perfect cubes, so I can use the identity $(a+b)^3=a^3+b^3+3ab(a+b)$ to rewrite it as $(6+8)^3$.",
+            "Step 2: This makes the calculation easier, because I only need to find the cube of 14, which is 14^3.",
+            "Step 3: The cube root of 14^3 is just 14, so the integer I'm looking for is 14. The answer is: 14"
+        ],
+        "labels": [
+            "+",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Katerina purchases 3 pots and 4 pans at the home goods store. Each pot costs $20. The total cost of Katerina's items is $100. If each pan is the same price, what is the cost of 2 pans? Step 1: The total cost of the pots is $20 * 3 = $<<20*3=60>>60.",
+            "Step 2: The cost of the pans is $20 / $60 = $<<20/60=.33>>.33",
+            "Step 3: The cost of 2 pans is $20 * .33 = $<<20*.33=6.66>>6.66. The answer is: 6.66"
+        ],
+        "labels": [
+            "+",
+            "-",
+            "-"
+        ]
+    }
+]

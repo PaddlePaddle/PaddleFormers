@@ -1,0 +1,68 @@
+pretrain:
+  default:
+    model_type: bert
+    model_name_or_path: __internal_testing__/bert
+    input_dir: model_zoo/bert/data
+    output_dir: model_zoo/bert/output/pretrained_models
+    max_predictions_per_seq: 20
+    per_device_train_batch_size: 2
+    warmup_steps: 2
+    num_train_epochs: 0.0005
+    logging_steps: 1
+    save_steps: 2
+    max_steps: 10
+    device: gpu
+    fp16: False
+    do_train: true 
+
+  slow:
+    model_type: bert
+    model_name_or_path: bert-base-uncased
+    input_dir: model_zoo/bert/data
+    output_dir: model_zoo/bert/output/pretrained_models
+    per_device_train_batch_size: 32   
+    learning_rate: 1e-4 
+    weight_decay: 1e-2 
+    adam_epsilon: 1e-6 
+    warmup_steps: 10000 
+    num_train_epochs: 3 
+    logging_steps: 1 
+    save_steps: 20000 
+    max_steps: 1000000 
+    device: gpu 
+    fp16: False 
+    do_train: true
+
+
+glue:
+  default:
+    model_name_or_path: __internal_testing__/bert
+    output_dir: model_zoo/bert/tmp
+    task_name: SST2 
+    max_seq_length: 32
+    per_device_train_batch_size: 32  
+    per_device_eval_batch_size: 32 
+    learning_rate: 2e-5 
+    num_train_epochs: 0.0001
+    logging_steps: 1
+    save_steps: 400
+    device: cpu 
+    fp16: False
+    do_train: true
+    do_eval:  true
+
+  slow:
+    model_name_or_path: bert-base-uncased
+    output_dir: model_zoo/bert/tmp
+    task_name: SST2 
+    max_seq_length: 128 
+    per_device_train_batch_size: 32   
+    per_device_eval_batch_size: 32   
+    learning_rate: 2e-5 
+    num_train_epochs: 3 
+    logging_steps: 1 
+    save_steps: 500 
+    device: gpu 
+    fp16: False
+    do_train: true
+    do_eval:  true

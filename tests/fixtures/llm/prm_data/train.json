@@ -1,0 +1,338 @@
+[
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "The product of the base seven numbers $24_7$ and X is expressed in base seven. What is the base seven sum of the digits of this product?\nIf we know the answer to the above question is 6, what is the value of unknown variable X? Step 1: We want to find the value of $X$ in the given situation.",
+            "Step 2: We are given that the product of the base seven numbers $24_7$ and $X$ is expressed in base seven.",
+            "Step 3: To find the base seven sum of the digits of this product, we need to determine the value of $X$.",
+            "Step 4: Let's convert the base seven number $24_7$ to decimal:\n$24_7 = 2 * 7^1 + 4 * 7^0 = 2 * 7 + 4 * 1 = 14 + 4 = 18$",
+            "Step 5: Now, we can write the equation for the product:\n$18 * X = 6 * 7^1 + 4 * 7^0$",
+            "Step 6: Simplifying this equation, we have:\n$18X = 42 + 4$",
+            "Step 7: $18X = 46$",
+            "Step 8: Dividing both sides of the equation by 18, we find:\n$X = 2.5$",
+            "Step 9: Since $X$ must be a whole number, we can round it to the nearest whole number:\n$X = 3$",
+            "Step 10: The value of $X$ is 3. The answer is: 3"
+        ],
+        "labels": [
+            "+",
+            "+",
+            "+",
+            "+",
+            "+",
+            "+",
+            "+",
+            "+",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Today Geoff bought 2 pairs of sneakers and spent $60 equally between the two. Tomorrow, he's going to spend 4 times as much on sneakers than he did on Monday. Wednesday, he'll spend 5 times as much on sneakers than he did on Monday. How much will Geoff spend on sneakers over these three days? Step 1: Geoff spent 60/2 = $<<60/2=30>>30 on sneakers today.",
+            "Step 2: Tomorrow, he'll spend 4 * 30 = $<<4*30=120>>120 on sneakers",
+            "Step 3: Wednesday, he'll spend 5 * 30 = $<<5*30=150>>150 on sneakers",
+            "Step 4: In these three days, Geoff will spend 120 + 150 = $<<120+150=270>>270 on sneakers. The answer is: 270"
+        ],
+        "labels": [
+            "-",
+            "-",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "How many different three-digit odd numbers can be formed using the digits 3, 4, 5 and 6 if digits cannot be repeated? Step 1: I notice that the number of choices for each digit is four, since there are four digits to choose from.",
+            "Step 2: However, I also notice that the first digit cannot be zero, since the number has to be odd.",
+            "Step 3: So I have three choices for the first digit: 3, 5 or 6.",
+            "Step 4: Once I choose the first digit, I have three digits left to choose from for the second digit, and then two digits left to choose from for the third digit.",
+            "Step 5: So the number of ways to form a three-digit odd number using the digits 3, 4, 5 and 6 is 3 times 3 times 2, which is 18. The answer is: 18"
+        ],
+        "labels": [
+            "-",
+            "-",
+            "-",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "One and one-half of what number is 30? Step 1: To solve this problem, I need to find a number x that satisfies the equation 1.5x = 30.",
+            "Step 2: I can divide both sides of the equation by 1.5 to get x = 30/1.5.",
+            "Step 3: I can use a calculator or long division to find the decimal value of 30/1.5, which is 20.",
+            "Step 4: Therefore, the number is 20. The answer is: 20"
+        ],
+        "labels": [
+            "+",
+            "+",
+            "+",
+            "+"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Wade is the star player of the basketball team. His average points per game is 20, and his teammates' average points per game is 40. How many points will their team have in total after 5 games? Step 1: Wade's teammates will score 40 points per game * 5 games = <<40*5=200>>200 points in total.",
+            "Step 2: Wade will score 20 points per game * 5 games = <<20*5=100>>100 points in total.",
+            "Step 3: In total, Wade's team will score 100 points + 200 points = <<100+200=300>>300 points in total. The answer is: 300"
+        ],
+        "labels": [
+            "+",
+            "+",
+            "+"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Find all real numbers $k$ for which there exists a nonzero, 2-dimensional vector $\\mathbf{v}$ such that\n\\[\\begin{pmatrix} 1 & 8 \\\\ 2 & 1 \\end{pmatrix} \\mathbf{v} = k \\mathbf{v}.\\]Enter all the solutions, separated by commas. Step 1: This problem is about finding a vector $\\mathbf{v}$ that satisfies a linear equation involving a 2x2 matrix.",
+            "Step 2: I know that a vector $\\mathbf{v}$ is 2-dimensional if and only if it is not parallel to any of the axes, which means that its dot product with the standard basis vectors $\\mathbf{i}$ and $\\mathbf{j}$ are not zero.",
+            "Step 3: So, I want to find a vector $\\mathbf{v}$ that has the property that $\\mathbf{v} \\cdot \\begin{pmatrix} 1 & 8 \\\\ 2 & 1 \\end{pmatrix} \\neq 0$.",
+            "Step 4: This is equivalent to finding a vector $\\mathbf{v}$ that satisfies the equation $\\mathbf{v} \\cdot \\begin{pmatrix} 1 & 8 \\\\ 2 & 1 \\end{pmatrix} = k$, for some nonzero constant $k$.",
+            "Step 5: This is a dot product equation, and I can use the fact that the dot product is distributive over vector addition and subtraction, and that it is commutative.",
+            "Step 6: So, I can write $\\mathbf{v} \\cdot \\begin{pmatrix} 1 & 8 \\\\ 2 & 1 \\end{pmatrix} = \\mathbf{v} \\cdot \\begin{pmatrix} 1 & 0 \\\\ 0 & k \\end{pmatrix} + \\mathbf{v} \\cdot \\begin{pmatrix} 0 & 8 \\\\ 0 & 1 \\end{pmatrix} = k + 0 + 8 = k + 8$.",
+            "Step 7: This means that $\\mathbf{v} \\cdot \\begin{pmatrix} 1 & 8 \\\\ 2 & 1 \\end{pmatrix} = k + 8$ for some nonzero constant $k$.",
+            "Step 8: But, I also know that $\\mathbf{v} \\cdot \\begin{pmatrix} 1 & 8 \\\\ 2 & 1 \\end{pmatrix} = 0$, by the fact that the dot product of two vectors is zero if and only if they are parallel.",
+            "Step 9: So, this means that $k + 8 = 0$, and therefore, $k = -8$.",
+            "Step 10: This is the only possible value of $k$ that makes sense, because if $k$ were any other nonzero constant, then $\\mathbf{v}$ would be parallel to one of the axes, and therefore, not 2-dimensional.",
+            "Step 11: So, the only solution is $k = -8$. The answer is: -8"
+        ],
+        "labels": [
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Ocho has 8 friends and half are girls. His friends who are boys like to play theater with him. How many boys play theater with him? Step 1: If there are 8 - 1/2 = <<8-1/2=4>>4 girls, then there are 8 - 4 = <<8-4=4>>4 boys.",
+            "Step 2: Since there are 4 boys, half of them like to play theater with him, so there are 4 x 1/2 = <<4*1/2=2>>2 boys. The answer is: 2"
+        ],
+        "labels": [
+            "+",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Jill is the hairdresser for the school's dance team and has to braid 8 dancers' hair. If each dancer has five braids and each braid takes 30 seconds, how many minutes will it take to braid all the dancers' hair? Step 1: First, multiply the number of braids per dancer by the number of dancers to find the total number of braids: 5 braids/dancer * 8 dancers = <<5*8=40>>40 braids",
+            "Step 2: Then divide the total number of braids by the time per braid to find the total braiding time: 40 braids / 30 seconds/braid = <<40/30=1.33>>1.33 minutes",
+            "Step 3: Then round the answer up to the next highest whole number to find the total braiding time: 1.33 minutes * 2 = <<1.33*2=2.66>>2.66 minutes The answer is: 2.66 minutes"
+        ],
+        "labels": [
+            "+",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "What is the value of the sum $S=\\sum_{k=0}^{49}(-1)^k\\binom{99}{2k}=\\binom{99}{0}-\\binom{99}{2}+\\binom{99}{4}-\\cdots -\\binom{99}{98}?$\n(A) $-2^{50}$ (B) $-2^{49}$ (C) 0 (D) X (E) $2^{50}$ The answer is 49. What is the value of unknown variable X? Step 1: ariable x is 49. The answer is: 49"
+        ],
+        "labels": [
+            "+"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Zilla spent 7% of her monthly earnings on rent, half of it on her other monthly expenses, and put the rest in her savings. If she spent $133 on her rent, how much does she deposit into her savings account in a month? Step 1: Zilla's other monthly expenses are half of what she spends on rent, which is 7/2 = 3.5%.",
+            "Step 2: She spends 7 + 3.5 = <<7+3.5=10.5>>10.5% of her earnings on rent and expenses combined.",
+            "Step 3: This means, she spends 10.5/100 * her monthly earnings = $<<10.5/100*90=9.5>>9.5 on rent and expenses.",
+            "Step 4: So, she saves 100 - 9.5 = $<<100-9.5=90.5>>90.5 in a month. The answer is: 90.5"
+        ],
+        "labels": [
+            "-",
+            "-",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "What is $\\left(\\frac{6}{7}\\right)^2 \\cdot \\left(\\frac{1}{2}\\right)^2$? Step 1: I recognize that this is a problem involving fractions and powers, so I need to use the rules of exponents and fractions to simplify it.",
+            "Step 2: First, I can use the rule that says $\\left(\\frac{a}{b}\\right)^n = \\frac{a^n}{b^n}$ to rewrite the expression as $\\left(\\frac{6}{7} \\cdot \\frac{1}{2}\\right)^2$.",
+            "Step 3: Next, I can use the rule that says $\\left(\\frac{a}{b} \\cdot \\frac{c}{d}\\right) = \\frac{a}{b} \\cdot \\frac{c}{d}$ to simplify the fraction inside the parentheses as $\\frac{3}{7}$.",
+            "Step 4: Then, I can use the rule that says $(a/b)^2 = a^2/b^2$ to write the expression as $\\frac{3^2}{7^2}$.",
+            "Step 5: Finally, I can evaluate the powers and the fractions to get the answer as $9/49$. The answer is: 9/49"
+        ],
+        "labels": [
+            "+",
+            "+",
+            "+",
+            "+",
+            "+"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Arnold's collagen powder has 18 grams of protein for every 2 scoops.  His protein powder has 21 grams of protein per scoop.  And his steak has 56 grams of protein.   If he has 1 scoop of collagen powder, 1 scoop of protein powder and his steak, how many grams of protein will he consume? Step 1: The collagen has 18 grams of protein for 2 scoops, so it has 18/2 = <<18/2=9>>9 grams of protein per scoop.",
+            "Step 2: The protein powder has 21 grams of protein per scoop, so it has 21 * 2 = <<21*2=42>>42 grams of protein.",
+            "Step 3: His steak has 56 grams of protein, so he will have 56 + 42 + 9 = <<56+42+9=117>>117 grams of protein. The answer is: 117"
+        ],
+        "labels": [
+            "+",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "The function $f(x) = x + 1$ generates the sequence\n\\[1, \\ 2, \\ 3, \\ 4, \\ \\dots\\]in the sense that plugging any number in the sequence into $f(x)$ gives the next number in the sequence.\n\nWhat rational function $g(x)$ generates the sequence\n\\[\\frac{1}{2}, \\ \\frac{2}{3}, \\ \\frac{3}{4}, \\ \\frac{4}{5}, \\ \\dots\\]in this manner? Step 1: I notice that the numerator of each term in the sequence is one less than the denominator.",
+            "Step 2: This suggests that $g(x)$ might have a form like $x + \\frac{1}{x}$.",
+            "Step 3: To test this idea, I plug in some values of $x$ and see if they match the sequence.",
+            "Step 4: If $x = 2$, then $g(2) = 2 + \\frac{1}{2} = \\frac{3}{2}$, which is the second term in the sequence.",
+            "Step 5: If $x = 3$, then $g(3) = 3 + \\frac{1}{3} = 2$, which is the third term in the sequence.",
+            "Step 6: If $x = 4$, then $g(4) = 4 + \\frac{1}{4} = \\frac{5}{4}$, which is the fourth term in the sequence.",
+            "Step 7: This seems to work for all values of $x$, so I think I have found $g(x)$.",
+            "Step 8: I can write $g(x)$ as a fraction: $g(x) = \\frac{x + 1}{x}$. The answer is: \\frac{x + 1}{x}"
+        ],
+        "labels": [
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Determine the distance, expressed in simplest radical form, between the points (1, 1) and (4, 7). Step 1: We can use the distance formula to find the distance between two points in a coordinate plane.",
+            "Step 2: The distance between the points $(x_1, y_1)$ and $(x_2, y_2)$ is given by the formula $\\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}$.",
+            "Step 3: In this case, $(x_1, y_1) = (1, 1)$ and $(x_2, y_2) = (4, 7)$.",
+            "Step 4: Plugging these values into the distance formula, we get $\\sqrt{(4 - 1)^2 + (7 - 1)^2} = \\sqrt{9 + 16} = \\sqrt{25} = \\boxed{5}$. The answer is: 5"
+        ],
+        "labels": [
+            "+",
+            "+",
+            "+",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "What are all the possible values of k such that the domain of b(x) = (kx^2 + 2x - 5)/(-5x^2 + 2x + k) is the set of all real numbers? Step 1: The domain of a function is the set of all possible input values.",
+            "Step 2: For the given function, the denominator cannot equal zero, so we need to find the values of $k$ that make $-5x^2 + 2x + k$ equal to zero.",
+            "Step 3: We can rewrite this quadratic as $-5(x^2 - \\frac{2}{5}x) + k = 0$.",
+            "Step 4: For the quadratic to equal zero, the coefficient of $x^2$ must be zero, so we have $-5 = 0$.",
+            "Step 5: This is not possible, so there are no values of $k$ that make the denominator equal to zero.",
+            "Step 6: Therefore, the domain of the function is the set of all real numbers.",
+            "Step 7: The possible values of $k$ are $\\boxed{all real numbers}$.The answer is: all"
+        ],
+        "labels": [
+            "+",
+            "+",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-"
+        ]
+    },
+    {
+        "src": [
+            ""
+        ],
+        "tgt": [],
+        "responses": [
+            "Calculate: $(243)^{\\frac35}$ Step 1: To solve this problem, I need to use the exponent rules for fractional powers.",
+            "Step 2: I recall that $(a^b)^c = a^{bc}$, which means I can multiply the exponents inside and outside the parentheses.",
+            "Step 3: So, I can rewrite the expression as $(243^{\\frac35})^{\\frac15}$.",
+            "Step 4: Now, I need to simplify the fraction inside the parentheses.",
+            "Step 5: I notice that $\\frac35 = \\frac{3}{5} = \\frac{6}{10} = \\frac{3}{5}$.",
+            "Step 6: This means I can replace it with a fraction that has a common denominator of 5.",
+            "Step 7: I choose to use $\\frac{6}{5}$, since it is easy to multiply by 5 and get 3.",
+            "Step 8: So, I can rewrite the expression as $(243^{\\frac35})^{\\frac15} = (243^{\\frac{6}{5}})^{\\frac{3}{5}}$.",
+            "Step 9: Now, I can use the rule that $(a^b)^c = a^{bc}$ again, and multiply the exponents inside and outside the parentheses.",
+            "Step 10: I get $(243^{\\frac{6}{5}})^{\\frac{3}{5}} = 243^{\\frac{6}{5} \\cdot \\frac{3}{5}}$.",
+            "Step 11: I can simplify the fraction in the exponent by multiplying the numerators and the denominators.",
+            "Step 12: I get $243^{\\frac{6}{5} \\cdot \\frac{3}{5}} = 243^{\\frac{18}{5}}$.",
+            "Step 13: Finally, I can multiply 243 by $\\frac{18}{5}$ by multiplying 243 by 3.",
+            "Step 14: I get $243^{\\frac{18}{5}} = 243 \\cdot 3 = 729$. The answer is: 729"
+        ],
+        "labels": [
+            "+",
+            "+",
+            "+",
+            "+",
+            "+",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-"
+        ]
+    }
+]
