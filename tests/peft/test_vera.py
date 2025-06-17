@@ -21,9 +21,10 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 import numpy as np
 import paddle
 from paddle import nn
-from paddlenlp.peft.vera import VeRAConfig, VeRALinear, VeRAModel
-from paddlenlp.transformers import AutoModel
 from parameterized import parameterized
+
+from paddleformers.peft.vera import VeRAConfig, VeRALinear, VeRAModel
+from paddleformers.transformers import AutoModel
 
 
 class TestVeraLayer(unittest.TestCase):

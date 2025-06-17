@@ -17,11 +17,12 @@ import shutil
 import tempfile
 import unittest
 
-from paddlenlp.transformers.auto.tokenizer import AutoTokenizer
-from paddlenlp.transformers.llama.tokenizer import LlamaTokenizer
-from paddlenlp.transformers.tokenizer_utils import PretrainedTokenizer
-from paddlenlp.transformers.tokenizer_utils_fast import PretrainedTokenizerFast
 from parameterized import parameterized_class
+
+from paddleformers.transformers.auto.tokenizer import AutoTokenizer
+from paddleformers.transformers.llama.tokenizer import LlamaTokenizer
+from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
+from paddleformers.transformers.tokenizer_utils_fast import PretrainedTokenizerFast
 
 from ..test_tokenizer_common import TokenizerTesterMixin
 

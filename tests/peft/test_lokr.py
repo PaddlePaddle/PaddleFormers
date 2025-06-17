@@ -21,8 +21,9 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 import paddle
-from paddlenlp.peft.lokr import LoKrConfig, LoKrLinear, LoKrModel
-from paddlenlp.transformers import AutoModel, BertModel
+
+from paddleformers.peft.lokr import LoKrConfig, LoKrLinear, LoKrModel
+from paddleformers.transformers import AutoModel, BertModel
 
 DEFAULT_LINEAR_TEST_CONFIG = {
     "in_features": 4864,

@@ -22,8 +22,10 @@ from typing import List
 
 import numpy as np
 import paddle
-from paddlenlp import __version__ as current_version
-from paddlenlp.transformers import (
+from parameterized import parameterized, parameterized_class
+
+from paddleformers import __version__ as current_version
+from paddleformers.transformers import (
     AutoModel,
     AutoModelForQuestionAnswering,
     AutoModelForTokenClassification,
@@ -35,10 +37,9 @@ from paddlenlp.transformers import (
     BertForTokenClassification,
     BertModel,
 )
-from paddlenlp.transformers.bert.configuration import BertConfig
-from paddlenlp.transformers.model_utils import PretrainedModel
-from paddlenlp.utils import install_package, uninstall_package
-from parameterized import parameterized, parameterized_class
+from paddleformers.transformers.bert.configuration import BertConfig
+from paddleformers.transformers.model_utils import PretrainedModel
+from paddleformers.utils import install_package, uninstall_package
 
 from ...testing_utils import require_package, slow
 from ..test_configuration_common import ConfigTester
@@ -473,12 +474,12 @@ class BertCompatibilityTest(unittest.TestCase):
         return tempdir.name
 
     def run_token_for_classification(self, version: str):
-        install_package("paddlenlp", version=version)
+        install_package("paddleformers", version=version)
 
-        from paddlenlp import __version__
+        from paddleformers import __version__
 
         self.assertEqual(__version__, version)
-        from paddlenlp.transformers import BertForTokenClassification, BertModel
+        from paddleformers.transformers import BertForTokenClassification, BertModel
 
         tempdir = self.get_tempdir()
 
@@ -493,12 +494,12 @@ class BertCompatibilityTest(unittest.TestCase):
         old_model_for_token_path = os.path.join(tempdir, "old-model-for-token")
         old_model_for_token.save_pretrained(old_model_for_token_path)
 
-        uninstall_package("paddlenlp")
-        from paddlenlp import __version__
+        uninstall_package("paddleformers")
+        from paddleformers import __version__
 
         self.assertEqual(__version__, current_version)
 
-        from paddlenlp.transformers import BertForTokenClassification, BertModel
+        from paddleformers.transformers import BertForTokenClassification, BertModel
 
         # bert: from old bert
         model = BertModel.from_pretrained(old_model_path)
@@ -539,17 +540,17 @@ class BertCompatibilityTest(unittest.TestCase):
         self.assertEqual(diff, 0.0)
 
     @slow
-    def test_paddlenlp_token_classification(self):
+    def test_paddleformers_token_classification(self):
         versions = ["3.0.0b4"]
         for version in versions:
-            install_package("paddlenlp", version=version)
+            install_package("paddleformers", version=version)
             self.run_token_for_classification(version)
-            uninstall_package("paddlenlp")
+            uninstall_package("paddleformers")
 
     @slow
     def test_bert_save_token_load(self):
         """bert -> token"""
-        from paddlenlp.transformers import BertForTokenClassification, BertModel
+        from paddleformers.transformers import BertForTokenClassification, BertModel
 
         saved_dir = os.path.join(self.get_tempdir(), "bert-saved")
         bert: BertModel = BertModel.from_pretrained("bert-base-uncased")
@@ -571,7 +572,7 @@ class BertCompatibilityTest(unittest.TestCase):
     @slow
     def test_token_saved_bert_load(self):
         """token -> bert"""
-        from paddlenlp.transformers import BertForTokenClassification, BertModel
+        from paddleformers.transformers import BertForTokenClassification, BertModel
 
         saved_dir = os.path.join(self.get_tempdir(), "bert-token-saved")
         bert_for_token = BertForTokenClassification.from_pretrained("bert-base-uncased")
@@ -608,7 +609,7 @@ class BertCompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the paddle model
-            from paddlenlp.transformers import BertModel
+            from paddleformers.transformers import BertModel
 
             paddle_model = BertModel.from_pretrained(
                 "hf-internal-testing/tiny-random-BertModel", from_hf_hub=True, cache_dir=tempdir
@@ -649,7 +650,7 @@ class BertCompatibilityTest(unittest.TestCase):
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             # 2. forward the paddle model
-            from paddlenlp.transformers import BertModel
+            from paddleformers.transformers import BertModel
 
             paddle_model = BertModel.from_pretrained(tempdir, convert_from_torch=True)
             paddle_model.eval()
@@ -705,7 +706,7 @@ class BertCompatibilityTest(unittest.TestCase):
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             # 3. forward the paddle model
-            from paddlenlp import transformers
+            from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_torch=True)

@@ -63,12 +63,12 @@ class ModelLoadTester(unittest.TestCase):
     @slow
     def test_bert_load(self):
         # BOS
-        logger.info("Download model from PaddleNLP BOS")
+        logger.info("Download model from PaddleFormers BOS")
         bert_model_bos = BertModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=False, from_hf_hub=False)
         bert_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=False, from_hf_hub=False)
         self.test_config_diff(bert_model_bos.config, bert_model_bos_auto.config)
 
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         bert_model_bos_sub = BertModel.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="tiny-bert", use_safetensors=False, from_hf_hub=False
         )
@@ -200,12 +200,12 @@ class ModelLoadTester(unittest.TestCase):
     @slow
     def test_bert_load_safe(self):
         # BOS
-        logger.info("Download model from PaddleNLP BOS")
+        logger.info("Download model from PaddleFormers BOS")
         bert_model_bos = BertModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=True, from_hf_hub=False)
         bert_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=True, from_hf_hub=False)
         self.test_config_diff(bert_model_bos.config, bert_model_bos_auto.config)
 
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         bert_model_bos_sub = BertModel.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="tiny-bert", use_safetensors=True, from_hf_hub=False
         )
@@ -327,12 +327,12 @@ class ModelLoadTester(unittest.TestCase):
     @slow
     def test_clip_load(self):
         # BOS
-        logger.info("Download model from PaddleNLP BOS")
+        logger.info("Download model from PaddleFormers BOS")
         clip_model_bos = CLIPTextModel.from_pretrained("baicai/tiny-clip", use_safetensors=False, from_hf_hub=False)
         clip_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-clip", use_safetensors=False, from_hf_hub=False)
         self.test_config_diff(clip_model_bos.config, clip_model_bos_auto.config)
 
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         clip_model_bos_sub = CLIPTextModel.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="tiny-clip", use_safetensors=False, from_hf_hub=False
         )
@@ -474,12 +474,12 @@ class ModelLoadTester(unittest.TestCase):
     @slow
     def test_clip_load_safe(self):
         # BOS
-        logger.info("Download model from PaddleNLP BOS")
+        logger.info("Download model from PaddleFormers BOS")
         clip_model_bos = CLIPTextModel.from_pretrained("baicai/tiny-clip", use_safetensors=True, from_hf_hub=False)
         clip_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-clip", use_safetensors=True, from_hf_hub=False)
         self.test_config_diff(clip_model_bos.config, clip_model_bos_auto.config)
 
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         clip_model_bos_sub = CLIPTextModel.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="tiny-clip", use_safetensors=True, from_hf_hub=False
         )
@@ -617,12 +617,12 @@ class ModelLoadTester(unittest.TestCase):
     @slow
     def test_t5_load(self):
         # BOS
-        logger.info("Download model from PaddleNLP BOS")
+        logger.info("Download model from PaddleFormers BOS")
         t5_model_bos = T5Model.from_pretrained("baicai/tiny-t5", use_safetensors=False, from_hf_hub=False)
         t5_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-t5", use_safetensors=False, from_hf_hub=False)
         self.test_config_diff(t5_model_bos.config, t5_model_bos_auto.config)
 
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         t5_model_bos_sub = T5Model.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="tiny-t5", use_safetensors=False, from_hf_hub=False
         )
@@ -736,12 +736,12 @@ class ModelLoadTester(unittest.TestCase):
     @slow
     def test_t5_load_safe(self):
         # BOS
-        logger.info("Download model from PaddleNLP BOS")
+        logger.info("Download model from PaddleFormers BOS")
         t5_model_bos = T5Model.from_pretrained("baicai/tiny-t5", use_safetensors=True, from_hf_hub=False)
         t5_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-t5", use_safetensors=True, from_hf_hub=False)
         self.test_config_diff(t5_model_bos.config, t5_model_bos_auto.config)
 
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         t5_model_bos_sub = T5Model.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="tiny-t5", use_safetensors=True, from_hf_hub=False
         )

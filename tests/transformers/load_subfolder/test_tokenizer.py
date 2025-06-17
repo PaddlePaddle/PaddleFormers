@@ -30,7 +30,7 @@ from tests.testing_utils import slow
 class TokenizerLoadTester(unittest.TestCase):
     @slow
     def test_bert_load(self):
-        logger.info("Download model from PaddleNLP BOS")
+        logger.info("Download model from PaddleFormers BOS")
         bert_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", from_hf_hub=False)
         bert_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased", from_hf_hub=False)
 
@@ -41,7 +41,7 @@ class TokenizerLoadTester(unittest.TestCase):
         bert_tokenizer = BertTokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="bert-base-uncased")
         bert_tokenizer = AutoTokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="bert-base-uncased")
 
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         bert_tokenizer = BertTokenizer.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="bert-base-uncased", from_hf_hub=False
         )
@@ -63,7 +63,7 @@ class TokenizerLoadTester(unittest.TestCase):
 
     @slow
     def test_clip_load(self):
-        logger.info("Download model from PaddleNLP BOS")
+        logger.info("Download model from PaddleFormers BOS")
         clip_tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
         clip_tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
 
@@ -74,7 +74,7 @@ class TokenizerLoadTester(unittest.TestCase):
         clip_tokenizer = CLIPTokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="clip-vit-base-patch32")
         clip_tokenizer = AutoTokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="clip-vit-base-patch32")
 
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         clip_tokenizer = CLIPTokenizer.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
         )
@@ -96,7 +96,7 @@ class TokenizerLoadTester(unittest.TestCase):
 
     @slow
     def test_t5_load(self):
-        logger.info("Download model from PaddleNLP BOS")
+        logger.info("Download model from PaddleFormers BOS")
         t5_tokenizer = T5Tokenizer.from_pretrained("t5-small", from_hf_hub=False)
         t5_tokenizer = AutoTokenizer.from_pretrained("t5-small", from_hf_hub=False)
 
@@ -107,7 +107,7 @@ class TokenizerLoadTester(unittest.TestCase):
         t5_tokenizer = T5Tokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="t5-small")
         t5_tokenizer = AutoTokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="t5-small")
 
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         t5_tokenizer = T5Tokenizer.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="t5-small", from_hf_hub=False
         )

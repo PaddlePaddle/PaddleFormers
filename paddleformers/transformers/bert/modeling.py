@@ -28,7 +28,6 @@ except ImportError:
     FusedTransformerEncoderLayer = None
 from dataclasses import dataclass
 
-from ...layers import Linear as TransposedLinear
 from ...utils.converter import StateDictNameMapping, init_name_mappings
 from ...utils.env import CONFIG_NAME
 from ..model_outputs import (
@@ -41,6 +40,7 @@ from ..model_outputs import (
     TokenClassifierOutput,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from ..transposed_linear import TransposedLinear
 from .configuration import (
     BERT_PRETRAINED_INIT_CONFIGURATION,
     BERT_PRETRAINED_RESOURCE_FILES_MAP,

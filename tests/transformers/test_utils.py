@@ -17,22 +17,15 @@ import json
 import os
 import unittest
 
-from paddlenlp.transformers import (
-    AlbertForTokenClassification,
-    AlbertModel,
-    BertModel,
-    utils,
-)
-from paddlenlp.transformers.bert.modeling import BertForTokenClassification
+from paddleformers.transformers import BertModel, utils
+from paddleformers.transformers.bert.modeling import BertForTokenClassification
 
 
 class TestUtils(unittest.TestCase):
-    """Unittest for paddlenlp.transformers.utils.py module"""
+    """Unittest for paddleformers.transformers.utils.py module"""
 
     def test_find_transformer_model_type(self):
         """test for `find_transformer_model_type`"""
-        self.assertEqual(utils.find_transformer_model_type(AlbertModel), "albert")
-        self.assertEqual(utils.find_transformer_model_type(AlbertForTokenClassification), "albert")
         self.assertEqual(utils.find_transformer_model_type(BertModel), "bert")
         self.assertEqual(utils.find_transformer_model_type(BertForTokenClassification), "bert")
 

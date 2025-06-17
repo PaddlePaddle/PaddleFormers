@@ -18,9 +18,10 @@ import tempfile
 from pathlib import Path
 
 import paddle
-from paddlenlp.generation import GenerationConfig
-from paddlenlp.trainer import PdArgumentParser, Trainer, TrainingArguments
-from paddlenlp.transformers import AutoModelForCausalLM, AutoTokenizer
+
+from paddleformers.generation import GenerationConfig
+from paddleformers.trainer import PdArgumentParser, Trainer, TrainingArguments
+from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from tests.parallel_launch import TestMultipleGpus

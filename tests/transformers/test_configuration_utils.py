@@ -18,11 +18,14 @@ import tempfile
 import unittest
 from typing import Dict, Optional
 
-from paddlenlp.transformers import BertConfig
-from paddlenlp.transformers.configuration_utils import PretrainedConfig, attribute_map
-from paddlenlp.transformers.model_utils import PretrainedModel
-from paddlenlp.utils import CONFIG_NAME
-from paddlenlp.utils.env import LEGACY_CONFIG_NAME
+from paddleformers.transformers import BertConfig
+from paddleformers.transformers.configuration_utils import (
+    PretrainedConfig,
+    attribute_map,
+)
+from paddleformers.transformers.model_utils import PretrainedModel
+from paddleformers.utils import CONFIG_NAME
+from paddleformers.utils.env import LEGACY_CONFIG_NAME
 
 
 class FakeSimplePretrainedModelConfig(PretrainedConfig):
@@ -106,7 +109,7 @@ class ConfigurationUtilsTest(unittest.TestCase):
             assert "fuse_attention_qkv" in loaded_config, "fuse qkv is need to save"
             assert "use_fused_rms_norm" not in loaded_config, "use_fused_rms_norm don't need to save"
             assert "tensor_parallel_degree" in loaded_config, "tensor_parallel_degree need to save"
-            assert "paddlenlp_version" in loaded_config, "always save paddlenlp_version"
+            assert "paddleformers_version" in loaded_config, "always save paddleformers_version"
             assert (
                 "quantization_config" in loaded_config and "quant_type" in loaded_config["quantization_config"]
             ), "missing quantization_config"
@@ -189,7 +192,8 @@ class TestTensorParallelConveter(unittest.TestCase):
         num_attention_heads = 4
         # head_dim = hidden_size // num_attention_heads
         import numpy as np
-        from paddlenlp.transformers.conversion_utils import (
+
+        from paddleformers.transformers.conversion_utils import (
             naive_merged_qkv_to_tensor_parallel_qkv,
             normal_fuse_merge_tp,
             normal_fuse_split_tp,

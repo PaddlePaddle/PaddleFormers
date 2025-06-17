@@ -14,7 +14,7 @@
 
 import unittest
 
-from paddlenlp.utils import install_package, uninstall_package
+from paddleformers.utils import install_package, uninstall_package
 
 from ..testing_utils import skip_for_none_ce_case
 
@@ -33,5 +33,5 @@ class ImportUntilsTest(unittest.TestCase):
         assert __version__ == "0.5.3"
 
     def test_uninstall_package(self):
-        uninstall_package("paddlenlp")
+        uninstall_package("paddleformers")
         uninstall_package("empty-package")

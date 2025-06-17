@@ -35,7 +35,7 @@ def ids_tensor(shape, vocab_size, rng=None, name=None):
     return paddle.to_tensor(data=values).reshape(shape)
 
 
-from paddlenlp.generation.logits_process import (
+from paddleformers.generation.logits_process import (
     ForcedBOSTokenLogitsProcessor,
     ForcedEOSTokenLogitsProcessor,
     HammingDiversityLogitsProcessor,

@@ -19,7 +19,8 @@ import numpy as np
 import paddle
 import paddle.distributed as dist
 from paddle.distributed.communication.group import _get_global_group
-from paddlenlp.transformers.segment_parallel_utils import (
+
+from paddleformers.transformers.segment_parallel_utils import (
     ReshardLayer,
     split_inputs_sequence_dim,
 )

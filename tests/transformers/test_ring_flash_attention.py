@@ -18,7 +18,11 @@ import unittest
 import numpy as np
 import paddle
 from paddle.nn.functional.flash_attention import scaled_dot_product_attention
-from paddlenlp.transformers.ring_flash_attention import RingFlashAttention, get_chunk_id
+
+from paddleformers.transformers.ring_flash_attention import (
+    RingFlashAttention,
+    get_chunk_id,
+)
 
 
 class TestRingFlashAttention(unittest.TestCase):

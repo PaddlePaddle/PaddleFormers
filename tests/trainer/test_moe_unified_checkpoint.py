@@ -15,13 +15,6 @@
 import os
 
 import numpy as np
-import pytest
-from paddlenlp.utils.downloader import get_path_from_url_with_filelock
-
-from tests.parallel_launch import TestMultipleGpus
-from tests.testing_utils import require_paddle_at_least_8_gpu, skip_for_none_ce_case
-from tests.trainer.test_unified_checkpoint import remove_ckpt, remove_logs
-from tests.trainer.trainer_utils import get_pretrain_arguments
 
 environment_variables = {
     "NCCL_ALGO": "Tree",
@@ -91,86 +84,86 @@ seed = 2024
 rng = np.random.default_rng(seed=seed)
 
 
-@pytest.mark.xdist_group(name="UC")
-class TestUnifiedCheckpointBase(TestMultipleGpus):
-    @classmethod
-    @property
-    def __test__(cls):
-        return cls != TestUnifiedCheckpointBase
+# @pytest.mark.xdist_group(name="UC")
+# class TestUnifiedCheckpointBase(TestMultipleGpus):
+#     @classmethod
+#     @property
+#     def __test__(cls):
+#         return cls != TestUnifiedCheckpointBase
 
-    def setUp(self):
-        """
-        1. update runfirst and rerun to run defined different config
-        2. update need_allclose to True if you want to check the result
-        3. update rtol to the relative value you want to check
-        """
+#     def setUp(self):
+#         """
+#         1. update runfirst and rerun to run defined different config
+#         2. update need_allclose to True if you want to check the result
+#         3. update rtol to the relative value you want to check
+#         """
 
-        self.configs = get_pretrain_arguments(moe_arguments)
-        os.environ.update(environment_variables)
+#         self.configs = get_pretrain_arguments(moe_arguments)
+#         os.environ.update(environment_variables)
 
-        file_ = "https://bj.bcebos.com/paddlenlp/datasets/examples/AdvertiseGen.tar.gz"
-        input_dir = "unified_checkpoint/peft_input/"
-        os.makedirs(input_dir, exist_ok=True)
-        file_path = os.path.join(input_dir, "AdvertiseGen.tar.gz")
-        if not os.path.exists(file_path):
-            get_path_from_url_with_filelock(file_, root_dir=input_dir)
+#         file_ = "https://bj.bcebos.com/paddlenlp/datasets/examples/AdvertiseGen.tar.gz"
+#         input_dir = "unified_checkpoint/peft_input/"
+#         os.makedirs(input_dir, exist_ok=True)
+#         file_path = os.path.join(input_dir, "AdvertiseGen.tar.gz")
+#         if not os.path.exists(file_path):
+#             get_path_from_url_with_filelock(file_, root_dir=input_dir)
 
-        self.need_allclose = True
-        self.rtol = 1e-7
+#         self.need_allclose = True
+#         self.rtol = 1e-7
 
-        self.run_file = "llm/run_finetune.py"
+#         self.run_file = "llm/run_finetune.py"
 
-    def runfirst(self, train_args):
-        self.run_n1c8(self.run_file, **train_args)
+#     def runfirst(self, train_args):
+#         self.run_n1c8(self.run_file, **train_args)
 
-    def rerun(self, train_args):
-        self.run_n1c8(self.run_file, **train_args)
+#     def rerun(self, train_args):
+#         self.run_n1c8(self.run_file, **train_args)
 
-    @require_paddle_at_least_8_gpu
-    def testTP4DP2(self):
-        remove_logs()
-        remove_ckpt(moe_arguments["output_dir"])
+#     @require_paddle_at_least_8_gpu
+#     def testTP4DP2(self):
+#         remove_logs()
+#         remove_ckpt(moe_arguments["output_dir"])
 
-        train_args = self.configs["TP4DP2"]
-        self.runfirst(train_args)
-        self.rerun(train_args)
+#         train_args = self.configs["TP4DP2"]
+#         self.runfirst(train_args)
+#         self.rerun(train_args)
 
-        if self.need_allclose:
-            res = check_acc()
-            assert len(res) == 2
-            np.testing.assert_allclose(res[0], res[1], self.rtol)
+#         if self.need_allclose:
+#             res = check_acc()
+#             assert len(res) == 2
+#             np.testing.assert_allclose(res[0], res[1], self.rtol)
 
-    @skip_for_none_ce_case
-    @require_paddle_at_least_8_gpu
-    def testTP2Sharding4(self):
-        remove_logs()
-        remove_ckpt(moe_arguments["output_dir"])
+#     @skip_for_none_ce_case
+#     @require_paddle_at_least_8_gpu
+#     def testTP2Sharding4(self):
+#         remove_logs()
+#         remove_ckpt(moe_arguments["output_dir"])
 
-        train_args = self.configs["TP2Sharding4"]
-        self.runfirst(train_args)
-        self.rerun(train_args)
+#         train_args = self.configs["TP2Sharding4"]
+#         self.runfirst(train_args)
+#         self.rerun(train_args)
 
-        if self.need_allclose:
-            res = check_acc()
-            assert len(res) == 2
-            np.testing.assert_allclose(res[0], res[1], self.rtol)
+#         if self.need_allclose:
+#             res = check_acc()
+#             assert len(res) == 2
+#             np.testing.assert_allclose(res[0], res[1], self.rtol)
 
 
-@pytest.mark.xdist_group(name="UC")
-class TestUnifiedCheckpointFull(TestUnifiedCheckpointBase):
-    @skip_for_none_ce_case
-    @require_paddle_at_least_8_gpu
-    def testTP2Sharding4V2(self):
-        remove_logs()
-        remove_ckpt(moe_arguments["output_dir"])
+# @pytest.mark.xdist_group(name="UC")
+# class TestUnifiedCheckpointFull(TestUnifiedCheckpointBase):
+#     @skip_for_none_ce_case
+#     @require_paddle_at_least_8_gpu
+#     def testTP2Sharding4V2(self):
+#         remove_logs()
+#         remove_ckpt(moe_arguments["output_dir"])
 
-        train_args = self.configs["TP2Sharding4"]
-        train_args.update({"sharding_parallel_config": "split_param"})
-        train_args.update({"amp_master_grad": True})
-        self.runfirst(train_args)
-        self.rerun(train_args)
+#         train_args = self.configs["TP2Sharding4"]
+#         train_args.update({"sharding_parallel_config": "split_param"})
+#         train_args.update({"amp_master_grad": True})
+#         self.runfirst(train_args)
+#         self.rerun(train_args)
 
-        if self.need_allclose:
-            res = check_acc()
-            assert len(res) == 2
-            np.testing.assert_allclose(res[0], res[1], self.rtol)
+#         if self.need_allclose:
+#             res = check_acc()
+#             assert len(res) == 2
+#             np.testing.assert_allclose(res[0], res[1], self.rtol)

@@ -98,7 +98,7 @@ def common_test_merge(model, model_class=None):
 
 
 def _test_llama():
-    from paddlenlp.transformers import LlamaConfig, LlamaForCausalLM
+    from paddleformers.transformers import LlamaConfig, LlamaForCausalLM
 
     config = LlamaConfig()
     config = prepare_config(config)
@@ -106,40 +106,13 @@ def _test_llama():
     common_test_merge(model, LlamaForCausalLM)
 
 
-def _test_chatglm():
-    from paddlenlp.transformers import ChatGLMConfig, ChatGLMForCausalLM
-
-    config = ChatGLMConfig()
-    config = prepare_config(config)
-    model = ChatGLMForCausalLM.from_config(config)
-    common_test_merge(model, ChatGLMForCausalLM)
-
-
-def _test_bloom():
-    from paddlenlp.transformers import BloomConfig, BloomForCausalLM
-
-    config = BloomConfig()
-    config = prepare_config(config)
-    model = BloomForCausalLM.from_config(config)
-    common_test_merge(model, BloomForCausalLM)
-
-
 def _test_qwen2():
-    from paddlenlp.transformers import Qwen2Config, Qwen2ForCausalLM
+    from paddleformers.transformers import Qwen2Config, Qwen2ForCausalLM
 
     config = Qwen2Config()
     config = prepare_config(config)
     model = Qwen2ForCausalLM.from_config(config)
     common_test_merge(model, Qwen2ForCausalLM)
-
-
-def _test_gemma():
-    from paddlenlp.transformers import GemmaConfig, GemmaForCausalLM
-
-    config = GemmaConfig()
-    config = prepare_config(config)
-    model = GemmaForCausalLM.from_config(config)
-    common_test_merge(model, GemmaForCausalLM)
 
 
 @require_paddle_at_least_2_gpu
@@ -150,7 +123,4 @@ class TestTensorParallel(TestMultipleGpus):
 
 if __name__ == "__main__":
     _test_llama()
-    _test_chatglm()
-    _test_bloom()
-    _test_gemma()
     _test_qwen2()

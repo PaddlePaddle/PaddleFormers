@@ -23,10 +23,11 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 import paddle
-from paddlenlp.peft.lora import LoRAConfig, LoRALinear, LoRAModel
-from paddlenlp.transformers import AutoModel, BertModel
-from paddlenlp.utils.optimizer import AdamWLoRAPro
 from parameterized import parameterized
+
+from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
+from paddleformers.transformers import AutoModel, BertModel
+from paddleformers.utils.optimizer import AdamWLoRAPro
 
 
 class TestLoRAProLayer(unittest.TestCase):

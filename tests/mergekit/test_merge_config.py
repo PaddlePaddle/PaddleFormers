@@ -15,7 +15,7 @@
 import unittest
 from tempfile import TemporaryDirectory
 
-from paddlenlp.mergekit import MergeConfig
+from paddleformers.mergekit import MergeConfig
 
 
 class TestMergeConfig(unittest.TestCase):

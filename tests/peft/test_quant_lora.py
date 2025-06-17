@@ -22,9 +22,10 @@ from paddle.quantization import QAT, QuantConfig
 from paddle.quantization.config import SingleLayerConfig
 from paddle.quantization.quanters import FakeQuanterWithAbsMaxObserver
 from paddle.quantization.quanters.abs_max import FakeQuanterWithAbsMaxObserverLayer
-from paddlenlp.peft.lora import LoRAConfig, LoRALinear, LoRAModel
-from paddlenlp.peft.lora.lora_quant_layers import QuantedLoRALinear
-from paddlenlp.transformers import AutoModel
+
+from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
+from paddleformers.peft.lora.lora_quant_layers import QuantedLoRALinear
+from paddleformers.transformers import AutoModel
 
 
 class TestQuantedLoraLayer(unittest.TestCase):

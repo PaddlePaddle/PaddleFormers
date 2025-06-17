@@ -17,14 +17,14 @@ import os
 import tempfile
 import unittest
 
-import paddlenlp
-from paddlenlp.transformers import AutoTokenizer
-from paddlenlp.transformers.auto.configuration import CONFIG_MAPPING, AutoConfig
-from paddlenlp.transformers.auto.tokenizer import TOKENIZER_MAPPING
-from paddlenlp.transformers.bert.configuration import BertConfig
-from paddlenlp.transformers.bert.tokenizer import BertTokenizer
-from paddlenlp.transformers.bert.tokenizer_fast import BertTokenizerFast
-from paddlenlp.utils.env import TOKENIZER_CONFIG_NAME
+import paddleformers
+from paddleformers.transformers import AutoTokenizer
+from paddleformers.transformers.auto.configuration import CONFIG_MAPPING, AutoConfig
+from paddleformers.transformers.auto.tokenizer import TOKENIZER_MAPPING
+from paddleformers.transformers.bert.configuration import BertConfig
+from paddleformers.transformers.bert.tokenizer import BertTokenizer
+from paddleformers.transformers.bert.tokenizer_fast import BertTokenizerFast
+from paddleformers.utils.env import TOKENIZER_CONFIG_NAME
 
 from ...utils.test_module.custom_configuration import CustomConfig
 from ...utils.test_module.custom_tokenizer import CustomTokenizer
@@ -37,8 +37,8 @@ from ...utils.test_module.custom_tokenizer_fast import (
 class AutoTokenizerTest(unittest.TestCase):
     @unittest.skip("skipping due to connection error!")
     def test_from_aistudio(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/tiny-random-bert", from_aistudio=True)
-        self.assertIsInstance(tokenizer, paddlenlp.transformers.BertTokenizer)
+        tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-bert", from_aistudio=True)
+        self.assertIsInstance(tokenizer, paddleformers.transformers.BertTokenizer)
 
     def test_from_pretrained_cache_dir(self):
         model_name = "__internal_testing__/tiny-random-bert"
@@ -57,7 +57,7 @@ class AutoTokenizerTest(unittest.TestCase):
             AutoConfig.register("custom", CustomConfig)
 
             AutoTokenizer.register(CustomConfig, slow_tokenizer_class=CustomTokenizer)
-            # Trying to register something existing in the PaddleNLP library will raise an error
+            # Trying to register something existing in the PaddleFormers library will raise an error
             with self.assertRaises(ValueError):
                 AutoTokenizer.register(BertConfig, slow_tokenizer_class=BertTokenizer)
 
@@ -105,7 +105,7 @@ class AutoTokenizerTest(unittest.TestCase):
             )
             self.assertEqual(TOKENIZER_MAPPING[CustomConfig], (CustomTokenizer, CustomTokenizerFast))
 
-            # Trying to register something existing in the PaddleNLP library will raise an error
+            # Trying to register something existing in the PaddleFormers library will raise an error
             with self.assertRaises(ValueError):
                 AutoTokenizer.register(BertConfig, fast_tokenizer_class=BertTokenizerFast)
             with self.assertRaises(ValueError):

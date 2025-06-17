@@ -16,7 +16,8 @@ import unittest
 
 import numpy as np
 import paddle
-from paddlenlp.mergekit import MergeConfig, MergeMethod
+
+from paddleformers.mergekit import MergeConfig, MergeMethod
 
 
 class TestMergeMethod(unittest.TestCase):

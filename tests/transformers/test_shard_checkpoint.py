@@ -18,22 +18,25 @@ import tempfile
 import unittest
 
 import paddle
-from paddlenlp.transformers import (
+
+from paddleformers.transformers import (
     AutoConfig,
     BertModel,
     PretrainedConfig,
     PretrainedModel,
     register_base_model,
 )
-from paddlenlp.transformers.model_utils import load_sharded_checkpoint, shard_checkpoint
-from paddlenlp.utils.env import (
+from paddleformers.transformers.model_utils import (
+    load_sharded_checkpoint,
+    shard_checkpoint,
+)
+from paddleformers.utils.env import (
     PADDLE_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_NAME,
     SAFE_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_NAME,
 )
-from paddlenlp.utils.import_utils import is_paddle_cuda_available
-
+from paddleformers.utils.import_utils import is_paddle_cuda_available
 from tests.testing_utils import require_package
 
 

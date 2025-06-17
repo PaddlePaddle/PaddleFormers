@@ -24,7 +24,7 @@ from tests.testing_utils import slow
 class ImageProcessorLoadTester(unittest.TestCase):
     @slow
     def test_clip_load(self):
-        logger.info("Download model from PaddleNLP BOS")
+        logger.info("Download model from PaddleFormers BOS")
         clip_processor = CLIPImageProcessor.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
         clip_processor = AutoImageProcessor.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
 
@@ -32,7 +32,7 @@ class ImageProcessorLoadTester(unittest.TestCase):
         clip_processor.save_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
         clip_processor = CLIPImageProcessor.from_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
         clip_processor = AutoImageProcessor.from_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         clip_processor = CLIPImageProcessor.from_pretrained(
             "./paddlenlp-test-model/", subfolder="clip-vit-base-patch32"
         )
@@ -40,7 +40,7 @@ class ImageProcessorLoadTester(unittest.TestCase):
             "./paddlenlp-test-model/", subfolder="clip-vit-base-patch32"
         )
 
-        logger.info("Download model from PaddleNLP BOS with subfolder")
+        logger.info("Download model from PaddleFormers BOS with subfolder")
         clip_processor = CLIPImageProcessor.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
         )

@@ -20,9 +20,83 @@ import tempfile
 import unittest
 from typing import Optional
 
-from paddlenlp.transformers import AutoTokenizer
-from paddlenlp.transformers.tokenizer_utils import ChatTemplate
 from parameterized import parameterized_class
+
+from paddleformers.transformers import AutoTokenizer
+from paddleformers.transformers.tokenizer_utils import ChatTemplate
+
+
+def tokenize_rounds_example(tokenizer, example, data_args, **kwargs):
+    """tokenize multi-rounds examples with chat_template.json
+
+    Args:
+        tokenizer (PretrainedTokenizer): the instance of tokenizer
+        example (dict[str, str | list[str]]):
+                the example instance, which can be: {"src": "src-sentence", "tgt": "tgt-sentence"}
+                or {"src": ["src-sentence-1", ..., "src-sentence-N"], "tgt": ["tgt-sentence-1", ..., "tgt-sentence-N"]}
+        data_args (DataArgument): the data_argument instance of data processing
+
+    Returns:
+        dict[str, list[int]]: return input_ids and labels fields
+    """
+
+    # 0. prepare data
+    context_data = example.get("context", {})
+    context_data["is_training"] = True
+
+    example["src"] = example["src"] if isinstance(example["src"], list) else [example["src"]]
+    example["tgt"] = example["tgt"] if isinstance(example["tgt"], list) else [example["tgt"]]
+
+    assert len(example["src"]) == len(example["tgt"]), "the length of `src` and `tgt` field must be same."
+
+    conversations = [[src, tgt] for src, tgt in zip(example["src"], example["tgt"])]
+
+    # 1. only tokenize input_ids
+    conversation_result: list[tuple[list[int], list[int]]] = tokenizer.encode_chat_inputs(
+        conversations, context_data=context_data, **kwargs
+    )
+    system_ids = conversation_result.pop("system", []) or []
+
+    # 2. truncate conversations based on conversation unit
+    input_ids, labels = [], []
+    conversations_ids = conversation_result.pop("conversations")
+
+    assert (
+        len(system_ids) < data_args.max_length
+    ), f"the length of system_ids<{len(system_ids)}> should be smaller than max_length<{data_args.max_length}>."
+    max_length = data_args.max_length - len(system_ids)
+
+    should_break = False
+    for index in range(len(conversations_ids) - 1, -1, -1):
+        user_input_ids, bot_input_ids = conversations_ids[index][0], conversations_ids[index][1]
+
+        # break when the length of current conversations is greater than max_length
+        if len(input_ids) + len(user_input_ids) + len(bot_input_ids) > max_length:
+
+            # when the length of last conversation is lager than max_length, we should not break: at least one round
+            if index < len(conversations_ids) - 1:
+                break
+
+            user_input_ids = user_input_ids[: data_args.src_length - len(system_ids)]
+            bot_input_ids = bot_input_ids[: max_length - len(user_input_ids)]
+
+            should_break = True
+
+        input_ids = user_input_ids + bot_input_ids + input_ids
+        labels = len(user_input_ids) * [-100] + bot_input_ids + labels
+
+        if should_break:
+            break
+
+    input_ids = system_ids + input_ids
+    labels = [-100] * len(system_ids) + labels
+    tokenized_source = {"input_ids": input_ids}
+    sequence_length = len(input_ids)
+
+    if "position_ids" in tokenizer.model_input_names:
+        tokenized_source["position_ids"] = list(range(sequence_length))
+
+    return tokenized_source, labels
 
 
 class ChatTemplateTest(unittest.TestCase):
@@ -117,22 +191,6 @@ class ChatTemplateIntegrationTest(unittest.TestCase):
             chat_template_file = os.path.join(tempdir, "chat_template.json")
             self.assertFalse(os.path.exists(chat_template_file))
 
-    def test_chatglm_bellegroup(self):
-        # refer to: https://huggingface.co/THUDM/chatglm-6b/blob/main/modeling_chatglm.py#L1267
-        tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm-6b-v1.1")
-        query = [["你好", "您好，我是个人人工智能助手"], ["今天吃啥"]]
-        final_query = tokenizer.apply_chat_template(query, tokenize=False)
-        expected_query = "[Round 0]\n问：你好\n答：您好，我是个人人工智能助手\n[Round 1]\n问：今天吃啥\n答：[gMASK]<sop>"
-        self.assertEqual(final_query, expected_query)
-
-    def test_bloom_bellegroup(self):
-        # refer to: https://huggingface.co/BelleGroup/BELLE-7B-2M#use-model
-        tokenizer = AutoTokenizer.from_pretrained("bellegroup/belle-7b-2m")
-        query = "你好"
-        final_query = tokenizer.apply_chat_template(query, tokenize=False)
-        expected_query = f"Human: {query}\n\nAssistant:"
-        self.assertEqual(final_query, expected_query)
-
     def test_qwen_14b_chat(self):
         # refer to: https://huggingface.co/Qwen/Qwen-14B-Chat/blob/main/qwen_generation_utils.py#L119
 
@@ -159,8 +217,6 @@ class ChatTemplateIntegrationTest(unittest.TestCase):
     ["model_name"],
     [
         ["linly-ai/chinese-llama-2-7b"],
-        # ["THUDM/chatglm-6b-v1.1"],
-        ["bellegroup/belle-7b-2m"],
     ],
 )
 class TestChatTemplateSpecialTokens(unittest.TestCase):
@@ -180,7 +236,7 @@ class TestChatTemplateSpecialTokens(unittest.TestCase):
         return prefix_ids
 
     def test_prefix(self):
-        prompt = "欢迎使用 PaddleNLP 大模型开发套件"
+        prompt = "欢迎使用 PaddleFormers 大模型开发套件"
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         result = tokenizer.apply_chat_template(prompt, tokenize=False)
 
@@ -217,8 +273,6 @@ class TestChatTemplateTruncation(unittest.TestCase):
         system = tokenizer.chat_template.render_system()
         system_ids = tokenizer.encode(system, add_special_tokens=False)["input_ids"]
 
-        from utils.data import tokenize_rounds_example
-
         fake_data_args = self.DataArg(len(system_ids) + 5, src_length=len(system_ids) + 5)
 
         example = {"src": ["你好"], "tgt": ["您好，我是个人人工智能助手"]}
@@ -243,7 +297,6 @@ class TestChatTemplateTruncation(unittest.TestCase):
         all_sentence_ids = tokenizer(all_sentence, add_special_tokens=False)["input_ids"]
 
         # get the max_length of conversation
-        from utils.data import tokenize_rounds_example
 
         fake_data_args = self.DataArg(1024)
         example = {"src": ["你好", "今天吃啥"], "tgt": ["您好，我是个人人工智能助手", "你可以选择不同的菜系"]}
@@ -259,7 +312,7 @@ class TestChatTemplateTruncation(unittest.TestCase):
             tokenizer.convert_ids_to_tokens(expected_tokenized_result["input_ids"])
         )
 
-        # https://github.com/PaddlePaddle/PaddleNLP/blob/v2.6.1/paddlenlp/transformers/llama/tokenizer.py#L119
+        # https://github.com/PaddlePaddle/PaddleFormers/blob/v2.6.1/paddleformers/transformers/llama/tokenizer.py#L119
         # should use blank string to join
         expected_sentence = " ".join(tokenizer.chat_template.render_conversation(["你好", "您好，我是个人人工智能助手"]))
         expected_sentence = expected_sentence.replace("<s>", "<s> ")
@@ -341,7 +394,6 @@ class TemplateIntegrationTest(unittest.TestCase):
             self.tokenizer.init_chat_template(error_jinja)
 
     def test_train_format(self):
-        from utils.data import tokenize_rounds_example
 
         fake_data_args = self.DataArg(50, src_length=50)
         example = {"src": ["你好"], "tgt": ["您好，我是个人人工智能助手"]}
@@ -359,7 +411,6 @@ class TemplateIntegrationTest(unittest.TestCase):
         self.assertNotEqual(tgt_id[tgt_idx], -100)
 
     def test_train_format_multi(self):
-        from utils.data import tokenize_rounds_example
 
         fake_data_args = self.DataArg(50, src_length=50)
         example = {"src": ["用户Round 1", "用户Round 2"], "tgt": ["回答Round 1", "回答Round 2"]}

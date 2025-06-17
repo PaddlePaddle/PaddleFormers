@@ -23,7 +23,7 @@ from tests.testing_utils import slow
 class ConfigLoadTester(unittest.TestCase):
     @slow
     def test_bert_config_load(self):
-        logger.info("Download Bert Config from PaddleNLP BOS")
+        logger.info("Download Bert Config from PaddleFormers BOS")
         bert_config = BertConfig.from_pretrained("bert-base-uncased", from_hf_hub=False)
         bert_config = AutoConfig.from_pretrained("bert-base-uncased", from_hf_hub=False)
 
@@ -35,7 +35,7 @@ class ConfigLoadTester(unittest.TestCase):
         bert_config = BertConfig.from_pretrained("./paddlenlp-test-config", subfolder="bert-base-uncased")
         bert_config = AutoConfig.from_pretrained("./paddlenlp-test-config", subfolder="bert-base-uncased")
 
-        logger.info("Download Bert Config from PaddleNLP BOS with subfolder")
+        logger.info("Download Bert Config from PaddleFormers BOS with subfolder")
         bert_config = BertConfig.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="bert-base-uncased", from_hf_hub=False
         )
@@ -49,7 +49,7 @@ class ConfigLoadTester(unittest.TestCase):
 
     @slow
     def test_clip_config_load(self):
-        logger.info("Download CLIP Config from PaddleNLP BOS")
+        logger.info("Download CLIP Config from PaddleFormers BOS")
         clip_config = CLIPConfig.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
         clip_config = AutoConfig.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
 
@@ -61,7 +61,7 @@ class ConfigLoadTester(unittest.TestCase):
         clip_config = CLIPConfig.from_pretrained("./paddlenlp-test-config", subfolder="clip-vit-base-patch32")
         clip_config = AutoConfig.from_pretrained("./paddlenlp-test-config", subfolder="clip-vit-base-patch32")
 
-        logger.info("Download CLIP Config from PaddleNLP BOS with subfolder")
+        logger.info("Download CLIP Config from PaddleFormers BOS with subfolder")
         clip_config = CLIPConfig.from_pretrained(
             "baicai/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
         )
@@ -75,11 +75,11 @@ class ConfigLoadTester(unittest.TestCase):
 
     @slow
     def test_t5_config_load(self):
-        logger.info("Download T5 Config from PaddleNLP BOS")
+        logger.info("Download T5 Config from PaddleFormers BOS")
         t5_config = T5Config.from_pretrained("t5-small", from_hf_hub=False)
         t5_config = AutoConfig.from_pretrained("t5-small", from_hf_hub=False)
 
-        logger.info("Download T5 Config from PaddleNLP BOS with subfolder")
+        logger.info("Download T5 Config from PaddleFormers BOS with subfolder")
         t5_config = T5Config.from_pretrained("baicai/paddlenlp-test-model", subfolder="t5-small", from_hf_hub=False)
         t5_config = AutoConfig.from_pretrained("baicai/paddlenlp-test-model", subfolder="t5-small", from_hf_hub=False)
         logger.info("Download T5 Config from local")

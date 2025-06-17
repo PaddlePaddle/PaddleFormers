@@ -20,10 +20,10 @@ import random
 import tempfile
 import unittest
 
-from paddlenlp.transformers import AutoConfig
-from paddlenlp.transformers.auto.configuration import CONFIG_MAPPING
-from paddlenlp.transformers.bert.configuration import BertConfig
-from paddlenlp.utils.env import CONFIG_NAME
+from paddleformers.transformers import AutoConfig
+from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
+from paddleformers.transformers.bert.configuration import BertConfig
+from paddleformers.utils.env import CONFIG_NAME
 
 from ...utils.test_module.custom_configuration import CustomConfig
 
@@ -51,9 +51,9 @@ class AutoConfigTest(unittest.TestCase):
 
     def test_community_model_class(self):
         # OPT model do not support PretrainedConfig, but can load it as the AutoConfig object
-        config = AutoConfig.from_pretrained("facebook/opt-125m")
+        config = AutoConfig.from_pretrained("__internal_testing__/micro-random-llama")
 
-        self.assertEqual(config.hidden_size, 768)
+        self.assertEqual(config.hidden_size, 64)
 
         number = random.randint(0, 10000)
         config.hidden_size = number
@@ -72,7 +72,7 @@ class AutoConfigTest(unittest.TestCase):
 
     @unittest.skip("skipping due to connection error!")
     def test_from_aistudio(self):
-        config = AutoConfig.from_pretrained("PaddleNLP/tiny-random-bert", from_aistudio=True)
+        config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-bert", from_aistudio=True)
         self.assertEqual(config.hidden_size, 32)
 
     # def test_subfolder(self):
@@ -96,7 +96,7 @@ class AutoConfigTest(unittest.TestCase):
             # Wrong model type will raise an error
             with self.assertRaises(ValueError):
                 AutoConfig.register("model", CustomConfig)
-            # Trying to register something existing in the PaddleNLP library will raise an error
+            # Trying to register something existing in the PaddleFormers library will raise an error
             with self.assertRaises(ValueError):
                 AutoConfig.register("bert", BertConfig)
 
@@ -142,7 +142,7 @@ class AutoConfigTest(unittest.TestCase):
             "num_hidden_layers": 32,
             "num_key_value_heads": 32,
             "pad_token_id": 32000,
-            "paddlenlp_version": None,
+            "paddleformers_version": None,
             "pp_recompute_interval": 1,
             "recompute_granularity": "full",
             "rms_norm_eps": 1e-06,

@@ -15,8 +15,7 @@
 
 import unittest
 
-from paddlenlp.transformers import PretrainedTokenizerFast
-
+from paddleformers.transformers import PretrainedTokenizerFast
 from tests.testing_utils import require_package
 from tests.transformers.test_tokenizer_common import TokenizerTesterMixin
 

@@ -116,8 +116,9 @@ def _test_fast_ffn():
 
     import paddle
     from paddle import nn
-    from paddlenlp.transformers import PretrainedModel
-    from paddlenlp.transformers.configuration_utils import PretrainedConfig
+
+    from paddleformers.transformers import PretrainedModel
+    from paddleformers.transformers.configuration_utils import PretrainedConfig
 
     class TestConfig(PretrainedConfig):
         def __init__(self, fast_ffn_state=False, convert_fast_ffn=False):
@@ -232,26 +233,15 @@ def _test_fast_ffn():
     common_test_save_and_load(config_no_fast_ffn, config_fast_ffn, TestForCausalLM)
 
 
-from paddlenlp.transformers import (
-    GPTConfig,
-    GPTForCausalLM,
-    LlamaConfig,
-    LlamaForCausalLM,
-    OPTConfig,
-    OPTForCausalLM,
-)
+from paddleformers.transformers import LlamaConfig, LlamaForCausalLM
 
 
 class TestFuseOrSplit(unittest.TestCase):
     def test_model_split_to_fuse(self):
         _test_split_to_fuse(LlamaConfig, LlamaForCausalLM)
-        _test_split_to_fuse(GPTConfig, GPTForCausalLM)
-        _test_split_to_fuse(OPTConfig, OPTForCausalLM)
 
     def test_model_fuse_to_split(self):
         _test_fuse_to_split(LlamaConfig, LlamaForCausalLM)
-        _test_fuse_to_split(GPTConfig, GPTForCausalLM)
-        _test_fuse_to_split(OPTConfig, OPTForCausalLM)
 
     def test_model_convert_fast_ffn(self):
         _test_fast_ffn()

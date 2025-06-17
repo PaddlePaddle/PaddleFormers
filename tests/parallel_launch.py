@@ -29,7 +29,8 @@ from paddle.distributed.utils.launch_utils import (
     terminate_local_procs,
     watch_local_trainers,
 )
-from paddlenlp.utils.downloader import get_path_from_url_with_filelock
+
+from paddleformers.utils.downloader import get_path_from_url_with_filelock
 
 logger = logging.getLogger("root")
 

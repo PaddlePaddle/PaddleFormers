@@ -98,12 +98,9 @@ class TestZeroPaddingMapDataset(ZeroPaddingTestCommon, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         fixture_path = get_tests_dir(os.path.join("fixtures", "dummy"))
-        cls.train_ds = load_dataset(
-            "clue",
-            "tnews",
-            data_files=[os.path.join(fixture_path, "tnews", "train.json")],
-            lazy=False,
-        )
+        cls.train_ds = load_dataset("json", data_files=os.path.join(fixture_path, "tnews", "train.json"), lazy=False)[
+            0
+        ]
         copy_dataset_1 = copy.deepcopy(cls.train_ds)
         copy_dataset_2 = copy.deepcopy(cls.train_ds)
         cls.dataset = cls.train_ds.map(lambda example: cls.preprocess_fn(cls, example))
@@ -160,9 +157,9 @@ class TestZeroPaddingIterableDataset(ZeroPaddingTestCommon, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         fixture_path = get_tests_dir(os.path.join("fixtures", "dummy"))
-        cls.train_ds = load_dataset(
-            read_local_dataset, path=os.path.join(fixture_path, "tnews", "train.json"), lazy=True
-        )
+        cls.train_ds = load_dataset("json", data_files=os.path.join(fixture_path, "tnews", "train.json"), lazy=False)[
+            0
+        ]
         copy_dataset_1 = copy.deepcopy(cls.train_ds)
         copy_dataset_2 = copy.deepcopy(cls.train_ds)
         cls.dataset = cls.train_ds.map(lambda example: cls.preprocess_fn(cls, example))

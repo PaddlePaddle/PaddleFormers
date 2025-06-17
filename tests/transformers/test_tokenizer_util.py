@@ -18,9 +18,9 @@ import os
 import tempfile
 import unittest
 
-from paddlenlp.transformers import BertTokenizer
-from paddlenlp.transformers.tokenizer_utils import PretrainedTokenizer
-from paddlenlp.utils.env import TOKENIZER_CONFIG_NAME
+from paddleformers.transformers import BertTokenizer
+from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
+from paddleformers.utils.env import TOKENIZER_CONFIG_NAME
 
 
 class EmptyTokenizer(PretrainedTokenizer):

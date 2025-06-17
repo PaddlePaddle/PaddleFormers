@@ -16,10 +16,62 @@ import os
 import sys
 import tempfile
 import unittest
+from dataclasses import dataclass, field
 from unittest.mock import patch
 
-from llm.run_pretrain import PreTrainingArguments
-from paddlenlp.trainer.argparser import PdArgumentParser
+from paddleformers.trainer import TrainingArguments
+from paddleformers.trainer.argparser import PdArgumentParser
+from paddleformers.trainer.utils.doc import add_start_docstrings
+from paddleformers.transformers.configuration_utils import llmmetaclass
+
+
+@dataclass
+@llmmetaclass
+@add_start_docstrings(TrainingArguments.__doc__)
+class PreTrainingArguments(TrainingArguments):
+    min_learning_rate: float = field(
+        default=1e-5,
+        metadata={"help": "Minimum learning rate deacyed to."},
+    )
+    decay_steps: float = field(
+        default=None,
+        metadata={
+            "help": "The steps use to control the learing rate. If the step > decay_steps, will use the min_learning_rate."
+        },
+    )
+    enable_linear_fused_grad_add: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable fused linear grad add strategy, which will reduce elementwise add for grad accumulation in the backward of nn.Linear ."
+        },
+    )
+    # NOTE(gongenlei): new add autotuner_benchmark
+    autotuner_benchmark: bool = field(
+        default=False,
+        metadata={"help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."},
+    )
+    unified_checkpoint: bool = field(
+        default=True,
+        metadata={"help": "Enable fused linear grad add strategy."},
+    )
+
+    def __post_init__(self):
+        super().__post_init__()
+        # NOTE(gongenlei): new add autotuner_benchmark
+        from paddleformers.trainer.trainer_utils import IntervalStrategy
+
+        if self.autotuner_benchmark:
+            self.max_steps = 5
+            self.do_train = True
+            self.do_export = False
+            self.do_predict = False
+            self.do_eval = False
+            self.overwrite_output_dir = True
+            self.load_best_model_at_end = False
+            self.report_to = []
+            self.save_strategy = IntervalStrategy.NO
+            self.evaluation_strategy = IntervalStrategy.NO
+            self.unified_checkpoint = False
 
 
 def parse_args():

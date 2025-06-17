@@ -17,7 +17,8 @@ import time
 import unittest
 
 import paddle
-from paddlenlp.generation.stopping_criteria import (
+
+from paddleformers.generation.stopping_criteria import (
     MaxLengthCriteria,
     MaxTimeCriteria,
     StoppingCriteriaList,

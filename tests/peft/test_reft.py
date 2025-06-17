@@ -13,32 +13,26 @@
 # limitations under the License.
 
 
-import os
 import unittest
-from functools import partial
-from tempfile import TemporaryDirectory
-from types import SimpleNamespace
 
 import paddle
-from llm.utils.data import convert_example_for_reft
-from paddlenlp.data import DataCollatorForSeq2Seq
-from paddlenlp.datasets import load_dataset
-from paddlenlp.peft.reft import (
+
+# from llm.utils.data import convert_example_for_reft
+from paddleformers.data import DataCollatorForSeq2Seq
+from paddleformers.peft.reft import (
     LoreftIntervention,
     LowRankRotateLayer,
     ReFTConfig,
     ReftDataCollator,
     ReFTModel,
     TinyIntervention,
-    do_predict,
 )
-from paddlenlp.peft.reft.modeling_utils import (
+from paddleformers.peft.reft.modeling_utils import (
     count_parameters,
     get_type_from_string,
     set_seed,
 )
-from paddlenlp.transformers import AutoModelForCausalLM, AutoTokenizer
-from paddlenlp.trl import SFTTrainer
+from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 class TestReftDataCollator(unittest.TestCase):
@@ -76,7 +70,7 @@ class TestReftDataCollator(unittest.TestCase):
 
 class TestBasicUtils(unittest.TestCase):
     def test_get_type_from_string(self):
-        class_str = "paddlenlp.peft.reft.LoreftIntervention"
+        class_str = "paddleformers.peft.reft.LoreftIntervention"
         cls = get_type_from_string(class_str)
         self.assertIsInstance(cls, type(LoreftIntervention))
 
@@ -247,99 +241,6 @@ class TestReftModel(unittest.TestCase):
         reft_model.print_trainable_parameters()
         outputs = reft_model.model(**{"input_ids": paddle.randint(low=1, high=100, shape=(5, 10))})
         self.assertTrue(outputs[0].shape, [5, 10, 32000])
-
-
-class TestReFTModelPredict(unittest.TestCase):
-    def test_reft_model_predict(self):
-        tokenizer = AutoTokenizer.from_pretrained("__internal_testing__/tiny-random-llama")
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-        train_ds = load_dataset(
-            "json",
-            data_files=os.path.join("./tests/fixtures/llm/data", "train.json"),
-            lazy=False,
-        )[0]
-        dev_ds = load_dataset(
-            "json",
-            data_files=os.path.join("./tests/fixtures/llm/data", "dev.json"),
-            lazy=False,
-        )[0]
-
-        trans_func = partial(
-            convert_example_for_reft,
-            tokenizer=tokenizer,
-            data_args=SimpleNamespace(**{"max_length": 64, "src_length": 32, "autoregressive": False}),
-            positions="f7",
-            num_interventions=1,
-        )
-
-        train_ds = train_ds.map(
-            partial(
-                trans_func,
-                is_test=False,
-                zero_padding=False,
-                flash_mask=False,
-            )
-        )
-        dev_ds = dev_ds.map(
-            partial(
-                trans_func,
-                is_test=False,
-                zero_padding=False,
-                flash_mask=False,
-            )
-        )
-
-        model = AutoModelForCausalLM.from_pretrained("__internal_testing__/tiny-random-llama")
-        layers = [0]
-        representations = [
-            {
-                "layer": l,
-                "component": "block_output",
-                "low_rank_dimension": 4,
-                "intervention": LoreftIntervention(
-                    embed_dim=768,
-                    low_rank_dimension=4,
-                    dropout=0.00,
-                    dtype="float32",
-                    act_fn="linear",
-                    device="gpu",
-                    add_bias=False,
-                ),
-            }
-            for l in layers
-        ]
-        reft_config = ReFTConfig(representations=representations)
-        reft_model = ReFTModel(reft_config, model)
-        reft_model.disable_model_gradients()
-        reft_model.model.train()
-        reft_model.print_trainable_parameters()
-        data_collator_fn = DataCollatorForSeq2Seq(
-            tokenizer=tokenizer, model=model, label_pad_token_id=-100, padding="longest"
-        )
-        data_collator = ReftDataCollator(data_collator=data_collator_fn)
-        trainer = SFTTrainer(
-            model=reft_model,
-            tokenizer=tokenizer,
-            train_dataset=train_ds,
-            data_collator=data_collator,
-            eval_dataset=None,
-            compute_metrics=None,
-            gen_args=None,
-            data_args=None,
-            do_generation=False,
-        )
-        trainer.train()
-
-        with TemporaryDirectory() as tempdir:
-            reft_model.save_pretrained(tempdir)
-            # 预测
-            do_predict(
-                intervenable=reft_model,
-                tokenizer=tokenizer,
-                eval_dataset=dev_ds,
-                batch_size=1,
-                predict_path=f"{tempdir}/pred_result.json",
-            )
 
 
 if __name__ == "__main__":

@@ -17,7 +17,8 @@ from __future__ import annotations
 import unittest
 
 import paddle
-from paddlenlp.generation import (
+
+from paddleformers.generation import (
     BeamSearchScorer,
     ForcedBOSTokenLogitsProcessor,
     ForcedEOSTokenLogitsProcessor,
@@ -30,13 +31,12 @@ from paddlenlp.generation import (
     TopPProcess,
     get_unfinished_flag,
 )
-from paddlenlp.transformers import (  # import gpt model
+from paddleformers.transformers import (  # import gpt model
     AutoModelForCausalLM,
     AutoTokenizer,
     PretrainedConfig,
     PretrainedTokenizer,
 )
-
 from tests.testing_utils import slow
 
 
@@ -841,7 +841,7 @@ class GenerationUtilsTestCase(unittest.TestCase):
 class TinyRandomGenerationTest(unittest.TestCase):
     def test_generation_config_min_new_tokens_warning(self):
 
-        with self.assertLogs("PaddleNLP", level="WARNING") as log_info:
+        with self.assertLogs("PaddleFormers", level="WARNING") as log_info:
             GenerationConfig(min_new_token=10)
             self.assertTrue(any(["<min_new_token> field is deprecated." in item for item in log_info.output]))
 

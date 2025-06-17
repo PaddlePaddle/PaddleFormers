@@ -17,7 +17,8 @@ import copy
 import numpy as np
 import paddle
 import paddle.nn as nn
-from paddlenlp.transformers import PretrainedConfig, PretrainedModel
+
+from paddleformers.transformers import PretrainedConfig, PretrainedModel
 
 
 def get_pretrain_arguments(pretrain_arguments):

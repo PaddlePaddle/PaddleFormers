@@ -20,9 +20,10 @@ import os
 import tempfile
 import unittest.mock as mock
 
-from paddlenlp.transformers import BertConfig
-from paddlenlp.transformers.configuration_utils import PretrainedConfig
 from requests.exceptions import HTTPError
+
+from paddleformers.transformers import BertConfig
+from paddleformers.transformers.configuration_utils import PretrainedConfig
 
 
 class CustomConfig(PretrainedConfig):
@@ -217,7 +218,14 @@ class ConfigTestUtils:
         # If this part of the test fails, you have arguments to addin config_common_kwargs above.
         self.assertListEqual(
             missing_keys,
-            ["use_cache", "is_encoder_decoder", "classifier_dropout", "dtype", "_name_or_path", "paddlenlp_version"],
+            [
+                "use_cache",
+                "is_encoder_decoder",
+                "classifier_dropout",
+                "dtype",
+                "_name_or_path",
+                "paddleformers_version",
+            ],
         )
         keys_with_defaults = [key for key, value in config_common_kwargs.items() if value == getattr(base_config, key)]
         if len(keys_with_defaults) > 0:

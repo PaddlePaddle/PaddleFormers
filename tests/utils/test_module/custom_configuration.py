@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from paddlenlp.transformers.configuration_utils import PretrainedConfig
+from paddleformers.transformers.configuration_utils import PretrainedConfig
 
 
 class CustomConfig(PretrainedConfig):

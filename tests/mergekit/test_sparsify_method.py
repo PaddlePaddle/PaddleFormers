@@ -16,7 +16,8 @@ import unittest
 
 import numpy as np
 import paddle
-from paddlenlp.mergekit import MergeConfig, SparsifyMethod
+
+from paddleformers.mergekit import MergeConfig, SparsifyMethod
 
 
 class TestSparsifyMethod(unittest.TestCase):

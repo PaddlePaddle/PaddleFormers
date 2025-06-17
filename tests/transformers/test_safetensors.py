@@ -18,8 +18,9 @@ import unittest
 
 import numpy as np
 import paddle
-from paddlenlp.utils.safetensors import fast_load_file, fast_safe_open
 from safetensors.numpy import load_file, save_file
+
+from paddleformers.utils.safetensors import fast_load_file, fast_safe_open
 
 from ..testing_utils import skip_platform
 

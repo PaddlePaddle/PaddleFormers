@@ -18,8 +18,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from paddlenlp.trainer import AutoTrainingArguments
-from paddlenlp.trainer.argparser import PdArgumentParser
+from paddleformers.trainer import AutoTrainingArguments
+from paddleformers.trainer.argparser import PdArgumentParser
 
 
 def parse_args():

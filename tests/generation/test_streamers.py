@@ -17,10 +17,10 @@ from queue import Empty
 from threading import Thread
 
 import paddle
-from paddlenlp.generation import TextIteratorStreamer, TextStreamer
-from paddlenlp.transformers import AutoModelForCausalLM, AutoTokenizer
-from paddlenlp.transformers.utils import CaptureStd
 
+from paddleformers.generation import TextIteratorStreamer, TextStreamer
+from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
+from paddleformers.transformers.utils import CaptureStd
 from tests.testing_utils import slow
 from tests.transformers.test_modeling_common import ids_tensor
 

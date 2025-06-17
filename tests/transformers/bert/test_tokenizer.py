@@ -16,7 +16,7 @@
 import os
 import unittest
 
-from paddlenlp.transformers.bert.tokenizer import (
+from paddleformers.transformers.bert.tokenizer import (
     BasicTokenizer,
     BertTokenizer,
     WordpieceTokenizer,
@@ -24,7 +24,7 @@ from paddlenlp.transformers.bert.tokenizer import (
     _is_punctuation,
     _is_whitespace,
 )
-from paddlenlp.transformers.bert.tokenizer_fast import BertTokenizerFast
+from paddleformers.transformers.bert.tokenizer_fast import BertTokenizerFast
 
 from ...testing_utils import slow
 from ...transformers.test_tokenizer_common import (

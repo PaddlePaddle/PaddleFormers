@@ -16,9 +16,10 @@ import os
 import unittest
 from tempfile import TemporaryDirectory
 
-from paddlenlp.mergekit import MergeConfig, MergeModel
-from paddlenlp.transformers import AutoModel
 from parameterized import parameterized
+
+from paddleformers.mergekit import MergeConfig, MergeModel
+from paddleformers.transformers import AutoModel
 
 
 class TestMergeModel(unittest.TestCase):

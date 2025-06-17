@@ -19,8 +19,8 @@ import os
 import tempfile
 import unittest
 
-from paddlenlp.transformers import AutoModel, BertModel
-from paddlenlp.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
+from paddleformers.transformers import AutoModel, BertModel
+from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
 
 
 class AutoModelTest(unittest.TestCase):
@@ -74,5 +74,5 @@ class AutoModelTest(unittest.TestCase):
 
     @unittest.skip("skipping due to connection error!")
     def test_from_aistudio(self):
-        model = AutoModel.from_pretrained("PaddleNLP/tiny-random-bert", from_aistudio=True)
+        model = AutoModel.from_pretrained("PaddleFormers/tiny-random-bert", from_aistudio=True)
         self.assertIsInstance(model, BertModel)

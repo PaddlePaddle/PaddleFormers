@@ -19,9 +19,9 @@ from unittest import TestCase
 import numpy as np
 import paddle
 from huggingface_hub import hf_hub_download
-from paddlenlp.utils import load_torch
 from parameterized import parameterized
 
+from paddleformers.utils import load_torch
 from tests.testing_utils import require_package
 
 

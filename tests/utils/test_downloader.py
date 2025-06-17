@@ -21,13 +21,11 @@ from tempfile import TemporaryDirectory
 
 
 class LockFileTest(unittest.TestCase):
-    test_url = (
-        "https://bj.bcebos.com/paddlenlp/models/transformers/roformerv2/roformer_v2_chinese_char_small/vocab.txt"
-    )
+    test_url = "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json"
 
     def test_downloading_with_exist_file(self):
 
-        from paddlenlp.utils.downloader import get_path_from_url_with_filelock
+        from paddleformers.utils.downloader import get_path_from_url_with_filelock
 
         with TemporaryDirectory() as tempdir:
             lock_file_name = hashlib.md5((self.test_url + tempdir).encode("utf-8")).hexdigest()
@@ -44,7 +42,7 @@ class LockFileTest(unittest.TestCase):
 
     def test_downloading_with_opened_exist_file(self):
 
-        from paddlenlp.utils.downloader import get_path_from_url_with_filelock
+        from paddleformers.utils.downloader import get_path_from_url_with_filelock
 
         with TemporaryDirectory() as tempdir:
             lock_file_name = hashlib.md5((self.test_url + tempdir).encode("utf-8")).hexdigest()

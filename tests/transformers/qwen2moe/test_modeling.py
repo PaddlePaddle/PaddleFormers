@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2020 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,27 +14,25 @@
 # limitations under the License.
 from __future__ import annotations
 
-import tempfile
 import unittest
 
-import numpy as np
 import paddle
-from parameterized import parameterized
 
-from paddleformers.transformers import LlamaConfig, LlamaForCausalLM, LlamaModel
-from tests.testing_utils import require_package, slow
+from paddleformers.transformers import (
+    Qwen2MoeConfig,
+    Qwen2MoeForCausalLM,
+    Qwen2MoeModel,
+)
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
-    GenerationD2STestMixin,
     ModelTesterMixin,
-    ModelTesterPretrainedMixin,
     ids_tensor,
     random_attention_mask,
 )
 
 
-class LlamaModelTester:
+class Qwen2MoeModelTester:
     def __init__(
         self,
         parent,
@@ -42,6 +40,7 @@ class LlamaModelTester:
         hidden_size=64,
         num_hidden_layers=2,
         num_attention_heads=8,
+        num_key_value_heads=8,
         masked_softmax_fusion=True,
         layer_norm_epsilon=1e-5,
         initializer_range=0.02,
@@ -68,11 +67,12 @@ class LlamaModelTester:
         use_labels: bool = False,
         return_dict=False,
     ):
-        self.parent: LlamaModelTest = parent
+        self.parent: Qwen2MoeModelTest = parent
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
         self.masked_softmax_fusion = masked_softmax_fusion
         self.layer_norm_epsilon = layer_norm_epsilon
         self.initializer_range = initializer_range
@@ -119,12 +119,13 @@ class LlamaModelTester:
         config = self.get_config()
         return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
 
-    def get_config(self) -> LlamaConfig:
-        return LlamaConfig(
+    def get_config(self) -> Qwen2MoeConfig:
+        return Qwen2MoeConfig(
             vocab_size=self.vocab_size,
             hidden_size=self.hidden_size,
             num_hidden_layers=self.num_hidden_layers,
             num_attention_heads=self.num_attention_heads,
+            num_key_value_heads=self.num_key_value_heads,
             masked_softmax_fusion=self.masked_softmax_fusion,
             layer_norm_epsilon=self.layer_norm_epsilon,
             initializer_range=self.initializer_range,
@@ -142,17 +143,17 @@ class LlamaModelTester:
         )
 
     def create_and_check_model(
-        self, config: LlamaConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self, config: Qwen2MoeConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
     ):
-        model = LlamaModel(config)
+        model = Qwen2MoeModel(config)
         model.eval()
         result = model(input_ids)
         self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
 
     def create_and_check_model_attention_mask(
-        self, config: LlamaConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self, config: Qwen2MoeConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
     ):
-        model = LlamaModel(config)
+        model = Qwen2MoeModel(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
@@ -170,14 +171,14 @@ class LlamaModelTester:
 
     def create_and_check_model_past_large_inputs(
         self,
-        config: LlamaConfig,
+        config: Qwen2MoeConfig,
         input_ids,
         input_mask,
         sequence_labels,
         token_labels,
         choice_labels,
     ):
-        model = LlamaModel(config)
+        model = Qwen2MoeModel(config)
         model.eval()
 
         # first forward pass
@@ -232,7 +233,7 @@ class LlamaModelTester:
         return config, inputs_dict
 
     def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
-        model = LlamaForCausalLM(config)
+        model = Qwen2MoeForCausalLM(config)
         model.eval()
 
         result = model(
@@ -248,7 +249,7 @@ class LlamaModelTester:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
-        model = LlamaForCausalLM(config)
+        model = Qwen2MoeForCausalLM(config)
         model.eval()
 
         result_no_position_id = model(
@@ -269,38 +270,21 @@ class LlamaModelTester:
         else:
             self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
 
-    def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
-        model = LlamaForCausalLM(config)
-        config.num_key_value_heads = 8  # gqa
-        config.use_fused_rope = True
-        model.eval()
 
-        result = model(
-            input_ids,
-            use_cache=True,
-            labels=input_ids if self.parent.use_labels else None,
-            return_dict=self.parent.return_dict,
-        )
-        if self.parent.use_labels:
-            self.parent.assertIsInstance(result[0].item(), float)
-            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
-        else:
-            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
-
-
-class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
-    base_model_class = LlamaModel
+class Qwen2MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+    base_model_class = Qwen2MoeModel
     return_dict = False
     use_labels = False
+    use_test_model_name_list = False
 
-    all_model_classes = (LlamaModel, LlamaForCausalLM)
-    all_generative_model_classes = {LlamaForCausalLM: (LlamaModel, "llama")}
+    all_model_classes = (Qwen2MoeModel, Qwen2MoeForCausalLM)
+    all_generative_model_classes = {Qwen2MoeForCausalLM: (Qwen2MoeModel, "qwen2_moe")}
 
     def setUp(self):
         super().setUp()
 
-        self.model_tester = LlamaModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=LlamaConfig, vocab_size=256, hidden_size=24)
+        self.model_tester = Qwen2MoeModelTester(self)
+        self.config_tester = ConfigTester(self, config_class=Qwen2MoeConfig, vocab_size=256, hidden_size=24)
 
     def _get_input_ids_and_config(self):
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
@@ -332,178 +316,6 @@ class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
         # this requires 4-D attention mask logic, which is not supported yet
         pass
 
-    def test_llama_lm_head_model(self):
+    def test_qwen2moe_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
-
-    def test_llama_gqa_model(self):
-        config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        self.model_tester.create_and_check_gqa_model(*config_and_inputs)
-
-
-class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
-    base_model_class = LlamaModel
-
-    @slow
-    def test_inference_no_attention(self):
-        model = LlamaModel.from_pretrained("__internal_testing__/tiny-random-llama")
-        model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-        with paddle.no_grad():
-            output = model(input_ids, attention_mask=attention_mask)[0]
-
-        expected_shape = [1, 11, 768]
-        self.assertEqual(output.shape, expected_shape)
-
-        expected_slice = paddle.to_tensor(
-            [
-                [
-                    [0.20443289, 0.18662477, -0.75216216],
-                    [0.37699354, -0.38747141, -1.21889985],
-                    [0.31100151, -0.40143669, -0.64101797],
-                ]
-            ]
-        )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
-
-    @slow
-    def test_inference_with_attention(self):
-        model = LlamaModel.from_pretrained("__internal_testing__/tiny-random-llama")
-        model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-        with paddle.no_grad():
-            output = model(input_ids, attention_mask=attention_mask)[0]
-
-        expected_shape = [1, 11, 768]
-        self.assertEqual(output.shape, expected_shape)
-        expected_slice = paddle.to_tensor(
-            [
-                [
-                    [0.20443289, 0.18662477, -0.75216216],
-                    [0.37699354, -0.38747141, -1.21889985],
-                    [0.31100151, -0.40143669, -0.64101797],
-                ]
-            ]
-        )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
-
-
-class LlamaGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "__internal_testing__/micro-random-llama"
-
-
-class LlamaCompatibilityTest(unittest.TestCase):
-    test_model_id = "hf-internal-testing/tiny-random-LlamaModel"
-
-    @classmethod
-    @require_package("transformers", "torch")
-    def setUpClass(cls) -> None:
-        from transformers import LlamaConfig, LlamaForCausalLM
-
-        # when python application is done, `TemporaryDirectory` will be free
-        cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = LlamaConfig(hidden_size=16, num_hidden_layers=1, num_attention_heads=2)
-        model = LlamaForCausalLM(config)
-        model.save_pretrained(cls.torch_model_path)
-
-    @require_package("transformers", "torch")
-    def test_llama_converter(self):
-        # 1. create common input
-        input_ids = np.random.randint(100, 200, [1, 20])
-
-        # 2. forward the paddle model
-        from paddleformers.transformers import LlamaModel
-
-        paddle_model = LlamaModel.from_pretrained(self.torch_model_path, convert_from_torch=True)
-        paddle_model.eval()
-        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-        # 3. forward the torch  model
-        import torch
-        from transformers import LlamaModel
-
-        torch_model = LlamaModel.from_pretrained(self.torch_model_path)
-        torch_model.eval()
-        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-        self.assertTrue(
-            np.allclose(
-                paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
-                torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
-                rtol=1e-2,
-            )
-        )
-
-    @require_package("transformers", "torch")
-    def test_llama_converter_from_local_dir(self):
-        with tempfile.TemporaryDirectory() as tempdir:
-
-            # 1. create common input
-            input_ids = np.random.randint(100, 200, [1, 20])
-
-            # 2. forward the torch  model
-            import torch
-            from transformers import LlamaModel
-
-            torch_model = LlamaModel.from_pretrained(self.torch_model_path)
-            torch_model.eval()
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 2. forward the paddle model
-            from paddleformers.transformers import LlamaModel
-
-            paddle_model = LlamaModel.from_pretrained(tempdir, convert_from_torch=True)
-            paddle_model.eval()
-            paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
-                    rtol=1e-2,
-                )
-            )
-
-    @parameterized.expand([("LlamaModel",), ("LlamaForCausalLM",)])
-    @require_package("transformers", "torch")
-    def test_llama_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-        pytorch_class_name = pytorch_class_name or class_name
-        with tempfile.TemporaryDirectory() as tempdir:
-
-            # 1. create common input
-            input_ids = np.random.randint(100, 200, [1, 20])
-
-            # 2. forward the torch model
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
-            from paddleformers import transformers
-
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_torch=True)
-            paddle_model.eval()
-
-            paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
-                    atol=1e-3,
-                )
-            )
-
-
-if __name__ == "__main__":
-    unittest.main()

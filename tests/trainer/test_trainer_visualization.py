@@ -17,16 +17,16 @@ import shutil
 import tempfile
 import unittest
 
-from paddlenlp.trainer import TrainerControl, TrainerState, TrainingArguments
-from paddlenlp.trainer.integrations import (
+from tensorboard.backend.event_processing import event_accumulator
+from visualdl import LogReader
+
+from paddleformers.trainer import TrainerControl, TrainerState, TrainingArguments
+from paddleformers.trainer.integrations import (
     SwanLabCallback,
     TensorBoardCallback,
     VisualDLCallback,
     WandbCallback,
 )
-from tensorboard.backend.event_processing import event_accumulator
-from visualdl import LogReader
-
 from tests.trainer.trainer_utils import RegressionModelConfig, RegressionPretrainedModel
 
 
@@ -40,7 +40,7 @@ class TestWandbCallback(unittest.TestCase):
             run_name="test_wandbcallback",
             logging_dir=output_dir,
         )
-        state = TrainerState(trial_name="PaddleNLP")
+        state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
         config = RegressionModelConfig(a=1, b=1)
         model = RegressionPretrainedModel(config)
@@ -77,7 +77,7 @@ class TestSwanlabCallback(unittest.TestCase):
             run_name="test_swanlabcallback",
             logging_dir=output_dir,
         )
-        state = TrainerState(trial_name="PaddleNLP")
+        state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
         config = RegressionModelConfig(a=1, b=1)
         model = RegressionPretrainedModel(config)
@@ -103,7 +103,7 @@ class TestTensorboardCallback(unittest.TestCase):
         args = TrainingArguments(
             output_dir=output_dir, max_steps=200, logging_steps=20, run_name="test_tbcallback", logging_dir=output_dir
         )
-        state = TrainerState(trial_name="PaddleNLP")
+        state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
         tensorboard_callback = TensorBoardCallback()
         self.assertIsNone(tensorboard_callback.tb_writer)
@@ -143,7 +143,7 @@ class TestVisualDLCallback(unittest.TestCase):
         args = TrainingArguments(
             output_dir=output_dir, max_steps=200, logging_steps=20, run_name="test_vdlcallback", logging_dir=output_dir
         )
-        state = TrainerState(trial_name="PaddleNLP")
+        state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
         visualdl_callback = VisualDLCallback()
         self.assertIsNone(visualdl_callback.vdl_writer)

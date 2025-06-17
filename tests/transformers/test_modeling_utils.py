@@ -16,9 +16,8 @@ import os
 import unittest
 from tempfile import TemporaryDirectory
 
-from paddlenlp.transformers import BertModel
-from paddlenlp.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
-
+from paddleformers.transformers import BertModel
+from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
 from tests.testing_utils import slow
 
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from paddlenlp.transformers.bert.tokenizer_fast import BertTokenizerFast
+from paddleformers.transformers.bert.tokenizer_fast import BertTokenizerFast
 
 from .custom_tokenizer import CustomTokenizer
 

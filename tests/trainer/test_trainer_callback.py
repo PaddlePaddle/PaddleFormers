@@ -21,7 +21,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from paddlenlp.trainer import (
+from paddleformers.trainer import (
     DefaultFlowCallback,
     IntervalStrategy,
     PrinterCallback,
@@ -30,8 +30,7 @@ from paddlenlp.trainer import (
     TrainerCallback,
     TrainingArguments,
 )
-from paddlenlp.trainer.trainer import DEFAULT_CALLBACKS
-
+from paddleformers.trainer.trainer import DEFAULT_CALLBACKS
 from tests.trainer.trainer_utils import (
     RegressionDataset,
     RegressionModelConfig,
@@ -254,8 +253,8 @@ class TrainerCallbackTest(unittest.TestCase):
         self.assertEqual(events, self.get_expected_events(trainer))
 
         # warning should be emitted for duplicated callbacks
-        # from paddlenlp import transformers
-        with patch("paddlenlp.trainer.logger.warning") as warn_mock:
+        # from paddleformers import transformers
+        with patch("paddleformers.trainer.logger.warning") as warn_mock:
             trainer = self.get_trainer(
                 callbacks=[MyTestTrainerCallback, MyTestTrainerCallback],
             )

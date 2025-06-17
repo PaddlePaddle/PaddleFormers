@@ -28,10 +28,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-from paddlenlp.transformers import PretrainedTokenizer
-from paddlenlp.transformers.tokenizer_utils import AddedToken, Trie
-from paddlenlp.transformers.tokenizer_utils_base import PretrainedTokenizerBase
 from parameterized import parameterized
+
+from paddleformers.transformers import PretrainedTokenizer
+from paddleformers.transformers.tokenizer_utils import AddedToken, Trie
+from paddleformers.transformers.tokenizer_utils_base import PretrainedTokenizerBase
 
 from ..testing_utils import get_tests_dir
 
@@ -840,7 +841,7 @@ class TokenizerTesterMixin:
                         # Simple with no truncation
                         # Reset warnings
                         tokenizer.deprecation_warnings = {}
-                        with self.assertLogs("PaddleNLP", level="WARNING") as cm:
+                        with self.assertLogs("PaddleFormers", level="WARNING") as cm:
                             output = tokenizer(seq_1, padding=padding_state, truncation=False)
                             self.assertNotEqual(len(output["input_ids"]), model_max_length)
                         self.assertEqual(len(cm.records), 1)
@@ -851,7 +852,7 @@ class TokenizerTesterMixin:
                         )
 
                         tokenizer.deprecation_warnings = {}
-                        with self.assertLogs("PaddleNLP", level="WARNING") as cm:
+                        with self.assertLogs("PaddleFormers", level="WARNING") as cm:
                             output = tokenizer([seq_1], padding=padding_state, truncation=False)
                             self.assertNotEqual(len(output["input_ids"][0]), model_max_length)
                         self.assertEqual(len(cm.records), 1)
@@ -965,7 +966,7 @@ class TokenizerTesterMixin:
                         # Simple with no truncation
                         # Reset warnings
                         tokenizer.deprecation_warnings = {}
-                        with self.assertLogs("PaddleNLP", level="WARNING") as cm:
+                        with self.assertLogs("PaddleFormers", level="WARNING") as cm:
                             output = tokenizer(seq_1, seq_2, padding=padding_state, truncation=False)
                             self.assertNotEqual(len(output["input_ids"]), model_max_length)
                         self.assertEqual(len(cm.records), 1)
@@ -976,7 +977,7 @@ class TokenizerTesterMixin:
                         )
 
                         tokenizer.deprecation_warnings = {}
-                        with self.assertLogs("PaddleNLP", level="WARNING") as cm:
+                        with self.assertLogs("PaddleFormers", level="WARNING") as cm:
                             output = tokenizer([seq_1], [seq_2], padding=padding_state, truncation=False)
                             self.assertNotEqual(len(output["input_ids"][0]), model_max_length)
                         self.assertEqual(len(cm.records), 1)

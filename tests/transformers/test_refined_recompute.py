@@ -28,10 +28,11 @@ import paddle.device
 import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle.distributed.fleet.recompute import recompute as original_recompute
-from paddlenlp.trainer.training_args import TrainingArguments
-from paddlenlp.transformers.refined_recompute import no_recompute as rr_no_recompute
-from paddlenlp.transformers.refined_recompute import recompute as rr_recompute
-from paddlenlp.utils.import_utils import is_paddle_cuda_available
+
+from paddleformers.trainer.training_args import TrainingArguments
+from paddleformers.transformers.refined_recompute import no_recompute as rr_no_recompute
+from paddleformers.transformers.refined_recompute import recompute as rr_recompute
+from paddleformers.utils.import_utils import is_paddle_cuda_available
 
 ACT2FN = {
     "relu": F.relu,
@@ -574,7 +575,7 @@ class TestRefinedRecomputeModel(unittest.TestCase):
     @unittest.skipIf(not is_paddle_cuda_available(), "refined-recompute-pp only support on gpu")
     def test_llama_refined_recompute(self):
         paddle.set_device("gpu")
-        from paddlenlp.transformers.llama import LlamaConfig, LlamaModel
+        from paddleformers.transformers.llama import LlamaConfig, LlamaModel
 
         llama_model = "__internal_testing__/tiny-random-llama"
         config = LlamaConfig.from_pretrained(llama_model)
@@ -592,7 +593,7 @@ class TestRefinedRecomputeModel(unittest.TestCase):
     @unittest.skipIf(not is_paddle_cuda_available(), "refined-recompute-pp only support on gpu")
     def test_qwen_refined_recompute(self):
         paddle.set_device("gpu")
-        from paddlenlp.transformers.qwen import QWenConfig, QWenModel
+        from paddleformers.transformers.qwen import QWenConfig, QWenModel
 
         llama_model = "__internal_testing__/tiny-random-qwen"
         config = QWenConfig.from_pretrained(llama_model)
@@ -611,7 +612,7 @@ class TestRefinedRecomputeModel(unittest.TestCase):
     @unittest.skipIf(not is_paddle_cuda_available(), "refined-recompute-pp only support on gpu")
     def test_qwen2_refined_recompute(self):
         paddle.set_device("gpu")
-        from paddlenlp.transformers.qwen2 import Qwen2Config, Qwen2Model
+        from paddleformers.transformers.qwen2 import Qwen2Config, Qwen2Model
 
         llama_model = "__internal_testing__/tiny-random-qwen2"
         config = Qwen2Config.from_pretrained(llama_model)
