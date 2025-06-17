@@ -25,6 +25,7 @@ from ...peft import LoRAModel, PrefixModelForCausalLM
 from ...trainer.utils.helper import distributed_isfile
 from ...transformers.model_utils import (
     PretrainedModel,
+    clean_model_class_name,
     get_parameter_dtype,
     unwrap_model,
 )
@@ -765,9 +766,9 @@ def save_model_config(model_to_save, save_directory):
     config_to_save = save_config(model_to_save)
     # Attach architecture to the config
     if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
-        config_to_save.architectures = [model_to_save.model.__class__.__name__]
+        config_to_save.architectures = [clean_model_class_name(model_to_save.model.__class__.__name__)]
     else:
-        config_to_save.architectures = [model_to_save.__class__.__name__]
+        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
 
     config_to_save.save_pretrained(save_directory)
     # save generation config

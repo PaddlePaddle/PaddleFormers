@@ -34,7 +34,12 @@ from paddle.incubate.tensor.manipulation import (
 )
 from paddle.optimizer.fusion_utils import FusionStorageHelper
 
-from ...transformers.model_utils import _add_variant, get_parameter_dtype, unwrap_model
+from ...transformers.model_utils import (
+    _add_variant,
+    clean_model_class_name,
+    get_parameter_dtype,
+    unwrap_model,
+)
 from ...transformers.utils import device_guard
 from ...utils.env import (
     CONFIG_NAME,
@@ -467,7 +472,7 @@ class ZeroCostCheckpointCallback(TrainerCallback):
             dtype = get_parameter_dtype(model_to_save)
             model_to_save.config.dtype = str(dtype).split(".")[1]
             self.manipulated_config_to_save = copy.deepcopy(model_to_save.config)
-            self.manipulated_config_to_save.architectures = [model_to_save.__class__.__name__]
+            self.manipulated_config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
             self.manipulated_config_to_save = self.manipulated_config_to_save.to_json_string(use_diff=True)
             logger.info("Cache manipulated model config done")
         self.model_meta = self.sharding_io.gather_distributed_model_meta()
