@@ -69,7 +69,7 @@ if __name__ == "__main__":
     }
     remote_version = read_version_of_remote_package(args.name)
 
-    if args.name == "paddlenlp":
+    if args.name == "paddleformers":
         local_version = str(subprocess.check_output(["python", "setup.py", "--version"], text=True))
     elif args.name in version_file_map:
         PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

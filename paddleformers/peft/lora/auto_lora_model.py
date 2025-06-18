@@ -386,7 +386,7 @@ class LoRAAutoModel(nn.Layer):
             )
         if lora_module is None:
             raise ValueError(
-                f"LoRA strategy only supports paddle.nn.Linear or paddle.distributed.fleet.meta_parallel.ColumnParallelLinear or paddlenlp.transformers.sequence_utils. {module}({module_name} {type(module).__name__}) is not supported。"
+                f"LoRA strategy only supports paddle.nn.Linear or paddle.distributed.fleet.meta_parallel.ColumnParallelLinear or paddleformers.transformers.sequence_utils. {module}({module_name} {type(module).__name__}) is not supported。"
             )
         if getattr(lora_module, "quant_weight", None) is not None:
             lora_module.quant_weight = module.quant_weight
@@ -671,7 +671,7 @@ class LoRAAutoModel(nn.Layer):
 
         if "data_sharding_parallel" in auto_dist_degree and auto_dist_degree["data_sharding_parallel"]:
             # to avoid a circular import
-            from paddlenlp.trainer.trainer_utils import ShardingOption
+            from paddleformers.trainer.trainer_utils import ShardingOption
 
             level = 0
             if "sharding" in auto_dist_degree and auto_dist_degree["sharding"] is not None:

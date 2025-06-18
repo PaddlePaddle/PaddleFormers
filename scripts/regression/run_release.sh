@@ -23,24 +23,24 @@ mkdir ${nlp_dir}/model_logs
 mkdir ${nlp_dir}/unittest_logs
 export log_path=${nlp_dir}/logs
 ####################################
-# for paddlenlp env
+# for paddleformers env
 python -c 'import sys; print(sys.version_info[:])'
 python -c 'import nltk; nltk.download("punkt")'
 set -x
 python -c "import paddle; print('paddle version:',paddle.__version__,'\npaddle commit:',paddle.version.commit)";
 nlp1_build (){
-    echo -e "\033[35m ---- only install paddlenlp \033[0m"
-    python -m pip install paddlenlp -f https://www.paddlepaddle.org.cn/whl/paddlenlp.html
+    echo -e "\033[35m ---- only install paddleformers \033[0m"
+    python -m pip install paddleformers -f https://www.paddlepaddle.org.cn/whl/paddleformers.html
 }
 nlp2_build (){
-    echo -e "\033[35m ---- build and install paddlenlp  \033[0m"
+    echo -e "\033[35m ---- build and install paddleformers  \033[0m"
     rm -rf build/
-    rm -rf paddlenlp.egg-info/
+    rm -rf paddleformers.egg-info/
     rm -rf dist/
 
     python -m pip install -r requirements.txt
     python setup.py bdist_wheel
-    python -m pip install -U dist/paddlenlp****.whl
+    python -m pip install -U dist/paddleformers****.whl
 }
 nlp2_build
 python -c 'from visualdl import LogWriter'
@@ -77,11 +77,11 @@ get_diff_TO_P0case
     echo -e "\033[35m ---- end run P0case  \033[0m"
 cd ${nlp_dir}
 upload(){
-if [ -f '/ssd1/paddlenlp/bos/upload.py' ];then
-    cp -r /ssd1/paddlenlp/bos/* ./
+if [ -f '/ssd1/paddleformers/bos/upload.py' ];then
+    cp -r /ssd1/paddleformers/bos/* ./
     tar -zcvf model_logs.tar model_logs/
     mkdir upload && mv model_logs.tar upload
-    python upload.py upload 'paddle-qa/paddlenlp'
+    python upload.py upload 'paddle-qa/paddleformers'
 else
     echo 'No upload script found'
 fi

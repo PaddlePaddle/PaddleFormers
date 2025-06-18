@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-RUN PaddleNLP CI Case
+RUN PaddleFormers CI Case
 """
 import os
 import re
@@ -94,8 +94,7 @@ def save_log(exit_code, output, case_name, file_name):
     """
     save model log
     """
-    root_path = "/workspace/PaddleNLP"
-    # root_path = '/ssd1/paddlenlp/zhangjunjun/PaddleNLP'
+    root_path = "/workspace/PaddleFormers"
     if exit_code == 0:
         log_file = root_path + "/model_logs/" + os.path.join(case_name + "_" + file_name + "_SUCCESS.log")
         print("{} SUCCESS".format(file_name))
@@ -112,7 +111,7 @@ def run_normal_case(case_path):
     """
     Run new normal case
     params:
-    case_path: model path based PaddleNLP from git diff
+    case_path: model path based PaddleFormers from git diff
     """
     case_name = case_path.split("/")[-1]
     model_info = get_mode_info(case_path)

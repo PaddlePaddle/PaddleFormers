@@ -319,8 +319,7 @@ class GenerationMixin(object):
     r"""
     This class implements the interface for generation task.
 
-    It's used as the base class of `paddlenlp.transformers.PretrainedModel
-    <https://paddlenlp.readthedocs.io/zh/latest/source/paddlenlp.transformers.model_utils.html>`__.
+    It's used as the base class of `paddleformers.transformers.PretrainedModel
     """
     # enable `to_static` method for CausalLM Model
     enable_to_static_method = False
@@ -665,7 +664,7 @@ class GenerationMixin(object):
             .. code-block::
 
                 import paddle
-                from paddlenlp.transformers import (
+                from paddleformers.transformers import (
                     UnifiedTransformerLMHeadModel,
                     UnifiedTransformerTokenizer
                 )

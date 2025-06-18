@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-export nlp_dir=/workspace/PaddleNLP/
+export nlp_dir=/workspace/PaddleFormers/
 mkdir ${nlp_dir}/logs
 mkdir ${nlp_dir}/model_logs
 mkdir ${nlp_dir}/unittest_logs
@@ -26,11 +26,11 @@ install_paddle(){
     python -m pip install paddlepaddle_gpu-0.0.0-cp37-cp37m-linux_x86_64.whl
     python -c "import paddle; print('paddle version:',paddle.__version__,'\npaddle commit:',paddle.version.commit)";
 }
-# Install paddlenlp 
+# Install paddleformers 
 nlp_build (){
     cd ${nlp_dir}
     rm -rf build/
-    rm -rf paddlenlp.egg-info/
+    rm -rf paddleformers.egg-info/
     rm -rf ppdiffusers.egg-info/
     rm -rf paddle_pipelines.egg-info/
     rm -rf dist/
