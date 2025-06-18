@@ -15,14 +15,8 @@
 
 import unittest
 
-from paddlenlp.transformers import (
-    AutoTokenizer,
-    BertTokenizer,
-    CLIPTokenizer,
-    T5Tokenizer,
-)
-from paddlenlp.utils.log import logger
-
+from paddleformers.transformers import AutoTokenizer, BertTokenizer  # CLIPTokenizer,
+from paddleformers.utils.log import logger
 from tests.testing_utils import slow
 
 
@@ -35,18 +29,18 @@ class TokenizerLoadTester(unittest.TestCase):
         bert_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased", from_hf_hub=False)
 
         logger.info("Download model from local")
-        bert_tokenizer.save_pretrained("./paddlenlp-test-model/bert-base-uncased")
-        bert_tokenizer = BertTokenizer.from_pretrained("./paddlenlp-test-model/bert-base-uncased")
-        bert_tokenizer = AutoTokenizer.from_pretrained("./paddlenlp-test-model/bert-base-uncased")
-        bert_tokenizer = BertTokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="bert-base-uncased")
-        bert_tokenizer = AutoTokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="bert-base-uncased")
+        bert_tokenizer.save_pretrained("./paddleformers-test-model/bert-base-uncased")
+        bert_tokenizer = BertTokenizer.from_pretrained("./paddleformers-test-model/bert-base-uncased")
+        bert_tokenizer = AutoTokenizer.from_pretrained("./paddleformers-test-model/bert-base-uncased")
+        bert_tokenizer = BertTokenizer.from_pretrained("./paddleformers-test-model/", subfolder="bert-base-uncased")
+        bert_tokenizer = AutoTokenizer.from_pretrained("./paddleformers-test-model/", subfolder="bert-base-uncased")
 
         logger.info("Download model from PaddleFormers BOS with subfolder")
         bert_tokenizer = BertTokenizer.from_pretrained(
-            "baicai/paddlenlp-test-model", subfolder="bert-base-uncased", from_hf_hub=False
+            "baicai/paddleformers-test-model", subfolder="bert-base-uncased", from_hf_hub=False
         )
         bert_tokenizer = AutoTokenizer.from_pretrained(
-            "baicai/paddlenlp-test-model", subfolder="bert-base-uncased", from_hf_hub=False
+            "baicai/paddleformers-test-model", subfolder="bert-base-uncased", from_hf_hub=False
         )
 
         logger.info("Download model from aistudio")
@@ -55,73 +49,41 @@ class TokenizerLoadTester(unittest.TestCase):
 
         logger.info("Download model from aistudio with subfolder")
         bert_tokenizer = BertTokenizer.from_pretrained(
-            "aistudio/paddlenlp-test-model", subfolder="bert-base-uncased", from_aistudio=True
+            "aistudio/paddleformers-test-model", subfolder="bert-base-uncased", from_aistudio=True
         )
         bert_tokenizer = AutoTokenizer.from_pretrained(
-            "aistudio/paddlenlp-test-model", subfolder="bert-base-uncased", from_aistudio=True
+            "aistudio/paddleformers-test-model", subfolder="bert-base-uncased", from_aistudio=True
         )
 
-    @slow
-    def test_clip_load(self):
-        logger.info("Download model from PaddleFormers BOS")
-        clip_tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
-        clip_tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
+    # @slow
+    # def test_clip_load(self):
+    #     logger.info("Download model from PaddleFormers BOS")
+    #     clip_tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
+    #     clip_tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
 
-        logger.info("Download model from local")
-        clip_tokenizer.save_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
-        clip_tokenizer = CLIPTokenizer.from_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
-        clip_tokenizer = AutoTokenizer.from_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
-        clip_tokenizer = CLIPTokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="clip-vit-base-patch32")
-        clip_tokenizer = AutoTokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="clip-vit-base-patch32")
+    #     logger.info("Download model from local")
+    #     clip_tokenizer.save_pretrained("./paddleformers-test-model/clip-vit-base-patch32")
+    #     clip_tokenizer = CLIPTokenizer.from_pretrained("./paddleformers-test-model/clip-vit-base-patch32")
+    #     clip_tokenizer = AutoTokenizer.from_pretrained("./paddleformers-test-model/clip-vit-base-patch32")
+    #     clip_tokenizer = CLIPTokenizer.from_pretrained("./paddleformers-test-model/", subfolder="clip-vit-base-patch32")
+    #     clip_tokenizer = AutoTokenizer.from_pretrained("./paddleformers-test-model/", subfolder="clip-vit-base-patch32")
 
-        logger.info("Download model from PaddleFormers BOS with subfolder")
-        clip_tokenizer = CLIPTokenizer.from_pretrained(
-            "baicai/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
-        )
-        clip_tokenizer = AutoTokenizer.from_pretrained(
-            "baicai/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
-        )
+    #     logger.info("Download model from PaddleFormers BOS with subfolder")
+    #     clip_tokenizer = CLIPTokenizer.from_pretrained(
+    #         "baicai/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
+    #     )
+    #     clip_tokenizer = AutoTokenizer.from_pretrained(
+    #         "baicai/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
+    #     )
 
-        logger.info("Download model from aistudio")
-        clip_tokenizer = CLIPTokenizer.from_pretrained("aistudio/clip-vit-base-patch32", from_aistudio=True)
-        clip_tokenizer = AutoTokenizer.from_pretrained("aistudio/clip-vit-base-patch32", from_aistudio=True)
+    #     logger.info("Download model from aistudio")
+    #     clip_tokenizer = CLIPTokenizer.from_pretrained("aistudio/clip-vit-base-patch32", from_aistudio=True)
+    #     clip_tokenizer = AutoTokenizer.from_pretrained("aistudio/clip-vit-base-patch32", from_aistudio=True)
 
-        logger.info("Download model from aistudio with subfolder")
-        clip_tokenizer = CLIPTokenizer.from_pretrained(
-            "aistudio/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
-        )
-        clip_tokenizer = AutoTokenizer.from_pretrained(
-            "aistudio/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
-        )
-
-    @slow
-    def test_t5_load(self):
-        logger.info("Download model from PaddleFormers BOS")
-        t5_tokenizer = T5Tokenizer.from_pretrained("t5-small", from_hf_hub=False)
-        t5_tokenizer = AutoTokenizer.from_pretrained("t5-small", from_hf_hub=False)
-
-        logger.info("Download model from local")
-        t5_tokenizer.save_pretrained("./paddlenlp-test-model/t5-small")
-        t5_tokenizer = T5Tokenizer.from_pretrained("./paddlenlp-test-model/t5-small")
-        t5_tokenizer = AutoTokenizer.from_pretrained("./paddlenlp-test-model/t5-small")
-        t5_tokenizer = T5Tokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="t5-small")
-        t5_tokenizer = AutoTokenizer.from_pretrained("./paddlenlp-test-model/", subfolder="t5-small")
-
-        logger.info("Download model from PaddleFormers BOS with subfolder")
-        t5_tokenizer = T5Tokenizer.from_pretrained(
-            "baicai/paddlenlp-test-model", subfolder="t5-small", from_hf_hub=False
-        )
-        t5_tokenizer = AutoTokenizer.from_pretrained(
-            "baicai/paddlenlp-test-model", subfolder="t5-small", from_hf_hub=False
-        )
-
-        logger.info("Download model from aistudio")
-        t5_tokenizer = T5Tokenizer.from_pretrained("aistudio/t5-small", from_aistudio=True)
-        t5_tokenizer = AutoTokenizer.from_pretrained("aistudio/t5-small", from_aistudio=True)
-
-        t5_tokenizer = T5Tokenizer.from_pretrained(
-            "aistudio/paddlenlp-test-model", subfolder="t5-small", from_aistudio=True
-        )
-        t5_tokenizer = AutoTokenizer.from_pretrained(
-            "aistudio/paddlenlp-test-model", subfolder="t5-small", from_aistudio=True
-        )
+    #     logger.info("Download model from aistudio with subfolder")
+    #     clip_tokenizer = CLIPTokenizer.from_pretrained(
+    #         "aistudio/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
+    #     )
+    #     clip_tokenizer = AutoTokenizer.from_pretrained(
+    #         "aistudio/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
+    #     )

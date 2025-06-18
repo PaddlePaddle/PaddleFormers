@@ -15,8 +15,8 @@
 
 # import unittest
 
-# from paddlenlp.transformers import AutoProcessor, CLIPProcessor
-# from paddlenlp.utils.log import logger
+# from paddleformers.transformers import AutoProcessor, CLIPProcessor
+# from paddleformers.utils.log import logger
 
 # from tests.testing_utils import slow
 
@@ -30,19 +30,19 @@
 #         clip_processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
 
 #         logger.info("Download model from local")
-#         clip_processor.save_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
-#         clip_processor = CLIPProcessor.from_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
-#         clip_processor = AutoProcessor.from_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
+#         clip_processor.save_pretrained("./paddleformers-test-model/clip-vit-base-patch32")
+#         clip_processor = CLIPProcessor.from_pretrained("./paddleformers-test-model/clip-vit-base-patch32")
+#         clip_processor = AutoProcessor.from_pretrained("./paddleformers-test-model/clip-vit-base-patch32")
 #         logger.info("Download model from PaddleFormers BOS with subfolder")
-#         clip_processor = CLIPProcessor.from_pretrained("./paddlenlp-test-model/", subfolder="clip-vit-base-patch32")
-#         clip_processor = AutoProcessor.from_pretrained("./paddlenlp-test-model/", subfolder="clip-vit-base-patch32")
+#         clip_processor = CLIPProcessor.from_pretrained("./paddleformers-test-model/", subfolder="clip-vit-base-patch32")
+#         clip_processor = AutoProcessor.from_pretrained("./paddleformers-test-model/", subfolder="clip-vit-base-patch32")
 
 #         logger.info("Download model from PaddleFormers BOS with subfolder")
 #         clip_processor = CLIPProcessor.from_pretrained(
-#             "baicai/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
+#             "baicai/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
 #         )
 #         clip_processor = AutoProcessor.from_pretrained(
-#             "baicai/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
+#             "baicai/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
 #         )
 
 #         logger.info("Download model from aistudio")
@@ -51,8 +51,8 @@
 
 #         logger.info("Download model from aistudio with subfolder")
 #         clip_processor = CLIPProcessor.from_pretrained(
-#             "aistudio/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
+#             "aistudio/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
 #         )
 #         clip_processor = AutoProcessor.from_pretrained(
-#             "aistudio/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
+#             "aistudio/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
 #         )

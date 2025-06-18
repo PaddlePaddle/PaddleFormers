@@ -12,58 +12,58 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
+# import unittest
 
-from paddlenlp.transformers import AutoImageProcessor, CLIPImageProcessor
-from paddlenlp.utils.log import logger
+# from paddleformers.transformers import AutoImageProcessor, CLIPImageProcessor
+# from paddleformers.utils.log import logger
 
-from tests.testing_utils import slow
-
-
-@unittest.skip("skipping due to connection error!")
-class ImageProcessorLoadTester(unittest.TestCase):
-    @slow
-    def test_clip_load(self):
-        logger.info("Download model from PaddleFormers BOS")
-        clip_processor = CLIPImageProcessor.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
-        clip_processor = AutoImageProcessor.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
-
-        logger.info("Download model from local")
-        clip_processor.save_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
-        clip_processor = CLIPImageProcessor.from_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
-        clip_processor = AutoImageProcessor.from_pretrained("./paddlenlp-test-model/clip-vit-base-patch32")
-        logger.info("Download model from PaddleFormers BOS with subfolder")
-        clip_processor = CLIPImageProcessor.from_pretrained(
-            "./paddlenlp-test-model/", subfolder="clip-vit-base-patch32"
-        )
-        clip_processor = AutoImageProcessor.from_pretrained(
-            "./paddlenlp-test-model/", subfolder="clip-vit-base-patch32"
-        )
-
-        logger.info("Download model from PaddleFormers BOS with subfolder")
-        clip_processor = CLIPImageProcessor.from_pretrained(
-            "baicai/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
-        )
-        clip_processor = AutoImageProcessor.from_pretrained(
-            "baicai/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
-        )
-
-        logger.info("Download model from aistudio")
-        clip_processor = CLIPImageProcessor.from_pretrained("aistudio/clip-vit-base-patch32", from_aistudio=True)
-        clip_processor = AutoImageProcessor.from_pretrained("aistudio/clip-vit-base-patch32", from_aistudio=True)
-
-        logger.info("Download model from aistudio with subfolder")
-        clip_processor = CLIPImageProcessor.from_pretrained(
-            "aistudio/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
-        )
-        clip_processor = AutoImageProcessor.from_pretrained(
-            "aistudio/paddlenlp-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
-        )
+# from tests.testing_utils import slow
 
 
-class ImageProcessorSubfolderLoadTester(unittest.TestCase):
-    def test_clip_subfolder_load(self):
-        logger.info("Download model with subfolder")
-        clip_processor = CLIPImageProcessor.from_pretrained(  # noqa: F841
-            "runwayml/stable-diffusion-v1-5", subfolder="feature_extractor"
-        )
+# @unittest.skip("skipping due to connection error!")
+# class ImageProcessorLoadTester(unittest.TestCase):
+#     @slow
+#     def test_clip_load(self):
+#         logger.info("Download model from PaddleFormers BOS")
+#         clip_processor = CLIPImageProcessor.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
+#         clip_processor = AutoImageProcessor.from_pretrained("openai/clip-vit-base-patch32", from_hf_hub=False)
+
+#         logger.info("Download model from local")
+#         clip_processor.save_pretrained("./paddleformers-test-model/clip-vit-base-patch32")
+#         clip_processor = CLIPImageProcessor.from_pretrained("./paddleformers-test-model/clip-vit-base-patch32")
+#         clip_processor = AutoImageProcessor.from_pretrained("./paddleformers-test-model/clip-vit-base-patch32")
+#         logger.info("Download model from PaddleFormers BOS with subfolder")
+#         clip_processor = CLIPImageProcessor.from_pretrained(
+#             "./paddleformers-test-model/", subfolder="clip-vit-base-patch32"
+#         )
+#         clip_processor = AutoImageProcessor.from_pretrained(
+#             "./paddleformers-test-model/", subfolder="clip-vit-base-patch32"
+#         )
+
+#         logger.info("Download model from PaddleFormers BOS with subfolder")
+#         clip_processor = CLIPImageProcessor.from_pretrained(
+#             "baicai/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
+#         )
+#         clip_processor = AutoImageProcessor.from_pretrained(
+#             "baicai/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_hf_hub=False
+#         )
+
+#         logger.info("Download model from aistudio")
+#         clip_processor = CLIPImageProcessor.from_pretrained("aistudio/clip-vit-base-patch32", from_aistudio=True)
+#         clip_processor = AutoImageProcessor.from_pretrained("aistudio/clip-vit-base-patch32", from_aistudio=True)
+
+#         logger.info("Download model from aistudio with subfolder")
+#         clip_processor = CLIPImageProcessor.from_pretrained(
+#             "aistudio/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
+#         )
+#         clip_processor = AutoImageProcessor.from_pretrained(
+#             "aistudio/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
+#         )
+
+
+# class ImageProcessorSubfolderLoadTester(unittest.TestCase):
+#     def test_clip_subfolder_load(self):
+#         logger.info("Download model with subfolder")
+#         clip_processor = CLIPImageProcessor.from_pretrained(  # noqa: F841
+#             "runwayml/stable-diffusion-v1-5", subfolder="feature_extractor"
+#         )

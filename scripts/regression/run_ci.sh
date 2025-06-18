@@ -17,26 +17,22 @@
 set -e
 export python=$1
 export paddle=$2
-export nlp_dir=/workspace/PaddleNLP
-mkdir -p /workspace/PaddleNLP/model_logs
-export log_path=/workspace/PaddleNLP/model_logs
+export nlp_dir=/workspace/PaddleFormers
+mkdir -p /workspace/PaddleFormers/model_logs
+export log_path=/workspace/PaddleFormers/model_logs
 export P0case_list=()
 declare -A all_P0case_dic
 declare -A Build_list
 target_lists_for_llm=(
-    "paddlenlp/transformers"
-    "paddlenlp/experimental/transformers/"
-    "paddlenlp/data"
-    "paddlenlp/datasets"
-    "paddlenlp/generation"
-    "paddlenlp/peft"
-    "paddlenlp/mergekit"
-    "paddlenlp/quantization"
-    "paddlenlp/trainer"
-    "paddlenlp/trl"
-    "llm"
-    "tests/llm"
-    "csrc"
+    "paddleformers/transformers"
+    "paddleformers/data"
+    "paddleformers/datasets"
+    "paddleformers/generation"
+    "paddleformers/peft"
+    "paddleformers/mergekit"
+    "paddleformers/quantization"
+    "paddleformers/trainer"
+    "paddleformers/trl"
     "scripts/regression"
 )
 all_P0case_dic=(["msra_ner"]=15 
@@ -74,11 +70,11 @@ install_paddle(){
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python -c 'from visualdl import LogWriter'
 }
-# Install paddlenlp func
+# Install paddleformers func
 nlp_build (){
     cd $1
     rm -rf build/
-    rm -rf paddlenlp.egg-info/
+    rm -rf paddleformers.egg-info/
     rm -rf ppdiffusers.egg-info/
     rm -rf paddle_pipelines.egg-info/
     rm -rf dist/
@@ -128,8 +124,8 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} |awk '{print $NF}'`
             if [[ ${dir2} =~ "should_deploy" ]];then # 针对发版mini test
                 P0case_list[${#P0case_list[*]}]=transformer
             fi  
-        elif [[ ${dir1} =~ "paddlenlp" ]];then # API 升级
-            Build_list[${dir1}]="paddlenlp" # 影响编包
+        elif [[ ${dir1} =~ "paddleformers" ]];then # API 升级
+            Build_list[${dir1}]="paddleformers" # 影响编包
             if [[ ${dir2} =~ "__init__" ]];then # 针对发版mini test
                 P0case_list[${#P0case_list[*]}]=bert
             elif [[ -n "${all_P0case_dic[$dir2]}" ]]; then
@@ -151,10 +147,8 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} |awk '{print $NF}'`
             if [[ -n "${all_P0case_dic[$dir2]}" ]];then
                 P0case_list[${#P0case_list[*]}]=${dir2}
             fi
-        elif [[ ${dir1} =~ "csrc" ]];then # 推理改动
-            Build_list[${dir1}]="paddlenlp_ops" # 影响推理编包
         elif [[ ${dir1} =~ "requirements" ]];then # 依赖改动
-            Build_list[${dir1}]="paddlenlp" # 影响paddlenlp编包
+            Build_list[${dir1}]="paddleformers" # 影响paddleformers编包
         else
             continue
         fi
@@ -164,20 +158,14 @@ done
 get_diff_TO_case
 P0case_list=($(awk -v RS=' ' '!a[$1]++' <<< ${P0case_list[*]}))
 ####################################
-# build latest paddlenlp/paddlenlp_ops whl and install
+# build latest paddleformers whl and install
 if [[ ${#Build_list[*]} -ne 0 ]];then
     install_paddle
     echo -e "\033[32m start build ${Build_list[*]} whl \033[0m"
     for build_pkg in ${Build_list[*]};do
-        if [[ ${build_pkg} == "paddlenlp" ]];then
-            echo -e "\033[35m ---- build ${GIT_PR_ID} paddlenlp  \033[0m"
+        if [[ ${build_pkg} == "paddleformers" ]];then
+            echo -e "\033[35m ---- build ${GIT_PR_ID} paddleformers  \033[0m"
             nlp_build ${nlp_dir}
-        elif [[ ${build_pkg} == "paddlenlp_ops" ]];then
-            echo -e "\033[35m ---- build ${GIT_PR_ID} paddlenlp_ops  \033[0m"
-            export http_proxy=${proxy} && export https_proxy=${proxy}
-            cd ${nlp_dir}/csrc
-            bash tools/build_wheel.sh
-            unset http_proxy && unset https_proxy
         else
             echo -e "\033[35m ---- build ${GIT_PR_ID} ${build_pkg}  \033[0m"
         fi  
@@ -194,25 +182,14 @@ if [[ ${#P0case_list[*]} -ne 0 ]];then
     else
         echo "install_paddle done"
     fi
-    # Install paddlenlp
+    # Install paddleformers
     if [ ! -f ./dist/p****.whl ];then
         echo "install_nlp_develop"
         python -m pip install --user https://paddlenlp.bj.bcebos.com/wheels/paddlenlp-ci-py3-none-any.whl --no-cache-dir
     else
         echo "install_nlp_pr done"
     fi
-    # install paddlenlp_ops
-    if [ ! -f ./csrc/gpu_dist/p****.whl ];then
-        echo "install_paddlenlp_ops_develop"
-        python -m pip install --user https://paddlenlp.bj.bcebos.com/wheels/paddlenlp_ops-ci-py3-none-any.whl --no-cache-dir
-    else
-        echo "install_paddlenlp_ops_pr done"
-    fi
-    # install fused_ln
-    install_external_ops
-    python -c "from paddlenlp import __version__; print('paddlenlp version:', __version__)" >> ${log_path}/commit_info.txt
-    python -c "import paddlenlp; print('paddlenlp commit:',paddlenlp.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip list >> ${log_path}/commit_info.txt
+
 
     echo -e "\033[35m =======CI Check P0case========= \033[0m"
     echo -e "\033[35m ---- P0case_list length: ${#P0case_list[*]}, cases: ${P0case_list[*]} \033[0m"

@@ -1,0 +1,1162 @@
+Traceback (most recent call last):
+  File "/root/paddlejob/workspace/env_run/output/lugim/PaddleHub/tests/generation/test_synced_gpus.py", line 22, in <module>
+
+
+--------------------------------------
+C++ Traceback (most recent call last):
+--------------------------------------
+No stack trace in paddle, may be caused by external reasons.
+
+----------------------
+Error Message Summary:
+----------------------
+FatalError: `Termination signal` is detected by the operating system.
+  [TimeInfo: *** Aborted at 1750250756 (unix time) try "date -d @1750250756" if you are using GNU date ***]
+  [SignalInfo: *** SIGTERM (@0x394b) received by PID 14909 (TID 0x7f4f5f4f4740) from PID 14667 ***]
+
+[2025-06-18 20:46:36,763] [    INFO] distributed_strategy.py:333 - distributed strategy initialized
+======================= Modified FLAGS detected =======================
+FLAGS(name='FLAGS_cudnn_deterministic', current_value=True, default_value=False)
+FLAGS(name='FLAGS_selected_gpus', current_value='0', default_value='')
+FLAGS(name='FLAGS_embedding_deterministic', current_value=1, default_value=0)
+FLAGS(name='FLAGS_enable_pir_in_executor', current_value=True, default_value=False)
+=======================================================================
+I0618 20:46:36.763962 16354 tcp_utils.cc:185] The server starts to listen on IP_ANY:10019; setting synclog to 2048
+I0618 20:46:36.764082 16354 tcp_utils.cc:134] Successfully connected to 127.0.0.1:10019
+Traceback (most recent call last):
+  File "/root/paddlejob/workspace/env_run/output/lugim/PaddleHub/tests/transformers/test_tensor_parallel.py", line 39, in <module>
+    fleet.init(is_collective=True, strategy=strategy)
+  File "/root/miniforge3/envs/formers/lib/python3.10/site-packages/paddle/distributed/fleet/fleet.py", line 337, in init
+    paddle.distributed.init_parallel_env()
+  File "/root/miniforge3/envs/formers/lib/python3.10/site-packages/paddle/distributed/parallel.py", line 1147, in init_parallel_env
+    core.CommContextManager.set_device_id(parallel_env.device_id)
+OSError: (External) CUDA error(2), out of memory. 
+  [Hint: 'cudaErrorMemoryAllocation'. The API call failed because it was unable to allocate enough memory to perform the requested operation. ] (at ../paddle/phi/backends/gpu/cuda/cuda_info.cc:259)
+
+I0618 20:47:20.010226 16402 tcp_store.cc:292] receive shutdown event and so quit from MasterDaemon run loop
+[2025-06-18 21:04:56,368] [    INFO] distributed_strategy.py:333 - distributed strategy initialized
+======================= Modified FLAGS detected =======================
+FLAGS(name='FLAGS_enable_pir_in_executor', current_value=True, default_value=False)
+FLAGS(name='FLAGS_selected_gpus', current_value='0', default_value='')
+=======================================================================
+I0618 21:04:56.369374 29779 tcp_utils.cc:185] The server starts to listen on IP_ANY:10003; setting synclog to 2048
+I0618 21:04:56.369494 29779 tcp_utils.cc:134] Successfully connected to 127.0.0.1:10003
+I0618 21:04:59.498072 29779 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:04:59.498117 29779 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:04:59,500] [    INFO] topology.py:370 - Total 2 pipe comm group(s) create successfully!
+W0618 21:04:59.501016 29779 gpu_resources.cc:114] Please NOTE: device: 0, GPU Compute Capability: 8.0, Driver API Version: 12.2, Runtime API Version: 12.3
+/root/miniforge3/envs/formers/lib/python3.10/site-packages/paddle/distributed/communication/group.py:145: UserWarning: Current global rank 0 is not in group _default_pg10
+  warnings.warn(
+[2025-06-18 21:04:59,504] [    INFO] topology.py:370 - Total 2 data comm group(s) create successfully!
+I0618 21:04:59.504909 29779 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:04:59.504917 29779 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:04:59,504] [    INFO] topology.py:370 - Total 1 model comm group(s) create successfully!
+[2025-06-18 21:04:59,504] [    INFO] topology.py:370 - Total 2 sharding comm group(s) create successfully!
+I0618 21:04:59.505039 29779 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:04:59.505043 29779 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+I0618 21:04:59.505067 29779 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:04:59.505069 29779 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:04:59,505] [    INFO] topology.py:288 - HybridParallelInfo: rank_id: 0, mp_degree: 2, sharding_degree: 1, pp_degree: 1, dp_degree: 1, sep_degree: 1, mp_group: [0, 1],  sharding_group: [0], pp_group: [0], dp_group: [0], sep:group: None, check/clip group: [0, 1]
+NCCL version 2.15.5-4 cuda 11.8
+[32m[2025-06-18 21:05:00,855] [    INFO][0m - Configuration saved in /tmp/tmpz3f61t9r/config.json[0m
+[32m[2025-06-18 21:05:00,856] [    INFO][0m - Configuration saved in /tmp/tmpz3f61t9r/generation_config.json[0m
+[32m[2025-06-18 21:05:01,189] [    INFO][0m - Model weights saved in /tmp/tmpz3f61t9r/model_state.pdparams[0m
+[32m[2025-06-18 21:05:01,290] [    INFO][0m - Loading configuration file /tmp/tmpz3f61t9r/config.json[0m
+[32m[2025-06-18 21:05:01,291] [    INFO][0m - Loading weights file /tmp/tmpz3f61t9r/model_state.pdparams[0m
+[32m[2025-06-18 21:05:01,441] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:05:01,470] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:05:01,470] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmpz3f61t9r.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:05:01,470] [    INFO][0m - Loading configuration file /tmp/tmpz3f61t9r/generation_config.json[0m
+[32m[2025-06-18 21:05:01,797] [    INFO][0m - Configuration saved in /tmp/tmpz3f61t9r/config.json[0m
+[32m[2025-06-18 21:05:01,797] [    INFO][0m - Configuration saved in /tmp/tmpz3f61t9r/generation_config.json[0m
+[32m[2025-06-18 21:05:02,097] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 10 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpz3f61t9r/model_state.pdparams.index.json.[0m
+[32m[2025-06-18 21:05:02,104] [    INFO][0m - Loading configuration file /tmp/tmpz3f61t9r/config.json[0m
+[32m[2025-06-18 21:05:02,105] [    INFO][0m - Loading weights file /tmp/tmpz3f61t9r/model_state.pdparams.index.json[0m
+Loading checkpoint shards:   0%|          | 0/10 [00:00<?, ?it/s]Loading checkpoint shards:  10%|█         | 1/10 [00:00<00:01,  4.76it/s]Loading checkpoint shards:  40%|████      | 4/10 [00:00<00:00, 13.80it/s]Loading checkpoint shards:  70%|███████   | 7/10 [00:00<00:00, 18.63it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:00<00:00, 16.81it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:00<00:00, 15.50it/s]
+[32m[2025-06-18 21:05:02,761] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:05:02,761] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmpz3f61t9r.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:05:02,762] [    INFO][0m - Loading configuration file /tmp/tmpz3f61t9r/generation_config.json[0m
+[32m[2025-06-18 21:05:02,786] [    INFO][0m - Configuration saved in /tmp/tmpz3f61t9r/config.json[0m
+[32m[2025-06-18 21:05:02,786] [    INFO][0m - Configuration saved in /tmp/tmpz3f61t9r/generation_config.json[0m
+[32m[2025-06-18 21:05:02,984] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpz3f61t9r/model_state.pdparams.index.tp00.json.[0m
+[32m[2025-06-18 21:05:02,985] [    INFO][0m - Loading configuration file /tmp/tmpz3f61t9r/config.json[0m
+[32m[2025-06-18 21:05:02,985] [    INFO][0m - Loading weights file /tmp/tmpz3f61t9r/model_state.pdparams.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  33%|███▎      | 2/6 [00:00<00:00, 15.67it/s]Loading checkpoint shards:  83%|████████▎ | 5/6 [00:00<00:00, 21.59it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 18.99it/s]
+[32m[2025-06-18 21:05:03,312] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:05:03,312] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmpz3f61t9r.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:05:03,313] [    INFO][0m - Loading configuration file /tmp/tmpz3f61t9r/generation_config.json[0m
+[32m[2025-06-18 21:05:03,366] [    INFO][0m - Configuration saved in /tmp/tmpz3f61t9r/config.json[0m
+[32m[2025-06-18 21:05:03,367] [    INFO][0m - Configuration saved in /tmp/tmpz3f61t9r/generation_config.json[0m
+[32m[2025-06-18 21:05:03,468] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpz3f61t9r/model.safetensors.index.tp00.json.[0m
+[32m[2025-06-18 21:05:03,474] [    INFO][0m - Loading configuration file /tmp/tmpz3f61t9r/config.json[0m
+[32m[2025-06-18 21:05:03,474] [    INFO][0m - Loading weights file /tmp/tmpz3f61t9r/model.safetensors.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 3/6 [00:00<00:00, 21.71it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 22.10it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 22.03it/s]
+[32m[2025-06-18 21:05:03,758] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:05:03,758] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmpz3f61t9r.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:05:03,758] [    INFO][0m - Loading configuration file /tmp/tmpz3f61t9r/generation_config.json[0m
+[32m[2025-06-18 21:05:03,794] [    INFO][0m - Configuration saved in /tmp/tmpz3f61t9r/config.json[0m
+[32m[2025-06-18 21:05:03,794] [    INFO][0m - Configuration saved in /tmp/tmpz3f61t9r/generation_config.json[0m
+[32m[2025-06-18 21:05:03,918] [    INFO][0m - Model weights saved in /tmp/tmpz3f61t9r/model.tp00.safetensors[0m
+[32m[2025-06-18 21:05:03,924] [    INFO][0m - Loading configuration file /tmp/tmpz3f61t9r/config.json[0m
+[32m[2025-06-18 21:05:03,924] [    INFO][0m - Loading weights file /tmp/tmpz3f61t9r/model.tp00.safetensors[0m
+[32m[2025-06-18 21:05:03,962] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:05:03,982] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:05:03,982] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmpz3f61t9r.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:05:03,982] [    INFO][0m - Loading configuration file /tmp/tmpz3f61t9r/generation_config.json[0m
+[32m[2025-06-18 21:05:05,176] [    INFO][0m - Configuration saved in /tmp/tmp7voutsyz/config.json[0m
+[32m[2025-06-18 21:05:05,177] [    INFO][0m - Configuration saved in /tmp/tmp7voutsyz/generation_config.json[0m
+[32m[2025-06-18 21:05:06,525] [    INFO][0m - Model weights saved in /tmp/tmp7voutsyz/model_state.pdparams[0m
+[32m[2025-06-18 21:05:06,555] [    INFO][0m - Loading configuration file /tmp/tmp7voutsyz/config.json[0m
+[32m[2025-06-18 21:05:06,555] [    INFO][0m - Loading weights file /tmp/tmp7voutsyz/model_state.pdparams[0m
+[32m[2025-06-18 21:05:07,191] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:05:07,265] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:05:07,265] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmp7voutsyz.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:05:07,266] [    INFO][0m - Loading configuration file /tmp/tmp7voutsyz/generation_config.json[0m
+[32m[2025-06-18 21:05:08,612] [    INFO][0m - Configuration saved in /tmp/tmp7voutsyz/config.json[0m
+[32m[2025-06-18 21:05:08,612] [    INFO][0m - Configuration saved in /tmp/tmp7voutsyz/generation_config.json[0m
+[32m[2025-06-18 21:05:09,962] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 10 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmp7voutsyz/model_state.pdparams.index.json.[0m
+[32m[2025-06-18 21:05:09,991] [    INFO][0m - Loading configuration file /tmp/tmp7voutsyz/config.json[0m
+[32m[2025-06-18 21:05:09,991] [    INFO][0m - Loading weights file /tmp/tmp7voutsyz/model_state.pdparams.index.json[0m
+Loading checkpoint shards:   0%|          | 0/10 [00:00<?, ?it/s]Loading checkpoint shards:  10%|█         | 1/10 [00:00<00:03,  2.42it/s]Loading checkpoint shards:  40%|████      | 4/10 [00:00<00:00,  9.22it/s]Loading checkpoint shards:  70%|███████   | 7/10 [00:00<00:00, 13.81it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:01<00:00,  9.04it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:01<00:00,  8.84it/s]
+[32m[2025-06-18 21:05:11,131] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:05:11,131] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmp7voutsyz.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:05:11,132] [    INFO][0m - Loading configuration file /tmp/tmp7voutsyz/generation_config.json[0m
+[32m[2025-06-18 21:05:11,318] [    INFO][0m - Configuration saved in /tmp/tmp7voutsyz/config.json[0m
+[32m[2025-06-18 21:05:11,319] [    INFO][0m - Configuration saved in /tmp/tmp7voutsyz/generation_config.json[0m
+[32m[2025-06-18 21:05:12,219] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmp7voutsyz/model_state.pdparams.index.tp00.json.[0m
+[32m[2025-06-18 21:05:12,247] [    INFO][0m - Loading configuration file /tmp/tmp7voutsyz/config.json[0m
+[32m[2025-06-18 21:05:12,248] [    INFO][0m - Loading weights file /tmp/tmp7voutsyz/model_state.pdparams.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  17%|█▋        | 1/6 [00:00<00:01,  4.21it/s]Loading checkpoint shards:  67%|██████▋   | 4/6 [00:00<00:00, 12.97it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00,  9.90it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00,  9.67it/s]
+[32m[2025-06-18 21:05:12,881] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:05:12,882] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmp7voutsyz.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:05:12,882] [    INFO][0m - Loading configuration file /tmp/tmp7voutsyz/generation_config.json[0m
+[32m[2025-06-18 21:05:12,989] [    INFO][0m - Configuration saved in /tmp/tmp7voutsyz/config.json[0m
+[32m[2025-06-18 21:05:12,989] [    INFO][0m - Configuration saved in /tmp/tmp7voutsyz/generation_config.json[0m
+[32m[2025-06-18 21:05:13,690] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmp7voutsyz/model.safetensors.index.tp00.json.[0m
+[32m[2025-06-18 21:05:13,728] [    INFO][0m - Loading configuration file /tmp/tmp7voutsyz/config.json[0m
+[32m[2025-06-18 21:05:13,729] [    INFO][0m - Loading weights file /tmp/tmp7voutsyz/model.safetensors.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  17%|█▋        | 1/6 [00:00<00:00,  7.05it/s]Loading checkpoint shards:  67%|██████▋   | 4/6 [00:00<00:00, 17.01it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 13.95it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 13.73it/s]
+[32m[2025-06-18 21:05:14,178] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:05:14,178] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmp7voutsyz.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:05:14,178] [    INFO][0m - Loading configuration file /tmp/tmp7voutsyz/generation_config.json[0m
+[32m[2025-06-18 21:05:14,279] [    INFO][0m - Configuration saved in /tmp/tmp7voutsyz/config.json[0m
+[32m[2025-06-18 21:05:14,279] [    INFO][0m - Configuration saved in /tmp/tmp7voutsyz/generation_config.json[0m
+[32m[2025-06-18 21:05:14,975] [    INFO][0m - Model weights saved in /tmp/tmp7voutsyz/model.tp00.safetensors[0m
+[32m[2025-06-18 21:05:15,012] [    INFO][0m - Loading configuration file /tmp/tmp7voutsyz/config.json[0m
+[32m[2025-06-18 21:05:15,013] [    INFO][0m - Loading weights file /tmp/tmp7voutsyz/model.tp00.safetensors[0m
+[32m[2025-06-18 21:05:15,177] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:05:15,222] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:05:15,222] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmp7voutsyz.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:05:15,223] [    INFO][0m - Loading configuration file /tmp/tmp7voutsyz/generation_config.json[0m
+[32m[2025-06-18 21:06:32,194] [    INFO][0m - We are using <class 'paddleformers.transformers.llama.tokenizer.LlamaTokenizer'> to load '__internal_testing__/tiny-random-llama'.[0m
+[32m[2025-06-18 21:06:32,205] [    INFO][0m - tokenizer config file saved in /root/.paddleformers/models/__internal_testing__/tiny-random-llama/tokenizer_config.json[0m
+[32m[2025-06-18 21:06:32,205] [    INFO][0m - Special tokens file saved in /root/.paddleformers/models/__internal_testing__/tiny-random-llama/special_tokens_map.json[0m
+[32m[2025-06-18 21:06:32,205] [    INFO][0m - We are using <class 'paddleformers.transformers.llama.modeling.LlamaForCausalLM'> to load '__internal_testing__/tiny-random-llama'.[0m
+[32m[2025-06-18 21:06:32,206] [    INFO][0m - Loading weights file from cache at /root/.paddleformers/models/__internal_testing__/tiny-random-llama/model_state.pdparams[0m
+[32m[2025-06-18 21:06:32,428] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+W0618 21:06:32.534341 31690 gpu_resources.cc:114] Please NOTE: device: 0, GPU Compute Capability: 8.0, Driver API Version: 12.2, Runtime API Version: 12.3
+[32m[2025-06-18 21:06:33,350] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:06:33,350] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at __internal_testing__/tiny-random-llama.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:06:33,390] [    INFO][0m - Generation config file not found, using a generation config created from the model config.[0m
+[32m[2025-06-18 21:06:33,413] [    INFO][0m - user has defined resume_from_checkpoint: None[0m
+[2025-06-18 21:06:33,414] [    INFO] distributed_strategy.py:333 - distributed strategy initialized
+======================= Modified FLAGS detected =======================
+FLAGS(name='FLAGS_enable_pir_in_executor', current_value=True, default_value=False)
+FLAGS(name='FLAGS_embedding_deterministic', current_value=1, default_value=0)
+FLAGS(name='FLAGS_selected_gpus', current_value='0', default_value='')
+FLAGS(name='FLAGS_cudnn_deterministic', current_value=True, default_value=False)
+=======================================================================
+I0618 21:06:33.415421 31690 tcp_utils.cc:185] The server starts to listen on IP_ANY:18457; setting synclog to 2048
+I0618 21:06:33.415556 31690 tcp_utils.cc:134] Successfully connected to 127.0.0.1:18457
+I0618 21:06:36.304682 31690 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:06:36.304702 31690 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:06:36,305] [    INFO] topology.py:370 - Total 2 pipe comm group(s) create successfully!
+/root/miniforge3/envs/formers/lib/python3.10/site-packages/paddle/distributed/communication/group.py:145: UserWarning: Current global rank 0 is not in group _default_pg10
+  warnings.warn(
+[2025-06-18 21:06:36,305] [    INFO] topology.py:370 - Total 2 data comm group(s) create successfully!
+[2025-06-18 21:06:36,305] [    INFO] topology.py:370 - Total 2 model comm group(s) create successfully!
+I0618 21:06:36.305727 31690 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:06:36.305737 31690 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:06:36,305] [    INFO] topology.py:370 - Total 1 sharding comm group(s) create successfully!
+I0618 21:06:36.305784 31690 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:06:36.305787 31690 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:06:36,305] [    INFO] topology.py:288 - HybridParallelInfo: rank_id: 0, mp_degree: 1, sharding_degree: 2, pp_degree: 1, dp_degree: 1, sep_degree: 1, mp_group: [0],  sharding_group: [0, 1], pp_group: [0], dp_group: [0], sep:group: None, check/clip group: [0, 1]
+[32m[2025-06-18 21:06:36,305] [    INFO][0m -     +==============================================================================+
+    |                                                                              |
+    |                         DistributedStrategy Overview                         |
+    |                                                                              |
+    +==============================================================================+
+    |                        a_sync=True <-> a_sync_configs                        |
+    +------------------------------------------------------------------------------+
+    |                               k_steps                    -1                  |
+    |                     max_merge_var_num                    1                   |
+    |                       send_queue_size                    16                  |
+    |               independent_recv_thread                  False                 |
+    |         min_send_grad_num_before_recv                    1                   |
+    |                      thread_pool_size                    1                   |
+    |                       send_wait_times                    1                   |
+    |               runtime_split_send_recv                  False                 |
+    |                        launch_barrier                   True                 |
+    |             heter_worker_device_guard                   cpu                  |
+    |                        lr_decay_steps                    10                  |
+    |                            use_ps_gpu                    0                   |
+    |                         use_gpu_graph                    0                   |
+    +==============================================================================+
+    |                    Environment Flags, Communication Flags                    |
+    +------------------------------------------------------------------------------+
+    |                                  mode                    1                   |
+    |                               elastic                  False                 |
+    |                                  auto                  False                 |
+    |                   sync_nccl_allreduce                   True                 |
+    |                         nccl_comm_num                    1                   |
+    |            use_hierarchical_allreduce                  False                 |
+    |   hierarchical_allreduce_inter_nranks                    1                   |
+    |                       sync_batch_norm                  False                 |
+    |                   fuse_all_reduce_ops                   True                 |
+    |                  fuse_grad_size_in_MB                    32                  |
+    |              fuse_grad_size_in_TFLOPS                   50.0                 |
+    |               cudnn_exhaustive_search                  False                 |
+    |             conv_workspace_size_limit                   512                  |
+    |    cudnn_batchnorm_spatial_persistent                  False                 |
+    |                        fp16_allreduce                  False                 |
+    |               last_comm_group_size_MB                   1.0                  |
+    |                find_unused_parameters                  False                 |
+    |            without_graph_optimization                   True                 |
+    |                 fuse_grad_size_in_num                    8                   |
+    |                 calc_comm_same_stream                  False                 |
+    |                                   asp                  False                 |
+    |                       fuse_grad_merge                  False                 |
+    |                             semi_auto                  False                 |
+    |                            adam_d2sum                  False                 |
+    |                           auto_search                  False                 |
+    |                        heter_ccl_mode                  False                 |
+    |                         is_fl_ps_mode                  False                 |
+    |                      with_coordinator                  False                 |
+    |                            split_data                   True                 |
+    |                  downpour_table_param                    []                  |
+    |                       fs_client_param                                        |
+    +==============================================================================+
+    |                                Build Strategy                                |
+    +------------------------------------------------------------------------------+
+    |              fuse_elewise_add_act_ops                  False                 |
+    |                       fuse_bn_act_ops                  False                 |
+    |              fuse_relu_depthwise_conv                  False                 |
+    |                    fuse_broadcast_ops                  False                 |
+    |                fuse_all_optimizer_ops                  False                 |
+    |                        enable_inplace                  False                 |
+    |     enable_backward_optimizer_op_deps                   True                 |
+    |                 cache_runtime_context                  False                 |
+    |                   fuse_bn_add_act_ops                   True                 |
+    |                    enable_auto_fusion                  False                 |
+    |                          enable_addto                  False                 |
+    |              allow_cuda_graph_capture                  False                 |
+    |                       reduce_strategy                    0                   |
+    |                    fuse_gemm_epilogue                  False                 |
+    |                   debug_graphviz_path                                        |
+    |                       fused_attention                  False                 |
+    |                     fused_feedforward                  False                 |
+    |            fuse_dot_product_attention                  False                 |
+    |                          fuse_resunit                  False                 |
+    +==============================================================================+
+[0m
+[32m[2025-06-18 21:06:36,306] [    INFO][0m - The default value for the training argument `--report_to` will change in v5 (from all installed integrations to none). In v5, you will need to use `--report_to all` to get the same behavior as now. You should start updating your code and make this info disappear :-).[0m
+[32m[2025-06-18 21:06:36,307] [    INFO][0m - The global seed is set to 42, local seed is set to 44 and random seed is set to 42.[0m
+[32m[2025-06-18 21:06:36,324] [    INFO][0m - Using half precision[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - ============================================================[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m -     Training Configuration Arguments    [0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - paddle commit id              : c9cc49e279b49b6b9d3e405eee5151f799540244[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - paddleformers commit id       : 4bb8495738bc4b99538a1b5663b7ab30f287ed83.dirty[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - _no_sync_in_gradient_accumulation: True[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - adam_beta1                    : 0.9[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - adam_beta2                    : 0.999[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - adam_epsilon                  : 1e-08[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - amp_custom_black_list         : None[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - amp_custom_white_list         : None[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - amp_master_grad               : False[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - auto_parallel_resume_form_hybrid_parallel: False[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - bf16                          : False[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - bf16_full_eval                : False[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - ckpt_quant_stage              : O0[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - context_parallel_degree       : 1[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - count_trained_tokens          : False[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - current_device                : gpu:0[0m
+[35m[2025-06-18 21:06:36,330] [   DEBUG][0m - data_parallel_config          : [0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - data_parallel_degree          : 1[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - data_parallel_rank            : 0[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - dataloader_drop_last          : False[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - dataloader_num_workers        : 0[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - dataloader_shuffle            : True[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - dataset_rank                  : 0[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - dataset_world_size            : 2[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - ddp_find_unused_parameters    : None[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - device                        : gpu[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - disable_tqdm                  : False[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - distributed_dataloader        : False[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - do_eval                       : False[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - do_export                     : False[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - do_predict                    : False[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - do_train                      : False[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - enable_auto_parallel          : False[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - enable_zero_cost_checkpoint   : False[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - eval_accumulation_steps       : None[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - eval_batch_size               : 8[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - eval_steps                    : None[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - evaluation_strategy           : IntervalStrategy.NO[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - expert_max_capacity           : 4294967296[0m
+[35m[2025-06-18 21:06:36,331] [   DEBUG][0m - expert_min_capacity           : 1[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - expert_parallel_degree        : 1[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - expert_tensor_parallel_degree : 1[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - flash_device_save_steps       : 0[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - flatten_param_grads           : False[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - force_reshard_pp              : False[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - fp16                          : True[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - fp16_full_eval                : False[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - fp16_opt_level                : O2[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - fuse_sequence_parallel_allreduce: False[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - gradient_accumulation_steps   : 1[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - greater_is_better             : None[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - hybrid_parallel_topo_order    : pp_first[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - ignore_data_skip              : False[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - ignore_load_lr_and_optim      : False[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - ignore_save_lr_and_optim      : False[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - label_names                   : None[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - lazy_data_processing          : True[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - learning_rate                 : 5e-05[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - load_best_model_at_end        : False[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - load_sharded_model            : False[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - local_process_index           : 0[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - local_rank                    : 0[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - log_level                     : -1[0m
+[35m[2025-06-18 21:06:36,332] [   DEBUG][0m - log_level_replica             : -1[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - log_on_each_node              : True[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - logging_dir                   : /tmp/tmpdr0783mj/output/runs/Jun18_21-06-33_bddwd-inf-k8s-a800-a12ni6-0399.bddwd.baidu.com[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - logging_first_step            : False[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - logging_steps                 : 500[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - logging_strategy              : IntervalStrategy.STEPS[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - logical_process_index         : 0[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - lr_end                        : 1e-07[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - lr_scheduler_type             : SchedulerType.LINEAR[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - max_evaluate_steps            : -1[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - max_grad_norm                 : 1.0[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - max_steps                     : -1[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - metric_for_best_model         : None[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - metrics_output_path           : None[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - min_lr                        : 0.0[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - minimum_eval_times            : None[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - no_cuda                       : False[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - num_cycles                    : 0.5[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - num_train_epochs              : 1.0[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - offload_optim                 : False[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - optim                         : OptimizerNames.ADAMW[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - optimizer_name_suffix         : shard00[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - ordered_save_group_size       : 0[0m
+[35m[2025-06-18 21:06:36,333] [   DEBUG][0m - output_dir                    : /tmp/tmpdr0783mj/output[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - output_signal_dir             : /tmp/tmpdr0783mj/output[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - overwrite_output_dir          : False[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - pad_token_id                  : 0[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - past_index                    : -1[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - pdc_download_ckpt             : False[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - pdc_download_timeout          : 300[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - per_device_eval_batch_size    : 8[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - per_device_train_batch_size   : 8[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - pipeline_parallel_config      : [0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - pipeline_parallel_degree      : 1[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - pipeline_parallel_rank        : 0[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - power                         : 1.0[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - prediction_loss_only          : False[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - process_index                 : 0[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - recompute                     : False[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - refined_recompute             : {}[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - release_grads                 : False[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - remove_unused_columns         : True[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - report_to                     : ['visualdl'][0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - resume_from_checkpoint        : None[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - run_name                      : /tmp/tmpdr0783mj/output[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - save_on_each_node             : False[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - save_rng_states               : True[0m
+[35m[2025-06-18 21:06:36,334] [   DEBUG][0m - save_sharded_model            : False[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - save_sharding_stage1_model_include_freeze_params: False[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - save_steps                    : 500[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - save_strategy                 : IntervalStrategy.STEPS[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - save_tokenizer                : True[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - save_total_limit              : None[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - scale_loss                    : 32768[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - seed                          : 42[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - sep_parallel_degree           : 1[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - sequence_parallel             : False[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - sequence_parallel_config      : [0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - sharding                      : [<ShardingOption.FULL_SHARD: 'stage3'>][0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - sharding_comm_buffer_size_MB  : -1[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - sharding_degree               : -1[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - sharding_parallel_config      : [0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - sharding_parallel_degree      : 2[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - sharding_parallel_mesh_dimension: dp[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - sharding_parallel_rank        : 0[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - should_load_dataset           : True[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - should_load_sharding_stage1_model: False[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - should_log                    : True[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - should_save                   : True[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - should_save_model_state       : True[0m
+[35m[2025-06-18 21:06:36,335] [   DEBUG][0m - should_save_model_with_tensor_fusion: False[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - should_save_sharding_stage1_model: False[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - skip_data_intervals           : None[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - skip_memory_metrics           : True[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - skip_profile_timer            : True[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - split_inputs_sequence_dim     : True[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - split_norm_comm               : False[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - tensor_parallel_config        : [0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - tensor_parallel_degree        : 1[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - tensor_parallel_rank          : 0[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - tensorwise_offload_optimizer  : False[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - to_static                     : False[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - train_batch_size              : 8[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - unified_checkpoint            : False[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - unified_checkpoint_config     : [0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - use_async_save                : False[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - use_expert_parallel           : False[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - use_hybrid_parallel           : True[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - use_lowprecision_moment       : False[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - wandb_api_key                 : None[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - wandb_http_proxy              : None[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - warmup_ratio                  : 0.0[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - warmup_steps                  : 0[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - weight_decay                  : 0.0[0m
+[35m[2025-06-18 21:06:36,336] [   DEBUG][0m - weight_name_suffix            : [0m
+[35m[2025-06-18 21:06:36,337] [   DEBUG][0m - world_size                    : 2[0m
+[35m[2025-06-18 21:06:36,337] [   DEBUG][0m - zcc_ema_interval              : 1[0m
+[35m[2025-06-18 21:06:36,337] [   DEBUG][0m - zcc_pipeline_hooks_capacity_usage: 0.6[0m
+[35m[2025-06-18 21:06:36,337] [   DEBUG][0m - zcc_save_ema_coef             : None[0m
+[35m[2025-06-18 21:06:36,337] [   DEBUG][0m - zcc_workers_num               : 3[0m
+[35m[2025-06-18 21:06:36,337] [   DEBUG][0m - [0m
+[2025-06-18 21:06:36,337] [ WARNING] group_sharded.py:148 - the input of scaler is None, please ensure the logic of your scaler outside is same as GroupShardedScaler.
+[2025-06-18 21:06:36,338] [ WARNING] group_sharded_stage3.py:197 - While using ClipGradByGlobalNorm in GroupShardedStage3, the grad clip of original optimizer will be changed.
+NCCL version 2.15.5-4 cuda 11.8
+[33m[2025-06-18 21:06:37,266] [ WARNING][0m - `max_length` will be deprecated in future releases, use `max_new_tokens` instead.[0m
+W0618 21:06:37.471076 31690 multiply_fwd_func.cc:76] got different data type, run type promotion automatically, this may cause data type been changed.
+[33m[2025-06-18 21:06:37,921] [ WARNING][0m - `max_length` will be deprecated in future releases, use `max_new_tokens` instead.[0m
+[33m[2025-06-18 21:06:38,053] [ WARNING][0m - `max_length` will be deprecated in future releases, use `max_new_tokens` instead.[0m
+W0618 21:06:38.318915 31690 dygraph_functions.cc:86360] got different data type, run type promotion automatically, this may cause data type been changed.
+[33m[2025-06-18 21:06:38,450] [ WARNING][0m - `max_length` will be deprecated in future releases, use `max_new_tokens` instead.[0m
+[2025-06-18 21:07:04,097] [    INFO] distributed_strategy.py:333 - distributed strategy initialized
+======================= Modified FLAGS detected =======================
+FLAGS(name='FLAGS_cudnn_deterministic', current_value=True, default_value=False)
+FLAGS(name='FLAGS_selected_gpus', current_value='0', default_value='')
+FLAGS(name='FLAGS_enable_pir_in_executor', current_value=True, default_value=False)
+FLAGS(name='FLAGS_embedding_deterministic', current_value=1, default_value=0)
+=======================================================================
+I0618 21:07:04.098403 32385 tcp_utils.cc:185] The server starts to listen on IP_ANY:10003; setting synclog to 2048
+I0618 21:07:04.098534 32385 tcp_utils.cc:134] Successfully connected to 127.0.0.1:10003
+I0618 21:07:04.221735 32385 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:07:04.221757 32385 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:07:04,222] [    INFO] topology.py:370 - Total 2 pipe comm group(s) create successfully!
+W0618 21:07:04.223280 32385 gpu_resources.cc:114] Please NOTE: device: 0, GPU Compute Capability: 8.0, Driver API Version: 12.2, Runtime API Version: 12.3
+/root/miniforge3/envs/formers/lib/python3.10/site-packages/paddle/distributed/communication/group.py:145: UserWarning: Current global rank 0 is not in group _default_pg10
+  warnings.warn(
+[2025-06-18 21:07:04,225] [    INFO] topology.py:370 - Total 2 data comm group(s) create successfully!
+I0618 21:07:04.225188 32385 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:07:04.225195 32385 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:07:04,225] [    INFO] topology.py:370 - Total 1 model comm group(s) create successfully!
+[2025-06-18 21:07:04,225] [    INFO] topology.py:370 - Total 2 sharding comm group(s) create successfully!
+I0618 21:07:04.225302 32385 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:07:04.225306 32385 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+I0618 21:07:04.225322 32385 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:07:04.225323 32385 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:07:04,225] [    INFO] topology.py:288 - HybridParallelInfo: rank_id: 0, mp_degree: 2, sharding_degree: 1, pp_degree: 1, dp_degree: 1, sep_degree: 1, mp_group: [0, 1],  sharding_group: [0], pp_group: [0], dp_group: [0], sep:group: None, check/clip group: [0, 1]
+NCCL version 2.15.5-4 cuda 11.8
+[32m[2025-06-18 21:07:05,683] [    INFO][0m - Configuration saved in /tmp/tmp8d5penwq/config.json[0m
+[32m[2025-06-18 21:07:05,684] [    INFO][0m - Configuration saved in /tmp/tmp8d5penwq/generation_config.json[0m
+[32m[2025-06-18 21:07:05,993] [    INFO][0m - Model weights saved in /tmp/tmp8d5penwq/model_state.pdparams[0m
+[32m[2025-06-18 21:07:06,103] [    INFO][0m - Loading configuration file /tmp/tmp8d5penwq/config.json[0m
+[32m[2025-06-18 21:07:06,104] [    INFO][0m - Loading weights file /tmp/tmp8d5penwq/model_state.pdparams[0m
+[32m[2025-06-18 21:07:06,248] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:07:06,273] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:07:06,273] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmp8d5penwq.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:07:06,274] [    INFO][0m - Loading configuration file /tmp/tmp8d5penwq/generation_config.json[0m
+[32m[2025-06-18 21:07:06,597] [    INFO][0m - Configuration saved in /tmp/tmp8d5penwq/config.json[0m
+[32m[2025-06-18 21:07:06,598] [    INFO][0m - Configuration saved in /tmp/tmp8d5penwq/generation_config.json[0m
+[32m[2025-06-18 21:07:06,900] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 10 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmp8d5penwq/model_state.pdparams.index.json.[0m
+[32m[2025-06-18 21:07:06,908] [    INFO][0m - Loading configuration file /tmp/tmp8d5penwq/config.json[0m
+[32m[2025-06-18 21:07:06,908] [    INFO][0m - Loading weights file /tmp/tmp8d5penwq/model_state.pdparams.index.json[0m
+Loading checkpoint shards:   0%|          | 0/10 [00:00<?, ?it/s]Loading checkpoint shards:  10%|█         | 1/10 [00:00<00:01,  6.00it/s]Loading checkpoint shards:  40%|████      | 4/10 [00:00<00:00, 14.36it/s]Loading checkpoint shards:  70%|███████   | 7/10 [00:00<00:00, 17.50it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:00<00:00, 15.45it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:00<00:00, 14.91it/s]
+[32m[2025-06-18 21:07:07,590] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:07:07,591] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmp8d5penwq.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:07:07,591] [    INFO][0m - Loading configuration file /tmp/tmp8d5penwq/generation_config.json[0m
+[32m[2025-06-18 21:07:07,848] [    INFO][0m - Configuration saved in /tmp/tmp8d5penwq/config.json[0m
+[32m[2025-06-18 21:07:07,849] [    INFO][0m - Configuration saved in /tmp/tmp8d5penwq/generation_config.json[0m
+[32m[2025-06-18 21:07:08,042] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmp8d5penwq/model_state.pdparams.index.tp00.json.[0m
+[32m[2025-06-18 21:07:08,042] [    INFO][0m - Loading configuration file /tmp/tmp8d5penwq/config.json[0m
+[32m[2025-06-18 21:07:08,043] [    INFO][0m - Loading weights file /tmp/tmp8d5penwq/model_state.pdparams.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  33%|███▎      | 2/6 [00:00<00:00, 14.05it/s]Loading checkpoint shards:  83%|████████▎ | 5/6 [00:00<00:00, 18.21it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 16.33it/s]
+[32m[2025-06-18 21:07:08,421] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:07:08,421] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmp8d5penwq.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:07:08,421] [    INFO][0m - Loading configuration file /tmp/tmp8d5penwq/generation_config.json[0m
+[32m[2025-06-18 21:07:08,543] [    INFO][0m - Configuration saved in /tmp/tmp8d5penwq/config.json[0m
+[32m[2025-06-18 21:07:08,544] [    INFO][0m - Configuration saved in /tmp/tmp8d5penwq/generation_config.json[0m
+[32m[2025-06-18 21:07:08,635] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmp8d5penwq/model.safetensors.index.tp00.json.[0m
+[32m[2025-06-18 21:07:08,673] [    INFO][0m - Loading configuration file /tmp/tmp8d5penwq/config.json[0m
+[32m[2025-06-18 21:07:08,673] [    INFO][0m - Loading weights file /tmp/tmp8d5penwq/model.safetensors.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  33%|███▎      | 2/6 [00:00<00:00, 17.29it/s]Loading checkpoint shards:  83%|████████▎ | 5/6 [00:00<00:00, 19.26it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 18.50it/s]
+[32m[2025-06-18 21:07:09,008] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:07:09,008] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmp8d5penwq.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:07:09,009] [    INFO][0m - Loading configuration file /tmp/tmp8d5penwq/generation_config.json[0m
+[32m[2025-06-18 21:07:09,133] [    INFO][0m - Configuration saved in /tmp/tmp8d5penwq/config.json[0m
+[32m[2025-06-18 21:07:09,134] [    INFO][0m - Configuration saved in /tmp/tmp8d5penwq/generation_config.json[0m
+[32m[2025-06-18 21:07:09,239] [    INFO][0m - Model weights saved in /tmp/tmp8d5penwq/model.tp00.safetensors[0m
+[32m[2025-06-18 21:07:09,275] [    INFO][0m - Loading configuration file /tmp/tmp8d5penwq/config.json[0m
+[32m[2025-06-18 21:07:09,276] [    INFO][0m - Loading weights file /tmp/tmp8d5penwq/model.tp00.safetensors[0m
+[32m[2025-06-18 21:07:09,312] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:07:09,331] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:07:09,331] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmp8d5penwq.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:07:09,331] [    INFO][0m - Loading configuration file /tmp/tmp8d5penwq/generation_config.json[0m
+[32m[2025-06-18 21:07:10,647] [    INFO][0m - Configuration saved in /tmp/tmpvuk1b38p/config.json[0m
+[32m[2025-06-18 21:07:10,648] [    INFO][0m - Configuration saved in /tmp/tmpvuk1b38p/generation_config.json[0m
+[32m[2025-06-18 21:07:12,032] [    INFO][0m - Model weights saved in /tmp/tmpvuk1b38p/model_state.pdparams[0m
+[32m[2025-06-18 21:07:12,063] [    INFO][0m - Loading configuration file /tmp/tmpvuk1b38p/config.json[0m
+[32m[2025-06-18 21:07:12,064] [    INFO][0m - Loading weights file /tmp/tmpvuk1b38p/model_state.pdparams[0m
+[32m[2025-06-18 21:07:12,728] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:07:12,809] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:07:12,809] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpvuk1b38p.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:07:12,810] [    INFO][0m - Loading configuration file /tmp/tmpvuk1b38p/generation_config.json[0m
+[32m[2025-06-18 21:07:14,208] [    INFO][0m - Configuration saved in /tmp/tmpvuk1b38p/config.json[0m
+[32m[2025-06-18 21:07:14,209] [    INFO][0m - Configuration saved in /tmp/tmpvuk1b38p/generation_config.json[0m
+[32m[2025-06-18 21:07:15,581] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 10 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpvuk1b38p/model_state.pdparams.index.json.[0m
+[32m[2025-06-18 21:07:15,611] [    INFO][0m - Loading configuration file /tmp/tmpvuk1b38p/config.json[0m
+[32m[2025-06-18 21:07:15,611] [    INFO][0m - Loading weights file /tmp/tmpvuk1b38p/model_state.pdparams.index.json[0m
+Loading checkpoint shards:   0%|          | 0/10 [00:00<?, ?it/s]Loading checkpoint shards:  10%|█         | 1/10 [00:00<00:03,  2.30it/s]Loading checkpoint shards:  30%|███       | 3/10 [00:00<00:01,  6.52it/s]Loading checkpoint shards:  50%|█████     | 5/10 [00:00<00:00,  9.94it/s]Loading checkpoint shards:  70%|███████   | 7/10 [00:00<00:00, 12.33it/s]Loading checkpoint shards:  90%|█████████ | 9/10 [00:00<00:00, 14.18it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:01<00:00,  7.78it/s]
+[32m[2025-06-18 21:07:16,906] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:07:16,906] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpvuk1b38p.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:07:16,907] [    INFO][0m - Loading configuration file /tmp/tmpvuk1b38p/generation_config.json[0m
+[32m[2025-06-18 21:07:17,043] [    INFO][0m - Configuration saved in /tmp/tmpvuk1b38p/config.json[0m
+[32m[2025-06-18 21:07:17,044] [    INFO][0m - Configuration saved in /tmp/tmpvuk1b38p/generation_config.json[0m
+[32m[2025-06-18 21:07:17,945] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpvuk1b38p/model_state.pdparams.index.tp00.json.[0m
+[32m[2025-06-18 21:07:17,945] [    INFO][0m - Loading configuration file /tmp/tmpvuk1b38p/config.json[0m
+[32m[2025-06-18 21:07:17,946] [    INFO][0m - Loading weights file /tmp/tmpvuk1b38p/model_state.pdparams.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  17%|█▋        | 1/6 [00:00<00:01,  4.02it/s]Loading checkpoint shards:  50%|█████     | 3/6 [00:00<00:00,  9.35it/s]Loading checkpoint shards:  83%|████████▎ | 5/6 [00:00<00:00, 12.39it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00,  8.25it/s]
+[32m[2025-06-18 21:07:18,685] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:07:18,685] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpvuk1b38p.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:07:18,686] [    INFO][0m - Loading configuration file /tmp/tmpvuk1b38p/generation_config.json[0m
+[32m[2025-06-18 21:07:18,758] [    INFO][0m - Configuration saved in /tmp/tmpvuk1b38p/config.json[0m
+[32m[2025-06-18 21:07:18,758] [    INFO][0m - Configuration saved in /tmp/tmpvuk1b38p/generation_config.json[0m
+[32m[2025-06-18 21:07:19,464] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpvuk1b38p/model.safetensors.index.tp00.json.[0m
+[32m[2025-06-18 21:07:19,481] [    INFO][0m - Loading configuration file /tmp/tmpvuk1b38p/config.json[0m
+[32m[2025-06-18 21:07:19,481] [    INFO][0m - Loading weights file /tmp/tmpvuk1b38p/model.safetensors.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  17%|█▋        | 1/6 [00:00<00:00,  6.51it/s]Loading checkpoint shards:  50%|█████     | 3/6 [00:00<00:00, 12.46it/s]Loading checkpoint shards:  83%|████████▎ | 5/6 [00:00<00:00, 14.90it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 11.25it/s]
+[32m[2025-06-18 21:07:20,027] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:07:20,027] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpvuk1b38p.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:07:20,027] [    INFO][0m - Loading configuration file /tmp/tmpvuk1b38p/generation_config.json[0m
+[32m[2025-06-18 21:07:20,109] [    INFO][0m - Configuration saved in /tmp/tmpvuk1b38p/config.json[0m
+[32m[2025-06-18 21:07:20,109] [    INFO][0m - Configuration saved in /tmp/tmpvuk1b38p/generation_config.json[0m
+[32m[2025-06-18 21:07:20,811] [    INFO][0m - Model weights saved in /tmp/tmpvuk1b38p/model.tp00.safetensors[0m
+[32m[2025-06-18 21:07:20,827] [    INFO][0m - Loading configuration file /tmp/tmpvuk1b38p/config.json[0m
+[32m[2025-06-18 21:07:20,828] [    INFO][0m - Loading weights file /tmp/tmpvuk1b38p/model.tp00.safetensors[0m
+[32m[2025-06-18 21:07:20,991] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:07:21,039] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:07:21,039] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpvuk1b38p.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:07:21,039] [    INFO][0m - Loading configuration file /tmp/tmpvuk1b38p/generation_config.json[0m
+[2025-06-18 21:08:25,532] [    INFO] distributed_strategy.py:333 - distributed strategy initialized
+[2025-06-18 21:08:25,532] [ WARNING] fleet.py:328 - You have set the environment variable FLAGS_nccl_nrings outside the program, so the nccl_comm_num in DistributedStrategy will not take effect here.
+======================= Modified FLAGS detected =======================
+FLAGS(name='FLAGS_embedding_deterministic', current_value=1, default_value=0)
+FLAGS(name='FLAGS_cudnn_deterministic', current_value=True, default_value=False)
+FLAGS(name='FLAGS_selected_gpus', current_value='0', default_value='')
+FLAGS(name='FLAGS_enable_pir_in_executor', current_value=True, default_value=False)
+=======================================================================
+I0618 21:08:25.533001 33348 tcp_utils.cc:185] The server starts to listen on IP_ANY:30789; setting synclog to 2048
+I0618 21:08:25.533140 33348 tcp_utils.cc:134] Successfully connected to 127.0.0.1:30789
+I0618 21:08:28.640478 33348 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:08:28.640506 33348 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:08:28,641] [    INFO] topology.py:370 - Total 2 pipe comm group(s) create successfully!
+W0618 21:08:28.641481 33348 gpu_resources.cc:114] Please NOTE: device: 0, GPU Compute Capability: 8.0, Driver API Version: 12.2, Runtime API Version: 12.3
+/root/miniforge3/envs/formers/lib/python3.10/site-packages/paddle/distributed/communication/group.py:145: UserWarning: Current global rank 0 is not in group _default_pg10
+  warnings.warn(
+[2025-06-18 21:08:28,643] [    INFO] topology.py:370 - Total 2 data comm group(s) create successfully!
+I0618 21:08:28.643172 33348 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:08:28.643180 33348 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:08:28,643] [    INFO] topology.py:370 - Total 1 model comm group(s) create successfully!
+[2025-06-18 21:08:28,643] [    INFO] topology.py:370 - Total 2 sharding comm group(s) create successfully!
+I0618 21:08:28.643281 33348 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:08:28.643285 33348 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+I0618 21:08:28.643299 33348 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:08:28.643302 33348 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:08:28,643] [    INFO] topology.py:288 - HybridParallelInfo: rank_id: 0, mp_degree: 2, sharding_degree: 1, pp_degree: 1, dp_degree: 1, sep_degree: 1, mp_group: [0, 1],  sharding_group: [0], pp_group: [0], dp_group: [0], sep:group: None, check/clip group: [0, 1]
+NCCL version 2.15.5-4 cuda 11.8
+[32m[2025-06-18 21:08:30,216] [    INFO][0m - Configuration saved in /tmp/tmpjxl455e2/config.json[0m
+[32m[2025-06-18 21:08:30,217] [    INFO][0m - Configuration saved in /tmp/tmpjxl455e2/generation_config.json[0m
+[32m[2025-06-18 21:08:30,536] [    INFO][0m - Model weights saved in /tmp/tmpjxl455e2/model_state.pdparams[0m
+[32m[2025-06-18 21:08:30,634] [    INFO][0m - Loading configuration file /tmp/tmpjxl455e2/config.json[0m
+[32m[2025-06-18 21:08:30,635] [    INFO][0m - Loading weights file /tmp/tmpjxl455e2/model_state.pdparams[0m
+[32m[2025-06-18 21:08:30,816] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:08:30,843] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:08:30,843] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmpjxl455e2.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:08:30,843] [    INFO][0m - Loading configuration file /tmp/tmpjxl455e2/generation_config.json[0m
+[32m[2025-06-18 21:08:31,174] [    INFO][0m - Configuration saved in /tmp/tmpjxl455e2/config.json[0m
+[32m[2025-06-18 21:08:31,174] [    INFO][0m - Configuration saved in /tmp/tmpjxl455e2/generation_config.json[0m
+[32m[2025-06-18 21:08:31,486] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 10 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpjxl455e2/model_state.pdparams.index.json.[0m
+[32m[2025-06-18 21:08:31,493] [    INFO][0m - Loading configuration file /tmp/tmpjxl455e2/config.json[0m
+[32m[2025-06-18 21:08:31,494] [    INFO][0m - Loading weights file /tmp/tmpjxl455e2/model_state.pdparams.index.json[0m
+Loading checkpoint shards:   0%|          | 0/10 [00:00<?, ?it/s]Loading checkpoint shards:  10%|█         | 1/10 [00:00<00:01,  6.17it/s]Loading checkpoint shards:  30%|███       | 3/10 [00:00<00:00, 11.74it/s]Loading checkpoint shards:  50%|█████     | 5/10 [00:00<00:00, 14.26it/s]Loading checkpoint shards:  70%|███████   | 7/10 [00:00<00:00, 15.70it/s]Loading checkpoint shards:  90%|█████████ | 9/10 [00:00<00:00, 16.40it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:00<00:00, 13.39it/s]
+[32m[2025-06-18 21:08:32,251] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:08:32,251] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmpjxl455e2.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:08:32,252] [    INFO][0m - Loading configuration file /tmp/tmpjxl455e2/generation_config.json[0m
+[32m[2025-06-18 21:08:32,275] [    INFO][0m - Configuration saved in /tmp/tmpjxl455e2/config.json[0m
+[32m[2025-06-18 21:08:32,275] [    INFO][0m - Configuration saved in /tmp/tmpjxl455e2/generation_config.json[0m
+[32m[2025-06-18 21:08:32,468] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpjxl455e2/model_state.pdparams.index.tp00.json.[0m
+[32m[2025-06-18 21:08:32,469] [    INFO][0m - Loading configuration file /tmp/tmpjxl455e2/config.json[0m
+[32m[2025-06-18 21:08:32,469] [    INFO][0m - Loading weights file /tmp/tmpjxl455e2/model_state.pdparams.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  33%|███▎      | 2/6 [00:00<00:00, 13.61it/s]Loading checkpoint shards:  67%|██████▋   | 4/6 [00:00<00:00, 16.22it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 15.54it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 15.43it/s]
+[32m[2025-06-18 21:08:32,869] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:08:32,869] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmpjxl455e2.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:08:32,869] [    INFO][0m - Loading configuration file /tmp/tmpjxl455e2/generation_config.json[0m
+[32m[2025-06-18 21:08:32,892] [    INFO][0m - Configuration saved in /tmp/tmpjxl455e2/config.json[0m
+[32m[2025-06-18 21:08:32,893] [    INFO][0m - Configuration saved in /tmp/tmpjxl455e2/generation_config.json[0m
+[32m[2025-06-18 21:08:32,988] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpjxl455e2/model.safetensors.index.tp00.json.[0m
+[32m[2025-06-18 21:08:32,991] [    INFO][0m - Loading configuration file /tmp/tmpjxl455e2/config.json[0m
+[32m[2025-06-18 21:08:32,992] [    INFO][0m - Loading weights file /tmp/tmpjxl455e2/model.safetensors.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  33%|███▎      | 2/6 [00:00<00:00, 15.34it/s]Loading checkpoint shards:  67%|██████▋   | 4/6 [00:00<00:00, 17.19it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 16.98it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 16.83it/s]
+[32m[2025-06-18 21:08:33,359] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:08:33,359] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmpjxl455e2.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:08:33,359] [    INFO][0m - Loading configuration file /tmp/tmpjxl455e2/generation_config.json[0m
+[32m[2025-06-18 21:08:33,382] [    INFO][0m - Configuration saved in /tmp/tmpjxl455e2/config.json[0m
+[32m[2025-06-18 21:08:33,383] [    INFO][0m - Configuration saved in /tmp/tmpjxl455e2/generation_config.json[0m
+[32m[2025-06-18 21:08:33,494] [    INFO][0m - Model weights saved in /tmp/tmpjxl455e2/model.tp00.safetensors[0m
+[32m[2025-06-18 21:08:33,498] [    INFO][0m - Loading configuration file /tmp/tmpjxl455e2/config.json[0m
+[32m[2025-06-18 21:08:33,498] [    INFO][0m - Loading weights file /tmp/tmpjxl455e2/model.tp00.safetensors[0m
+[32m[2025-06-18 21:08:33,534] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:08:33,554] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:08:33,554] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmpjxl455e2.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:08:33,555] [    INFO][0m - Loading configuration file /tmp/tmpjxl455e2/generation_config.json[0m
+[32m[2025-06-18 21:08:34,796] [    INFO][0m - Configuration saved in /tmp/tmpf0uq6cpy/config.json[0m
+[32m[2025-06-18 21:08:34,796] [    INFO][0m - Configuration saved in /tmp/tmpf0uq6cpy/generation_config.json[0m
+[32m[2025-06-18 21:08:36,138] [    INFO][0m - Model weights saved in /tmp/tmpf0uq6cpy/model_state.pdparams[0m
+[32m[2025-06-18 21:08:36,168] [    INFO][0m - Loading configuration file /tmp/tmpf0uq6cpy/config.json[0m
+[32m[2025-06-18 21:08:36,169] [    INFO][0m - Loading weights file /tmp/tmpf0uq6cpy/model_state.pdparams[0m
+[32m[2025-06-18 21:08:36,806] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:08:36,886] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:08:36,886] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpf0uq6cpy.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:08:36,886] [    INFO][0m - Loading configuration file /tmp/tmpf0uq6cpy/generation_config.json[0m
+[32m[2025-06-18 21:08:38,134] [    INFO][0m - Configuration saved in /tmp/tmpf0uq6cpy/config.json[0m
+[32m[2025-06-18 21:08:38,135] [    INFO][0m - Configuration saved in /tmp/tmpf0uq6cpy/generation_config.json[0m
+[32m[2025-06-18 21:08:39,492] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 10 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpf0uq6cpy/model_state.pdparams.index.json.[0m
+[32m[2025-06-18 21:08:39,522] [    INFO][0m - Loading configuration file /tmp/tmpf0uq6cpy/config.json[0m
+[32m[2025-06-18 21:08:39,522] [    INFO][0m - Loading weights file /tmp/tmpf0uq6cpy/model_state.pdparams.index.json[0m
+Loading checkpoint shards:   0%|          | 0/10 [00:00<?, ?it/s]Loading checkpoint shards:  10%|█         | 1/10 [00:00<00:03,  2.35it/s]Loading checkpoint shards:  30%|███       | 3/10 [00:00<00:01,  6.50it/s]Loading checkpoint shards:  50%|█████     | 5/10 [00:00<00:00,  9.75it/s]Loading checkpoint shards:  70%|███████   | 7/10 [00:00<00:00, 12.34it/s]Loading checkpoint shards:  90%|█████████ | 9/10 [00:00<00:00, 14.22it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:01<00:00,  7.79it/s]
+[32m[2025-06-18 21:08:40,816] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:08:40,816] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpf0uq6cpy.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:08:40,816] [    INFO][0m - Loading configuration file /tmp/tmpf0uq6cpy/generation_config.json[0m
+[32m[2025-06-18 21:08:40,887] [    INFO][0m - Configuration saved in /tmp/tmpf0uq6cpy/config.json[0m
+[32m[2025-06-18 21:08:40,887] [    INFO][0m - Configuration saved in /tmp/tmpf0uq6cpy/generation_config.json[0m
+[32m[2025-06-18 21:08:41,777] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpf0uq6cpy/model_state.pdparams.index.tp00.json.[0m
+[32m[2025-06-18 21:08:41,777] [    INFO][0m - Loading configuration file /tmp/tmpf0uq6cpy/config.json[0m
+[32m[2025-06-18 21:08:41,778] [    INFO][0m - Loading weights file /tmp/tmpf0uq6cpy/model_state.pdparams.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  17%|█▋        | 1/6 [00:00<00:01,  4.22it/s]Loading checkpoint shards:  50%|█████     | 3/6 [00:00<00:00,  9.79it/s]Loading checkpoint shards:  83%|████████▎ | 5/6 [00:00<00:00, 13.16it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00,  8.72it/s]
+[32m[2025-06-18 21:08:42,478] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:08:42,478] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpf0uq6cpy.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:08:42,478] [    INFO][0m - Loading configuration file /tmp/tmpf0uq6cpy/generation_config.json[0m
+[32m[2025-06-18 21:08:42,558] [    INFO][0m - Configuration saved in /tmp/tmpf0uq6cpy/config.json[0m
+[32m[2025-06-18 21:08:42,558] [    INFO][0m - Configuration saved in /tmp/tmpf0uq6cpy/generation_config.json[0m
+[32m[2025-06-18 21:08:43,248] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpf0uq6cpy/model.safetensors.index.tp00.json.[0m
+[32m[2025-06-18 21:08:43,265] [    INFO][0m - Loading configuration file /tmp/tmpf0uq6cpy/config.json[0m
+[32m[2025-06-18 21:08:43,265] [    INFO][0m - Loading weights file /tmp/tmpf0uq6cpy/model.safetensors.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  17%|█▋        | 1/6 [00:00<00:00,  6.69it/s]Loading checkpoint shards:  50%|█████     | 3/6 [00:00<00:00, 12.76it/s]Loading checkpoint shards:  83%|████████▎ | 5/6 [00:00<00:00, 15.43it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 11.81it/s]
+[32m[2025-06-18 21:08:43,785] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:08:43,785] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpf0uq6cpy.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:08:43,786] [    INFO][0m - Loading configuration file /tmp/tmpf0uq6cpy/generation_config.json[0m
+[32m[2025-06-18 21:08:43,866] [    INFO][0m - Configuration saved in /tmp/tmpf0uq6cpy/config.json[0m
+[32m[2025-06-18 21:08:43,867] [    INFO][0m - Configuration saved in /tmp/tmpf0uq6cpy/generation_config.json[0m
+[32m[2025-06-18 21:08:44,554] [    INFO][0m - Model weights saved in /tmp/tmpf0uq6cpy/model.tp00.safetensors[0m
+[32m[2025-06-18 21:08:44,570] [    INFO][0m - Loading configuration file /tmp/tmpf0uq6cpy/config.json[0m
+[32m[2025-06-18 21:08:44,570] [    INFO][0m - Loading weights file /tmp/tmpf0uq6cpy/model.tp00.safetensors[0m
+[32m[2025-06-18 21:08:44,731] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:08:44,778] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:08:44,778] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpf0uq6cpy.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:08:44,778] [    INFO][0m - Loading configuration file /tmp/tmpf0uq6cpy/generation_config.json[0m
+[32m[2025-06-18 21:12:40,763] [    INFO][0m - We are using <class 'paddleformers.transformers.llama.tokenizer.LlamaTokenizer'> to load '__internal_testing__/tiny-random-llama'.[0m
+[32m[2025-06-18 21:12:40,773] [    INFO][0m - tokenizer config file saved in /root/.paddleformers/models/__internal_testing__/tiny-random-llama/tokenizer_config.json[0m
+[32m[2025-06-18 21:12:40,774] [    INFO][0m - Special tokens file saved in /root/.paddleformers/models/__internal_testing__/tiny-random-llama/special_tokens_map.json[0m
+[32m[2025-06-18 21:12:40,774] [    INFO][0m - We are using <class 'paddleformers.transformers.llama.modeling.LlamaForCausalLM'> to load '__internal_testing__/tiny-random-llama'.[0m
+[32m[2025-06-18 21:12:40,824] [    INFO][0m - Loading weights file from cache at /root/.paddleformers/models/__internal_testing__/tiny-random-llama/model_state.pdparams[0m
+[32m[2025-06-18 21:12:41,043] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+W0618 21:12:41.125190 37680 gpu_resources.cc:114] Please NOTE: device: 0, GPU Compute Capability: 8.0, Driver API Version: 12.2, Runtime API Version: 12.3
+[32m[2025-06-18 21:12:42,000] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:12:42,000] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at __internal_testing__/tiny-random-llama.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:12:42,042] [    INFO][0m - Generation config file not found, using a generation config created from the model config.[0m
+[32m[2025-06-18 21:12:42,065] [    INFO][0m - user has defined resume_from_checkpoint: None[0m
+[2025-06-18 21:12:42,066] [    INFO] distributed_strategy.py:333 - distributed strategy initialized
+======================= Modified FLAGS detected =======================
+FLAGS(name='FLAGS_enable_pir_in_executor', current_value=True, default_value=False)
+FLAGS(name='FLAGS_cudnn_deterministic', current_value=True, default_value=False)
+FLAGS(name='FLAGS_embedding_deterministic', current_value=1, default_value=0)
+FLAGS(name='FLAGS_selected_gpus', current_value='0', default_value='')
+=======================================================================
+I0618 21:12:42.067394 37680 tcp_utils.cc:185] The server starts to listen on IP_ANY:31251; setting synclog to 2048
+I0618 21:12:42.067528 37680 tcp_utils.cc:134] Successfully connected to 127.0.0.1:31251
+I0618 21:12:44.955837 37680 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:12:44.955855 37680 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:12:44,956] [    INFO] topology.py:370 - Total 2 pipe comm group(s) create successfully!
+/root/miniforge3/envs/formers/lib/python3.10/site-packages/paddle/distributed/communication/group.py:145: UserWarning: Current global rank 0 is not in group _default_pg10
+  warnings.warn(
+[2025-06-18 21:12:44,956] [    INFO] topology.py:370 - Total 2 data comm group(s) create successfully!
+[2025-06-18 21:12:44,956] [    INFO] topology.py:370 - Total 2 model comm group(s) create successfully!
+I0618 21:12:44.956791 37680 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:12:44.956799 37680 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:12:44,956] [    INFO] topology.py:370 - Total 1 sharding comm group(s) create successfully!
+I0618 21:12:44.956856 37680 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:12:44.956859 37680 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:12:44,956] [    INFO] topology.py:288 - HybridParallelInfo: rank_id: 0, mp_degree: 1, sharding_degree: 2, pp_degree: 1, dp_degree: 1, sep_degree: 1, mp_group: [0],  sharding_group: [0, 1], pp_group: [0], dp_group: [0], sep:group: None, check/clip group: [0, 1]
+[32m[2025-06-18 21:12:44,957] [    INFO][0m -     +==============================================================================+
+    |                                                                              |
+    |                         DistributedStrategy Overview                         |
+    |                                                                              |
+    +==============================================================================+
+    |                        a_sync=True <-> a_sync_configs                        |
+    +------------------------------------------------------------------------------+
+    |                               k_steps                    -1                  |
+    |                     max_merge_var_num                    1                   |
+    |                       send_queue_size                    16                  |
+    |               independent_recv_thread                  False                 |
+    |         min_send_grad_num_before_recv                    1                   |
+    |                      thread_pool_size                    1                   |
+    |                       send_wait_times                    1                   |
+    |               runtime_split_send_recv                  False                 |
+    |                        launch_barrier                   True                 |
+    |             heter_worker_device_guard                   cpu                  |
+    |                        lr_decay_steps                    10                  |
+    |                            use_ps_gpu                    0                   |
+    |                         use_gpu_graph                    0                   |
+    +==============================================================================+
+    |                    Environment Flags, Communication Flags                    |
+    +------------------------------------------------------------------------------+
+    |                                  mode                    1                   |
+    |                               elastic                  False                 |
+    |                                  auto                  False                 |
+    |                   sync_nccl_allreduce                   True                 |
+    |                         nccl_comm_num                    1                   |
+    |            use_hierarchical_allreduce                  False                 |
+    |   hierarchical_allreduce_inter_nranks                    1                   |
+    |                       sync_batch_norm                  False                 |
+    |                   fuse_all_reduce_ops                   True                 |
+    |                  fuse_grad_size_in_MB                    32                  |
+    |              fuse_grad_size_in_TFLOPS                   50.0                 |
+    |               cudnn_exhaustive_search                  False                 |
+    |             conv_workspace_size_limit                   512                  |
+    |    cudnn_batchnorm_spatial_persistent                  False                 |
+    |                        fp16_allreduce                  False                 |
+    |               last_comm_group_size_MB                   1.0                  |
+    |                find_unused_parameters                  False                 |
+    |            without_graph_optimization                   True                 |
+    |                 fuse_grad_size_in_num                    8                   |
+    |                 calc_comm_same_stream                  False                 |
+    |                                   asp                  False                 |
+    |                       fuse_grad_merge                  False                 |
+    |                             semi_auto                  False                 |
+    |                            adam_d2sum                  False                 |
+    |                           auto_search                  False                 |
+    |                        heter_ccl_mode                  False                 |
+    |                         is_fl_ps_mode                  False                 |
+    |                      with_coordinator                  False                 |
+    |                            split_data                   True                 |
+    |                  downpour_table_param                    []                  |
+    |                       fs_client_param                                        |
+    +==============================================================================+
+    |                                Build Strategy                                |
+    +------------------------------------------------------------------------------+
+    |              fuse_elewise_add_act_ops                  False                 |
+    |                       fuse_bn_act_ops                  False                 |
+    |              fuse_relu_depthwise_conv                  False                 |
+    |                    fuse_broadcast_ops                  False                 |
+    |                fuse_all_optimizer_ops                  False                 |
+    |                        enable_inplace                  False                 |
+    |     enable_backward_optimizer_op_deps                   True                 |
+    |                 cache_runtime_context                  False                 |
+    |                   fuse_bn_add_act_ops                   True                 |
+    |                    enable_auto_fusion                  False                 |
+    |                          enable_addto                  False                 |
+    |              allow_cuda_graph_capture                  False                 |
+    |                       reduce_strategy                    0                   |
+    |                    fuse_gemm_epilogue                  False                 |
+    |                   debug_graphviz_path                                        |
+    |                       fused_attention                  False                 |
+    |                     fused_feedforward                  False                 |
+    |            fuse_dot_product_attention                  False                 |
+    |                          fuse_resunit                  False                 |
+    +==============================================================================+
+[0m
+[32m[2025-06-18 21:12:44,957] [    INFO][0m - The default value for the training argument `--report_to` will change in v5 (from all installed integrations to none). In v5, you will need to use `--report_to all` to get the same behavior as now. You should start updating your code and make this info disappear :-).[0m
+[32m[2025-06-18 21:12:44,958] [    INFO][0m - The global seed is set to 42, local seed is set to 44 and random seed is set to 42.[0m
+[32m[2025-06-18 21:12:44,975] [    INFO][0m - Using half precision[0m
+[35m[2025-06-18 21:12:44,979] [   DEBUG][0m - ============================================================[0m
+[35m[2025-06-18 21:12:44,979] [   DEBUG][0m -     Training Configuration Arguments    [0m
+[35m[2025-06-18 21:12:44,979] [   DEBUG][0m - paddle commit id              : c9cc49e279b49b6b9d3e405eee5151f799540244[0m
+[35m[2025-06-18 21:12:44,979] [   DEBUG][0m - paddleformers commit id       : 4bb8495738bc4b99538a1b5663b7ab30f287ed83.dirty[0m
+[35m[2025-06-18 21:12:44,979] [   DEBUG][0m - _no_sync_in_gradient_accumulation: True[0m
+[35m[2025-06-18 21:12:44,979] [   DEBUG][0m - adam_beta1                    : 0.9[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - adam_beta2                    : 0.999[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - adam_epsilon                  : 1e-08[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - amp_custom_black_list         : None[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - amp_custom_white_list         : None[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - amp_master_grad               : False[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - auto_parallel_resume_form_hybrid_parallel: False[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - bf16                          : False[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - bf16_full_eval                : False[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - ckpt_quant_stage              : O0[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - context_parallel_degree       : 1[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - count_trained_tokens          : False[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - current_device                : gpu:0[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - data_parallel_config          : [0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - data_parallel_degree          : 1[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - data_parallel_rank            : 0[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - dataloader_drop_last          : False[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - dataloader_num_workers        : 0[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - dataloader_shuffle            : True[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - dataset_rank                  : 0[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - dataset_world_size            : 2[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - ddp_find_unused_parameters    : None[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - device                        : gpu[0m
+[35m[2025-06-18 21:12:44,980] [   DEBUG][0m - disable_tqdm                  : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - distributed_dataloader        : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - do_eval                       : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - do_export                     : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - do_predict                    : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - do_train                      : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - enable_auto_parallel          : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - enable_zero_cost_checkpoint   : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - eval_accumulation_steps       : None[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - eval_batch_size               : 8[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - eval_steps                    : None[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - evaluation_strategy           : IntervalStrategy.NO[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - expert_max_capacity           : 4294967296[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - expert_min_capacity           : 1[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - expert_parallel_degree        : 1[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - expert_tensor_parallel_degree : 1[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - flash_device_save_steps       : 0[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - flatten_param_grads           : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - force_reshard_pp              : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - fp16                          : True[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - fp16_full_eval                : False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - fp16_opt_level                : O2[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - fuse_sequence_parallel_allreduce: False[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - gradient_accumulation_steps   : 1[0m
+[35m[2025-06-18 21:12:44,981] [   DEBUG][0m - greater_is_better             : None[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - hybrid_parallel_topo_order    : pp_first[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - ignore_data_skip              : False[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - ignore_load_lr_and_optim      : False[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - ignore_save_lr_and_optim      : False[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - label_names                   : None[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - lazy_data_processing          : True[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - learning_rate                 : 5e-05[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - load_best_model_at_end        : False[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - load_sharded_model            : False[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - local_process_index           : 0[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - local_rank                    : 0[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - log_level                     : -1[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - log_level_replica             : -1[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - log_on_each_node              : True[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - logging_dir                   : /tmp/tmp75dx0n12/output/runs/Jun18_21-12-42_bddwd-inf-k8s-a800-a12ni6-0399.bddwd.baidu.com[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - logging_first_step            : False[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - logging_steps                 : 500[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - logging_strategy              : IntervalStrategy.STEPS[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - logical_process_index         : 0[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - lr_end                        : 1e-07[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - lr_scheduler_type             : SchedulerType.LINEAR[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - max_evaluate_steps            : -1[0m
+[35m[2025-06-18 21:12:44,982] [   DEBUG][0m - max_grad_norm                 : 1.0[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - max_steps                     : -1[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - metric_for_best_model         : None[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - metrics_output_path           : None[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - min_lr                        : 0.0[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - minimum_eval_times            : None[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - no_cuda                       : False[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - num_cycles                    : 0.5[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - num_train_epochs              : 1.0[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - offload_optim                 : False[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - optim                         : OptimizerNames.ADAMW[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - optimizer_name_suffix         : shard00[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - ordered_save_group_size       : 0[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - output_dir                    : /tmp/tmp75dx0n12/output[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - output_signal_dir             : /tmp/tmp75dx0n12/output[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - overwrite_output_dir          : False[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - pad_token_id                  : 0[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - past_index                    : -1[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - pdc_download_ckpt             : False[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - pdc_download_timeout          : 300[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - per_device_eval_batch_size    : 8[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - per_device_train_batch_size   : 8[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - pipeline_parallel_config      : [0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - pipeline_parallel_degree      : 1[0m
+[35m[2025-06-18 21:12:44,983] [   DEBUG][0m - pipeline_parallel_rank        : 0[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - power                         : 1.0[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - prediction_loss_only          : False[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - process_index                 : 0[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - recompute                     : False[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - refined_recompute             : {}[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - release_grads                 : False[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - remove_unused_columns         : True[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - report_to                     : ['visualdl'][0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - resume_from_checkpoint        : None[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - run_name                      : /tmp/tmp75dx0n12/output[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - save_on_each_node             : False[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - save_rng_states               : True[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - save_sharded_model            : False[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - save_sharding_stage1_model_include_freeze_params: False[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - save_steps                    : 500[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - save_strategy                 : IntervalStrategy.STEPS[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - save_tokenizer                : True[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - save_total_limit              : None[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - scale_loss                    : 32768[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - seed                          : 42[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - sep_parallel_degree           : 1[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - sequence_parallel             : False[0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - sequence_parallel_config      : [0m
+[35m[2025-06-18 21:12:44,984] [   DEBUG][0m - sharding                      : [<ShardingOption.FULL_SHARD: 'stage3'>][0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - sharding_comm_buffer_size_MB  : -1[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - sharding_degree               : -1[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - sharding_parallel_config      : [0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - sharding_parallel_degree      : 2[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - sharding_parallel_mesh_dimension: dp[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - sharding_parallel_rank        : 0[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - should_load_dataset           : True[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - should_load_sharding_stage1_model: False[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - should_log                    : True[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - should_save                   : True[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - should_save_model_state       : True[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - should_save_model_with_tensor_fusion: False[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - should_save_sharding_stage1_model: False[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - skip_data_intervals           : None[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - skip_memory_metrics           : True[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - skip_profile_timer            : True[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - split_inputs_sequence_dim     : True[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - split_norm_comm               : False[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - tensor_parallel_config        : [0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - tensor_parallel_degree        : 1[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - tensor_parallel_rank          : 0[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - tensorwise_offload_optimizer  : False[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - to_static                     : False[0m
+[35m[2025-06-18 21:12:44,985] [   DEBUG][0m - train_batch_size              : 8[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - unified_checkpoint            : False[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - unified_checkpoint_config     : [0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - use_async_save                : False[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - use_expert_parallel           : False[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - use_hybrid_parallel           : True[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - use_lowprecision_moment       : False[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - wandb_api_key                 : None[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - wandb_http_proxy              : None[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - warmup_ratio                  : 0.0[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - warmup_steps                  : 0[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - weight_decay                  : 0.0[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - weight_name_suffix            : [0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - world_size                    : 2[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - zcc_ema_interval              : 1[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - zcc_pipeline_hooks_capacity_usage: 0.6[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - zcc_save_ema_coef             : None[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - zcc_workers_num               : 3[0m
+[35m[2025-06-18 21:12:44,986] [   DEBUG][0m - [0m
+[2025-06-18 21:12:44,987] [ WARNING] group_sharded.py:148 - the input of scaler is None, please ensure the logic of your scaler outside is same as GroupShardedScaler.
+[2025-06-18 21:12:44,987] [ WARNING] group_sharded_stage3.py:197 - While using ClipGradByGlobalNorm in GroupShardedStage3, the grad clip of original optimizer will be changed.
+NCCL version 2.15.5-4 cuda 11.8
+[33m[2025-06-18 21:12:45,871] [ WARNING][0m - `max_length` will be deprecated in future releases, use `max_new_tokens` instead.[0m
+W0618 21:12:46.013636 37680 multiply_fwd_func.cc:76] got different data type, run type promotion automatically, this may cause data type been changed.
+[33m[2025-06-18 21:12:46,445] [ WARNING][0m - `max_length` will be deprecated in future releases, use `max_new_tokens` instead.[0m
+[33m[2025-06-18 21:12:46,572] [ WARNING][0m - `max_length` will be deprecated in future releases, use `max_new_tokens` instead.[0m
+W0618 21:12:46.824450 37680 dygraph_functions.cc:86360] got different data type, run type promotion automatically, this may cause data type been changed.
+[33m[2025-06-18 21:12:46,914] [ WARNING][0m - `max_length` will be deprecated in future releases, use `max_new_tokens` instead.[0m
+[2025-06-18 21:14:28,124] [    INFO] distributed_strategy.py:333 - distributed strategy initialized
+[2025-06-18 21:14:28,125] [ WARNING] fleet.py:328 - You have set the environment variable FLAGS_nccl_nrings outside the program, so the nccl_comm_num in DistributedStrategy will not take effect here.
+======================= Modified FLAGS detected =======================
+FLAGS(name='FLAGS_embedding_deterministic', current_value=1, default_value=0)
+FLAGS(name='FLAGS_selected_gpus', current_value='0', default_value='')
+FLAGS(name='FLAGS_cudnn_deterministic', current_value=True, default_value=False)
+FLAGS(name='FLAGS_enable_pir_in_executor', current_value=True, default_value=False)
+=======================================================================
+I0618 21:14:28.125761 38852 tcp_utils.cc:185] The server starts to listen on IP_ANY:33257; setting synclog to 2048
+I0618 21:14:28.125883 38852 tcp_utils.cc:134] Successfully connected to 127.0.0.1:33257
+I0618 21:14:31.268374 38852 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:14:31.268406 38852 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:14:31,268] [    INFO] topology.py:370 - Total 2 pipe comm group(s) create successfully!
+W0618 21:14:31.269440 38852 gpu_resources.cc:114] Please NOTE: device: 0, GPU Compute Capability: 8.0, Driver API Version: 12.2, Runtime API Version: 12.3
+/root/miniforge3/envs/formers/lib/python3.10/site-packages/paddle/distributed/communication/group.py:145: UserWarning: Current global rank 0 is not in group _default_pg10
+  warnings.warn(
+[2025-06-18 21:14:31,271] [    INFO] topology.py:370 - Total 2 data comm group(s) create successfully!
+I0618 21:14:31.271164 38852 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:14:31.271173 38852 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:14:31,271] [    INFO] topology.py:370 - Total 1 model comm group(s) create successfully!
+[2025-06-18 21:14:31,271] [    INFO] topology.py:370 - Total 2 sharding comm group(s) create successfully!
+I0618 21:14:31.271270 38852 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:14:31.271274 38852 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+I0618 21:14:31.271289 38852 process_group_nccl.cc:151] ProcessGroupNCCL pg_timeout_ 1800000
+I0618 21:14:31.271291 38852 process_group_nccl.cc:152] ProcessGroupNCCL nccl_comm_init_option_ 0
+[2025-06-18 21:14:31,271] [    INFO] topology.py:288 - HybridParallelInfo: rank_id: 0, mp_degree: 2, sharding_degree: 1, pp_degree: 1, dp_degree: 1, sep_degree: 1, mp_group: [0, 1],  sharding_group: [0], pp_group: [0], dp_group: [0], sep:group: None, check/clip group: [0, 1]
+NCCL version 2.15.5-4 cuda 11.8
+[32m[2025-06-18 21:14:32,613] [    INFO][0m - Configuration saved in /tmp/tmp7ud345s1/config.json[0m
+[32m[2025-06-18 21:14:32,614] [    INFO][0m - Configuration saved in /tmp/tmp7ud345s1/generation_config.json[0m
+[32m[2025-06-18 21:14:32,922] [    INFO][0m - Model weights saved in /tmp/tmp7ud345s1/model_state.pdparams[0m
+[32m[2025-06-18 21:14:33,043] [    INFO][0m - Loading configuration file /tmp/tmp7ud345s1/config.json[0m
+[32m[2025-06-18 21:14:33,043] [    INFO][0m - Loading weights file /tmp/tmp7ud345s1/model_state.pdparams[0m
+[32m[2025-06-18 21:14:33,189] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:14:33,216] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:14:33,216] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmp7ud345s1.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:14:33,216] [    INFO][0m - Loading configuration file /tmp/tmp7ud345s1/generation_config.json[0m
+[32m[2025-06-18 21:14:33,539] [    INFO][0m - Configuration saved in /tmp/tmp7ud345s1/config.json[0m
+[32m[2025-06-18 21:14:33,540] [    INFO][0m - Configuration saved in /tmp/tmp7ud345s1/generation_config.json[0m
+[32m[2025-06-18 21:14:33,839] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 10 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmp7ud345s1/model_state.pdparams.index.json.[0m
+[32m[2025-06-18 21:14:33,847] [    INFO][0m - Loading configuration file /tmp/tmp7ud345s1/config.json[0m
+[32m[2025-06-18 21:14:33,847] [    INFO][0m - Loading weights file /tmp/tmp7ud345s1/model_state.pdparams.index.json[0m
+Loading checkpoint shards:   0%|          | 0/10 [00:00<?, ?it/s]Loading checkpoint shards:  10%|█         | 1/10 [00:00<00:01,  6.45it/s]Loading checkpoint shards:  30%|███       | 3/10 [00:00<00:00, 12.75it/s]Loading checkpoint shards:  60%|██████    | 6/10 [00:00<00:00, 16.49it/s]Loading checkpoint shards:  90%|█████████ | 9/10 [00:00<00:00, 18.23it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:00<00:00, 14.72it/s]
+[32m[2025-06-18 21:14:34,538] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:14:34,538] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmp7ud345s1.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:14:34,539] [    INFO][0m - Loading configuration file /tmp/tmp7ud345s1/generation_config.json[0m
+[32m[2025-06-18 21:14:34,593] [    INFO][0m - Configuration saved in /tmp/tmp7ud345s1/config.json[0m
+[32m[2025-06-18 21:14:34,594] [    INFO][0m - Configuration saved in /tmp/tmp7ud345s1/generation_config.json[0m
+[32m[2025-06-18 21:14:34,783] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmp7ud345s1/model_state.pdparams.index.tp00.json.[0m
+[32m[2025-06-18 21:14:34,783] [    INFO][0m - Loading configuration file /tmp/tmp7ud345s1/config.json[0m
+[32m[2025-06-18 21:14:34,784] [    INFO][0m - Loading weights file /tmp/tmp7ud345s1/model_state.pdparams.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  33%|███▎      | 2/6 [00:00<00:00, 13.28it/s]Loading checkpoint shards:  67%|██████▋   | 4/6 [00:00<00:00, 15.95it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 15.69it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 15.45it/s]
+[32m[2025-06-18 21:14:35,183] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:14:35,183] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmp7ud345s1.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:14:35,183] [    INFO][0m - Loading configuration file /tmp/tmp7ud345s1/generation_config.json[0m
+[32m[2025-06-18 21:14:35,206] [    INFO][0m - Configuration saved in /tmp/tmp7ud345s1/config.json[0m
+[32m[2025-06-18 21:14:35,207] [    INFO][0m - Configuration saved in /tmp/tmp7ud345s1/generation_config.json[0m
+[32m[2025-06-18 21:14:35,298] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmp7ud345s1/model.safetensors.index.tp00.json.[0m
+[32m[2025-06-18 21:14:35,332] [    INFO][0m - Loading configuration file /tmp/tmp7ud345s1/config.json[0m
+[32m[2025-06-18 21:14:35,332] [    INFO][0m - Loading weights file /tmp/tmp7ud345s1/model.safetensors.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  33%|███▎      | 2/6 [00:00<00:00, 16.57it/s]Loading checkpoint shards:  67%|██████▋   | 4/6 [00:00<00:00, 17.52it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 17.21it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 17.19it/s]
+[32m[2025-06-18 21:14:35,692] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:14:35,692] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmp7ud345s1.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:14:35,692] [    INFO][0m - Loading configuration file /tmp/tmp7ud345s1/generation_config.json[0m
+[32m[2025-06-18 21:14:35,716] [    INFO][0m - Configuration saved in /tmp/tmp7ud345s1/config.json[0m
+[32m[2025-06-18 21:14:35,717] [    INFO][0m - Configuration saved in /tmp/tmp7ud345s1/generation_config.json[0m
+[32m[2025-06-18 21:14:35,822] [    INFO][0m - Model weights saved in /tmp/tmp7ud345s1/model.tp00.safetensors[0m
+[32m[2025-06-18 21:14:35,855] [    INFO][0m - Loading configuration file /tmp/tmp7ud345s1/config.json[0m
+[32m[2025-06-18 21:14:35,856] [    INFO][0m - Loading weights file /tmp/tmp7ud345s1/model.tp00.safetensors[0m
+[32m[2025-06-18 21:14:35,892] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:14:35,911] [    INFO][0m - All model checkpoint weights were used when initializing LlamaForCausalLM.
+[0m
+[32m[2025-06-18 21:14:35,912] [    INFO][0m - All the weights of LlamaForCausalLM were initialized from the model checkpoint at /tmp/tmp7ud345s1.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use LlamaForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:14:35,912] [    INFO][0m - Loading configuration file /tmp/tmp7ud345s1/generation_config.json[0m
+[32m[2025-06-18 21:14:37,095] [    INFO][0m - Configuration saved in /tmp/tmpezs21j21/config.json[0m
+[32m[2025-06-18 21:14:37,095] [    INFO][0m - Configuration saved in /tmp/tmpezs21j21/generation_config.json[0m
+[32m[2025-06-18 21:14:38,424] [    INFO][0m - Model weights saved in /tmp/tmpezs21j21/model_state.pdparams[0m
+[32m[2025-06-18 21:14:38,454] [    INFO][0m - Loading configuration file /tmp/tmpezs21j21/config.json[0m
+[32m[2025-06-18 21:14:38,455] [    INFO][0m - Loading weights file /tmp/tmpezs21j21/model_state.pdparams[0m
+[32m[2025-06-18 21:14:39,088] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:14:39,168] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:14:39,168] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpezs21j21.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:14:39,169] [    INFO][0m - Loading configuration file /tmp/tmpezs21j21/generation_config.json[0m
+[32m[2025-06-18 21:14:40,403] [    INFO][0m - Configuration saved in /tmp/tmpezs21j21/config.json[0m
+[32m[2025-06-18 21:14:40,403] [    INFO][0m - Configuration saved in /tmp/tmpezs21j21/generation_config.json[0m
+[32m[2025-06-18 21:14:41,729] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 10 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpezs21j21/model_state.pdparams.index.json.[0m
+[32m[2025-06-18 21:14:41,759] [    INFO][0m - Loading configuration file /tmp/tmpezs21j21/config.json[0m
+[32m[2025-06-18 21:14:41,760] [    INFO][0m - Loading weights file /tmp/tmpezs21j21/model_state.pdparams.index.json[0m
+Loading checkpoint shards:   0%|          | 0/10 [00:00<?, ?it/s]Loading checkpoint shards:  10%|█         | 1/10 [00:00<00:04,  2.13it/s]Loading checkpoint shards:  30%|███       | 3/10 [00:00<00:01,  6.16it/s]Loading checkpoint shards:  50%|█████     | 5/10 [00:00<00:00,  9.50it/s]Loading checkpoint shards:  70%|███████   | 7/10 [00:00<00:00, 12.19it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:01<00:00,  8.07it/s]Loading checkpoint shards: 100%|██████████| 10/10 [00:01<00:00,  7.74it/s]
+[32m[2025-06-18 21:14:43,061] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:14:43,062] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpezs21j21.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:14:43,062] [    INFO][0m - Loading configuration file /tmp/tmpezs21j21/generation_config.json[0m
+[32m[2025-06-18 21:14:43,141] [    INFO][0m - Configuration saved in /tmp/tmpezs21j21/config.json[0m
+[32m[2025-06-18 21:14:43,142] [    INFO][0m - Configuration saved in /tmp/tmpezs21j21/generation_config.json[0m
+[32m[2025-06-18 21:14:44,016] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpezs21j21/model_state.pdparams.index.tp00.json.[0m
+[32m[2025-06-18 21:14:44,018] [    INFO][0m - Loading configuration file /tmp/tmpezs21j21/config.json[0m
+[32m[2025-06-18 21:14:44,019] [    INFO][0m - Loading weights file /tmp/tmpezs21j21/model_state.pdparams.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  17%|█▋        | 1/6 [00:00<00:01,  4.14it/s]Loading checkpoint shards:  50%|█████     | 3/6 [00:00<00:00,  9.47it/s]Loading checkpoint shards:  83%|████████▎ | 5/6 [00:00<00:00, 12.81it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00,  8.62it/s]
+[32m[2025-06-18 21:14:44,727] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:14:44,727] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpezs21j21.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:14:44,727] [    INFO][0m - Loading configuration file /tmp/tmpezs21j21/generation_config.json[0m
+[32m[2025-06-18 21:14:44,815] [    INFO][0m - Configuration saved in /tmp/tmpezs21j21/config.json[0m
+[32m[2025-06-18 21:14:44,815] [    INFO][0m - Configuration saved in /tmp/tmpezs21j21/generation_config.json[0m
+[32m[2025-06-18 21:14:45,501] [    INFO][0m - The model is bigger than the maximum size per checkpoint (5MB) and is going to be split in 6 checkpoint shards. You can find where each parameters has been saved in the index located at /tmp/tmpezs21j21/model.safetensors.index.tp00.json.[0m
+[32m[2025-06-18 21:14:45,529] [    INFO][0m - Loading configuration file /tmp/tmpezs21j21/config.json[0m
+[32m[2025-06-18 21:14:45,529] [    INFO][0m - Loading weights file /tmp/tmpezs21j21/model.safetensors.index.tp00.json[0m
+Loading checkpoint shards:   0%|          | 0/6 [00:00<?, ?it/s]Loading checkpoint shards:  17%|█▋        | 1/6 [00:00<00:00,  6.65it/s]Loading checkpoint shards:  50%|█████     | 3/6 [00:00<00:00, 12.60it/s]Loading checkpoint shards:  83%|████████▎ | 5/6 [00:00<00:00, 15.17it/s]Loading checkpoint shards: 100%|██████████| 6/6 [00:00<00:00, 11.62it/s]
+[32m[2025-06-18 21:14:46,057] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:14:46,057] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpezs21j21.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:14:46,058] [    INFO][0m - Loading configuration file /tmp/tmpezs21j21/generation_config.json[0m
+[32m[2025-06-18 21:14:46,158] [    INFO][0m - Configuration saved in /tmp/tmpezs21j21/config.json[0m
+[32m[2025-06-18 21:14:46,158] [    INFO][0m - Configuration saved in /tmp/tmpezs21j21/generation_config.json[0m
+[32m[2025-06-18 21:14:46,833] [    INFO][0m - Model weights saved in /tmp/tmpezs21j21/model.tp00.safetensors[0m
+[32m[2025-06-18 21:14:46,858] [    INFO][0m - Loading configuration file /tmp/tmpezs21j21/config.json[0m
+[32m[2025-06-18 21:14:46,858] [    INFO][0m - Loading weights file /tmp/tmpezs21j21/model.tp00.safetensors[0m
+[32m[2025-06-18 21:14:47,018] [    INFO][0m - Loaded weights file from disk, setting weights to model.[0m
+[32m[2025-06-18 21:14:47,064] [    INFO][0m - All model checkpoint weights were used when initializing Qwen2ForCausalLM.
+[0m
+[32m[2025-06-18 21:14:47,064] [    INFO][0m - All the weights of Qwen2ForCausalLM were initialized from the model checkpoint at /tmp/tmpezs21j21.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use Qwen2ForCausalLM for predictions without further training.[0m
+[32m[2025-06-18 21:14:47,065] [    INFO][0m - Loading configuration file /tmp/tmpezs21j21/generation_config.json[0m

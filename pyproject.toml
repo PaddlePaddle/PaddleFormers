@@ -14,22 +14,13 @@ addopts = "-ra -q "
 pythonpath = ["."]
 testpaths = [
     "tests/data",
-    "tests/dataaug",
     "tests/datasets",
-    "tests/experimental",
     "tests/generation",
-    "tests/layers",
-    "tests/metrics",
-    "tests/pose",
-    "tests/ops",
+    "tests/mergekit",
+    "tests/peft",
     "tests/trainer",
     "tests/transformers",
-    "tests/peft",
-    "tests/prompt",
-    "tests/mergekit",
-    # "tests/taskflow",  TODO (paddle 2.5.1 breaks this test suite, debug later)
     "tests/utils",
-    "tests/longlora",       
 ]
 python_files = [
     "test.py",

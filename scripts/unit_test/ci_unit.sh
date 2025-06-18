@@ -17,8 +17,8 @@
 set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
-export nlp_dir=/workspace/PaddleNLP
-export log_path=/workspace/PaddleNLP/unittest_logs
+export nlp_dir=/workspace/PaddleFormers
+export log_path=/workspace/PaddleFormers/unittest_logs
 cd $nlp_dir
 
 if [ ! -d "unittest_logs" ];then
@@ -32,7 +32,6 @@ install_requirements() {
     python -m pip install -r requirements.txt
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
-    python -m pip install -r paddlenlp/experimental/autonlp/requirements.txt 
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
     python -m pip install pillow codecov-cli allure-pytest
     python -m pip install --no-cache-dir ${paddle}
@@ -40,8 +39,8 @@ install_requirements() {
 
     python setup.py bdist_wheel > /dev/null
     python -m pip install  dist/p****.whl
-    python -c "from paddlenlp import __version__; print('paddlenlp version:', __version__)" >> ${log_path}/commit_info.txt
-    python -c "import paddlenlp; print('paddlenlp commit:',paddlenlp.version.commit)" >> ${log_path}/commit_info.txt
+    python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
+    python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
 }
 
@@ -69,7 +68,7 @@ print_info() {
         echo -e "\033[31m ${log_path}/unittest_FAIL \033[0m"
         cat ${log_path}/unittest_FAIL.log
         cp ${log_path}/unittest_FAIL.log ${PPNLP_HOME}/upload/unittest_FAIL.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
-        cd ${PPNLP_HOME} && python upload.py ${PPNLP_HOME}/upload 'paddlenlp/PaddleNLP_CI/PaddleNLP-CI-Unittest-GPU'
+        cd ${PPNLP_HOME} && python upload.py ${PPNLP_HOME}/upload 'paddleformers/PaddleFormers_CI/PaddleFormers-CI-Unittest-GPU'
         rm -rf upload/* && cd -
         if [ $1 -eq 124 ]; then
             echo "\033[32m [failed-timeout] Test case execution was terminated after exceeding the ${running_time} min limit."
@@ -107,7 +106,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     --dist loadgroup \
     --retries 1 --retry-delay 1 \
     --timeout 200 --durations 20 --alluredir=result \
-    --cov paddlenlp --cov-report xml:coverage.xml > ${log_path}/unittest.log 2>&1
+    --cov paddleformers --cov-report xml:coverage.xml > ${log_path}/unittest.log 2>&1
     exit_code=$?
     print_info $exit_code unittest
 

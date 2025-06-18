@@ -1,4 +1,4 @@
-## PaddleNLP CI
+## PaddleFormers CI
 
 主要代码结构及说明：
 ```

@@ -33,8 +33,7 @@ from parameterized import parameterized
 from paddleformers.transformers import PretrainedTokenizer
 from paddleformers.transformers.tokenizer_utils import AddedToken, Trie
 from paddleformers.transformers.tokenizer_utils_base import PretrainedTokenizerBase
-
-from ..testing_utils import get_tests_dir
+from tests.testing_utils import get_tests_dir
 
 sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
@@ -93,7 +92,7 @@ class TokenizerTesterMixin:
         else:
             self.tokenizers_list = []
 
-        with open(f"{get_tests_dir()}/sample_text.txt", encoding="utf-8") as f_data:
+        with open(f"{get_tests_dir()}/fixtures/sample_text.txt", encoding="utf-8") as f_data:
             self._data = f_data.read().replace("\n\n", "\n").strip()
 
         self.tmpdirname = tempfile.mkdtemp()
