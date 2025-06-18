@@ -42,9 +42,40 @@ __all__ = [
     "AutoModelForConditionalGeneration",
 ]
 
-MAPPING_NAMES = OrderedDict([])
+MAPPING_NAMES = OrderedDict(
+    [
+        ("Bert", "bert"),
+        ("DeepseekV2", "deepseek_v2"),
+        ("DeepseekV3", "deepseek_v3"),
+        ("Llama", "llama"),
+        ("QWen", "qwen"),
+        ("Qwen2", "qwen2"),
+        ("Qwen3", "qwen3"),
+        ("Qwen2Moe", "qwen2_moe"),
+        ("Qwen3Moe", "qwen3_moe"),
+    ]
+)
 
-MAPPING_TASKS = OrderedDict([])
+MAPPING_TASKS = OrderedDict(
+    [
+        ("Backbone", "AutoBackbone"),
+        ("Model", "AutoModel"),
+        ("ForPretraining", "AutoModelForPretraining"),
+        ("ForSequenceClassification", "AutoModelForSequenceClassification"),
+        ("ForTokenClassification", "AutoModelForTokenClassification"),
+        ("ForQuestionAnswering", "AutoModelForQuestionAnswering"),
+        ("ForMultipleChoice", "AutoModelForMultipleChoice"),
+        ("ForMaskedLM", "AutoModelForMaskedLM"),
+        ("ForCausalLM", "AutoModelForCausalLM"),
+        ("ForCausalLMPipe", "AutoModelForCausalLMPipe"),
+        ("Encoder", "AutoEncoder"),
+        ("Decoder", "AutoDecoder"),
+        ("Generator", "AutoGenerator"),
+        ("Discriminator", "AutoDiscriminator"),
+        ("ForConditionalGeneration", "AutoModelForConditionalGeneration"),
+    ]
+)
+
 
 MODEL_FOR_CAUSAL_LM_MAPPING_NAMES = OrderedDict([])
 
