@@ -31,9 +31,8 @@ from ..datasets import ZeroPaddingIterableDataset
 from ..generation import GenerationConfig
 from ..trainer import TrainerCallback
 from ..trainer.trainer_utils import IterableDatasetShard
-from ..transformers import (
+from ..transformers import (  # ChatGLMv2Tokenizer,
     AutoTokenizer,
-    ChatGLMv2Tokenizer,
     DeepseekV2ForCausalLMPipe,
     DeepseekV3ForCausalLMPipe,
     LlamaForCausalLMPipe,
@@ -384,7 +383,8 @@ def dybatch_preprocess(
                 padding=True,
                 max_length=src_length,
                 # if use chat_template, it will not add special_tokens
-                add_special_tokens=tokenizer.chat_template is None or isinstance(tokenizer, ChatGLMv2Tokenizer),
+                add_special_tokens=tokenizer.chat_template is None,
+                # add_special_tokens=tokenizer.chat_template is None or isinstance(tokenizer, ChatGLMv2Tokenizer),
             )
             input_ids.append(tokens["input_ids"][0])
             position_ids.append(tokens["position_ids"][0])
@@ -443,7 +443,8 @@ def dybatch_preprocess(
                     truncation=truncation,
                     return_attention_mask=return_attention_mask,
                     return_token_type_ids=False,
-                    add_special_tokens=tokenizer.chat_template is None or isinstance(tokenizer, ChatGLMv2Tokenizer),
+                    add_special_tokens=tokenizer.chat_template is None,
+                    # add_special_tokens=tokenizer.chat_template is None or isinstance(tokenizer, ChatGLMv2Tokenizer),
                 )
                 input_ids.append(tokens["input_ids"][0])
                 attention_mask.append(tokens["attention_mask"][0])
@@ -472,7 +473,8 @@ def dybatch_preprocess(
                     max_length=src_length,
                     return_attention_mask=False,
                     return_token_type_ids=False,
-                    add_special_tokens=tokenizer.chat_template is None or isinstance(tokenizer, ChatGLMv2Tokenizer),
+                    add_special_tokens=tokenizer.chat_template is None
+                    # add_special_tokens=tokenizer.chat_template is None or isinstance(tokenizer, ChatGLMv2Tokenizer),
                 )
                 input_ids.append(tokens["input_ids"][0])
 
