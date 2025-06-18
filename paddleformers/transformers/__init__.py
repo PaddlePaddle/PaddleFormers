@@ -50,12 +50,23 @@ except:
     pass
 from .export import export_model
 
+# isort: split
+from .bert.modeling import *
+from .bert.tokenizer import *
+from .bert.configuration import *
 
 # isort: split
-
 from .auto.configuration import *
 from .auto.image_processing import *
 from .auto.modeling import *
 from .auto.processing import *
 from .auto.tokenizer import *
+from .deepseek_v2 import *
+from .deepseek_v3 import *
+from .llama import *
 from .optimization import *
+from .qwen import *
+from .qwen2 import *
+from .qwen2_moe import *
+from .qwen3 import *
+from .qwen3_moe import *
