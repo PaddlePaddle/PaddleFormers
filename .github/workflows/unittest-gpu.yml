@@ -56,7 +56,7 @@ jobs:
           git remote add upstream https://github.com/PaddlePaddle/PaddleHub.git
           git fetch upstream ${BRANCH}
           git merge ${BRANCH}
-          git diff --numstat ${BRANCH} |awk '{print $NF}'
+          git diff --numstat ${BRANCH} -- |awk '{print $NF}'
           git log --pretty=oneline -10
       
       - name: Parse GPU ID From Runner Label
