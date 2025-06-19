@@ -50,7 +50,11 @@ from huggingface_hub import (
 from huggingface_hub.utils import EntryNotFoundError
 
 from ..utils.download import resolve_file_path
-from ..utils.env import CHAT_TEMPLATE_CONFIG_NAME, TOKENIZER_CONFIG_NAME
+from ..utils.env import (
+    CHAT_TEMPLATE_CONFIG_NAME,
+    NONE_CHAT_TEMPLATE,
+    TOKENIZER_CONFIG_NAME,
+)
 from ..utils.import_utils import is_protobuf_available, is_tokenizers_available
 from ..utils.log import logger
 
@@ -1746,6 +1750,8 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
         chat_template = init_kwargs.pop("chat_template", None)
         if chat_template is not None:
             tokenizer.init_chat_template(chat_template)
+        else:
+            tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
 
         special_tokens_map_file = resolved_vocab_files.pop("special_tokens_map_file", None)
         if special_tokens_map_file is not None:
