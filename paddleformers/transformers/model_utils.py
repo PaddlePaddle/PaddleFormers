@@ -2260,7 +2260,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                             origin_loaded_keys,
                             ignore_error=True,
                             base_model_prefix=prefix,
-                            post_quantize=post_quantize,
                         )
                     if post_quantize:
                         # Split -> quantize(Not support mdoel save)
@@ -2623,7 +2622,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             # load pt weights early so that we know which dtype to init the model under
         if not is_sharded and state_dict is None:
             # 4. loading non-sharded ckpt from the state dict
-            # Quantization: Loading non-sharded ckpt does not support saving with merge_tensor_parallel
             if config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model_state.pdparams"):
                 state_dict = cls.convert_tensor_parallel(resolved_archive_file, config)
             elif config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model.safetensors"):
