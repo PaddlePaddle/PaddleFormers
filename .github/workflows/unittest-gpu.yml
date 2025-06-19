@@ -44,8 +44,8 @@ jobs:
           # wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
           # echo "Extracting PaddleFormers.tar.gz"
           # tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
-          git clone --branch=${BRANCH} https://github.com/PaddlePaddle/PaddleHub.git
           source ${{ github.workspace }}/../../../proxy
+          git clone --branch=${BRANCH} https://github.com/PaddlePaddle/PaddleHub.git
           cd PaddleHub
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
@@ -86,7 +86,7 @@ jobs:
             -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
             -v ${{ github.workspace }}:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
-            -v /ssd1/PaddleFormers:/ssd1/PaddleNLP \
+            -v /ssd1/PaddleNLP:/ssd1/PaddleNLP \
             -e BRANCH \
             -e AGILE_COMPILE_BRANCH \
             -e PR_ID \
