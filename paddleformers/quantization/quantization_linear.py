@@ -289,11 +289,20 @@ class QuantizationLinear(nn.Layer):
             "a8w4linear",
             "fp8linear",
         ]:
-            self.quant_weight = self.create_parameter(
-                shape=[out_features // 2, in_features] if self.quant_weight_bit == 4 else [out_features, in_features],
-                dtype="int8",
-                is_bias=False,
-            )
+            if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
+                self.quant_weight = self.create_parameter(
+                    shape=[in_features, out_features],
+                    dtype="int8",
+                    is_bias=False,
+                )
+            else:
+                self.quant_weight = self.create_parameter(
+                    shape=[out_features // 2, in_features]
+                    if self.quant_weight_bit == 4
+                    else [out_features, in_features],
+                    dtype="int8",
+                    is_bias=False,
+                )
             if self.quantization_config.group_size == -1:
                 self.quant_scale = self.create_parameter(
                     shape=[out_features] if self.weight_quantize_algo not in ["fp8linear"] else [1],
@@ -446,13 +455,20 @@ class ColumnParallelQuantizationLinear(nn.Layer):
             "a8w4linear",
             "fp8linear",
         ]:
-            self.quant_weight = self.create_parameter(
-                shape=[self.output_size_per_partition // 2, in_features]
-                if self.quant_dtype == "int4"
-                else [self.output_size_per_partition, in_features],
-                dtype="int8",
-                is_bias=False,
-            )
+            if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
+                self.quant_weight = self.create_parameter(
+                    shape=[in_features, self.output_size_per_partition],
+                    dtype="int8",
+                    is_bias=False,
+                )
+            else:
+                self.quant_weight = self.create_parameter(
+                    shape=[self.output_size_per_partition // 2, in_features]
+                    if self.quant_dtype == "int4"
+                    else [self.output_size_per_partition, in_features],
+                    dtype="int8",
+                    is_bias=False,
+                )
             self.quant_weight.is_distributed = True if self.is_mp else False
             if self.quant_weight.is_distributed:
                 self.quant_weight.split_axis = 0
@@ -590,13 +606,20 @@ class RowParallelQuantizationLinear(nn.Layer):
             "a8w4linear",
             "fp8linear",
         ]:
-            self.quant_weight = self.create_parameter(
-                shape=[out_features // 2, self.input_size_per_partition]
-                if self.quant_dtype == "int4"
-                else [out_features, self.input_size_per_partition],
-                dtype="int8",
-                is_bias=False,
-            )
+            if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
+                self.quant_weight = self.create_parameter(
+                    shape=[self.input_size_per_partition, out_features],
+                    dtype="int8",
+                    is_bias=False,
+                )
+            else:
+                self.quant_weight = self.create_parameter(
+                    shape=[out_features // 2, self.input_size_per_partition]
+                    if self.quant_dtype == "int4"
+                    else [out_features, self.input_size_per_partition],
+                    dtype="int8",
+                    is_bias=False,
+                )
             self.quant_weight.is_distributed = True if self.is_mp else False
             if self.quant_weight.is_distributed:
                 self.quant_weight.split_axis = 1
