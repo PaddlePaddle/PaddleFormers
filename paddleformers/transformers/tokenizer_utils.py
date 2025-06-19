@@ -1933,7 +1933,7 @@ class PretrainedTokenizer(ChatTemplateMixin, PretrainedTokenizerBase):
         sub_texts = []
         current_sub_text = []
         for token in filtered_tokens:
-            if skip_special_tokens and token in self.all_special_ids:
+            if skip_special_tokens and token in self.all_special_tokens:
                 continue
             if token in self.added_tokens_encoder:
                 if current_sub_text:
