@@ -83,7 +83,7 @@ print_info() {
 
 get_diff_TO_case(){
 export FLAGS_enable_CI=false
-for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} |awk '{print $NF}'`;do
+for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
     ext="${file_name##*.}"
     echo "file_name: ${file_name}, ext: ${file_name##*.}"
     
