@@ -3475,15 +3475,18 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
         all_input_ids: List[int],
         prefix_offset: int = 0,
         read_offset: int = 0,
+        skip_special_tokens: bool = False,
     ) -> Tuple[str, int, int]:
         """tokenizer decoding for the streaming generation use case. This method can be overridden for tokenizer that doesn't follow this API"""
         # The prefix text is necessary only to defeat cleanup algorithms in the decode
         # which decide to add a space or not depending on the surrounding ids.
         prefix_text = self.decode(
-            all_input_ids[prefix_offset:read_offset], skip_special_tokens=False, clean_up_tokenization_spaces=False
+            all_input_ids[prefix_offset:read_offset],
+            skip_special_tokens=skip_special_tokens,
+            clean_up_tokenization_spaces=False,
         )
         new_text = self.decode(
-            all_input_ids[prefix_offset:], skip_special_tokens=False, clean_up_tokenization_spaces=False
+            all_input_ids[prefix_offset:], skip_special_tokens=skip_special_tokens, clean_up_tokenization_spaces=False
         )
 
         if len(new_text) > len(prefix_text) and not prefix_text.endswith("�") and not new_text.endswith("�"):
