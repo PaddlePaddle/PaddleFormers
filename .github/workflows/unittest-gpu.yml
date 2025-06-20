@@ -127,9 +127,9 @@ jobs:
       - name: Upload Allure-reports & Logs
         if: always()
         env:
-          home_path: ${{ github.workspace }}/..
-          bos_file: ${{ github.workspace }}/../bos/BosClient.py
-          allure_file: ${{ github.workspace }}/../allure-2.19.0
+          home_path: ${{ github.workspace }}/../../..
+          bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
+          allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -c '
           if [ ! -f "${{ env.bos_file }}" ]; then
@@ -139,7 +139,7 @@ jobs:
           fi
           if [ ! -f "${{ env.allure_file }}" ]; then
             wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
-            unzip ${{ env.home_path }}/allure-2.19.0.zip
+            unzip -q ${{ env.home_path }}/allure-2.19.0.zip
           fi
           cd /workspace/PaddleHub/unittest_logs
           for FILE in /workspace/PaddleHub/unittest_logs/*; do
@@ -148,7 +148,7 @@ jobs:
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${PR_ID}/${COMMIT_ID}/logs/$file"
           done
           cd /workspace/PaddleHub/
-          ${{ env.allure_file }}/bin/allure generate result -o report
+          ${{ env.allure_file }} generate result -o report
           tar -czf products.tar.gz report unittest_logs
           python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${PR_ID}/${COMMIT_ID}/logs
           echo "products: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${PR_ID}/${COMMIT_ID}/logs/products.tar.gz"
