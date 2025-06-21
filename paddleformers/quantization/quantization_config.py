@@ -37,7 +37,7 @@ class QuantizationConfig:
         llm_int8_threshold: The threshold for llm.int8 quantization.
         qlora_weight_double_quant: Whether quant weight scale.
         qlora_weight_blocksize: Block size for weight quantization.
-        qlora_weight_double_quant_block_size: Block size for quant_scale of weight quant_scale.
+        qlora_weight_double_quant_block_size: Block size for weight_scale of weight weight_scale.
         weight_quant_method: The method for weight quantization.
         act_quant_method: The method for activation quantization.
         apply_online_actscale_step: Use online (per-step) activation scales for the first N steps. During these steps, activation scales are also collected to compute their mean for later use.

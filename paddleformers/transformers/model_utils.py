@@ -400,12 +400,16 @@ def _load_part_state_dict(
                 continue
 
             py_safe_slice_ = f.get_slice(key)
-            if quantization_linear_list is not None and key.split(".weight")[0] in quantization_linear_list:
+            if (
+                quantization_linear_list is not None
+                and key.split(".weight")[0] in quantization_linear_list
+                and not key.endswith("_scale")
+            ):
                 # numpy.array -> paddle.tensor
                 weight = paddle.Tensor.__call__(py_safe_slice_[:], zero_copy=True)
                 key_name = key.split(".weight")[0]
                 quant_key_name = key_name + ".quant_weight"
-                quant_scale_name = key_name + ".quant_scale"
+                weight_scale_name = key_name + ".weight_scale"
                 # 16bit -> 4/8bit
                 quant_state_dict = convert_to_weight_quantize_state_dict(
                     state_dict={key: weight},
@@ -420,9 +424,9 @@ def _load_part_state_dict(
                     quant_state_dict[quant_key_name] = tensor_parallel_split_mapping[quant_key_name](
                         quant_state_dict[quant_key_name]
                     )
-                    if quant_scale_name in tensor_parallel_split_mapping:
-                        quant_state_dict[quant_scale_name] = tensor_parallel_split_mapping[quant_scale_name](
-                            quant_state_dict[quant_scale_name]
+                    if weight_scale_name in tensor_parallel_split_mapping:
+                        quant_state_dict[weight_scale_name] = tensor_parallel_split_mapping[weight_scale_name](
+                            quant_state_dict[weight_scale_name]
                         )
                 part_state_dict.update(quant_state_dict)
             else:
@@ -1266,7 +1270,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if predictor_args.mode == "dynamic":
                 ptq_multicards_num = 0
                 if os.path.exists(config.model_name_or_path):
-                    prefix = "act_scales_"
+                    prefix = "activation_scales_"
                     for filename in os.listdir(config.model_name_or_path):
                         if filename.startswith(prefix):
                             ptq_multicards_num += 1
@@ -2179,7 +2183,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         if quantization_linear_list is not None:
             keep_in_fp32_modules = (
-                (keep_in_fp32_modules or []) + ["quant_scale"]
+                (keep_in_fp32_modules or []) + ["weight_scale"]
                 if config.quantization_config.weight_quantize_algo in ["nf4", "fp4"]
                 else keep_in_fp32_modules
             )
