@@ -81,7 +81,7 @@ def add_quant_mapping(name_action_mappings, quantization_config):
             if re.match(pattern, key):
                 weight_quantize_algo = parse_weight_quantize_algo(quantization_config, key)
                 quant_key = key.replace("weight", "quant_weight")
-                quant_scale_key = key.replace("weight", "quant_scale")
+                weight_scale_key = key.replace("weight", "weight_scale")
                 fn = name_action_mappings.pop(key)
                 name_action_mappings[quant_key] = fn
                 if (
@@ -89,7 +89,7 @@ def add_quant_mapping(name_action_mappings, quantization_config):
                     and "is_column" in fn.keywords
                     and fn.keywords["is_column"]
                 ):
-                    name_action_mappings[quant_scale_key] = partial(
+                    name_action_mappings[weight_scale_key] = partial(
                         fn.func, *fn.args, **{**fn.keywords, "is_column": True}
                     )
 

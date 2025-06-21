@@ -38,11 +38,11 @@ class QuantizationLoRABaseLinear(nn.Layer):
         self.quant_dtype = layer.quant_dtype
         self.quant_weight = layer.quant_weight
         if self.weight_quantize_algo in ["fp4", "nf4"] and self.quantization_config.qlora_weight_double_quant:
-            self.qquant_scale = layer.qquant_scale
-            self.double_quant_scale = layer.double_quant_scale
-            self.quant_scale_offset = layer.quant_scale_offset
+            self.qweight_scale = layer.qweight_scale
+            self.double_weight_scale = layer.double_weight_scale
+            self.weight_scale_offset = layer.weight_scale_offset
         else:
-            self.quant_scale = layer.quant_scale
+            self.weight_scale = layer.weight_scale
         self.bias = layer.bias
 
         # LoRA related parameters
@@ -72,8 +72,8 @@ class QuantizationLoRABaseLinear(nn.Layer):
             quantization_config=self.quantization_config,
             weight_quantize_algo=self.weight_quantize_algo,
             dtype=self._dtype,
-            quant_scale=self.quant_scale,
-            quant_state=(self.qquant_scale, self.double_quant_scale, self.quant_scale_offset)
+            weight_scale=self.weight_scale,
+            quant_state=(self.qweight_scale, self.double_weight_scale, self.weight_scale_offset)
             if (self.weight_quantize_algo in ["fp4", "nf4"] and self.quantization_config.qlora_weight_double_quant)
             else None,
             bias=self.bias if add_bias else None,

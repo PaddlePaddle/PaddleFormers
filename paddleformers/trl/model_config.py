@@ -125,15 +125,15 @@ class ModelConfig:
     )
     qlora_weight_blocksize: int = field(
         default=64,
-        metadata={"help": "Block size for weight quantization(Only available for nf4 or fp4 quant_scale.)."},
+        metadata={"help": "Block size for weight quantization(Only available for nf4 or fp4 weight_scale.)."},
     )
     qlora_weight_double_quant: bool = field(
-        default=False, metadata={"help": "Whether apply double quant(Only available for nf4 or fp4 quant_scale.)."}
+        default=False, metadata={"help": "Whether apply double quant(Only available for nf4 or fp4 weight_scale.)."}
     )
     qlora_weight_double_quant_block_size: int = field(
         default=256,
         metadata={
-            "help": "Block size for quant_scale of weight quant_scale(Only available for nf4 or fp4 quant_scale.)"
+            "help": "Block size for weight_scale of weight weight_scale(Only available for nf4 or fp4 weight_scale.)"
         },
     )
     apply_hadamard: bool = field(default=False, metadata={"help": "Whether to apply hadamard"})

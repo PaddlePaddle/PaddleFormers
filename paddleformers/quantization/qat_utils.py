@@ -51,7 +51,7 @@ def quantize(
     quantization_config,
     side="right",
     apply_hadamard=False,
-    act_scale=None,
+    activation_scale=None,
     state=0,
     training=False,
     group=None,
@@ -66,20 +66,20 @@ def quantize(
     else:
         qmin, qmax = QMIN_QMAX_MAPPING[weight_quantize_algo + "_" + tensor_type]
     if tensor_type == "activation":
-        if act_scale is not None:
+        if activation_scale is not None:
             if training:
                 scale = (paddle.max(paddle.abs(target_x)) / qmax + quantization_config.scale_epsilon).reshape([1])
                 if group is not None:
                     paddle.distributed.all_reduce(scale, op=paddle.distributed.ReduceOp.MAX, group=group, sync_op=True)
                 if state < quantization_config.apply_online_actscale_step:
-                    act_scale[:] = (state * act_scale + scale) / (state + 1)
+                    activation_scale[:] = (state * activation_scale + scale) / (state + 1)
                 else:
                     scale = (
                         1 - quantization_config.actscale_moving_rate
-                    ) * act_scale + quantization_config.actscale_moving_rate * scale
-                    act_scale[:] = scale
+                    ) * activation_scale + quantization_config.actscale_moving_rate * scale
+                    activation_scale[:] = scale
             else:
-                scale = act_scale
+                scale = activation_scale
         else:
             scale = (paddle.max(paddle.abs(target_x)) / qmax + quantization_config.scale_epsilon).reshape([1])
         if weight_quantize_algo in ["a8w8linear", "a8w4linear"]:
@@ -144,7 +144,7 @@ def int8_forward(
     quantization_config=None,
     state=0,
     training=False,
-    act_scale=None,
+    activation_scale=None,
     group=None,
 ):
     quant_x, scale_x = quantize(
@@ -154,7 +154,7 @@ def int8_forward(
         quantization_config=quantization_config,
         side="right",
         apply_hadamard=quantization_config.apply_hadamard,
-        act_scale=act_scale,
+        activation_scale=activation_scale,
         state=state,
         training=training,
         group=group,
@@ -166,11 +166,11 @@ def int8_forward(
     return out, quant_x, scale_x
 
 
-def int8_backward(ctx, x, grad_output, quant_weight, quant_scale, quant_x, x_scale):
+def int8_backward(ctx, x, grad_output, quant_weight, weight_scale, quant_x, x_scale):
     if not ctx.x_stop_gradient:
         qdq_weight = dequantize(
             quant_weight,
-            quant_scale,
+            weight_scale,
             "weight",
             ctx.weight_quantize_algo,
             ctx.quantization_config,
@@ -204,7 +204,7 @@ def fp8_forward(
     quantization_config=None,
     state=0,
     training=False,
-    act_scale=None,
+    activation_scale=None,
     group=None,
 ):
     x_fp8, x_scale = quantize(
@@ -214,14 +214,15 @@ def fp8_forward(
         quantization_config,
         side="right",
         apply_hadamard=quantization_config.apply_hadamard,
-        act_scale=act_scale,
+        activation_scale=activation_scale,
         state=state,
         training=training,
         group=group,
     )
     w_fp8 = w_fp8.view(quantization_config.fp8_format["weight"]).T
+    origin_shape = x_fp8.shape[:-1]
     out = fp8_fp8_half_gemm_fused(
-        x_fp8,
+        x_fp8.reshape([-1, x_fp8.shape[-1]]),
         w_fp8,
         transpose_x=False,
         transpose_y=True,
@@ -229,10 +230,10 @@ def fp8_forward(
         scale=x_scale * w_scale,
         output_dtype=dtype,
     )
-    return out, x_fp8, x_scale
+    return out.reshape(origin_shape + out.shape[-1:]), x_fp8, x_scale
 
 
-def fp8_backward(ctx, x, grad_output, quant_weight, quant_scale, quant_x, x_scale):
+def fp8_backward(ctx, x, grad_output, quant_weight, weight_scale, quant_x, x_scale):
     if not ctx.x_stop_gradient:
         if ctx.quantization_config.quant_input_grad:
             grad_output_fp8, grad_output_scale = quantize(
@@ -247,7 +248,7 @@ def fp8_backward(ctx, x, grad_output, quant_weight, quant_scale, quant_x, x_scal
             if SUPPORT_TE:
                 grad_output_shape = grad_output_fp8.shape
                 grad_output_fp8 = grad_output_fp8.view((-1, grad_output_fp8.shape[-1]))
-                fwd_scales = paddle.concat([x_scale.astype("float32"), quant_scale.astype("float32")])
+                fwd_scales = paddle.concat([x_scale.astype("float32"), weight_scale.astype("float32")])
                 bwd_scales = grad_output_scale[None].astype("float32")
                 input_grad, _ = fp8_gemm(
                     A=quant_weight,
@@ -265,14 +266,14 @@ def fp8_backward(ctx, x, grad_output, quant_weight, quant_scale, quant_x, x_scal
                 input_grad = input_grad.view((*grad_output_shape[:-1], -1))
             else:
                 grad_output_ = grad_output_fp8.astype(ctx.dtype) * grad_output_scale
-                weight_ = quant_weight.astype(ctx.dtype) * quant_scale
+                weight_ = quant_weight.astype(ctx.dtype) * weight_scale
                 input_grad = paddle.matmul(grad_output_, weight_).astype(ctx.dtype)
             if ctx.quantization_config.apply_hadamard:
                 input_grad = apply_hadamard_matmul(input_grad, "right", ctx.quantization_config.hadamard_block_size)
         else:
             qdq_weight = dequantize(
                 quant_weight,
-                quant_scale,
+                weight_scale,
                 "weight",
                 ctx.weight_quantize_algo,
                 ctx.quantization_config,
@@ -295,7 +296,7 @@ def fp8_backward(ctx, x, grad_output, quant_weight, quant_scale, quant_x, x_scal
             if SUPPORT_TE:
                 quant_x = quant_x.view((-1, quant_x.shape[-1]))
                 grad_output_fp8 = grad_output_fp8.view((-1, grad_output_fp8.shape[-1]))
-                fwd_scales = paddle.concat([x_scale.astype("float32"), quant_scale.astype("float32")])
+                fwd_scales = paddle.concat([x_scale.astype("float32"), weight_scale.astype("float32")])
                 bwd_scales = grad_output_scale[None].astype("float32")
                 # FP8 gemm need k % 16 = 0
                 ALIGNMENT_SIZE = 16
@@ -361,12 +362,12 @@ class QATFunc(PyLayer):
         x,
         quant_weight,
         bias,
-        quant_scale,
+        weight_scale,
         quantization_config,
         dtype,
         state,
         training,
-        act_scale,
+        activation_scale,
         weight_quantize_algo,
         group,
     ):
@@ -375,27 +376,27 @@ class QATFunc(PyLayer):
             output, quant_x, x_scale = fp8_forward(
                 x,
                 quant_weight,
-                w_scale=quant_scale,
+                w_scale=weight_scale,
                 weight_quantize_algo=weight_quantize_algo,
                 bias=bias,
                 dtype=dtype,
                 quantization_config=quantization_config,
                 state=state,
                 training=training,
-                act_scale=act_scale,
+                activation_scale=activation_scale,
                 group=group,
             )
         else:
             output, quant_x, x_scale = int8_forward(
                 x,
                 quant_w=quant_weight,
-                scale_w=quant_scale,
+                scale_w=weight_scale,
                 weight_quantize_algo=weight_quantize_algo,
                 bias=bias,
                 quantization_config=quantization_config,
                 state=state,
                 training=training,
-                act_scale=act_scale,
+                activation_scale=activation_scale,
                 group=group,
             )
         ctx.quantization_config = quantization_config
@@ -408,7 +409,7 @@ class QATFunc(PyLayer):
             x if not quantization_config.quant_weight_grad else None,
             quant_weight,
             bias,
-            quant_scale,
+            weight_scale,
             quant_x if quantization_config.quant_weight_grad else None,
             x_scale if quantization_config.quant_weight_grad else None,
         )
@@ -417,12 +418,12 @@ class QATFunc(PyLayer):
 
     @staticmethod
     def backward(ctx, grad_output):
-        x, quant_weight, bias, quant_scale, quant_x, x_scale = ctx.saved_tensor()
+        x, quant_weight, bias, weight_scale, quant_x, x_scale = ctx.saved_tensor()
 
         if ctx.quantization_config.weight_quantize_algo in ["fp8linear"]:
-            input_grad, weight_grad = fp8_backward(ctx, x, grad_output, quant_weight, quant_scale, quant_x, x_scale)
+            input_grad, weight_grad = fp8_backward(ctx, x, grad_output, quant_weight, weight_scale, quant_x, x_scale)
         else:
-            input_grad, weight_grad = int8_backward(ctx, x, grad_output, quant_weight, quant_scale, quant_x, x_scale)
+            input_grad, weight_grad = int8_backward(ctx, x, grad_output, quant_weight, weight_scale, quant_x, x_scale)
 
         if not ctx.b_stop_gradient:
             bias_grad = grad_output.sum(axis=[0, 1])

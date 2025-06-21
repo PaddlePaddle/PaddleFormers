@@ -147,17 +147,17 @@ def convert_to_weight_quantize_state_dict(state_dict, name, quantization_config,
 
     weight_name = name + ".weight"
     quant_weight_name = name + ".quant_weight"
-    quant_scale_name = name + ".quant_scale"
-    act_scale_name = name + ".act_scale"
+    weight_scale_name = name + ".weight_scale"
+    activation_scale_name = name + ".activation_scale"
 
-    if quant_weight_name in state_dict and quant_scale_name in state_dict:
+    if quant_weight_name in state_dict and weight_scale_name in state_dict:
         return state_dict
     if weight_name in state_dict:
         # gpu weight_quantize will fix in future
         target_weight = state_dict.pop(weight_name).cast(dtype).cuda()
 
         if weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
-            quant_weight, quant_scale = quantize(
+            quant_weight, weight_scale = quantize(
                 target_weight,
                 weight_quantize_algo,
                 "weight",
@@ -165,17 +165,17 @@ def convert_to_weight_quantize_state_dict(state_dict, name, quantization_config,
                 side="left",
                 apply_hadamard=quantization_config.apply_hadamard,
             )
-            act_scale = paddle.ones([1], dtype=dtype).cuda()
-            act_scale.stop_gradient = True
-            state_dict[act_scale_name] = act_scale
+            activation_scale = paddle.ones([1], dtype=dtype).cuda()
+            activation_scale.stop_gradient = True
+            state_dict[activation_scale_name] = activation_scale
         else:
-            quant_weight, quant_scale = weight_quantize(
+            quant_weight, weight_scale = weight_quantize(
                 x=target_weight,
                 algo=weight_quantize_algo,
                 group_size=quantization_config.group_size,
             )
         state_dict[quant_weight_name] = quant_weight
-        state_dict[quant_scale_name] = quant_scale
+        state_dict[weight_scale_name] = weight_scale
         del target_weight
     return state_dict
 
@@ -192,13 +192,13 @@ def convert_to_qlora_state_dict(state_dict, name, quantization_config, dtype, we
     quant_weight_name = name + ".quant_weight"
     quant_name_list = [quant_weight_name]
     if not quantization_config.qlora_weight_double_quant:
-        quant_scale_name = name + ".quant_scale"
-        quant_name_list += [quant_scale_name]
+        weight_scale_name = name + ".weight_scale"
+        quant_name_list += [weight_scale_name]
     else:
-        qquant_scale_name = name + ".qquant_scale"
-        double_quant_scale_name = name + ".double_quant_scale"
+        qweight_scale_name = name + ".qweight_scale"
+        double_weight_scale_name = name + ".double_weight_scale"
         quant_sacle_offset_name = name + ".quant_sacle_offset"
-        quant_name_list += [qquant_scale_name, double_quant_scale_name, quant_sacle_offset_name]
+        quant_name_list += [qweight_scale_name, double_weight_scale_name, quant_sacle_offset_name]
 
     if all(quant_name in state_dict for quant_name in quant_name_list):
         return state_dict
@@ -248,31 +248,31 @@ def update_loaded_state_dict_keys(state_dict, quantization_linear_list, quantiza
     for name in quantization_linear_list:
         weight_name = name + ".weight"
         quant_weight_name = name + ".quant_weight"
-        quant_scale_name = name + ".quant_scale"
-        act_scale_name = name + ".act_scale"
-        qquant_scale_name = name + ".qquant_scale"
-        double_quant_scale_name = name + ".double_quant_scale"
+        weight_scale_name = name + ".weight_scale"
+        activation_scale_name = name + ".activation_scale"
+        qweight_scale_name = name + ".qweight_scale"
+        double_weight_scale_name = name + ".double_weight_scale"
         quant_sacle_offset_name = name + ".quant_sacle_offset"
 
-        if quant_weight_name in state_dict and quant_scale_name in state_dict:
+        if quant_weight_name in state_dict and weight_scale_name in state_dict:
             continue
         elif weight_name in state_dict:
             state_dict.remove(weight_name)
             state_dict.append(quant_weight_name)
             if quantization_config.qlora_weight_double_quant:
-                state_dict.append(qquant_scale_name)
-                state_dict.append(double_quant_scale_name)
+                state_dict.append(qweight_scale_name)
+                state_dict.append(double_weight_scale_name)
                 state_dict.append(quant_sacle_offset_name)
             else:
-                state_dict.append(quant_scale_name)
+                state_dict.append(weight_scale_name)
                 weight_quantize_algo = parse_weight_quantize_algo(quantization_config, name)
                 if weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
-                    state_dict.append(act_scale_name)
+                    state_dict.append(activation_scale_name)
 
         else:
             if not ignore_warning:
                 logger.warning(
-                    f"Cannot find {weight_name} in state_dict or {quant_weight_name}  and {quant_scale_name} in state_dict"
+                    f"Cannot find {weight_name} in state_dict or {quant_weight_name}  and {weight_scale_name} in state_dict"
                 )
 
     return state_dict

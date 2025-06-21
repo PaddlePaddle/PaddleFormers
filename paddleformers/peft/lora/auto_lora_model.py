@@ -390,12 +390,12 @@ class LoRAAutoModel(nn.Layer):
             )
         if getattr(lora_module, "quant_weight", None) is not None:
             lora_module.quant_weight = module.quant_weight
-            if getattr(lora_module, "quant_scale", None) is not None:
-                lora_module.quant_scale = module.quant_scale
-            if getattr(lora_module, "qquant_scale", None) is not None:
-                lora_module.qquant_scale = module.qquant_scale
-            if getattr(lora_module, "double_quant_scale", None) is not None:
-                lora_module.double_quant_scale = module.double_quant_scale
+            if getattr(lora_module, "weight_scale", None) is not None:
+                lora_module.weight_scale = module.weight_scale
+            if getattr(lora_module, "qweight_scale", None) is not None:
+                lora_module.qweight_scale = module.qweight_scale
+            if getattr(lora_module, "double_weight_scale", None) is not None:
+                lora_module.double_weight_scale = module.double_weight_scale
             if getattr(lora_module, "quant_sacle_offset", None) is not None:
                 lora_module.quant_sacle_offset = module.quant_sacle_offset
         else:

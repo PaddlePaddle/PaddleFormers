@@ -165,10 +165,10 @@ class AdamWMini(AdamW):
 class AdamWCustom(AdamW):
     def __init__(self, quantization_config, tensorwise_offload_optimizer, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.quant_scale_mapping = {}
+        self.weight_scale_mapping = {}
         for p in self._param_groups:
             if "quantization_linear" in p.name and "w_1" in p.name:
-                self.quant_scale_mapping[p.name.replace("w_1", "w_0")] = p
+                self.weight_scale_mapping[p.name.replace("w_1", "w_0")] = p
         self.quantization_config = quantization_config
         self._hcg = fleet.get_hybrid_communicate_group()
         self.mp_group = self._hcg.get_model_parallel_group()
@@ -212,8 +212,8 @@ class AdamWCustom(AdamW):
             if self._multi_precision and self._is_dtype_fp16_or_bf16(p.dtype):
                 master_p = self._create_master_weight(p)
                 if self._use_lowprecision_moment:
-                    if p.name in self.quant_scale_mapping:
-                        p_scale = self.quant_scale_mapping[p.name]
+                    if p.name in self.weight_scale_mapping:
+                        p_scale = self.weight_scale_mapping[p.name]
                         if str(p_scale.dtype) == "paddle.float16":
                             moment_dtype = core.VarDesc.VarType.FP16
                         elif str(p_scale.dtype) == "paddle.bfloat16":
@@ -242,12 +242,12 @@ class AdamWCustom(AdamW):
             var = self._master_weights[param.name]
         else:
             var_name = self._gen_master_weight_var_name(param)
-            if param.name in self.quant_scale_mapping:
-                quant_scale = self.quant_scale_mapping[param.name]
+            if param.name in self.weight_scale_mapping:
+                weight_scale = self.weight_scale_mapping[param.name]
                 if self.quantization_config.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
                     var = dequantize(
                         param,
-                        quant_scale,
+                        weight_scale,
                         "weight",
                         self.quantization_config.weight_quantize_algo,
                         self.quantization_config,
@@ -300,10 +300,10 @@ class AdamWCustom(AdamW):
         beta2_pow_acc = self._get_accumulator_master(self._beta2_pow_acc_str, param_and_grad[0])
         find_master = self._multi_precision and self._is_dtype_fp16_or_bf16(param_and_grad[0].dtype)
         master_weight = self._master_weights[param_and_grad[0].name] if find_master else None
-        if param.name in self.quant_scale_mapping:
-            quant_scale = self.quant_scale_mapping[param.name]
+        if param.name in self.weight_scale_mapping:
+            weight_scale = self.weight_scale_mapping[param.name]
         else:
-            quant_scale = None
+            weight_scale = None
         lr = self._create_param_lr(param_and_grad)
         # create the adamw optimize op
         if in_dynamic_or_pir_mode():
@@ -313,7 +313,7 @@ class AdamWCustom(AdamW):
             _beta2 = self._beta2 if not isinstance(self._beta2, Variable) else self._beta2.item(0)
 
             found_inf = self._get_auxiliary_var("found_inf") if in_pir_mode() else None
-            skip_update_param = quant_scale is not None
+            skip_update_param = weight_scale is not None
             apply_adamw = self.adamw_custom if adamw_triton is None else adamw_triton
             apply_adamw(
                 param_and_grad[0],
@@ -342,8 +342,8 @@ class AdamWCustom(AdamW):
                         group = None
                     else:
                         group = self.mp_group
-                    param[:], quant_scale[:] = quantize(
-                        x=master_weight.astype(quant_scale.dtype),
+                    param[:], weight_scale[:] = quantize(
+                        x=master_weight.astype(weight_scale.dtype),
                         weight_quantize_algo=self.quantization_config.weight_quantize_algo,
                         tensor_type="weight",
                         quantization_config=self.quantization_config,

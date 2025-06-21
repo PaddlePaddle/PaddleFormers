@@ -50,7 +50,7 @@ def quant_weight_forward(
     x,
     quant_weight,
     bias,
-    quant_scale,
+    weight_scale,
     quant_state,
     quant_dtype,
     quantization_config,
@@ -62,18 +62,18 @@ def quant_weight_forward(
             x=x,
             weight=quant_weight,
             bias=bias,
-            weight_scale=quant_scale,
+            weight_scale=weight_scale,
             weight_dtype=quant_dtype,
             group_size=quantization_config.group_size,
         )
     elif weight_quantize_algo in ["llm.int8"]:
-        output = llm_int8_linear(x, quant_weight, bias, quant_scale, quantization_config.llm_int8_threshold)
+        output = llm_int8_linear(x, quant_weight, bias, weight_scale, quantization_config.llm_int8_threshold)
     elif weight_quantize_algo in ["fp4", "nf4"]:
         output = qlora_weight_linear(
             x=x,
             quant_weight=quant_weight,
             dtype=dtype,
-            state=quant_state if quantization_config.qlora_weight_double_quant else quant_scale,
+            state=quant_state if quantization_config.qlora_weight_double_quant else weight_scale,
             quant_algo=weight_quantize_algo,
             double_quant=quantization_config.qlora_weight_double_quant,
             block_size=quantization_config.qlora_weight_blocksize,
@@ -89,14 +89,14 @@ def dequant_weight(
     quantization_config,
     weight_quantize_algo,
     dtype,
-    quant_scale,
+    weight_scale,
     quant_state,
     input_shape,
 ):
     if weight_quantize_algo in ["weight_only_int8", "weight_only_int4", "llm.int8"]:
         quant_dequant_weight = weight_dequantize(
             x=quant_weight,
-            scale=quant_scale,
+            scale=weight_scale,
             algo=weight_quantize_algo,
             out_dtype=dtype,
             group_size=quantization_config.group_size,
@@ -106,7 +106,7 @@ def dequant_weight(
             qlora_weight_dequantize(
                 quant_weight=quant_weight,
                 quant_algo=weight_quantize_algo,
-                state=quant_state if quantization_config.qlora_weight_double_quant else quant_scale,
+                state=quant_state if quantization_config.qlora_weight_double_quant else weight_scale,
                 double_quant=quantization_config.qlora_weight_double_quant,
                 block_size=quantization_config.qlora_weight_blocksize,
                 double_quant_block_size=quantization_config.qlora_weight_double_quant_block_size,
@@ -124,7 +124,7 @@ class QuantizationLinearFunc(PyLayer):
         x,
         quant_weight,
         bias,
-        quant_scale,
+        weight_scale,
         quant_state,
         quant_dtype,
         quantization_config,
@@ -136,7 +136,7 @@ class QuantizationLinearFunc(PyLayer):
             x=x,
             quant_weight=quant_weight,
             bias=bias,
-            quant_scale=quant_scale,
+            weight_scale=weight_scale,
             quant_state=quant_state,
             quant_dtype=quant_dtype,
             quantization_config=quantization_config,
@@ -148,20 +148,20 @@ class QuantizationLinearFunc(PyLayer):
         ctx.weight_quantize_algo = weight_quantize_algo
         ctx.dtype = dtype
         if ctx.weight_quantize_algo in ["fp4", "nf4"] and ctx.quantization_config.qlora_weight_double_quant:
-            qquant_scale, double_quant_scale, quant_scale_offset = quant_state
-            ctx.save_for_backward(x, quant_weight, bias, qquant_scale, double_quant_scale, quant_scale_offset)
+            qweight_scale, double_weight_scale, weight_scale_offset = quant_state
+            ctx.save_for_backward(x, quant_weight, bias, qweight_scale, double_weight_scale, weight_scale_offset)
         else:
-            ctx.save_for_backward(x, quant_weight, bias, quant_scale)
+            ctx.save_for_backward(x, quant_weight, bias, weight_scale)
         return output
 
     @staticmethod
     def backward(ctx, grad_output):
         if ctx.weight_quantize_algo in ["fp4", "nf4"] and ctx.quantization_config.qlora_weight_double_quant:
-            x, quant_weight, bias, qquant_scale, double_quant_scale, quant_scale_offset = ctx.saved_tensor()
-            quant_state = (qquant_scale, double_quant_scale, quant_scale_offset)
-            quant_scale = None
+            x, quant_weight, bias, qweight_scale, double_weight_scale, weight_scale_offset = ctx.saved_tensor()
+            quant_state = (qweight_scale, double_weight_scale, weight_scale_offset)
+            weight_scale = None
         else:
-            x, quant_weight, bias, quant_scale = ctx.saved_tensor()
+            x, quant_weight, bias, weight_scale = ctx.saved_tensor()
             quant_state = None
 
         qdq_weight = dequant_weight(
@@ -169,7 +169,7 @@ class QuantizationLinearFunc(PyLayer):
             quantization_config=ctx.quantization_config,
             weight_quantize_algo=ctx.weight_quantize_algo,
             dtype=ctx.dtype,
-            quant_scale=quant_scale,
+            weight_scale=weight_scale,
             quant_state=quant_state,
             input_shape=x.shape,
         )
@@ -204,25 +204,25 @@ def quant_weight_linear(
     quantization_config,
     weight_quantize_algo,
     dtype,
-    quant_scale=None,
+    weight_scale=None,
     quant_state=None,
     bias=None,
     act_state=None,
 ):
     if weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
 
-        state, training, act_scale, group = act_state
+        state, training, activation_scale, group = act_state
 
         return QATFunc.apply(
             x,
             quant_weight,
             bias,
-            quant_scale,
+            weight_scale,
             quantization_config,
             dtype,
             state,
             training,
-            act_scale,
+            activation_scale,
             weight_quantize_algo,
             group,
         )
@@ -231,7 +231,7 @@ def quant_weight_linear(
             x,
             quant_weight,
             bias,
-            quant_scale,
+            weight_scale,
             quant_state,
             quant_dtype,
             quantization_config,
@@ -240,7 +240,7 @@ def quant_weight_linear(
         )
 
 
-def get_act_scale_group(is_row=False):
+def get_activation_scale_group(is_row=False):
     if paddle.distributed.is_initialized():
         if getattr(infohub, "scale_group") is None:
             hcg = fleet.get_hybrid_communicate_group()
@@ -304,21 +304,21 @@ class QuantizationLinear(nn.Layer):
                     is_bias=False,
                 )
             if self.quantization_config.group_size == -1:
-                self.quant_scale = self.create_parameter(
+                self.weight_scale = self.create_parameter(
                     shape=[out_features] if self.weight_quantize_algo not in ["fp8linear"] else [1],
                     dtype=self._dtype,
                     is_bias=False,
                 )
-                self.quant_scale.stop_gradient = True
+                self.weight_scale.stop_gradient = True
             else:
                 # TODO(lugimzzz): support groupwise in next PR
                 raise NotImplementedError("Not yet support grouwise weightonly quantization.")
             if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
-                self.act_scale = self.create_parameter(
+                self.activation_scale = self.create_parameter(
                     shape=[1], dtype=self._dtype, is_bias=False, default_initializer=nn.initializer.Constant(value=0.0)
                 )
-                self.act_scale.stop_gradient = True
-                self.group = get_act_scale_group()
+                self.activation_scale.stop_gradient = True
+                self.group = get_activation_scale_group()
 
         elif self.weight_quantize_algo in ["fp4", "nf4"]:
             if qlora_weight_linear is None:
@@ -335,14 +335,14 @@ class QuantizationLinear(nn.Layer):
                 is_bias=False,
             )
             if self.quantization_config.qlora_weight_double_quant:
-                # quantized quant_scale
-                self.qquant_scale = self.create_parameter(
+                # quantized weight_scale
+                self.qweight_scale = self.create_parameter(
                     shape=[in_features * out_features // self.quantization_config.qlora_weight_blocksize],
                     dtype="uint8",
                     is_bias=False,
                 )
-                # double quant_scale: quant_scale of quantized quant_scale
-                self.double_quant_scale = self.create_parameter(
+                # double weight_scale: weight_scale of quantized weight_scale
+                self.double_weight_scale = self.create_parameter(
                     shape=[
                         in_features
                         * out_features
@@ -352,13 +352,13 @@ class QuantizationLinear(nn.Layer):
                     dtype="float32",
                     is_bias=False,
                 )
-                self.quant_scale_offset = self.create_parameter(
+                self.weight_scale_offset = self.create_parameter(
                     shape=[],
                     dtype="float32",
                     is_bias=False,
                 )
             else:
-                self.quant_scale = self.create_parameter(
+                self.weight_scale = self.create_parameter(
                     shape=[in_features * out_features // self.quantization_config.qlora_weight_blocksize],
                     dtype="float32",
                     is_bias=False,
@@ -388,12 +388,12 @@ class QuantizationLinear(nn.Layer):
             quantization_config=self.quantization_config,
             weight_quantize_algo=self.weight_quantize_algo,
             dtype=self._dtype,
-            quant_scale=self.quant_scale,
-            quant_state=(self.qquant_scale, self.double_quant_scale, self.quant_scale_offset)
+            weight_scale=self.weight_scale,
+            quant_state=(self.qweight_scale, self.double_weight_scale, self.weight_scale_offset)
             if (self.weight_quantize_algo in ["fp4", "nf4"] and self.quantization_config.qlora_weight_double_quant)
             else None,
             bias=self.bias,
-            act_state=(self.state, self.training, self.act_scale, self.group)
+            act_state=(self.state, self.training, self.activation_scale, self.group)
             if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]
             else None,
         )
@@ -474,28 +474,28 @@ class ColumnParallelQuantizationLinear(nn.Layer):
                 self.quant_weight.split_axis = 0
 
             if self.quantization_config.group_size == -1:
-                self.quant_scale = self.create_parameter(
+                self.weight_scale = self.create_parameter(
                     shape=[self.output_size_per_partition] if self.weight_quantize_algo not in ["fp8linear"] else [1],
                     dtype=self._dtype,
                     is_bias=False,
                 )
-                self.quant_scale.stop_gradient = True
+                self.weight_scale.stop_gradient = True
                 if self.weight_quantize_algo in ["fp8linear", "a8w4linear", "a8w8linear"]:
-                    self.quant_scale.is_distributed = False
+                    self.weight_scale.is_distributed = False
                 else:
-                    self.quant_scale.is_distributed = True if self.is_mp else False
-                if self.quant_scale.is_distributed:
-                    self.quant_scale.split_axis = 0
+                    self.weight_scale.is_distributed = True if self.is_mp else False
+                if self.weight_scale.is_distributed:
+                    self.weight_scale.split_axis = 0
             else:
                 # TODO(lugimzzz): support groupwise in next PR
                 raise NotImplementedError("Not yet support grouwise weightonly quantization.")
             if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
-                self.act_scale = self.create_parameter(
+                self.activation_scale = self.create_parameter(
                     shape=[1], dtype=self._dtype, is_bias=False, default_initializer=nn.initializer.Constant(value=0.0)
                 )
-                self.act_scale.is_distributed = False
-                self.act_scale.stop_gradient = True
-                self.group = get_act_scale_group()
+                self.activation_scale.is_distributed = False
+                self.activation_scale.stop_gradient = True
+                self.group = get_activation_scale_group()
         else:
             raise NotImplementedError(f"Not yet support weight_quantize_algo: {self.weight_quantize_algo}")
         if bias_attr is False:
@@ -532,12 +532,12 @@ class ColumnParallelQuantizationLinear(nn.Layer):
             quantization_config=self.quantization_config,
             weight_quantize_algo=self.weight_quantize_algo,
             dtype=self._dtype,
-            quant_scale=self.quant_scale,
-            quant_state=(self.qquant_scale, self.double_quant_scale, self.quant_scale_offset)
+            weight_scale=self.weight_scale,
+            quant_state=(self.qweight_scale, self.double_weight_scale, self.weight_scale_offset)
             if (self.weight_quantize_algo in ["fp4", "nf4"] and self.quantization_config.qlora_weight_double_quant)
             else None,
             bias=self.bias,
-            act_state=(self.state, self.training, self.act_scale, self.group)
+            act_state=(self.state, self.training, self.activation_scale, self.group)
             if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]
             else None,
         )
@@ -625,28 +625,28 @@ class RowParallelQuantizationLinear(nn.Layer):
                 self.quant_weight.split_axis = 1
 
             if self.quantization_config.group_size == -1:
-                self.quant_scale = self.create_parameter(
+                self.weight_scale = self.create_parameter(
                     shape=[out_features] if self.weight_quantize_algo not in ["fp8linear"] else [1],
                     dtype=self._dtype,
                     is_bias=False,
                 )
-                self.quant_scale.stop_gradient = True
+                self.weight_scale.stop_gradient = True
                 if self.weight_quantize_algo in ["fp8linear", "a8w4linear", "a8w8linear"]:
-                    self.quant_scale.is_distributed = False
+                    self.weight_scale.is_distributed = False
                 else:
-                    self.quant_scale.is_distributed = True if self.is_mp else False
-                if self.quant_scale.is_distributed:
-                    self.quant_scale.split_axis = 0
+                    self.weight_scale.is_distributed = True if self.is_mp else False
+                if self.weight_scale.is_distributed:
+                    self.weight_scale.split_axis = 0
             else:
                 # TODO(lugimzzz): support groupwise in next PR
                 raise NotImplementedError("Not yet support grouwise weightonly quantization.")
             if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
-                self.act_scale = self.create_parameter(
+                self.activation_scale = self.create_parameter(
                     shape=[1], dtype=self._dtype, is_bias=False, default_initializer=nn.initializer.Constant(value=0.0)
                 )
-                self.act_scale.is_distributed = False
-                self.act_scale.stop_gradient = True
-                self.group = get_act_scale_group(is_row=True)
+                self.activation_scale.is_distributed = False
+                self.activation_scale.stop_gradient = True
+                self.group = get_activation_scale_group(is_row=True)
         else:
             raise NotImplementedError(f"Not yet support weight_quantize_algo: {self.weight_quantize_algo}")
 
@@ -678,12 +678,12 @@ class RowParallelQuantizationLinear(nn.Layer):
                 quantization_config=self.quantization_config,
                 weight_quantize_algo=self.weight_quantize_algo,
                 dtype=self._dtype,
-                quant_scale=self.quant_scale,
-                quant_state=(self.qquant_scale, self.double_quant_scale, self.quant_scale_offset)
+                weight_scale=self.weight_scale,
+                quant_state=(self.qweight_scale, self.double_weight_scale, self.weight_scale_offset)
                 if (self.weight_quantize_algo in ["fp4", "nf4"] and self.quantization_config.qlora_weight_double_quant)
                 else None,
                 bias=None,
-                act_state=(self.state, self.training, self.act_scale, self.group)
+                act_state=(self.state, self.training, self.activation_scale, self.group)
                 if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]
                 else None,
             )
@@ -706,12 +706,12 @@ class RowParallelQuantizationLinear(nn.Layer):
                 quantization_config=self.quantization_config,
                 weight_quantize_algo=self.weight_quantize_algo,
                 dtype=self._dtype,
-                quant_scale=self.quant_scale,
-                quant_state=(self.qquant_scale, self.double_quant_scale, self.quant_scale_offset)
+                weight_scale=self.weight_scale,
+                quant_state=(self.qweight_scale, self.double_weight_scale, self.weight_scale_offset)
                 if (self.weight_quantize_algo in ["fp4", "nf4"] and self.quantization_config.qlora_weight_double_quant)
                 else None,
                 bias=self.bias,
-                act_state=(self.state, self.training, self.act_scale, self.group)
+                act_state=(self.state, self.training, self.activation_scale, self.group)
                 if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]
                 else None,
             )
