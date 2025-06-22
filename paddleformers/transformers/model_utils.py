@@ -480,7 +480,7 @@ def load_state_dict(
         tensor_parallel_split_mapping = {}
 
     if (
-        checkpoint_file.endswith(".safetensors") or re.search(r"\.safetensors_shard\d{3}$", checkpoint_file)
+        checkpoint_file.endswith(".safetensors") or re.search(r"\.safetensors_shard_\d{4}$", checkpoint_file)
     ) and is_safetensors_available():
         # Check format of the archive
         with safe_open(checkpoint_file, framework="np") as f:
