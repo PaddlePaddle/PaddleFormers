@@ -332,7 +332,7 @@ class UnifiedCheckpointHandler:
         master_weights_path = os.path.join(resume_from_checkpoint, master_weights_name)
         # no quantization & no master weight represent O1 AMP strategy.
         is_amp_o1 = self.args.fp16_opt_level == "O1"
-        device = "cpu" if offload else "expected"
+        device = "pin_memory" if offload else "expected"
         model_state_dict = get_expected_state_dict(model)
         struct2static_name_mappings = {k: v.name for k, v in model_state_dict.items()}  # get optimizer param mappings
         optim_shard_num = 1
