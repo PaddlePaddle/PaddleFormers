@@ -357,10 +357,11 @@ class UnifiedCheckpointHandler:
                     )
                 )
                 # normal AMP O2
-                if not is_amp_o1 and os.path.isfile(master_weights_path):
+                if not is_amp_o1 and os.path.isfile(master_weights_path + f"_shard_{i+1:04d}"):
                     master_weights.update(
                         load_state_dict(master_weights_path + f"_shard_{i+1:04d}", None, None, device=device)
                     )
+                gc.collect()
         else:
             optimizer_state_dict = load_state_dict(
                 optimizer_path, None, None, device=device, ckpt_quant_stage=ckpt_quant_stage
@@ -386,7 +387,7 @@ class UnifiedCheckpointHandler:
             returned_optim_state_dict[key_name].name = key_name
 
             # master weight cast (only in AMP O2 + remove_master_weight)
-            if not is_amp_o1 and not os.path.isfile(master_weights_path):
+            if not is_amp_o1 and not master_weights:
                 master_weights[model_weight_key] = paddle.cast(
                     model_state_dict[model_weight_key], dtype=paddle.float32
                 )

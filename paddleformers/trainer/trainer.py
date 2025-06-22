@@ -18,6 +18,7 @@
 
 import collections
 import contextlib
+import gc
 import inspect
 import json
 import math
@@ -105,6 +106,7 @@ from ..transformers.model_utils import (
 )
 from ..transformers.segment_parallel_utils import split_inputs_sequence_dim
 from ..transformers.tokenizer_utils import PretrainedTokenizer
+from ..utils import empty_device_cache
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     LOKR_WEIGHTS_NAME,
@@ -3151,6 +3153,8 @@ class Trainer:
         else:
             optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
             raise ValueError(f"optimizer-state-dict not found, opt: {os.path.join(checkpoint, optimizer_name)}.")
+        gc.collect()
+        empty_device_cache()
 
         if not self.args.ignore_load_lr_and_optim:
             if distributed_isfile(os.path.join(checkpoint, SCHEDULER_NAME)):
