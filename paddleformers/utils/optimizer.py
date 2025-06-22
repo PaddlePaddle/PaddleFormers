@@ -207,7 +207,6 @@ class AdamWCustom(AdamW):
 
         # Create accumulator tensors for first and second moments
         for p in parameters:
-            print("p.name in self._already_create_accumulator", p.name in self._already_create_accumulator)
             if p.name in self._already_create_accumulator:
                 continue
             if self._multi_precision and self._is_dtype_fp16_or_bf16(p.dtype):
@@ -293,7 +292,6 @@ class AdamWCustom(AdamW):
             with_decay = False
 
         if self.tensorwise_offload_optimizer:
-            print("reload", param.name)
             self.reload_optim(param)
 
         moment1 = self._get_accumulator_master(self._moment1_acc_str, param_and_grad[0])
