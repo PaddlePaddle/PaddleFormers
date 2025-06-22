@@ -1010,6 +1010,10 @@ class TrainingArguments:
             )
         },
     )
+    optim_shard_num: int = field(
+        default=1,
+        metadata={"help": ("Number of shards to split the optimizer into.")},
+    )
     save_sharding_stage1_model_include_freeze_params: Optional[bool] = field(
         default=False, metadata={"help": "Save Sharding Stage1 Model Exclude Freeze Params"}
     )
