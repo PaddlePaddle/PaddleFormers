@@ -2,8 +2,7 @@ name: Build pr ci-docker
 
 on:
   push:
-    branches:
-      - paddleformers # for now let's only build on this branch
+    branches: paddleformers
   schedule:
     - cron: "5 0 * * *"
 
@@ -12,10 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-ci-docker:
+    name: build-ci-docker
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Download Code
         uses: actions/checkout@v3
 
       - name: Write Dockerfile Inline
