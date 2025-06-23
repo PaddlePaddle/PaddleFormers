@@ -33,7 +33,6 @@ install_requirements() {
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
-    python -m pip install pillow codecov-cli allure-pytest
     python -m pip install --no-cache-dir ${paddle}
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
 

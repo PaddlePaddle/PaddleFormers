@@ -110,7 +110,6 @@ jobs:
           ldconfig
           unlink /usr/bin/python3
           ln -sf $(which python${python_version}) /usr/bin/python3
-          python -m pip install bce-python-sdk==0.8.74
           pip config set global.cache-dir "/home/.cache/pip"
           echo "[global]
           timeout = 60
