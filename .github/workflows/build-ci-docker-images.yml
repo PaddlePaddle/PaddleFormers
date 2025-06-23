@@ -1,0 +1,60 @@
+name: Build pr ci-docker
+
+on:
+  push:
+    branches:
+      - paddleformers # for now let's only build on this branch
+  schedule:
+    - cron: "5 0 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Write Dockerfile Inline
+        run: |
+          cat <<EOF > Dockerfile
+          FROM iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5
+          RUN apt-get update && apt-get install -y libsndfile1 --fix-missing
+          RUN unlink /usr/bin/python3 && ln -sf python3.10 /usr/bin/python3
+          RUN python -m pip config --user set global.index http://pip.baidu-int.com/search/
+          RUN python -m pip config --user set global.index-url http://pip.baidu-int.com/simple
+          RUN python -m pip config --user set global.trusted-host pip.baidu-int.com
+          RUN python -m pip install bce-python-sdk==0.8.74
+          RUN python -m pip install --no-cache-dir https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          RUN python -m pip install -r requirements.txt
+          RUN python -m pip install -r requirements-dev.txt
+          RUN python -m pip install -r tests/requirements.txt
+          RUN python setup.py bdist_wheel > /dev/null
+          RUN python -m pip install dist/*.whl
+          CMD ["python3"]
+          EOF
+      
+      - name: Build Docker Image
+        run: |
+          docker build -t iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest .
+
+      - name: Test CI Image
+        run: |
+          docker run --rm paddleformers-ci:latest /bin/bash -c "
+            python -c \"from paddleformers import __version__; print('paddleformers version:', __version__)\" 2>&1 | tee pip_info.txt
+            python -c \"import paddleformers; print('paddleformers commit:', paddleformers.version.commit)\" 2>&1 | tee pip_info.txt
+            python -c \"import paddle; print('paddle'); print(paddle.__version__); print(paddle.version.show())\" 2>&1 | tee pip_info.txt
+            python -m pip list 2>&1 | tee pip_info.txt
+          "
+      
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-log
+          path: |
+            pip_info.txt
+          if-no-files-found: ignore
