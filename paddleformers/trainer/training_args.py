@@ -1010,6 +1010,10 @@ class TrainingArguments:
             )
         },
     )
+    optim_shard_num: int = field(
+        default=1,
+        metadata={"help": ("Number of shards to split the optimizer into.")},
+    )
     save_sharding_stage1_model_include_freeze_params: Optional[bool] = field(
         default=False, metadata={"help": "Save Sharding Stage1 Model Exclude Freeze Params"}
     )
@@ -1171,6 +1175,10 @@ class TrainingArguments:
             raise ValueError("AdamW Mini currently doesn't support tensor parallelism.")
 
         self._post_init_parallel_degree()
+        if self.tensorwise_offload_optimizer and self.data_parallel_degree > 1:
+            raise NotImplementedError(
+                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_degree {self.sharding_parallel_degree*self.data_parallel_degree}."
+            )
 
         if self.to_static:
             assert world_size == 1 or self.enable_auto_parallel, (

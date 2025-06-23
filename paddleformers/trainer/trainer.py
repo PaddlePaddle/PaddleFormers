@@ -18,6 +18,7 @@
 
 import collections
 import contextlib
+import gc
 import inspect
 import json
 import math
@@ -105,6 +106,7 @@ from ..transformers.model_utils import (
 )
 from ..transformers.segment_parallel_utils import split_inputs_sequence_dim
 from ..transformers.tokenizer_utils import PretrainedTokenizer
+from ..utils import empty_device_cache
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     LOKR_WEIGHTS_NAME,
@@ -2748,7 +2750,7 @@ class Trainer:
             optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
             saved_signal_path = os.path.join(output_dir, f"saved_signal_{dist.get_rank()}")
 
-            if self.args.unified_checkpoint and (self.args.offload_optim or self.args.tensorwise_offload_optimizer):
+            if self.args.unified_checkpoint and self.args.offload_optim:
                 self._reload_optimizer()
 
             if self.args.use_hybrid_parallel:
@@ -2761,6 +2763,7 @@ class Trainer:
                             self.optimizer,
                             output_dir,
                             signal_dir,
+                            self.args.optim_shard_num,
                         )
                     else:
                         if self.dp_group.rank > 0:  # this should only work for MoE saving
@@ -2799,6 +2802,7 @@ class Trainer:
                             self.optimizer,
                             output_dir,
                             signal_dir,
+                            self.args.optim_shard_num,
                         )
                     else:
                         if self.args.data_parallel_rank > 0 and self.args.use_expert_parallel:
@@ -3122,6 +3126,7 @@ class Trainer:
                     model=model,
                     optimizer=self.optimizer,
                     resume_from_checkpoint=checkpoint,
+                    offload=self.args.tensorwise_offload_optimizer,
                 )
 
         if self.args.ignore_load_lr_and_optim and opt_state_dict:
@@ -3148,6 +3153,8 @@ class Trainer:
         else:
             optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
             raise ValueError(f"optimizer-state-dict not found, opt: {os.path.join(checkpoint, optimizer_name)}.")
+        gc.collect()
+        empty_device_cache()
 
         if not self.args.ignore_load_lr_and_optim:
             if distributed_isfile(os.path.join(checkpoint, SCHEDULER_NAME)):

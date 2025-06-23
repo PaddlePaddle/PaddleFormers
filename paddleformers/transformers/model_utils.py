@@ -479,7 +479,9 @@ def load_state_dict(
     if tensor_parallel_split_mapping is None:
         tensor_parallel_split_mapping = {}
 
-    if checkpoint_file.endswith(".safetensors") and is_safetensors_available():
+    if (
+        checkpoint_file.endswith(".safetensors") or re.search(r"\.safetensors_shard_\d{4}$", checkpoint_file)
+    ) and is_safetensors_available():
         # Check format of the archive
         with safe_open(checkpoint_file, framework="np") as f:
             metadata = f.metadata()
@@ -536,10 +538,14 @@ def load_state_dict(
                         state_dict.update(res_state_dict)
                         scale_dict.update(res_scale_dict)
 
-            if not return_numpy and device == "cpu":
-                with device_guard():
+            if not return_numpy:
+                if device == "cpu":
+                    with device_guard():
+                        for k in list(state_dict.keys()):
+                            state_dict[k] = paddle.Tensor.__call__(state_dict.pop(k), zero_copy=True)
+                elif device == "pin_memory":
                     for k in list(state_dict.keys()):
-                        state_dict[k] = paddle.Tensor.__call__(state_dict.pop(k), zero_copy=True)
+                        state_dict[k] = paddle.to_tensor(state_dict.pop(k), place=paddle.CUDAPinnedPlace())
 
             if len(scale_dict) != 0:
                 if ckpt_quant_stage == "O0":

@@ -13,8 +13,10 @@
 # limitations under the License.
 
 import copy
+import gc
 import json
 import os
+import random
 
 import paddle
 from paddle.distributed import fleet
@@ -197,7 +199,9 @@ class UnifiedCheckpointHandler:
         if self.args.dataset_rank == 0 or self.args.use_expert_parallel:
             load_unified_checkpoint_locally(self.args, model, resume_from_checkpoint, safe_serialization=True)
 
-    def save_non_merge_optimizer(self, model, optim_state_dict, master_weights, output_dir, signal_dir):
+    def save_non_merge_optimizer(
+        self, model, optim_state_dict, master_weights, output_dir, signal_dir, optim_shard_num=1
+    ):
         empty_device_cache()
 
         # gather global master_weights status.
@@ -236,6 +240,7 @@ class UnifiedCheckpointHandler:
         sharded_optim_index["quant_ckpt_resume_times"] = (
             infohub["quant_ckpt_resume_times"] if "quant_ckpt_resume_times" in infohub else 0
         )
+        sharded_optim_index["optim_shard_num"] = optim_shard_num
 
         if len(sharded_optim_index) > 0:
             optimizer_index_name = SAFE_OPTIMIZER_INDEX_NAME
@@ -247,24 +252,60 @@ class UnifiedCheckpointHandler:
         is_sync_save = True
         if "async_save" in self.args.unified_checkpoint_config:
             is_sync_save = False
-        self.async_handler._file_save_async_or_sync(
-            optim_state_dict,
-            path=os.path.join(output_dir, optimizer_name),
-            signal_path=signal_dir,
-            is_sync=is_sync_save,
-            state_dict_type="optimizer_weight",
-            ckpt_quant_stage=self.args.ckpt_quant_stage if "quant_reach_limit" not in infohub else "O0",
-        )
-        if master_weights is not None:
+        if optim_shard_num > 1:
+            key_list = list(optim_state_dict.keys())
+            random.shuffle(key_list)
+            split_key_list = [key_list[i::optim_shard_num] for i in range(optim_shard_num)]
+            for i in range(optim_shard_num):
+                state_dict_shard = {}
+                for key in split_key_list[i]:
+                    state_dict_shard[key] = optim_state_dict.pop(key)
+                self.async_handler._file_save_async_or_sync(
+                    state_dict_shard,
+                    path=os.path.join(output_dir, optimizer_name + f"_shard_{i+1:04d}"),
+                    signal_path=signal_dir,
+                    is_sync=is_sync_save,
+                    state_dict_type="optimizer_weight",
+                    ckpt_quant_stage=self.args.ckpt_quant_stage if "quant_reach_limit" not in infohub else "O0",
+                )
+                del state_dict_shard
+                gc.collect()
+            if master_weights is not None:
+                key_list = list(master_weights.keys())
+                random.shuffle(key_list)
+                split_key_list = [key_list[i::optim_shard_num] for i in range(optim_shard_num)]
+                for i in range(optim_shard_num):
+                    state_dict_shard = {}
+                    for key in split_key_list[i]:
+                        state_dict_shard[key] = master_weights.pop(key)
+                    self.async_handler._file_save_async_or_sync(
+                        state_dict_shard,
+                        path=os.path.join(output_dir, master_weights_name + f"_shard_{i+1:04d}"),
+                        signal_path=signal_dir,
+                        is_sync=is_sync_save,
+                        state_dict_type="master_weight",
+                    )
+                    del state_dict_shard
+                    gc.collect()
+        else:
             self.async_handler._file_save_async_or_sync(
-                master_weights,
-                path=os.path.join(output_dir, master_weights_name),
+                optim_state_dict,
+                path=os.path.join(output_dir, optimizer_name),
                 signal_path=signal_dir,
                 is_sync=is_sync_save,
-                state_dict_type="master_weight",
+                state_dict_type="optimizer_weight",
+                ckpt_quant_stage=self.args.ckpt_quant_stage if "quant_reach_limit" not in infohub else "O0",
             )
+            if master_weights is not None:
+                self.async_handler._file_save_async_or_sync(
+                    master_weights,
+                    path=os.path.join(output_dir, master_weights_name),
+                    signal_path=signal_dir,
+                    is_sync=is_sync_save,
+                    state_dict_type="master_weight",
+                )
 
-    def load_non_merge_optimizer(self, model, optimizer, resume_from_checkpoint, ckpt_quant_stage="O0"):
+    def load_non_merge_optimizer(self, model, optimizer, resume_from_checkpoint, ckpt_quant_stage="O0", offload=False):
         """load non merge optimizer
 
         Args:
@@ -291,16 +332,44 @@ class UnifiedCheckpointHandler:
         master_weights_path = os.path.join(resume_from_checkpoint, master_weights_name)
         # no quantization & no master weight represent O1 AMP strategy.
         is_amp_o1 = self.args.fp16_opt_level == "O1"
-
+        device = "pin_memory" if offload else "expected"
         model_state_dict = get_expected_state_dict(model)
         struct2static_name_mappings = {k: v.name for k, v in model_state_dict.items()}  # get optimizer param mappings
-        optimizer_state_dict = load_state_dict(
-            optimizer_path, None, None, device="expected", ckpt_quant_stage=ckpt_quant_stage
-        )
-        master_weights = {}
-        # normal AMP O2
-        if not is_amp_o1 and os.path.isfile(master_weights_path):
-            master_weights = load_state_dict(master_weights_path, None, None, device="expected")
+        optim_shard_num = 1
+        optimizer_index_file = os.path.join(resume_from_checkpoint, SAFE_OPTIMIZER_INDEX_NAME)
+        if os.path.isfile(optimizer_index_file):
+            with open(optimizer_index_file, "r") as f:
+                index = json.loads(f.read())
+            if "optim_shard_num" in index:
+                optim_shard_num = index["optim_shard_num"]
+
+        if optim_shard_num > 1:
+            optimizer_state_dict = {}
+            master_weights = {}
+            for i in range(optim_shard_num):
+                optimizer_state_dict.update(
+                    load_state_dict(
+                        optimizer_path + f"_shard_{i+1:04d}",
+                        None,
+                        None,
+                        device=device,
+                        ckpt_quant_stage=ckpt_quant_stage,
+                    )
+                )
+                # normal AMP O2
+                if not is_amp_o1 and os.path.isfile(master_weights_path + f"_shard_{i+1:04d}"):
+                    master_weights.update(
+                        load_state_dict(master_weights_path + f"_shard_{i+1:04d}", None, None, device=device)
+                    )
+                gc.collect()
+        else:
+            optimizer_state_dict = load_state_dict(
+                optimizer_path, None, None, device=device, ckpt_quant_stage=ckpt_quant_stage
+            )
+            master_weights = {}
+            # normal AMP O2
+            if not is_amp_o1 and os.path.isfile(master_weights_path):
+                master_weights = load_state_dict(master_weights_path, None, None, device=device)
 
         # rename and move to paddle.Tensor
         for key in list(optimizer_state_dict.keys()):
@@ -318,7 +387,7 @@ class UnifiedCheckpointHandler:
             returned_optim_state_dict[key_name].name = key_name
 
             # master weight cast (only in AMP O2 + remove_master_weight)
-            if not is_amp_o1 and not os.path.isfile(master_weights_path):
+            if not is_amp_o1 and not master_weights:
                 master_weights[model_weight_key] = paddle.cast(
                     model_state_dict[model_weight_key], dtype=paddle.float32
                 )
@@ -332,7 +401,7 @@ class UnifiedCheckpointHandler:
 
         return returned_optim_state_dict
 
-    def save_unified_optimizer(self, model, optimizer, output_dir, signal_dir):
+    def save_unified_optimizer(self, model, optimizer, output_dir, signal_dir, optim_shard_num=1):
         """save unified optimizer
 
         Args:
@@ -365,7 +434,9 @@ class UnifiedCheckpointHandler:
             master_weights = None
 
         if "ignore_merge_optimizer" in self.args.unified_checkpoint_config:
-            self.save_non_merge_optimizer(model, optim_state_dict, master_weights, output_dir, signal_dir)
+            self.save_non_merge_optimizer(
+                model, optim_state_dict, master_weights, output_dir, signal_dir, optim_shard_num=optim_shard_num
+            )
             return
 
         # Split into naive optimizer params and master weights.
@@ -421,7 +492,7 @@ class UnifiedCheckpointHandler:
                     with open(master_path, "w") as f:
                         json.dump(sharded_master_weight_index, f, indent=4)
 
-    def load_unified_optimizer(self, model, optimizer, resume_from_checkpoint):
+    def load_unified_optimizer(self, model, optimizer, resume_from_checkpoint, offload=False):
         """Load potential model checkpoint
 
         Args:
@@ -468,10 +539,7 @@ class UnifiedCheckpointHandler:
         if "weight_map" not in index:
             if self.args.data_parallel_rank == 0 or self.args.use_expert_parallel:
                 returned_optim_state_dict = self.load_non_merge_optimizer(
-                    model,
-                    optimizer,
-                    resume_from_checkpoint,
-                    ckpt_quant_stage=ckpt_quant_stage,
+                    model, optimizer, resume_from_checkpoint, ckpt_quant_stage=ckpt_quant_stage, offload=offload
                 )
                 return returned_optim_state_dict
             else:
