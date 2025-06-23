@@ -1,10 +1,6 @@
-name: Build pr ci-docker
+name: Build PR CI-Docker
 
-on:
-  push:
-    branches: paddleformers
-  schedule:
-    - cron: "5 0 * * *"
+on: [push, pull_request]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
