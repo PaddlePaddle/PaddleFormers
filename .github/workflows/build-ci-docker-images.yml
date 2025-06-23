@@ -49,13 +49,18 @@ jobs:
           git diff --numstat ${BRANCH} -- |awk '{print $NF}'
           git log --pretty=oneline -10
 
+      - name: Copy Proxy File
+        run: |
+          cp ${{ github.workspace }}/../../../proxy ./
+
       - name: Write Dockerfile Inline
         env:
-          work_dir: ${{ github.workspace }}/PaddleHub/PaddleHub
+          work_dir: ${{ github.workspace }}/PaddleHub
         run: |
           cat <<EOF > Dockerfile
           FROM iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5
-          RUN source ${{ github.workspace }}/../../../proxy
+          COPY proxy /tmp/proxy
+          RUN bash -c "source /tmp/proxy"  # 或导出变量
           RUN apt-get update && apt-get install -y libsndfile1 --fix-missing
           RUN unset http_proxy && unset https_proxy
           RUN unlink /usr/bin/python3 && ln -sf python3.10 /usr/bin/python3
@@ -64,11 +69,15 @@ jobs:
           RUN python -m pip config --user set global.trusted-host pip.baidu-int.com
           RUN python -m pip install bce-python-sdk==0.8.74
           RUN python -m pip install --no-cache-dir https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          COPY PaddleHub /tmp/paddlehub
+          WORKDIR /tmp/paddlehub
           RUN python -m pip install -r requirements.txt
           RUN python -m pip install -r requirements-dev.txt
           RUN python -m pip install -r tests/requirements.txt
           RUN python setup.py bdist_wheel > /dev/null
           RUN python -m pip install dist/*.whl
+          WORKDIR /
+          RUN rm -rf /tmp/paddlehub
           CMD ["python3"]
           EOF
       
