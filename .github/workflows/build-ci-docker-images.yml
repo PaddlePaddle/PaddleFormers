@@ -1,20 +1,58 @@
 name: Build PR CI-Docker
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [paddleformers, build*]
+  pull_request:
+    branches: [paddleformers, build*]
+  schedule:
+    - cron: "5 0 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+env:
+  PR_ID: ${{ github.event.pull_request.number }}
+  COMMIT_ID: ${{ github.event.pull_request.head.sha }}
+  work_dir: /workspace/PaddleHub
+  PaddleFormers_ROOT: /workspace/PaddleHub
+  TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-build-docker
+  BRANCH: ${{ github.event.pull_request.base.ref }}
+  CI_name: build-docker
+  no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+
 jobs:
   build-ci-docker:
     name: build-ci-docker
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, 4gpu]
     steps:
       - name: Download Code
-        uses: actions/checkout@v3
+        env:
+          work_dir: ${{ github.workspace }}
+        run: |
+          sudo rm -rf * .[^.]*
+          # wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          # echo "Extracting PaddleFormers.tar.gz"
+          # tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+          source ${{ github.workspace }}/../../../proxy
+          git clone --branch=${BRANCH} https://github.com/PaddlePaddle/PaddleHub.git
+          cd PaddleHub
+          git config --global user.name "PaddleCI"
+          git config --global user.email "paddle_ci@example.com"
+          git pull
+          git submodule update --init --recursive --force
+          git fetch origin pull/${PR_ID}/head
+          git checkout -b PR_${PR_ID} FETCH_HEAD
+          git remote add upstream https://github.com/PaddlePaddle/PaddleHub.git
+          git fetch upstream ${BRANCH}
+          git merge ${BRANCH}
+          git diff --numstat ${BRANCH} -- |awk '{print $NF}'
+          git log --pretty=oneline -10
 
       - name: Write Dockerfile Inline
+        env:
+          work_dir: ${{ github.workspace }}/PaddleHub
         run: |
           cat <<EOF > Dockerfile
           FROM iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5
@@ -40,17 +78,8 @@ jobs:
       - name: Test CI Image
         run: |
           docker run --rm paddleformers-ci:latest /bin/bash -c "
-            python -c \"from paddleformers import __version__; print('paddleformers version:', __version__)\" 2>&1 | tee pip_info.txt
-            python -c \"import paddleformers; print('paddleformers commit:', paddleformers.version.commit)\" 2>&1 | tee pip_info.txt
-            python -c \"import paddle; print('paddle'); print(paddle.__version__); print(paddle.version.show())\" 2>&1 | tee pip_info.txt
-            python -m pip list 2>&1 | tee pip_info.txt
+            python -c \"from paddleformers import __version__; print('paddleformers version:', __version__)\"
+            python -c \"import paddleformers; print('paddleformers commit:', paddleformers.version.commit)\"
+            python -c \"import paddle; print('paddle'); print(paddle.__version__); print(paddle.version.show())\"
+            python -m pip list
           "
-      
-      - name: Upload Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pip-log
-          path: |
-            pip_info.txt
-          if-no-files-found: ignore
