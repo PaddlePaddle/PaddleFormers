@@ -10,6 +10,7 @@ __pycache__/
 .Python
 build/
 build*
+!.github/workflows/build-ci-docker-images.yml
 develop-eggs/
 dist/
 downloads/
