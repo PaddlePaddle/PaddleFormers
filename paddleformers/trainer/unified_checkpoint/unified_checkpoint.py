@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import gc
 import json
 import os
 
@@ -223,7 +224,8 @@ class UnifiedCheckpointHandler:
 
         if self.args.use_expert_parallel:
             model_state_dict = get_expected_state_dict(model)
-            filter_sync_parameters(model_state_dict, optim_state_dict, master_weights, is_model_weight=False)
+            filter_sync_parameters(model_state_dict, optim_state_dict, is_model_weight=False)
+            filter_sync_parameters(model_state_dict, master_weights, is_model_weight=False)
 
         optimizer_name = _add_variant(SAFE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
         master_weights_name = _add_variant(SAFE_MASTER_WEIGHTS_NAME, self.args.optimizer_name_suffix)
@@ -369,22 +371,19 @@ class UnifiedCheckpointHandler:
             return
 
         # Split into naive optimizer params and master weights.
-        results = unified_optimizer_into_shards(
-            self.args, model, optim_state_dict, master_weights, safe_serialization=True
+        optim_state_dict, shard_optim_file, sharded_optim_index = unified_optimizer_into_shards(
+            self.args,
+            model,
+            optim_state_dict,
+            is_master_weights=False,
+            safe_serialization=True,
         )
-        master_weight_state_dict = None
-        if len(results) == 1:
-            optim_state_dict, shard_optim_file, sharded_optim_index = results[0]
-        else:
-            optim_state_dict, shard_optim_file, sharded_optim_index = results[0]
-            master_weight_state_dict, shard_master_weight_file, sharded_master_weight_index = results[1]
 
         empty_device_cache()
         save_directory = output_dir
         os.makedirs(save_directory, exist_ok=True)
         if signal_dir is not None:
             os.makedirs(signal_dir, exist_ok=True)
-
         is_sync_save = True
         if "async_save" in self.args.unified_checkpoint_config:
             is_sync_save = False
@@ -396,6 +395,19 @@ class UnifiedCheckpointHandler:
             state_dict_type="optimizer_weight",
             ckpt_quant_stage=self.args.ckpt_quant_stage if "quant_reach_limit" not in infohub else "O0",
         )
+        del optim_state_dict
+        gc.collect()
+
+        master_weight_state_dict = None
+        master_weights_res = unified_optimizer_into_shards(
+            self.args,
+            model,
+            master_weights,
+            is_master_weights=True,
+            safe_serialization=True,
+        )
+        if master_weights_res is not None:
+            master_weight_state_dict, shard_master_weight_file, sharded_master_weight_index = master_weights_res
         if master_weight_state_dict is not None:
             self.async_handler._file_save_async_or_sync(
                 master_weight_state_dict,
@@ -576,8 +588,8 @@ def unified_checkpoint_into_shards(
 def unified_optimizer_into_shards(
     args,
     model,
-    optim_state_dict,
-    master_weights,
+    state_dict,
+    is_master_weights=False,
     safe_serialization=False,
 ):
     """Get optimizer state dict and master weight state dict.
@@ -589,57 +601,57 @@ def unified_optimizer_into_shards(
     empty_device_cache()
 
     # gather global master_weights status.
-    global_master_weights = reduce_master_weights_status(master_weights is not None)
-    if master_weights is None and global_master_weights:
-        master_weights = {}
+    global_master_weights = reduce_master_weights_status(state_dict is not None)
+    if is_master_weights:
+        if state_dict is None and global_master_weights:
+            state_dict = {}
 
     # get optimizer param mappings
     static2struct_name_mappings = {}
-    state_dict = get_expected_state_dict(model)
+    model_state_dict = get_expected_state_dict(model)
     fp32_weight = {}
 
     extra_save_keys = {}
-    for k, v in state_dict.items():
+    for k, v in model_state_dict.items():
         if v.name not in static2struct_name_mappings:
             static2struct_name_mappings[v.name] = k
         else:
             extra_save_keys[v.name] = k
-        if master_weights is not None and v.dtype == paddle.float32:
+        if is_master_weights and state_dict is not None and v.dtype == paddle.float32:
             if args.dataset_rank > 0:  # deal with different dataset rank.
                 continue
             fp32_weight[k] = v
 
     # rename optimizer param
-    for key in list(optim_state_dict.keys()):
-        static_name, type_name = generate_base_static_name(key)
-        new_name = static2struct_name_mappings[static_name] + "/" + type_name
-        optim_state_dict[new_name] = optim_state_dict.pop(key)
-        if static_name in extra_save_keys:
-            extra_new_name = extra_save_keys[static_name] + "/" + type_name
-            optim_state_dict[extra_new_name] = optim_state_dict[new_name]
+    if not is_master_weights:
+        for key in list(state_dict.keys()):
+            static_name, type_name = generate_base_static_name(key)
+            new_name = static2struct_name_mappings[static_name] + "/" + type_name
+            state_dict[new_name] = state_dict.pop(key)
+            if static_name in extra_save_keys:
+                extra_new_name = extra_save_keys[static_name] + "/" + type_name
+                state_dict[extra_new_name] = state_dict[new_name]
+    else:
+        if state_dict is not None:
+            for key in list(state_dict.keys()):
+                state_dict[static2struct_name_mappings[key]] = state_dict.pop(key)
+                if key in extra_save_keys:
+                    state_dict[extra_save_keys[key]] = state_dict[static2struct_name_mappings[key]]
+            state_dict.update(fp32_weight)
 
-    if master_weights is not None:
-        for key in list(master_weights.keys()):
-            master_weights[static2struct_name_mappings[key]] = master_weights.pop(key)
-            if key in extra_save_keys:
-                master_weights[extra_save_keys[key]] = master_weights[static2struct_name_mappings[key]]
-        master_weights.update(fp32_weight)
-
-    # filter optimizer param
-    if master_weights is not None:
-        filter_master_keys = filter_params(model, master_weights, args, is_optimizer=True)
-    filter_optim_keys = filter_params(model, optim_state_dict, args, is_optimizer=True)
+    if state_dict is not None:
+        filter_keys = filter_params(model, state_dict, args, is_optimizer=True)
 
     tp_group = fleet.get_hybrid_communicate_group().get_model_parallel_group()
     tp_size = tp_group.nranks
 
     if args.use_expert_parallel:
-        filter_sync_parameters(state_dict, optim_state_dict, master_weights, is_model_weight=False)
+        filter_sync_parameters(model_state_dict, state_dict, is_model_weight=False)
 
     if tp_size > 1:
         # get tp_actions
         model_keys = []
-        for key in optim_state_dict.keys():
+        for key in state_dict.keys():
             base_model_key = key.split("/")[0]
             if base_model_key not in model_keys:
                 model_keys.append(base_model_key)
@@ -652,79 +664,59 @@ def unified_optimizer_into_shards(
                 is_split=False,
                 ignore_error=True,
             )
-        logger.info("Unified optimizer tensor parallel in shards")
-        optim_state_dict = merge_tensor_parallel_for_optimizer(
-            optim_state_dict,
-            state_dict,
-            tp_actions,
-            filter_optim_keys,
-        )
-        empty_device_cache()
 
-        if master_weights is not None:
-            logger.info("Unified master weight tensor parallel in shards")
-            master_weights = merge_tensor_parallel_for_optimizer(
-                master_weights,
+        if state_dict is not None:
+            if is_master_weights:
+                logger.info("Unified master weight tensor parallel in shards")
+            else:
+                logger.info("Unified optimizer tensor parallel in shards")
+            state_dict = merge_tensor_parallel_for_optimizer(
                 state_dict,
+                model_state_dict,
                 tp_actions,
-                filter_master_keys,
+                filter_keys,
             )
             empty_device_cache()
 
     # build index json file
-    index_optimizer_file, index_master_weight_file = {}, {}
-    total_optim_size, total_master_weight_size = 0, 0
-    optimizer_name = SAFE_OPTIMIZER_NAME if safe_serialization else PADDLE_OPTIMIZER_NAME
-    master_weights_name = SAFE_MASTER_WEIGHTS_NAME if safe_serialization else PADDLE_MASTER_WEIGHTS_NAME
-    if UnifiedCheckpointOption.SKIP_SAVE_MODEL_WEIGHT.value in args.unified_checkpoint_config:
-        master_weights_name = SAFE_WEIGHTS_NAME if safe_serialization else PADDLE_WEIGHTS_NAME
-    shard_optimizer_file = get_sharded_file_name(args, optimizer_name, is_optimizer=True)
-    shard_master_weight_file = get_sharded_file_name(args, master_weights_name, is_optimizer=True)
+    index_file = {}
+    total_size = 0
+    if not is_master_weights:
+        name = SAFE_OPTIMIZER_NAME if safe_serialization else PADDLE_OPTIMIZER_NAME
+    else:
+        name = SAFE_MASTER_WEIGHTS_NAME if safe_serialization else PADDLE_MASTER_WEIGHTS_NAME
+        if UnifiedCheckpointOption.SKIP_SAVE_MODEL_WEIGHT.value in args.unified_checkpoint_config:
+            name = SAFE_WEIGHTS_NAME if safe_serialization else PADDLE_WEIGHTS_NAME
+    shard_file = get_sharded_file_name(args, name, is_optimizer=True)
 
-    for key, weight in optim_state_dict.items():
-        index_optimizer_file[key] = shard_optimizer_file
-        total_optim_size += weight.numel().item() * dtype_byte_size(weight.dtype)
+    if state_dict is not None:
+        for key, weight in state_dict.items():
+            index_file[key] = shard_file
+            total_size += weight.numel().item() * dtype_byte_size(weight.dtype)
 
-    if master_weights is not None:
-        for key, weight in master_weights.items():
-            index_master_weight_file[key] = shard_master_weight_file
-            total_master_weight_size += weight.numel().item() * dtype_byte_size(weight.dtype)
-
-    index_optimizer_filelist, total_optim_size_list = gather_sharded_object(
-        index_optimizer_file,
-        total_optim_size,
-        is_optimizer=True,
-        use_expert_parallel=args.use_expert_parallel,
-    )
-    sharded_optim_index = get_sharded_index(index_optimizer_filelist, total_optim_size_list)
-
-    if args.should_save:
-        if args.ckpt_quant_stage in ["O1", "O2"] and "quant_reach_limit" not in infohub:
-            sharded_optim_index["ckpt_quant_stage"] = args.ckpt_quant_stage
-        sharded_optim_index["quant_ckpt_resume_times"] = (
-            infohub["quant_ckpt_resume_times"] if "quant_ckpt_resume_times" in infohub else 0
-        )
-
-    if master_weights is not None:
-        index_master_weight_filelist, total_master_weight_size_list = gather_sharded_object(
-            index_master_weight_file,
-            total_master_weight_size,
+        index_filelist, total_size_list = gather_sharded_object(
+            index_file,
+            total_size,
             is_optimizer=True,
             use_expert_parallel=args.use_expert_parallel,
         )
-        sharded_master_weight_index = get_sharded_index(index_master_weight_filelist, total_master_weight_size_list)
+        sharded_index = get_sharded_index(index_filelist, total_size_list)
 
-    if sharded_optim_index is not None:
-        if master_weights is not None:
-            sharded_optim_index["master_weights"] = True
-        else:
-            sharded_optim_index["master_weights"] = False
+    if args.should_save and state_dict is not None:
+        if not is_master_weights:
+            if args.ckpt_quant_stage in ["O1", "O2"] and "quant_reach_limit" not in infohub:
+                sharded_index["ckpt_quant_stage"] = args.ckpt_quant_stage
+            sharded_index["quant_ckpt_resume_times"] = (
+                infohub["quant_ckpt_resume_times"] if "quant_ckpt_resume_times" in infohub else 0
+            )
+            if sharded_index is not None:
+                if global_master_weights:
+                    sharded_index["master_weights"] = True
+                else:
+                    sharded_index["master_weights"] = False
 
     empty_device_cache()
-    if master_weights is None:
-        return [(optim_state_dict, shard_optimizer_file, sharded_optim_index)]
+    if state_dict is None:
+        return None
     else:
-        return [
-            (optim_state_dict, shard_optimizer_file, sharded_optim_index),
-            (master_weights, shard_master_weight_file, sharded_master_weight_index),
-        ]
+        return state_dict, shard_file, sharded_index
