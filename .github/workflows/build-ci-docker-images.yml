@@ -4,7 +4,6 @@ on:
   push:
     branches: [paddleformers, build*]
   pull_request:
-    branches: [paddleformers, build*]
   schedule:
     - cron: "5 0 * * *"
 
@@ -52,11 +51,13 @@ jobs:
 
       - name: Write Dockerfile Inline
         env:
-          work_dir: ${{ github.workspace }}/PaddleHub
+          work_dir: ${{ github.workspace }}/PaddleHub/PaddleHub
         run: |
           cat <<EOF > Dockerfile
           FROM iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5
+          RUN source ${{ github.workspace }}/../../../proxy
           RUN apt-get update && apt-get install -y libsndfile1 --fix-missing
+          RUN unset http_proxy && unset https_proxy
           RUN unlink /usr/bin/python3 && ln -sf python3.10 /usr/bin/python3
           RUN python -m pip config --user set global.index http://pip.baidu-int.com/search/
           RUN python -m pip config --user set global.index-url http://pip.baidu-int.com/simple
