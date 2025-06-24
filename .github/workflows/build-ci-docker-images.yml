@@ -61,7 +61,7 @@ jobs:
           RUN python -m pip config --user set global.trusted-host pip.baidu-int.com
           RUN python -m pip install bce-python-sdk==0.8.74
           RUN python -m pip install --no-cache-dir https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
-          COPY -r PaddleHub/ /tmp/paddlehub/
+          COPY PaddleHub/ /tmp/paddlehub/
           WORKDIR /tmp/paddlehub
           RUN python -m pip install -r requirements.txt
           RUN python -m pip install -r requirements-dev.txt
