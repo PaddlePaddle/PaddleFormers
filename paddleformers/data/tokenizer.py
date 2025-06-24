@@ -13,7 +13,6 @@
 # limitations under the License.
 
 
-
 def get_idx_from_word(word, word_to_idx, unk_word):
     if word in word_to_idx:
         return word_to_idx[word]
@@ -32,4 +31,3 @@ class BaseTokenizer(object):
 
     def encode(self, sentence):
         pass
-
