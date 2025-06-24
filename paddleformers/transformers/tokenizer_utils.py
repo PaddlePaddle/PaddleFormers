@@ -795,12 +795,12 @@ class ChatTemplateMixin:
             conversation_id = []
             conversation_dict["messages"].append(conversations["messages"][idx])
             round_str = self.chat_template.render(
-                conversation_dict, add_generation_prompt=False, **self.special_tokens_map
+                conversation_dict, add_generation_prompt=True, **self.special_tokens_map
             )
+            # query: user prefix + user content + assist prefix
+            query = round_str[len(cur_str) :]
             conversation_id.append(
-                self.encode(round_str[len(cur_str) :], split_special_tokens=False, add_special_tokens=False)[
-                    "input_ids"
-                ]
+                self.encode(query, split_special_tokens=False, add_special_tokens=False)["input_ids"]
             )
             cur_str = round_str
 
@@ -809,10 +809,10 @@ class ChatTemplateMixin:
                 round_str = self.chat_template.render(
                     conversation_dict, add_generation_prompt=False, **self.special_tokens_map
                 )
+                # answer: assistant content
+                answer = round_str[len(cur_str) :]
                 conversation_id.append(
-                    self.encode(round_str[len(cur_str) :], split_special_tokens=False, add_special_tokens=False)[
-                        "input_ids"
-                    ]
+                    self.encode(answer, split_special_tokens=False, add_special_tokens=False)["input_ids"]
                 )
                 cur_str = round_str
 
