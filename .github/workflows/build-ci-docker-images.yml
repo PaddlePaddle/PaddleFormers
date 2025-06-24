@@ -2,8 +2,19 @@ name: Build PR CI-Docker
 
 on:
   push:
-    branches: [paddleformers, build*]
+    branches:
+      - paddleformers
+    paths:
+      - "requirements*"
+      - "tests/requirements.txt"
+      - "setup.py"
+      - ".github/workflows/build-ci-docker-images.yml"
   pull_request:
+    paths:
+      - "requirements*"
+      - "tests/requirements.txt"
+      - "setup.py"
+      - ".github/workflows/build-ci-docker-images.yml"
   schedule:
     - cron: "5 0 * * *"
 
@@ -79,7 +90,10 @@ jobs:
 
       - name: Test CI Image
         run: |
-          docker run --rm paddleformers-ci:latest /bin/bash -c "
+          container_name=PaddleFormers-Build-test-${core_index}-$(date +%Y%m%d-%H%M%S)
+          docker_image=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
+          nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          --runtime=nvidia ${docker_image} /bin/bash -c "
             python -c \"from paddleformers import __version__; print('paddleformers version:', __version__)\"
             python -c \"import paddleformers; print('paddleformers commit:', paddleformers.version.commit)\"
             python -c \"import paddle; print('paddle'); print(paddle.__version__); print(paddle.version.show())\"
