@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ContextManager, List, Optional, Type, Union
 
 from filelock import FileLock
+
 from paddleformers import __version__
 
 from ..utils.downloader import (

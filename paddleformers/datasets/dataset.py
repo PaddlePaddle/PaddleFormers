@@ -24,8 +24,9 @@ from itertools import islice
 os.environ["HF_UPDATE_DOWNLOAD_COUNTS"] = "False"
 
 import datasets
-import paddleformers
 from multiprocess import Pool, RLock
+
+import paddleformers
 
 try:
     import paddle.distributed as dist

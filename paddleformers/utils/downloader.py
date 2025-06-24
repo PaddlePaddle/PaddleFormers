@@ -403,6 +403,7 @@ class DownloaderCheck(threading.Thread):
             extra.update({"addition": addition})
         try:
             import paddle
+
             import paddleformers
 
             payload["hub_version"] = " "
