@@ -1,4 +1,3 @@
-jieba
 blobfile
 colorlog
 colorama

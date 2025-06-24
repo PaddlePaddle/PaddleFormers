@@ -18,5 +18,4 @@ from .collate import *
 from .data_collator import *
 from .dist_dataloader import *
 from .sampler import *
-from .tokenizer import *
 from .vocab import *
