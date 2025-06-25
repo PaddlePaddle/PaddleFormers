@@ -1,9 +1,9 @@
 name: Unittest GPU CI
 
 on:
-  push:
-    branches: [paddleformers, release/*]
   pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [paddleformers]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}

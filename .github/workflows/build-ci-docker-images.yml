@@ -1,15 +1,9 @@
 name: Build CI-Docker Images
 
 on:
-  push:
-    branches:
-      - paddleformers
-    paths:
-      - "requirements*"
-      - "tests/requirements.txt"
-      - "setup.py"
-      - ".github/workflows/build-ci-docker-images.yml"
   pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [paddleformers]
     paths:
       - "requirements*"
       - "tests/requirements.txt"
