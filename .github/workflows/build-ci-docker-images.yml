@@ -1,4 +1,4 @@
-name: Build PR CI-Docker
+name: Build CI-Docker Images
 
 on:
   push:
@@ -23,18 +23,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PR_ID: ${{ github.event.pull_request.number }}
-  COMMIT_ID: ${{ github.event.pull_request.head.sha }}
-  work_dir: /workspace/PaddleHub
-  PaddleFormers_ROOT: /workspace/PaddleHub
-  TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-build-docker
   BRANCH: ${{ github.event.pull_request.base.ref }}
-  CI_name: build-docker
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 jobs:
-  build-ci-docker:
-    name: build-ci-docker
+  build-ci-docker-images:
+    name: build-ci-docker-images
     runs-on: [self-hosted, 4gpu]
     steps:
       - name: Download Code
@@ -52,12 +46,17 @@ jobs:
           git config --global user.email "paddle_ci@example.com"
           git pull
           git submodule update --init --recursive --force
-          git fetch origin pull/${PR_ID}/head
-          git checkout -b PR_${PR_ID} FETCH_HEAD
-          git remote add upstream https://github.com/PaddlePaddle/PaddleHub.git
-          git fetch upstream ${BRANCH}
-          git merge ${BRANCH}
-          git diff --numstat ${BRANCH} -- |awk '{print $NF}'
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
+            export PR_ID=${{ github.event.pull_request.number }}
+            git fetch origin pull/${PR_ID}/head
+            git checkout -b PR_${PR_ID} FETCH_HEAD
+            git remote add upstream https://github.com/PaddlePaddle/PaddleHub.git
+            git fetch upstream ${BRANCH}
+            git merge ${BRANCH}
+            git diff --numstat ${BRANCH} -- | awk '{print $NF}'
+          else
+            echo "Not in a pull_request event. Skipping PR-specific operations."
+          fi
           git log --pretty=oneline -10
 
       - name: Write Dockerfile Inline

@@ -123,6 +123,7 @@ jobs:
           cd /workspace/PaddleHub && git config --global --add safe.directory $PWD
           timeout 50m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
           '
+          
       - name: Upload Allure-reports & Logs
         if: always()
         env:
