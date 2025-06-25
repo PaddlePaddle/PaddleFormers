@@ -1261,7 +1261,7 @@ class SpecialTokensMixin:
         return set_attr
 
     @property
-    @cache
+    #@cache
     def all_special_tokens(self) -> List[str]:
         """
         `List[str]`: All the special tokens (`'<unk>'`, `'<cls>'`, etc.) mapped to class attributes.
@@ -1272,7 +1272,7 @@ class SpecialTokensMixin:
         return all_toks
 
     @property
-    @cache
+    #@cache
     def all_special_tokens_extended(self) -> List[Union[str, AddedToken]]:
         """
         `List[Union[str, AddedToken]]`: All the special tokens (`'<unk>'`, `'<cls>'`, etc.) mapped to class
