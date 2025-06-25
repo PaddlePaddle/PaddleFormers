@@ -1,23 +1,12 @@
 blobfile
 colorlog
-colorama
-seqeval
-dill<0.3.5
 multiprocess<=0.70.12.2
 datasets >= 2.0.0
 tqdm
-paddlefsl
 sentencepiece
 huggingface_hub>=0.19.2
-onnx>=1.10.0
 protobuf>=3.20.2
-paddle2onnx
-Flask-Babel
 visualdl
-fastapi
-uvicorn
-typer
-rich
 safetensors
 fast_dataindex>=0.1.1 ; platform_system == "Linux"
 aistudio-sdk>=0.3.0
@@ -29,4 +18,3 @@ ml_dtypes
 tokenizers<=0.20.3; python_version<="3.8"
 tokenizers>=0.21,<0.22; python_version>"3.8"
 omegaconf
-einops>=0.7.0
