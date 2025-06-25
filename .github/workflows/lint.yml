@@ -1,32 +1,41 @@
-name: Lint
+name: Codestyle Check
 
 on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   Lint:
     name: Lint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Download Code
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - name: checkout develop
+
+      - name: Checkout Develop
         run: |
-          if ! git show-ref --quiet refs/heads/develop; then \
+          if ! git show-ref --quiet refs/heads/paddleformers; then \
               echo "local develop branch is missing, creating local develop branch that tracks remote develop branch"
-              git fetch origin develop
-              git branch develop --track origin/develop
+              git fetch origin paddleformers
+              git branch paddleformers --track origin/paddleformers
           else
             echo "local develop branch exist, skipping"
           fi
-      - uses: actions/setup-python@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
           cache: 'pip' # caching pip dependencies
-      - name: Install dependencies
+
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           make install
-      - name: run the command
+
+      - name: Test
         run: make lint
-    

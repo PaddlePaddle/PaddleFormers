@@ -17,8 +17,8 @@
 set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
-export nlp_dir=/workspace/PaddleFormers
-export log_path=/workspace/PaddleFormers/unittest_logs
+export nlp_dir=/workspace/PaddleHub
+export log_path=/workspace/PaddleHub/unittest_logs
 cd $nlp_dir
 
 if [ ! -d "unittest_logs" ];then
@@ -33,7 +33,6 @@ install_requirements() {
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
-    python -m pip install pillow codecov-cli allure-pytest
     python -m pip install --no-cache-dir ${paddle}
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
 
@@ -67,9 +66,11 @@ print_info() {
         tail -n 1 ${log_path}/unittest.log >> ${log_path}/unittest_FAIL.log
         echo -e "\033[31m ${log_path}/unittest_FAIL \033[0m"
         cat ${log_path}/unittest_FAIL.log
-        cp ${log_path}/unittest_FAIL.log ${PPNLP_HOME}/upload/unittest_FAIL.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
-        cd ${PPNLP_HOME} && python upload.py ${PPNLP_HOME}/upload 'paddleformers/PaddleFormers_CI/PaddleFormers-CI-Unittest-GPU'
-        rm -rf upload/* && cd -
+        if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
+            cp ${log_path}/unittest_FAIL.log ${PPNLP_HOME}/upload/unittest_FAIL.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
+            cd ${PPNLP_HOME} && python upload.py ${PPNLP_HOME}/upload 'paddlenlp/PaddleNLP_CI/PaddleNLP-CI-Unittest-GPU'
+            rm -rf upload/* && cd -
+        fi
         if [ $1 -eq 124 ]; then
             echo "\033[32m [failed-timeout] Test case execution was terminated after exceeding the ${running_time} min limit."
         fi
@@ -81,7 +82,7 @@ print_info() {
 
 get_diff_TO_case(){
 export FLAGS_enable_CI=false
-for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} |awk '{print $NF}'`;do
+for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
     ext="${file_name##*.}"
     echo "file_name: ${file_name}, ext: ${file_name##*.}"
     
@@ -110,12 +111,16 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     exit_code=$?
     print_info $exit_code unittest
 
-    cd ${nlp_dir}
-    echo -e "\033[35m ---- Generate Allure Report  \033[0m"
-    unset http_proxy && unset https_proxy
-    cp scripts/regression/gen_allure_report.py ./
-    python gen_allure_report.py > /dev/null
-    echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"
+    if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
+        cd ${nlp_dir}
+        echo -e "\033[35m ---- Generate Allure Report  \033[0m"
+        unset http_proxy && unset https_proxy
+        cp scripts/regression/gen_allure_report.py ./
+        python gen_allure_report.py > /dev/null
+        echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"
+    else
+        echo "AGILE_JOB_BUILD_ID is empty, skip generate allure report"
+    fi
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
     exit_code=0

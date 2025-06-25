@@ -1,0 +1,100 @@
+name: Build CI-Docker Images
+
+on:
+  push:
+    branches:
+      - paddleformers
+    paths:
+      - "requirements*"
+      - "tests/requirements.txt"
+      - "setup.py"
+      - ".github/workflows/build-ci-docker-images.yml"
+  pull_request:
+    paths:
+      - "requirements*"
+      - "tests/requirements.txt"
+      - "setup.py"
+      - ".github/workflows/build-ci-docker-images.yml"
+  schedule:
+    - cron: "5 0 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  BRANCH: ${{ github.event.pull_request.base.ref }}
+  no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+
+jobs:
+  build-ci-docker-images:
+    name: build-ci-docker-images
+    runs-on: [self-hosted, 4gpu]
+    steps:
+      - name: Download Code
+        env:
+          work_dir: ${{ github.workspace }}
+        run: |
+          sudo rm -rf * .[^.]*
+          # wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          # echo "Extracting PaddleFormers.tar.gz"
+          # tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+          source ${{ github.workspace }}/../../../proxy
+          git clone --branch=${BRANCH} https://github.com/PaddlePaddle/PaddleHub.git
+          cd PaddleHub
+          git config --global user.name "PaddleCI"
+          git config --global user.email "paddle_ci@example.com"
+          git pull
+          git submodule update --init --recursive --force
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
+            export PR_ID=${{ github.event.pull_request.number }}
+            git fetch origin pull/${PR_ID}/head
+            git checkout -b PR_${PR_ID} FETCH_HEAD
+            git remote add upstream https://github.com/PaddlePaddle/PaddleHub.git
+            git fetch upstream ${BRANCH}
+            git merge ${BRANCH}
+            git diff --numstat ${BRANCH} -- | awk '{print $NF}'
+          else
+            echo "Not in a pull_request event. Skipping PR-specific operations."
+          fi
+          git log --pretty=oneline -10
+
+      - name: Write Dockerfile Inline
+        env:
+          work_dir: ${{ github.workspace }}/PaddleHub
+        run: |
+          cat <<EOF > Dockerfile
+          FROM iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-libsndfile
+          RUN unlink /usr/bin/python3 && ln -sf python3.10 /usr/bin/python3
+          RUN python -m pip config --user set global.index http://pip.baidu-int.com/search/
+          RUN python -m pip config --user set global.index-url http://pip.baidu-int.com/simple
+          RUN python -m pip config --user set global.trusted-host pip.baidu-int.com
+          RUN python -m pip install bce-python-sdk==0.8.74
+          RUN python -m pip install --no-cache-dir https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          COPY PaddleHub/ /tmp/paddlehub/
+          WORKDIR /tmp/paddlehub
+          RUN python -m pip install -r requirements.txt
+          RUN python -m pip install -r requirements-dev.txt
+          RUN python -m pip install -r tests/requirements.txt
+          RUN python setup.py bdist_wheel > /dev/null
+          RUN python -m pip install dist/*.whl
+          WORKDIR /
+          RUN rm -rf /tmp/paddlehub
+          CMD ["python3"]
+          EOF
+      
+      - name: Build Docker Image
+        run: |
+          docker build -t iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest .
+
+      - name: Test CI Image
+        run: |
+          container_name=PaddleFormers-Build-test-${core_index}-$(date +%Y%m%d-%H%M%S)
+          docker_image=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
+          nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          --runtime=nvidia ${docker_image} /bin/bash -c "
+            python -c \"from paddleformers import __version__; print('paddleformers version:', __version__)\"
+            python -c \"import paddleformers; print('paddleformers commit:', paddleformers.version.commit)\"
+            python -c \"import paddle; print('paddle'); print(paddle.__version__); print(paddle.version.show())\"
+            python -m pip list
+          "

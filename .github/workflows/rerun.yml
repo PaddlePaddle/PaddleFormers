@@ -1,0 +1,63 @@
+name: Re-run
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  re-run:
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, '/re-run')  && github.event.comment.user.login == github.event.issue.user.login }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Rerun All Failed Jobs
+        if: ${{ contains(github.event.comment.body, 'all-failed') }}
+        uses: ./.github/actions/rerun-workflow
+        with:
+          PR_ID: ${{ github.event.issue.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          JOB_NAME: 'all-failed'
+
+      - name: Rerun Unittest GPU
+        if: ${{ contains(github.event.comment.body, 'Unittest GPU') }}
+        uses: ./.github/actions/rerun-workflow
+        with:
+          PR_ID: ${{ github.event.issue.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          JOB_NAME: 'Unittest GPU CI / unittest-gpu-ci'
+
+      - name: Rerun Unittest CPU
+        if: ${{ contains(github.event.comment.body, 'Unittest CPU') }}
+        uses: ./.github/actions/rerun-workflow
+        with:
+          PR_ID: ${{ github.event.issue.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          JOB_NAME: 'Unittest CPU CI / unittest-cpu-ci'
+
+      - name: Rerun Codestyle Check
+        if: ${{ contains(github.event.comment.body, 'Codestyle Check') }}
+        uses: ./.github/actions/rerun-workflow
+        with:
+          PR_ID: ${{ github.event.issue.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          JOB_NAME: 'Codestyle Check / Lint'
+
+      - name: Rerun Build CI-Docker
+        if: ${{ contains(github.event.comment.body, 'Build CI-Docker Images') }}
+        uses: ./.github/actions/rerun-workflow
+        with:
+          PR_ID: ${{ github.event.issue.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          JOB_NAME: 'Build CI-Docker / build-ci-docker-images'
