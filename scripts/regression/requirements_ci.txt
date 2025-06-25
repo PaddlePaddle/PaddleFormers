@@ -1,5 +1,5 @@
 opencv-python==4.6.0.66
-opencv-contrib-python==4.6.0.66
+opencv-contrib-python==4.8.1.78
 protobuf==3.20.2
 regex
 attrdict==2.0.1
