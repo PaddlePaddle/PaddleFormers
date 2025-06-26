@@ -19,8 +19,25 @@ import os
 import tempfile
 import unittest
 
-from paddleformers.transformers import AutoModel, BertModel
+from paddleformers.transformers import (
+    AutoConfig,
+    AutoModel,
+    AutoModelForCausalLM,
+    AutoModelForMaskedLM,
+    AutoModelForPretraining,
+    AutoModelForQuestionAnswering,
+    AutoModelForSequenceClassification,
+    AutoModelForTokenClassification,
+    BertConfig,
+    BertModel,
+)
+from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
+from paddleformers.transformers.auto.modeling import MODEL_MAPPING
 from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
+
+from ...utils.test_module.custom_configuration import CustomConfig
+from ...utils.test_module.custom_model import CustomModel
+from ..bert.test_modeling import BertModelTester
 
 
 class AutoModelTest(unittest.TestCase):
@@ -47,17 +64,6 @@ class AutoModelTest(unittest.TestCase):
             reloaded_model = AutoModel.from_pretrained(model_save_path)
             self.assertIsInstance(reloaded_model, BertModel)
 
-    def test_from_pretrained_no_init_class_no_model_name(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            model = copy.deepcopy(self.model)
-            model.save_pretrained(tmp_dir)
-            config = model.config.to_dict()
-            config.pop("architectures")
-            with open(os.path.join(tmp_dir, "config.json"), "w", encoding="utf-8") as writer:
-                writer.write(json.dumps(config, indent=2, sort_keys=True) + "\n")
-            with self.assertRaises(AttributeError):
-                AutoModel.from_pretrained(tmp_dir)
-
     def test_model_from_pretrained_cache_dir(self):
         model_name = "__internal_testing__/tiny-random-bert"
         with tempfile.TemporaryDirectory() as tempdir:
@@ -76,3 +82,46 @@ class AutoModelTest(unittest.TestCase):
     def test_from_aistudio(self):
         model = AutoModel.from_pretrained("PaddleFormers/tiny-random-bert", from_aistudio=True)
         self.assertIsInstance(model, BertModel)
+
+    def test_new_model_registration(self):
+        AutoConfig.register("custom", CustomConfig)
+
+        auto_classes = [
+            AutoModel,
+            AutoModelForCausalLM,
+            AutoModelForMaskedLM,
+            AutoModelForPretraining,
+            AutoModelForQuestionAnswering,
+            AutoModelForSequenceClassification,
+            AutoModelForTokenClassification,
+        ]
+
+        try:
+            for auto_class in auto_classes:
+                with self.subTest(auto_class.__name__):
+                    # Wrong config class will raise an error
+                    with self.assertRaises(ValueError):
+                        auto_class.register(BertConfig, CustomModel)
+                    auto_class.register(CustomConfig, CustomModel)
+                    # Trying to register something existing in the Transformers library will raise an error
+                    with self.assertRaises(ValueError):
+                        auto_class.register(BertConfig, BertModel)
+
+                    # Now that the config is registered, it can be used as any other config with the auto-API
+                    tiny_config = BertModelTester(self).get_config()
+                    config = CustomConfig(**tiny_config.to_dict())
+                    model = auto_class.from_config(config)
+                    self.assertIsInstance(model, CustomModel)
+
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        model.save_pretrained(tmp_dir)
+                        new_model = auto_class.from_pretrained(tmp_dir)
+                        # The model is a CustomModel but from the new dynamically imported class.
+                        self.assertIsInstance(new_model, CustomModel)
+
+        finally:
+            if "custom" in CONFIG_MAPPING._extra_content:
+                del CONFIG_MAPPING._extra_content["custom"]
+            for mapping in (MODEL_MAPPING,):
+                if CustomConfig in mapping._extra_content:
+                    del mapping._extra_content[CustomConfig]

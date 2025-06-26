@@ -23,6 +23,13 @@ from ...utils.download import resolve_file_path
 from ...utils.log import logger
 from .. import *  # noqa
 from ..configuration_utils import is_standard_config
+from .configuration import (
+    CONFIG_MAPPING_NAMES,
+    MODEL_NAMES_MAPPING,
+    AutoConfig,
+    PretrainedConfig,
+)
+from .factory import _LazyAutoMapping
 
 __all__ = [
     "AutoBackbone",
@@ -80,6 +87,8 @@ MAPPING_TASKS = OrderedDict(
 MODEL_FOR_CAUSAL_LM_MAPPING_NAMES = OrderedDict([])
 
 MODEL_FOR_CAUSAL_LM_INFERENCE_MAPPING_NAMES = OrderedDict([])
+
+MODEL_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, MODEL_NAMES_MAPPING)
 
 
 def get_name_mapping(task="Model"):
@@ -143,7 +152,7 @@ class _BaseAutoModelClass:
         # Get class name corresponds to this configuration
         if is_standard_config(config):
             architectures = deepcopy(config["architectures"])
-            init_class = architectures.pop() if len(architectures) > 0 else None
+            init_class = architectures.pop() if architectures is not None and len(architectures) > 0 else None
         else:
             init_class = config.pop("init_class", None)
         init_class = init_class[:-5] if init_class is not None and init_class.endswith("Model") else init_class
@@ -161,10 +170,17 @@ class _BaseAutoModelClass:
         else:
             # From pretrained_model_name_or_path
             for model_flag, name in SORTED_MAPPING_NAMES.items():
-                if name in pretrained_model_name_or_path.lower():
+                if type(pretrained_model_name_or_path) is str and name in pretrained_model_name_or_path.lower():
                     model_name = model_flag + "Model"
                     break
         if model_name is None:
+            # Try to get model class from config class
+            if not isinstance(config, PretrainedConfig) and pretrained_model_name_or_path is not None:
+                config = AutoConfig.from_pretrained(pretrained_model_name_or_path)
+            if type(config) in MODEL_MAPPING.keys():
+                model_class = MODEL_MAPPING[type(config)]
+                if not isinstance(model_class, (list, tuple)):
+                    return model_class
             raise AttributeError(
                 f"Unable to parse 'architectures' or 'init_class' from {config_file_path}. Also unable to infer model class from 'pretrained_model_name_or_path'"
             )
@@ -269,6 +285,24 @@ class _BaseAutoModelClass:
                 "- or a correct model-identifier of community-contributed pretrained models,\n"
                 "- or the correct path to a directory containing relevant model files.\n"
             )
+
+    @classmethod
+    def register(cls, config_class, model_class, exist_ok=False):
+        """
+        Register a new model for this class.
+        Args:
+            config_class ([`PretrainedConfig`]):
+                The configuration corresponding to the model to register.
+            model_class ([`PreTrainedModel`]):
+                The model to register.
+        """
+        if hasattr(model_class, "config_class") and model_class.config_class.__name__ != config_class.__name__:
+            raise ValueError(
+                "The model class you are passing has a `config_class` attribute that is not consistent with the "
+                f"config class you passed (model has {model_class.config_class} and you passed {config_class}. Fix "
+                "one of those so they match!"
+            )
+        MODEL_MAPPING.register(config_class, model_class, exist_ok=exist_ok)
 
 
 class AutoBackbone(_BaseAutoModelClass):

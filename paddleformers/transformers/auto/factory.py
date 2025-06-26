@@ -79,24 +79,13 @@ class _LazyAutoMapping(OrderedDict):
     def _load_attr_from_module(self, model_type, attr):
         module_name = model_type_to_module_name(model_type)
         if module_name not in self._modules:
-            if any(["Tokenizer" in name for name in [model_type, attr]]):
-                try:
-                    self._modules[module_name] = importlib.import_module(
-                        f".{module_name}.tokenizer", "paddleformers.transformers"
-                    )
-                except ImportError:
-                    pass
-            if module_name not in self._modules:
-                if any(["Config" in name for name in [model_type, attr]]):
-                    try:
-                        self._modules[module_name] = importlib.import_module(
-                            f".{module_name}.configuration", "paddleformers.transformers"
-                        )
-                    except ImportError:
-                        pass
-            if module_name not in self._modules:
-                self._modules[module_name] = importlib.import_module(f".{module_name}", "paddleformers.transformers")
-        return getattribute_from_module(self._modules[module_name], attr)
+            self._modules[module_name] = importlib.import_module(f".{module_name}", "paddleformers.transformers")
+        import_from = self._modules[module_name]
+        if any(["Tokenizer" in name for name in [model_type, attr]]):
+            import_from = import_from.tokenizer
+        elif any(["Config" in name for name in [model_type, attr]]):
+            import_from = import_from.configuration
+        return getattribute_from_module(import_from, attr)
 
     def keys(self):
         mapping_keys = [
