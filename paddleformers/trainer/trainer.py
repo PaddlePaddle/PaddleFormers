@@ -2616,8 +2616,8 @@ class Trainer:
             self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel)
         else:
             if self.args.unified_checkpoint and "async_save" in self.args.unified_checkpoint_config:
-                os.makedirs(signal_dir, exist_ok=True)
                 if self.is_in_train:
+                    os.makedirs(signal_dir, exist_ok=True)
                     global_rank = paddle.distributed.get_rank() if paddle.distributed.get_world_size() > 1 else -1
                     paddle.save(global_rank, os.path.join(signal_dir, f".model_weight.done.{global_rank}"))
 
@@ -2630,14 +2630,6 @@ class Trainer:
             ):
                 # For ckpt integrity
                 paddle.save(self.state.global_step, os.path.join(output_dir, ".model_done"))
-        if (
-            self.args.unified_checkpoint
-            and "async_save" in self.args.unified_checkpoint_config
-            and not self.is_in_train
-        ):
-            os.makedirs(signal_dir, exist_ok=True)
-            global_rank = paddle.distributed.get_rank() if paddle.distributed.get_world_size() > 1 else -1
-            paddle.save(self.state.global_step, os.path.join(signal_dir, f".model_weight.done.{global_rank}"))
 
     def _filter_moe_no_sync_optimizer_params(self):
         """
@@ -2850,7 +2842,7 @@ class Trainer:
             need_to_rotate_checkpoints = self.args.should_save_model_state
 
         # Delete only by one process
-        need_to_rotate_checkpoints = need_to_rotate_checkpoints and self.args.local_rank == 0
+        need_to_rotate_checkpoints = need_to_rotate_checkpoints and self.args.local_rank in [0, -1]
         if need_to_rotate_checkpoints:
             self._rotate_checkpoints(use_mtime=True, output_dir=run_dir)
             self._rotate_checkpoints(use_mtime=True, output_dir=run_signal_dir)
@@ -2943,8 +2935,9 @@ class Trainer:
         if self.args.unified_checkpoint and "async_save" in self.args.unified_checkpoint_config:
             if PREFIX_CHECKPOINT_DIR in os.path.split(output_dir)[-1]:
                 signal_dir = os.path.join(signal_dir, os.path.split(output_dir)[-1])
-            os.makedirs(signal_dir, exist_ok=True)
-            logger.info(f"Saving model checkpoint finish signal to {signal_dir}")
+            if self.is_in_train:
+                os.makedirs(signal_dir, exist_ok=True)
+                logger.info(f"Saving model checkpoint finish signal to {signal_dir}")
 
         # Save a trained model and configuration using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
@@ -2980,7 +2973,7 @@ class Trainer:
             # backup and remove unified_checkpoint_config for not trine stage
             if not self.is_in_train:
                 self.args.unified_checkpoint_config = []
-
+                signal_dir = None
             self.unified_checkpoint_handler.save_unified_checkpoint(self.model, self.optimizer, output_dir, signal_dir)
 
             # recover unified_checkpoint_config for not trine stage
