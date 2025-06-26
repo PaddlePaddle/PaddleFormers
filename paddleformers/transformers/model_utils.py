@@ -2807,7 +2807,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # we currently don't use this setting automatically, but may start to use with v5
 
         dtype = get_parameter_dtype(model_to_save)
-        model_to_save.config.dtype = str(dtype).split(".")[1]
+        if dtype is not None:
+            model_to_save.config.dtype = str(dtype).split(".")[1]
         if config_to_save is None:
             config_to_save = copy.deepcopy(model_to_save.config)
 
