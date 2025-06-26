@@ -74,6 +74,9 @@ class QuantizationConfig:
         actscale_moving_rate=0.01,
         fp8_format_type="hybrid",
         scale_epsilon=1e-8,
+        dense_quant_type="",
+        moe_quant_type="",
+        quantization="",
         **kwargs,
     ):
         if weight_quantize_algo is not None:
@@ -154,6 +157,9 @@ class QuantizationConfig:
         self.actscale_moving_rate = actscale_moving_rate
         self.fp8_format_type = fp8_format_type
         self.scale_epsilon = scale_epsilon
+        self.dense_quant_type = dense_quant_type
+        self.moe_quant_type = moe_quant_type
+        self.quantization = quantization
 
     @property
     def fp8_format(self):
