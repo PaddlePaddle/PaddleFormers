@@ -79,7 +79,7 @@ class _LazyAutoMapping(OrderedDict):
     def _load_attr_from_module(self, model_type, attr):
         module_name = model_type_to_module_name(model_type)
         if module_name not in self._modules:
-            self._modules[module_name] = importlib.import_module(f".{module_name}", "paddlenlp.transformers")
+            self._modules[module_name] = importlib.import_module(f".{module_name}", "paddleformers.transformers")
         import_from = self._modules[module_name]
         if any(["Tokenizer" in name for name in [model_type, attr]]):
             import_from = import_from.tokenizer
