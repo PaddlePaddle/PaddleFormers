@@ -3,7 +3,7 @@ name: Build CI-Docker Images
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [paddleformers]
+    branches: [develop]
     paths:
       - "requirements*"
       - "tests/requirements.txt"
@@ -30,12 +30,11 @@ jobs:
           work_dir: ${{ github.workspace }}
         run: |
           sudo rm -rf * .[^.]*
-          # wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          # echo "Extracting PaddleFormers.tar.gz"
-          # tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          echo "Extracting PaddleFormers.tar.gz"
+          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           source ${{ github.workspace }}/../../../proxy
-          git clone --branch=${BRANCH} https://github.com/PaddlePaddle/PaddleHub.git
-          cd PaddleHub
+          cd PaddleFormers
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
           git pull
@@ -44,7 +43,7 @@ jobs:
             export PR_ID=${{ github.event.pull_request.number }}
             git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
-            git remote add upstream https://github.com/PaddlePaddle/PaddleHub.git
+            git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
             git fetch upstream ${BRANCH}
             git merge ${BRANCH}
             git diff --numstat ${BRANCH} -- | awk '{print $NF}'
@@ -55,7 +54,7 @@ jobs:
 
       - name: Write Dockerfile Inline
         env:
-          work_dir: ${{ github.workspace }}/PaddleHub
+          work_dir: ${{ github.workspace }}/PaddleFormers
         run: |
           cat <<EOF > Dockerfile
           FROM iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-libsndfile
@@ -65,15 +64,15 @@ jobs:
           RUN python -m pip config --user set global.trusted-host pip.baidu-int.com
           RUN python -m pip install bce-python-sdk==0.8.74
           RUN python -m pip install --no-cache-dir https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
-          COPY PaddleHub/ /tmp/paddlehub/
-          WORKDIR /tmp/paddlehub
+          COPY PaddleFormers/ /tmp/PaddleFormers/
+          WORKDIR /tmp/paddleformers
           RUN python -m pip install -r requirements.txt
           RUN python -m pip install -r requirements-dev.txt
           RUN python -m pip install -r tests/requirements.txt
           RUN python setup.py bdist_wheel > /dev/null
           RUN python -m pip install dist/*.whl
           WORKDIR /
-          RUN rm -rf /tmp/paddlehub
+          RUN rm -rf /tmp/paddleformers
           CMD ["python3"]
           EOF
       
@@ -84,6 +83,7 @@ jobs:
       - name: Test CI Image
         run: |
           container_name=PaddleFormers-Build-test-${core_index}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
           docker_image=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
           nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
           --runtime=nvidia ${docker_image} /bin/bash -c "
@@ -92,3 +92,8 @@ jobs:
             python -c \"import paddle; print('paddle'); print(paddle.__version__); print(paddle.version.show())\"
             python -m pip list
           "
+
+      - name: Terminate And Delete the Container
+        if: always()
+        run: |
+          docker rm -f ${{ env.container_name }}

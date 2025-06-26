@@ -17,8 +17,8 @@
 set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
-export nlp_dir=/workspace/PaddleHub
-export log_path=/workspace/PaddleHub/unittest_logs
+export nlp_dir=/workspace/PaddleFormers
+export log_path=/workspace/PaddleFormers/unittest_logs
 cd $nlp_dir
 
 if [ ! -d "unittest_logs" ];then

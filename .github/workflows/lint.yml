@@ -1,6 +1,6 @@
 name: Codestyle Check
 
-on: [pull_request]
+on: [push, pull_request]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -18,10 +18,10 @@ jobs:
 
       - name: Checkout Develop
         run: |
-          if ! git show-ref --quiet refs/heads/paddleformers; then \
+          if ! git show-ref --quiet refs/heads/develop; then \
               echo "local develop branch is missing, creating local develop branch that tracks remote develop branch"
-              git fetch origin paddleformers
-              git branch paddleformers --track origin/paddleformers
+              git fetch origin develop
+              git branch develop --track origin/develop
           else
             echo "local develop branch exist, skipping"
           fi

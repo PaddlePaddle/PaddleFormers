@@ -3,7 +3,7 @@ name: Unittest GPU CI
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [paddleformers]
+    branches: [develop]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -12,10 +12,10 @@ concurrency:
 env:
   PR_ID: ${{ github.event.pull_request.number }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
-  work_dir: /workspace/PaddleHub
-  PaddleFormers_ROOT: /workspace/PaddleHub
+  work_dir: /workspace/PaddleFormers
+  PaddleFormers_ROOT: /workspace/PaddleFormers
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-gpu
-  ci_scripts: /workspace/PaddleHub/scripts/unit_test
+  ci_scripts: /workspace/PaddleFormers/scripts/unit_test
   BRANCH: ${{ github.event.pull_request.base.ref }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_name: unittest-gpu-ci
@@ -23,7 +23,7 @@ env:
   HF_ENDPOINT: https://hf-mirror.com
   STUDIO_GIT_HOST: http://git.prod.idc-to-cloud.aistudio.baidu-int.com
   PPNLP_HOME: /ssd1/PaddleNLP
-  NLP_DIR: /workspace/PaddleHub
+  NLP_DIR: /workspace/PaddleFormers
   HF_DATASETS_CACHE: /ssd1/PaddleNLP/huggingface/datasets
   TRANSFORMERS_CACHE: /ssd1/PaddleNLP/huggingface
 
@@ -41,19 +41,18 @@ jobs:
           work_dir: ${{ github.workspace }}
         run: |
           sudo rm -rf * .[^.]*
-          # wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          # echo "Extracting PaddleFormers.tar.gz"
-          # tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          echo "Extracting PaddleFormers.tar.gz"
+          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           source ${{ github.workspace }}/../../../proxy
-          git clone --branch=${BRANCH} https://github.com/PaddlePaddle/PaddleHub.git
-          cd PaddleHub
+          cd PaddleFormers
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
           git pull
           git submodule update --init --recursive --force
           git fetch origin pull/${PR_ID}/head
           git checkout -b PR_${PR_ID} FETCH_HEAD
-          git remote add upstream https://github.com/PaddlePaddle/PaddleHub.git
+          git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
           git fetch upstream ${BRANCH}
           git merge ${BRANCH}
           git diff --numstat ${BRANCH} -- |awk '{print $NF}'
@@ -120,7 +119,7 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -c '
           ldconfig
           set -e
-          cd /workspace/PaddleHub && git config --global --add safe.directory $PWD
+          cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           timeout 50m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
           '
           
@@ -141,13 +140,13 @@ jobs:
             wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
             unzip -q ${{ env.home_path }}/allure-2.19.0.zip
           fi
-          cd /workspace/PaddleHub/unittest_logs
-          for FILE in /workspace/PaddleHub/unittest_logs/*; do
+          cd /workspace/PaddleFormers/unittest_logs
+          for FILE in /workspace/PaddleFormers/unittest_logs/*; do
             file=$(basename "$FILE")
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${PR_ID}/${COMMIT_ID}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${PR_ID}/${COMMIT_ID}/logs/$file"
           done
-          cd /workspace/PaddleHub/
+          cd /workspace/PaddleFormers/
           ${{ env.allure_file }} generate result -o report
           tar -czf products.tar.gz report unittest_logs
           python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${PR_ID}/${COMMIT_ID}/logs
