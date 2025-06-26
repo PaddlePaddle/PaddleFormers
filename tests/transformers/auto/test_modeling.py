@@ -38,7 +38,6 @@ from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
 from ...utils.test_module.custom_configuration import CustomConfig
 from ...utils.test_module.custom_model import CustomModel
 from ..bert.test_modeling import BertModelTester
-from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
 
 
 class AutoModelTest(unittest.TestCase):

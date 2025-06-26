@@ -90,6 +90,7 @@ MODEL_FOR_CAUSAL_LM_INFERENCE_MAPPING_NAMES = OrderedDict([])
 
 MODEL_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, MODEL_NAMES_MAPPING)
 
+
 def get_name_mapping(task="Model"):
     """
     Task can be 'Backbone', 'Model', 'ForPretraining', 'ForSequenceClassification', 'ForTokenClassification',
@@ -302,7 +303,6 @@ class _BaseAutoModelClass:
                 "one of those so they match!"
             )
         MODEL_MAPPING.register(config_class, model_class, exist_ok=exist_ok)
-
 
 
 class AutoBackbone(_BaseAutoModelClass):
