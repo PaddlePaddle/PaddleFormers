@@ -32,7 +32,7 @@ jobs:
     name: build-ci-docker-images
     runs-on: [self-hosted, 4gpu]
     outputs:
-      image_name: ${{ steps.set-image-name.outputs.image_name }}
+      image_name: ${{ steps.set_image_name.outputs.image_name }}
   
     steps:
       - name: Download Code
@@ -87,6 +87,7 @@ jobs:
           EOF
       
       - name: Set Image Name
+        id: set_image_name
         run: |
           if [[ "${{ github.event_name }}" =~ ^(push|schedule)$ ]]; then
             image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
