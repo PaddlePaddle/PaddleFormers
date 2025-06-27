@@ -102,12 +102,11 @@ jobs:
 
   test-ci-docker-images:
     name: test-ci-docker-images
-    runs-on: [self-hosted, 4gpu]
-    needs: build-ci-docker-images
     if: github.event_name == 'pull_request'
+    needs: build-ci-docker-images
     uses: ./.github/workflows/unittest-gpu.yml
     with:
-          image_name: ${{ needs.build-ci-docker-images.outputs.image_name }}
+      image_name: ${{ needs.build-ci-docker-images.outputs.image_name }}
 
   clean-ci-image:
     needs: test-ci-docker-images
