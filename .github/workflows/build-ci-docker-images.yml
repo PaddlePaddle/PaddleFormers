@@ -25,7 +25,6 @@ concurrency:
 
 env:
   BRANCH: ${{ github.event.pull_request.base.ref }}
-  IMAGE_NAME: ${{ needs.build-ci-docker-images.outputs.image_name }}
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 jobs:
@@ -96,7 +95,6 @@ jobs:
             image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-$(date +%Y%m%d-%H%M%S)
           fi
           echo "image_name=${image_name}" >> ${{ github.env }}
-          echo "image_name=${image_name}" >> "$GITHUB_ENV"
           echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
       
       - name: Build Docker Image
@@ -112,11 +110,11 @@ jobs:
       image_name: ${{ needs.build-ci-docker-images.outputs.image_name }}
 
   clean-ci-image:
-    needs: [build-ci-docker-images, test-ci-docker-images]
+    needs: test-ci-docker-images
     if: github.event_name == 'pull_request'
     runs-on: [self-hosted, 4gpu]
     steps:
       - name: Remove CI Image
         run: |
           docker image prune -f 
-          docker rmi -f ${{ env.IMAGE_NAME }}
+          docker rmi -f ${{ needs.build-ci-docker-images.outputs.image_name }}
