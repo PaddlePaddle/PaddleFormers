@@ -11,7 +11,7 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
