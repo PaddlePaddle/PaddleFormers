@@ -105,12 +105,15 @@ jobs:
     runs-on: [self-hosted, 4gpu]
     needs: build-ci-docker-images
     if: github.event_name == 'pull_request'
-    steps:
-      - name: Test CI Image
-        uses: ./.github/workflows/unittest-gpu.yml
-        with:
+    uses: ./.github/workflows/unittest-gpu.yml
+    with:
           image_name: ${{ needs.build-ci-docker-images.outputs.image_name }}
 
-      - name: Delete the Image
+  clean-ci-image:
+    needs: test-ci-docker-images
+    if: github.event_name == 'pull_request'
+    runs-on: [self-hosted, 4gpu]
+    steps:
+      - name: Remove CI Image
         run: |
-            docker rmi -f ${{ needs.build-ci-docker-images.outputs.image_name }}
+          docker rmi -f ${{ needs.build-ci-docker-images.outputs.image_name }}
