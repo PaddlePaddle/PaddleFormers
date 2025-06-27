@@ -1540,12 +1540,6 @@ class TrainingArguments:
                         assert (
                             "split_param" in sharding_parallel_config
                         ), "split_param should be set when enable_stage1_allgather_overlap."
-                        use_casual_mask = os.getenv("USE_CASUAL_MASK", "False")
-                        assert use_casual_mask, "enable_stage1_allgather_overlap requires USE_CASUAL_MASK=True."
-                        assert self.logging_steps > 1, (
-                            "The logging_steps should be greater than 1 for enable_stage1_allgather_overlap, "
-                            f"but got logging_steps={self.logging_steps}."
-                        )
 
                     if "split_param" in sharding_parallel_config:
                         if ShardingOption.SHARD_OP not in self.sharding:
@@ -2195,6 +2189,17 @@ class TrainingArguments:
         else:
             return 0
 
+    @property
+    def expert_parallel_rank(self):
+        if self.use_hybrid_parallel:
+            hcg = fleet.get_hybrid_communicate_group()
+            if hasattr(hcg, "get_expert_parallel_rank"):
+                return max(hcg.get_expert_parallel_rank(), 0)
+            else:
+                return 0
+        else:
+            return 0
+
     def _format_name(self, prefix, rank, degree):
         size = 2
         return f"{prefix}{rank:0>{size}d}"
@@ -2209,7 +2214,7 @@ class TrainingArguments:
                 name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_parallel_degree))
             if self.sharding_parallel_degree > 1:
                 name.append(self._format_name("shard", self.sharding_parallel_rank, self.sharding_parallel_degree))
-            if self.use_expert_parallel:
+            if self.use_expert_parallel and self.expert_parallel_degree <= 1:
                 name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree))
             return "_".join(name)
         else:
@@ -2225,7 +2230,7 @@ class TrainingArguments:
                 name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_parallel_degree))
             if self.pipeline_parallel_degree > 1:
                 name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_parallel_degree))
-            if self.use_expert_parallel:
+            if self.use_expert_parallel and self.expert_parallel_degree <= 1:
                 name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree))
             return "_".join(name)
 
@@ -2234,7 +2239,9 @@ class TrainingArguments:
                 return self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree)
             return None
 
-    def sharded_name_suffix(self, shard_id=None, pp_id=None, moe_id=None):
+    def sharded_name_suffix(self, shard_id=None, pp_id=None, moe_id=None, sharding_parallel_degree=None):
+        if sharding_parallel_degree is None:
+            sharding_parallel_degree = self.sharding_parallel_degree
         if self.use_hybrid_parallel:
             name = []
             if self.tensor_parallel_degree > 1:
@@ -2244,12 +2251,12 @@ class TrainingArguments:
                     pp_id = self.pipeline_parallel_rank
                 assert isinstance(pp_id, int)
                 name.append(self._format_name("pp", pp_id, self.pipeline_parallel_degree))
-            if self.sharding_parallel_degree > 1:
+            if sharding_parallel_degree > 1:
                 if shard_id is None:
                     shard_id = self.sharding_parallel_rank
                 assert isinstance(shard_id, int)
-                name.append(self._format_name("shard", shard_id, self.sharding_parallel_degree))
-            if self.use_expert_parallel:
+                name.append(self._format_name("shard", shard_id, sharding_parallel_degree))
+            if self.use_expert_parallel and self.expert_parallel_degree <= 1:
                 if moe_id is None:
                     moe_id = self.data_parallel_rank
                 assert isinstance(moe_id, int)
