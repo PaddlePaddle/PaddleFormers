@@ -1,6 +1,13 @@
 name: Build CI-Docker Images
 
 on:
+  push:
+    branches: [develop]
+    paths:
+      - "requirements*"
+      - "tests/requirements.txt"
+      - "setup.py"
+      - ".github/workflows/build-ci-docker-images.yml"
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [develop]
@@ -24,6 +31,9 @@ jobs:
   build-ci-docker-images:
     name: build-ci-docker-images
     runs-on: [self-hosted, 4gpu]
+    outputs:
+      image_name: ${{ steps.set-image-name.outputs.image_name }}
+  
     steps:
       - name: Download Code
         env:
@@ -76,24 +86,31 @@ jobs:
           CMD ["python3"]
           EOF
       
+      - name: Set Image Name
+        run: |
+          if [[ "${{ github.event_name }}" =~ ^(push|schedule)$ ]]; then
+            image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-$(date +%Y%m%d-%H%M%S)
+          fi
+          echo "image_name=${image_name}" >> ${{ github.env }}
+          echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
+      
       - name: Build Docker Image
         run: |
-          docker build -t iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest .
+          docker build -t ${{ env.image_name }} .
 
+  test-ci-docker-images:
+    name: test-ci-docker-images
+    runs-on: [self-hosted, 4gpu]
+    needs: build-ci-docker-images
+    if: github.event_name == 'pull_request'
+    steps:
       - name: Test CI Image
-        run: |
-          container_name=PaddleFormers-Build-test-${core_index}-$(date +%Y%m%d-%H%M%S)
-          echo "container_name=${container_name}" >> ${{ github.env }}
-          docker_image=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
-          nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
-          --runtime=nvidia ${docker_image} /bin/bash -c "
-            python -c \"from paddleformers import __version__; print('paddleformers version:', __version__)\"
-            python -c \"import paddleformers; print('paddleformers commit:', paddleformers.version.commit)\"
-            python -c \"import paddle; print('paddle'); print(paddle.__version__); print(paddle.version.show())\"
-            python -m pip list
-          "
+        uses: ./.github/workflows/unittest-gpu.yml
+        with:
+          image_name: ${{ needs.build-ci-docker-images.outputs.image_name }}
 
-      - name: Terminate And Delete the Container
-        if: always()
+      - name: Delete the Image
         run: |
-          docker rm -f ${{ env.container_name }}
+            docker rmi -f ${{ needs.build-ci-docker-images.outputs.image_name }}

@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [develop]
+  workflow_call:
+    inputs:
+      image_name:
+        required: true
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -70,6 +75,14 @@ jobs:
             echo "Unknown runner label, fallback to default CUDA"
             echo "cudaid=0,1,2,3" >> ${{ github.env }}
           fi
+
+      - name: Determine Image Name
+        run: |
+          if [[ -n "${{ inputs.image_name }}" ]]; then
+            echo "IMAGE_NAME=${{ inputs.image_name }}" >> ${{ github.env }}
+          else
+            echo "IMAGE_NAME=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest" >> ${{ github.env }}
+          fi
       
       - name: Check Docker Image And Run Container
         env:
@@ -80,7 +93,6 @@ jobs:
         run: |
           container_name=${TASK}-${core_index}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> ${{ github.env }}
-          docker_image=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
           nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
             -v ${{ github.workspace }}:/workspace \
@@ -99,7 +111,7 @@ jobs:
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
             -e CUDA_VISIBLE_DEVICES=${{ env.cudaid }} \
-            -w /workspace --runtime=nvidia ${docker_image}
+            -w /workspace --runtime=nvidia ${{ env.IMAGE_NAME }} 
 
       - name: Test
         env:
