@@ -116,4 +116,5 @@ jobs:
     steps:
       - name: Remove CI Image
         run: |
+          docker image prune -f 
           docker rmi -f ${{ needs.build-ci-docker-images.outputs.image_name }}
