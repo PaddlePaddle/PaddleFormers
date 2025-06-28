@@ -12,10 +12,10 @@
 </p>
 
 <h4 align="center">
-    <a href=#News> News </a> |
-    <a href=#Support-Models> Supported Models </a> |
-    <a href=#Installation> Installation </a> |
-    <a href=#Quick-start> Quick Start </a> |
+    <a href=#news> News </a> |
+    <a href=#highlights> Highlights </a> |
+    <a href=#installation> Installation </a> |
+    <a href=#quickstart> Quickstart </a> |
     <a href=#community> Community </a>
 </h4>
 
