@@ -21,7 +21,7 @@
 
 **PaddleFormers** is a Transformer model library built on the [PaddlePaddle](https://www.paddlepaddle.org.cn) deep learning framework, delivering both **ease of use** and **high-performance capabilities**. It provides a unified model definition interface, modular training components, and comprehensive distributed training strategies specifically designed for large language model development pipelines. This enables developers to train large models efficiently with minimal complexity, making it suitable for diverse scenarios ranging from academic research to industrial applications.
 
-## 📣 News
+## News
 
 [2025/06/28] 🎉  **PaddleFormers 0.1** is officially released! This initial version supports SFT/DPO training paradigms, configurable distributed training via unified Trainer API, and integrates PEFT, MergeKit, and Quantization APIs for diverse LLM applications.
 
@@ -36,7 +36,7 @@ Integrates Packing dataflow and [FlashMask](https://arxiv.org/abs/2410.01359) op
 ### 💾 Industrial Storage Solution
 Features **Unified Checkpoint** storage tools for LLMs, enabling training resumption and dynamic resource scaling.  Additionally implements asynchronous storage (up to 95% faster) and Optimizer State Quantization (78% storage reduction), ensuring industrial training meets both efficiency and stability requirements.
 
-## 📦 Installation
+## Installation
 
 Requires Python 3.8+ and [PaddlePaddle](https://www.paddlepaddle.org.cn/install/quick) 3.1+.
 
@@ -50,7 +50,7 @@ cd PaddleFormers
 pip install -e .
 ```
 
-## 🚀 Quickstart
+## Quickstart
 
 ### Text Generation
 
@@ -84,9 +84,9 @@ trainer = SFTTrainer(
 trainer.train()
 ```
 
-## 🤝 Community
+## Community
 
 We welcome all contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## 📄 License
+## License
 This repository's source code is available under the [Apache 2.0 License](LICENSE).
