@@ -16,6 +16,15 @@ import paddle
 import triton
 import triton.language as tl
 
+try:
+    import use_triton_in_paddle
+
+    use_triton_in_paddle.make_triton_compatible_with_paddle()
+except:
+    raise RuntimeError(
+        "Triton is installed, but not yet compatible with Paddle. "
+        "Please run 'python -m pip install use-triton-in-paddle' to enable Triton support in Paddle."
+    )
 DTYPE_MAPPING = {
     paddle.bfloat16: tl.bfloat16,
     paddle.float32: tl.float32,
