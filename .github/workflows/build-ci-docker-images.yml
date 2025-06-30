@@ -117,13 +117,16 @@ jobs:
     steps:
       - name: Remove CI Image
         run: |
-          image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}
-          CONTAINERS=$(docker ps -a --filter "ancestor=$IMAGE_NAME" --format "{{.ID}}")
+          image_name="iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}"
+          CONTAINERS=$(docker ps -a --filter "ancestor=$image_name" --format "{{.ID}}")
+
           if [ -z "$CONTAINERS" ]; then
-            echo "$image_name is not using by any container, deleting..."
-            docker rmi $image_name
+              echo "$image_name is not using by any container, deleting..."
+              docker rmi "$image_name"
           else
               echo "$image_name is using by containers:"
               echo "$CONTAINERS"
           fi
-          docker rmi -f $(docker images -f "dangling=true" -q)
+
+          # 安全删除悬空镜像（无悬空镜像时跳过）
+          docker images -f "dangling=true" -q | xargs -r docker rmi -f
