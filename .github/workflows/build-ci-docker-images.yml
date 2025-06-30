@@ -24,6 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  PR_ID: ${{ github.event.pull_request.number }}
+  COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   BRANCH: ${{ github.event.pull_request.base.ref }}
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
@@ -49,8 +51,7 @@ jobs:
           git config --global user.email "paddle_ci@example.com"
           git pull
           git submodule update --init --recursive --force
-          if [ -n "${{ github.event.pull_request.number }}" ]; then
-            export PR_ID=${{ github.event.pull_request.number }}
+          if [ -n "${PR_ID}" ]; then
             git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
             git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
@@ -92,7 +93,7 @@ jobs:
           if [[ "${{ github.event_name }}" =~ ^(push|schedule)$ ]]; then
             image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-$(date +%Y%m%d-%H%M%S)
+            image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}
           fi
           echo "image_name=${image_name}" >> ${{ github.env }}
           echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
@@ -116,5 +117,13 @@ jobs:
     steps:
       - name: Remove CI Image
         run: |
-          docker image prune -f 
-          docker rmi -f ${{ needs.build-ci-docker-images.outputs.image_name }}
+          image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}
+          CONTAINERS=$(docker ps -a --filter "ancestor=$IMAGE_NAME" --format "{{.ID}}")
+          if [ -z "$CONTAINERS" ]; then
+            echo "$image_name is not using by any container, deleting..."
+            docker rmi $image_name
+          else
+              echo "$image_name is using by containers:"
+              echo "$CONTAINERS"
+          fi
+          docker rmi -f $(docker images -f "dangling=true" -q)

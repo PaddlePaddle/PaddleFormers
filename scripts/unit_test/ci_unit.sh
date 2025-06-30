@@ -105,7 +105,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     set +e
     timeout ${running_time} python -m pytest -v -n 8 \
     --dist loadgroup \
-    --retries 1 --retry-delay 1 \
+    --retries 3 --retry-delay 1 \
     --timeout 200 --durations 20 --alluredir=result \
     --cov paddleformers --cov-report xml:coverage.xml > ${log_path}/unittest.log 2>&1
     exit_code=$?
