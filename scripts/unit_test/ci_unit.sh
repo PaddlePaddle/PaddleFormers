@@ -82,19 +82,25 @@ print_info() {
 
 get_diff_TO_case(){
 export FLAGS_enable_CI=false
-for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
-    ext="${file_name##*.}"
-    echo "file_name: ${file_name}, ext: ${file_name##*.}"
-    
-    if [ ! -f ${file_name} ];then # 针对pr删掉文件
-        continue
-    elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
-        continue
-    else
-        FLAGS_enable_CI=true
-    fi
-done
+if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
+    # 定时任务回归测试
+    FLAGS_enable_CI=true
+else
+    for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
+        ext="${file_name##*.}"
+        echo "file_name: ${file_name}, ext: ${file_name##*.}"
+        
+        if [ ! -f ${file_name} ];then # 针对pr删掉文件
+            continue
+        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
+            continue
+        else
+            FLAGS_enable_CI=true
+        fi
+    done
+fi
 }
+
 get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then

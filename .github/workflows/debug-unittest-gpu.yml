@@ -1,0 +1,110 @@
+name: Debug Unittest GPU with SSH
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  PR_ID: ${{ github.event.pull_request.number }}
+  COMMIT_ID: ${{ github.event.pull_request.head.sha }}
+  work_dir: /workspace/PaddleFormers
+  PaddleFormers_ROOT: /workspace/PaddleFormers
+  TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-gpu-debug
+  ci_scripts: /workspace/PaddleFormers/scripts/unit_test
+  BRANCH: ${{ github.event.pull_request.base.ref }}
+  AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
+  CI_name: unittest-gpu-debug
+  no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+  HF_ENDPOINT: https://hf-mirror.com
+  STUDIO_GIT_HOST: http://git.prod.idc-to-cloud.aistudio.baidu-int.com
+  PPNLP_HOME: /ssd1/PaddleNLP
+  HF_DATASETS_CACHE: /ssd1/PaddleNLP/huggingface/datasets
+  TRANSFORMERS_CACHE: /ssd1/PaddleNLP/huggingface
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  debug-container:
+    name: unittest-gpu-debug
+    runs-on: [self-hosted, 4gpu]
+    timeout-minutes: 30
+    steps:
+      - name: Download Code
+        env:
+          work_dir: ${{ github.workspace }}
+        run: |
+          sudo rm -rf * .[^.]*
+          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          echo "Extracting PaddleFormers.tar.gz"
+          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+          source ${{ github.workspace }}/../../../proxy
+          cd PaddleFormers
+          git config --global user.name "PaddleCI"
+          git config --global user.email "paddle_ci@example.com"
+          git pull
+          git submodule update --init --recursive --force
+          git fetch origin pull/${PR_ID}/head
+          git checkout -b PR_${PR_ID} FETCH_HEAD
+          git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
+          git fetch upstream ${BRANCH}
+          git merge ${BRANCH}
+          git diff --numstat ${BRANCH} -- |awk '{print $NF}'
+          git log --pretty=oneline -10
+
+      - name: Run SSH Container
+        env:
+          CACHE_DIR: /home/data/cfs/.cache
+          FLAGS_dynamic_static_unified_comm: "True"
+          python_version: "3.10"
+          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+        run: |
+          container_name=${TASK}
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
+          echo "image_name=${image_name}" >> ${{ github.env }}
+          docker rm -f $container_name 2>/dev/null || true
+          nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+            -v ${{ github.workspace }}:/workspace \
+            -v /home/.cache/pip:/home/.cache/pip \
+            -v /ssd1/PaddleNLP:/ssd1/PaddleNLP \
+            -e BRANCH \
+            -e AGILE_COMPILE_BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e work_dir \
+            -e PaddleFormers_ROOT \
+            -e ci_scripts \
+            -e no_proxy \
+            -e CI_name \
+            -e paddle_whl \
+            -e FLAGS_dynamic_static_unified_comm \
+            -e python_version \
+            -w /workspace --runtime=nvidia $image_name bash -c '
+            ldconfig
+          unlink /usr/bin/python3
+          ln -sf $(which python${python_version}) /usr/bin/python3
+          pip config set global.cache-dir "/home/.cache/pip"
+          echo "[global]
+          timeout = 60
+          index = https://pip.baidu-int.com/search/
+          index-url = https://pip.baidu-int.com/simple/
+          trusted-host = pip.baidu-int.com" > /etc/pip.conf
+          cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
+          '
+
+      - name: Print Info
+        run: |
+          echo "容器已启动，请登录机器进行调试"
+          echo "登录机器后，进入容器："
+          echo "docker exec -it $container_name bash"
+          echo "容器内工作目录为：$work_dir"
+          echo "unittest-gpu任务整体复现命令为："
+          echo "bash scripts/unit_test/ci_unit.sh ${paddle_whl}"
+          echo "也可直接在$work_dir下执行python -m pytest 失败case"
+          echo "请调试完成后手动执行清理命令："
+          echo "docker rm -f $container_name"

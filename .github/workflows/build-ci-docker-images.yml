@@ -17,7 +17,7 @@ on:
       - "setup.py"
       - ".github/workflows/build-ci-docker-images.yml"
   schedule:
-    - cron: "5 0 * * *"
+    - cron: "4 0 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
