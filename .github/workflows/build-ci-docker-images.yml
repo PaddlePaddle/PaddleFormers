@@ -29,10 +29,12 @@ jobs:
     name: build-ci-docker-images
     runs-on: [self-hosted, 4gpu]
     outputs:
+      run_downstream: ${{ steps.event_name.outputs.run_downstream }}
       image_name: ${{ steps.set_image_name.outputs.image_name }}
   
     steps:
       - name: Download Code
+        id: event_name
         env:
           work_dir: ${{ github.workspace }}
         run: |

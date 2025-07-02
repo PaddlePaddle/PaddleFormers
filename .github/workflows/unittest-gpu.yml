@@ -144,7 +144,6 @@ jobs:
           '
           
       - name: Upload Allure-reports & Logs
-        if: always()
         if: inputs.run_downstream == '' || inputs.run_downstream == 'true'
         env:
           home_path: ${{ github.workspace }}/../../..
@@ -187,7 +186,6 @@ jobs:
   upload-products:
     name: upload-products
     needs: [unittest-gpu-ci]
-    if: always()
     if: inputs.run_downstream == '' || inputs.run_downstream == 'true'
     runs-on: ubuntu-latest
     steps:
