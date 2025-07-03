@@ -33,6 +33,8 @@ env:
   PPNLP_HOME: /ssd1/PaddleNLP
   HF_DATASETS_CACHE: /ssd1/PaddleNLP/huggingface/datasets
   TRANSFORMERS_CACHE: /ssd1/PaddleNLP/huggingface
+  GITHUB_EVENT_NAME: ${{ github.event_name }}
+  RUN_DOWNSTREAM: ${{ inputs.run_downstream }}
 
 defaults:
   run:
@@ -83,10 +85,11 @@ jobs:
           fi
 
       - name: Determine Image Name
+        env:
+          IMAGE_NAME: ${{ inputs.image_name }}
         run: |
-          echo "IMAGE_NAME=${{ inputs.image_name }}" >> ${{ github.env }}
           if [[ -n "${IMAGE_NAME}" ]]; then
-            echo "IMAGE_NAME=${{ inputs.image_name }}" >> ${{ github.env }}
+            echo "IMAGE_NAME=${IMAGE_NAME}" >> ${{ github.env }}
           else
             echo "IMAGE_NAME=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest" >> ${{ github.env }}
           fi
@@ -109,6 +112,7 @@ jobs:
             -e AGILE_COMPILE_BRANCH \
             -e PR_ID \
             -e COMMIT_ID \
+            -e GITHUB_EVENT_NAME \
             -e work_dir \
             -e PaddleFormers_ROOT \
             -e ci_scripts \
@@ -121,7 +125,6 @@ jobs:
             -w /workspace --runtime=nvidia ${{ env.IMAGE_NAME }} 
 
       - name: Test
-        if: inputs.run_downstream == '' || inputs.run_downstream == 'true'
         env:
           work_dir: ${{ github.workspace }}
         run: |
@@ -136,47 +139,58 @@ jobs:
           index-url = https://pip.baidu-int.com/simple/
           trusted-host = pip.baidu-int.com" > /etc/pip.conf
           '
-          docker exec -t ${{ env.container_name }} /bin/bash -c '
-          ldconfig
-          set -e
-          cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-          timeout 50m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
-          '
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${RUN_DOWNSTREAM}" == "true" ]]; then
+            docker exec -t ${{ env.container_name }} /bin/bash -c '
+            ldconfig
+            set -e
+            cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
+            timeout 50m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
+            '
+          else
+            echo "Not in a pull_request or test_build event. Skipping..."
+          fi
+          
           
       - name: Upload Allure-reports & Logs
-        if: always() && (inputs.run_downstream == '' || inputs.run_downstream == 'true')
+        if: always()
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
           allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
         run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -c '
-          if [ ! -f "${{ env.bos_file }}" ]; then
-            wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
-            mkdir ${{ env.home_path }}/bos
-            tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
-          fi
-          if [ ! -f "${{ env.allure_file }}" ]; then
-            wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
-            unzip -q ${{ env.home_path }}/allure-2.19.0.zip
-          fi
-          if [[ -n "${PR_ID}" ]]; then
-            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${RUN_DOWNSTREAM}" == "true" ]]; then
+            docker exec -t ${{ env.container_name }} /bin/bash -c '
+            if [ ! -f "${{ env.bos_file }}" ]; then
+              wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+              mkdir ${{ env.home_path }}/bos
+              tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
+            fi
+            if [ ! -f "${{ env.allure_file }}" ]; then
+              wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
+              unzip -q ${{ env.home_path }}/allure-2.19.0.zip
+            fi
+            if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+              bos_prefix="${PR_ID}/${COMMIT_ID}"
+            elif [[ "${RUN_DOWNSTREAM}" == "true" && -n "${PR_ID}" ]]; then
+              bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
+            else
+              bos_prefix="schedule/$(date +%Y%m%d)"
+            fi
+            cd /workspace/PaddleFormers/unittest_logs
+            for FILE in /workspace/PaddleFormers/unittest_logs/*; do
+              file=$(basename "$FILE")
+              python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+              echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
+            done
+            cd /workspace/PaddleFormers/
+            ${{ env.allure_file }} generate result -o report
+            tar -czf products.tar.gz report unittest_logs
+            python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+            echo "products: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz"
+            '
           else
-            bos_prefix="schedule/$(date +%Y%m%d)"
+            echo "Not in a pull_request or test_build event. Skipping..."
           fi
-          cd /workspace/PaddleFormers/unittest_logs
-          for FILE in /workspace/PaddleFormers/unittest_logs/*; do
-            file=$(basename "$FILE")
-            python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-            echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
-          done
-          cd /workspace/PaddleFormers/
-          ${{ env.allure_file }} generate result -o report
-          tar -czf products.tar.gz report unittest_logs
-          python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-          echo "products: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz"
-          '
 
       - name: Terminate And Delete the Container
         if: always()
@@ -186,18 +200,24 @@ jobs:
   upload-products:
     name: upload-products
     needs: [unittest-gpu-ci]
-    if: always() && (inputs.run_downstream == '' || inputs.run_downstream == 'true')
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Wget Files
         run: |
-          if [[ -n "${PR_ID}" ]]; then
-            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${RUN_DOWNSTREAM}" == "true" ]]; then
+            if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+              bos_prefix="${PR_ID}/${COMMIT_ID}"
+            elif [[ "${RUN_DOWNSTREAM}" == "true" && -n "${PR_ID}" ]]; then
+              bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
+            else
+              bos_prefix="schedule/$(date +%Y%m%d)"
+            fi
+            wget -q --no-proxy  https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz --no-check-certificate
+            tar -xzf products.tar.gz
           else
-            bos_prefix="schedule/$(date +%Y%m%d)"
+            echo "Not in a pull_request or test_build event. Skipping..."
           fi
-          wget -q --no-proxy  https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz --no-check-certificate
-          tar -xzf products.tar.gz
 
       - name: Upload Allure Report
         uses: actions/upload-artifact@v4
