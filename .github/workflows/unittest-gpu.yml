@@ -139,7 +139,7 @@ jobs:
           index-url = https://pip.baidu-int.com/simple/
           trusted-host = pip.baidu-int.com" > /etc/pip.conf
           '
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${RUN_DOWNSTREAM}" == "true" ]]; then
+          if [[ "${{ env.GITHUB_EVENT_NAME }}" == "pull_request" || "${{ env.RUN_DOWNSTREAM }}" == "true" ]]; then
             docker exec -t ${{ env.container_name }} /bin/bash -c '
             ldconfig
             set -e
@@ -158,7 +158,7 @@ jobs:
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
           allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${RUN_DOWNSTREAM}" == "true" ]]; then
+          if [[ "${{ env.GITHUB_EVENT_NAME }}" == "pull_request" || "${{ env.RUN_DOWNSTREAM }}" == "true" ]]; then
             docker exec -t ${{ env.container_name }} /bin/bash -c '
             if [ ! -f "${{ env.bos_file }}" ]; then
               wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
@@ -169,14 +169,14 @@ jobs:
               wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
               unzip -q ${{ env.home_path }}/allure-2.19.0.zip
             fi
-            if [[ "${RUN_DOWNSTREAM}" == "" && -n "${PR_ID}" ]]; then
+            if [[ "${{ env.RUN_DOWNSTREAM }}" == "" && -n "${PR_ID}" ]]; then
               bos_prefix="${PR_ID}/${COMMIT_ID}"
-            elif [[ "${RUN_DOWNSTREAM}" == "true" && -n "${PR_ID}" ]]; then
+            elif [[ "${{ env.RUN_DOWNSTREAM }}" == "true" && -n "${PR_ID}" ]]; then
               bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
             else
               bos_prefix="schedule/$(date +%Y%m%d)"
             fi
-            echo ${RUN_DOWNSTREAM} ${PR_ID} $bos_prefix
+            echo ${{ env.RUN_DOWNSTREAM }} ${PR_ID} ${bos_prefix}
             cd /workspace/PaddleFormers/unittest_logs
             for FILE in /workspace/PaddleFormers/unittest_logs/*; do
               file=$(basename "$FILE")
@@ -206,10 +206,10 @@ jobs:
     steps:
       - name: Wget Files
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${RUN_DOWNSTREAM}" == "true" ]]; then
-            if [[ "${RUN_DOWNSTREAM}" == "" && -n "${PR_ID}" ]]; then
+          if [[ "${{ env.GITHUB_EVENT_NAME }}" == "pull_request" || "${{ env.RUN_DOWNSTREAM }}" == "true" ]]; then
+            if [[ "${{ env.RUN_DOWNSTREAM }}" == "" && -n "${PR_ID}" ]]; then
               bos_prefix="${PR_ID}/${COMMIT_ID}"
-            elif [[ "${RUN_DOWNSTREAM}" == "true" && -n "${PR_ID}" ]]; then
+            elif [[ "${{ env.RUN_DOWNSTREAM }}" == "true" && -n "${PR_ID}" ]]; then
               bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
             else
               bos_prefix="schedule/$(date +%Y%m%d)"
