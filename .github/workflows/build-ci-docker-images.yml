@@ -132,7 +132,7 @@ jobs:
       
       - name: Build Docker Image
         run: |
-          if "${{ env.run_build }}" == "false"; then
+          if [[ "${{ env.run_build }}" == "false" ]]; then
             echo "No need to build docker image"
           else
             docker build -t ${{ env.image_name }} .
