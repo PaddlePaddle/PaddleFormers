@@ -169,7 +169,7 @@ jobs:
               wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
               unzip -q ${{ env.home_path }}/allure-2.19.0.zip
             fi
-            if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            if [[ "${RUN_DOWNSTREAM}" == "" && -n "${PR_ID}" ]]; then
               bos_prefix="${PR_ID}/${COMMIT_ID}"
             elif [[ "${RUN_DOWNSTREAM}" == "true" && -n "${PR_ID}" ]]; then
               bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
@@ -206,7 +206,7 @@ jobs:
       - name: Wget Files
         run: |
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${RUN_DOWNSTREAM}" == "true" ]]; then
-            if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            if [[ "${RUN_DOWNSTREAM}" == "" && -n "${PR_ID}" ]]; then
               bos_prefix="${PR_ID}/${COMMIT_ID}"
             elif [[ "${RUN_DOWNSTREAM}" == "true" && -n "${PR_ID}" ]]; then
               bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
