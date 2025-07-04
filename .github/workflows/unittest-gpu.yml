@@ -176,7 +176,6 @@ jobs:
             else
               bos_prefix="schedule/$(date +%Y%m%d)"
             fi
-            echo ${{ env.RUN_DOWNSTREAM }} ${PR_ID} ${bos_prefix}
             cd /workspace/PaddleFormers/unittest_logs
             for FILE in /workspace/PaddleFormers/unittest_logs/*; do
               file=$(basename "$FILE")
