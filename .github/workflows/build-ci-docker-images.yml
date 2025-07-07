@@ -166,8 +166,6 @@ jobs:
                 echo "$image_name is using by containers:"
                 echo "$CONTAINERS"
             fi
-          else
-            echo "Not a pull request, no need to clean up images"
           fi
 
           # 安全删除悬空镜像（无悬空镜像时跳过）
