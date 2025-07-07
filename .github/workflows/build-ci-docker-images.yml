@@ -23,6 +23,7 @@ env:
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   BRANCH: ${{ github.event.pull_request.base.ref }}
   TASK: PaddleFormers-CI-build-image
+  GITHUB_EVENT_NAME: ${{ github.event_name }}
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 jobs:
@@ -46,6 +47,7 @@ jobs:
             -e BRANCH \
             -e PR_ID \
             -e COMMIT_ID \
+            -e GITHUB_EVENT_NAME \
             -e work_dir \
             -e no_proxy \
             -w /workspace --runtime=nvidia ${docker_image}
@@ -55,63 +57,54 @@ jobs:
         env:
           work_dir: ${{ github.workspace }}
         run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          docker exec -t ${{ env.container_name }} /bin/bash -c "
           rm -rf * .[^.]*
           wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          echo "Extracting PaddleFormers.tar.gz"
+          echo 'Extracting PaddleFormers.tar.gz'
           tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           source ${{ github.workspace }}/../../../proxy
           cd PaddleFormers
-          git config --global user.name "PaddleCI"
-          git config --global user.email "paddle_ci@example.com"
+          git config --global user.name 'PaddleCI'
+          git config --global user.email 'paddle_ci@example.com'
           git pull
           git submodule update --init --recursive --force
           run_build=false
           run_downstream=false
-          if [[ "${{ github.event_name }}" == "push" ]]; then
+          if [[ \"$EVENT_NAME\" == \"push\" ]]; then
             run_build=true
             run_downstream=false
-          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+          elif [[ \"$EVENT_NAME\" == \"schedule\" ]]; then
             run_build=true
             run_downstream=true
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch origin pull/${PR_ID}/head
-            git checkout -b PR_${PR_ID} FETCH_HEAD
+          elif [[ \"$EVENT_NAME\" == \"pull_request\" ]]; then
+            git fetch origin pull/$PR_ID/head
+            git checkout -b PR_$PR_ID FETCH_HEAD
             git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-            git fetch upstream ${BRANCH}
-            git merge ${BRANCH}
-            git diff --numstat ${BRANCH} -- | awk '{print $NF}'
-            files=$(git diff --numstat ${BRANCH} -- | awk '{print $NF}')
+            git fetch upstream $BRANCH
+            git merge $BRANCH
+            files=$(git diff --numstat $BRANCH -- | awk '{print \$NF}')
             target_lists_for_pr=(
-                "requirements"
-                "tests/requirements.txt"
-                "setup.py"
-                ".github/workflows/build-ci-docker-images.yml"
+                'requirements'
+                'tests/requirements.txt'
+                'setup.py'
+                '.github/workflows/build-ci-docker-images.yml'
             )
-            for file_name in `git diff --numstat ${BRANCH} -- |awk '{print $NF}'`;do
-              for ((i=0; i<${#target_lists_for_pr[@]}; i++)); do
-                arr_file_name=(${file_name//// })
-                dir1=${arr_file_name[0]}
-                dir2=${arr_file_name[1]}
-                dir3=${arr_file_name[2]}
-                dir4=${arr_file_name[3]}
-                file_item=$dir1/$dir2/$dir3/$dir4
-                if [ ! -f "${file_name}" ]; then
-                    continue
-                fi
-                if [[ "${file_item}" == *"${target_lists_for_pr[i]}"* ]];then
-                    run_build=true
-                    run_downstream=true
-                    break 2
+            for file_name in \$files;do
+              for item in \"${target_lists_for_pr[@]}\"; do
+                if [[ \"$file_name\" == *\"$item\"* ]]; then
+                  run_build=true
+                  run_downstream=true
+                  break 2
                 fi
               done
             done
           fi
-          echo "run_build=${run_build}" >> ${{ github.env }}
-          echo "run_downstream=${run_downstream}" >> ${{ github.env }}
-          echo "run_downstream=${run_downstream}" >> "$GITHUB_OUTPUT"
+          echo \"run_build=\$run_build\" >> /github/workspace/run.env
+          echo \"run_downstream=\$run_downstream\" >> /github/workspace/run.env
           git log --pretty=oneline -10
-          '
+          "
+          cat run.env >> $GITHUB_ENV
+          cat run.env >> $GITHUB_OUTPUT
 
       - name: Write Dockerfile Inline
         env:
