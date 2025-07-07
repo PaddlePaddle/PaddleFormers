@@ -153,7 +153,9 @@ jobs:
     steps:
       - name: Remove CI Image
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          if [[ "${{ env.run_downstream }}" == "false" ]]; then
+            echo "Not in a pull_request or test_build event. Skipping..."
+          else
             image_name="iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}"
             CONTAINERS=$(docker ps -a --filter "ancestor=$image_name" --format "{{.ID}}")
 
