@@ -22,6 +22,7 @@ env:
   PR_ID: ${{ github.event.pull_request.number }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   BRANCH: ${{ github.event.pull_request.base.ref }}
+  TASK: PaddleFormers-CI-build-image
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 jobs:
@@ -34,11 +35,27 @@ jobs:
       image_name: ${{ steps.set_image_name.outputs.image_name }}
   
     steps:
+      - name: Run Container
+        run: |
+          container_name=${TASK}-${core_index}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker_image="iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest"
+          nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+            -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
+            -v ${{ github.workspace }}:/workspace \
+            -e BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e work_dir \
+            -e no_proxy \
+            -w /workspace --runtime=nvidia ${docker_image}
+
       - name: Download Code
         id: event_name
         env:
           work_dir: ${{ github.workspace }}
         run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
           rm -rf * .[^.]*
           wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
           echo "Extracting PaddleFormers.tar.gz"
@@ -94,6 +111,7 @@ jobs:
           echo "run_downstream=${run_downstream}" >> ${{ github.env }}
           echo "run_downstream=${run_downstream}" >> "$GITHUB_OUTPUT"
           git log --pretty=oneline -10
+          '
 
       - name: Write Dockerfile Inline
         env:
@@ -137,6 +155,11 @@ jobs:
           else
             docker build -t ${{ env.image_name }} .
           fi
+
+      - name: Terminate And Delete the Container
+        if: always()
+        run: |
+          docker rm -f ${{ env.container_name }} 2>/dev/null || true
 
   test-ci-docker-images:
     name: test-ci-docker-images

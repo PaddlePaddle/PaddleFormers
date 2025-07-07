@@ -45,32 +45,6 @@ jobs:
     name: unittest-gpu-ci
     runs-on: [self-hosted, 4gpu]
     steps:
-      - name: Download Code
-        env:
-          work_dir: ${{ github.workspace }}
-        run: |
-          rm -rf * .[^.]*
-          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          echo "Extracting PaddleFormers.tar.gz"
-          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
-          source ${{ github.workspace }}/../../../proxy
-          cd PaddleFormers
-          git config --global user.name "PaddleCI"
-          git config --global user.email "paddle_ci@example.com"
-          git pull
-          git submodule update --init --recursive --force
-          if [ -n "${PR_ID}" ]; then
-            git fetch origin pull/${PR_ID}/head
-            git checkout -b PR_${PR_ID} FETCH_HEAD
-            git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-            git fetch upstream ${BRANCH}
-            git merge ${BRANCH}
-            git diff --numstat ${BRANCH} -- | awk '{print $NF}'
-          else
-            echo "Not in a pull_request event. Skipping PR-specific operations."
-          fi
-          git log --pretty=oneline -10
-      
       - name: Parse GPU ID From Runner Label
         id: parse-gpu
         run: |
@@ -127,6 +101,37 @@ jobs:
               -e CUDA_VISIBLE_DEVICES=${{ env.cudaid }} \
               -w /workspace --runtime=nvidia ${{ env.IMAGE_NAME }}
           fi
+    
+      - name: Download Code
+        env:
+          work_dir: ${{ github.workspace }}
+        run: |
+          if [[ "${{ env.RUN_DOWNSTREAM }}" == "false" ]]; then
+            echo "Not in a pull_request or test_build event. Skipping..."
+          else
+            docker exec -t ${{ env.container_name }} /bin/bash -c '
+            rm -rf * .[^.]*
+            wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+            echo "Extracting PaddleFormers.tar.gz"
+            tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+            source ${{ github.workspace }}/../../../proxy
+            cd PaddleFormers
+            git config --global user.name "PaddleCI"
+            git config --global user.email "paddle_ci@example.com"
+            git pull
+            git submodule update --init --recursive --force
+            if [ -n "${PR_ID}" ]; then
+              git fetch origin pull/${PR_ID}/head
+              git checkout -b PR_${PR_ID} FETCH_HEAD
+              git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
+              git fetch upstream ${BRANCH}
+              git merge ${BRANCH}
+              git diff --numstat ${BRANCH} -- | awk '{print $NF}'
+            else
+              echo "Not in a pull_request event. Skipping PR-specific operations."
+            fi
+            git log --pretty=oneline -10
+            '
 
       - name: Test
         env:
@@ -137,18 +142,11 @@ jobs:
           else
             docker exec -t ${{ env.container_name }} /bin/bash -c '
             ldconfig
+            set -e
             unlink /usr/bin/python3
             ln -sf $(which python${python_version}) /usr/bin/python3
+            python -c "import sys; print(sys.version_info[:])"
             pip config set global.cache-dir "/home/.cache/pip"
-            echo "[global]
-            timeout = 60
-            index = https://pip.baidu-int.com/search/
-            index-url = https://pip.baidu-int.com/simple/
-            trusted-host = pip.baidu-int.com" > /etc/pip.conf
-            '
-            docker exec -t ${{ env.container_name }} /bin/bash -c '
-            ldconfig
-            set -e
             cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
             timeout 50m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
             '            
