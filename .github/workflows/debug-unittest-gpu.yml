@@ -64,32 +64,22 @@ jobs:
             -e python_version \
             -w /workspace --runtime=nvidia $image_name
 
-      - name: Download Code
+      - name: Cleanup Environment
         env:
           work_dir: ${{ github.workspace }}
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -c '
           rm -rf * .[^.]*
-          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           '
-          source ${{ github.workspace }}/../../../proxy
-          cd PaddleFormers
-          git config --global user.name 'PaddleCI'
-          git config --global user.email 'paddle_ci@example.com'
-          git pull
-          git submodule update --init --recursive --force
-          if [ -n "${PR_ID}" ]; then
-            git fetch origin pull/${PR_ID}/head
-            git checkout -b PR_${PR_ID} FETCH_HEAD
-            git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-            git fetch upstream ${BRANCH}
-            git merge ${BRANCH}
-            git diff --numstat ${BRANCH} -- | awk '{print $NF}'
-          else
-            echo 'Not in a pull_request event. Skipping PR-specific operations.'
-          fi
-          git log --pretty=oneline -10
+
+      - name: Download Code
+        env:
+          ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION: node16
+          ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: node16
+          ACTIONS_ALLOW_UNSECURE_NODE_VERSION: true
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
             
       - name: Prepare Env
         run: |
