@@ -39,7 +39,7 @@ jobs:
         env:
           work_dir: ${{ github.workspace }}
         run: |
-          sudo rm -rf * .[^.]*
+          rm -rf * .[^.]*
           wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
           echo "Extracting PaddleFormers.tar.gz"
           tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
@@ -148,7 +148,7 @@ jobs:
 
   clean-ci-image:
     name: clean-ci-image
-    needs: test-ci-docker-images
+    needs: [build-ci-docker-images, test-ci-docker-images]
     runs-on: [self-hosted, 4gpu]
     steps:
       - name: Remove CI Image
