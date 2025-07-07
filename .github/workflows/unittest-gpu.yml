@@ -164,13 +164,13 @@ jobs:
             else
               bos_prefix="schedule/$(date +%Y%m%d)"
             fi
-            cd /workspace/PaddleFormers/unittest_logs
-            for FILE in /workspace/PaddleFormers/unittest_logs/*; do
+            cd /workspace/unittest_logs
+            for FILE in /workspace/unittest_logs/*; do
               file=$(basename "$FILE")
               python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
               echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
             done
-            cd /workspace/PaddleFormers/
+            cd /workspace
             ${{ env.allure_file }} generate result -o report
             tar -czf products.tar.gz report unittest_logs
             python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
