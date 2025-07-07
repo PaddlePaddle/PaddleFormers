@@ -103,51 +103,55 @@ jobs:
         run: |
           container_name=${TASK}-${core_index}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> ${{ github.env }}
-          nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
-            -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
-            -v ${{ github.workspace }}:/workspace \
-            -v /home/.cache/pip:/home/.cache/pip \
-            -v /ssd1/PaddleNLP:/ssd1/PaddleNLP \
-            -e BRANCH \
-            -e AGILE_COMPILE_BRANCH \
-            -e PR_ID \
-            -e COMMIT_ID \
-            -e GITHUB_EVENT_NAME \
-            -e work_dir \
-            -e PaddleFormers_ROOT \
-            -e ci_scripts \
-            -e no_proxy \
-            -e CI_name \
-            -e paddle_whl \
-            -e FLAGS_dynamic_static_unified_comm \
-            -e python_version \
-            -e CUDA_VISIBLE_DEVICES=${{ env.cudaid }} \
-            -w /workspace --runtime=nvidia ${{ env.IMAGE_NAME }} 
+          if [[ "${{ env.RUN_DOWNSTREAM }}" == "false" ]]; then
+            echo "Not in a pull_request or test_build event. Skipping..."
+          else
+            nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+              -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
+              -v ${{ github.workspace }}:/workspace \
+              -v /home/.cache/pip:/home/.cache/pip \
+              -v /ssd1/PaddleNLP:/ssd1/PaddleNLP \
+              -e BRANCH \
+              -e AGILE_COMPILE_BRANCH \
+              -e PR_ID \
+              -e COMMIT_ID \
+              -e GITHUB_EVENT_NAME \
+              -e work_dir \
+              -e PaddleFormers_ROOT \
+              -e ci_scripts \
+              -e no_proxy \
+              -e CI_name \
+              -e paddle_whl \
+              -e FLAGS_dynamic_static_unified_comm \
+              -e python_version \
+              -e CUDA_VISIBLE_DEVICES=${{ env.cudaid }} \
+              -w /workspace --runtime=nvidia ${{ env.IMAGE_NAME }}
+          fi
 
       - name: Test
         env:
           work_dir: ${{ github.workspace }}
         run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -c '
-          ldconfig
-          unlink /usr/bin/python3
-          ln -sf $(which python${python_version}) /usr/bin/python3
-          pip config set global.cache-dir "/home/.cache/pip"
-          echo "[global]
-          timeout = 60
-          index = https://pip.baidu-int.com/search/
-          index-url = https://pip.baidu-int.com/simple/
-          trusted-host = pip.baidu-int.com" > /etc/pip.conf
-          '
-          if [[ "${{ env.GITHUB_EVENT_NAME }}" == "pull_request" || "${{ env.RUN_DOWNSTREAM }}" == "true" ]]; then
+          if [[ "${{ env.RUN_DOWNSTREAM }}" == "false" ]]; then
+            echo "Not in a pull_request or test_build event. Skipping..."
+          else
+            docker exec -t ${{ env.container_name }} /bin/bash -c '
+            ldconfig
+            unlink /usr/bin/python3
+            ln -sf $(which python${python_version}) /usr/bin/python3
+            pip config set global.cache-dir "/home/.cache/pip"
+            echo "[global]
+            timeout = 60
+            index = https://pip.baidu-int.com/search/
+            index-url = https://pip.baidu-int.com/simple/
+            trusted-host = pip.baidu-int.com" > /etc/pip.conf
+            '
             docker exec -t ${{ env.container_name }} /bin/bash -c '
             ldconfig
             set -e
             cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
             timeout 50m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
-            '
-          else
-            echo "Not in a pull_request or test_build event. Skipping..."
+            '            
           fi
           
           
@@ -158,7 +162,9 @@ jobs:
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
           allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
         run: |
-          if [[ "${{ env.GITHUB_EVENT_NAME }}" == "pull_request" || "${{ env.RUN_DOWNSTREAM }}" == "true" ]]; then
+          if [[ "${{ env.RUN_DOWNSTREAM }}" == "false" ]]; then
+            echo "Not in a pull_request or test_build event. Skipping..."
+          else
             docker exec -t ${{ env.container_name }} /bin/bash -c '
             if [ ! -f "${{ env.bos_file }}" ]; then
               wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
@@ -188,8 +194,6 @@ jobs:
             python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
             echo "products: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz"
             '
-          else
-            echo "Not in a pull_request or test_build event. Skipping..."
           fi
 
       - name: Terminate And Delete the Container
@@ -205,7 +209,9 @@ jobs:
     steps:
       - name: Wget Files
         run: |
-          if [[ "${{ env.GITHUB_EVENT_NAME }}" == "pull_request" || "${{ env.RUN_DOWNSTREAM }}" == "true" ]]; then
+          if [[ "${{ env.RUN_DOWNSTREAM }}" == "false" ]]; then
+            echo "Not in a pull_request or test_build event. Skipping..."
+          else
             if [[ "${{ env.RUN_DOWNSTREAM }}" == "" && -n "${PR_ID}" ]]; then
               bos_prefix="${PR_ID}/${COMMIT_ID}"
             elif [[ "${{ env.RUN_DOWNSTREAM }}" == "true" && -n "${PR_ID}" ]]; then
@@ -215,8 +221,6 @@ jobs:
             fi
             wget -q --no-proxy  https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz --no-check-certificate
             tar -xzf products.tar.gz
-          else
-            echo "Not in a pull_request or test_build event. Skipping..."
           fi
 
       - name: Upload Allure Report
