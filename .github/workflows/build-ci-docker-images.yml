@@ -60,7 +60,6 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -c '
           rm -rf * .[^.]*
           wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          echo "Extracting PaddleFormers.tar.gz"
           tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           '
           
