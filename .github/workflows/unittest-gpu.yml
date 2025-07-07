@@ -20,10 +20,9 @@ concurrency:
 env:
   PR_ID: ${{ github.event.pull_request.number }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
-  work_dir: /workspace/PaddleFormers
-  PaddleFormers_ROOT: /workspace/PaddleFormers
+  work_dir: /workspace
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-gpu
-  ci_scripts: /workspace/PaddleFormers/scripts/unit_test
+  ci_scripts: /workspace/scripts/unit_test
   BRANCH: ${{ github.event.pull_request.base.ref }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_name: unittest-gpu-ci
@@ -91,7 +90,6 @@ jobs:
               -e COMMIT_ID \
               -e GITHUB_EVENT_NAME \
               -e work_dir \
-              -e PaddleFormers_ROOT \
               -e ci_scripts \
               -e no_proxy \
               -e CI_name \
@@ -133,7 +131,7 @@ jobs:
             ln -sf $(which python${python_version}) /usr/bin/python3
             python -c "import sys; print(sys.version_info[:])"
             pip config set global.cache-dir "/home/.cache/pip"
-            cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
+            cd /workspace && git config --global --add safe.directory $PWD
             timeout 50m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
             '            
           fi
