@@ -43,6 +43,16 @@ jobs:
     name: unittest-gpu-ci
     runs-on: [self-hosted, 4gpu]
     steps:
+      - name: Determine Image Name
+        env:
+          IMAGE_NAME: ${{ inputs.image_name }}
+        run: |
+          if [[ -n "${IMAGE_NAME}" ]]; then
+            echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
+          else
+            echo "IMAGE_NAME=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest" >> "$GITHUB_ENV"
+          fi
+      
       - name: Parse GPU ID From Runner Label
         id: parse-gpu
         run: |
@@ -56,16 +66,6 @@ jobs:
             echo "cudaid=0,1,2,3" >> "$GITHUB_ENV"
           fi
 
-      - name: Determine Image Name
-        env:
-          IMAGE_NAME: ${{ inputs.image_name }}
-        run: |
-          if [[ -n "${IMAGE_NAME}" ]]; then
-            echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
-          else
-            echo "IMAGE_NAME=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest" >> "$GITHUB_ENV"
-          fi
-      
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
