@@ -101,8 +101,6 @@ jobs:
             
       - name: Download Code
         run: |
-          touch test.log
-          echo $RUN_DOWNSTREAM > test.log
           if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
             echo "Not in a pull_request or test_build event. Skipping..."
           else
@@ -112,8 +110,6 @@ jobs:
             wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
             echo "Extracting PaddleFormers.tar"
             tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
-            echo $PWD >> test.log
-            sleep 1d
             '
           fi
 
@@ -124,8 +120,13 @@ jobs:
           if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
             echo "Not in a pull_request or test_build event. Skipping..."
           else
+            touch test.log
+            echo $PWD >> test.log
             source $work_dir/../../../proxy
             cd $work_dir/PaddleFormers
+            touch test2.log
+            echo $PWD >> test2.log
+            echo $PR_ID >> test2.log
             git config --global user.name "PaddleCI"
             git config --global user.email "paddle_ci@example.com"
             git pull
@@ -136,11 +137,11 @@ jobs:
               git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
               git fetch upstream ${BRANCH}
               git merge ${BRANCH}
-              git diff --numstat ${BRANCH} -- | awk '{print $NF}'
+              git diff --numstat ${BRANCH} -- | awk '{print $NF}' >> test2.log
             else
               echo "Not in a pull_request event. Skipping PR-specific operations."
             fi
-            git log --pretty=oneline -10
+            git log --pretty=oneline -10 >> test2.log
           fi
 
       - name: Test
