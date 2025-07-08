@@ -32,7 +32,6 @@ env:
   PPNLP_HOME: /ssd1/PaddleNLP
   HF_DATASETS_CACHE: /ssd1/PaddleNLP/huggingface/datasets
   TRANSFORMERS_CACHE: /ssd1/PaddleNLP/huggingface
-  GITHUB_EVENT_NAME: ${{ github.event_name }}
   RUN_DOWNSTREAM: ${{ inputs.run_downstream }}
 
 defaults:
@@ -88,9 +87,7 @@ jobs:
               -e AGILE_COMPILE_BRANCH \
               -e PR_ID \
               -e COMMIT_ID \
-              -e GITHUB_EVENT_NAME \
               -e work_dir \
-              -e PaddleFormers_ROOT \
               -e ci_scripts \
               -e no_proxy \
               -e CI_name \

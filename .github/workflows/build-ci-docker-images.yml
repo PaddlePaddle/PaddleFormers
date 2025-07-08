@@ -62,7 +62,7 @@ jobs:
           echo "Extracting PaddleFormers.tar"
           tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           '
-          
+
       - name: Checkout Code & Set Flags
         id: event_name
         env:
