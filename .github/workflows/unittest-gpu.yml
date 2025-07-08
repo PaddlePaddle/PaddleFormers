@@ -101,6 +101,8 @@ jobs:
             
       - name: Download Code
         run: |
+          touch test.log
+          echo $RUN_DOWNSTREAM > test.log
           if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
             echo "Not in a pull_request or test_build event. Skipping..."
           else
@@ -110,6 +112,8 @@ jobs:
             wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
             echo "Extracting PaddleFormers.tar"
             tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+            echo $PWD >> test.log
+            sleep 1d
             '
           fi
 
