@@ -106,32 +106,50 @@ jobs:
           else
             docker exec -t $container_name /bin/bash -c '
             rm -rf * .[^.]*
-            echo "Downloading PaddleFormers.tar"
-            wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-            echo "Extracting PaddleFormers.tar"
-            tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
-            source $work_dir/../../../proxy
-            cd PaddleFormers
-            git config --global user.name "PaddleCI"
-            git config --global user.email "paddle_ci@example.com"
-            git pull
-            touch a.log
-            echo ${PR_ID} >> a.log
-            git submodule update --init --recursive --force
-            if [ -n "${PR_ID}" ]; then
-              echo "In a pull_request event. Performing PR-specific operations." >> a.log
-              git fetch origin pull/${PR_ID}/head >> a.log
-              git checkout -b PR_${PR_ID} FETCH_HEAD >> a.log
-              git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git >> a.log
-              git fetch upstream ${BRANCH} >> a.log
-              git merge ${BRANCH} >> a.log
-              git diff --numstat ${BRANCH} -- | awk '{print $NF}' >> a.log
-            else
-              echo "Not in a pull_request event. Skipping PR-specific operations."
-            fi
-            git log --pretty=oneline -10
-            sleep 60m
+            # echo "Downloading PaddleFormers.tar"
+            # wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+            # echo "Extracting PaddleFormers.tar"
+            # tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+            # source $work_dir/../../../proxy
+            # cd PaddleFormers
+            # git config --global user.name "PaddleCI"
+            # git config --global user.email "paddle_ci@example.com"
+            # git pull
+            # touch a.log
+            # echo ${PR_ID} >> a.log
+            # git submodule update --init --recursive --force
+            # if [ -n "${PR_ID}" ]; then
+            #   echo "In a pull_request event. Performing PR-specific operations." >> a.log
+            #   git fetch origin pull/${PR_ID}/head >> a.log
+            #   git checkout -b PR_${PR_ID} FETCH_HEAD >> a.log
+            #   git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git >> a.log
+            #   git fetch upstream ${BRANCH} >> a.log
+            #   git merge ${BRANCH} >> a.log
+            #   git diff --numstat ${BRANCH} -- | awk '{print $NF}' >> a.log
+            # else
+            #   echo "Not in a pull_request event. Skipping PR-specific operations."
+            # fi
+            # git log --pretty=oneline -10
+            # sleep 60m
             '
+          fi
+
+      - name: Get Repo
+        env:
+          ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION: node16
+          ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: node16
+          ACTIONS_ALLOW_UNSECURE_NODE_VERSION: true
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Checkout Develop
+        run: |
+          if ! git show-ref --quiet refs/heads/develop; then \
+              echo "local develop branch is missing, creating local develop branch that tracks remote develop branch"
+              git fetch origin develop
+              git branch develop --track origin/develop
+          else
+            echo "local develop branch exist, skipping"
           fi
 
       - name: Test
