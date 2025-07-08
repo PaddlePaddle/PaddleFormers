@@ -115,18 +115,22 @@ jobs:
             git config --global user.name "PaddleCI"
             git config --global user.email "paddle_ci@example.com"
             git pull
+            touch a.log
+            echo ${PR_ID} >> a.log
             git submodule update --init --recursive --force
             if [ -n "${PR_ID}" ]; then
-              git fetch origin pull/${PR_ID}/head
-              git checkout -b PR_${PR_ID} FETCH_HEAD
-              git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-              git fetch upstream ${BRANCH}
-              git merge ${BRANCH}
-              git diff --numstat ${BRANCH} -- | awk '{print $NF}'
+              echo "In a pull_request event. Performing PR-specific operations." >> a.log
+              git fetch origin pull/${PR_ID}/head >> a.log
+              git checkout -b PR_${PR_ID} FETCH_HEAD >> a.log
+              git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git >> a.log
+              git fetch upstream ${BRANCH} >> a.log
+              git merge ${BRANCH} >> a.log
+              git diff --numstat ${BRANCH} -- | awk '{print $NF}' >> a.log
             else
               echo "Not in a pull_request event. Skipping PR-specific operations."
             fi
             git log --pretty=oneline -10
+            sleep 60m
             '
           fi
 
