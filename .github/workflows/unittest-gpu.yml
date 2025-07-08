@@ -123,7 +123,6 @@ jobs:
               git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
               git fetch upstream ${BRANCH}
               git merge ${BRANCH}
-              git diff --numstat ${BRANCH} -- | awk '{print $NF}'
             else
               echo "Not in a pull_request event. Skipping PR-specific operations."
             fi
