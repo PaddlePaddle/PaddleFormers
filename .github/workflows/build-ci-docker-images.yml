@@ -22,6 +22,8 @@ env:
   PR_ID: ${{ github.event.pull_request.number }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   BRANCH: ${{ github.event.pull_request.base.ref }}
+  GITHUB_EVENT_NAME: ${{ github.event_name }}
+  TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-build-image
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 jobs:
@@ -34,15 +36,38 @@ jobs:
       image_name: ${{ steps.set_image_name.outputs.image_name }}
   
     steps:
+      - name: Run Container
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker_image="iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest"
+          nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+            -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
+            -v ${{ github.workspace }}:/workspace \
+            -e BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e work_dir \
+            -e no_proxy \
+            -w /workspace --runtime=nvidia ${docker_image}
+
       - name: Download Code
+        env:
+          work_dir: ${{ github.workspace }}
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          rm -rf * .[^.]*
+          echo "Downloading PaddleFormers.tar"
+          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          echo "Extracting PaddleFormers.tar"
+          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+          '
+          
+      - name: Checkout Code & Set Flags
         id: event_name
         env:
           work_dir: ${{ github.workspace }}
         run: |
-          sudo rm -rf * .[^.]*
-          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          echo "Extracting PaddleFormers.tar.gz"
-          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           source ${{ github.workspace }}/../../../proxy
           cd PaddleFormers
           git config --global user.name "PaddleCI"
@@ -51,20 +76,18 @@ jobs:
           git submodule update --init --recursive --force
           run_build=false
           run_downstream=false
-          if [[ "${{ github.event_name }}" == "push" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             run_build=true
             run_downstream=false
-          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+          elif [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
             run_build=true
             run_downstream=true
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
             git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
             git fetch upstream ${BRANCH}
             git merge ${BRANCH}
-            git diff --numstat ${BRANCH} -- | awk '{print $NF}'
-            files=$(git diff --numstat ${BRANCH} -- | awk '{print $NF}')
             target_lists_for_pr=(
                 "requirements"
                 "tests/requirements.txt"
@@ -96,15 +119,12 @@ jobs:
           git log --pretty=oneline -10
 
       - name: Write Dockerfile Inline
-        env:
-          work_dir: ${{ github.workspace }}/PaddleFormers
         run: |
           cat <<EOF > Dockerfile
           FROM iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-libsndfile
           RUN unlink /usr/bin/python3 && ln -sf python3.10 /usr/bin/python3
-          RUN python -m pip config --user set global.index http://pip.baidu-int.com/search/
-          RUN python -m pip config --user set global.index-url http://pip.baidu-int.com/simple
-          RUN python -m pip config --user set global.trusted-host pip.baidu-int.com
+          RUN rm -rf /etc/pip.conf
+          RUN python -m pip config set global.cache-dir "/home/.cache/pip"
           RUN python -m pip install bce-python-sdk==0.8.74
           RUN python -m pip install --no-cache-dir https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
           COPY PaddleFormers/ /tmp/paddleformers/
@@ -122,9 +142,9 @@ jobs:
       - name: Set Image Name
         id: set_image_name
         run: |
-          if [[ "${{ github.event_name }}" =~ ^(push|schedule)$ ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" =~ ^(push|schedule)$ ]]; then
             image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}
           fi
           echo "image_name=${image_name}" >> ${{ github.env }}
@@ -137,6 +157,11 @@ jobs:
           else
             docker build -t ${{ env.image_name }} .
           fi
+      
+      - name: Terminate And Delete the Container
+        if: always()
+        run: |
+          docker rm -f ${{ env.container_name }} 2>/dev/null || true
 
   test-ci-docker-images:
     name: test-ci-docker-images
@@ -148,15 +173,18 @@ jobs:
 
   clean-ci-image:
     name: clean-ci-image
-    needs: test-ci-docker-images
+    needs: [build-ci-docker-images, test-ci-docker-images]
     runs-on: [self-hosted, 4gpu]
     steps:
       - name: Remove CI Image
+        env:
+          RUN_DOWNSTREAM: ${{ needs.build-ci-docker-images.outputs.run_downstream }}
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          if [[ "${RUN_DOWNSTREAM}" == "false" ]]; then
+            echo "Not in a pull_request or test_build event. Skipping..."
+          else
             image_name="iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}"
             CONTAINERS=$(docker ps -a --filter "ancestor=$image_name" --format "{{.ID}}")
-
             if [ -z "$CONTAINERS" ]; then
                 echo "$image_name is not using by any container, deleting..."
                 docker rmi "$image_name"
@@ -164,9 +192,6 @@ jobs:
                 echo "$image_name is using by containers:"
                 echo "$CONTAINERS"
             fi
-          else
-            echo "Not a pull request, no need to clean up images"
           fi
-
           # 安全删除悬空镜像（无悬空镜像时跳过）
           docker images -f "dangling=true" -q | xargs -r docker rmi -f
