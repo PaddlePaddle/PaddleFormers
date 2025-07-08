@@ -113,7 +113,7 @@ jobs:
             '
           fi
 
-       - name: Checkout Code & Set Flags
+      - name: Checkout Code & Set Flags
         env:
           work_dir: ${{ github.workspace }}
         run: |
