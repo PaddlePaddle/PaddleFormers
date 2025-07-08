@@ -144,7 +144,7 @@ jobs:
       - name: Checkout Develop
         run: |
           source ${{ github.workspace }}/../../../proxy
-          cd PaddleFormers
+          git init
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
           if ! git show-ref --quiet refs/heads/develop; then \
