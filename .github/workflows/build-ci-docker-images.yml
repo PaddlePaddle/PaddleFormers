@@ -68,8 +68,9 @@ jobs:
         env:
           work_dir: ${{ github.workspace }}
         run: |
-          source ${{ github.workspace }}/../../../proxy
-          cd PaddleFormers
+          echo $work_dir
+          source $work_dir/../../../proxy
+          cd $work_dir/PaddleFormers
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
           git pull
@@ -113,8 +114,8 @@ jobs:
               done
             done
           fi
-          echo "run_build=${run_build}" >> ${{ github.env }}
-          echo "run_downstream=${run_downstream}" >> ${{ github.env }}
+          echo "run_build=${run_build}" >> "$GITHUB_ENV"
+          echo "run_downstream=${run_downstream}" >> "$GITHUB_ENV"
           echo "run_downstream=${run_downstream}" >> "$GITHUB_OUTPUT"
           git log --pretty=oneline -10
 

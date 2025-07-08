@@ -121,7 +121,7 @@ jobs:
             echo "Not in a pull_request or test_build event. Skipping..."
           else
             source $work_dir/../../../proxy
-            cd PaddleFormers
+            cd $work_dir/PaddleFormers
             git config --global user.name "PaddleCI"
             git config --global user.email "paddle_ci@example.com"
             git pull
