@@ -46,6 +46,7 @@ jobs:
           nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
+            -v /home/.cache/pip:/home/.cache/pip \
             -e BRANCH \
             -e PR_ID \
             -e COMMIT_ID \
@@ -128,7 +129,11 @@ jobs:
 
       - name: Write Dockerfile Inline
         run: |
-          cp -r /home/.cache/pip ./pip-cache
+          if [[ "${run_build}" == "true" ]]; then
+            docker exec -t ${container_name} /bin/bash -c '
+            cp -r /home/.cache/pip /workspace/pip-cache
+            '
+          fi
           cat <<EOF > Dockerfile
           FROM iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-libsndfile
           RUN unlink /usr/bin/python3 && ln -sf python3.10 /usr/bin/python3
