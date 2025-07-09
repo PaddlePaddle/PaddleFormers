@@ -129,17 +129,10 @@ jobs:
 
       - name: Write Dockerfile Inline
         run: |
-          if [[ "${run_build}" == "true" ]]; then
-            docker exec -t ${container_name} /bin/bash -c '
-            cp -r /home/.cache/pip /workspace/pip-cache
-            '
-          fi
           cat <<EOF > Dockerfile
           FROM iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-libsndfile
           RUN unlink /usr/bin/python3 && ln -sf python3.10 /usr/bin/python3
           RUN rm -rf /etc/pip.conf
-          COPY pip-cache /tmp/.cache/pip
-          RUN python -m pip config set global.cache-dir "/tmp/.cache/pip"
           RUN python -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
           RUN python -m pip install bce-python-sdk==0.8.74
           COPY PaddleFormers/ /tmp/paddleformers/
@@ -149,7 +142,7 @@ jobs:
           RUN python -m pip install -r tests/requirements.txt
           RUN python setup.py bdist_wheel
           RUN python -m pip install dist/*.whl
-          RUN rm -rf /tmp
+          RUN rm -rf /tmp/paddleformers
           CMD ["python3"]
           EOF
       
@@ -169,7 +162,9 @@ jobs:
           if [[ "${run_build}" == "false" ]]; then
             echo "No need to build docker image"
           else
-            docker build -t ${image_name} .
+            #docker build -t ${image_name} .
+            echo "Skipping docker build for connectivity issues"
+            docker tag iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest ${image_name}
           fi
       
       - name: Terminate And Delete the Container
