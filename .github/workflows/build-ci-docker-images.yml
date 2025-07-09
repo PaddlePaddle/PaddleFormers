@@ -128,10 +128,13 @@ jobs:
 
       - name: Write Dockerfile Inline
         run: |
+          cp -r /home/.cache/pip ./pip-cache
           cat <<EOF > Dockerfile
           FROM iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-libsndfile
           RUN unlink /usr/bin/python3 && ln -sf python3.10 /usr/bin/python3
           RUN rm -rf /etc/pip.conf
+          COPY pip-cache /tmp/.cache/pip
+          RUN python -m pip config set global.cache-dir "/tmp/.cache/pip"
           RUN python -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
           RUN python -m pip install bce-python-sdk==0.8.74
           COPY PaddleFormers/ /tmp/paddleformers/
