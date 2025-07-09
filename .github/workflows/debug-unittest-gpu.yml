@@ -48,6 +48,7 @@ jobs:
             -e BRANCH \
             -e PR_ID \
             -e COMMIT_ID \
+            -e work_dir \
             -e ci_scripts \
             -e no_proxy \
             -e CI_name \
