@@ -20,7 +20,6 @@ concurrency:
 env:
   PR_ID: ${{ github.event.pull_request.number }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
-  work_dir: /workspace/PaddleFormers
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-gpu
   ci_scripts: /workspace/PaddleFormers/scripts/unit_test
   BRANCH: ${{ github.event.pull_request.base.ref }}
@@ -88,14 +87,13 @@ jobs:
               -e AGILE_COMPILE_BRANCH \
               -e PR_ID \
               -e COMMIT_ID \
-              -e work_dir \
               -e ci_scripts \
               -e no_proxy \
               -e CI_name \
               -e paddle_whl \
               -e FLAGS_dynamic_static_unified_comm \
               -e python_version \
-              -e CUDA_VISIBLE_DEVICES=$cudaic \
+              -e CUDA_VISIBLE_DEVICES=$cudaid \
               -w /workspace --runtime=nvidia $IMAGE_NAME
           fi
             
@@ -122,7 +120,7 @@ jobs:
               git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
               git fetch upstream ${BRANCH}
               git merge ${BRANCH}
-              git diff --numstat ${BRANCH} -- | awk '{print $NF}'
+              git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
             else
               echo "Not in a pull_request event. Skipping PR-specific operations."
             fi

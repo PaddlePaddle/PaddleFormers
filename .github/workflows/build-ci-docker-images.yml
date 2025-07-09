@@ -31,8 +31,8 @@ jobs:
     name: build-ci-docker-images
     runs-on: [self-hosted, 4gpu]
     outputs:
-      run_build: ${{ steps.event_name.outputs.run_build }}
-      run_downstream: ${{ steps.event_name.outputs.run_downstream }}
+      run_build: ${{ steps.set_flags.outputs.run_build }}
+      run_downstream: ${{ steps.set_flags.outputs.run_downstream }}
       image_name: ${{ steps.set_image_name.outputs.image_name }}
   
     steps:
@@ -57,7 +57,7 @@ jobs:
         env:
           work_dir: ${{ github.workspace }}
         run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          docker exec -t ${container_name} /bin/bash -c '
           rm -rf * .[^.]*
           echo "Downloading PaddleFormers.tar"
           wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
@@ -75,7 +75,7 @@ jobs:
             git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
             git fetch upstream ${BRANCH}
             git merge ${BRANCH}
-            git diff --numstat ${BRANCH} -- | awk '{print $NF}'
+            git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
           else
             echo "Not in a pull_request event. Skipping PR-specific operations."
           fi
@@ -83,7 +83,7 @@ jobs:
           '
 
       - name: Set Flags
-        id: event_name
+        id: set_flags
         env:
           work_dir: ${{ github.workspace }}
         run: |
@@ -156,21 +156,21 @@ jobs:
           elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}
           fi
-          echo "image_name=${image_name}" >> ${{ github.env }}
+          echo "image_name=${image_name}" >> "$GITHUB_ENV"
           echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
       
       - name: Build Docker Image
         run: |
-          if [[ "${{ env.run_build }}" == "false" ]]; then
+          if [[ "${run_build}" == "false" ]]; then
             echo "No need to build docker image"
           else
-            docker build -t ${{ env.image_name }} .
+            docker build -t ${image_name} .
           fi
       
       - name: Terminate And Delete the Container
         if: always()
         run: |
-          docker rm -f ${{ env.container_name }} 2>/dev/null || true
+          docker rm -f ${container_name} 2>/dev/null || true
 
   test-ci-docker-images:
     name: test-ci-docker-images
@@ -187,12 +187,12 @@ jobs:
     steps:
       - name: Remove CI Image
         env:
-          RUN_DOWNSTREAM: ${{ needs.build-ci-docker-images.outputs.run_downstream }}
+          run_downstream: ${{ needs.build-ci-docker-images.outputs.run_downstream }}
+          image_name: ${{ needs.build-ci-docker-images.outputs.image_name }}
         run: |
-          if [[ "${RUN_DOWNSTREAM}" == "false" ]]; then
+          if [[ "${run_downstream}" == "false" ]]; then
             echo "Not in a pull_request or test_build event. Skipping..."
           else
-            image_name="iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}"
             CONTAINERS=$(docker ps -a --filter "ancestor=$image_name" --format "{{.ID}}")
             if [ -z "$CONTAINERS" ]; then
                 echo "$image_name is not using by any container, deleting..."
