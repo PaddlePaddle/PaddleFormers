@@ -26,6 +26,7 @@ if [ ! -d "unittest_logs" ];then
 fi
 
 install_requirements() {
+    python -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip install -r requirements.txt
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
