@@ -990,6 +990,9 @@ class Trainer:
                 # so, the trainable numel is a little bigger than real.
                 logger.debug(f"  Number of trainable parameters = {trainable_numel:,} (all devices, roughly)")
 
+        if self.args.offload_optim:
+            self._offload_optimizer()
+
         return self._inner_training_loop(
             args,
             model,
