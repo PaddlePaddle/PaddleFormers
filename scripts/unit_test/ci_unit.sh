@@ -26,9 +26,11 @@ if [ ! -d "unittest_logs" ];then
 fi
 
 install_requirements() {
-    python -m pip config --user set global.index http://pip.baidu-int.com/search/
-    python -m pip config --user set global.index-url http://pip.baidu-int.com/simple
-    python -m pip config --user set global.trusted-host pip.baidu-int.com
+    python -m pip config --user unset global.index
+    python -m pip config --user unset global.index-url
+    python -m pip config --user unset global.trusted-host
+    python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+    python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip install -r requirements.txt
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
