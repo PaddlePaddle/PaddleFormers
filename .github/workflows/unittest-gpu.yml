@@ -4,6 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [develop]
+  schedule:
+    - cron: "4 0 * * *"
   workflow_call:
     inputs:
       run_downstream:
