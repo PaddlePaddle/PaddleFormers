@@ -18,6 +18,13 @@ from .common import (
     SHARDING_STRATEGY_V2,
     NodeModelState,
     all_gather_state_dict,
+    get_moe_sharding_group,
+    get_param_sharding_group,
     get_sharding_strategy,
     is_sharding_opt,
+    merge_model_state,
+    merge_opt_state,
+    split_model_state,
+    split_opt_state,
+    split_structure_name_mapping,
 )

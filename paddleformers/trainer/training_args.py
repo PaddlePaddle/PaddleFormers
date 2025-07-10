@@ -1999,6 +1999,9 @@ class TrainingArguments:
 
             if expert_parallel_degree > 1:
                 moe_sharding_parallel_degree = world_size // (pipeline_parallel_degree * expert_parallel_degree)
+                assert (
+                    self.expert_tensor_parallel_degree <= 1
+                ), "expert_tensor_parallel_degree > 1 is not supported when expert_parallel_degree > 1"
             else:
                 moe_sharding_parallel_degree = 1
             moe_sharding_parallel_degree = max(moe_sharding_parallel_degree, 1)

@@ -19,9 +19,8 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
 from ....transformers.model_utils import unwrap_optimizer
 
 
-def shard(node_model_state, model, optimizer, hcg):
-    group = hcg.get_sharding_parallel_group()
-    cur_rank = group.rank
+def shard(node_model_state, model, optimizer):
+    cur_rank = max(node_model_state.group.rank, 0)
     optimizer = unwrap_optimizer(optimizer, DygraphShardingOptimizer)
     assert optimizer is not None
     param2rank = optimizer._param2rank
@@ -33,10 +32,10 @@ def shard(node_model_state, model, optimizer, hcg):
         dst_rank = param2rank[param_name]
         return dst_rank == cur_rank
 
-    node_model_state.reshard(group, filter_func)
+    node_model_state.reshard(filter_func)
     return node_model_state
 
 
-def restore(node_model_state, model, optimizer, hcg):
+def restore(node_model_state, model, optimizer):
     node_model_state.drop_rank()
     return node_model_state
