@@ -706,6 +706,8 @@ class Trainer:
                 if k not in old_state_dict or id(v) != id(old_state_dict[k]):
                     new_state_dict[k] = v
             self.model.set_state_dict(new_state_dict)
+            if self.args.offload_optim:
+                self._offload_optimizer()
         else:
             if resume_from_checkpoint is not None and (self.args.dataset_rank == 0 or self.args.use_expert_parallel):
 
@@ -989,9 +991,6 @@ class Trainer:
                 # the numel is roughly, because the tensor parallel still hold own bias or layer_norm weight without splited
                 # so, the trainable numel is a little bigger than real.
                 logger.debug(f"  Number of trainable parameters = {trainable_numel:,} (all devices, roughly)")
-
-        if self.args.offload_optim:
-            self._offload_optimizer()
 
         return self._inner_training_loop(
             args,
