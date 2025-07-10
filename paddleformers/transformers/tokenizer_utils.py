@@ -799,9 +799,8 @@ class ChatTemplateMixin:
             )
             # query: user prefix + user content + assist prefix
             query = round_str[len(cur_str) :]
-            conversation_id.append(
-                self.encode(query, split_special_tokens=False, add_special_tokens=False)["input_ids"]
-            )
+            input_ids = self.convert_tokens_to_ids(self.tokenize(query))
+            conversation_id.append(input_ids)
             cur_str = round_str
 
             if idx + 1 < len(conversations["messages"]):
@@ -811,14 +810,14 @@ class ChatTemplateMixin:
                 )
                 # answer: assistant content
                 answer = round_str[len(cur_str) :]
-                conversation_id.append(
-                    self.encode(answer, split_special_tokens=False, add_special_tokens=False)["input_ids"]
-                )
+                output_ids = self.convert_tokens_to_ids(self.tokenize(answer))
+                conversation_id.append(output_ids)
                 cur_str = round_str
 
             conversation_ids.append(conversation_id)
 
         return conversation_ids
+
 
     def _encode_chat_inputs(
         self,
