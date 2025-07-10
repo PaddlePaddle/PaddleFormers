@@ -184,7 +184,7 @@ jobs:
             ${{ env.allure_file }} generate result -o report
             tar -czf products.tar.gz report unittest_logs
             python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-            echo "products: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz"
+            echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz"
             '
           fi
 
@@ -193,39 +193,39 @@ jobs:
         run: |
           docker rm -f $container_name 2>/dev/null || true
 
-  upload-products:
-    name: upload-products
-    needs: [unittest-gpu-ci]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wget Files
-        run: |
-          if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
-            echo "Not in a pull_request or test_build event. Skipping..."
-          else
-            if [[ "$RUN_DOWNSTREAM" == "" && -n "${PR_ID}" ]]; then
-              bos_prefix="${PR_ID}/${COMMIT_ID}"
-            elif [[ "$RUN_DOWNSTREAM" == "true" && -n "${PR_ID}" ]]; then
-              bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
-            else
-              bos_prefix="schedule/$(date +%Y%m%d)"
-            fi
-            wget -q --no-proxy  https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz --no-check-certificate
-            tar -xzf products.tar.gz
-          fi
+  # upload-products:
+  #   name: upload-products
+  #   needs: [unittest-gpu-ci]
+  #   if: always()
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Wget Files
+  #       run: |
+  #         if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
+  #           echo "Not in a pull_request or test_build event. Skipping..."
+  #         else
+  #           if [[ "$RUN_DOWNSTREAM" == "" && -n "${PR_ID}" ]]; then
+  #             bos_prefix="${PR_ID}/${COMMIT_ID}"
+  #           elif [[ "$RUN_DOWNSTREAM" == "true" && -n "${PR_ID}" ]]; then
+  #             bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
+  #           else
+  #             bos_prefix="schedule/$(date +%Y%m%d)"
+  #           fi
+  #           wget -q --no-proxy  https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz --no-check-certificate
+  #           tar -xzf products.tar.gz
+  #         fi
 
-      - name: Upload Allure Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-report
-          path: report
-          if-no-files-found: ignore
+  #     - name: Upload Allure Report
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: allure-report
+  #         path: report
+  #         if-no-files-found: ignore
 
-      - name: Upload Logs
-        uses: actions/upload-artifact@v4
-        with:
-          name: unittest-gpu-ci-log
-          path: |
-            unittest_logs
-          if-no-files-found: ignore
+  #     - name: Upload Logs
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: unittest-gpu-ci-log
+  #         path: |
+  #           unittest_logs
+  #         if-no-files-found: ignore
