@@ -103,7 +103,7 @@ jobs:
       - name: Download Code
         run: |
           if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
-            echo "Not in a pull_request or test_build event. Skipping..."
+            echo "Not in a pull_request or test_build event. Skipping.."
           else
             docker exec -t $container_name /bin/bash -c '
             rm -rf * .[^.]*
