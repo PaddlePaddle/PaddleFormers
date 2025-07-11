@@ -25,7 +25,7 @@ defaults:
 jobs:
   debug-container:
     name: unittest-gpu-debug
-    runs-on: [self-hosted, 4gpu]
+    runs-on: [self-hosted, ernie-8gpu]
     timeout-minutes: 30
     steps:
       - name: Run Container
