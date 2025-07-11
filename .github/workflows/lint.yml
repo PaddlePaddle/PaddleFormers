@@ -79,7 +79,8 @@ jobs:
           docker exec -t $container_name /bin/bash -c '
           unlink /usr/local/bin/python
           ln -sf $(which python${python_version}) /usr/local/bin/python
-          pip config set global.cache-dir "/home/.cache/pip"
+          python -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          python -m pip config set global.cache-dir "/home/.cache/pip"
           python -m pip install --upgrade pip
           set -e
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD

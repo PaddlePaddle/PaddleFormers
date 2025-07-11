@@ -30,7 +30,7 @@ env:
 jobs:
   build-ci-docker-images:
     name: build-ci-docker-images
-    runs-on: [self-hosted, ernie-8gpu]
+    runs-on: [self-hosted, 4gpu]
     outputs:
       run_build: ${{ steps.set_flags.outputs.run_build }}
       run_downstream: ${{ steps.set_flags.outputs.run_downstream }}
@@ -148,6 +148,7 @@ jobs:
           RUN python -m pip install -r tests/requirements.txt
           RUN python setup.py bdist_wheel
           RUN python -m pip install dist/*.whl
+          WORKDIR /
           RUN rm -rf /tmp/paddleformers
           CMD ["python3"]
           EOF
@@ -178,7 +179,7 @@ jobs:
   clean-ci-image:
     name: clean-ci-image
     needs: [build-ci-docker-images, test-ci-docker-images]
-    runs-on: [self-hosted, ernie-8gpu]
+    runs-on: [self-hosted, 4gpu]
     steps:
       - name: Remove CI Image
         env:

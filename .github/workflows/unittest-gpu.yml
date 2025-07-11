@@ -42,7 +42,7 @@ defaults:
 jobs:
   unittest-gpu-ci:
     name: unittest-gpu-ci
-    runs-on: [self-hosted, ernie-8gpu]
+    runs-on: [self-hosted, 4gpu]
     steps:
       - name: Determine Image Name
         env:
