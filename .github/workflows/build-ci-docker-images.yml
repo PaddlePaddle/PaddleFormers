@@ -159,7 +159,8 @@ jobs:
           if [[ "${run_build}" == "false" ]]; then
             echo "No need to build docker image"
           else
-            docker build --network host -t ${image_name} .
+            # docker build --network host -t ${image_name} .
+            docker tag ${image_base}-latest ${image_name}
           fi
       
       - name: Terminate And Delete the Container
