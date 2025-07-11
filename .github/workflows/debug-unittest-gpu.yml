@@ -82,6 +82,7 @@ jobs:
             echo "Not in a pull_request event. Skipping PR-specific operations."
           fi
           git log --pretty=oneline -10
+          unset http_proxy && unset https_proxy
           '
 
       - name: Prepare Environment

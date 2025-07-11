@@ -82,6 +82,7 @@ jobs:
             echo "Not in a pull_request event. Skipping PR-specific operations."
           fi
           git log --pretty=oneline -10
+          unset http_proxy && unset https_proxy
           '
 
       - name: Set Flags
@@ -158,9 +159,7 @@ jobs:
           if [[ "${run_build}" == "false" ]]; then
             echo "No need to build docker image"
           else
-            #docker build -t ${image_name} .
-            echo "Skipping docker build for connectivity issues"
-            docker tag ${image_base}-latest ${image_name}
+            docker build --network host -t ${image_name} .
           fi
       
       - name: Terminate And Delete the Container
