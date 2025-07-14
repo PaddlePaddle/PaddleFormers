@@ -67,7 +67,6 @@ from .modeling import (
     build_alibi_tensor,
     get_triangle_upper_mask,
     repeat_kv,
-    rms_norm_fused,
 )
 
 try:
@@ -199,7 +198,9 @@ class LlamaRMSNormNet(nn.Layer):
 
     def forward(self, hidden_states):
         if self.config.use_fused_rms_norm:
-            return rms_norm_fused(hidden_states, self.weight, self.variance_epsilon)
+            return paddle.incubate.nn.functional.fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[
+                0
+            ].astype(self.weight.dtype)
 
         with paddle.amp.auto_cast(False):
             variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)

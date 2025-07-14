@@ -209,9 +209,7 @@ class LlamaRMSNormAuto(nn.Layer):
 
     def forward(self, hidden_states):
         if self.config.use_fused_rms_norm:
-            return fusion_ops.fusion_rms_norm(
-                hidden_states, self.weight, self.variance_epsilon, self.config.use_fast_layer_norm
-            )
+            return fusion_ops.fusion_rms_norm(hidden_states, self.weight, self.variance_epsilon)
 
         with paddle.amp.auto_cast(False):
             variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
