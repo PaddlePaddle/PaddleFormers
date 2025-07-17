@@ -16,6 +16,28 @@
 from paddleformers.transformers.configuration_utils import PretrainedConfig
 
 
+ERNIE_PRETRAINED_INIT_CONFIGURATION = {
+    "ernie/tiny-random-ernie": {
+        "hidden_size": 768,
+        "initializer_range": 0.02,
+        "intermediate_size": 11008,
+        "max_position_embeddings": 2048,
+        "model_type": "ernie",
+        "num_attention_heads": 2,
+        "num_hidden_layers": 2,
+        "rms_norm_eps": 1e-06,
+        "vocab_size": 32000,
+        "bos_token_id": 1,
+        "eos_token_id": 2,
+        "pad_token_id": 0,
+        "use_cache": False,
+        "recompute": False,
+        "use_flash_attn": True,
+        "use_pure_fp16": False,
+    },
+}
+
+
 class Ernie4_5_Config(PretrainedConfig):
     """
     Configuration class for ERNIE model.
@@ -25,6 +47,8 @@ class Ernie4_5_Config(PretrainedConfig):
     """
 
     model_type = "ernie4_5"
+
+    pretrained_init_configuration = ERNIE_PRETRAINED_INIT_CONFIGURATION
 
     def __init__(
         self,
