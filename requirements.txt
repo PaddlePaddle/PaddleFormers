@@ -19,3 +19,4 @@ ml_dtypes
 tokenizers<=0.20.3; python_version<="3.8"
 tokenizers>=0.21,<0.22; python_version>"3.8"
 omegaconf
+modelscope

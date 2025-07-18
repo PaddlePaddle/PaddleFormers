@@ -99,6 +99,7 @@ class ModelConfig:
     reft: bool = field(default=False, metadata={"help": "Whether using reft method"})
 
     from_aistudio: bool = field(default=False, metadata={"help": "Whether to load model from aistudio"})
+    from_modelscope: bool = field(default=False, metadata={"help": "Whether to load model from modelscope"})
     save_to_aistudio: bool = field(default=False, metadata={"help": "Whether to save model to aistudio"})
     aistudio_repo_id: str = field(default=None, metadata={"help": "The id of aistudio repo"})
     aistudio_repo_private: bool = field(default=True, metadata={"help": "Whether to create a private repo"})
