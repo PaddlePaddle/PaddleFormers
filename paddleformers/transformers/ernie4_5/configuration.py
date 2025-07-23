@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """ Ernie model configuration"""
-from paddleformers.transformers.configuration_utils import PretrainedConfig
+from ..configuration_utils import PretrainedConfig
 
 
 ERNIE_PRETRAINED_INIT_CONFIGURATION = {

@@ -37,14 +37,14 @@ from paddle.distributed.fleet.meta_parallel import (
 )
 from paddle.distributed.fleet.utils import recompute
 
-from paddleformers.transformers.model_outputs import (
+from ..model_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
 )
-from paddleformers.transformers.model_outputs import (
+from ..model_outputs import (
     CausalLMOutputWithCrossAttentions,
 )
-from paddleformers.transformers.model_utils import PretrainedModel, register_base_model
-from paddleformers.utils.log import logger
+from ..model_utils import PretrainedModel, register_base_model
+from ...utils.log import logger
 
 from .distributed import (
     AllGatherVarlenOp,
@@ -1618,7 +1618,7 @@ class Ernie4_5_PretrainedModel(PretrainedModel):
                 to their corresponding split/merge functions for tensor parallelism.
         """
 
-        from paddleformers.transformers.conversion_utils import split_or_merge_func
+        from ..conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
             is_split=is_split,
