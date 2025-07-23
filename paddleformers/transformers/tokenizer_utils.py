@@ -647,6 +647,7 @@ class ChatTemplateMixin:
         conversation: List[List[str, str] | Dict[str, str]] | str,
         tokenize: bool = True,
         context_data: Dict[str, Any] = {},
+        chat_template: Optional[str] = None,
         **tokenizer_kwargs
     ) -> str | dict[str, numpy.ndarray | paddle.Tensor]:
         """apply chat_template rules to conversation which should not be batched data
@@ -659,6 +660,10 @@ class ChatTemplateMixin:
         Returns:
             str | dict[str, numpy.ndarray | paddle.Tensor]: return the result of applied data
         """
+        if chat_template is not None:
+            if isinstance(chat_template, str):
+                chat_template = ChatTemplate._compile_jinja_template(chat_template)
+            self.chat_template = chat_template
         if not self.chat_template:
             raise ValueError("chat_template is not set, please set chat_template first.")
         elif isinstance(self.chat_template, Template):
