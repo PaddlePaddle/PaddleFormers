@@ -36,9 +36,14 @@ from ...utils.test_module.custom_tokenizer_fast import (
 
 class AutoTokenizerTest(unittest.TestCase):
     @unittest.skip("skipping due to connection error!")
+    def test_from_mdoelscope(self):
+        tokenizer = AutoTokenizer.from_pretrained("sqlhuman/tiny-random-llama", from_mdoelscope=True)
+        self.assertIsInstance(tokenizer, paddleformers.transformers.LlamaTokenizer)
+
+    @unittest.skip("skipping due to connection error!")
     def test_from_aistudio(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-bert", from_aistudio=True)
-        self.assertIsInstance(tokenizer, paddleformers.transformers.BertTokenizer)
+        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama", from_aistudio=True)
+        self.assertIsInstance(tokenizer, paddleformers.transformers.LlamaTokenizer)
 
     def test_from_pretrained_cache_dir(self):
         model_name = "__internal_testing__/tiny-random-bert"

@@ -170,8 +170,12 @@ class AdamWCustom(AdamW):
             if "quantization_linear" in p.name and "w_1" in p.name:
                 self.weight_scale_mapping[p.name.replace("w_1", "w_0")] = p
         self.quantization_config = quantization_config
-        self._hcg = fleet.get_hybrid_communicate_group()
-        self.mp_group = self._hcg.get_model_parallel_group()
+        if paddle.distributed.get_world_size() > 1:
+            self._hcg = fleet.get_hybrid_communicate_group()
+            self.mp_group = self._hcg.get_model_parallel_group()
+        else:
+            self.mp_group = None
+
         self.tensorwise_offload_optimizer = tensorwise_offload_optimizer
 
     def _add_moments_pows(self, p, moment_dtype=core.VarDesc.VarType.FP32):

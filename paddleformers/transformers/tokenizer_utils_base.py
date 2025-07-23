@@ -1542,6 +1542,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
         cache_dir = kwargs.pop("cache_dir", None)
         from_hf_hub = kwargs.pop("from_hf_hub", False)
         from_aistudio = kwargs.pop("from_aistudio", False)
+        from_modelscope = kwargs.pop("from_modelscope", False)
         subfolder = kwargs.pop("subfolder", "")
         return_tokenizer_file_dir = kwargs.pop("return_tokenizer_file_dir", False)
 
@@ -1566,7 +1567,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
             )
         vocab_files_target = {**cls.resource_files_names, **additional_files_names}
         # From HF Hub or AI Studio
-        if from_hf_hub or from_aistudio:
+        if from_hf_hub or from_aistudio or from_modelscope:
             # Only include the necessary resource files specified by the tokenizer cls
             # Deep copy to avoid modifying the class attributes
             vocab_files = copy.deepcopy(cls.resource_files_names)
@@ -1600,6 +1601,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
                 subfolder,
                 cache_dir=cache_dir,
                 from_aistudio=from_aistudio,
+                from_modelscope=from_modelscope,
                 from_hf_hub=from_hf_hub,
             )
         for file_id, file_path in resolved_vocab_files.items():

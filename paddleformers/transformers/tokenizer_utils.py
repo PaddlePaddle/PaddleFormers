@@ -818,7 +818,6 @@ class ChatTemplateMixin:
 
         return conversation_ids
 
-
     def _encode_chat_inputs(
         self,
         conversations: List[List[str, str]],
@@ -897,6 +896,7 @@ class ChatTemplateMixin:
         cache_dir = kwargs.pop("cache_dir", None)
         from_hf_hub = kwargs.pop("from_hf_hub", False)
         from_aistudio = kwargs.pop("from_aistudio", False)
+        from_modelscope = kwargs.pop("from_modelscope", False)
         subfolder = kwargs.pop("subfolder", "")
         if subfolder is None:
             subfolder = ""
@@ -905,6 +905,7 @@ class ChatTemplateMixin:
         kwargs["cache_dir"] = cache_dir
         kwargs["from_hf_hub"] = from_hf_hub
         kwargs["from_aistudio"] = from_aistudio
+        kwargs["from_modelscope"] = from_modelscope
         kwargs["return_tokenizer_file_dir"] = True
         tokenizer, tokenizer_config_file_dir = super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
 

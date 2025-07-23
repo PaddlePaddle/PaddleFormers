@@ -98,6 +98,7 @@ except:
     pass
 
 from ..transformers.context_parallel_utils import split_inputs_sequence_dim_load_balance
+from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
     PretrainedModel,
     _add_variant,
@@ -296,6 +297,7 @@ class Trainer:
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[paddle.optimizer.Optimizer, paddle.optimizer.lr.LRScheduler] = (None, None),
         preprocess_logits_for_metrics: Callable[[paddle.Tensor, paddle.Tensor], paddle.Tensor] = None,
+        processing_class: Optional[ImageProcessingMixin] = None,
     ):
 
         if args is None:
@@ -361,6 +363,7 @@ class Trainer:
 
         self.compute_metrics = compute_metrics
         self.preprocess_logits_for_metrics = preprocess_logits_for_metrics
+        self.processing_class = processing_class
         self.optimizer, self.lr_scheduler = optimizers
         # Label smoothing
         # if self.args.label_smoothing_factor != 0:
@@ -2974,6 +2977,8 @@ class Trainer:
         if self.args.should_save:
             if self.tokenizer is not None and self.args.save_tokenizer:
                 self.tokenizer.save_pretrained(output_dir)
+            if self.processing_class is not None:
+                self.processing_class.save_pretrained(output_dir)
             # Good practice: save your training arguments together with the trained model
             paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
 
