@@ -30,7 +30,7 @@ env:
 jobs:
   build-ci-docker-images:
     name: build-ci-docker-images
-    runs-on: [self-hosted, 4gpu]
+    runs-on: [self-hosted, ernie-8gpu]
     outputs:
       run_build: ${{ steps.set_flags.outputs.run_build }}
       run_downstream: ${{ steps.set_flags.outputs.run_downstream }}
@@ -179,7 +179,7 @@ jobs:
   clean-ci-image:
     name: clean-ci-image
     needs: [build-ci-docker-images, test-ci-docker-images]
-    runs-on: [self-hosted, 4gpu]
+    runs-on: [self-hosted, ernie-8gpu]
     steps:
       - name: Remove CI Image
         env:
