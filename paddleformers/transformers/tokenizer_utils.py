@@ -662,8 +662,12 @@ class ChatTemplateMixin:
         """
         if chat_template is not None:
             if isinstance(chat_template, str):
+                # Temporary replace chat template
+                origin_chat_template = self.chat_template
                 chat_template = ChatTemplate._compile_jinja_template(chat_template)
-            self.chat_template = chat_template
+                self.chat_template = chat_template
+            else:
+                raise ValueError("Chat template must be provided as a string value")
         if not self.chat_template:
             raise ValueError("chat_template is not set, please set chat_template first.")
         elif isinstance(self.chat_template, Template):
@@ -671,6 +675,10 @@ class ChatTemplateMixin:
             query = self._apply_chat_template(conversation, add_generation_prompt=add_generation_prompt)
         elif isinstance(self.chat_template, ChatTemplate):
             query = self._apply_chat_template_paddle(conversation, context_data)
+
+        if chat_template is not None:
+            # Restore to the original chat template
+            self.chat_template = origin_chat_template
 
         if not tokenize:
             return query
