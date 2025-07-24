@@ -647,6 +647,7 @@ class ChatTemplateMixin:
         conversation: List[List[str, str] | Dict[str, str]] | str,
         tokenize: bool = True,
         context_data: Dict[str, Any] = {},
+        chat_template: Optional[str] = None,
         **tokenizer_kwargs
     ) -> str | dict[str, numpy.ndarray | paddle.Tensor]:
         """apply chat_template rules to conversation which should not be batched data
@@ -659,6 +660,10 @@ class ChatTemplateMixin:
         Returns:
             str | dict[str, numpy.ndarray | paddle.Tensor]: return the result of applied data
         """
+        if chat_template is not None:
+            if isinstance(chat_template, str):
+                chat_template = ChatTemplate._compile_jinja_template(chat_template)
+            self.chat_template = chat_template
         if not self.chat_template:
             raise ValueError("chat_template is not set, please set chat_template first.")
         elif isinstance(self.chat_template, Template):
@@ -818,7 +823,6 @@ class ChatTemplateMixin:
 
         return conversation_ids
 
-
     def _encode_chat_inputs(
         self,
         conversations: List[List[str, str]],
@@ -897,6 +901,7 @@ class ChatTemplateMixin:
         cache_dir = kwargs.pop("cache_dir", None)
         from_hf_hub = kwargs.pop("from_hf_hub", False)
         from_aistudio = kwargs.pop("from_aistudio", False)
+        from_modelscope = kwargs.pop("from_modelscope", False)
         subfolder = kwargs.pop("subfolder", "")
         if subfolder is None:
             subfolder = ""
@@ -905,6 +910,7 @@ class ChatTemplateMixin:
         kwargs["cache_dir"] = cache_dir
         kwargs["from_hf_hub"] = from_hf_hub
         kwargs["from_aistudio"] = from_aistudio
+        kwargs["from_modelscope"] = from_modelscope
         kwargs["return_tokenizer_file_dir"] = True
         tokenizer, tokenizer_config_file_dir = super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
 

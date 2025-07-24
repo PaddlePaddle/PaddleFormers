@@ -72,8 +72,13 @@ class AutoConfigTest(unittest.TestCase):
 
     @unittest.skip("skipping due to connection error!")
     def test_from_aistudio(self):
-        config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-bert", from_aistudio=True)
-        self.assertEqual(config.hidden_size, 32)
+        config = AutoConfig.from_pretrained("test_paddleformers/tiny-random-llama", from_aistudio=True)
+        self.assertEqual(config.hidden_size, 768)
+
+    @unittest.skip("skipping due to connection error!")
+    def test_from_mdoelscope(self):
+        config = AutoConfig.from_pretrained("sqlhuman/tiny-random-llama", from_modelscope=True)
+        self.assertEqual(config.hidden_size, 768)
 
     # def test_subfolder(self):
     #     config = AutoConfig.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="text_encoder")

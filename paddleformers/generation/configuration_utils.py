@@ -339,6 +339,7 @@ class GenerationConfig:
         pretrained_model_name_or_path: Union[str, os.PathLike],
         from_hf_hub: bool = False,
         from_aistudio: bool = False,
+        from_modelscope: bool = False,
         config_file_name: Optional[Union[str, os.PathLike]] = None,
         cache_dir: Optional[Union[str, os.PathLike]] = None,
         force_download: bool = False,
@@ -419,6 +420,7 @@ class GenerationConfig:
             force_download=force_download,
             from_aistudio=from_aistudio,
             from_hf_hub=from_hf_hub,
+            from_modelscope=from_modelscope,
         )
         assert (
             resolved_config_file is not None

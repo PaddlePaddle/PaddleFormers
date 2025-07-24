@@ -66,8 +66,9 @@ def resolve_file_path(
     local_files_only: bool = False,
     endpoint: Optional[str] = None,
     url: Optional[str] = None,
-    from_aistudio: bool = False,
     from_hf_hub: bool = False,
+    from_aistudio: bool = False,
+    from_modelscope: bool = False,
     from_bos: bool = True,
 ) -> str:
     """
@@ -75,8 +76,6 @@ def resolve_file_path(
 
     It supports downloading files from four different download sources, including BOS, AiStudio,
     HuggingFace Hub and ModelScope.
-
-    If you want to download a file from ModelScope, you need to set os.environ["from_modelscope"] = "True"
 
     Args:
         repo_id('str'): A path to a folder containing the file, a path of the file, a url or repo name.
@@ -88,6 +87,7 @@ def resolve_file_path(
         url('str'): If it is not None, then it will be downloaded from BOS.
         from_aistudio('bool'): If this value is true, it will be downloaded from aistudio.
         from_hf_hub('bool'): If this value is true, it will be downloaded from hf hub.
+        from_modelscope('bool'): If this value is true, it will be download from the modelscope.
         from_bos('bool'): If this value is true, it will be downloaded from bos (default).
 
 
@@ -148,8 +148,6 @@ def resolve_file_path(
             cache_file_name = None
         if cache_file_name is not None:
             return cache_file_name
-
-    from_modelscope = strtobool(os.environ.get("from_modelscope", False))
 
     # download file from different origins
     try:

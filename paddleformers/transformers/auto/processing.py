@@ -136,8 +136,9 @@ class AutoProcessor:
         subfolder = kwargs.get("subfolder", "")
         if subfolder is None:
             subfolder = ""
-        from_aistudio = kwargs.get("from_aistudio", False)
         from_hf_hub = kwargs.get("from_hf_hub", False)
+        from_aistudio = kwargs.get("from_aistudio", False)
+        from_modelscope = kwargs.get("from_modelscope", False)
         kwargs["subfolder"] = subfolder
         kwargs["cache_dir"] = cache_dir
 
@@ -166,6 +167,7 @@ class AutoProcessor:
             cache_dir=cache_dir,
             from_hf_hub=from_hf_hub,
             from_aistudio=from_aistudio,
+            from_modelscope=from_modelscope,
         )
         if config_file is not None and os.path.exists(config_file):
             processor_class = cls._get_processor_class_from_config(

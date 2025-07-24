@@ -30,6 +30,7 @@ from paddleformers.transformers import (
     AutoModelForTokenClassification,
     BertConfig,
     BertModel,
+    LlamaModel,
 )
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.auto.modeling import MODEL_MAPPING
@@ -75,13 +76,18 @@ class AutoModelTest(unittest.TestCase):
 
     @unittest.skip("skipping due to connection error!")
     def test_from_hf_hub(self):
-        model = AutoModel.from_pretrained("PaddleCI/tiny-random-bert", from_hf_hub=True, convert_from_torch=False)
-        self.assertIsInstance(model, BertModel)
+        model = AutoModel.from_pretrained("dfargveazd/tiny-random-llama", from_hf_hub=True, convert_from_torch=False)
+        self.assertIsInstance(model, LlamaModel)
 
     @unittest.skip("skipping due to connection error!")
     def test_from_aistudio(self):
-        model = AutoModel.from_pretrained("PaddleFormers/tiny-random-bert", from_aistudio=True)
-        self.assertIsInstance(model, BertModel)
+        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-llama", from_aistudio=True)
+        self.assertIsInstance(model, LlamaModel)
+
+    @unittest.skip("skipping due to connection error!")
+    def test_from_modelscope(self):
+        model = AutoModel.from_pretrained("sqlhuman/tiny-random-llama", from_modelscope=True)
+        self.assertIsInstance(model, LlamaModel)
 
     def test_new_model_registration(self):
         AutoConfig.register("custom", CustomConfig)

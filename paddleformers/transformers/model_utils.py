@@ -1748,6 +1748,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         pretrained_model_name_or_path: str,
         from_hf_hub: bool = False,
         from_aistudio: bool = False,
+        from_modelscope: bool = False,
         cache_dir: str | None = None,
         subfolder: Optional[str] = "",
         config: PretrainedConfig = None,
@@ -1904,6 +1905,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     cache_dir=cache_dir,
                     from_aistudio=from_aistudio,
                     from_hf_hub=from_hf_hub,
+                    from_modelscope=from_modelscope,
                 )
 
             elif pretrained_model_name_or_path in cls.pretrained_init_configuration:
@@ -1916,6 +1918,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     cache_dir=cache_dir,
                     from_aistudio=from_aistudio,
                     from_hf_hub=from_hf_hub,
+                    from_modelscope=from_modelscope,
                 )
             else:
                 if use_safetensors is True:
@@ -1946,6 +1949,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     cache_dir=cache_dir,
                     from_aistudio=from_aistudio,
                     from_hf_hub=from_hf_hub,
+                    from_modelscope=from_modelscope,
                 )
                 if resolved_archive_file is None:
                     raise EnvironmentError(
@@ -1977,6 +1981,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 resolved_archive_file,
                 from_aistudio=from_aistudio,
                 from_hf_hub=from_hf_hub,
+                from_modelscope=from_modelscope,
                 cache_dir=cache_dir,
                 subfolder=subfolder,
             )
@@ -2510,6 +2515,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         dtype = kwargs.pop("dtype", None)
         from_hf_hub = kwargs.pop("from_hf_hub", False)
         from_aistudio = kwargs.pop("from_aistudio", False)
+        from_modelscope = kwargs.pop("from_modelscope", False)
         subfolder = kwargs.pop("subfolder", None)
         if subfolder is None:
             subfolder = ""
@@ -2524,7 +2530,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         model_kwargs = kwargs
 
-        if convert_from_torch is None and os.environ.get("from_modelscope", False):
+        if convert_from_torch is None and from_modelscope:
             logger.warning(
                 "If you are attempting to load weights from ModelScope Hub and want to disable the default behavior of considering torch weights,"
                 " you can set ·convert_from_torch=False·. By default, `convert_from_torch` is set to `True`. "
@@ -2550,12 +2556,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 cache_dir=cache_dir,
                 from_hf_hub=from_hf_hub,
                 from_aistudio=from_aistudio,
+                from_modelscope=from_modelscope,
                 subfolder=subfolder,
                 return_unused_kwargs=True,
                 **kwargs,
             )
         if "from_aistudio" in model_kwargs:
             model_kwargs.pop("from_aistudio")
+        if "from_modelscope" in model_kwargs:
+            model_kwargs.pop("from_modelscope")
 
         # if not from_hf_hub and not from_aistudio:
         #     if not os.path.exists(os.path.join(cache_dir, pretrained_model_name_or_path, subfolder, CONFIG_NAME)):
@@ -2596,6 +2605,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             subfolder=subfolder,
             from_hf_hub=from_hf_hub,
             from_aistudio=from_aistudio,
+            from_modelscope=from_modelscope,
             config=config,
             convert_from_torch=convert_from_torch,
             use_safetensors=use_safetensors,
@@ -2719,6 +2729,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     force_download=force_download,
                     from_hf_hub=from_hf_hub,
                     from_aistudio=from_aistudio,
+                    from_modelscope=from_modelscope,
                     subfolder=subfolder,
                     **kwargs,
                 )
