@@ -660,25 +660,33 @@ class ChatTemplateMixin:
         Returns:
             str | dict[str, numpy.ndarray | paddle.Tensor]: return the result of applied data
         """
-        if chat_template is not None:
+        if chat_template:
             if isinstance(chat_template, str):
-                # Temporary replace chat template
-                origin_chat_template = self.chat_template
                 chat_template = ChatTemplate._compile_jinja_template(chat_template)
-                self.chat_template = chat_template
-            else:
-                raise ValueError("Chat template must be provided as a string value")
-        if not self.chat_template:
-            raise ValueError("chat_template is not set, please set chat_template first.")
-        elif isinstance(self.chat_template, Template):
-            add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", True)
-            query = self._apply_chat_template(conversation, add_generation_prompt=add_generation_prompt)
-        elif isinstance(self.chat_template, ChatTemplate):
-            query = self._apply_chat_template_paddle(conversation, context_data)
+            elif isinstance(chat_template, dict):
+                chat_template = ChatTemplate(
+                    system=chat_template.get("system", None),
+                    conversation=chat_template.get("conversation", None),
+                    query=chat_template.get("query", None),
+                )
+            elif not isinstance(chat_template, (Template | ChatTemplate)):
+                raise ValueError("chat template should be str, dict, Template, ChatTemplate")
 
-        if chat_template is not None:
-            # Restore to the original chat template
-            self.chat_template = origin_chat_template
+            if isinstance(chat_template, Template):
+                add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", True)
+                query = self._apply_chat_template(
+                    conversation, add_generation_prompt=add_generation_prompt, chat_template=chat_template
+                )
+            elif isinstance(chat_template, ChatTemplate):
+                query = self._apply_chat_template_paddle(conversation, context_data, chat_template=chat_template)
+        else:
+            if not self.chat_template:
+                raise ValueError("chat_template is not set, please set chat_template first.")
+            elif isinstance(self.chat_template, Template):
+                add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", True)
+                query = self._apply_chat_template(conversation, add_generation_prompt=add_generation_prompt)
+            elif isinstance(self.chat_template, ChatTemplate):
+                query = self._apply_chat_template_paddle(conversation, context_data)
 
         if not tokenize:
             return query
@@ -691,8 +699,18 @@ class ChatTemplateMixin:
         self,
         conversation: List[List[str, str]] | str,
         context_data: Dict[str, Any] = {},
+        chat_template: Optional[dict | ChatTemplate] = None,
     ) -> str | dict[str, numpy.ndarray | paddle.Tensor]:
-        context_data = self.chat_template._init_context_data(context_data)
+        if isinstance(chat_template, dict):
+            chat_template = ChatTemplate(
+                system=chat_template.get("system", None),
+                conversation=chat_template.get("conversation", None),
+                query=chat_template.get("query", None),
+            )
+        elif not isinstance(chat_template, ChatTemplate):
+            raise ValueError("chat template should be dict or ChatTemplate class")
+        template = chat_template if chat_template else self.chat_template
+        context_data = template._init_context_data(context_data)
 
         if isinstance(conversation, str):
             conversation = [[conversation]]
@@ -702,14 +720,18 @@ class ChatTemplateMixin:
                 "so you should apply the conversation one by one."
             )
 
-        query = self.chat_template(conversation, context_data=context_data)
+        query = template(conversation, context_data=context_data)
         return query
 
     def _apply_chat_template(
         self,
         conversation: List[List[str, str] | Dict[str, str]] | str,
         add_generation_prompt=True,
+        chat_template: Optional[str | Template] = None,
     ) -> str | dict[str, numpy.ndarray | paddle.Tensor]:
+        if isinstance(chat_template, str):
+            chat_template = ChatTemplate._compile_jinja_template(chat_template)
+        template = chat_template if chat_template else self.chat_template
         if isinstance(conversation, str):
             conversations = [{"role": "user", "content": conversation}]
         elif isinstance(conversation, list):
@@ -725,12 +747,12 @@ class ChatTemplateMixin:
                 )
         elif isinstance(conversation, dict):
             conversations = conversation
-            query = self.chat_template.render(
+            query = template.render(
                 conversations, **self.special_tokens_map, add_generation_prompt=add_generation_prompt
             )
             return query
 
-        query = self.chat_template.render(
+        query = template.render(
             messages=conversations, **self.special_tokens_map, add_generation_prompt=add_generation_prompt
         )
         return query
