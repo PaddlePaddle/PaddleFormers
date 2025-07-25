@@ -1,16 +1,16 @@
 name: Build CI-Docker Images
 
 on:
-  push:
-    branches: [develop]
-    paths:
-      - "requirements*"
-      - "tests/requirements.txt"
-      - "setup.py"
-      - ".github/workflows/build-ci-docker-images.yml"
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches: [develop]
+  # push:
+  #   branches: [develop]
+  #   paths:
+  #     - "requirements*"
+  #     - "tests/requirements.txt"
+  #     - "setup.py"
+  #     - ".github/workflows/build-ci-docker-images.yml"
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
+  #   branches: [develop]
   schedule:
     - cron: "5 0 * * 0"
 
@@ -159,8 +159,7 @@ jobs:
           if [[ "${run_build}" == "false" ]]; then
             echo "No need to build docker image"
           else
-            # docker build --network host -t ${image_name} .
-            docker tag ${image_base}-latest ${image_name}
+            docker build --network host -t ${image_name} .
           fi
       
       - name: Terminate And Delete the Container
@@ -192,7 +191,11 @@ jobs:
             CONTAINERS=$(docker ps -a --filter "ancestor=$image_name" --format "{{.ID}}")
             if [ -z "$CONTAINERS" ]; then
                 echo "$image_name is not using by any container, deleting..."
-                docker rmi "$image_name"
+                if docker image inspect "$image_name" > /dev/null 2>&1; then
+                    docker rmi "$image_name"
+                else
+                    echo "$image_name not found, maybe in other runners"
+                fi
             else
                 echo "$image_name is using by containers:"
                 echo "$CONTAINERS"
