@@ -708,7 +708,7 @@ class ChatTemplateMixin:
         self,
         conversation: List[List[str, str] | Dict[str, str]] | str,
         add_generation_prompt=True,
-        chat_template: Optional[str] = None,
+        chat_template: Optional[str | Template] = None,
     ) -> str | dict[str, numpy.ndarray | paddle.Tensor]:
         if isinstance(chat_template, str):
             chat_template = ChatTemplate._compile_jinja_template(chat_template)
