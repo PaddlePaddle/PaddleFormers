@@ -16,10 +16,10 @@
 
 import paddle
 import paddle.nn.functional as F
-from .. import fused_head_and_loss_fn
-from ...trl import DPOCriterion
-from ...utils import infohub
 
+from ....trl import DPOCriterion
+from ....utils import infohub
+from .. import fused_head_and_loss_fn
 from ..distributed.common_dist_utils import (
     AllGatherVarlenOp,
     GatherOp,
@@ -43,10 +43,8 @@ class ErnieDPOCriterion(DPOCriterion):
     ):
         """DPO logprobs"""
         labels = chosen_labels + rejected_labels
-        if self.config.use_fused_head_and_loss_fn:
-            hidden_states, weight, bias, transpose_y = logits
-        elif self.config.use_sparse_head_and_loss_fn:
-            hidden_states, weight, bias = logits
+        hidden_states, weight, bias, transpose_y = logits
+
         if self.config.use_sparse_head_and_loss_fn:
             if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel:
                 labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, 0)
@@ -87,7 +85,7 @@ class ErnieDPOCriterion(DPOCriterion):
                 return_token_loss=True,
                 ignore_index=0,
             )
-        elif self.config.use_sparse_head_and_loss_fn:
+        else:
             logits = parallel_matmul(
                 hidden_states,
                 weight,
@@ -98,12 +96,6 @@ class ErnieDPOCriterion(DPOCriterion):
             )
             logits = logits.astype("float32")
             per_token_logps = -self.logprobs(logits, labels)
-        else:
-            logits = logits.astype("float32")
-            if logits.shape[:-1] != labels.shape:
-                raise ValueError("Logits (batch and sequence length dim) and labels must have the same shape.")
-            # bs, seq
-            per_token_logps = -self.logprobs(logits, labels.unsqueeze(2)).squeeze(2)
 
         if len(response_indexs.shape) == 3:
             response_indexs = response_indexs[0]

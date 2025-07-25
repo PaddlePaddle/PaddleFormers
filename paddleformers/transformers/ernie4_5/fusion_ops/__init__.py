@@ -22,18 +22,18 @@ from paddle.incubate.nn.functional import swiglu as fused_swiglu
 
 from .common_fusion_ops import Linear, matmul
 
-if paddle.device.is_compiled_with_custom_device('npu'):
+if paddle.device.is_compiled_with_custom_device("npu"):
     from .npu_fusion_ops import npu_cal_aux_loss_func as cal_aux_loss
 else:
     from paddle.incubate.nn.functional import cal_aux_loss
 
 __all__ = [
-    'fused_rope',
-    'fused_swiglu',
-    'fused_rms_norm_ext',
-    'Linear',
-    'matmul',
-    'cal_aux_loss',
+    "fused_rope",
+    "fused_swiglu",
+    "fused_rms_norm_ext",
+    "Linear",
+    "matmul",
+    "cal_aux_loss",
 ]
 
 

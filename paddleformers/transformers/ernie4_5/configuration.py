@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Ernie model configuration"""
+""" Ernie4_5 model configuration"""
 from ..configuration_utils import PretrainedConfig
-
 
 ERNIE_PRETRAINED_INIT_CONFIGURATION = {
     "ernie/tiny-random-ernie": {
@@ -40,9 +39,9 @@ ERNIE_PRETRAINED_INIT_CONFIGURATION = {
 
 class Ernie4_5_Config(PretrainedConfig):
     """
-    Configuration class for ERNIE model.
+    Configuration class for Ernie4_5 model.
 
-    This class stores the configuration of an ERNIE model, defining the model architecture.
+    This class stores the configuration of an Ernie4_5 model, defining the model architecture.
     It inherits from PretrainedConfig and can be used to control model outputs.
     """
 
@@ -103,7 +102,7 @@ class Ernie4_5_Config(PretrainedConfig):
         **kwargs,
     ):
         """
-        Initialize ERNIE model configuration with default or specified parameters.
+        Initialize Ernie4_5 model configuration with default or specified parameters.
 
         Args:
             vocab_size (int): Size of the vocabulary (number of unique tokens)

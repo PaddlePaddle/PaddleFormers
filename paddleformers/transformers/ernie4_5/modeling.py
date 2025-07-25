@@ -14,9 +14,9 @@
 
 """Paddle Ernie model"""
 
-import math
 import contextlib
 import functools
+import math
 from functools import partial
 from typing import Optional, Tuple
 
@@ -30,22 +30,18 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.layers.mpu import mp_ops
 from paddle.distributed.fleet.meta_parallel import (
     ParallelCrossEntropy,
-    get_rng_state_tracker,
-)
-from paddle.distributed.fleet.meta_parallel import (
     VocabParallelEmbedding,
+    get_rng_state_tracker,
 )
 from paddle.distributed.fleet.utils import recompute
 
+from ...utils.log import logger
 from ..model_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
-)
-from ..model_outputs import (
     CausalLMOutputWithCrossAttentions,
 )
 from ..model_utils import PretrainedModel, register_base_model
-from ...utils.log import logger
-
+from .configuration import Ernie4_5_Config
 from .distributed import (
     AllGatherVarlenOp,
     ColumnParallelLinear,
@@ -59,11 +55,20 @@ from .distributed import (
     parallel_matmul,
     sequence_parallel_sparse_mask_labels,
 )
-from .fusion_ops import Linear, fused_rope, fused_swiglu, fusion_flash_attention
-from .loss.dpo import ErnieDPOCriterion
-from .refined_recompute.utils import RefinedRecomputeFunction, create_skip_config_for_refined_recompute
+from .fusion_ops import (
+    Linear,
+    fused_rms_norm_ext,
+    fused_rope,
+    fused_swiglu,
+    fusion_flash_attention,
+)
+
+# from .loss.dpo import ErnieDPOCriterion
+from .refined_recompute.utils import (
+    RefinedRecomputeFunction,
+    create_skip_config_for_refined_recompute,
+)
 from .sequence_parallel_utils import ScatterOp
-from .configuration import Ernie4_5_Config
 
 
 def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_output=None, training=True):
@@ -263,9 +268,8 @@ class RMSNorm(nn.Layer):
                 3. Scale by learned weight parameter
             - Maintains original dtype for numerical stability during computation
         """
-        # TODO: use fused_rms_norm_ext if paddle supports it
-        # if self.config.fuse_rms_norm:
-        #     return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
+        if self.config.fuse_rms_norm:
+            return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
         with paddle.amp.auto_cast(False):
             variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
             hidden_states = paddle.rsqrt(variance + self.variance_epsilon) * hidden_states
@@ -868,7 +872,7 @@ class Ernie4_5_Attention(nn.Layer):
         if past_key_value is not None:
             offset = past_key_value[0].shape[-3]
             kv_seq_len += offset
-        
+
         if offset > 0 or position_ids is not None or not self.fuse_rope:
             cos_sin = self.rotary_emb(kv_seq_len, position_ids).transpose([0, 2, 1, 3])  # [b,h,s,d]->[b,s,h,d]
             if offset > 0 and position_ids is None:
@@ -1193,7 +1197,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
         """
 
         if self.config.use_sparse_head_and_loss_fn:
-            hidden_states, outlinear_weight, outlinear_bias = prediction_scores
+            hidden_states, outlinear_weight, outlinear_bias, _ = prediction_scores
 
             if self.config.sequence_parallel:
                 masked_lm_labels, sparse_label_idx = sequence_parallel_sparse_mask_labels(
@@ -1344,14 +1348,10 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             prediction_scores_dims = len(prediction_scores.shape)
             loss_subbatch_seqlen = getattr(self.config, "loss_subbatch_seqlen", 32768)
             if prediction_scores_dims == 2 and prediction_scores.shape[0] > loss_subbatch_seqlen:
-                sb_loss_func = subbatch(
-                    self.loss_impl, [0, 1], [0, 0], loss_subbatch_seqlen, 0
-                )
+                sb_loss_func = subbatch(self.loss_impl, [0, 1], [0, 0], loss_subbatch_seqlen, 0)
                 masked_lm_loss = sb_loss_func(prediction_scores, masked_lm_labels)
             elif prediction_scores_dims == 3 and prediction_scores.shape[1] > loss_subbatch_seqlen:
-                sb_loss_func = subbatch(
-                    self.loss_impl, [0, 1], [1, 1], loss_subbatch_seqlen, 1
-                )
+                sb_loss_func = subbatch(self.loss_impl, [0, 1], [1, 1], loss_subbatch_seqlen, 1)
                 masked_lm_loss = sb_loss_func(prediction_scores, masked_lm_labels)
             else:
                 masked_lm_loss = self.loss_impl(prediction_scores, masked_lm_labels)
@@ -1450,13 +1450,11 @@ class Ernie4_5_LMHead(nn.Layer):
                     Logits tensor of shape [batch_size, seq_len, vocab_size]
             ]
         """
+        #  will enter this branch when:
+        # 1. use_recompute_loss_fn or use_sparse_head_and_loss_fn
+        # 2. dpo training
         if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
-            out_tensors = (
-                (hidden_states, self.weight, self.bias)
-                if tensor_parallel_output is None
-                else (hidden_states, self.weight, self.bias, tensor_parallel_output)
-            )
-            return out_tensors
+            return (hidden_states, self.weight, self.bias, self.config.tie_word_embeddings)
 
         return calc_lm_head_logits(
             self.config, hidden_states, self.weight, self.bias, tensor_parallel_output, training=self.training
@@ -1466,7 +1464,7 @@ class Ernie4_5_LMHead(nn.Layer):
 class Ernie4_5_DecoderLayer(nn.Layer):
     """A single transformer decoder layer in ERNIE model.
 
-    Contains self-attention and feed-forward components, 
+    Contains self-attention and feed-forward components,
     support, residual connections, and layer normalization.
     """
 
@@ -1481,7 +1479,7 @@ class Ernie4_5_DecoderLayer(nn.Layer):
         self.hidden_size = config.hidden_size
         self.layer_idx = layer_idx
         self.config = config
-        
+
         self.self_attn = Ernie4_5_Attention(config, layer_idx)
         self.mlp = Ernie4_5_MLP(config)
 
@@ -1960,7 +1958,7 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
         inputs_embeds = inputs_embeds.astype(self.embed_tokens.weight.dtype)
-        
+
         if self.config.sequence_parallel:
             inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
             inputs_embeds = ScatterOp.apply(inputs_embeds)
@@ -2064,10 +2062,11 @@ class Ernie4_5_ForCausalLM(Ernie4_5_PretrainedModel):
         self.config = config
         self.ernie = Ernie4_5_Model(config)
         self.lm_head = Ernie4_5_LMHead(config)
-        if self.config.dpo_config is not None:
-            self.criterion = ErnieDPOCriterion(config)
-        else:
-            self.criterion = ErniePretrainingCriterion(config)
+        # if self.config.dpo_config is not None:
+        #     self.criterion = ErnieDPOCriterion(config)
+        # else:
+        #     self.criterion = ErniePretrainingCriterion(config)
+        self.criterion = ErniePretrainingCriterion(config)
 
         self.tie_weights()
 
@@ -2270,6 +2269,9 @@ class Ernie4_5_ForCausalLM(Ernie4_5_PretrainedModel):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        if attention_mask is not None and attention_mask.dtype != paddle.bool:
+            attention_mask = paddle.cast(attention_mask, paddle.bool)
+
         outputs = self.ernie(
             input_ids,
             position_ids=position_ids,
@@ -2285,11 +2287,10 @@ class Ernie4_5_ForCausalLM(Ernie4_5_PretrainedModel):
         )
 
         hidden_states = outputs.last_hidden_state
-        # if labels is None，means we need full output, instead of tensor_parallel_output
-        # tensor_parallel_output is togather with ParallelCrossEntropy
-        logits = self.lm_head(hidden_states)
 
-        if isinstance(self.criterion, ErnieDPOCriterion):
+        # if isinstance(self.criterion, ErnieDPOCriterion):
+        if False:
+            logits = (hidden_states, self.lm_head.weight, None, self.config.tie_word_embeddings)
             chosen_labels = kwargs.get("chosen_labels", None)
             rejected_labels = kwargs.get("rejected_labels", None)
             response_indexs = kwargs.get("response_indexs", None)
@@ -2308,6 +2309,10 @@ class Ernie4_5_ForCausalLM(Ernie4_5_PretrainedModel):
                 logits,
                 labels,
             )
+
+        # if labels is None，means we need full output, instead of tensor_parallel_output
+        # tensor_parallel_output is togather with ParallelCrossEntropy
+        logits = self.lm_head(hidden_states)
 
         if return_dict:  # aka Generate Decoding
             if labels is not None:
