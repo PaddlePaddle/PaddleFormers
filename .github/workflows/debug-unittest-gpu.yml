@@ -40,7 +40,7 @@ jobs:
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
           image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
           echo "image_name=${image_name}" >> "$GITHUB_ENV"
-          nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
