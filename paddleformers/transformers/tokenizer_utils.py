@@ -656,29 +656,20 @@ class ChatTemplateMixin:
             conversation (List[List[str, str]] | str): the conversation messages between user and bot
             context_data (Dict[str, Any]): the context data for chat_template.json
             tokenize (bool, optional): whether do tokenization. Defaults to True.
-
+            chat_template(str, optional): Optional conversation formatting template string.
         Returns:
             str | dict[str, numpy.ndarray | paddle.Tensor]: return the result of applied data
         """
         if chat_template:
             if isinstance(chat_template, str):
                 chat_template = ChatTemplate._compile_jinja_template(chat_template)
-            elif isinstance(chat_template, dict):
-                chat_template = ChatTemplate(
-                    system=chat_template.get("system", None),
-                    conversation=chat_template.get("conversation", None),
-                    query=chat_template.get("query", None),
-                )
-            elif not isinstance(chat_template, (Template | ChatTemplate)):
-                raise ValueError("chat template should be str, dict, Template, ChatTemplate")
+            else:
+                raise ValueError("chat template should be a string value")
 
-            if isinstance(chat_template, Template):
-                add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", True)
-                query = self._apply_chat_template(
-                    conversation, add_generation_prompt=add_generation_prompt, chat_template=chat_template
-                )
-            elif isinstance(chat_template, ChatTemplate):
-                query = self._apply_chat_template_paddle(conversation, context_data, chat_template=chat_template)
+            add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", True)
+            query = self._apply_chat_template(
+                conversation, add_generation_prompt=add_generation_prompt, chat_template=chat_template
+            )
         else:
             if not self.chat_template:
                 raise ValueError("chat_template is not set, please set chat_template first.")
@@ -699,18 +690,8 @@ class ChatTemplateMixin:
         self,
         conversation: List[List[str, str]] | str,
         context_data: Dict[str, Any] = {},
-        chat_template: Optional[dict | ChatTemplate] = None,
     ) -> str | dict[str, numpy.ndarray | paddle.Tensor]:
-        if isinstance(chat_template, dict):
-            chat_template = ChatTemplate(
-                system=chat_template.get("system", None),
-                conversation=chat_template.get("conversation", None),
-                query=chat_template.get("query", None),
-            )
-        elif not isinstance(chat_template, ChatTemplate):
-            raise ValueError("chat template should be dict or ChatTemplate class")
-        template = chat_template if chat_template else self.chat_template
-        context_data = template._init_context_data(context_data)
+        context_data = self.chat_template._init_context_data(context_data)
 
         if isinstance(conversation, str):
             conversation = [[conversation]]
@@ -720,14 +701,14 @@ class ChatTemplateMixin:
                 "so you should apply the conversation one by one."
             )
 
-        query = template(conversation, context_data=context_data)
+        query = self.chat_template(conversation, context_data=context_data)
         return query
 
     def _apply_chat_template(
         self,
         conversation: List[List[str, str] | Dict[str, str]] | str,
         add_generation_prompt=True,
-        chat_template: Optional[str | Template] = None,
+        chat_template: Optional[str] = None,
     ) -> str | dict[str, numpy.ndarray | paddle.Tensor]:
         if isinstance(chat_template, str):
             chat_template = ChatTemplate._compile_jinja_template(chat_template)
