@@ -346,6 +346,7 @@ class TemplateIntegrationTest(unittest.TestCase):
             self.src_length: int = src_length
 
     def setUp(self) -> None:
+        self.test_template = '{%- if not add_generation_prompt is defined -%}\n    {%- set add_generation_prompt = true -%}\n{%- endif -%}\n{%- if not cls_token is defined -%}\n    {%- set cls_token = "<|begin_of_sentence|>" -%}\n{%- endif -%}\n{%- if not sep_token is defined -%}\n    {%- set sep_token = "<|end_of_sentence|>" -%}\n{%- endif -%}\n{{- cls_token -}}\n{%- for message in messages -%}\n    {%- if message["role"] == "user" -%}\n        {{- "User: " + message["content"] + "\n" -}}\n    {%- elif message["role"] == "assistant" -%}\n        {{- "Assistant: " + message["content"] + sep_token -}}\n    {%- elif message["role"] == "system" -%}\n        {{- message["content"] + "\n" -}}\n    {%- endif -%}\n{%- endfor -%}\n{%- if add_generation_prompt -%}\n    {{- "Assistant: " -}}\n{%- endif -%}'
         self.tokenizer = AutoTokenizer.from_pretrained("qwen/qwen-7b-chat")
         qwen_jinja = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
         self.tokenizer.init_chat_template(qwen_jinja)
@@ -447,3 +448,41 @@ class TemplateIntegrationTest(unittest.TestCase):
             split_part[0],
             "<|im_start|>system\nYou are a helpful assistant<|im_end|>\n<|im_start|>user\n用户Round 1<|im_end|>\n<|im_start|>assistant\n",
         )
+
+    def test_chat_template_argument(self):
+        query = "你好"
+        first_query = self.tokenizer.apply_chat_template(query, tokenize=False, chat_template=self.test_template)
+        first_answer = f"<|begin_of_sentence|>User: {query}\nAssistant: "
+        self.assertEqual(first_query, first_answer)
+        second_query = self.tokenizer.apply_chat_template(query, tokenize=False)
+        second_answer = f"<|im_start|>system\nYou are a helpful assistant<|im_end|>\n<|im_start|>user\n{query}<|im_end|>\n<|im_start|>assistant\n"
+        self.assertEqual(second_query, second_answer)
+
+    def test_multi_turns_dict_chat_template_argument(self):
+        query = [
+            {"role": "user", "content": "用户Round 1"},
+            {"role": "assistant", "content": "回答Round 1"},
+            {"role": "user", "content": "用户Round 2"},
+        ]
+        first_query = self.tokenizer.apply_chat_template(query, tokenize=False, chat_template=self.test_template)
+        first_answer = (
+            "<|begin_of_sentence|>User: 用户Round 1\nAssistant: 回答Round 1<|end_of_sentence|>User: 用户Round 2\nAssistant: "
+        )
+        self.assertEqual(first_query, first_answer)
+        second_query = self.tokenizer.apply_chat_template(query, tokenize=False)
+        second_answer = "<|im_start|>system\nYou are a helpful assistant<|im_end|>\n<|im_start|>user\n用户Round 1<|im_end|>\n<|im_start|>assistant\n回答Round 1<|im_end|>\n<|im_start|>user\n用户Round 2<|im_end|>\n<|im_start|>assistant\n"
+        self.assertEqual(second_query, second_answer)
+
+    def test_multi_turns_list_chat_template_argument(self):
+        query = [
+            ["用户Round 1", "回答Round 1"],
+            ["用户Round 2"],
+        ]
+        first_query = self.tokenizer.apply_chat_template(query, tokenize=False, chat_template=self.test_template)
+        first_answer = (
+            "<|begin_of_sentence|>User: 用户Round 1\nAssistant: 回答Round 1<|end_of_sentence|>User: 用户Round 2\nAssistant: "
+        )
+        self.assertEqual(first_query, first_answer)
+        second_query = self.tokenizer.apply_chat_template(query, tokenize=False)
+        second_answer = "<|im_start|>system\nYou are a helpful assistant<|im_end|>\n<|im_start|>user\n用户Round 1<|im_end|>\n<|im_start|>assistant\n回答Round 1<|im_end|>\n<|im_start|>user\n用户Round 2<|im_end|>\n<|im_start|>assistant\n"
+        self.assertEqual(second_query, second_answer)
