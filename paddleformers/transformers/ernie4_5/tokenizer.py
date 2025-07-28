@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Ernie4_5_Tokenizer
+Ernie4_5Tokenizer
 """
 import os
 import re
@@ -23,14 +23,15 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import paddle
 import sentencepiece as spm
+
+from ...utils.log import logger
 from .. import PretrainedTokenizer
 from ..tokenizer_utils_base import PaddingStrategy, TextInput
-from ...utils.log import logger
 
 
-class Ernie4_5_Tokenizer(PretrainedTokenizer):
+class Ernie4_5Tokenizer(PretrainedTokenizer):
     """
-    Ernie4_5_Tokenizer
+    Ernie4_5Tokenizer
 
     Attributes:
         resource_files_names (dict): Mapping of resource file names.
@@ -325,4 +326,3 @@ class Ernie4_5_Tokenizer(PretrainedTokenizer):
         if return_attention_mask:
             encoded_inputs["attention_mask"] = attention_mask.tolist()
         return encoded_inputs
-

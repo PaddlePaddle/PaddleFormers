@@ -37,7 +37,7 @@ ERNIE_PRETRAINED_INIT_CONFIGURATION = {
 }
 
 
-class Ernie4_5_Config(PretrainedConfig):
+class Ernie4_5Config(PretrainedConfig):
     """
     Configuration class for Ernie4_5 model.
 
@@ -97,7 +97,7 @@ class Ernie4_5_Config(PretrainedConfig):
         token_balance_loss=False,
         token_balance_seqlen=False,  # calculated based on batchsize and seqlen
         cachekv_quant: bool = False,
-        pp_seg_method="layer:Ernie4_5_DecoderLayer|EmptyLayer",
+        pp_seg_method="layer:Ernie4_5DecoderLayer|EmptyLayer",
         dpo_config=None,
         **kwargs,
     ):
@@ -256,4 +256,4 @@ class Ernie4_5_Config(PretrainedConfig):
         )
 
 
-__all__ = ["Ernie4_5_Config"]
+__all__ = ["Ernie4_5Config"]

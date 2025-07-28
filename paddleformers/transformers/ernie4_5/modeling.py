@@ -41,7 +41,7 @@ from ..model_outputs import (
     CausalLMOutputWithCrossAttentions,
 )
 from ..model_utils import PretrainedModel, register_base_model
-from .configuration import Ernie4_5_Config
+from .configuration import Ernie4_5Config
 from .distributed import (
     AllGatherVarlenOp,
     ColumnParallelLinear,
@@ -79,7 +79,7 @@ def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_out
     handling sequence parallelism and tensor parallelism configurations.
 
     Args:
-        config (Ernie4_5_Config): Model configuration.
+        config (Ernie4_5Config): Model configuration.
         hidden_states (Tensor): Hidden states from the transformer layers
         weight (Tensor): Weight matrix for the language model head
         bias (Tensor): Bias vector for the language model head
@@ -235,7 +235,7 @@ class RMSNorm(nn.Layer):
         Initialize RMSNorm layer.
 
         Args:
-            config (Ernie4_5_Config): Model configuration.
+            config (Ernie4_5Config): Model configuration.
         """
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -292,7 +292,7 @@ class LayerNorm(nn.LayerNorm):
         Initialize LayerNorm with configuration.
 
         Args:
-            config (Ernie4_5_Config): Model configuration contains normalization parameters and flags.
+            config (Ernie4_5Config): Model configuration contains normalization parameters and flags.
         """
         super().__init__(config.hidden_size, epsilon=config.rms_norm_eps)
         self.config = config
@@ -396,9 +396,9 @@ class RopeEmbedding(nn.Layer):
         return query, key
 
 
-class Ernie4_5_MLP(nn.Layer):
+class Ernie4_5MLP(nn.Layer):
     """
-    Ernie4_5_MLP - Gated Multi-Layer Perceptron module used in Ernie model.
+    Ernie4_5MLP - Gated Multi-Layer Perceptron module used in Ernie model.
     """
 
     def __init__(self, config, layer_idx=0):
@@ -406,7 +406,7 @@ class Ernie4_5_MLP(nn.Layer):
         Initialize the MLP module with configuration options.
 
         Args:
-            config (Ernie4_5_Config): Model configurations.
+            config (Ernie4_5Config): Model configurations.
             layer_idx (int): Index of current layer (default: 0)
         """
         super().__init__()
@@ -486,14 +486,14 @@ class Ernie4_5_MLP(nn.Layer):
         return self.down_proj(x)
 
 
-class Ernie4_5_Attention(nn.Layer):
+class Ernie4_5Attention(nn.Layer):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
     def __init__(self, config, layer_idx=0):
         """Initialize the attention layer.
 
         Args:
-            config (Ernie4_5_Config): Model configuration.
+            config (Ernie4_5Config): Model configuration.
             layer_idx (int, optional): Index in transformer stack. Defaults to 0.
         """
         super().__init__()
@@ -1161,7 +1161,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
         """Initialize the pretraining criterion.
 
         Args:
-            config (Ernie4_5_Config): Model configuration.
+            config (Ernie4_5Config): Model configuration.
             return_tuple (bool): Whether to return loss as tuple (loss, loss_sum). Defaults to True.
         """
         super(ErniePretrainingCriterion, self).__init__()
@@ -1375,14 +1375,14 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
         return loss, loss_sum
 
 
-class Ernie4_5_LMHead(nn.Layer):
+class Ernie4_5LMHead(nn.Layer):
     """Language model head for ERNIE with support for tensor parallelism."""
 
     def __init__(self, config):
         """Initialize the language model head.
 
         Args:
-            config (Ernie4_5_Config): Model configuration containing:
+            config (Ernie4_5Config): Model configuration containing:
                 - vocab_size: Size of vocabulary
                 - hidden_size: Dimension of hidden states
                 - tensor_parallel_degree: Degree of tensor parallelism
@@ -1393,7 +1393,7 @@ class Ernie4_5_LMHead(nn.Layer):
                 - use_sparse_head_and_loss_fn: Whether to use sparse head computation
         """
 
-        super(Ernie4_5_LMHead, self).__init__()
+        super(Ernie4_5LMHead, self).__init__()
         self.config = config
         if config.tensor_parallel_degree > 1:
             vocab_size = config.vocab_size // config.tensor_parallel_degree
@@ -1461,7 +1461,7 @@ class Ernie4_5_LMHead(nn.Layer):
         )
 
 
-class Ernie4_5_DecoderLayer(nn.Layer):
+class Ernie4_5DecoderLayer(nn.Layer):
     """A single transformer decoder layer in ERNIE model.
 
     Contains self-attention and feed-forward components,
@@ -1472,7 +1472,7 @@ class Ernie4_5_DecoderLayer(nn.Layer):
         """Initialize the decoder layer.
 
         Args:
-            config (Ernie4_5_Config): Model configuration.
+            config (Ernie4_5Config): Model configuration.
             layer_idx (int): Index of this layer in the transformer stack
         """
         super().__init__()
@@ -1480,8 +1480,8 @@ class Ernie4_5_DecoderLayer(nn.Layer):
         self.layer_idx = layer_idx
         self.config = config
 
-        self.self_attn = Ernie4_5_Attention(config, layer_idx)
-        self.mlp = Ernie4_5_MLP(config)
+        self.self_attn = Ernie4_5Attention(config, layer_idx)
+        self.mlp = Ernie4_5MLP(config)
 
         Norm = RMSNorm if config.use_rmsnorm else LayerNorm
 
@@ -1596,10 +1596,10 @@ class Ernie4_5_DecoderLayer(nn.Layer):
         return contextlib.nullcontext()
 
 
-class Ernie4_5_PretrainedModel(PretrainedModel):
+class Ernie4_5PretrainedModel(PretrainedModel):
     """Base class for ERNIE pretrained models."""
 
-    config_class = Ernie4_5_Config
+    config_class = Ernie4_5Config
     base_model_prefix = "ernie"
 
     @classmethod
@@ -1607,7 +1607,7 @@ class Ernie4_5_PretrainedModel(PretrainedModel):
         """Generate tensor parallel mappings for model conversion.
 
         Args:
-            config (Ernie4_5_Config): Model configuration.
+            config (Ernie4_5Config): Model configuration.
             is_split (bool): Whether to generate split mappings (True)
                             or merge mappings (False). Defaults to True.
 
@@ -1797,14 +1797,14 @@ class Ernie4_5_PretrainedModel(PretrainedModel):
 
 
 @register_base_model
-class Ernie4_5_Model(Ernie4_5_PretrainedModel):
+class Ernie4_5Model(Ernie4_5PretrainedModel):
     """The core ERNIE transformer model"""
 
-    def __init__(self, config: Ernie4_5_Config):
+    def __init__(self, config: Ernie4_5Config):
         """Initialize the ERNIE model architecture.
 
         Args:
-            config (Ernie4_5_Config): Model configuration.
+            config (Ernie4_5Config): Model configuration.
         """
         super().__init__(config)
         self.padding_idx = config.pad_token_id
@@ -1825,7 +1825,7 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
 
         self.layers = nn.LayerList(
             [
-                Ernie4_5_DecoderLayer(create_skip_config_for_refined_recompute(i, config), i)
+                Ernie4_5DecoderLayer(create_skip_config_for_refined_recompute(i, config), i)
                 for i in range(config.num_hidden_layers)
             ]
         )
@@ -2040,7 +2040,7 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
         )
 
 
-class Ernie4_5_ForCausalLM(Ernie4_5_PretrainedModel):
+class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
     """ERNIE model for causal language modeling."""
 
     _keys_to_ignore_on_load_missing = [r"lm_head.weight"]
@@ -2050,7 +2050,7 @@ class Ernie4_5_ForCausalLM(Ernie4_5_PretrainedModel):
         Initializes the ERNIE model for causal language modeling.
 
         Args:
-            config (Ernie4_5_Config): Model configuration.
+            config (Ernie4_5Config): Model configuration.
         """
         super().__init__(config)
 
@@ -2060,8 +2060,8 @@ class Ernie4_5_ForCausalLM(Ernie4_5_PretrainedModel):
         logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")
         config.initializer_range = new_initializer_range
         self.config = config
-        self.ernie = Ernie4_5_Model(config)
-        self.lm_head = Ernie4_5_LMHead(config)
+        self.ernie = Ernie4_5Model(config)
+        self.lm_head = Ernie4_5LMHead(config)
         # if self.config.dpo_config is not None:
         #     self.criterion = ErnieDPOCriterion(config)
         # else:
@@ -2334,6 +2334,6 @@ class Ernie4_5_ForCausalLM(Ernie4_5_PretrainedModel):
 
 
 __all__ = [
-    "Ernie4_5_Model",
-    "Ernie4_5_ForCausalLM",
+    "Ernie4_5Model",
+    "Ernie4_5ForCausalLM",
 ]
