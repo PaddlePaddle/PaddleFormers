@@ -21,7 +21,11 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
-from paddleformers.transformers import LlamaConfig, LlamaForCausalLM, LlamaModel
+from paddleformers.transformers import (
+    Ernie4_5Config,
+    Ernie4_5ForCausalLM,
+    Ernie4_5Model,
+)
 from tests.testing_utils import require_package, slow
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -33,8 +37,10 @@ from tests.transformers.test_modeling_common import (
     random_attention_mask,
 )
 
+paddle.set_default_dtype("bfloat16")
 
-class LlamaModelTester:
+
+class Ernie4_5ModelTester:
     def __init__(
         self,
         parent,
@@ -68,7 +74,7 @@ class LlamaModelTester:
         use_labels: bool = False,
         return_dict=False,
     ):
-        self.parent: LlamaModelTest = parent
+        self.parent: Ernie4_5ModelTest = parent
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
@@ -119,8 +125,8 @@ class LlamaModelTester:
         config = self.get_config()
         return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
 
-    def get_config(self) -> LlamaConfig:
-        return LlamaConfig(
+    def get_config(self) -> Ernie4_5Config:
+        return Ernie4_5Config(
             vocab_size=self.vocab_size,
             hidden_size=self.hidden_size,
             num_hidden_layers=self.num_hidden_layers,
@@ -142,17 +148,17 @@ class LlamaModelTester:
         )
 
     def create_and_check_model(
-        self, config: LlamaConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self, config: Ernie4_5Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
     ):
-        model = LlamaModel(config)
+        model = Ernie4_5Model(config)
         model.eval()
         result = model(input_ids)
         self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
 
     def create_and_check_model_attention_mask(
-        self, config: LlamaConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self, config: Ernie4_5Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
     ):
-        model = LlamaModel(config)
+        model = Ernie4_5Model(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
@@ -170,14 +176,14 @@ class LlamaModelTester:
 
     def create_and_check_model_past_large_inputs(
         self,
-        config: LlamaConfig,
+        config: Ernie4_5Config,
         input_ids,
         input_mask,
         sequence_labels,
         token_labels,
         choice_labels,
     ):
-        model = LlamaModel(config)
+        model = Ernie4_5Model(config)
         model.eval()
 
         # first forward pass
@@ -232,7 +238,7 @@ class LlamaModelTester:
         return config, inputs_dict
 
     def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
-        model = LlamaForCausalLM(config)
+        model = Ernie4_5ForCausalLM(config)
         model.eval()
 
         result = model(
@@ -248,7 +254,7 @@ class LlamaModelTester:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
-        model = LlamaForCausalLM(config)
+        model = Ernie4_5ForCausalLM(config)
         model.eval()
 
         result_no_position_id = model(
@@ -270,7 +276,7 @@ class LlamaModelTester:
             self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
 
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
-        model = LlamaForCausalLM(config)
+        model = Ernie4_5ForCausalLM(config)
         config.num_key_value_heads = 8  # gqa
         config.use_fused_rope = True
         model.eval()
@@ -288,19 +294,19 @@ class LlamaModelTester:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
 
-class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
-    base_model_class = LlamaModel
+class Ernie4_5ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+    base_model_class = Ernie4_5Model
     return_dict = False
     use_labels = False
 
-    all_model_classes = (LlamaModel, LlamaForCausalLM)
-    all_generative_model_classes = {LlamaForCausalLM: (LlamaModel, "llama")}
+    all_model_classes = (Ernie4_5Model, Ernie4_5ForCausalLM)
+    all_generative_model_classes = {Ernie4_5ForCausalLM: (Ernie4_5Model, "ernie4_5")}
 
     def setUp(self):
         super().setUp()
 
-        self.model_tester = LlamaModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=LlamaConfig, vocab_size=256, hidden_size=24)
+        self.model_tester = Ernie4_5ModelTester(self)
+        self.config_tester = ConfigTester(self, config_class=Ernie4_5Config, vocab_size=256, hidden_size=24)
 
     def _get_input_ids_and_config(self):
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
@@ -332,21 +338,21 @@ class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
         # this requires 4-D attention mask logic, which is not supported yet
         pass
 
-    def test_llama_lm_head_model(self):
+    def test_ernie4_5_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
 
-    def test_llama_gqa_model(self):
+    def test_ernie4_5_gqa_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_gqa_model(*config_and_inputs)
 
 
-class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
-    base_model_class = LlamaModel
+class Ernie4_5ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
+    base_model_class = Ernie4_5Model
 
     @slow
     def test_inference_no_attention(self):
-        model = LlamaModel.from_pretrained("__internal_testing__/tiny-random-llama")
+        model = Ernie4_5Model.from_pretrained("__internal_testing__/tiny-random-ernie4_5")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -369,7 +375,7 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_with_attention(self):
-        model = LlamaModel.from_pretrained("__internal_testing__/tiny-random-llama")
+        model = Ernie4_5Model.from_pretrained("__internal_testing__/tiny-random-ernie4_5")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -390,41 +396,41 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
 
 
-class LlamaGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "__internal_testing__/micro-random-llama"
+class Ernie4_5GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
+    internal_testing_model = "__internal_testing__/micro-random-ernie4_5"
 
 
-class LlamaCompatibilityTest(unittest.TestCase):
-    test_model_id = "hf-internal-testing/tiny-random-LlamaModel"
+class Ernie4_5CompatibilityTest(unittest.TestCase):
+    test_model_id = "hf-internal-testing/tiny-random-Ernie4_5Model"
 
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
-        from transformers import LlamaConfig, LlamaForCausalLM
+        from transformers import Ernie4_5Config, Ernie4_5ForCausalLM
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = LlamaConfig(hidden_size=16, num_hidden_layers=1, num_attention_heads=2)
-        model = LlamaForCausalLM(config)
+        config = Ernie4_5Config(hidden_size=16, num_hidden_layers=1, num_attention_heads=2)
+        model = Ernie4_5ForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
 
     @require_package("transformers", "torch")
-    def test_llama_converter(self):
+    def test_ernie4_5_converter(self):
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
         # 2. forward the paddle model
-        from paddleformers.transformers import LlamaModel
+        from paddleformers.transformers import Ernie4_5Model
 
-        paddle_model = LlamaModel.from_pretrained(self.torch_model_path, convert_from_torch=True)
+        paddle_model = Ernie4_5Model.from_pretrained(self.torch_model_path, convert_from_torch=True)
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
         import torch
-        from transformers import LlamaModel
+        from transformers import Ernie4_5Model
 
-        torch_model = LlamaModel.from_pretrained(self.torch_model_path)
+        torch_model = Ernie4_5Model.from_pretrained(self.torch_model_path)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -437,7 +443,7 @@ class LlamaCompatibilityTest(unittest.TestCase):
         )
 
     @require_package("transformers", "torch")
-    def test_llama_converter_from_local_dir(self):
+    def test_ernie4_5_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
 
             # 1. create common input
@@ -445,17 +451,17 @@ class LlamaCompatibilityTest(unittest.TestCase):
 
             # 2. forward the torch  model
             import torch
-            from transformers import LlamaModel
+            from transformers import Ernie4_5Model
 
-            torch_model = LlamaModel.from_pretrained(self.torch_model_path)
+            torch_model = Ernie4_5Model.from_pretrained(self.torch_model_path)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             # 2. forward the paddle model
-            from paddleformers.transformers import LlamaModel
+            from paddleformers.transformers import Ernie4_5Model
 
-            paddle_model = LlamaModel.from_pretrained(tempdir, convert_from_torch=True)
+            paddle_model = Ernie4_5Model.from_pretrained(tempdir, convert_from_torch=True)
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -467,9 +473,9 @@ class LlamaCompatibilityTest(unittest.TestCase):
                 )
             )
 
-    @parameterized.expand([("LlamaModel",), ("LlamaForCausalLM",)])
+    @parameterized.expand([("Ernie4_5Model",), ("Ernie4_5ForCausalLM",)])
     @require_package("transformers", "torch")
-    def test_llama_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
+    def test_ernie4_5_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
         pytorch_class_name = pytorch_class_name or class_name
         with tempfile.TemporaryDirectory() as tempdir:
 
