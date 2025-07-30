@@ -1237,12 +1237,7 @@ class PretrainedTokenizer(ChatTemplateMixin, PretrainedTokenizerBase):
                     # Strip white spaces on the left
                     if tok_extended.lstrip and left:
                         tokens[i - 1] = left.rstrip()  # Opposite here
-                else:
-                    # We strip left and right by default
-                    if right:
-                        tokens[i + 1] = right.lstrip()
-                    if left:
-                        tokens[i - 1] = left.rstrip()
+
         # ["This is something", "<special_token_1>", "else"]
         tokenized_text = []
         for token in tokens:
