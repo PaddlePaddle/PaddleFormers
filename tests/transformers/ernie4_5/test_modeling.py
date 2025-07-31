@@ -39,9 +39,6 @@ from tests.transformers.test_modeling_common import (
 # from parameterized import parameterized
 
 
-paddle.set_default_dtype("bfloat16")
-
-
 class Ernie4_5ModelTester:
     def __init__(
         self,
