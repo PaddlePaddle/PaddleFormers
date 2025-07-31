@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Fusion operators.
+Fusion operators
 """
 import paddle
 from paddle.incubate.nn.functional import fused_rms_norm_ext

@@ -13,8 +13,7 @@
 # limitations under the License.
 
 """
-npu fusion operators.
-
+npu fusion operators
 """
 import paddle
 import paddle.distributed as dist

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Ernie4_5 model configuration"""
+""" Ernie4_5 model configuration."""
 from ..configuration_utils import PretrainedConfig
 
 ERNIE_PRETRAINED_INIT_CONFIGURATION = {

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-XPU distributed utils.
+XPU distributed utils
 """
 
 try:

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Paddle Ernie model"""
+"""Paddle Ernie model."""
 
 import contextlib
 import functools

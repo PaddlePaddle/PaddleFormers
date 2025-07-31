@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Common distributed utils.
+Common distributed utils
 """
 
 import paddle

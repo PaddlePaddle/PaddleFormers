@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Ernie4_5Tokenizer
+Ernie4_5Tokenizer.
 """
 import os
 import re

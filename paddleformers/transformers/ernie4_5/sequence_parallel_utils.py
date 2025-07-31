@@ -62,7 +62,7 @@ class _AllToAll(paddle.autograd.PyLayer):
         input_split_sizes=None,
     ):
         """
-        All-to-all communication in the group.
+        All-to-all communication in the group
 
         Args:
             ctx (Any): Context object.
@@ -292,7 +292,7 @@ def sequence_parallel_sparse_mask_labels(labels, ignore_label=-100):
     """allgather sparse label and return sparse idx"""
     hcg = fleet.get_hybrid_communicate_group()
     group = hcg.get_model_parallel_group()
-    parallelism = group.nranks
+    # parallelism = group.nranks
     labels = labels.flatten()
     labels_local = paddle.split(labels, group.nranks)[group.rank]
 

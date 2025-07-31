@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""DPO Criterion"""
+"""DPO Criterion."""
 
 import paddle
 import paddle.nn.functional as F
