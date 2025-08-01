@@ -36,6 +36,9 @@ import numpy as np
 import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
+    HybridParallelOptimizer,
+)
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
@@ -1252,3 +1255,34 @@ def download_recovery_ckpt_from_pdc(recovery_checkpoint_path, timeout):
         raise RuntimeError(
             f"{PDC_DOWNLOAD_ERROR}; Error occurred when trying to download checkpoint from PDC, recovery_checkpoint_path: {recovery_checkpoint_path}, timeout: {timeout}; error details: {PDCErrorMessageMap[result]}"
         )
+
+
+class CustomHybridParallelOptimizer(HybridParallelOptimizer):
+    """
+    Custom optimizer class inherited from HybridParallelOptimizer
+    Override _insert_sync method to solve DPO pin-memory problem
+    """
+
+    def _insert_sync(self, sync_var, src, mp_group, sync_mode):
+        # Get device type where the sync_var is located
+        original_device = "pin_memory" if str(sync_var.place) == "Place(gpu_pinned)" else "cuda"
+
+        # If the sync_var is on pin memory, first move it to CUDA
+        if original_device == "pin_memory":
+            sync_var = sync_var.cuda()
+
+        if sync_mode == "broadcast":
+            paddle.distributed.broadcast(sync_var, src=src, group=mp_group, sync_op=True)
+        else:
+            paddle.distributed.all_reduce(sync_var, group=mp_group, sync_op=True)
+            sync_var.multiply_(
+                paddle.full(
+                    shape=[],
+                    dtype=sync_var.dtype,
+                    fill_value=(1.0 / mp_group.nranks),
+                )
+            )
+
+        # Move it back to pin memory
+        if original_device == "pin_memory":
+            sync_var = paddle.to_tensor(sync_var.numpy(), place=paddle.CUDAPinnedPlace())

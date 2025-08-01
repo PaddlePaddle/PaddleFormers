@@ -49,9 +49,6 @@ try:
 except:
     core = None
 from paddle.distributed import fleet
-from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
-    HybridParallelOptimizer,
-)
 from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
     GroupShardedOptimizerStage2,
 )
@@ -146,6 +143,7 @@ from .trainer_callback import (
     TrainerControl,
     TrainerState,
 )
+from .trainer_utils import CustomHybridParallelOptimizer as HybridParallelOptimizer
 from .trainer_utils import (  # set_hyrbid_parallel_seed,
     EvalLoopOutput,
     EvalPrediction,
