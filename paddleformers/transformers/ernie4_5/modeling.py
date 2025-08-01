@@ -64,10 +64,10 @@ from .fusion_ops import (
 )
 
 # from .loss.dpo import ErnieDPOCriterion
-from .refined_recompute.utils import (
-    RefinedRecomputeFunction,
-    create_skip_config_for_refined_recompute,
-)
+# from .refined_recompute.utils import (
+#     RefinedRecomputeFunction,
+#     create_skip_config_for_refined_recompute,
+# )
 from .sequence_parallel_utils import ScatterOp
 
 
@@ -604,8 +604,8 @@ class Ernie4_5Attention(nn.Layer):
         self.config = config
 
         self._rr_flash_attn = None
-        if config.recompute and config.skip_recompute_ops[layer_idx].get("flash_attn", False):
-            self._rr_flash_attn = RefinedRecomputeFunction()
+        # if config.recompute and config.skip_recompute_ops[layer_idx].get("flash_attn", False):
+        #     self._rr_flash_attn = RefinedRecomputeFunction()
 
         self.set_attn_func()
 
@@ -1825,7 +1825,8 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
 
         self.layers = nn.LayerList(
             [
-                Ernie4_5DecoderLayer(create_skip_config_for_refined_recompute(i, config), i)
+                # Ernie4_5DecoderLayer(create_skip_config_for_refined_recompute(i, config), i)
+                Ernie4_5DecoderLayer(config, i)
                 for i in range(config.num_hidden_layers)
             ]
         )
