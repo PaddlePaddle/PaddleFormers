@@ -38,7 +38,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
 )
 from paddle.incubate.tensor.manipulation import create_async_load
 
-from ..refined_recompute.utils import RefinedRecomputeFunction
+# from ..refined_recompute.utils import RefinedRecomputeFunction
 
 __all__ = [
     "get_hcg",
@@ -345,7 +345,8 @@ class RRColumnSequenceParallelLinear(ColumnSequenceParallelLinear):
             name=name,
         )
 
-        self._rr_column_ln = RefinedRecomputeFunction() if use_rr else None
+        # self._rr_column_ln = RefinedRecomputeFunction() if use_rr else None
+        self._rr_column_ln = None
         if self.weight.is_distributed:
             self.weight.split_axis = 1
         if has_bias and self.bias.is_distributed:
@@ -425,7 +426,8 @@ class RRRowSequenceParallelLinear(RowSequenceParallelLinear):
             name=name,
         )
 
-        self._rr_row_ln = RefinedRecomputeFunction() if use_rr else None
+        # self._rr_row_ln = RefinedRecomputeFunction() if use_rr else None
+        self._rr_row_ln = None
 
         if self.weight.is_distributed:
             self.weight.split_axis = 0
