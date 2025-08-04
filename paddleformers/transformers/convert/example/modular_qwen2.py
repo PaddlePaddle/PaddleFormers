@@ -1,8 +1,23 @@
+"""Paddle modular_Qwen2 model."""
 from fix_import import patcher
 import math
 import numpy as np
 from paddlenlp.transformers import AutoModelForCausalLM
 import paddle
+from ...activations import ACT2FN
+from ...contrastive_loss import SimpleContrastiveLoss
+from ...embedding_utils import dist_gather_tensor_with_gradient
+import os
+from ..llama import parallel_matmul as llama_parallel_matmul
+from ..llama import fusion_ops
+from ...llama.modeling import get_use_casual_mask
+from ..model_outputs import (
+    BaseModelOutputWithPast,
+    CausalLMOutputWithPast,
+    SequenceClassifierOutputWithPast,
+    TokenClassifierOutput,
+)
+import paddle.distributed as dist
 import paddle.nn as nn
 from paddle import DataParallel
 from paddlenlp.transformers.llama.modeling import (
@@ -13,45 +28,19 @@ from paddlenlp.transformers.llama.modeling import (
     LlamaDecoderLayer
 )
 __all__=[
-    "Qwen2Config",
     "Qwen2Model",
-    "Qwen2ForCausalLM", 
+    "Qwen2PretrainedModel",
+    "Qwen2ForCausalLM",
+    "Qwen2PretrainingCriterion",
+    "Qwen2ForSequenceClassification",
+    "Qwen2ForTokenClassification",
+    "Qwen2SentenceEmbedding", 
 ]
 from typing import Optional, Tuple, Union, List
 
+def parallel_matmul(x, y, transpose_y=True, **kwargs):
+    return llama_parallel_matmul(x, y, transpose_y=transpose_y, **kwargs)
 # 旋转位置编码辅助函数
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None):
-    """
-    应用旋转位置编码，支持动态NTK和线性缩放
-    """
-    cos = cos.unsqueeze(2)
-    sin = sin.unsqueeze(2)
-    
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    
-    return q_embed, k_embed
-
-def rotate_half(x):
-    """
-    旋转一半的隐藏维度
-    """
-    x1 = x[..., :x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2:]
-    return paddle.concat([-x2, x1], axis=-1)
-
-# GQA函数
-def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
-    """
-    为Grouped Query Attention重复key和value，优化内存布局
-    """
-    batch, seq_len, num_key_value_heads, head_dim = hidden_states.shape
-    if n_rep == 1:
-        return hidden_states
-    
-    # 优化内存访问模式
-    hidden_states = hidden_states.unsqueeze(3).tile([1, 1, 1, n_rep, 1])
-    return hidden_states.reshape([batch, seq_len, num_key_value_heads * n_rep, head_dim])
 
 class Qwen2Config(LlamaConfig):
     """
