@@ -153,7 +153,7 @@ class Ernie4_5Config(PretrainedConfig):
 
         # Set default for tied embeddings if not specified.
         if "tie_word_embeddings" not in kwargs:
-            kwargs["tie_word_embeddings"] = False
+            kwargs["tie_word_embeddings"] = True
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,

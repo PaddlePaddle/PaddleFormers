@@ -1602,6 +1602,9 @@ class Ernie4_5PretrainedModel(PretrainedModel):
     config_class = Ernie4_5Config
     base_model_prefix = "ernie"
 
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    packed_modules_mapping = {"qkv_proj": ["q_proj", "k_proj", "v_proj"], "up_gate_proj": ["gate_proj", "up_proj"]}
+
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):
         """Generate tensor parallel mappings for model conversion.

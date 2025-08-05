@@ -2571,7 +2571,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         #         config.save_pretrained(os.path.join(cache_dir, pretrained_model_name_or_path, subfolder))
 
         # refine options for config
-        convert_from_torch = cls.support_conversion(config) and convert_from_torch
+        # convert_from_torch = cls.support_conversion(config) and convert_from_torch
         if dtype is None:
             dtype = config.dtype
 
