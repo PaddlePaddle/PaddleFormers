@@ -18,7 +18,6 @@
 
 import collections
 import contextlib
-import gc
 import inspect
 import json
 import math
@@ -98,7 +97,6 @@ except:
     pass
 
 from ..transformers.context_parallel_utils import split_inputs_sequence_dim_load_balance
-from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
     PretrainedModel,
     _add_variant,
@@ -107,7 +105,6 @@ from ..transformers.model_utils import (
 )
 from ..transformers.segment_parallel_utils import split_inputs_sequence_dim
 from ..transformers.tokenizer_utils import PretrainedTokenizer
-from ..utils import empty_device_cache
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     LOKR_WEIGHTS_NAME,
@@ -297,7 +294,6 @@ class Trainer:
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[paddle.optimizer.Optimizer, paddle.optimizer.lr.LRScheduler] = (None, None),
         preprocess_logits_for_metrics: Callable[[paddle.Tensor, paddle.Tensor], paddle.Tensor] = None,
-        processing_class: Optional[ImageProcessingMixin] = None,
     ):
 
         if args is None:
@@ -363,7 +359,6 @@ class Trainer:
 
         self.compute_metrics = compute_metrics
         self.preprocess_logits_for_metrics = preprocess_logits_for_metrics
-        self.processing_class = processing_class
         self.optimizer, self.lr_scheduler = optimizers
         # Label smoothing
         # if self.args.label_smoothing_factor != 0:
@@ -709,8 +704,6 @@ class Trainer:
                 if k not in old_state_dict or id(v) != id(old_state_dict[k]):
                     new_state_dict[k] = v
             self.model.set_state_dict(new_state_dict)
-            if self.args.offload_optim:
-                self._offload_optimizer()
         else:
             if resume_from_checkpoint is not None and (self.args.dataset_rank == 0 or self.args.use_expert_parallel):
 
@@ -2755,7 +2748,7 @@ class Trainer:
             optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
             saved_signal_path = os.path.join(output_dir, f"saved_signal_{dist.get_rank()}")
 
-            if self.args.unified_checkpoint and self.args.offload_optim:
+            if self.args.unified_checkpoint and (self.args.offload_optim or self.args.tensorwise_offload_optimizer):
                 self._reload_optimizer()
 
             if self.args.use_hybrid_parallel:
@@ -2768,7 +2761,6 @@ class Trainer:
                             self.optimizer,
                             output_dir,
                             signal_dir,
-                            self.args.optim_shard_num,
                         )
                     else:
                         if self.dp_group.rank > 0:  # this should only work for MoE saving
@@ -2807,7 +2799,6 @@ class Trainer:
                             self.optimizer,
                             output_dir,
                             signal_dir,
-                            self.args.optim_shard_num,
                         )
                     else:
                         if self.args.data_parallel_rank > 0 and self.args.use_expert_parallel:
@@ -2855,7 +2846,7 @@ class Trainer:
             need_to_rotate_checkpoints = self.args.should_save_model_state
 
         # Delete only by one process
-        need_to_rotate_checkpoints = need_to_rotate_checkpoints and self.args.local_rank in [0, -1]
+        need_to_rotate_checkpoints = need_to_rotate_checkpoints and self.args.local_rank == 0
         if need_to_rotate_checkpoints:
             self._rotate_checkpoints(use_mtime=True, output_dir=run_dir)
             self._rotate_checkpoints(use_mtime=True, output_dir=run_signal_dir)
@@ -2977,8 +2968,6 @@ class Trainer:
         if self.args.should_save:
             if self.tokenizer is not None and self.args.save_tokenizer:
                 self.tokenizer.save_pretrained(output_dir)
-            if self.processing_class is not None:
-                self.processing_class.save_pretrained(output_dir)
             # Good practice: save your training arguments together with the trained model
             paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
 
@@ -3132,7 +3121,6 @@ class Trainer:
                     model=model,
                     optimizer=self.optimizer,
                     resume_from_checkpoint=checkpoint,
-                    offload=self.args.tensorwise_offload_optimizer,
                 )
 
         if self.args.ignore_load_lr_and_optim and opt_state_dict:
@@ -3159,8 +3147,6 @@ class Trainer:
         else:
             optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
             raise ValueError(f"optimizer-state-dict not found, opt: {os.path.join(checkpoint, optimizer_name)}.")
-        gc.collect()
-        empty_device_cache()
 
         if not self.args.ignore_load_lr_and_optim:
             if distributed_isfile(os.path.join(checkpoint, SCHEDULER_NAME)):
