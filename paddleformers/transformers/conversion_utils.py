@@ -1293,7 +1293,7 @@ class ConversionMixin:
             state_dict_keys = list(state_dict.keys())
             for key in state_dict_keys:
                 for trans_key in cls.transpose_weight_keys:
-                    if key.endswith(f"{trans_key}.weight"):
+                    if key.endswith(f".{trans_key}.weight"):
                         state_dict[key] = state_dict[key].transpose([-1, -2])
 
         # pack modules
