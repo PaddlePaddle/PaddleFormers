@@ -1234,7 +1234,6 @@ class LogitComparer:
 
 class ConversionMixin:
 
-    base_model_prefix = ""
     transpose_weight_keys = None
     packed_modules_mapping = None
 
@@ -1258,7 +1257,6 @@ class ConversionMixin:
             config (PretrainedConfig): the PretrainedConfig instance of model
         """
         # FIXME(wj-Mcat): add compatibility with downstream models
-        # name_mappings = cls._get_name_mappings(config)
         if weight_file.endswith(".index.json"):
             if ".safetensors." in weight_file:
                 files = [file for file in os.listdir(os.path.dirname(weight_file)) if file.startswith("model-")]
@@ -1274,27 +1272,8 @@ class ConversionMixin:
             state_dict = load_torch(weight_file)
 
         # 3. convert state_dict
-        # all_layer_names = set(state_dict.keys())
-        # for name_mapping in name_mappings:
-        #     if name_mapping.source_name not in state_dict:
-        #         logger.warning(f"key<{name_mapping.source_name}> not in the pytorch weight file.")
-        #         continue
-
-        #     state_dict[name_mapping.target_name] = name_mapping.run(state_dict, name_mapping.source_name)
-        #     if name_mapping.source_name in all_layer_names:
-        #         all_layer_names.remove(name_mapping.source_name)
-
-        # if all_layer_names:
-        #     logger.warning(f"There are {len(all_layer_names)} tensors not initialized:")
-        #     logger.warning(f"Keys: {all_layer_names}")
-
         # transpose weight
-        if isinstance(cls.transpose_weight_keys, list):
-            state_dict_keys = list(state_dict.keys())
-            for key in state_dict_keys:
-                for trans_key in cls.transpose_weight_keys:
-                    if key.endswith(f".{trans_key}.weight"):
-                        state_dict[key] = state_dict[key].transpose([-1, -2])
+        state_dict = cls._transpose_selected_weights(state_dict)
 
         # pack modules
         if isinstance(cls.packed_modules_mapping, dict):
@@ -1305,7 +1284,7 @@ class ConversionMixin:
                     for key in state_dict_keys:
                         if f".{p_sim_key}." in key:
                             prefix_str, suffix_str = key.split(f".{p_sim_key}.")
-                            new_pack_key_values_dict["".join([prefix_str, f".{packed_key}.", suffix_str])].append(
+                            new_pack_key_values_dict[f"{prefix_str}.{packed_key}.{suffix_str}"].append(
                                 state_dict.pop(key)
                             )
             # pack values
@@ -1313,16 +1292,56 @@ class ConversionMixin:
             for new_key in new_pack_key_values_keys:
                 state_dict[new_key] = paddle.concat(new_pack_key_values_dict.pop(new_key), axis=-1)
 
-        # check prefix
-        if len(cls.base_model_prefix) > 0:
-            new_state_dict_keys = list(state_dict.keys())
-            for key in new_state_dict_keys:
-                if not key.startswith(f"{cls.base_model_prefix}."):
-                    key_names = key.split(".")
-                    key_names[0] = cls.base_model_prefix
-                    new_key = ".".join(key_names)
-                    state_dict[new_key] = state_dict.pop(key)
+        return state_dict
 
+    @classmethod
+    def convert_torch_weights(cls, state_dict: dict, config: PretrainedConfig):
+        """convert to fit HF torch weights
+
+        Args:
+            state_dict (dict): the state_dict of paddle model
+            config (PretrainedConfig): the configuration of name-mapping
+
+        Returns:
+            dict: the converted state_dict
+        """
+        # split modules
+        if isinstance(cls.packed_modules_mapping, dict):
+            split_modules_hidden_size_mapping = cls._get_split_modules_hidden_size_mapping(config)
+            state_dict_keys = list(state_dict.keys())
+            for packed_key in cls.packed_modules_mapping:
+                for key in state_dict_keys:
+                    if f".{packed_key}." in key:
+                        prefix_str, suffix_str = key.split(f".{packed_key}.")
+                        split_indices = [
+                            split_modules_hidden_size_mapping[p_sim_key]
+                            for p_sim_key in cls.packed_modules_mapping[packed_key]
+                        ]
+                        split_values = state_dict.pop(key).split(split_indices, axis=-1)
+                        for idx, p_sim_key in enumerate(cls.packed_modules_mapping[packed_key]):
+                            state_dict[f"{prefix_str}.{p_sim_key}.{suffix_str}"] = split_values[idx]
+
+        # transpose weight
+        state_dict = cls._transpose_selected_weights(state_dict)
+
+        return state_dict
+
+    @classmethod
+    def _transpose_selected_weights(cls, state_dict: dict):
+        """transpose Linear weights
+
+        Args:
+            state_dict (dict): the state_dict of paddle model
+
+        Returns:
+            dict: the converted state_dict
+        """
+        if isinstance(cls.transpose_weight_keys, list):
+            state_dict_keys = list(state_dict.keys())
+            for key in state_dict_keys:
+                for trans_key in cls.transpose_weight_keys:
+                    if key.endswith(f".{trans_key}.weight"):
+                        state_dict[key] = state_dict[key].transpose([-1, -2])
         return state_dict
 
     @classmethod
@@ -1337,6 +1356,21 @@ class ConversionMixin:
 
         Returns:
             List[StateDictNameMapping]: the name-mappings of pretrained model
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def _get_split_modules_hidden_size_mapping(cls, config: PretrainedConfig):
+        """get split modules hidden_size of PretrainedModel
+
+        Args:
+            config (PretrainedConfig): the configuration of name-mapping
+
+        Raises:
+            NotImplementedError:
+
+        Returns:
+            Dict[str, int]: the split modules hidden_size
         """
         raise NotImplementedError
 

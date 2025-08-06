@@ -501,7 +501,7 @@ class Ernie4_5Attention(nn.Layer):
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
-        if config.head_dim is None:
+        if getattr(config, "head_dim", None) is None:
             self.head_dim = self.hidden_size // self.num_heads
         else:
             self.head_dim = config.head_dim
@@ -526,7 +526,7 @@ class Ernie4_5Attention(nn.Layer):
             assert (
                 self.num_heads % self.num_key_value_heads == 0
             ), f"num_heads: {self.num_heads}, num_key_value_heads: {self.num_key_value_heads}"
-            if config.head_dim is None:
+            if getattr(config, "head_dim", None) is None:
                 kv_hidden_size = self.hidden_size // self.num_heads * self.num_key_value_heads
             else:
                 kv_hidden_size = self.head_dim * config.num_key_value_heads
@@ -546,7 +546,7 @@ class Ernie4_5Attention(nn.Layer):
                 ColumnLN = RRColumnSequenceParallelLinear
                 column_ln_configs = {"use_rr": True}
 
-            if config.head_dim is None:
+            if getattr(config, "head_dim", None) is None:
                 qkv_hidden_size = self.hidden_size * 3 if not self.is_gqa else self.hidden_size + kv_hidden_size * 2
             else:
                 qkv_hidden_size = q_hidden_size + kv_hidden_size * 2
@@ -560,7 +560,7 @@ class Ernie4_5Attention(nn.Layer):
             )
         else:
             LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
-            if config.head_dim is None:
+            if getattr(config, "head_dim", None) is None:
                 qkv_hidden_size = self.hidden_size * 3 if not self.is_gqa else self.hidden_size + kv_hidden_size * 2
             else:
                 qkv_hidden_size = q_hidden_size + kv_hidden_size * 2
@@ -581,7 +581,7 @@ class Ernie4_5Attention(nn.Layer):
                 row_ln_configs = {"use_rr": True}
 
             self.o_proj = RowLN(
-                self.hidden_size if config.head_dim is None else q_hidden_size,
+                self.hidden_size if getattr(config, "head_dim", None) is None else q_hidden_size,
                 self.hidden_size,
                 has_bias=config.use_bias,
                 input_is_parallel=True,
@@ -591,7 +591,7 @@ class Ernie4_5Attention(nn.Layer):
         else:
             LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
             self.o_proj = LinearFN(
-                self.hidden_size if config.head_dim is None else q_hidden_size,
+                self.hidden_size if getattr(config, "head_dim", None) is None else q_hidden_size,
                 self.hidden_size,
                 bias_attr=config.use_bias,
             )
@@ -1600,10 +1600,28 @@ class Ernie4_5PretrainedModel(PretrainedModel):
     """Base class for ERNIE pretrained models."""
 
     config_class = Ernie4_5Config
-    base_model_prefix = "ernie"
+    base_model_prefix = "model"
 
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
     packed_modules_mapping = {"qkv_proj": ["q_proj", "k_proj", "v_proj"], "up_gate_proj": ["gate_proj", "up_proj"]}
+
+    @classmethod
+    def _get_split_modules_hidden_size_mapping(cls, config):
+        if getattr(config, "head_dim", None) is None:
+            q_hidden_size = config.hidden_size
+            kv_hidden_size = config.hidden_size // config.num_attention_heads * config.num_key_value_heads
+        else:
+            q_hidden_size = config.head_dim * config.num_attention_heads
+            kv_hidden_size = config.head_dim * config.num_key_value_heads
+
+        split_modules_hidden_size_mapping = {
+            "q_proj": q_hidden_size,
+            "k_proj": kv_hidden_size,
+            "v_proj": kv_hidden_size,
+            "gate_proj": config.intermediate_size,
+            "up_proj": config.intermediate_size,
+        }
+        return split_modules_hidden_size_mapping
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):
@@ -1740,7 +1758,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
                     num_key_value_heads=config.num_key_value_heads,
                     head_dim=(
                         config.hidden_size // config.num_attention_heads
-                        if config.head_dim is None
+                        if getattr(config, "head_dim", None) is None
                         else config.head_dim
                     ),
                     is_quant=False,
@@ -1753,7 +1771,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
                     num_key_value_heads=config.num_key_value_heads,
                     head_dim=(
                         config.hidden_size // config.num_attention_heads
-                        if config.head_dim is None
+                        if getattr(config, "head_dim", None) is None
                         else config.head_dim
                     ),
                     is_quant=False,
@@ -2064,7 +2082,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")
         config.initializer_range = new_initializer_range
         self.config = config
-        self.ernie = Ernie4_5Model(config)
+        self.model = Ernie4_5Model(config)
         self.lm_head = Ernie4_5LMHead(config)
         # if self.config.dpo_config is not None:
         #     self.criterion = ErnieDPOCriterion(config)
@@ -2098,11 +2116,11 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
 
     def get_input_embeddings(self):
         """Returns the input embeddings layer."""
-        return self.ernie.embed_tokens
+        return self.model.embed_tokens
 
     def set_input_embeddings(self, value):
         """Sets the input embeddings layer."""
-        self.ernie.embed_tokens = value
+        self.model.embed_tokens = value
 
     def get_output_embeddings(self):
         """Returns the output embeddings (LM head)."""
@@ -2114,7 +2132,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
 
     def set_decoder(self, decoder):
         """Sets the ERNIE decoder model."""
-        self.ernie = decoder
+        self.model = decoder
 
     def get_decoder(self):
         """Get the transformer decoder.
@@ -2122,7 +2140,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         Returns:
             nn.Layer: The decoder module
         """
-        return self.ernie
+        return self.model
 
     def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
         """Avoid using attention_mask with flash_attn on generation."""
@@ -2276,7 +2294,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
 
-        outputs = self.ernie(
+        outputs = self.model(
             input_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,

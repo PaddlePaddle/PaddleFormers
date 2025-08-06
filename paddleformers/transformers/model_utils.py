@@ -2798,6 +2798,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         shard_format = kwargs.get("shard_format", "naive")  # support naive pipeline
         # variant = kwargs.get("variant", None)
         # is_main_process = kwargs.get("is_main_process", True)
+        save_to_torch = kwargs.get("save_to_torch", False)
+        safe_serialization = safe_serialization or save_to_torch
 
         save_directory = save_dir
 
@@ -2861,6 +2863,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         weights_name = SAFE_WEIGHTS_NAME if safe_serialization else PADDLE_WEIGHTS_NAME
         weights_name = _add_variant(weights_name, variant)
 
+        # convert to fit HF torch weights
+        if save_to_torch:
+            state_dict = self.convert_torch_weights(state_dict, config_to_save)
+
         # Save model
         shards, index = shard_checkpoint(
             state_dict, max_shard_size=max_shard_size, weights_name=weights_name, shard_format=shard_format
@@ -2893,8 +2899,12 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 # joyfulness), but for now this enough.
                 for k in list(shard.keys()):
                     if isinstance(shard[k], paddle.Tensor):
-                        shard[k] = shard.pop(k).cpu().numpy()
-                safe_save_file(shard, os.path.join(save_directory, shard_file), metadata={"format": "np"})
+                        if save_to_torch:
+                            shard[k] = shard.pop(k).astype("float32").cpu().numpy()
+                        else:
+                            shard[k] = shard.pop(k).cpu().numpy()
+                metadata = {"format": "pt"} if save_to_torch else {"format": "np"}
+                safe_save_file(shard, os.path.join(save_directory, shard_file), metadata=metadata)
             else:
                 save_function(shard, os.path.join(save_directory, shard_file))
 
