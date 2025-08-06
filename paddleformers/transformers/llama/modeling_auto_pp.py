@@ -177,7 +177,7 @@ class LlamaChunk(nn.Layer):
         return outputs
 
 
-def manual_model_split(model, stage_idx, group, mode, pp_degree):
+def manual_model_split(model, stage_idx, group, mode, pp_degree, need_shared_params=False):
 
     num_hidden_layers = model.config.num_hidden_layers
     virtual_pp_degree = model.config.virtual_pp_degree if mode == "VPP" else 1
@@ -187,9 +187,10 @@ def manual_model_split(model, stage_idx, group, mode, pp_degree):
 
     layer_lists = model.layers
 
-    # shared_params_names only support ernie
-    shared_params_names = [["embedding_0.w_0.dist", "ernie_lm_head_0.w_0.dist"]]
-
+    if need_shared_params:
+        shared_params_names = [["embedding_0.w_0.dist", "ernie_lm_head_0.w_0.dist"]]
+    else:
+        shared_params_names = []
     shared_mp = build_shared_param_map(model, shared_params_names)
 
     def _build_stage(model, stage_idx, group):
@@ -233,9 +234,9 @@ def get_param_from_name(param_name, model):
     raise ValueError(f"{param_name} not found in model parameters")
 
 
-def get_llama_pp_schedule(model, n_microbatches, loss_fn, mode, pp_degree, group):
+def get_llama_pp_schedule(model, n_microbatches, loss_fn, mode, pp_degree, group, need_shared_params=False):
     assert mode in ["VPP", "1F1B", "FThenB"]
-    stages = manual_model_split(model, group.rank, group, mode, pp_degree)
+    stages = manual_model_split(model, group.rank, group, mode, pp_degree, need_shared_params)
     if mode == "VPP":
         schedule = ScheduleVPP(stages, n_microbatches=n_microbatches, loss_fn=loss_fn)
     elif mode == "1F1B":

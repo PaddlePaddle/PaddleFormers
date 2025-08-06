@@ -27,9 +27,7 @@ from paddle.distributed import fleet
 from paddle.profiler.utils import switch_job_schedule_profiler
 from tqdm.auto import tqdm
 
-from ..transformers.context_parallel_utils import auto_split_sequence_dim_load_balance
 from ..transformers.model_utils import clean_model_class_name, unwrap_model
-from ..transformers.segment_parallel_utils import auto_split_inputs_sequence_dim
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     PREFIX_CHECKPOINT_DIR,
@@ -147,7 +145,6 @@ class AutoTrainer(Trainer):
             "data_sharding_parallel": training_args.dataset_world_size > 1,
             "sharding": training_args.sharding,
             "sharding_mesh_dim": training_args.sharding_parallel_mesh_dimension,
-            "context_parallel": training_args.context_parallel_degree > 1 or training_args.sep_parallel_degree > 1,
         }
         auto_dist_config = model._generate_auto_dist_config(auto_dist_degree)
         model = parallelize.parallelize_model(
@@ -231,16 +228,6 @@ class AutoTrainer(Trainer):
                 )
             else:
                 self.optimizer = dist.shard_optimizer(self.optimizer, None, self.args.gradient_accumulation_steps)
-            if (
-                hasattr(self.optimizer, "_enable_tensor_fusion")
-                and "enable_tensor_fusion" in self.args.sharding_parallel_config
-            ):
-                self.optimizer._enable_tensor_fusion()
-            if (
-                hasattr(self.optimizer, "_enable_sharding_overlap")
-                and "enable_overlap" in self.args.sharding_parallel_config
-            ):
-                self.optimizer._enable_sharding_overlap(model)
 
         if self.args.to_static:
             unified_strategy = dist.Strategy()
@@ -574,10 +561,7 @@ class AutoTrainer(Trainer):
                     if step_control % args.gradient_accumulation_steps == 0:
                         self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
                         self.timers and self.timers("forward-backward").start()
-                    if self.args.sep_parallel_degree > 1 and self.args.split_inputs_sequence_dim:
-                        inputs = auto_split_inputs_sequence_dim(inputs)
-                    if self.args.context_parallel_degree > 1 and self.args.split_inputs_sequence_dim:
-                        inputs = auto_split_sequence_dim_load_balance(inputs)
+
                     tr_loss_step = self.training_step(model, inputs)
 
                     with _exec_mode_guard("dynamic"):
@@ -743,8 +727,11 @@ class AutoTrainer(Trainer):
         if self.criterion is not None:
             if "labels" in inputs:
                 labels = inputs.pop("labels")
-                if len(inputs["input_ids"]) == 4:
-                    input_ids, labels, _, _ = inputs["input_ids"]
+                # hack fix for ernie
+                if len(inputs["input_ids"]) == 2:
+                    input_ids, labels = inputs["input_ids"]
+                else:
+                    raise ValueError(f"Unexpected input length, inputs = {inputs['input_ids']}")
             elif "start_positions" in inputs and "end_positions" in inputs:
                 labels = (inputs.pop("start_positions"), inputs.pop("end_positions"))
             elif self.args.label_names is not None:
@@ -1000,11 +987,7 @@ class AutoTrainer(Trainer):
                 model_to_save.generation_config.save_pretrained(output_dir)
 
         if self.args.should_save_model_state:
-            if state_dict is None:
-                self._save_ckpt_func(self.model.state_dict(), output_dir)
-                logger.info(f"Model weights saved in {output_dir}")
-            else:
-                self._save_ckpt_func(state_dict, output_dir)
+            self._save_ckpt_func(self.model.state_dict(), output_dir)
             logger.info(f"Model weights and optimizer states saved in {output_dir}")
 
     def _load_from_checkpoint(self, resume_from_checkpoint=None):
