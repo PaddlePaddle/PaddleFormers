@@ -43,6 +43,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen2_moe", "Qwen2MoeConfig"),
         ("qwen3", "Qwen3Config"),
         ("qwen3_moe", "Qwen3MoeConfig"),
+        ("qwen2_5_vl", "Qwen2_5_VLConfig"),
     ]
 )
 
@@ -59,6 +60,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen2_moe", "Qwen2Moe"),
         ("qwen3", "Qwen3"),
         ("qwen3_moe", "Qwen3Moe"),
+        ("qwen2_5_vl", "Qwen2_5_VL"),
     ]
 )
 

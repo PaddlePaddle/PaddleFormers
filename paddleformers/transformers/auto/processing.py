@@ -27,7 +27,11 @@ __all__ = [
     "AutoProcessor",
 ]
 
-PROCESSOR_MAPPING_NAMES = OrderedDict([])
+PROCESSOR_MAPPING_NAMES = OrderedDict(
+    [
+        ("Qwen2_5_VLProcessor", "qwen2_5_vl"),
+    ]
+)
 
 
 def get_configurations():

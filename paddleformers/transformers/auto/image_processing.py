@@ -27,7 +27,11 @@ __all__ = [
     "AutoImageProcessor",
 ]
 
-IMAGE_PROCESSOR_MAPPING_NAMES = OrderedDict([])
+IMAGE_PROCESSOR_MAPPING_NAMES = OrderedDict(
+    [
+        ("Qwen2_5_VLImageProcessor", "qwen2_5_vl"),
+    ]
+)
 
 
 def get_configurations():

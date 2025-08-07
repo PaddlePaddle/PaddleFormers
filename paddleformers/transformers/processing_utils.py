@@ -29,6 +29,8 @@ class ProcessorMixin(object):
 
     attributes = ["feature_extractor", "tokenizer"]
     # Names need to be attr_class for attr in attributes
+    pretrained_init_configuration = {}
+
     feature_extractor_class = None
     tokenizer_class = None
     _auto_class = None
