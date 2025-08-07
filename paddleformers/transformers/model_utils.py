@@ -2900,7 +2900,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 for k in list(shard.keys()):
                     if isinstance(shard[k], paddle.Tensor):
                         if save_to_torch:
-                            shard[k] = shard.pop(k).astype("float32").cpu().numpy()
+                            import ml_dtypes
+
+                            shard[k] = shard.pop(k).astype("float32").cpu().numpy().astype(ml_dtypes.bfloat16)
                         else:
                             shard[k] = shard.pop(k).cpu().numpy()
                 metadata = {"format": "pt"} if save_to_torch else {"format": "np"}
