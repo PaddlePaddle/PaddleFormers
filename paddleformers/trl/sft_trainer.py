@@ -24,6 +24,7 @@ import paddle.nn as nn
 from datasets import Dataset
 from paddle.distributed import fleet
 from paddle.io import BatchSampler, DataLoader, DistributedBatchSampler
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..data import DataCollator, DataCollatorForSeq2Seq
 from ..trainer import Trainer
@@ -31,7 +32,6 @@ from ..trainer.trainer_callback import TrainerCallback
 from ..trainer.trainer_utils import EvalPrediction, has_length
 from ..transformers import AutoModelForCausalLM, AutoTokenizer
 from ..transformers.model_utils import PretrainedModel
-from ..transformers.tokenizer_utils import PretrainedTokenizer
 from ..utils.log import logger
 from .extras.dataset_formatting import get_formatting_func_from_dataset
 from .sft_config import SFTConfig
@@ -48,7 +48,7 @@ class SFTTrainer(Trainer):
         data_collator: Optional[DataCollator] = None,
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Union[Dataset, Dict[str, Dataset]] = None,
-        tokenizer: Optional[PretrainedTokenizer] = None,
+        tokenizer: Optional[PreTrainedTokenizer] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[paddle.optimizer.Optimizer, paddle.optimizer.lr.LRScheduler] = (None, None),

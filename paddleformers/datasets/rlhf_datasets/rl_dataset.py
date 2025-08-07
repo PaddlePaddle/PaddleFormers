@@ -19,8 +19,8 @@ import numpy as np
 import paddle
 from datasets import load_dataset
 from paddle.io import Dataset
+from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ...transformers import PretrainedTokenizer
 from ...transformers.tokenizer_utils import PaddingStrategy
 
 
@@ -85,7 +85,7 @@ class RLHFDataset(Dataset):
     def __init__(
         self,
         dataset_name_or_path,
-        tokenizer: PretrainedTokenizer,
+        tokenizer: PreTrainedTokenizer,
         max_prompt_len=1024,
         filter_prompts=True,
         prompt_key="src",

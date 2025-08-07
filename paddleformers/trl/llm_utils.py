@@ -26,6 +26,7 @@ import paddle.distributed as dist
 import paddle.incubate.multiprocessing as mp
 from paddle.distributed import fleet
 from sklearn.metrics import accuracy_score
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..datasets import ZeroPaddingIterableDataset
 from ..generation import GenerationConfig
@@ -40,7 +41,6 @@ from ..transformers import (  # ChatGLMv2Tokenizer,
     Qwen2ForCausalLMPipe,
     Qwen2MoeForCausalLMPipe,
 )
-from ..transformers.tokenizer_utils import PretrainedTokenizer
 from ..utils.log import logger
 
 
@@ -605,7 +605,7 @@ def load_real_time_tokens():
 
 
 def init_chat_template(
-    tokenizer: PretrainedTokenizer, model_name_or_path: str, chat_template_file: Optional[str] = None
+    tokenizer: PreTrainedTokenizer, model_name_or_path: str, chat_template_file: Optional[str] = None
 ):
     """init chat template for the given tokenizer.
 
@@ -615,7 +615,7 @@ def init_chat_template(
         If is file, it will load it.
 
     Args:
-        tokenizer (PretrainedTokenizer): the instance of tokenizer
+        tokenizer (PreTrainedTokenizer): the instance of tokenizer
         model_name_or_path (str): _description_
         chat_template_file (Optional[str], optional): _description_. Defaults to None.
     """
@@ -897,7 +897,7 @@ def init_dist_env():
 
 
 def get_eos_token_id(
-    tokenizer: PretrainedTokenizer, generation_config: Optional[GenerationConfig] = None
+    tokenizer: PreTrainedTokenizer, generation_config: Optional[GenerationConfig] = None
 ) -> List[List[int]]:
     """get eos_token_id from generation_config or tokenizer
 

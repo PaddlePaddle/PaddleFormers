@@ -20,12 +20,8 @@ from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, Union
 
 import numpy as np
 import paddle
-
-from ..transformers.tokenizer_utils_base import (
-    BatchEncoding,
-    PaddingStrategy,
-    PretrainedTokenizerBase,
-)
+from transformers.tokenization_utils_base import BatchEncoding, PreTrainedTokenizerBase
+from transformers.utils import PaddingStrategy
 
 __all__ = [
     "DataCollatorWithPadding",
@@ -177,11 +173,11 @@ class DataCollatorWithPadding:
     Data collator that will dynamically pad the inputs to the longest sequence in the batch.
 
     Args:
-        tokenizer (`paddleformers.transformers.PretrainedTokenizer`):
+        tokenizer (`paddleformers.transformers.PreTrainedTokenizer`):
             The tokenizer used for encoding the data.
     """
 
-    tokenizer: PretrainedTokenizerBase
+    tokenizer: PreTrainedTokenizerBase
     padding: Union[bool, str, PaddingStrategy] = True
     max_length: Optional[int] = None
     pad_to_multiple_of: Optional[int] = None
@@ -216,7 +212,7 @@ class DataCollatorForTokenClassification(DataCollatorMixin):
     Data collator that will dynamically pad the inputs received, as well as the labels.
 
     Args:
-        tokenizer ([`PretrainedTokenizer`] or [`PretrainedFasterTokenizer`]):
+        tokenizer ([`PreTrainedTokenizer`] or [`PretrainedFasterTokenizer`]):
             The tokenizer used for encoding the data.
         padding (`bool`, `str` or [`~utils.PaddingStrategy`], *optional*, defaults to `True`):
             Select a strategy to pad the returned sequences (according to the model's padding side and padding index)
@@ -241,7 +237,7 @@ class DataCollatorForTokenClassification(DataCollatorMixin):
             The type of Tensor to return. Allowable values are "np", "pt" and "tf".
     """
 
-    tokenizer: PretrainedTokenizerBase
+    tokenizer: PreTrainedTokenizerBase
     padding: Union[bool, str, PaddingStrategy] = True
     max_length: Optional[int] = None
     pad_to_multiple_of: Optional[int] = None
@@ -321,7 +317,7 @@ class DataCollatorForSeq2Seq:
     Data collator that will dynamically pad the inputs received, as well as the labels.
 
     Args:
-        tokenizer ([`PretrainedTokenizer`] or [`PretrainedFasterTokenizer`]):
+        tokenizer ([`PreTrainedTokenizer`] or [`PretrainedFasterTokenizer`]):
             The tokenizer used for encoding the data.
         model ([`PreTrainedModel`]):
             The model that is being trained. If set and has the *prepare_decoder_input_ids_from_labels*, use it to
@@ -352,7 +348,7 @@ class DataCollatorForSeq2Seq:
         max_label_length (`int`, *optional*, Pad label to max_label_length. defaults to `None`):
     """
 
-    tokenizer: PretrainedTokenizerBase
+    tokenizer: PreTrainedTokenizerBase
     model: Optional[Any] = None
     padding: Union[bool, str, PaddingStrategy] = True
     max_length: Optional[int] = None
@@ -421,7 +417,7 @@ class DataCollatorForSeq2Seq:
 
 @dataclass
 class DataCollatorForEmbedding:
-    tokenizer: PretrainedTokenizerBase
+    tokenizer: PreTrainedTokenizerBase
     model: Optional[Any] = None
     padding: Union[bool, str, PaddingStrategy] = True
     pad_to_multiple_of: Optional[int] = None
@@ -651,7 +647,7 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
     [`PreTrainedTokenizerFast`] with the argument `return_special_tokens_mask=True`.
     </Tip>"""
 
-    tokenizer: PretrainedTokenizerBase
+    tokenizer: PreTrainedTokenizerBase
     mlm: bool = True
     mlm_probability: float = 0.15
     pad_to_multiple_of: Optional[int] = None

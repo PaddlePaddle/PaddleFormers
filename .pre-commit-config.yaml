@@ -1,21 +1,21 @@
 repos:
 # For Python files
 -   repo: https://github.com/psf/black.git
-    rev: 22.8.0
+    rev: 25.1.0
     hooks:
     -   id: black
         files: \.(py|pyi)$
         additional_dependencies: [toml]
 -   repo: https://github.com/PyCQA/isort
-    rev: 5.11.5
+    rev: 6.0.1
     hooks:
     -   id: isort
 -   repo: https://github.com/PyCQA/flake8
-    rev: 4.0.1
+    rev: 7.3.0
     hooks:
     -   id: flake8
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.1.0
+    rev: v5.0.0
     hooks:
     -   id: check-merge-conflict
     -   id: check-symlinks
@@ -26,7 +26,7 @@ repos:
     -   id: trailing-whitespace
         files: \.md$
 -   repo: https://github.com/Lucas-C/pre-commit-hooks
-    rev: v1.1.14
+    rev: v1.5.5
     hooks:
     -   id: forbid-crlf
         files: \.md$
