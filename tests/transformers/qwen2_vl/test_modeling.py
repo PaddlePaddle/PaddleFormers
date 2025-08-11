@@ -1,5 +1,5 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
+# Copyright 2024 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,24 +22,24 @@ import requests
 from PIL import Image
 
 from paddleformers.transformers import (
-    Qwen2_5_VLConfig,
-    Qwen2_5_VLForConditionalGeneration,
-    Qwen2_5_VLProcessor,
+    Qwen2VLConfig,
+    Qwen2VLForConditionalGeneration,
+    Qwen2VLProcessor,
 )
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import ModelTesterMixin
 
 
-class Qwen2_5_VLModelTester:
+class Qwen2VLModelTester:
     def __init__(self, parent):
         self.parent = parent
-        self.model_name_or_path = "Qwen/Qwen2.5-VL-7B-Instruct"
-        self.processor = Qwen2_5_VLProcessor.from_pretrained(self.model_name_or_path)
+        self.model_name_or_path = "Qwen/Qwen2-VL-7B"
+        self.processor = Qwen2VLProcessor.from_pretrained(self.model_name_or_path)
 
     def get_config(self):
         test_config = {
             "_name_or_path": "./",
-            "architectures": ["Qwen2_5_VLForConditionalGeneration"],
+            "architectures": ["Qwen2VLForConditionalGeneration"],
             "attention_dropout": 0.0,
             "bos_token_id": 151643,
             "eos_token_id": 151645,
@@ -49,42 +49,38 @@ class Qwen2_5_VLModelTester:
             "image_token_id": 151655,
             "video_token_id": 151656,
             "hidden_act": "silu",
-            "hidden_size": 3584,
+            "hidden_size": 1536,
             "initializer_range": 0.02,
-            "intermediate_size": 18944,
-            "max_position_embeddings": 128000,
+            "intermediate_size": 8960,
+            "max_position_embeddings": 32768,
             "max_window_layers": 28,
-            "model_type": "qwen2_5_vl",
-            "num_attention_heads": 28,
+            "model_type": "qwen2_vl",
+            "num_attention_heads": 12,
             "num_hidden_layers": 28,
-            "num_key_value_heads": 4,
+            "num_key_value_heads": 2,
             "rms_norm_eps": 1e-06,
             "rope_theta": 1000000.0,
             "sliding_window": 32768,
             "tie_word_embeddings": False,
-            "dtype": "bfloat16",
+            "dtype": "float32",
             "use_cache": True,
             "use_sliding_window": False,
             "vision_config": {
                 "depth": 32,
-                "hidden_act": "silu",
-                "hidden_size": 1280,
-                "intermediate_size": 3420,
+                "embed_dim": 1280,
+                "mlp_ratio": 4,
                 "num_heads": 16,
                 "in_chans": 3,
-                "out_hidden_size": 3584,
+                "hidden_size": 1536,
                 "patch_size": 14,
                 "spatial_merge_size": 2,
                 "spatial_patch_size": 14,
-                "window_size": 112,
-                "fullatt_block_indexes": [7, 15, 23, 31],
-                "tokens_per_second": 2,
                 "temporal_patch_size": 2,
             },
             "rope_scaling": {"type": "mrope", "mrope_section": [16, 24, 24]},
-            "vocab_size": 152064,
+            "vocab_size": 151936,
         }
-        return Qwen2_5_VLConfig(**test_config)
+        return Qwen2VLConfig(**test_config)
 
     def prepare_config_and_inputs(self):
         messages = [
@@ -115,7 +111,7 @@ class Qwen2_5_VLModelTester:
 
     def create_and_check_model(self, input_ids, attention_mask, pixel_values, image_grid_thw):
         config = self.get_config()
-        model = Qwen2_5_VLForConditionalGeneration(config)
+        model = Qwen2VLForConditionalGeneration(config)
         model.eval()
         with paddle.no_grad():
             result = model(
@@ -127,8 +123,8 @@ class Qwen2_5_VLModelTester:
         self.parent.assertIsNotNone(result)
 
 
-class Qwen2_5_VLModelTest(ModelTesterMixin, unittest.TestCase):
-    all_model_classes = (Qwen2_5_VLForConditionalGeneration,)
+class Qwen2VLModelTest(ModelTesterMixin, unittest.TestCase):
+    all_model_classes = (Qwen2VLForConditionalGeneration,)
     fx_compatible = False
     test_head_masking = False
     test_pruning = False
@@ -139,11 +135,11 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, unittest.TestCase):
 
     def setUp(self):
         # model tester instance
-        self.model_tester = Qwen2_5_VLModelTester(self)
+        self.model_tester = Qwen2VLModelTester(self)
 
         self.config_tester = ConfigTester(
             self,
-            config_class=Qwen2_5_VLConfig,
+            config_class=Qwen2VLConfig,
         )
 
     def test_config(self):
@@ -187,7 +183,7 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, unittest.TestCase):
 
     def test_model_from_pretrained(self):
 
-        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(self.model_tester.model_name_or_path)
+        model = Qwen2VLForConditionalGeneration.from_pretrained(self.model_tester.model_name_or_path)
         self.assertIsNotNone(model)
 
 

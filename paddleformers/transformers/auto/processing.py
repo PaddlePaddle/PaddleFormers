@@ -29,6 +29,7 @@ __all__ = [
 
 PROCESSOR_MAPPING_NAMES = OrderedDict(
     [
+        ("Qwen2VLProcessor", "qwen2_vl"),
         ("Qwen2_5_VLProcessor", "qwen2_5_vl"),
     ]
 )

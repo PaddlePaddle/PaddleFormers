@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib
 import io
 import json
 import os
@@ -29,7 +28,8 @@ __all__ = [
 
 IMAGE_PROCESSOR_MAPPING_NAMES = OrderedDict(
     [
-        ("Qwen2_5_VLImageProcessor", "qwen2_5_vl"),
+        ("Qwen2VLImageProcessor", "qwen2_vl"),
+        ("Qwen2VLImageProcessor", "qwen2_5_vl"),
     ]
 )
 
@@ -37,8 +37,13 @@ IMAGE_PROCESSOR_MAPPING_NAMES = OrderedDict(
 def get_configurations():
     MAPPING_NAMES = OrderedDict()
     for key, class_name in IMAGE_PROCESSOR_MAPPING_NAMES.items():
-        import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.image_processing")
-        processor_name = getattr(import_class, key)
+        # import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.image_processing")
+        import_class = import_module(f"paddleformers.transformer.{class_name}.image_processing")
+        try:
+            processor_name = getattr(import_class, key)
+        except AttributeError:
+            continue
+        print(processor_name)
         name = tuple(processor_name.pretrained_init_configuration.keys())
         if MAPPING_NAMES.get(name, None) is None:
             MAPPING_NAMES[name] = []

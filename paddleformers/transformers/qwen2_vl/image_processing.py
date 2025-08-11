@@ -1,5 +1,5 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
+# Copyright 2024 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ VideoInput = Union[
     List[List["paddle.Tensor"]],
 ]  # noqa
 
-__all__ = ["Qwen2_5_VLImageProcessor"]
+__all__ = ["Qwen2VLImageProcessor"]
 
 
 def is_scaled_image(image: np.ndarray) -> bool:
@@ -139,7 +139,7 @@ def smart_resize(
     return h_bar, w_bar
 
 
-class Qwen2_5_VLImageProcessor(BaseImageProcessor):
+class Qwen2VLImageProcessor(BaseImageProcessor):
     """
     Constructs a Qwen2.5-VL image processor that dynamically resizes images based on the original images.
 

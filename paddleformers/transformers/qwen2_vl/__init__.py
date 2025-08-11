@@ -1,5 +1,5 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
+# Copyright 2024 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .bert_padding import *
 from .configuration import *
+from .image_processing import *
 from .modeling import *
 from .processing import *
