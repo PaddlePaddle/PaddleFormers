@@ -135,3 +135,51 @@ class ReshardLayer(paddle.nn.Layer):
             )
             reshard_tensor.reshape_(shape)
         return reshard_tensor
+
+
+def sep_reshard_layer(input, split_axis, concat_axis):
+    # [auto_parallel] do alltoall operation to reshard input from [Shard(concat_axis)] to [Shard[split_axis]]
+    sep_axis = input.process_mesh.dim_names.index("sep")
+    mp_axis = input.process_mesh.dim_names.index("mp")
+
+    input_placements = input.placements
+    if input_placements[sep_axis] != dist.Shard(concat_axis):
+        raise ValueError(
+            f"Input placements for 'sep' axis should be Shard({concat_axis}), but got {input_placements[sep_axis]}"
+        )
+
+    input_placements[sep_axis] = dist.Shard(split_axis)
+
+    if input_placements[sep_axis] == input_placements[mp_axis]:
+        input_placements[sep_axis] = dist.Shard(split_axis, shard_order=0)
+        input_placements[mp_axis] = dist.Shard(split_axis, shard_order=1)
+    out = dist.reshard(input, input.process_mesh, input_placements)
+    return out
+
+
+def auto_split_inputs_sequence_dim(inputs):
+    def do_split_sequence_dim(data):
+        if data is None:
+            return None
+
+        data_mesh = data.process_mesh
+        data_placements = data.placements
+        sep_axis = data_mesh.dim_names.index("sep")
+        # shard along sep axis
+        data_placements[sep_axis] = dist.Shard(1)
+        data = dist.reshard(data, data_mesh, data_placements)
+        return data
+
+    if isinstance(inputs, paddle.Tensor):
+        return do_split_sequence_dim(inputs)
+    elif isinstance(inputs, dict):
+        res = {}
+        for k, tensor in inputs.items():
+            res[k] = do_split_sequence_dim(tensor)
+    elif isinstance(inputs, list):
+        res = []
+        for tensor in inputs:
+            res.append(do_split_sequence_dim(tensor))
+    else:
+        raise ValueError(f"the inputs should be a tensor, list or dict, but is type: {type(inputs)}")
+    return res

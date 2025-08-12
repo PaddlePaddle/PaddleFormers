@@ -42,6 +42,7 @@ from paddle.optimizer.lr import LambdaDecay
 
 from ..ops import Topology
 from ..trainer.argparser import strtobool
+from ..transformers import get_llama_pp_schedule
 from ..transformers.tokenizer_utils_base import BatchEncoding
 from ..utils.env import PREFIX_CHECKPOINT_DIR, _re_checkpoint  # noqa for compatibility
 from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
@@ -1252,3 +1253,16 @@ def download_recovery_ckpt_from_pdc(recovery_checkpoint_path, timeout):
         raise RuntimeError(
             f"{PDC_DOWNLOAD_ERROR}; Error occurred when trying to download checkpoint from PDC, recovery_checkpoint_path: {recovery_checkpoint_path}, timeout: {timeout}; error details: {PDCErrorMessageMap[result]}"
         )
+
+
+def check_auto_parallel_pipeline_support(model_type=None):
+    support_types = ["llama_pp", "ernie_pp"]
+    return model_type in support_types
+
+
+def get_pp_schedule(model, model_type, n_microbatches, loss_fn, mode, pp_degree, group, need_shared_params=False):
+    assert check_auto_parallel_pipeline_support(model_type)
+    if model_type == "llama_pp":
+        return get_llama_pp_schedule(model, n_microbatches, loss_fn, mode, pp_degree, group)
+    elif model_type == "ernie_pp":
+        return get_llama_pp_schedule(model, n_microbatches, loss_fn, mode, pp_degree, group, need_shared_params=True)
