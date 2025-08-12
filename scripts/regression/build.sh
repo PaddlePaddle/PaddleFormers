@@ -70,7 +70,7 @@ paddleformers_build (){
 
 install_paddleformers(){
     echo "install_formers_develop"
-    python -m pip install --user https://paddlenlp.bj.bcebos.com/wheels/paddleformers-latest-py3-none-any.whl --no-cache-dir
+    python -m pip install --user https://paddleformers.bj.bcebos.com/wheels/paddleformers-latest-py3-none-any.whl --no-cache-dir
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
 }
 
@@ -100,7 +100,7 @@ if [[ ${#Build_list[*]} -ne 0 ]];then
 
     if [ -e "${upload_path}" ] && [ "$(ls -A "${upload_path}/")" ]; then
         cd ${upload_path} && ls -A "${upload_path}"
-        cd ${PPNLP_HOME} && python upload.py ${upload_path} 'paddlenlp/wheels'
+        cd ${PPNLP_HOME} && python upload.py ${upload_path} 'paddleformers/wheels'
         rm -rf ${upload_path}
         echo -e "\033[32m upload wheels SUCCESS \033[0m"
     fi
