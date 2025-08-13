@@ -376,7 +376,13 @@ class Trainer:
         self.optimizer_grouped_parameters = None
         self.sharding_io = None
         if self.args.should_save_sharding_stage1_model or self.args.should_load_sharding_stage1_model:
-            self.sharding_io = ShardingIO(self.args, self.model, self.optimizer)
+            self.sharding_io = ShardingIO(
+                self.args,
+                self.model,
+                self.optimizer,
+                remap_parameter_name=self.args.load_sharded_model_remap_parameter_name,
+            )
+
         if self.args.unified_checkpoint:
             self.unified_checkpoint_handler = UnifiedCheckpointHandler(self.args)
 
