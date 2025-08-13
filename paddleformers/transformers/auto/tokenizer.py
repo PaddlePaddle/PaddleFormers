@@ -56,6 +56,7 @@ else:
                 "deepseek_v2",
                 "DeepseekTokenizerFast" if is_tokenizers_available() else None,
             ),
+            ("ernie4_5", "Ernie4_5Tokenizer"),
             (
                 "llama",
                 (

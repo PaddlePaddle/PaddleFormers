@@ -289,7 +289,7 @@ class Qwen2Tokenizer(PretrainedTokenizer):
         text = bytearray([self.byte_decoder[c] for c in text]).decode("utf-8", errors=self.errors)
         return text
 
-    def _decode(
+    def decode(
         self,
         token_ids,
         skip_special_tokens: bool = False,
@@ -299,7 +299,7 @@ class Qwen2Tokenizer(PretrainedTokenizer):
     ) -> str:
         # `spaces_between_special_tokens` defaults to True for _decode in slow tokenizers
         # and cannot be configured elsewhere, but it should default to False for Qwen2Tokenizer
-        return super()._decode(
+        return super().decode(
             token_ids,
             skip_special_tokens=skip_special_tokens,
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,

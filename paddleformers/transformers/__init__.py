@@ -63,6 +63,7 @@ from .auto.processing import *
 from .auto.tokenizer import *
 from .deepseek_v2 import *
 from .deepseek_v3 import *
+from .ernie4_5 import *
 from .llama import *
 from .optimization import *
 from .qwen import *
