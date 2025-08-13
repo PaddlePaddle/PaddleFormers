@@ -97,6 +97,8 @@ try:
 except:
     pass
 
+from transformers.tokenization_utils import PreTrainedTokenizer
+
 from ..transformers.context_parallel_utils import split_inputs_sequence_dim_load_balance
 from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
@@ -106,7 +108,6 @@ from ..transformers.model_utils import (
     unwrap_model,
 )
 from ..transformers.segment_parallel_utils import split_inputs_sequence_dim
-from ..transformers.tokenizer_utils import PretrainedTokenizer
 from ..utils import empty_device_cache
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
@@ -253,7 +254,7 @@ class Trainer:
              The dataset to use for evaluation. If it is a [`~datasets.Dataset`], columns not accepted by the
              `model.forward()` method are automatically removed. If it is a dictionary, it will evaluate on each
              dataset prepending the dictionary key to the metric name.
-        tokenizer ([`PretrainedTokenizer`], *optional*):
+        tokenizer ([`PreTrainedTokenizer`], *optional*):
             The tokenizer used to preprocess the data. If provided, will be used to automatically pad the inputs the
             maximum length when batching inputs, and it will be saved along the model to make it easier to rerun an
             interrupted training or reuse the fine-tuned model.
@@ -292,7 +293,7 @@ class Trainer:
         data_collator: Optional[DataCollator] = None,
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Union[Dataset, Dict[str, Dataset]] = None,
-        tokenizer: Optional[PretrainedTokenizer] = None,
+        tokenizer: Optional[PreTrainedTokenizer] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[paddle.optimizer.Optimizer, paddle.optimizer.lr.LRScheduler] = (None, None),

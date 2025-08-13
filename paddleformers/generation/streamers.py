@@ -15,7 +15,7 @@
 from queue import Queue
 from typing import Optional
 
-from ..transformers.tokenizer_utils import PretrainedTokenizer
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 
 class BaseStreamer:
@@ -59,7 +59,7 @@ class TextStreamer(BaseStreamer):
         ```
     """
 
-    def __init__(self, tokenizer: PretrainedTokenizer, skip_prompt: bool = False, **decode_kwargs):
+    def __init__(self, tokenizer: PreTrainedTokenizer, skip_prompt: bool = False, **decode_kwargs):
         self.tokenizer = tokenizer
         self.skip_prompt = skip_prompt
         self.decode_kwargs = decode_kwargs
@@ -189,7 +189,7 @@ class TextIteratorStreamer(TextStreamer):
 
     def __init__(
         self,
-        tokenizer: PretrainedTokenizer,
+        tokenizer: PreTrainedTokenizer,
         skip_prompt: bool = False,
         timeout: Optional[float] = None,
         **decode_kwargs

@@ -15,17 +15,6 @@
 
 from .configuration_utils import PretrainedConfig
 from .model_utils import PretrainedModel, register_base_model
-from .tokenizer_utils import (
-    PretrainedTokenizer,
-    BPETokenizer,
-    tokenize_chinese_chars,
-    is_chinese_char,
-    AddedToken,
-    normalize_chars,
-    tokenize_special_chars,
-    convert_to_unicode,
-)
-from .tokenizer_utils_fast import PretrainedTokenizerFast
 from .processing_utils import ProcessorMixin
 from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
 from .image_processing_utils import ImageProcessingMixin
