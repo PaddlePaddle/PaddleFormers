@@ -27,15 +27,14 @@ from transformers.tokenization_utils_base import (
     SPECIAL_TOKENS_MAP_FILE,
     TOKENIZER_CONFIG_FILE,
 )
+from transformers.utils import ExplicitEnum
 
 from ..utils.download import resolve_file_path
 
 DOWNDLOAD_SOURCE_MAPPING = {
-    "Qwen": {"hf": "Qwen", "model_scope": "Qwen", "ai_studio": "PaddleNLP"},
-    "DeepSeek": {"hf": "deepseek-ai", "model_scope": "deepseek-ai", "ai_studio": "PaddleNLP"},
+    "Qwen": {"hf": "Qwen", "modelscope": "Qwen", "ai_studio": "PaddleNLP"},
+    "DeepSeek": {"hf": "deepseek-ai", "modelscope": "deepseek-ai", "aistudio": "PaddleNLP"},
 }
-
-from transformers.utils import ExplicitEnum
 
 
 class TensorType(ExplicitEnum):
@@ -62,6 +61,9 @@ class PaddleTokenizerMixin:
         from_modelscope = kwargs.pop("from_modelscope", False)
         local_files_only = kwargs.pop("local_files_only", False)
 
+        if not from_hf_hub and not from_aistudio and not from_modelscope:
+            from_hf_hub = True
+
         if not os.path.isdir(pretrained_model_name_or_path):
             download_source = None
             model_name = pretrained_model_name_or_path.split("/")[-1]
@@ -69,14 +71,17 @@ class PaddleTokenizerMixin:
                 if key in model_name:
                     download_source = DOWNDLOAD_SOURCE_MAPPING.get(key, None)
                     break
-            if download_source is None:
-                raise ValueError("pretrained_model_name_or_path is not correct")
-            if from_hf_hub:
-                pretrained_model_name_or_path = os.path.join(download_source["hf"], model_name)
-            elif from_aistudio:
-                pretrained_model_name_or_path = os.path.join(download_source["ai_studio"], model_name)
-            elif from_modelscope:
-                pretrained_model_name_or_path = os.path.join(download_source["modelscope"], model_name)
+            if download_source is not None:
+                if from_hf_hub:
+                    pretrained_model_name_or_path = os.path.join(download_source["hf"], model_name)
+                elif from_aistudio:
+                    pretrained_model_name_or_path = os.path.join(download_source["ai_studio"], model_name)
+                elif from_modelscope:
+                    pretrained_model_name_or_path = os.path.join(download_source["modelscope"], model_name)
+            else:
+                print(
+                    "this repo is not supported by paddleformers download source, please check the difference for repo id"
+                )
 
         # 如果从hf下载，则使用原生的hf的from_pretrained
         if from_hf_hub:
@@ -116,18 +121,20 @@ class PaddleTokenizerMixin:
             if file_path is None or os.path.isfile(file_path):
                 resolved_vocab_files[file_id] = file_path
                 continue
-            resolved_vocab_files[file_id] = resolve_file_path(
-                pretrained_model_name_or_path,
-                [file_path],
-                subfolder,
-                cache_dir=cache_dir,
-                local_dir=cache_dir,
-                from_aistudio=from_aistudio,
-                from_modelscope=from_modelscope,
-                from_hf_hub=False,
-                local_files_only=local_files_only,
-            )
-
+            try:
+                resolved_vocab_files[file_id] = resolve_file_path(
+                    pretrained_model_name_or_path,
+                    [file_path],
+                    subfolder,
+                    cache_dir=cache_dir,
+                    local_dir=cache_dir,
+                    from_aistudio=from_aistudio,
+                    from_modelscope=from_modelscope,
+                    from_hf_hub=False,
+                    local_files_only=local_files_only,
+                )
+            except Exception:
+                pass
         # 获得cache_dir的目录
         for file_id, file_path in resolved_vocab_files.items():
             if resolved_vocab_files[file_id] is not None:

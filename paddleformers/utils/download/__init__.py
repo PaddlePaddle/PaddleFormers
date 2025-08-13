@@ -176,6 +176,7 @@ def resolve_file_path(
                     if index < len(filenames) - 1:
                         continue
                     else:
+                        raise EntryNotFoundError(f"please make sure one of the {filenames} under the repo {repo_id}")
                         print(f"please make sure one of the {filenames} under the repo {repo_id}")
                         return None
 
@@ -191,6 +192,7 @@ def resolve_file_path(
                     if index < len(filenames) - 1:
                         continue
                     else:
+                        raise EntryNotFoundError(f"please make sure one of the {filenames} under the repo {repo_id}")
                         print(f"please make sure one of the {filenames} under the repo {repo_id}")
                         return None
 
