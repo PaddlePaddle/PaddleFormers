@@ -26,9 +26,6 @@ if [ ! -d "unittest_logs" ];then
 fi
 
 install_requirements() {
-    python -m pip config --user unset global.index
-    python -m pip config --user unset global.index-url
-    python -m pip config --user unset global.trusted-host
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip install -r requirements.txt

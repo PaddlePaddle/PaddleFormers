@@ -1,16 +1,16 @@
 name: Build CI-Docker Images
 
 on:
-  push:
-    branches: [develop]
-    paths:
-      - "requirements*"
-      - "tests/requirements.txt"
-      - "setup.py"
-      - ".github/workflows/build-ci-docker-images.yml"
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches: [develop]
+  # push:
+  #   branches: [develop]
+  #   paths:
+  #     - "requirements*"
+  #     - "tests/requirements.txt"
+  #     - "setup.py"
+  #     - ".github/workflows/build-ci-docker-images.yml"
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
+  #   branches: [develop]
   schedule:
     - cron: "5 0 * * 0"
 
@@ -30,7 +30,7 @@ env:
 jobs:
   build-ci-docker-images:
     name: build-ci-docker-images
-    runs-on: [self-hosted, 4gpu]
+    runs-on: [self-hosted, ernie-8gpu]
     outputs:
       run_build: ${{ steps.set_flags.outputs.run_build }}
       run_downstream: ${{ steps.set_flags.outputs.run_downstream }}
@@ -44,7 +44,7 @@ jobs:
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> ${{ github.env }}
           docker_image="${image_base}-latest"
-          nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
@@ -159,8 +159,7 @@ jobs:
           if [[ "${run_build}" == "false" ]]; then
             echo "No need to build docker image"
           else
-            # docker build --network host -t ${image_name} .
-            docker tag ${image_base}-latest ${image_name}
+            docker build --network host -t ${image_name} .
           fi
       
       - name: Terminate And Delete the Container
@@ -179,7 +178,7 @@ jobs:
   clean-ci-image:
     name: clean-ci-image
     needs: [build-ci-docker-images, test-ci-docker-images]
-    runs-on: [self-hosted, 4gpu]
+    runs-on: [self-hosted, ernie-8gpu]
     steps:
       - name: Remove CI Image
         env:
@@ -192,7 +191,11 @@ jobs:
             CONTAINERS=$(docker ps -a --filter "ancestor=$image_name" --format "{{.ID}}")
             if [ -z "$CONTAINERS" ]; then
                 echo "$image_name is not using by any container, deleting..."
-                docker rmi "$image_name"
+                if docker image inspect "$image_name" > /dev/null 2>&1; then
+                    docker rmi "$image_name"
+                else
+                    echo "$image_name not found, maybe in other runners"
+                fi
             else
                 echo "$image_name is using by containers:"
                 echo "$CONTAINERS"

@@ -93,6 +93,7 @@ jobs:
           docker exec -t $container_name /bin/bash -c '
           set -e
           cd /workspace/PaddleFormers
+          source $work_dir/../../../proxy
           make lint
           '
       

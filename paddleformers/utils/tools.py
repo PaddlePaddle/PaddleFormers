@@ -116,18 +116,13 @@ def get_env_device():
     """
     if paddle.is_compiled_with_cuda():
         return "gpu"
-    elif "npu" in paddle.device.get_all_custom_device_type():
-        return "npu"
-    elif "mlu" in paddle.device.get_all_custom_device_type():
-        return "mlu"
-    elif "gcu" in paddle.device.get_all_custom_device_type():
-        return "gcu"
-    elif "intel_hpu" in paddle.device.get_all_custom_device_type():
-        return "intel_hpu"
-    elif paddle.is_compiled_with_rocm():
+    if paddle.is_compiled_with_rocm():
         return "rocm"
-    elif paddle.is_compiled_with_xpu():
+    if paddle.is_compiled_with_xpu():
         return "xpu"
+    custom_devices = paddle.device.get_all_custom_device_type()
+    if custom_devices:
+        return custom_devices[0]
     return "cpu"
 
 

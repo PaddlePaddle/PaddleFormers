@@ -42,7 +42,7 @@ defaults:
 jobs:
   unittest-gpu-ci:
     name: unittest-gpu-ci
-    runs-on: [self-hosted, 4gpu]
+    runs-on: [self-hosted, ernie-8gpu]
     steps:
       - name: Determine Image Name
         env:
@@ -80,7 +80,7 @@ jobs:
           if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
             echo "Not in a pull_request or test_build event. Skipping..."
           else
-            nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+            docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
               -v $work_dir/../../..:$work_dir/../../.. \
               -v $work_dir:/workspace \
               -v /home/.cache/pip:/home/.cache/pip \
