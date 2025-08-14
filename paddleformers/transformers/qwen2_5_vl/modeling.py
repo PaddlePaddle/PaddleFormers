@@ -38,8 +38,8 @@ from ..configuration_utils import PretrainedConfig
 from ..linear_utils import Linear
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
-from ..qwen2_vl.flash_attn_utils import has_flash_attn_func
 from ..qwen2_vl.bert_padding import index_first_axis, pad_input, unpad_input
+from ..qwen2_vl.flash_attn_utils import has_flash_attn_func
 from ..utils import logger
 from .configuration import Qwen2_5_VLConfig, Qwen2_5_VLVisionConfig
 
