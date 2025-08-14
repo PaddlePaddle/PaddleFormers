@@ -18,8 +18,6 @@ import unittest
 
 import numpy as np
 import paddle
-import requests
-from PIL import Image
 
 from paddleformers.transformers import (
     Qwen2_5_VLConfig,
@@ -28,6 +26,9 @@ from paddleformers.transformers import (
 )
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import ModelTesterMixin
+
+# import requests
+# from PIL import Image
 
 
 class Qwen2_5_VLModelTester:
@@ -87,25 +88,35 @@ class Qwen2_5_VLModelTester:
         return Qwen2_5_VLConfig(**test_config)
 
     def prepare_config_and_inputs(self):
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image"},
-                    {"type": "text", "text": "What kind of dog is this?"},
-                ],
-            }
-        ]
-        image_url = "https://qianwen-res.oss-accelerate-overseas.aliyuncs.com/Qwen2-VL/demo_small.jpg"
+        # messages = [
+        #     {
+        #         "role": "user",
+        #         "content": [
+        #             {"type": "image"},
+        #             {"type": "text", "text": "What kind of dog is this?"},
+        #         ],
+        #     }
+        # ]
+        # image_url = "https://qianwen-res.oss-accelerate-overseas.aliyuncs.com/Qwen2-VL/demo_small.jpg"
 
-        text = self.processor.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        image = Image.open(requests.get(image_url, stream=True).raw)
-        inputs = self.processor(
-            text=[text],
-            images=image,
-            padding=True,
-            return_tensors="pd",
-        )
+        # text = self.processor.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        # image = Image.open(requests.get(image_url, stream=True).raw)
+        # inputs = self.processor(
+        #     text=[text],
+        #     images=image,
+        #     padding=True,
+        #     return_tensors="pd",
+        # )
+        input_ids = paddle.randint(1, 400, shape=[2, 10]).astype("int32")
+        attention_mask = paddle.ones_like(input_ids).astype("float32")
+        pixel_values = paddle.randn([1, 1224, 1176]).astype("float32")
+        image_grid_thw = paddle.to_tensor([[1, 36, 34]], dtype="int32")
+        inputs = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "pixel_values": pixel_values,
+            "image_grid_thw": image_grid_thw,
+        }
         config = self.get_config()
         return config, inputs
 
