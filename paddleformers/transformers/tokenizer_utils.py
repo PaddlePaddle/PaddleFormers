@@ -17,7 +17,8 @@
 from __future__ import annotations
 
 import os
-from typing import Union
+import re
+from typing import Any, Dict, List, Union
 
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_base import (
@@ -150,6 +151,144 @@ class PaddleTokenizerMixin:
             local_files_only=True,
             **kwargs,
         )
+
+    def _encode_chat_inputs_openai_format(
+        self,
+        conversations: Dict[str, Any],
+        add_generation_prompt=True,
+    ):
+        conversation_dict = {} if "tools" not in conversations else {"tools": conversations["tools"]}
+        conversation_dict["messages"] = (
+            [conversations["messages"][0]] if conversations["messages"][0]["role"] == "system" else []
+        )
+
+        if conversations["messages"][0]["role"] == "system":
+            conversations["messages"] = conversations["messages"][1:]
+
+        cur_str = ""
+        conversation_ids = []
+        for idx in range(0, len(conversations["messages"]), 2):
+            conversation_id = []
+            conversation_dict["messages"].append(conversations["messages"][idx])
+            round_str = self.apply_chat_template(
+                conversation_dict["messages"], add_generation_prompt=True, tokenize=False
+            )
+            # query: user prefix + user content + assist prefix
+            query = round_str[len(cur_str) :]
+            input_ids = self.convert_tokens_to_ids(self.tokenize(query))
+            conversation_id.append(input_ids)
+            cur_str = round_str
+
+            if idx + 1 < len(conversations["messages"]):
+                conversation_dict["messages"].append(conversations["messages"][idx + 1])
+                round_str = self.apply_chat_template(
+                    conversation_dict["messages"], add_generation_prompt=False, tokenize=False
+                )
+                # answer: assistant content
+                answer = round_str[len(cur_str) :]
+                output_ids = self.convert_tokens_to_ids(self.tokenize(answer))
+                conversation_id.append(output_ids)
+                cur_str = round_str
+
+            conversation_ids.append(conversation_id)
+
+        return conversation_ids
+
+    def _extract_non_learnable_parts(self, origin_msg: List[Dict[str, str]], split_s: List[str]):
+        """Split the entire chat by specified words. Extract the non-learnable parts."""
+        # distinguish and replace the special words in original string to an uncompiled form: Like | -> \|
+        regex_pattern = "|".join(map(re.escape, split_s))
+        # splited by replaced specified words
+        non_learnable_parts = re.split(
+            r"(?:%s)" % regex_pattern,
+            self.apply_chat_template(conversation=origin_msg, add_generation_prompt=False, tokenize=False),
+        )
+        if non_learnable_parts[-1] == "":
+            non_learnable_parts.pop()
+        return non_learnable_parts
+
+    def _encode_chat_inputs(
+        self,
+        conversations: List[List[str, str]],
+        context_data: Dict[str, Any] = {},
+        system: str = None,
+        add_generation_prompt=True,
+    ):
+        result = {}
+
+        # Some template do not support system msg, so we need to check it first.
+        if system:
+            try:
+                self.apply_chat_template([{"role": "system", "content": system}], add_generation_prompt)
+            except Exception as e:
+                raise ValueError("System is not supported in this tokenizer.", e)
+
+        # convert list msg to role dict msg
+        conversation_dict = []
+        origin_msg = []
+        for round in conversations:
+            round_role = [
+                {"role": "user", "content": round[0]},
+                {"role": "assistant", "content": round[1]},
+            ]
+            origin_msg.extend(round_role)
+            conversation_dict.append(round_role)
+        ans = []
+
+        # get answer in single round, then compile the chat entirely and split by single round ans
+        # attention: answer should include end token!
+        for conv in conversation_dict:
+            roundi = [{"role": "system", "content": system}] + conv if system else conv
+            roundi_str = self.apply_chat_template(conversation=roundi, add_generation_prompt=False, tokenize=False)
+            roundi_no_ans = [{"role": "system", "content": system}] + [conv[0]] if system else [conv[0]]
+            roundi_no_ans_str = self.apply_chat_template(
+                conversation=roundi_no_ans, add_generation_prompt=add_generation_prompt, tokenize=False
+            )
+            ans_roundi = roundi_str[len(roundi_no_ans_str) :]
+            ans.append(ans_roundi)
+
+        non_learnable_parts = self._extract_non_learnable_parts(origin_msg, ans)
+        assert len(non_learnable_parts) == len(
+            ans
+        ), f"Get non_learnable_parts len: {len(non_learnable_parts)}, but ans len: {len(ans)}."
+
+        conversation_ids = []
+        for i in range(len(non_learnable_parts)):
+            conversation_ids.append(
+                self([non_learnable_parts[i], ans[i]], add_special_tokens=False, padding=False, return_tensors="np")[
+                    "input_ids"
+                ]
+            )
+
+        result["conversations"] = conversation_ids
+        return result
+
+    def encode_chat_inputs(
+        self, conversations: List[List[str, str]] | Dict[str, Any], context_data: Dict[str, Any] = {}, **kwargs
+    ):
+        """Encodes conversation to pairs of token ids.
+        Turn 0: bos + system + sep + user     bot + eos
+        Turn t: sep + bot + query             bot + eos
+
+        Args:
+            conversation (List[List[str, str]]): the conversation of data
+            context_data (Dict[str, Any]): the context data of conversation
+
+        Returns:
+            List[list[int], list[int]]: the pair of input_ids and target_ids
+        """
+        if not self.chat_template:
+            raise ValueError("chat_template is not set, please set chat_template first.")
+        else:
+            add_generation_prompt = kwargs.pop("add_generation_prompt", True)
+            if not isinstance(conversations, dict):
+                query = self._encode_chat_inputs(
+                    conversations, context_data, add_generation_prompt=add_generation_prompt
+                )
+            else:
+                conversations.update(add_generation_prompt=add_generation_prompt)
+                query = self._encode_chat_inputs_openai_format(conversations)
+        return query
 
 
 def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer):
