@@ -255,9 +255,7 @@ class PaddleTokenizerMixin:
         conversation_ids = []
         for i in range(len(non_learnable_parts)):
             conversation_ids.append(
-                self([non_learnable_parts[i], ans[i]], add_special_tokens=False, padding=False, return_tensors="np")[
-                    "input_ids"
-                ]
+                self([non_learnable_parts[i], ans[i]], add_special_tokens=False, padding=False)["input_ids"]
             )
 
         result["conversations"] = conversation_ids
