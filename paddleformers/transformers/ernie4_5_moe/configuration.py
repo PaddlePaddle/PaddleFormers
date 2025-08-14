@@ -16,8 +16,8 @@
 import json
 from typing import Optional, Union
 
-from paddleformers.transformers.configuration_utils import PretrainedConfig
-from paddleformers.utils.log import logger
+from ...utils.log import logger
+from ..configuration_utils import PretrainedConfig
 
 ERNIE_PRETRAINED_INIT_CONFIGURATION = {
     "ernie/tiny-random-ernie": {
@@ -62,9 +62,9 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
 
     def __init__(
         self,
-        vocab_size=32000,
-        hidden_size=768,
-        intermediate_size=11008,
+        vocab_size=103424,
+        hidden_size=2560,
+        intermediate_size=12288,
         max_position_embeddings=32768,
         num_hidden_layers=2,
         num_attention_heads=2,
@@ -121,7 +121,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         sinkhorn_temp=3e-2,
         global_aux_loss=False,
         moe_dropout_prob=0.0,
-        moe_group="world",
+        moe_group="dummy",
         moe_gate="topk",
         moe_intermediate_size: Union[int, list] = 0,
         moe_num_shared_experts: int = 0,

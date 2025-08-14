@@ -39,7 +39,8 @@ from ...utils.log import logger
 from ..ernie4_5.distributed import ScatterOp, mark_as_sequence_parallel_parameter
 from ..ernie4_5.distributed.common_dist_utils import get_async_loader, hack_offload_wait
 from ..ernie4_5.fusion_ops import fused_swiglu
-from ..ernie4_5.loss.dpo import ErnieDPOCriterion
+
+# from ..ernie4_5.loss.dpo import ErnieDPOCriterion
 from ..ernie4_5.modeling import Ernie4_5Attention, Ernie4_5LMHead, Ernie4_5MLP
 from ..ernie4_5.modeling import (
     ErniePretrainingCriterion as ErniePretrainingCriterionBase,
@@ -655,7 +656,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                 to their corresponding split/merge functions for tensor parallelism.
         """
 
-        from paddleformers.transformers.conversion_utils import split_or_merge_func
+        from ..conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
             is_split=is_split,
@@ -1451,10 +1452,11 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         self.config = config
         self.model = Ernie4_5_MoeModel(config)
         self.lm_head = Ernie4_5_MoeLMHead(config)
-        if self.config.dpo_config is not None:
-            self.criterion = ErnieDPOCriterion(config)
-        else:
-            self.criterion = ErniePretrainingCriterion(config)
+        # if self.config.dpo_config is not None:
+        #     self.criterion = ErnieDPOCriterion(config)
+        # else:
+        #     self.criterion = ErniePretrainingCriterion(config)
+        self.criterion = ErniePretrainingCriterion(config)
 
         self.tie_weights()  # maybe weight share
 
@@ -1630,7 +1632,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         past_key_values=None,
         output_attentions=None,
         output_hidden_states=None,
-        return_dict=False,  # true when decode, false when pretrain & eval
+        return_dict=True,  # true when decode, false when pretrain & eval
         **kwargs,
     ):
         """
@@ -1680,31 +1682,31 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         hidden_states = outputs.last_hidden_state
         mtp_outputs = outputs.mtp_outputs
 
-        if isinstance(self.criterion, ErnieDPOCriterion):
-            logits = (
-                hidden_states,
-                self.lm_head.weight,
-                None,
-                self.config.tie_word_embeddings,
-            )
-            chosen_labels = kwargs.get("chosen_labels", None)
-            rejected_labels = kwargs.get("rejected_labels", None)
-            response_indexs = kwargs.get("response_indexs", None)
-            score_deltas = kwargs.get("score_deltas", None)
-            reference_chosen_logps = kwargs.get("reference_chosen_logps", None)
-            reference_rejected_logps = kwargs.get("reference_rejected_logps", None)
-            labels = (
-                chosen_labels,
-                rejected_labels,
-                response_indexs,
-                score_deltas,
-                reference_chosen_logps,
-                reference_rejected_logps,
-            )
-            return self.criterion(
-                logits,
-                labels,
-            )
+        # if isinstance(self.criterion, ErnieDPOCriterion):
+        #     logits = (
+        #         hidden_states,
+        #         self.lm_head.weight,
+        #         None,
+        #         self.config.tie_word_embeddings,
+        #     )
+        #     chosen_labels = kwargs.get("chosen_labels", None)
+        #     rejected_labels = kwargs.get("rejected_labels", None)
+        #     response_indexs = kwargs.get("response_indexs", None)
+        #     score_deltas = kwargs.get("score_deltas", None)
+        #     reference_chosen_logps = kwargs.get("reference_chosen_logps", None)
+        #     reference_rejected_logps = kwargs.get("reference_rejected_logps", None)
+        #     labels = (
+        #         chosen_labels,
+        #         rejected_labels,
+        #         response_indexs,
+        #         score_deltas,
+        #         reference_chosen_logps,
+        #         reference_rejected_logps,
+        #     )
+        #     return self.criterion(
+        #         logits,
+        #         labels,
+        #     )
 
         # if labels is None，means we need full output, instead of tensor_parallel_output
         # tensor_parallel_output is togather with ParallelCrossEntropy
@@ -1737,4 +1739,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         return self.criterion(logits, labels, loss_mask, router_loss, mtp_logits)
 
 
-__all__ = ["Ernie4_5_MoeForCausalLM"]
+__all__ = [
+    "Ernie4_5_MoeModel",
+    "Ernie4_5_MoeForCausalLM",
+]

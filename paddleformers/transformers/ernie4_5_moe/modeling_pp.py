@@ -38,7 +38,8 @@ from ...utils.log import logger
 from ..model_utils import PipelinePretrainedModel
 from .configuration import Ernie4_5_MoeConfig
 from .distributed import ScatterOp, mark_as_sequence_parallel_parameter
-from .loss.dpo import ErnieDPOCriterion
+
+# from .loss.dpo import ErnieDPOCriterion
 from .modeling import (
     Ernie4_5_MoeDecoderLayer,
     Ernie4_5_MoeLMHead,
@@ -1120,9 +1121,10 @@ class Ernie4_5_MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         Returns:
             ErniePretrainingCriterionPipe: Configured loss function.
         """
-        if config.dpo_config is not None:
-            loss_fn = ErnieDPOCriterion(config, use_infohub=True)
-        else:
-            loss_fn = ErniePretrainingCriterionPipe(config)
+        # if config.dpo_config is not None:
+        #     loss_fn = ErnieDPOCriterion(config, use_infohub=True)
+        # else:
+        #     loss_fn = ErniePretrainingCriterionPipe(config)
+        loss_fn = ErniePretrainingCriterionPipe(config)
 
         return loss_fn

@@ -34,7 +34,7 @@ from paddle.distributed.fleet.utils.mix_precision_utils import MixPrecisionOptim
 from paddle.framework import core
 from paddle.nn import ClipGradByGlobalNorm, clip
 
-from paddleformers.utils.log import logger
+from ...utils.log import logger
 
 g_profile_optimizer_details_steps = int(os.getenv("FLAGS_profile_optimizer_details_steps", "0"))
 

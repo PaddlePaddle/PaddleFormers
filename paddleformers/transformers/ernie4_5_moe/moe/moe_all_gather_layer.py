@@ -34,10 +34,10 @@ from paddle.incubate.nn.functional import (
 )
 from paddle.incubate.tensor.manipulation import async_offload
 
-from paddleformers.peft.lora.lora_quantization_layers import QuantizationLoRALinear
+# from paddleformers.peft.lora.lora_quantization_layers import QuantizationLoRALinear
 from paddleformers.utils.log import logger
 
-from ..distributed.common_dist_utils import (
+from ...ernie4_5.distributed.common_dist_utils import (
     AllGatherGroupOp,
     ReduceScatterGroupOp,
     all_gather_group,
@@ -1397,7 +1397,8 @@ class MOEAllGatherLayerV2(MOELayer):
         for iexpert, chunk in enumerate(dispatched_input):
             if chunk is None:
                 # QuantizationLoRALinear can not call `.weight`.
-                if not isinstance(true_experts[iexpert].up_gate_proj, QuantizationLoRALinear):
+                # if not isinstance(true_experts[iexpert].up_gate_proj, QuantizationLoRALinear):
+                if True:
                     input_shape = [
                         1,
                         true_experts[iexpert].up_gate_proj.weight.shape[0],

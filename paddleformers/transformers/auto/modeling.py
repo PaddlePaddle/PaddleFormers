@@ -56,6 +56,7 @@ MAPPING_NAMES = OrderedDict(
         ("DeepseekV2", "deepseek_v2"),
         ("DeepseekV3", "deepseek_v3"),
         ("Ernie4_5", "ernie4_5"),
+        ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Llama", "llama"),
         ("QWen", "qwen"),
         ("Qwen2", "qwen2"),

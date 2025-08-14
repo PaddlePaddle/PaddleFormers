@@ -22,7 +22,6 @@ from typing import Tuple
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
-from ernie.fusion_ops import cal_aux_loss
 from paddle import Tensor, _C_ops, nn
 from paddle.distributed import fleet
 from paddle.incubate.nn.functional import int_bincount
@@ -30,6 +29,8 @@ from paddle.nn.clip import _squared_l2_norm
 from paddle.utils import unique_name
 
 from paddleformers.utils.log import logger
+
+from ...ernie4_5.fusion_ops import cal_aux_loss
 
 
 def masked_fill(x, mask, value):
