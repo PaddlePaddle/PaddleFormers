@@ -34,7 +34,7 @@ class Qwen2VLModelTester:
     def __init__(self, parent):
         self.parent = parent
         self.model_name_or_path = "Qwen/Qwen2-VL-2B-Instruct"
-        self.processor = Qwen2VLProcessor.from_pretrained(self.model_name_or_path, from_modelscope=True)
+        self.processor = Qwen2VLProcessor.from_pretrained(self.model_name_or_path, from_hf_hub=True)
 
     def get_config(self):
         test_config = {
