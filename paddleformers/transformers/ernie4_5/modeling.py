@@ -267,11 +267,12 @@ class Ernie4_5Attention(nn.Layer):
         self.config = config
 
         self._rr_flash_attn = None
-        # TODO Fix this
+
         if config.recompute and config.skip_recompute_ops[layer_idx].get("flash_attn", False):
             self._rr_flash_attn = RefinedRecomputeFunction()
 
-        self.attn_implementation = "flashmask" if config.use_flash_attention else "sdpa"
+        self.scaling = self.head_dim**-0.5
+        self.attn_implementation = "flashmask" if config.use_flash_attention else "eager"
         # self.set_attn_func()
 
     def set_attn_func(self):
@@ -347,7 +348,7 @@ class Ernie4_5Attention(nn.Layer):
             has_gradient = not mix_layer.stop_gradient
         else:
             has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
-        if attn_mask_start_row_indices is None:
+        if attn_mask_start_row_indices is None and attention_mask is None:
             self.attn_implementation = "sdpa"
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
@@ -390,7 +391,6 @@ class Ernie4_5Attention(nn.Layer):
         # NOTE(for generation): use list instead of tuple to store the cache
         # tensors, so that we can clear the cache tensors for memory efficiency.
         past_key_value = [key_states, value_states] if use_cache else None
-
         if self.config.recompute and self.config.recompute_granularity == "core_attn" and has_gradient:
             assert past_key_value is None, "do not use kv cache in recompute"
             assert not use_cache
@@ -402,6 +402,8 @@ class Ernie4_5Attention(nn.Layer):
                 value_states,
                 attention_mask,
                 attn_mask_start_row_indices,
+                self.config.attention_probs_dropout_prob if self.training else 0.0,
+                self.scaling,
                 use_reentrant=self.config.recompute_use_reentrant,
             )
         else:
@@ -412,6 +414,8 @@ class Ernie4_5Attention(nn.Layer):
                 value=value_states,
                 attention_mask=attention_mask,
                 attn_mask_start_row_indices=attn_mask_start_row_indices,
+                dropout=self.config.attention_probs_dropout_prob if self.training else 0.0,
+                scaling=self.scaling,
             )
 
         if self.config.sequence_parallel:
@@ -902,6 +906,9 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
 
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
+            kv_seq_len = 0
+        else:
+            kv_seq_len = past_key_values[0][0].shape[1]
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
@@ -913,6 +920,12 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
 
         hidden_states = inputs_embeds
 
+        if attention_mask is not None:
+            causal_attention_mask = self._prepare_decoder_attention_mask(
+                attention_mask, hidden_states.shape[:2], kv_seq_len, hidden_states.dtype
+            )
+        else:
+            causal_attention_mask = None
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
@@ -928,7 +941,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
                 layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,
-                    attention_mask,
+                    causal_attention_mask,
                     attn_mask_start_row_indices,
                     position_ids,
                     token_type_ids,
@@ -939,7 +952,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             else:
                 layer_outputs = decoder_layer(
                     hidden_states,
-                    attention_mask,
+                    causal_attention_mask,
                     attn_mask_start_row_indices,
                     position_ids,
                     token_type_ids,
@@ -1128,8 +1141,8 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
 
         return model_inputs
 
-    # @staticmethod
-    def update_model_kwargs_for_generation(self, outputs, model_kwargs, is_encoder_decoder=False):
+    @staticmethod
+    def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
         """
         Updates model kwargs for generation.
 
@@ -1158,7 +1171,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
             model_kwargs["attention_mask"] = paddle.concat(
                 [
                     attention_mask,
-                    paddle.ones([attention_mask.shape[0], 1], dtype="int64"),
+                    paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype),
                 ],
                 axis=-1,
             )

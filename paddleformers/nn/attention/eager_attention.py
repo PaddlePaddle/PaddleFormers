@@ -32,24 +32,22 @@ def eager_attention_forward(
     **kwargs,
 ):
     # query: b l h d
-    if hasattr(module, "num_key_value_groups"):
-        key_states = repeat_kv(key, module.num_key_value_groups)
-        value_states = repeat_kv(value, module.num_key_value_groups)
+    if hasattr(module, "num_key_value_heads"):
+        key = repeat_kv(key, module.num_key_value_heads)
+        value = repeat_kv(value, module.num_key_value_heads)
 
     perm = [0, 2, 1, 3]  # b l h d -> b h l d
     query = paddle.transpose(x=query, perm=perm)
-    key_states = paddle.transpose(x=key_states, perm=perm)
-    value_states = paddle.transpose(x=value_states, perm=perm)
-
-    attn_weights = paddle.matmul(query, key_states.transpose([0, 1, 3, 2])) * scaling
+    key = paddle.transpose(x=key, perm=perm)
+    value = paddle.transpose(x=value, perm=perm)
+    attn_weights = paddle.matmul(query, key.transpose([0, 1, 3, 2])) * scaling
     if attention_mask is not None:
-        causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+        causal_mask = attention_mask[:, :, :, : key.shape[-2]]
         attn_weights = attn_weights + causal_mask
-
     attn_weights = nn.functional.softmax(attn_weights, axis=-1, dtype=paddle.float32).astype(query.dtype)
     attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
 
-    attn_output = paddle.matmul(attn_weights, value_states)  # b h l l @ b h l d -> b h l d
+    attn_output = paddle.matmul(attn_weights, value)  # b h l l @ b h l d -> b h l d
     attn_output = attn_output.transpose([0, 2, 1, 3])  # b h l d -> b l h d
     attn_output = paddle.reshape(x=attn_output, shape=[0, 0, attn_output.shape[2] * attn_output.shape[3]])
 

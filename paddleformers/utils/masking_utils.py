@@ -17,7 +17,7 @@ import os
 import numpy as np
 import paddle
 
-from ...utils.tools import get_env_device
+from .tools import get_env_device
 
 
 def _gen_from_sparse_attn_mask_indices(attn_mask_start_row_indices, dtype):
