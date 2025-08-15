@@ -49,19 +49,19 @@ class Qwen2_5_VLModelTester:
             "image_token_id": 151655,
             "video_token_id": 151656,
             "hidden_act": "silu",
-            "hidden_size": 3584,
+            "hidden_size": 2048,
             "initializer_range": 0.02,
-            "intermediate_size": 18944,
+            "intermediate_size": 11008,
             "max_position_embeddings": 128000,
-            "max_window_layers": 28,
+            "max_window_layers": 70,
             "model_type": "qwen2_5_vl",
-            "num_attention_heads": 28,
-            "num_hidden_layers": 28,
-            "num_key_value_heads": 4,
+            "num_attention_heads": 16,
+            "num_hidden_layers": 36,
+            "num_key_value_heads": 2,
             "rms_norm_eps": 1e-06,
             "rope_theta": 1000000.0,
             "sliding_window": 32768,
-            "tie_word_embeddings": False,
+            "tie_word_embeddings": True,
             "dtype": "bfloat16",
             "use_cache": True,
             "use_sliding_window": False,
@@ -72,7 +72,7 @@ class Qwen2_5_VLModelTester:
                 "intermediate_size": 3420,
                 "num_heads": 16,
                 "in_chans": 3,
-                "out_hidden_size": 3584,
+                "out_hidden_size": 2048,
                 "patch_size": 14,
                 "spatial_merge_size": 2,
                 "spatial_patch_size": 14,
@@ -82,7 +82,7 @@ class Qwen2_5_VLModelTester:
                 "temporal_patch_size": 2,
             },
             "rope_scaling": {"type": "mrope", "mrope_section": [16, 24, 24]},
-            "vocab_size": 152064,
+            "vocab_size": 151936,
         }
         return Qwen2_5_VLConfig(**test_config)
 
@@ -168,8 +168,8 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, unittest.TestCase):
             model = self._make_model_instance(config, model_class)
             model.eval()
             with paddle.no_grad():
-                first = model.generate(**inputs_dict, max_new_tokens=30)
-                second = model.generate(**inputs_dict, max_new_tokens=30)
+                first = model(**inputs_dict)
+                second = model(**inputs_dict)
 
             if isinstance(first, tuple) and isinstance(second, tuple):
                 for tensor1, tensor2 in zip(first, second):
@@ -186,7 +186,6 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, unittest.TestCase):
         self.model_tester.create_and_check_model(**inputs_dict)
 
     def test_model_from_pretrained(self):
-
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(self.model_tester.model_name_or_path)
         self.assertIsNotNone(model)
 

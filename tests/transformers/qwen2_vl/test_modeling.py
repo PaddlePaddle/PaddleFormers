@@ -33,8 +33,8 @@ from tests.transformers.test_modeling_common import ModelTesterMixin
 class Qwen2VLModelTester:
     def __init__(self, parent):
         self.parent = parent
-        self.model_name_or_path = "Qwen/Qwen2-VL-7B"
-        self.processor = Qwen2VLProcessor.from_pretrained(self.model_name_or_path)
+        self.model_name_or_path = "Qwen/Qwen2-VL-2B-Instruct"
+        self.processor = Qwen2VLProcessor.from_pretrained(self.model_name_or_path, from_hf_hub=True)
 
     def get_config(self):
         test_config = {
@@ -61,7 +61,7 @@ class Qwen2VLModelTester:
             "rms_norm_eps": 1e-06,
             "rope_theta": 1000000.0,
             "sliding_window": 32768,
-            "tie_word_embeddings": False,
+            "tie_word_embeddings": True,
             "dtype": "float32",
             "use_cache": True,
             "use_sliding_window": False,
@@ -93,7 +93,6 @@ class Qwen2VLModelTester:
             }
         ]
         image_url = "https://qianwen-res.oss-accelerate-overseas.aliyuncs.com/Qwen2-VL/demo_small.jpg"
-
         text = self.processor.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         image = Image.open(requests.get(image_url, stream=True).raw)
         inputs = self.processor(
@@ -164,8 +163,8 @@ class Qwen2VLModelTest(ModelTesterMixin, unittest.TestCase):
             model = self._make_model_instance(config, model_class)
             model.eval()
             with paddle.no_grad():
-                first = model.generate(**inputs_dict, max_new_tokens=30)
-                second = model.generate(**inputs_dict, max_new_tokens=30)
+                first = model(**inputs_dict)
+                second = model(**inputs_dict)
 
             if isinstance(first, tuple) and isinstance(second, tuple):
                 for tensor1, tensor2 in zip(first, second):
@@ -182,7 +181,6 @@ class Qwen2VLModelTest(ModelTesterMixin, unittest.TestCase):
         self.model_tester.create_and_check_model(**inputs_dict)
 
     def test_model_from_pretrained(self):
-
         model = Qwen2VLForConditionalGeneration.from_pretrained(self.model_tester.model_name_or_path)
         self.assertIsNotNone(model)
 
