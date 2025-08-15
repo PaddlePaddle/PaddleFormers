@@ -341,7 +341,6 @@ class GenerationMixin(object):
         is_pad_token_not_equal_to_eos_token_id = (eos_token_id is None) or (
             (eos_token_id is not None) and (pad_token_id != eos_token_id)
         )
-
         inputs_tensor = input_ids
 
         # No information for attention mask inference -> return default attention mask
@@ -931,9 +930,6 @@ class GenerationMixin(object):
             model_kwargs["attention_mask"] = self.prepare_attention_mask_for_generation(
                 input_ids, pad_token_id, eos_token_id
             )
-        elif kwargs_has_attention_mask:
-            if len(model_kwargs["attention_mask"].shape) > 2:
-                raise ValueError("`attention_mask` passed to `generate` must be 2D.")
 
         if generation_config.max_length != 0 and generation_config.max_new_tokens == DEFAULT_MAX_NEW_TOKENS:
             logger.warning("`max_length` will be deprecated in future releases, use `max_new_tokens` instead.")

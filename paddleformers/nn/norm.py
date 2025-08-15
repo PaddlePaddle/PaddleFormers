@@ -36,7 +36,7 @@ __all__ = ["Norm"]
 class LayerNorm(nn.LayerNorm):
     def __init__(self, config: PretrainedConfig, hidden_size=None, norm_eps=None, has_bias=None, **kwargs):
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
-        self.norm_eps = config.norm_eps if norm_eps is None else norm_eps
+        self.norm_eps = config.get("norm_eps", 1e-5) if norm_eps is None else norm_eps
         super().__init__(self.hidden_size, epsilon=self.norm_eps)
         self.config = config
         if config.get("sequence_parallel", False):
@@ -79,24 +79,8 @@ class Norm(GeneralInterface):
     @classmethod
     def from_config(self, config, norm_type=None, hidden_size=None, has_bias=None, **kwargs):
         if norm_type is None:
-            norm_type = "rms_norm" if config.use_rmsnorm else "layer_norm"
+            norm_type = "rms_norm" if config.get("use_rmsnorm", False) else "layer_norm"
         if has_bias is None:
-            has_bias = config.use_bias
+            has_bias = config.get("use_bias", False)
         norm_cls = self._global_mapping[norm_type]
         return norm_cls(config, hidden_size, has_bias=has_bias, **kwargs)
-
-    # @classmethod
-    # def process_kwargs(self, linear_type, has_bias, **kwargs):
-    #     # validate kwargs
-
-    #     assert (
-    #         kwargs.get("bias_attr", None) is None or has_bias is None
-    #     ), "bias_attr and has_bias can not be simultaneously specified"
-
-    #     # add default kwargs
-    #     if linear_type == "default":
-    #         kwargs["bias_attr"] = has_bias
-    #     else:
-    #         kwargs.pop("bias_attr")
-    #         kwargs["has_bias"] = has_bias
-    #     return kwargs
