@@ -15,6 +15,7 @@
 
 from .bert_padding import *
 from .configuration import *
+from .flash_attn_utils import *
 from .image_processing import *
 from .modeling import *
 from .processing import *
