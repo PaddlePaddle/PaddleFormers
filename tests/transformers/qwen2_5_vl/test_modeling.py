@@ -33,7 +33,7 @@ from tests.transformers.test_modeling_common import ModelTesterMixin
 class Qwen2_5_VLModelTester:
     def __init__(self, parent):
         self.parent = parent
-        self.model_name_or_path = "Qwen/Qwen2.5-VL-7B-Instruct"
+        self.model_name_or_path = "Qwen/Qwen2.5-VL-3B-Instruct"
         self.processor = Qwen2_5_VLProcessor.from_pretrained(self.model_name_or_path)
 
     def get_config(self):
