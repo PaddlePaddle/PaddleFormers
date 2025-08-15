@@ -143,6 +143,7 @@ jobs:
             pip config set global.cache-dir "/home/.cache/pip"
             set -e
             cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
+            source $work_dir/../../../proxy_aistudio
             timeout 50m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
             '
           fi

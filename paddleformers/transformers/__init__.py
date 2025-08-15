@@ -14,6 +14,7 @@
 
 
 from .configuration_utils import PretrainedConfig
+from .download_utils import *
 from .model_utils import PretrainedModel, register_base_model
 from .tokenizer_utils import (
     PretrainedTokenizer,

@@ -31,7 +31,7 @@
 #             repo_id=repo_id,
 #             filenames=filename,
 #             revision=revision,
-#             from_aistudio=True,
+#             download_hub="aistudio",
 #             local_dir=local_dir,
 #         )
 

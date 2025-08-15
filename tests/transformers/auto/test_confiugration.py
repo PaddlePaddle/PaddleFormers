@@ -30,7 +30,7 @@ from ...utils.test_module.custom_configuration import CustomConfig
 
 class AutoConfigTest(unittest.TestCase):
     def test_built_in_model_class_config(self):
-        config = AutoConfig.from_pretrained("bert-base-uncased")
+        config = AutoConfig.from_pretrained("test_paddleformers/bert-base-uncased", download_hub="aistudio")
         number = random.randint(0, 10000)
         self.assertEqual(config.hidden_size, 768)
 
@@ -51,7 +51,7 @@ class AutoConfigTest(unittest.TestCase):
 
     def test_community_model_class(self):
         # OPT model do not support PretrainedConfig, but can load it as the AutoConfig object
-        config = AutoConfig.from_pretrained("__internal_testing__/micro-random-llama")
+        config = AutoConfig.from_pretrained("test_paddleformers/micro-random-llama", download_hub="aistudio")
 
         self.assertEqual(config.hidden_size, 64)
 
@@ -67,17 +67,17 @@ class AutoConfigTest(unittest.TestCase):
 
     @unittest.skip("skipping due to connection error!")
     def test_from_hf_hub(self):
-        config = AutoConfig.from_pretrained("facebook/opt-66b", from_hf_hub=True)
+        config = AutoConfig.from_pretrained("facebook/opt-66b", download_hub="huggingface")
         self.assertEqual(config.hidden_size, 9216)
 
     @unittest.skip("skipping due to connection error!")
     def test_from_aistudio(self):
-        config = AutoConfig.from_pretrained("test_paddleformers/tiny-random-llama", from_aistudio=True)
+        config = AutoConfig.from_pretrained("test_paddleformers/tiny-random-llama", download_hub="aistudio")
         self.assertEqual(config.hidden_size, 768)
 
     @unittest.skip("skipping due to connection error!")
     def test_from_mdoelscope(self):
-        config = AutoConfig.from_pretrained("sqlhuman/tiny-random-llama", from_modelscope=True)
+        config = AutoConfig.from_pretrained("sqlhuman/tiny-random-llama", download_hub="modelscope")
         self.assertEqual(config.hidden_size, 768)
 
     # def test_subfolder(self):
@@ -117,9 +117,9 @@ class AutoConfigTest(unittest.TestCase):
                 del CONFIG_MAPPING._extra_content["custom"]
 
     def test_from_pretrained_cache_dir(self):
-        model_id = "__internal_testing__/tiny-random-bert"
+        model_id = "test_paddleformers/tiny-random-bert"
         with tempfile.TemporaryDirectory() as tempdir:
-            AutoConfig.from_pretrained(model_id, cache_dir=tempdir)
+            AutoConfig.from_pretrained(model_id, download_hub="aistudio", cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))

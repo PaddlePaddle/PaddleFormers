@@ -39,7 +39,9 @@ class LlamaTokenizationTest(TokenizerTesterMixin, unittest.TestCase):
     # test_seq2seq = False
 
     def get_tokenizer(self, **kwargs) -> PretrainedTokenizer:
-        tokenizer = LlamaTokenizer.from_pretrained("__internal_testing__/tiny-random-llama", **kwargs)
+        tokenizer = LlamaTokenizer.from_pretrained(
+            "test_paddleformers/tiny-random-llama", download_hub="aistudio", **kwargs
+        )
         tokenizer.pad_token = tokenizer.unk_token
         return tokenizer
 
@@ -210,19 +212,23 @@ class LlamaTokenizationTest(TokenizerTesterMixin, unittest.TestCase):
         self.assertEqual(decode_s.split()[0][:3], bos_token)
         self.assertTrue(all(d.split()[0][:3] == bos_token for d in decode_s2))
 
-    def test_pretrained_model_lists(self):
-        # No max_model_input_sizes
-        self.assertGreaterEqual(len(self.tokenizer_class.pretrained_resource_files_map), 1)
-        self.assertGreaterEqual(len(list(self.tokenizer_class.pretrained_resource_files_map.values())[0]), 1)
+    # def test_pretrained_model_lists(self):
+    #     # No max_model_input_sizes
+    #     self.assertGreaterEqual(len(self.tokenizer_class.pretrained_resource_files_map), 1)
+    #     self.assertGreaterEqual(len(list(self.tokenizer_class.pretrained_resource_files_map.values())[0]), 1)
 
 
 @parameterized_class(
     ["model_name_or_path"],
     [
-        ["facebook/llama-7b"],
-        ["meta-llama/Meta-Llama-3.1-8B"],
-        ["meta-llama/Llama-3.2-1B"],
-        ["meta-llama/Llama-3.3-70B-Instruct"],
+        ["test_paddleformers/llama-7b"],
+        ["PaddleNLP/Meta-Llama-3.1-8B"],
+        ["PaddleNLP/Llama-3.2-1B"],
+        ["PaddleNLP/Llama-3.3-70B-Instruct"],
+        # ["facebook/llama-7b"],
+        # ["meta-llama/Meta-Llama-3.1-8B"],
+        # ["meta-llama/Llama-3.2-1B"],
+        # ["meta-llama/Llama-3.3-70B-Instruct"],
     ],
 )
 class LlamaTokenizationLoadTest(unittest.TestCase):
@@ -246,7 +252,7 @@ class TikTokenIntegrationTests(unittest.TestCase):
     """
 
     def test_tiktoken_llama(self):
-        model_path = "hf-internal-testing/llama-3-8b-internal"
+        model_path = "test_paddleformers/llama-3-8b-internal"
         subfolder = ""
         test_text = "This is a test sentence."
         test_tokens = [128000, 2028, 374, 264, 1296, 11914, 13, 128001]

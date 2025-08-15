@@ -27,7 +27,7 @@ from tests.transformers.test_tokenizer_common import TokenizerTesterMixin
 
 
 class Qwen2TokenizationTest(TokenizerTesterMixin, unittest.TestCase):
-    from_pretrained_id = "__internal_testing__/tiny-random-qwen2"
+    from_pretrained_id = "paddleformers_test/tiny-random-qwen2"
     tokenizer_class = Qwen2Tokenizer
     rust_tokenizer_class = Qwen2TokenizerFast
     test_slow_tokenizer = True
@@ -180,7 +180,7 @@ class Qwen2TokenizationTest(TokenizerTesterMixin, unittest.TestCase):
 
         self.tokenizer_integration_test_util(
             expected_encoding=expected_encoding,
-            model_name="__internal_testing__/tiny-random-qwen2",
+            model_name="paddleformers_test/tiny-random-qwen2",
             sequences=sequences,
         )
 
