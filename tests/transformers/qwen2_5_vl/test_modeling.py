@@ -18,13 +18,12 @@ import unittest
 
 import numpy as np
 import paddle
-import requests
-from PIL import Image
 
 from paddleformers.transformers import (
     Qwen2_5_VLConfig,
     Qwen2_5_VLForConditionalGeneration,
     Qwen2_5_VLProcessor,
+    process_vision_info,
 )
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import ModelTesterMixin
@@ -91,15 +90,16 @@ class Qwen2_5_VLModelTester:
             {
                 "role": "user",
                 "content": [
-                    {"type": "image"},
-                    {"type": "text", "text": "What kind of dog is this?"},
+                    {
+                        "type": "image",
+                        "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+                    },
+                    {"type": "text", "text": "Describe this image."},
                 ],
             }
         ]
-        image_url = "https://qianwen-res.oss-accelerate-overseas.aliyuncs.com/Qwen2-VL/demo_small.jpg"
-
         text = self.processor.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        image = Image.open(requests.get(image_url, stream=True).raw)
+        image, _ = process_vision_info(messages)
         inputs = self.processor(
             text=[text],
             images=image,
@@ -188,7 +188,3 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, unittest.TestCase):
     def test_model_from_pretrained(self):
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(self.model_tester.model_name_or_path)
         self.assertIsNotNone(model)
-
-
-if __name__ == "__main__":
-    unittest.main()

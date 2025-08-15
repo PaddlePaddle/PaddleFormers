@@ -18,13 +18,12 @@ import unittest
 
 import numpy as np
 import paddle
-import requests
-from PIL import Image
 
 from paddleformers.transformers import (
     Qwen2VLConfig,
     Qwen2VLForConditionalGeneration,
     Qwen2VLProcessor,
+    process_vision_info,
 )
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import ModelTesterMixin
@@ -62,7 +61,7 @@ class Qwen2VLModelTester:
             "rope_theta": 1000000.0,
             "sliding_window": 32768,
             "tie_word_embeddings": True,
-            "dtype": "bfloat16",
+            "dtype": "float32",
             "use_cache": True,
             "use_sliding_window": False,
             "vision_config": {
@@ -87,14 +86,16 @@ class Qwen2VLModelTester:
             {
                 "role": "user",
                 "content": [
-                    {"type": "image"},
-                    {"type": "text", "text": "What kind of dog is this?"},
+                    {
+                        "type": "image",
+                        "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+                    },
+                    {"type": "text", "text": "Describe this image."},
                 ],
             }
         ]
-        image_url = "https://qianwen-res.oss-accelerate-overseas.aliyuncs.com/Qwen2-VL/demo_small.jpg"
         text = self.processor.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        image = Image.open(requests.get(image_url, stream=True).raw)
+        image, _ = process_vision_info(messages)
         inputs = self.processor(
             text=[text],
             images=image,
@@ -163,8 +164,8 @@ class Qwen2VLModelTest(ModelTesterMixin, unittest.TestCase):
             model = self._make_model_instance(config, model_class)
             model.eval()
             with paddle.no_grad():
-                first = model(**inputs_dict)
-                second = model(**inputs_dict)
+                first = model.generate(**inputs_dict, max_new_tokens=64)
+                second = model.generate(**inputs_dict, max_new_tokens=64)
 
             if isinstance(first, tuple) and isinstance(second, tuple):
                 for tensor1, tensor2 in zip(first, second):
@@ -183,7 +184,3 @@ class Qwen2VLModelTest(ModelTesterMixin, unittest.TestCase):
     def test_model_from_pretrained(self):
         model = Qwen2VLForConditionalGeneration.from_pretrained(self.model_tester.model_name_or_path)
         self.assertIsNotNone(model)
-
-
-if __name__ == "__main__":
-    unittest.main()
