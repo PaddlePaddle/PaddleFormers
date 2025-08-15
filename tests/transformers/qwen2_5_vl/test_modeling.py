@@ -168,8 +168,8 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, unittest.TestCase):
             model = self._make_model_instance(config, model_class)
             model.eval()
             with paddle.no_grad():
-                first = model(**inputs_dict)
-                second = model(**inputs_dict)
+                first = model.generate(**inputs_dict, max_new_tokens=30)
+                second = model.generate(**inputs_dict, max_new_tokens=30)
 
             if isinstance(first, tuple) and isinstance(second, tuple):
                 for tensor1, tensor2 in zip(first, second):
