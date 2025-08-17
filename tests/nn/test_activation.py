@@ -61,8 +61,8 @@ class TestActivationFunctions(unittest.TestCase):
                 concat_input = paddle.concat([self.test_gate, self.test_input], axis=-1)
                 output = activation(concat_input)
                 self.assertEqual(output.shape, [self.batch_size, self.feature_size])
-            elif act_name == "swish":
-                # Swish (Swiglu) needs separate gate and x
+            elif act_name == "swiglu":
+                # swiglu needs separate gate and x
                 output = activation(self.test_gate, self.test_input)
                 self.assertEqual(output.shape, [self.batch_size, self.feature_size])
             else:

@@ -41,7 +41,7 @@ ACT2CLS = {
     "relu6": nn.ReLU6,
     "sigmoid": nn.Sigmoid,
     "silu": nn.Silu,
-    "swish": Swiglu,
+    "swiglu": Swiglu,
     "tanh": nn.Tanh,
     "prelu": nn.PReLU,
     "fused_swiglu": FusedSwiglu,
