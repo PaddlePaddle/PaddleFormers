@@ -926,6 +926,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             )
         else:
             causal_attention_mask = None
+
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None

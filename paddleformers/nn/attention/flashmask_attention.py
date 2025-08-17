@@ -24,7 +24,7 @@ def flashmask_attention_forward(
     query: paddle.Tensor,
     key: paddle.Tensor,
     value: paddle.Tensor,
-    attention_mask: Optional[paddle.Tensor],
+    attention_mask: Optional[paddle.Tensor] = None,
     attn_mask_start_row_indices=None,
     dropout: float = 0.0,
     scaling: Optional[float] = None,

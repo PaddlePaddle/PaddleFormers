@@ -81,6 +81,7 @@ class Ernie4_5Config(PretrainedConfig):
         fuse_softmax_mask=False,
         weight_share_add_bias=True,
         fuse_linear=False,
+        fuse_attention_ffn=True,
         max_sequence_length=None,
         ignored_index=-100,
         add_tail_layers=False,
@@ -88,6 +89,7 @@ class Ernie4_5Config(PretrainedConfig):
         use_recompute_loss_fn=False,
         refined_recompute=dict(),
         attention_probs_dropout_prob=0.0,
+        hidden_act="swiglu",
         hidden_dropout_prob=0.0,
         compression_ratio: float = 1.0,
         num_key_value_heads=None,
@@ -131,6 +133,7 @@ class Ernie4_5Config(PretrainedConfig):
             fuse_rope (bool): Whether to fuse RoPE operations
             weight_share_add_bias (bool): Whether to share bias weights in certain layers
             fuse_linear (bool): Whether to fuse linear operations
+            fuse_attention_ffn (bool): Whether to fuse up_proj and gate_proj to a single linear layer
             max_sequence_length (int): Maximum sequence length for positional embeddings
             ignored_index (int): Target value that is ignored during loss computation
             add_tail_layers (int): Whether to add additional layers at the end
@@ -138,6 +141,7 @@ class Ernie4_5Config(PretrainedConfig):
             use_recompute_loss_fn (bool): Whether to recompute gradients for loss function
             refined_recompute (dict): Dictionary specifying refined recomputation settings
             attention_probs_dropout_prob (float): Dropout probability for attention weights
+            hidden_act (str): Activation function for MLP layers
             hidden_dropout_prob (float): Dropout probability for hidden layers
             compression_ratio (float): Ratio for KV cache compression (1.0 = no compression)
             num_key_value_heads (int): Number of key/value heads (for Grouped Query Attention)
@@ -194,6 +198,7 @@ class Ernie4_5Config(PretrainedConfig):
         self.fuse_softmax_mask = fuse_softmax_mask
 
         self.fuse_linear = fuse_linear
+        self.fuse_attention_ffn = fuse_attention_ffn
         self.ignored_index = ignored_index
         self.add_tail_layers = add_tail_layers
         self.use_recompute_lm_head = use_recompute_lm_head
@@ -222,6 +227,7 @@ class Ernie4_5Config(PretrainedConfig):
             This allows precise control over memory/computation tradeoffs for different operations.
         """
         self.attention_probs_dropout_prob = attention_probs_dropout_prob
+        self.hidden_act = hidden_act
         self.hidden_dropout_prob = hidden_dropout_prob
         self.compression_ratio = compression_ratio
         self.num_key_value_heads = num_key_value_heads

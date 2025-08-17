@@ -119,7 +119,7 @@ def sft_loss_forward(
                 f" {logits.shape[-1]}, {self.config.vocab_size}"
             )
         else:
-            assert logits.shape[-1] != self.config.vocab_size, (
+            assert logits.shape[-1] == self.config.vocab_size, (
                 f"disable_parallel_cross_entropy, the vocab_size should not be splited:"
                 f" {logits.shape[-1]}, {self.config.vocab_size}"
             )

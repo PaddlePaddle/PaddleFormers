@@ -25,7 +25,7 @@ def sdpa_attention_forward(
     query: paddle.Tensor,
     key: paddle.Tensor,
     value: paddle.Tensor,
-    attention_mask: Optional[paddle.Tensor],
+    attention_mask: Optional[paddle.Tensor] = None,
     dropout: float = 0.0,
     scaling: Optional[float] = None,
     is_causal: Optional[bool] = None,
