@@ -13,6 +13,34 @@
 # limitations under the License.
 
 
-from .attention_strategies import *
-from .embedding_strategies import *
-from .long_sequence_strategies import *
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import OptionalDependencyNotAvailable, _LazyModule
+
+import_structure = {
+    "long_sequence_strategies": ["LongSequenceStrategies"],
+    "attention_strategies": ["AttentionWithLinearBias"],
+    "embedding_strategies": [
+        "RotaryEmbedding",
+        "LinearScalingRotaryEmbedding",
+        "NTKScalingRotaryEmbedding",
+        "DynamicNTKScalingRotaryEmbedding",
+        "YaRNScalingRotaryEmbedding",
+    ],
+}
+
+if TYPE_CHECKING:
+    from .attention_strategies import *
+    from .embedding_strategies import *
+    from .long_sequence_strategies import *
+
+
+else:
+    import sys
+
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

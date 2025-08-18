@@ -12,7 +12,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ..qwen2.tokenizer import *
-from .configuration import *
-from .modeling import *
-from .modeling_pp import *
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import OptionalDependencyNotAvailable, _LazyModule
+
+import_structure = {
+    "modeling_pp": [
+        "recompute",
+        "get_env_device",
+        "parse_args",
+        "return_args",
+        "get_attr",
+        "Qwen2MoeEmbeddingPipe",
+        "Qwen2MoeDecoderLayerPipe",
+        "Qwen2MoeRMSNormPipe",
+        "Qwen2MoeLMHeadPipe",
+        "Qwen2MoeForCausalLMPipe",
+    ],
+    "configuration": ["Qwen2MoeConfig"],
+    "modeling": [
+        "Qwen2MoeDecoderLayer",
+        "Qwen2MoeLMHead",
+        "Qwen2MoeModel",
+        "Qwen2MoePretrainedModel",
+        "Qwen2MoePretrainingCriterion",
+        "Qwen2MoeRMSNorm",
+    ],
+}
+
+
+if TYPE_CHECKING:
+    from ..qwen2.tokenizer import *
+    from .configuration import *
+    from .modeling import *
+    from .modeling_pp import *
+
+
+else:
+    import sys
+
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

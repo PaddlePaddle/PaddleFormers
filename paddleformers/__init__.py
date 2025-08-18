@@ -38,20 +38,56 @@ if "datasets" in sys.modules.keys():
         "This may cause PaddleFormers datasets to be unavailable in intranet. "
         "Please import paddleformers before datasets module to avoid download issues"
     )
-import paddle
 
-from . import (
-    data,
-    datasets,
-    mergekit,
-    ops,
-    peft,
-    quantization,
-    trainer,
-    transformers,
-    trl,
-    utils,
-    version,
-)
+try:
+    import paddle
 
-paddle.disable_signal_handler()
+    paddle.disable_signal_handler()
+except:
+    pass
+from typing import TYPE_CHECKING
+
+from .utils.lazy_import import _LazyModule
+
+import_structure = {
+    "data": [],
+    "datasets": [],
+    "mergekit": [],
+    "ops": [],
+    "peft": [],
+    "quantization": [],
+    "trainer": [],
+    "transformers": [],
+    "trl": [],
+    "utils": [],
+    "version": [],
+}
+
+
+if TYPE_CHECKING:
+    from . import (
+        data,
+        datasets,
+        mergekit,
+        ops,
+        peft,
+        quantization,
+        trainer,
+        transformers,
+        trl,
+        utils,
+        version,
+    )
+
+
+else:
+
+    import sys
+
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+        extra_objects={"__version__": __version__},
+    )

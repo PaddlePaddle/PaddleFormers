@@ -12,6 +12,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration import *
-from .modeling import *
-from .modeling_pp import *
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import OptionalDependencyNotAvailable, _LazyModule
+
+import_structure = {
+    "modeling_pp": [
+        "recompute",
+        "get_attr",
+        "parse_args",
+        "return_args",
+        "Qwen2MoeEmbeddingPipe",
+        "Qwen3MoeEmbeddingPipe",
+        "Qwen3MoeDecoderLayerPipe",
+        "Qwen3MoeRMSNormPipe",
+        "Qwen3MoeLMHeadPipe",
+        "Qwen3MoeForCausalLMPipe",
+    ],
+    "model_utils": ["PipelinePretrainedModel"],
+    "configuration": ["Qwen3MoeConfig"],
+    "modeling": [
+        "Qwen3MoeModel",
+        "Qwen3MoeForCausalLM",
+        "Qwen3MoeDecoderLayer",
+        "Qwen3MoeLMHead",
+        "Qwen3MoePretrainedModel",
+        "Qwen3MoePretrainingCriterion",
+        "Qwen3MoeRMSNorm",
+    ],
+}
+if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
+    from .modeling_pp import *
+
+
+else:
+    import sys
+
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

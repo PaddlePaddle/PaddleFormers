@@ -16,4 +16,3 @@ from .auto_lora_model import LoRAAutoModel
 from .lora_config import LoRAAutoConfig, LoRAConfig
 from .lora_layers import ColumnParallelLoRALinear, LoRALinear, RowParallelLoRALinear
 from .lora_model import LoRAModel
-from .lora_quantization_layers import QuantizationLoRABaseLinear
