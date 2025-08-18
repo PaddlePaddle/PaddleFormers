@@ -57,10 +57,10 @@ class PaddleTokenizerMixin:
         *args,
         **kwargs,
     ):
-        from_hf_hub = kwargs.pop("from_hf_hub", False)
-        from_aistudio = kwargs.pop("from_aistudio", False)
-        from_modelscope = kwargs.pop("from_modelscope", False)
-        local_files_only = kwargs.pop("local_files_only", False)
+        from_hf_hub = kwargs.get("from_hf_hub", False)
+        from_aistudio = kwargs.get("from_aistudio", False)
+        from_modelscope = kwargs.get("from_modelscope", False)
+        local_files_only = kwargs.get("local_files_only", False)
 
         if not from_hf_hub and not from_aistudio and not from_modelscope:
             from_aistudio = True
