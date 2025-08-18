@@ -35,7 +35,8 @@ lint:
 test: unit-test
 
 unit-test:
-	PYTHONPATH=$(shell pwd) pytest -v \
+	export PYTHONPATH=$(shell pwd):$$PYTHONPATH && \
+	pytest -v \
 		-n auto \
 		--retries 1 --retry-delay 1 \
 		--durations 20 \
