@@ -1566,6 +1566,14 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
                 DeprecationWarning,
             )
         vocab_files_target = {**cls.resource_files_names, **additional_files_names}
+        # print("==>vocab_files_target1", vocab_files_target)
+        # {
+        # 'vocab_file': 'tokenizer.model',
+        # 'added_tokens_file': 'added_tokens.json',
+        # 'special_tokens_map_file': 'special_tokens_map.json',
+        # 'tokenizer_config_file': 'tokenizer_config.json',
+        # 'chat_template_file': 'chat_template.json'
+        # }
         # From HF Hub or AI Studio
         if from_hf_hub or from_aistudio or from_modelscope:
             # Only include the necessary resource files specified by the tokenizer cls
@@ -1590,7 +1598,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
             for file_id, file_name in vocab_files_target.items():
                 vocab_files[file_id] = file_name
         resolved_vocab_files = {}
-
+        print("vocab_files", vocab_files)
         for file_id, file_path in vocab_files.items():
             if file_path is None or os.path.isfile(file_path):
                 resolved_vocab_files[file_id] = file_path
@@ -1604,10 +1612,12 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
                 from_modelscope=from_modelscope,
                 from_hf_hub=from_hf_hub,
             )
+            print("resolved_vocab_files", resolved_vocab_files)
         for file_id, file_path in resolved_vocab_files.items():
             if resolved_vocab_files[file_id] is not None:
                 cache_dir = os.path.dirname(resolved_vocab_files[file_id])
                 break
+
         return cls._from_pretrained(
             resolved_vocab_files,
             pretrained_model_name_or_path,
@@ -1648,8 +1658,10 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
         else:
             slow_tokenizer = None
         tokenizer_config_file_dir_list = set()
+        # print("=>resolved_vocab_files:",resolved_vocab_files)
         for k, v in resolved_vocab_files.items():
             if v is not None and os.path.isfile(v):
+                # print("=>tokenizer_config_file_dir_list_v:",v)
                 tokenizer_config_file_dir_list.add(os.path.dirname(v))
         tokenizer_config_file_dir_list = list(tokenizer_config_file_dir_list)
         # TODO: check this
