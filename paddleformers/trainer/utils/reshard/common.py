@@ -16,10 +16,13 @@ from collections import OrderedDict
 
 import numpy as np
 import paddle
+import paddle.distributed.fleet as fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizer,
 )
 from paddle.distributed.fleet.utils.log_util import logger
+
+from paddleformers.utils.tools import get_env_device
 
 try:
     from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
@@ -60,18 +63,60 @@ def get_sharding_strategy(optimizer):
     return SHARDING_STRATEGY_V1
 
 
+def convert_opt_name_to_tname(tensor_names, opt_names):
+    tensor_names = set(tensor_names)
+    all_names = []
+    all_names.extend(list(tensor_names))
+    all_names.extend(opt_names)
+    all_names.sort()
+    pre_t_name = ""
+    suffix = [
+        "_fp32_master_0_beta1_pow_acc_0",
+        "_fp32_master_0_beta2_pow_acc_0",
+        "_fp32_master_0_moment1_0",
+        "_fp32_master_0_moment2_0",
+        "_beta1_pow_acc_0",
+        "_beta2_pow_acc_0",
+        "_moment1_0",
+        "_moment2_0",
+    ]
+    opt_to_t = {}
+    for n in all_names:
+        if n in tensor_names:
+            # we get a param
+            pre_t_name = n
+        else:
+            assert pre_t_name
+            opt_to_t[n] = pre_t_name
+
+    for t in opt_names:
+        _find = False
+        for s in suffix:
+            if get_env_device() == "xpu" and t.endswith(s + ".SCALE_VALUE"):
+                # NOTE: for xpu adamw, all optimizer state will have an extra attribute end with SCALE_VALUE.
+                # This extra attribute won't be used, just skip it.
+                _find = True
+                break
+            if t.endswith(s):
+                logger.info(f"{t}-{t[:-len(s)]}--{t[:-len(s)] in tensor_names}")
+                opt_to_t[t] = t[: -len(s)]
+                _find = True
+                break
+        assert _find
+    return opt_to_t
+
+
 class NodeModelState:
-    def __init__(self, mp_rank=None, sharding_rank=None, pp_rank=None):
+    def __init__(self, group):
         self._model_weights = OrderedDict()
         self._opt_state = OrderedDict()
         self._master_weights = OrderedDict()
         self._lr_scheduler = None
-        self.set_node_rank(mp_rank, sharding_rank, pp_rank)
+        self._group = group
 
-    def set_node_rank(self, mp_rank, sharding_rank, pp_rank):
-        self._mp_rank = mp_rank
-        self._sharding_rank = sharding_rank
-        self._pp_rank = pp_rank
+    @property
+    def group(self):
+        return self._group
 
     def _add_kv(self, d, k, v):
         assert k not in d
@@ -259,43 +304,6 @@ class NodeModelState:
         change the key of master weights dict from param_name to (structure_name, param_name)
         """
         # pack key for pp convert
-        def _opt_name_to_tname(tensor_names, opt_names):
-            tensor_names = set(tensor_names)
-            all_names = []
-            all_names.extend(list(tensor_names))
-            all_names.extend(opt_names)
-            all_names.sort()
-            pre_t_name = ""
-            suffix = [
-                "_fp32_master_0_beta1_pow_acc_0",
-                "_fp32_master_0_beta2_pow_acc_0",
-                "_fp32_master_0_moment1_0",
-                "_fp32_master_0_moment2_0",
-                "_beta1_pow_acc_0",
-                "_beta2_pow_acc_0",
-                "_moment1_0",
-                "_moment2_0",
-            ]
-            opt_to_t = {}
-            for n in all_names:
-                if n in tensor_names:
-                    # we get a param
-                    pre_t_name = n
-                else:
-                    assert pre_t_name
-                    opt_to_t[n] = pre_t_name
-
-            for t in opt_names:
-                _find = False
-                for s in suffix:
-                    if t.endswith(s):
-                        logger.info(f"{t}-{t[:-len(s)]}--{t[:-len(s)] in tensor_names}")
-                        opt_to_t[t] = t[: -len(s)]
-                        _find = True
-                        break
-                assert _find
-            return opt_to_t
-
         if structure_name_mapping is not None:
             tname_to_structure_name = {v: k for (k, v) in structure_name_mapping.items()}
         else:
@@ -304,7 +312,7 @@ class NodeModelState:
 
         tensor_names = list(tname_to_structure_name.keys())
         opt_names = list(self._opt_state.keys())
-        opt_name_to_tname = _opt_name_to_tname(tensor_names, opt_names)
+        opt_name_to_tname = convert_opt_name_to_tname(tensor_names, opt_names)
 
         # model state
         model_weights_tmp = OrderedDict()
@@ -399,12 +407,13 @@ class NodeModelState:
 
         return node_model_states
 
-    def even_distribute(self, group):
+    def even_distribute(self):
         """
         distribute the node state evenly among all workers in group， and make sure
         in the dicts of (key, rank)=>tensor, items keys of the same key but different rank are distributed to the
         same worker
         """
+        group = self.group
         # sharding degree == 1
         if group is None or group.nranks < 2:
             return self
@@ -438,7 +447,7 @@ class NodeModelState:
             def filter_func(key):
                 assert key[0] in key_to_rank, key
                 dst_rank = key_to_rank[key[0]]
-                return dst_rank == group.rank
+                return dst_rank == max(group.rank, 0)
 
             return _all_gather_state_dict(state_dict, filter_func, group)
 
@@ -447,10 +456,11 @@ class NodeModelState:
         self._master_weights = distribute(self._master_weights)
         return self
 
-    def reshard(self, group, filter_func):
+    def reshard(self, filter_func):
         """
         reshard according to the passed in filter_func
         """
+        group = self.group
         self._model_weights = _all_gather_state_dict(self._model_weights, filter_func, group)
         self._opt_state = _all_gather_state_dict(self._opt_state, filter_func, group)
         self._master_weights = _all_gather_state_dict(self._master_weights, filter_func, group)
@@ -503,6 +513,7 @@ class NodeModelState:
         return self
 
     def merge_from(self, other, rank=None):
+        assert other.group is self.group
         self.add_weights(other.model_weights, rank)
         self.add_opts(other.opt_state, rank)
         self.add_master_weights(other.master_weights, rank)
@@ -518,6 +529,68 @@ class NodeModelState:
             opt_state_dict["LR_Scheduler"] = self._lr_scheduler
         opt_state_dict["master_weights"] = self._master_weights
         return opt_state_dict
+
+
+def split_model_state(model_state, group_getter):
+    res = OrderedDict()
+    for k, v in model_state.items():
+        group = group_getter.get_group(k)
+        if group.id not in res:
+            res[group.id] = OrderedDict()
+        res[group.id][k] = v
+    return res
+
+
+def merge_model_state(model_state_map):
+    res = OrderedDict()
+    for gid, model_state in model_state_map.items():
+        res.update(model_state)
+    return res
+
+
+def split_opt_state(opt_state, group_getter):
+    res = OrderedDict()
+    lr_scheduler = opt_state.get("LR_Scheduler", None)
+    for k, v in opt_state.items():
+        if k == "LR_Scheduler":
+            continue
+        elif k == "master_weights":
+            for kk, vv in v.items():
+                group = group_getter.get_group(kk)
+                if group.id not in res:
+                    res[group.id] = {"master_weights": OrderedDict(), "LR_Scheduler": lr_scheduler}
+                res[group.id]["master_weights"][kk] = vv
+        else:
+            assert isinstance(v, paddle.Tensor), type(v)
+            group = group_getter.get_group(k)
+            if group.id not in res:
+                res[group.id] = {"master_weights": OrderedDict(), "LR_Scheduler": lr_scheduler}
+            res[group.id][k] = v
+    return res
+
+
+def merge_opt_state(opt_state_map):
+    res = {"LR_Scheduler": None, "master_weights": OrderedDict()}
+    for gid, opt_state in opt_state_map.items():
+        for k, v in opt_state.items():
+            if k == "LR_Scheduler":
+                if v is not None:
+                    res["LR_Scheduler"] = v
+            elif k == "master_weights":
+                res["master_weights"].update(v)
+            else:
+                res[k] = v
+    return res
+
+
+def split_structure_name_mapping(structure_name_mapping, group_getter):
+    res = OrderedDict()
+    for k, v in structure_name_mapping.items():
+        group = group_getter.get_group(k)
+        if group.id not in res:
+            res[group.id] = OrderedDict()
+        res[group.id][k] = v
+    return res
 
 
 def all_gather_simple_object(obj, group):
@@ -561,7 +634,7 @@ def all_gather_state_dict(state_dict, filter_func, group):
             del state_dict[k]
         else:
             tensor = paddle.to_tensor(np.empty(shape, dtype))
-        logger.info(f"broadcast {k} from {rank}")
+        logger.info(f"broadcast {k} from {rank}, group {group}")
         # broadcast the tensor
         paddle.distributed.broadcast(
             tensor,
@@ -585,3 +658,29 @@ def _all_gather_state_dict(state_dict, filter_func, group):
     for (k, v) in tmp_state_dict.items():
         state_dict[k] = v
     return state_dict
+
+
+def get_moe_sharding_group(hcg=None):
+    if hcg is None:
+        hcg = fleet.get_hybrid_communicate_group()
+    if hasattr(hcg, "get_moe_sharding_parallel_group"):
+        return hcg.get_moe_sharding_parallel_group()
+    else:
+        return None
+
+
+def get_param_sharding_group(param, hcg=None):
+    if hcg is None:
+        hcg = fleet.get_hybrid_communicate_group()
+    default_group = hcg.get_sharding_parallel_group()
+    ep_sharding_group = get_moe_sharding_group(hcg)
+
+    if not hasattr(param, "color"):
+        return default_group
+    color = getattr(param, "color")
+    if isinstance(color, dict):
+        group = color.get("group", default_group)
+        assert group is default_group or group is ep_sharding_group, f"unsupported group: {group}"
+        return group
+    else:
+        return default_group

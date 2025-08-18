@@ -477,7 +477,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
             grad_lm_head_weight = paddle.zeros_like(lm_head_weight)
         else:
             grad_lm_head_weight = None
-        if lm_head_weight is not None and not lm_head_weight.stop_gradient:
+        if lm_head_weight is not None and not lm_head_weight.stop_gradient and lm_head_bias is not None:
             grad_lm_head_bias = paddle.zeros_like(lm_head_bias)
         else:
             grad_lm_head_bias = None
@@ -571,13 +571,11 @@ class FusedHeadAndCrossEntropy(PyLayer):
                 grad_hidden_states,
                 grad_lm_head_weight,
                 grad_lm_head_bias,
-                None,
             )
         else:
             return (
                 grad_hidden_states,
                 grad_lm_head_weight,
                 grad_lm_head_bias,
-                None,
                 None,
             )

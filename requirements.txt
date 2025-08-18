@@ -1,5 +1,6 @@
 blobfile
 colorlog
+scikit-learn
 multiprocess<=0.70.12.2
 datasets >= 2.0.0
 tqdm
@@ -18,3 +19,4 @@ ml_dtypes
 tokenizers<=0.20.3; python_version<="3.8"
 tokenizers>=0.21,<0.22; python_version>"3.8"
 omegaconf
+modelscope

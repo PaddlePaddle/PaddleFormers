@@ -23,7 +23,6 @@ import paddle.nn.functional as F
 from paddle import nn
 from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
-from paddle.utils import try_import
 
 from ...utils.converter import StateDictNameMapping, init_name_mappings
 from ...utils.log import logger
@@ -942,11 +941,6 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None):
     return q_embed, k_embed
 
 
-def rms_norm_fused(x_in, w, eps):
-    fused_ln = try_import("fused_ln")
-    return fused_ln.fused_rms_norm(x_in, w, eps)[0]
-
-
 class QWenRMSNormAuto(nn.Layer):
     def __init__(self, config, ipp):
         super().__init__()
@@ -964,7 +958,9 @@ class QWenRMSNormAuto(nn.Layer):
 
     def forward(self, x):
         if self.config.use_fused_rms_norm:
-            return rms_norm_fused(x, self.weight, self.eps)
+            return paddle.incubate.nn.functional.fused_rms_norm_ext(x, self.weight, self.eps)[0].astype(
+                self.weight.dtype
+            )
 
         output = self._norm(x.astype(paddle.float32)).astype(x.dtype)
         return output * self.weight

@@ -69,7 +69,6 @@ class MergeConfig:
     rescale: bool = field(default=True, metadata={"help": "Rescale the weights after sparsifying."})
     reserve_p: float = field(default=0.7, metadata={"help": "Random reserve probability for the sparsify model."})
     epsilon: float = field(default=0.14, metadata={"help": "Epsilon value for magprune."})
-    remove_keys: List[str] = field(default=None, metadata={"help": "Keys to be removed from the model."})
 
     def __post_init__(self):
         self.config_check()
@@ -116,9 +115,6 @@ class MergeConfig:
                     raise ValueError(
                         f"Error: reserve_p +- epsilon/2 must be in the range (0, 1). reserve_p + epsilon/2 = {self.reserve_p + self.epsilon / 2 }, reserve_p - epsilon/2 = {self.reserve_p - self.epsilon / 2 }"
                     )
-
-        if self.remove_keys is None:
-            self.remove_keys = []
 
     @property
     def __dict__(self):

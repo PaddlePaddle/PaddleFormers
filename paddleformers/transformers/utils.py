@@ -321,15 +321,21 @@ def param_in_func(func, param_field: str) -> bool:
     return param_field in result[0]
 
 
-def resolve_cache_dir(from_hf_hub: bool, from_aistudio: bool, cache_dir: Optional[str] = None) -> str:
+def resolve_cache_dir(
+    from_hf_hub: bool, from_aistudio: bool, from_modelscope: bool, cache_dir: Optional[str] = None
+) -> str:
     """resolve cache dir for PretrainedModel and PretrainedConfig
 
     Args:
         from_hf_hub (bool): if load from huggingface hub
+        from_aistudio (bool): if load from aistudio
+        from_modelscope (bool): if load from modelscope
         cache_dir (str): cache_dir for models
     """
     if cache_dir is not None:
         return cache_dir
+    if from_modelscope:
+        return None
     if from_aistudio:
         return None
     if from_hf_hub:
@@ -504,6 +510,7 @@ def cached_file(
     cache_dir: Optional[Union[str, os.PathLike]] = None,
     subfolder: str = "",
     from_aistudio: bool = False,
+    from_modelscope: bool = False,
     _raise_exceptions_for_missing_entries: bool = True,
     _raise_exceptions_for_connection_errors: bool = True,
     pretrained_model_name_or_path=None,
@@ -651,6 +658,7 @@ def get_checkpoint_shard_files(
     cache_dir=None,
     subfolder="",
     from_aistudio=False,
+    from_modelscope=False,
     from_hf_hub=False,
 ):
     """
@@ -704,8 +712,9 @@ def get_checkpoint_shard_files(
                 [shard_filename],
                 subfolder,
                 cache_dir=cache_dir,
-                from_aistudio=from_aistudio,
                 from_hf_hub=from_hf_hub,
+                from_aistudio=from_aistudio,
+                from_modelscope=from_modelscope,
             )
             assert (
                 cached_filename is not None

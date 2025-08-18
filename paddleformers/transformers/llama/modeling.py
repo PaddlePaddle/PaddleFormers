@@ -94,8 +94,6 @@ except:
     flash_attention = None
 from . import fusion_ops
 
-rms_norm_fused = fusion_ops.rms_norm_fused
-
 __all__ = [
     "LlamaModel",
     "LlamaLMHead",
@@ -385,9 +383,7 @@ class LlamaRMSNorm(nn.Layer):
 
     def forward(self, hidden_states):
         if self.config.use_fused_rms_norm:
-            return fusion_ops.fusion_rms_norm(
-                hidden_states, self.weight, self.variance_epsilon, self.config.use_fast_layer_norm
-            )
+            return fusion_ops.fusion_rms_norm(hidden_states, self.weight, self.variance_epsilon)
 
         if paddle.in_dynamic_mode():
             with paddle.amp.auto_cast(False):

@@ -26,9 +26,8 @@ if [ ! -d "unittest_logs" ];then
 fi
 
 install_requirements() {
-    python -m pip config --user set global.index http://pip.baidu-int.com/search/
-    python -m pip config --user set global.index-url http://pip.baidu-int.com/simple
-    python -m pip config --user set global.trusted-host pip.baidu-int.com
+    python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+    python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip install -r requirements.txt
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
@@ -82,19 +81,25 @@ print_info() {
 
 get_diff_TO_case(){
 export FLAGS_enable_CI=false
-for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
-    ext="${file_name##*.}"
-    echo "file_name: ${file_name}, ext: ${file_name##*.}"
-    
-    if [ ! -f ${file_name} ];then # 针对pr删掉文件
-        continue
-    elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
-        continue
-    else
-        FLAGS_enable_CI=true
-    fi
-done
+if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
+    # 定时任务回归测试
+    FLAGS_enable_CI=true
+else
+    for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
+        ext="${file_name##*.}"
+        echo "file_name: ${file_name}, ext: ${file_name##*.}"
+        
+        if [ ! -f ${file_name} ];then # 针对pr删掉文件
+            continue
+        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
+            continue
+        else
+            FLAGS_enable_CI=true
+        fi
+    done
+fi
 }
+
 get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
@@ -105,7 +110,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     set +e
     timeout ${running_time} python -m pytest -v -n 8 \
     --dist loadgroup \
-    --retries 1 --retry-delay 1 \
+    --retries 3 --retry-delay 1 \
     --timeout 200 --durations 20 --alluredir=result \
     --cov paddleformers --cov-report xml:coverage.xml > ${log_path}/unittest.log 2>&1
     exit_code=$?

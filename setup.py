@@ -112,7 +112,7 @@ def show():
 
 
 # only use this file to contral the version
-__version__ = "0.0.0.post"
+__version__ = "0.1.2.post"
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
 else:
@@ -176,7 +176,7 @@ try:
         author="PaddleFormers Team",
         author_email="paddleformers@baidu.com",
         description="Easy-to-use and powerful NLP library with Awesome model zoo, supporting wide-range of NLP tasks from research to industrial applications, including Neural Search, Question Answering, Information Extraction and Sentiment Analysis end-to-end system.",
-        long_description=read("README_en.md"),
+        long_description=read("README.md"),
         long_description_content_type="text/markdown",
         url="https://github.com/PaddlePaddle/PaddleFormers",
         license_files=("LICENSE",),

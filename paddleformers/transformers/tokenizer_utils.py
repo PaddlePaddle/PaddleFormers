@@ -647,6 +647,7 @@ class ChatTemplateMixin:
         conversation: List[List[str, str] | Dict[str, str]] | str,
         tokenize: bool = True,
         context_data: Dict[str, Any] = {},
+        chat_template: Optional[str] = None,
         **tokenizer_kwargs
     ) -> str | dict[str, numpy.ndarray | paddle.Tensor]:
         """apply chat_template rules to conversation which should not be batched data
@@ -655,17 +656,28 @@ class ChatTemplateMixin:
             conversation (List[List[str, str]] | str): the conversation messages between user and bot
             context_data (Dict[str, Any]): the context data for chat_template.json
             tokenize (bool, optional): whether do tokenization. Defaults to True.
-
+            chat_template(str, optional): Optional conversation formatting template string.
         Returns:
             str | dict[str, numpy.ndarray | paddle.Tensor]: return the result of applied data
         """
-        if not self.chat_template:
-            raise ValueError("chat_template is not set, please set chat_template first.")
-        elif isinstance(self.chat_template, Template):
+        if chat_template:
+            if isinstance(chat_template, str):
+                chat_template = ChatTemplate._compile_jinja_template(chat_template)
+            else:
+                raise ValueError("chat template should be a string value")
+
             add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", True)
-            query = self._apply_chat_template(conversation, add_generation_prompt=add_generation_prompt)
-        elif isinstance(self.chat_template, ChatTemplate):
-            query = self._apply_chat_template_paddle(conversation, context_data)
+            query = self._apply_chat_template(
+                conversation, add_generation_prompt=add_generation_prompt, chat_template=chat_template
+            )
+        else:
+            if not self.chat_template:
+                raise ValueError("chat_template is not set, please set chat_template first.")
+            elif isinstance(self.chat_template, Template):
+                add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", True)
+                query = self._apply_chat_template(conversation, add_generation_prompt=add_generation_prompt)
+            elif isinstance(self.chat_template, ChatTemplate):
+                query = self._apply_chat_template_paddle(conversation, context_data)
 
         if not tokenize:
             return query
@@ -696,7 +708,11 @@ class ChatTemplateMixin:
         self,
         conversation: List[List[str, str] | Dict[str, str]] | str,
         add_generation_prompt=True,
+        chat_template: Optional[str | Template] = None,
     ) -> str | dict[str, numpy.ndarray | paddle.Tensor]:
+        if isinstance(chat_template, str):
+            chat_template = ChatTemplate._compile_jinja_template(chat_template)
+        template = chat_template if chat_template else self.chat_template
         if isinstance(conversation, str):
             conversations = [{"role": "user", "content": conversation}]
         elif isinstance(conversation, list):
@@ -712,12 +728,12 @@ class ChatTemplateMixin:
                 )
         elif isinstance(conversation, dict):
             conversations = conversation
-            query = self.chat_template.render(
+            query = template.render(
                 conversations, **self.special_tokens_map, add_generation_prompt=add_generation_prompt
             )
             return query
 
-        query = self.chat_template.render(
+        query = template.render(
             messages=conversations, **self.special_tokens_map, add_generation_prompt=add_generation_prompt
         )
         return query
@@ -799,9 +815,8 @@ class ChatTemplateMixin:
             )
             # query: user prefix + user content + assist prefix
             query = round_str[len(cur_str) :]
-            conversation_id.append(
-                self.encode(query, split_special_tokens=False, add_special_tokens=False)["input_ids"]
-            )
+            input_ids = self.convert_tokens_to_ids(self.tokenize(query))
+            conversation_id.append(input_ids)
             cur_str = round_str
 
             if idx + 1 < len(conversations["messages"]):
@@ -811,9 +826,8 @@ class ChatTemplateMixin:
                 )
                 # answer: assistant content
                 answer = round_str[len(cur_str) :]
-                conversation_id.append(
-                    self.encode(answer, split_special_tokens=False, add_special_tokens=False)["input_ids"]
-                )
+                output_ids = self.convert_tokens_to_ids(self.tokenize(answer))
+                conversation_id.append(output_ids)
                 cur_str = round_str
 
             conversation_ids.append(conversation_id)
@@ -898,6 +912,7 @@ class ChatTemplateMixin:
         cache_dir = kwargs.pop("cache_dir", None)
         from_hf_hub = kwargs.pop("from_hf_hub", False)
         from_aistudio = kwargs.pop("from_aistudio", False)
+        from_modelscope = kwargs.pop("from_modelscope", False)
         subfolder = kwargs.pop("subfolder", "")
         if subfolder is None:
             subfolder = ""
@@ -906,6 +921,7 @@ class ChatTemplateMixin:
         kwargs["cache_dir"] = cache_dir
         kwargs["from_hf_hub"] = from_hf_hub
         kwargs["from_aistudio"] = from_aistudio
+        kwargs["from_modelscope"] = from_modelscope
         kwargs["return_tokenizer_file_dir"] = True
         tokenizer, tokenizer_config_file_dir = super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
 
@@ -1221,12 +1237,7 @@ class PretrainedTokenizer(ChatTemplateMixin, PretrainedTokenizerBase):
                     # Strip white spaces on the left
                     if tok_extended.lstrip and left:
                         tokens[i - 1] = left.rstrip()  # Opposite here
-                else:
-                    # We strip left and right by default
-                    if right:
-                        tokens[i + 1] = right.lstrip()
-                    if left:
-                        tokens[i - 1] = left.rstrip()
+
         # ["This is something", "<special_token_1>", "else"]
         tokenized_text = []
         for token in tokens:

@@ -67,10 +67,12 @@ def add_quant_mapping(name_action_mappings, quantization_config):
         post_quantize = quantization_config.weight_quantize_algo in [
             "weight_only_int4",
             "weight_only_int8",
+            "nf4",
         ]
     elif isinstance(quantization_config.weight_quantize_algo, dict):
         post_quantize = any(
-            key in ["weight_only_int4", "weight_only_int8"] for key in quantization_config.weight_quantize_algo.keys()
+            key in ["weight_only_int4", "weight_only_int8", "nf4"]
+            for key in quantization_config.weight_quantize_algo.keys()
         )
     else:
         post_quantize = False

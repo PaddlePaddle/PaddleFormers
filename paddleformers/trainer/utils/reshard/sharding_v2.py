@@ -33,12 +33,14 @@ except:
 
 from paddle.distributed.communication.reduce import ReduceOp
 
+from .common import get_moe_sharding_group
 
-def shard(node_model_state, model, optimizer, hcg):
+
+def shard(node_model_state, model, optimizer):
     assert DygraphShardingOptimizerV2 is not None
-    group = hcg.get_sharding_parallel_group()
-    cur_rank = group.rank
     split_infos = collect_split_info(optimizer, model)
+    group = node_model_state.group
+    cur_rank = max(group.rank, 0)
 
     def split_func(k, v):
         param_name = k[1]
@@ -86,15 +88,14 @@ def shard(node_model_state, model, optimizer, hcg):
         return rank == cur_rank
 
     # reshard
-    node_model_state.reshard(group, filter_func)
+    node_model_state.reshard(filter_func)
     node_model_state.drop_rank()
     return node_model_state
 
 
-def restore(node_model_state, model, optimizer, hcg):
-    group = hcg.get_sharding_parallel_group()
+def restore(node_model_state, model, optimizer):
     # evenly distribute param
-    node_model_state.even_distribute(group)
+    node_model_state.even_distribute()
     param_shapes = {k: v.shape for (k, v) in model.state_dict().items()}
 
     def merge_func(k, v):
@@ -174,7 +175,7 @@ def collect_split_info(optimizer, model, only_return_lengths=False):
         for comm_buffer in optimizer._comm_buffer_list:
             gather_infos(comm_buffer)
 
-    assert len(split_infos)
+    assert len(split_infos) > 0
     return split_infos
 
 
@@ -210,6 +211,16 @@ def is_matched_optimizer_state_dict(opt_state_dict, optimizer, model, hcg=None, 
     if need_allgather:
         if hcg is None:
             hcg = fleet.get_hybrid_communicate_group()
+        sharding_group = hcg.get_sharding_parallel_group()
+        moe_sharding_group = get_moe_sharding_group(hcg)
+        for group in [sharding_group, moe_sharding_group]:
+            if group is not None and group.nranks > 1:
+                x = paddle.to_tensor([is_matched], dtype=paddle.int32)
+                paddle.distributed.stream.all_reduce(
+                    x, op=ReduceOp.MIN, group=group, sync_op=True, use_calc_stream=True
+                )
+                is_matched = int(x.numpy()[0])
+        global_is_matched = is_matched
         group = hcg.get_sharding_parallel_group()
         if group is not None and group.nranks > 1:
             x = paddle.to_tensor([is_matched], dtype=paddle.int32)

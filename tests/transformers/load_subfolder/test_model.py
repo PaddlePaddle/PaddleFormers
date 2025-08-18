@@ -35,7 +35,14 @@ class ModelLoadTester(unittest.TestCase):
 
     @pytest.mark.skip
     def test_cache_dir(
-        self, model_cls, repo_id="", subfolder=None, use_safetensors=False, from_aistudio=False, from_hf_hub=False
+        self,
+        model_cls,
+        repo_id="",
+        subfolder=None,
+        use_safetensors=False,
+        from_aistudio=False,
+        from_hf_hub=False,
+        from_modelscope=False,
     ):
         with tempfile.TemporaryDirectory() as cache_dir:
             model_cls.from_pretrained(
@@ -44,6 +51,7 @@ class ModelLoadTester(unittest.TestCase):
                 cache_dir=cache_dir,
                 use_safetensors=use_safetensors,
                 from_aistudio=from_aistudio,
+                from_modelscope=from_modelscope,
                 from_hf_hub=from_hf_hub,
             )
             file_list = []

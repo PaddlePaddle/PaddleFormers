@@ -84,6 +84,7 @@ from ..data import (
     init_dataloader_comm_group,
 )
 from ..peft import LoKrModel, LoRAModel, PrefixModelForCausalLM, ReFTModel, VeRAModel
+from ..peft.lora import QuantizationLoRABaseLinear
 from ..quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
@@ -98,6 +99,7 @@ except:
     pass
 
 from ..transformers.context_parallel_utils import split_inputs_sequence_dim_load_balance
+from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
     PretrainedModel,
     _add_variant,
@@ -156,6 +158,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     ShardingOption,
     TrainerMemoryTracker,
     TrainOutput,
+    _insert_sync,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
     get_last_checkpoint,
@@ -296,6 +299,7 @@ class Trainer:
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[paddle.optimizer.Optimizer, paddle.optimizer.lr.LRScheduler] = (None, None),
         preprocess_logits_for_metrics: Callable[[paddle.Tensor, paddle.Tensor], paddle.Tensor] = None,
+        processing_class: Optional[ImageProcessingMixin] = None,
     ):
 
         if args is None:
@@ -361,6 +365,7 @@ class Trainer:
 
         self.compute_metrics = compute_metrics
         self.preprocess_logits_for_metrics = preprocess_logits_for_metrics
+        self.processing_class = processing_class
         self.optimizer, self.lr_scheduler = optimizers
         # Label smoothing
         # if self.args.label_smoothing_factor != 0:
@@ -373,7 +378,13 @@ class Trainer:
         self.optimizer_grouped_parameters = None
         self.sharding_io = None
         if self.args.should_save_sharding_stage1_model or self.args.should_load_sharding_stage1_model:
-            self.sharding_io = ShardingIO(self.args, self.model, self.optimizer)
+            self.sharding_io = ShardingIO(
+                self.args,
+                self.model,
+                self.optimizer,
+                remap_parameter_name=self.args.load_sharded_model_remap_parameter_name,
+            )
+
         if self.args.unified_checkpoint:
             self.unified_checkpoint_handler = UnifiedCheckpointHandler(self.args)
 
@@ -521,7 +532,12 @@ class Trainer:
                 models=model,
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
-                excluded_layers=[QuantizationLinear, ColumnParallelQuantizationLinear, RowParallelQuantizationLinear]
+                excluded_layers=[
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
+                    QuantizationLoRABaseLinear,
+                ]
                 + self._decorate_exclude_layers(model),
             )
         # for pipeline mode and pure tensor parallel
@@ -706,6 +722,8 @@ class Trainer:
                 if k not in old_state_dict or id(v) != id(old_state_dict[k]):
                     new_state_dict[k] = v
             self.model.set_state_dict(new_state_dict)
+            if self.args.offload_optim:
+                self._offload_optimizer()
         else:
             if resume_from_checkpoint is not None and (self.args.dataset_rank == 0 or self.args.use_expert_parallel):
 
@@ -2189,7 +2207,12 @@ class Trainer:
                 optimizers=self.optimizer,
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
-                excluded_layers=[QuantizationLinear, ColumnParallelQuantizationLinear, RowParallelQuantizationLinear]
+                excluded_layers=[
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
+                    QuantizationLoRABaseLinear,
+                ]
                 + self._decorate_exclude_layers(model),
             )
 
@@ -2390,6 +2413,9 @@ class Trainer:
                     and "enable_stage1_broadcast_overlap" in self.args.sharding_parallel_config
                 ):
                     self.optimizer._set_broadcast_overlap(True, model)
+
+        # To solve DPO pin-memory problem, temporarily modify the _insert_sync method.
+        self.optimizer._insert_sync = types.MethodType(_insert_sync, self.optimizer)
 
         return model
 
@@ -2850,7 +2876,7 @@ class Trainer:
             need_to_rotate_checkpoints = self.args.should_save_model_state
 
         # Delete only by one process
-        need_to_rotate_checkpoints = need_to_rotate_checkpoints and self.args.local_rank == 0
+        need_to_rotate_checkpoints = need_to_rotate_checkpoints and self.args.local_rank in [0, -1]
         if need_to_rotate_checkpoints:
             self._rotate_checkpoints(use_mtime=True, output_dir=run_dir)
             self._rotate_checkpoints(use_mtime=True, output_dir=run_signal_dir)
@@ -2972,6 +2998,8 @@ class Trainer:
         if self.args.should_save:
             if self.tokenizer is not None and self.args.save_tokenizer:
                 self.tokenizer.save_pretrained(output_dir)
+            if self.processing_class is not None:
+                self.processing_class.save_pretrained(output_dir)
             # Good practice: save your training arguments together with the trained model
             paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
 
@@ -2980,7 +3008,6 @@ class Trainer:
             # backup and remove unified_checkpoint_config for not trine stage
             if not self.is_in_train:
                 self.args.unified_checkpoint_config = []
-
             self.unified_checkpoint_handler.save_unified_checkpoint(self.model, self.optimizer, output_dir, signal_dir)
 
             # recover unified_checkpoint_config for not trine stage
