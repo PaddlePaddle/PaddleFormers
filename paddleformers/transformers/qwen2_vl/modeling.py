@@ -38,11 +38,12 @@ from ..linear_utils import Linear
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
 from ..utils import logger
-from .bert_padding import index_first_axis, pad_input, unpad_input
+from .bert_padding import IndexFirstAxis, IndexPutFirstAxis, unpad_input
 from .configuration import Qwen2VLConfig, Qwen2VLVisionConfig
 from .flash_attn_utils import has_flash_attn_func
 
 flash_attn_func, flash_attn_varlen_func = has_flash_attn_func()
+_IS_NPU = "npu" in paddle.get_device()
 
 
 def get_triangle_upper_mask(x, mask=None):
@@ -967,166 +968,78 @@ class Qwen2VLFlashAttention2(Qwen2VLAttention):
         # Contains at least one padding token in the sequence
         causal = self.is_causal and query_length != 1
 
-        head_dim = query_states.shape[-1]
-        softmax_scale = head_dim**-0.5  # TODO: 需要手动加上
-
-        if attention_mask is not None:  # attention_mask.shape # [2, 1, 1323, 1323]
-            batch_size = query_states.shape[0]  # [2, 1323, 12, 128]
-            query_states, key_states, value_states, indices_q, cu_seq_lens, max_seq_lens = self._unpad_input(
-                query_states, key_states, value_states, attention_mask, query_length
-            )
-            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
-            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
-
-            query_dtype = query_states.dtype
-            # 修改数据类型为bfloat16以支持flash_attn_varlen_func
-            query_states = query_states.astype("bfloat16")
-            key_states = key_states.astype("bfloat16")
-            value_states = value_states.astype("bfloat16")
-
-            attn_output_unpad = flash_attn_varlen_func(  # TODO: flash_attn_unpadded
-                query_states,  # [5998, 16, 128]
-                key_states,  # [5998, 8, 128]
-                value_states,  # [5998, 8, 128]
-                cu_seqlens_q=cu_seqlens_q,
-                cu_seqlens_k=cu_seqlens_k,
-                max_seqlen_q=max_seqlen_in_batch_q,
-                max_seqlen_k=max_seqlen_in_batch_k,
-                scale=softmax_scale,  # not softmax_scale=
-                dropout=dropout,
-                causal=causal,
-            )[0]
-
-            attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
-            attn_output = attn_output.astype(query_dtype)
+        if _IS_NPU:
+            if attention_mask is not None:
+                attn_output = paddle.nn.functional.flash_attention_npu(  # TODO: flash_attn_unpadded
+                    query_states,  # [5998, 16, 128]
+                    key_states,  # [5998, 8, 128]
+                    value_states,  # [5998, 8, 128]
+                    attn_mask=attention_mask,
+                    dropout=dropout,
+                    causal=causal,
+                    is_varlen=True,
+                )
+            else:
+                dtype = query_states.dtype
+                attn_output = paddle.nn.functional.flash_attention_npu(  # TODO: flash_attn_unpadded
+                    query_states.astype("bfloat16"),  # [5998, 16, 128]
+                    key_states.astype("bfloat16"),  # [5998, 8, 128]
+                    value_states.astype("bfloat16"),  # [5998, 8, 128]
+                    attn_mask=attention_mask,
+                    dropout=dropout,
+                    causal=causal,
+                )
+                attn_output = attn_output.astype(dtype)
         else:
-            query_dtype = query_states.dtype
-            attn_output = flash_attn_func(
-                query_states.astype("bfloat16"),
-                key_states.astype("bfloat16"),
-                value_states.astype("bfloat16"),
-                dropout,
-                causal=causal,  # no softmax_scale=
-            )[0]
-            attn_output = attn_output.astype(query_dtype)
+            head_dim = query_states.shape[-1]
+            softmax_scale = head_dim**-0.5  # TODO: 需要手动加上
+
+            if attention_mask is not None:  # attention_mask.shape # [2, 1, 1323, 1323]
+                batch_size = query_states.shape[0]  # [2, 1323, 12, 128]
+                query_states, key_states, value_states, indices_q, cu_seq_lens, max_seq_lens = self._unpad_input(
+                    query_states, key_states, value_states, attention_mask, query_length
+                )
+                cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+                max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+
+                query_dtype = query_states.dtype
+                # 修改数据类型为bfloat16以支持flash_attn_varlen_func
+                query_states = query_states.astype("bfloat16")
+                key_states = key_states.astype("bfloat16")
+                value_states = value_states.astype("bfloat16")
+
+                attn_output_unpad = flash_attn_varlen_func(  # TODO: flash_attn_unpadded
+                    query_states,  # [5998, 16, 128]
+                    key_states,  # [5998, 8, 128]
+                    value_states,  # [5998, 8, 128]
+                    cu_seqlens_q=cu_seqlens_q,
+                    cu_seqlens_k=cu_seqlens_k,
+                    max_seqlen_q=max_seqlen_in_batch_q,
+                    max_seqlen_k=max_seqlen_in_batch_k,
+                    scale=softmax_scale,  # not softmax_scale=
+                    dropout=dropout,
+                    causal=causal,
+                )[0]
+
+                # attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
+                attn_output = IndexPutFirstAxis.apply(attn_output_unpad, indices_q, batch_size * query_length)
+                attn_output = attn_output.reshape([batch_size, query_length, -1])
+                attn_output = attn_output.astype(query_dtype)
+            else:
+                query_dtype = query_states.dtype
+                attn_output = flash_attn_func(
+                    query_states,
+                    key_states,
+                    value_states,
+                    dropout,
+                    causal=causal,  # no softmax_scale=
+                )[0]
+                attn_output = attn_output.astype(query_dtype)
 
         # # 修改这里的维度转换，考虑并行策略下的维度
         # batch_size = query_states.shape[0]
         # hidden_size = self.num_heads * self.head_dim  # 计算实际的 hidden_size
         # attn_output = attn_output.reshape([batch_size, query_length, hidden_size])
-
-        return attn_output
-
-    def _flash_attention_forward2(
-        self,
-        query_states,
-        key_states,
-        value_states,
-        attention_mask,
-        query_length: int,
-        is_causal: bool,
-        dropout: float = 0.0,
-        softmax_scale: Optional[float] = None,
-        use_top_left_mask: bool = False,
-        softcap: Optional[float] = None,
-    ):
-        """
-        Calls the forward method of Flash Attention - if the input hidden states contain at least one padding token
-        first unpad the input, then computes the attention scores and pad the final attention scores.
-
-        Args:
-            query_states (`paddle.Tensor`):
-                Input query states to be passed to Flash Attention API
-            key_states (`paddle.Tensor`):
-                Input key states to be passed to Flash Attention API
-            value_states (`paddle.Tensor`):
-                Input value states to be passed to Flash Attention API
-            attention_mask (`paddle.Tensor`):
-                The padding mask - corresponds to a tensor of size `(batch_size, seq_len)` where 0 stands for the
-                position of padding tokens and 1 for the position of non-padding tokens.
-            dropout (`float`):
-                Attention dropout
-            softmax_scale (`float`, *optional*):
-                The scaling of QK^T before applying softmax. Default to 1 / sqrt(head_dim)
-            use_top_left_mask (`bool`, defaults to `False`):
-                flash_attn<2.1 generates top-left aligned causal mask, while what is needed here is bottom-right alignement, that was made default for flash_attn>=2.1. This attribute is used to handle this difference.
-            softcap (`float`, *optional*):
-                Softcap for the attention logits, used e.g. in gemma2.
-            deterministic (`bool`, *optional*):
-                Determines if the deterministic option introduced in flash_attn>=2.4.1 is enabled.
-        """
-        if not use_top_left_mask:
-            causal = is_causal
-        else:
-            # TODO: Remove the `query_length != 1` check once Flash Attention for RoCm is bumped to 2.1.
-            causal = is_causal and query_length != 1
-
-        # Assuming 4D tensors, key_states.shape[1] is the key/value sequence length (source length).
-        flash_kwargs = {}
-
-        if softcap is not None:
-            flash_kwargs["softcap"] = softcap
-
-        datatype = query_states.dtype
-        # query_states diff!
-        if attention_mask is not None:
-            # Reashape to the expected shape for Flash Attention
-            # [1, 3599, 12, 128]
-            query_states = query_states.transpose(perm=[0, 2, 1, 3])
-            key_states = key_states.transpose(perm=[0, 2, 1, 3])
-            value_states = value_states.transpose(perm=[0, 2, 1, 3])
-
-            assert query_states.shape[0] == key_states.shape[0] == value_states.shape[0] == 1
-            query_states = query_states.squeeze(0)
-            key_states = key_states.squeeze(0)
-            value_states = value_states.squeeze(0)
-            cu_seqlens = attention_mask
-            head_dim = query_states.shape[-1]
-            softmax_scale = head_dim**-0.5
-            with paddle.no_grad():
-                max_seqlen = max(
-                    [cu_seqlens[idx + 1] - cu_seqlens[idx] for idx in range(cu_seqlens.shape[0] - 1)]
-                ).item()
-            attn_output = flash_attn_varlen_func(
-                query_states.cast("bfloat16"),
-                key_states.cast("bfloat16"),
-                value_states.cast("bfloat16"),
-                cu_seqlens_q=cu_seqlens,
-                cu_seqlens_k=cu_seqlens,
-                max_seqlen_q=max_seqlen,
-                max_seqlen_k=max_seqlen,
-                dropout=dropout,
-                scale=softmax_scale,
-                causal=causal,
-            )[0]
-            attn_output = attn_output.unsqueeze(0)
-            query_states = query_states.unsqueeze(0)
-            key_states = key_states.unsqueeze(0)
-            value_states = value_states.unsqueeze(0)
-            attn_output = attn_output.cast(datatype)
-        elif query_states.shape[2] == key_states.shape[2]:
-            # Reashape to the expected shape for Flash Attention
-            # [1, 3599, 12, 128]
-            query_states = query_states.transpose(perm=[0, 2, 1, 3])
-            key_states = key_states.transpose(perm=[0, 2, 1, 3])
-            value_states = value_states.transpose(perm=[0, 2, 1, 3])
-
-            attn_output = flash_attn_func(
-                query_states.cast("bfloat16"),
-                key_states.cast("bfloat16"),
-                value_states.cast("bfloat16"),
-                dropout,
-                softmax_scale=softmax_scale,
-                causal=causal,
-                **flash_kwargs,
-            )[0]
-            attn_output = attn_output.cast(datatype)
-        else:
-            attn_weights = paddle.matmul(query_states, key_states.transpose([0, 1, 3, 2])) / math.sqrt(self.head_dim)
-            attn_weights = nn.functional.softmax(attn_weights, axis=-1)
-            attn_weights = nn.functional.dropout(x=attn_weights, p=self.attention_dropout, training=self.training)
-            attn_output = paddle.matmul(attn_weights.cast(self.config.dtype), value_states.cast(self.config.dtype))
-            attn_output = attn_output.transpose([0, 2, 1, 3])
 
         return attn_output
 
@@ -1136,15 +1049,15 @@ class Qwen2VLFlashAttention2(Qwen2VLAttention):
         batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
 
         # TODO：cuda error
-        key_layer = index_first_axis(
+        key_layer = IndexFirstAxis.apply(
             key_layer.reshape([batch_size * kv_seq_len, num_key_value_heads, head_dim]), indices_k
         )
-        value_layer = index_first_axis(
+        value_layer = IndexFirstAxis.apply(
             value_layer.reshape([batch_size * kv_seq_len, num_key_value_heads, head_dim]), indices_k
         )
 
         if query_length == kv_seq_len:
-            query_layer = index_first_axis(
+            query_layer = IndexFirstAxis.apply(
                 query_layer.reshape([batch_size * kv_seq_len, self.num_heads, head_dim]), indices_k
             )
             cu_seqlens_q = cu_seqlens_k

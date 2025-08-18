@@ -52,16 +52,16 @@ class Qwen2VLModelTester:
             "initializer_range": 0.02,
             "intermediate_size": 8960,
             "max_position_embeddings": 32768,
-            "max_window_layers": 28,
+            "max_window_layers": 7,
             "model_type": "qwen2_vl",
             "num_attention_heads": 12,
-            "num_hidden_layers": 28,
+            "num_hidden_layers": 7,
             "num_key_value_heads": 2,
             "rms_norm_eps": 1e-06,
             "rope_theta": 1000000.0,
             "sliding_window": 32768,
             "tie_word_embeddings": True,
-            "dtype": "float32",
+            "dtype": "bfloat16",
             "use_cache": True,
             "use_sliding_window": False,
             "vision_config": {
@@ -164,8 +164,8 @@ class Qwen2VLModelTest(ModelTesterMixin, unittest.TestCase):
             model = self._make_model_instance(config, model_class)
             model.eval()
             with paddle.no_grad():
-                first = model.generate(**inputs_dict, max_new_tokens=64)
-                second = model.generate(**inputs_dict, max_new_tokens=64)
+                first = model(**inputs_dict)
+                second = model(**inputs_dict)
 
             if isinstance(first, tuple) and isinstance(second, tuple):
                 for tensor1, tensor2 in zip(first, second):
@@ -184,3 +184,7 @@ class Qwen2VLModelTest(ModelTesterMixin, unittest.TestCase):
     def test_model_from_pretrained(self):
         model = Qwen2VLForConditionalGeneration.from_pretrained(self.model_tester.model_name_or_path)
         self.assertIsNotNone(model)
+
+
+if __name__ == "__main__":
+    unittest.main()

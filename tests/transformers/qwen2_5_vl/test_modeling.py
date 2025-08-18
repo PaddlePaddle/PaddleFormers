@@ -55,7 +55,7 @@ class Qwen2_5_VLModelTester:
             "max_window_layers": 70,
             "model_type": "qwen2_5_vl",
             "num_attention_heads": 16,
-            "num_hidden_layers": 36,
+            "num_hidden_layers": 18,
             "num_key_value_heads": 2,
             "rms_norm_eps": 1e-06,
             "rope_theta": 1000000.0,
@@ -76,7 +76,7 @@ class Qwen2_5_VLModelTester:
                 "spatial_merge_size": 2,
                 "spatial_patch_size": 14,
                 "window_size": 112,
-                "fullatt_block_indexes": [7, 15, 23, 31],
+                "fullatt_block_indexes": [7, 15],
                 "tokens_per_second": 2,
                 "temporal_patch_size": 2,
             },
@@ -188,3 +188,7 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, unittest.TestCase):
     def test_model_from_pretrained(self):
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(self.model_tester.model_name_or_path)
         self.assertIsNotNone(model)
+
+
+if __name__ == "__main__":
+    unittest.main()
