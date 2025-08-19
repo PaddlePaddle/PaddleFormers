@@ -727,11 +727,7 @@ class AutoTrainer(Trainer):
         if self.criterion is not None:
             if "labels" in inputs:
                 labels = inputs.pop("labels")
-                # hack fix for ernie
-                if len(inputs["input_ids"]) == 2:
-                    input_ids, labels = inputs["input_ids"]
-                else:
-                    raise ValueError(f"Unexpected input length, inputs = {inputs['input_ids']}")
+                input_ids, labels = inputs["input_ids"][:2]
             elif "start_positions" in inputs and "end_positions" in inputs:
                 labels = (inputs.pop("start_positions"), inputs.pop("end_positions"))
             elif self.args.label_names is not None:
