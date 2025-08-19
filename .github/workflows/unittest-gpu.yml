@@ -30,9 +30,9 @@ env:
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
   HF_ENDPOINT: https://hf-mirror.com
   STUDIO_GIT_HOST: http://git.prod.idc-to-cloud.aistudio.baidu-int.com
-  PPNLP_HOME: /ssd1/PaddleNLP
-  HF_DATASETS_CACHE: /ssd1/PaddleNLP/huggingface/datasets
-  TRANSFORMERS_CACHE: /ssd1/PaddleNLP/huggingface
+  PPNLP_HOME: /ssd1/paddlenlp
+  HF_DATASETS_CACHE: /ssd1/paddlenlp/huggingface/datasets
+  TRANSFORMERS_CACHE: /ssd1/paddlenlp/huggingface
   RUN_DOWNSTREAM: ${{ inputs.run_downstream }}
 
 defaults:
@@ -84,7 +84,7 @@ jobs:
               -v $work_dir/../../..:$work_dir/../../.. \
               -v $work_dir:/workspace \
               -v /home/.cache/pip:/home/.cache/pip \
-              -v /ssd1/PaddleNLP:/ssd1/PaddleNLP \
+              -v /ssd1/paddlenlp:/ssd1/paddlenlp \
               -e BRANCH \
               -e AGILE_COMPILE_BRANCH \
               -e PR_ID \
@@ -97,6 +97,7 @@ jobs:
               -e FLAGS_dynamic_static_unified_comm \
               -e python_version \
               -e CUDA_VISIBLE_DEVICES=$cudaid \
+              -e PPNLP_HOME \
               -w /workspace --runtime=nvidia $IMAGE_NAME
           fi
             

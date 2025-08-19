@@ -11,6 +11,7 @@ env:
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   BRANCH: ${{ github.event.pull_request.base.ref }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-cpu
+  PPNLP_HOME: /home/disk1/cache
 
 jobs:
   unittest-cpu-ci:
@@ -33,12 +34,14 @@ jobs:
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
+            -v /home/disk1/cache:/home/disk1/cache
             -e BRANCH \
             -e PR_ID \
             -e COMMIT_ID \
             -e work_dir \
             -e no_proxy \
             -e python_version \
+            -e PPNLP_HOME \
             -w /workspace ${docker_image}
 
       - name: Download Code
