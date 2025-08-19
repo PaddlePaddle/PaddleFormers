@@ -36,7 +36,6 @@ jobs:
             -e no_proxy \
             -e python_version \
             -w /workspace ${docker_image}
-
       - name: Download Code
         env:
           work_dir: ${{ github.workspace }}
@@ -64,7 +63,6 @@ jobs:
             echo "Not in a pull_request event. Skipping PR-specific operations."
           fi
           git log --pretty=oneline -10
-
           if ! git show-ref --quiet refs/heads/develop; then \
               echo "local develop branch is missing, creating local develop branch that tracks remote develop branch"
               git fetch origin develop
@@ -72,10 +70,8 @@ jobs:
           else
             echo "local develop branch exist, skipping"
           fi
-
           unset http_proxy && unset https_proxy
           '
-
       - name: Setup Environment
         run: |
           docker exec -t $container_name /bin/bash -c '

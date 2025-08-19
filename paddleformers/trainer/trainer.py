@@ -84,6 +84,7 @@ from ..data import (
     init_dataloader_comm_group,
 )
 from ..peft import LoKrModel, LoRAModel, PrefixModelForCausalLM, ReFTModel, VeRAModel
+from ..peft.lora import QuantizationLoRABaseLinear
 from ..quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
@@ -157,6 +158,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     ShardingOption,
     TrainerMemoryTracker,
     TrainOutput,
+    _insert_sync,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
     get_last_checkpoint,
@@ -376,7 +378,13 @@ class Trainer:
         self.optimizer_grouped_parameters = None
         self.sharding_io = None
         if self.args.should_save_sharding_stage1_model or self.args.should_load_sharding_stage1_model:
-            self.sharding_io = ShardingIO(self.args, self.model, self.optimizer)
+            self.sharding_io = ShardingIO(
+                self.args,
+                self.model,
+                self.optimizer,
+                remap_parameter_name=self.args.load_sharded_model_remap_parameter_name,
+            )
+
         if self.args.unified_checkpoint:
             self.unified_checkpoint_handler = UnifiedCheckpointHandler(self.args)
 
@@ -524,7 +532,12 @@ class Trainer:
                 models=model,
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
-                excluded_layers=[QuantizationLinear, ColumnParallelQuantizationLinear, RowParallelQuantizationLinear]
+                excluded_layers=[
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
+                    QuantizationLoRABaseLinear,
+                ]
                 + self._decorate_exclude_layers(model),
             )
         # for pipeline mode and pure tensor parallel
@@ -2194,7 +2207,12 @@ class Trainer:
                 optimizers=self.optimizer,
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
-                excluded_layers=[QuantizationLinear, ColumnParallelQuantizationLinear, RowParallelQuantizationLinear]
+                excluded_layers=[
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
+                    QuantizationLoRABaseLinear,
+                ]
                 + self._decorate_exclude_layers(model),
             )
 
@@ -2395,6 +2413,9 @@ class Trainer:
                     and "enable_stage1_broadcast_overlap" in self.args.sharding_parallel_config
                 ):
                     self.optimizer._set_broadcast_overlap(True, model)
+
+        # To solve DPO pin-memory problem, temporarily modify the _insert_sync method.
+        self.optimizer._insert_sync = types.MethodType(_insert_sync, self.optimizer)
 
         return model
 
