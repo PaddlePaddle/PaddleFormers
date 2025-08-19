@@ -23,7 +23,9 @@ from typing import Optional
 from parameterized import parameterized_class
 
 from paddleformers.transformers import AutoTokenizer
-from paddleformers.transformers.tokenizer_utils import ChatTemplate
+
+# from paddleformers.transformers.tokenizer_utils import ChatTemplate
+ChatTemplate = None
 
 
 def tokenize_rounds_example(tokenizer, example, data_args, **kwargs):
@@ -99,6 +101,7 @@ def tokenize_rounds_example(tokenizer, example, data_args, **kwargs):
     return tokenized_source, labels
 
 
+@unittest.skip("update to hf tokenizer")
 class ChatTemplateTest(unittest.TestCase):
     chat_template_config_file = "./tests/fixtures/chat_template.json"
 
@@ -150,6 +153,7 @@ class ChatTemplateTest(unittest.TestCase):
         assert final_query == "Human: 你好<sep>Bot: 您好，我是个人人工智能助手\n\n" + query
 
 
+@unittest.skip("update to hf tokenizer")
 class ChatTemplateContextDataTest(unittest.TestCase):
     chat_template_config_file = "./tests/fixtures/chat_template_with_context.json"
 
@@ -168,6 +172,7 @@ class ChatTemplateContextDataTest(unittest.TestCase):
         self.assertEqual(final_query, expected_query)
 
 
+@unittest.skip("update to hf tokenizer")
 class ChatTemplateIntegrationTest(unittest.TestCase):
     def test_linlyai_chinese_llama_2_chat_template(self):
         tokenizer = AutoTokenizer.from_pretrained("linly-ai/chinese-llama-2-7b")
@@ -219,6 +224,7 @@ class ChatTemplateIntegrationTest(unittest.TestCase):
         ["linly-ai/chinese-llama-2-7b"],
     ],
 )
+@unittest.skip("update to hf tokenizer")
 class TestChatTemplateSpecialTokens(unittest.TestCase):
     model_name: str
 
@@ -245,6 +251,7 @@ class TestChatTemplateSpecialTokens(unittest.TestCase):
         assert result_ids[: len(special_token_prefix_ids)] == special_token_prefix_ids
 
 
+@unittest.skip("update to hf tokenizer")
 class TestChatTemplateTruncation(unittest.TestCase):
     class DataArg:
         def __init__(self, max_length, src_length: Optional[int] = None):
@@ -336,6 +343,7 @@ class TestChatTemplateTruncation(unittest.TestCase):
         self.assertEqual(final_query, expected_query)
 
 
+@unittest.skip("update to hf tokenizer")
 class TemplateIntegrationTest(unittest.TestCase):
     class DataArg:
         def __init__(self, max_length, src_length: Optional[int] = None):

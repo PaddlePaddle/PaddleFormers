@@ -18,11 +18,11 @@ import tempfile
 import unittest
 
 from parameterized import parameterized_class
+from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from paddleformers.transformers.auto.tokenizer import AutoTokenizer
 from paddleformers.transformers.llama.tokenizer import LlamaTokenizer
-from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
-from paddleformers.transformers.tokenizer_utils_fast import PretrainedTokenizerFast
 
 from ..test_tokenizer_common import TokenizerTesterMixin
 
@@ -38,7 +38,7 @@ class LlamaTokenizationTest(TokenizerTesterMixin, unittest.TestCase):
     # from_pretrained_kwargs = {"add_prefix_space": True}
     # test_seq2seq = False
 
-    def get_tokenizer(self, **kwargs) -> PretrainedTokenizer:
+    def get_tokenizer(self, **kwargs) -> PreTrainedTokenizer:
         tokenizer = LlamaTokenizer.from_pretrained("__internal_testing__/tiny-random-llama", **kwargs)
         tokenizer.pad_token = tokenizer.unk_token
         return tokenizer
@@ -228,7 +228,7 @@ class LlamaTokenizationTest(TokenizerTesterMixin, unittest.TestCase):
 class LlamaTokenizationLoadTest(unittest.TestCase):
     model_name_or_path: str = None
 
-    def get_tokenizer(self, **kwargs) -> PretrainedTokenizer:
+    def get_tokenizer(self, **kwargs) -> PreTrainedTokenizer:
         tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path, **kwargs)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.unk_token
@@ -265,7 +265,7 @@ class TikTokenIntegrationTests(unittest.TestCase):
             "<|python_tag|>",  # end of turn
         ] + [f"<|reserved_special_token_{i}|>" for i in range(5, num_reserved_special_tokens - 5)]
 
-        tiktoken_tokenizer = PretrainedTokenizerFast.from_pretrained(
+        tiktoken_tokenizer = PreTrainedTokenizerFast.from_pretrained(
             model_path,
             subfolder=subfolder,
             additional_special_tokens=special_tokens,
@@ -285,13 +285,13 @@ class TikTokenIntegrationTests(unittest.TestCase):
             add_eos_token=True,
             use_fast=True,
         )
-        self.assertTrue(isinstance(tiktoken_tokenizer, PretrainedTokenizerFast))
+        self.assertTrue(isinstance(tiktoken_tokenizer, PreTrainedTokenizerFast))
         tokens = tiktoken_tokenizer.encode(test_text, add_special_tokens=True)["input_ids"]
         self.assertEqual(tokens, test_tokens)
         tmpdirname = tempfile.mkdtemp()
         tiktoken_tokenizer.save_pretrained(tmpdirname)
         tokenizer_reload = AutoTokenizer.from_pretrained(tmpdirname, use_fast=True)
-        self.assertTrue(isinstance(tokenizer_reload, PretrainedTokenizerFast))
+        self.assertTrue(isinstance(tokenizer_reload, PreTrainedTokenizerFast))
         tokens = tokenizer_reload.encode(test_text, add_special_tokens=True)["input_ids"]
         self.assertEqual(tokens, test_tokens)
         shutil.rmtree(tmpdirname)

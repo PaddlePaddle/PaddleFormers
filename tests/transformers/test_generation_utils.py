@@ -17,6 +17,7 @@ from __future__ import annotations
 import unittest
 
 import paddle
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 from paddleformers.generation import (
     BeamSearchScorer,
@@ -35,7 +36,6 @@ from paddleformers.transformers import (  # import gpt model
     AutoModelForCausalLM,
     AutoTokenizer,
     PretrainedConfig,
-    PretrainedTokenizer,
 )
 from tests.testing_utils import slow
 
@@ -799,7 +799,7 @@ class GenerationUtilsTestCase(unittest.TestCase):
 
     @slow
     def test_gpt_multi_stop_tokens(self):
-        tokenizer: PretrainedTokenizer = AutoTokenizer.from_pretrained("gpt-cpm-small-cn-distill")
+        tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained("gpt-cpm-small-cn-distill")
 
         input_ids = tokenizer("中国的首都是")["input_ids"]
         model = AutoModelForCausalLM.from_pretrained("gpt-cpm-small-cn-distill")

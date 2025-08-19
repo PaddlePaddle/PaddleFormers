@@ -17,6 +17,7 @@ import unittest
 from paddleformers.transformers import AutoTokenizer, Qwen2Tokenizer
 
 
+@unittest.skip("multi source download CI not support")
 class TestHFTokenizer(unittest.TestCase):
     def encode(self, tokenizer):
         input_text = "hello world, 你好"
@@ -49,7 +50,7 @@ class TestHFTokenizer(unittest.TestCase):
         self.encode(tokenizer)
 
     def test_ernie_4_5_tokenizer(self):
-        tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
+        tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT", from_hf_hub=True)
         input_text = "hello world, 你好"
         output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input_text))
         true_ids = [18830, 3135, 93938, 93919, 5300]

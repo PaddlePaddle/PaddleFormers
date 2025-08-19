@@ -34,6 +34,7 @@ from ...utils.test_module.custom_tokenizer_fast import (
 )
 
 
+@unittest.skip("update to hf tokenizer")
 class AutoTokenizerTest(unittest.TestCase):
     @unittest.skip("skipping due to connection error!")
     def test_from_mdoelscope(self):

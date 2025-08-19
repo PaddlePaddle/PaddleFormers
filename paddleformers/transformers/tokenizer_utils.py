@@ -91,8 +91,8 @@ class PaddleTokenizerMixin:
         from_modelscope = kwargs.get("from_modelscope", False)
         local_files_only = kwargs.get("local_files_only", False)
 
-        if not from_hf_hub and not from_aistudio and not from_modelscope:
-            from_aistudio = True
+        # if not from_hf_hub and not from_aistudio and not from_modelscope:
+        #     from_aistudio = True
 
         if not os.path.isdir(pretrained_model_name_or_path):
             download_source = None
