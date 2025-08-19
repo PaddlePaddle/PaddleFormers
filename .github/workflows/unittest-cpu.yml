@@ -11,8 +11,6 @@ env:
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   BRANCH: ${{ github.event.pull_request.base.ref }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-cpu
-  HF_ENDPOINT: https://hf-mirror.com
-  STUDIO_GIT_HOST: http://git.prod.idc-to-cloud.aistudio.baidu-int.com
 
 jobs:
   unittest-cpu-ci:
@@ -41,8 +39,6 @@ jobs:
             -e work_dir \
             -e no_proxy \
             -e python_version \
-            -e HF_ENDPOINT \
-            -e STUDIO_GIT_HOST \
             -w /workspace ${docker_image}
 
       - name: Download Code
@@ -95,6 +91,7 @@ jobs:
           source $work_dir/../../../proxy_aistudio
           cd /workspace/PaddleFormers
           set -e
+          sleep 1d
           make test
           '
 
