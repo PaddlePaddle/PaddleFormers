@@ -37,8 +37,7 @@ test: unit-test
 unit-test:
 	DOWNLOAD_SOURCE=$$DOWNLOAD_SOURCE \
 	PYTHONPATH=$(shell pwd):$$PYTHONPATH \
-	pytest -v -n auto 
-		-n auto \
+	pytest -v \ 
 		--retries 1 --retry-delay 1 \
 		--durations 20 \
 		--cov paddleformers \
