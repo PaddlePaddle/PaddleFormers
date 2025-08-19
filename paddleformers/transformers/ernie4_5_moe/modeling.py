@@ -284,11 +284,15 @@ class Ernie4_5_MoeMLP(Ernie4_5MLP):
             paddle.Tensor: Output tensor with same shape as input
         """
         if self.fuse_swiglu:
-            x = self.up_gate_proj(x)
+            # x = self.up_gate_proj(x)
+            x = paddle.concat([self.gate_proj(x), self.up_proj(x)], axis=-1)
             x = fused_swiglu(x)
         else:
-            x, gate = self.up_gate_proj(x).chunk(2, axis=-1)
-            x = F.silu(x) * gate
+            # x, gate = self.up_gate_proj(x).chunk(2, axis=-1)
+            # x = F.silu(x) * gate
+            gate = self.gate_proj(x)
+            x = self.up_proj(x)
+            x = F.silu(gate) * x
         if self.moe_dropout_prob > 0:
             with get_rng_state_tracker().rng_state("local_seed"):
                 x = F.dropout(x=x, p=self.moe_dropout_prob)
@@ -641,6 +645,8 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
     config_class = Ernie4_5_MoeConfig
     base_model_prefix = "model"
     _keep_in_fp32_modules = ["mlp.gate", "e_score_correction_bias"]
+
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):
