@@ -106,9 +106,12 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     install_requirements
     cd ${nlp_dir}
     echo ' Testing all unittest cases '
-    export http_proxy=${proxy} && export https_proxy=${proxy}
+    unset http_proxy && unset https_proxy
     set +e
-    timeout ${running_time} python -m pytest -v -n 8 \
+    timeout ${running_time} \
+    DOWNLOAD_SOURCE=aistudio \
+	PYTHONPATH=$(pwd) \
+    python -m pytest -v -n 8 \
     --dist loadgroup \
     --retries 3 --retry-delay 1 \
     --timeout 200 --durations 20 --alluredir=result \

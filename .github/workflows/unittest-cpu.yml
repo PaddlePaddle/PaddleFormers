@@ -15,7 +15,7 @@ env:
 jobs:
   unittest-cpu-ci:
     name: unittest-cpu-ci
-    runs-on: [self-hosted, ernie-cpu]
+    runs-on: [self-hosted, 4gpu]
     permissions:
       pull-requests: write
       contents: read
@@ -92,7 +92,6 @@ jobs:
           cd /workspace/PaddleFormers
           set -e
           make test
-          sleep 1d
           '
 
       # - name: Upload Coverage To Codecov
