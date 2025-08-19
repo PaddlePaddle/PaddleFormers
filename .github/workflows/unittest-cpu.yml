@@ -96,6 +96,7 @@ jobs:
           cd /workspace/PaddleFormers
           set -e
           make test
+          echo "finished"
           '
 
       # - name: Upload Coverage To Codecov
