@@ -92,6 +92,7 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           source $work_dir/../../../proxy_aistudio
+          rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers
           set -e
           make test
