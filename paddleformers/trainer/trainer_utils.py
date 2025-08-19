@@ -48,6 +48,7 @@ from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
 from ..utils.import_utils import is_paddle_cuda_available, is_psutil_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import PDCErrorCode, PDCErrorMessageMap, pdc_tool
+from ..utils.tools import get_env_device
 from .utils.helper import distributed_file
 
 __all__ = [
@@ -1252,3 +1253,31 @@ def download_recovery_ckpt_from_pdc(recovery_checkpoint_path, timeout):
         raise RuntimeError(
             f"{PDC_DOWNLOAD_ERROR}; Error occurred when trying to download checkpoint from PDC, recovery_checkpoint_path: {recovery_checkpoint_path}, timeout: {timeout}; error details: {PDCErrorMessageMap[result]}"
         )
+
+
+def _insert_sync(self, sync_var, src, mp_group, sync_mode):
+    # Get device type where the sync_var is located
+    original_device = "pin_memory" if str(sync_var.place) == "Place(gpu_pinned)" else "Other"
+
+    # If the sync_var is on pin memory, first move it to CUDA or other decives
+    if original_device == "pin_memory":
+        if get_env_device() == "gpu":
+            sync_var = sync_var.cuda()
+        else:
+            sync_var = sync_var.to(get_env_device())
+
+    if sync_mode == "broadcast":
+        paddle.distributed.broadcast(sync_var, src=src, group=mp_group, sync_op=True)
+    else:
+        paddle.distributed.all_reduce(sync_var, group=mp_group, sync_op=True)
+        sync_var.multiply_(
+            paddle.full(
+                shape=[],
+                dtype=sync_var.dtype,
+                fill_value=(1.0 / mp_group.nranks),
+            )
+        )
+
+    # Move it back to pin memory
+    if original_device == "pin_memory":
+        sync_var = paddle.to_tensor(sync_var, place=paddle.CUDAPinnedPlace())

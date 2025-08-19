@@ -13,28 +13,73 @@
 # limitations under the License.
 
 import contextlib
+import sys
+from typing import TYPE_CHECKING
 
-import paddle
+from ..utils.lazy_import import _LazyModule
 
-from .batch_sampler import *
-from .env import CONFIG_NAME, GENERATION_CONFIG_NAME, LEGACY_CONFIG_NAME
-from .import_utils import *
-from .infohub import infohub
-from .initializer import to
-from .log import logger
-from .memory_utils import empty_device_cache
-
-try:
-    from .optimizer import *
-except:
-    logger.info("Not support custom optimizer")
-
-from .paddle_patch import *
-from .serialization import load_torch
-
-# hack impl for EagerParamBase to function
-# https://github.com/PaddlePaddle/Paddle/blob/fa44ea5cf2988cd28605aedfb5f2002a63018df7/python/paddle/nn/layer/layers.py#L2077
-paddle.framework.io.EagerParamBase.to = to
+import_structure = {
+    "nested": [
+        "nested_reduce_tensor",
+        "nested_empty_tensor",
+        "nested_broadcast_tensor",
+        "nested_broadcast_tensor_with_empty",
+        "nested_copy",
+        "nested_copy_place",
+        "flatten_list",
+        "TensorHolder",
+    ],
+    "import_utils": [
+        "is_torch_available",
+        "is_paddlenlp_ops_available",
+        "auto_dynamic_graph_pybind",
+        "is_paddle_cuda_available",
+        "is_package_available",
+        "is_tiktoken_available",
+        "uninstall_package",
+        "import_module",
+        "_is_package_available",
+        "is_sentencepiece_available",
+        "is_paddle_available",
+        "is_psutil_available",
+        "is_protobuf_available",
+        "is_tokenizers_available",
+        "is_fast_tokenizer_available",
+        "install_package",
+        "is_g2p_en_available",
+        "is_datasets_available",
+        "is_transformers_available",
+        "dynamic_graph_pybind_context",
+        "custom_import",
+    ],
+    "initializer": ["to"],
+    "infohub": ["infohub", "InfoHub"],
+    "memory_utils": ["empty_device_cache"],
+    "paddle_patch": ["enhance_set_value", "new_repr", "_numel", "_numpy", "enhance_init", "enhance_to_tensor"],
+    "serialization": [
+        "seek_by_string",
+        "load_torch_inner",
+        "SerializationError",
+        "_element_size",
+        "_rebuild_tensor_stage",
+        "_maybe_decode_ascii",
+        "load_torch",
+        "_rebuild_parameter",
+        "_rebuild_parameter_with_state",
+        "UnpicklerWrapperStage",
+        "read_prefix_key",
+        "_storage_type_to_dtype_to_map",
+        "SafeUnpickler",
+        "dumpy",
+        "StorageType",
+    ],
+    "batch_sampler": ["DistributedBatchSampler"],
+    "optimizer": ["AdamWMini", "AdamWCustom", "AdamWLoRAPro"],
+    "env": ["CONFIG_NAME", "GENERATION_CONFIG_NAME", "LEGACY_CONFIG_NAME"],
+    "log": ["logger"],
+    "tools": ["device_guard"],
+    "downloader": ["get_weights_path_from_url"],
+}
 
 
 @contextlib.contextmanager
@@ -48,3 +93,34 @@ def device_guard(device="cpu", dev_id=0):
         yield
     finally:
         paddle.set_device(origin_device)
+
+
+if TYPE_CHECKING:
+    import paddle
+
+    from .batch_sampler import *
+    from .env import CONFIG_NAME, GENERATION_CONFIG_NAME, LEGACY_CONFIG_NAME
+    from .import_utils import *
+    from .infohub import infohub
+    from .initializer import to
+    from .log import logger
+    from .memory_utils import empty_device_cache
+
+    try:
+        from .optimizer import *
+    except:
+        logger.info("Not support custom optimizer")
+
+    from .paddle_patch import *
+    from .serialization import load_torch
+
+    # hack impl for EagerParamBase to function
+    # https://github.com/PaddlePaddle/Paddle/blob/fa44ea5cf2988cd28605aedfb5f2002a63018df7/python/paddle/nn/layer/layers.py#L2077
+    paddle.framework.io.EagerParamBase.to = to
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )
