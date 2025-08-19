@@ -36,6 +36,7 @@ test: unit-test
 
 unit-test:
 	export PYTHONPATH=$(shell pwd):$$PYTHONPATH && \
+	export DOWNLOAD_SOURCE=$$DOWNLOAD_SOURCE && \
 	pytest -v \
 		-n auto \
 		--retries 1 --retry-delay 1 \
