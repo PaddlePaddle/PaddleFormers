@@ -613,6 +613,11 @@ class Qwen2_5_VLVisionBlock(paddle.nn.Layer):
         super().__init__()
         self.norm1 = Qwen2RMSNorm(config.hidden_size, eps=1e-6)
         self.norm2 = Qwen2RMSNorm(config.hidden_size, eps=1e-6)
+
+        if flash_attn_func is None and attn_implementation == "flash_attention_2":
+            attn_implementation = "eager"
+            logger.warning_once(f"Warning: Flash Attention2 is not available for vision module, fallback to normal attention.")
+
         self.attn = QWEN2_5_VL_VISION_ATTENTION_CLASSES[attn_implementation](
             config.hidden_size, num_heads=config.num_heads
         )
@@ -1230,7 +1235,14 @@ class Qwen2_5_VLDecoderLayer(nn.Layer):
                 f"Sliding Window Attention is enabled but not implemented for `{config._attn_implementation}`; "
                 "unexpected results may be encountered."
             )
-        self.self_attn = QWEN2_5_VL_ATTENTION_CLASSES[config._attn_implementation](config, layer_idx)
+        
+        if flash_attn_func is None and config._attn_implementation == "flash_attention_2":
+            attn_implementation = "eager"
+            logger.warning_once(f"Warning: Flash Attention2 is not available for decoder layer, fallback to normal attention.")
+        else:
+            attn_implementation = config._attn_implementation
+
+        self.self_attn = QWEN2_5_VL_ATTENTION_CLASSES[attn_implementation](config, layer_idx)
         self.mlp = Qwen2MLP(config)
         self.input_layernorm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)

@@ -326,6 +326,21 @@ import_structure = {
         "Qwen3MoePretrainingCriterion",
     ],
     "qwen3_moe.modeling_pp": ["Qwen3MoeForCausalLMPipe"],
+    "qwen2_vl.configuration": ["Qwen2VLConfig"],
+    "qwen2_vl.image_processing": ["Qwen2VLImageProcessor"],
+    "qwen2_vl.modeling": [
+        "Qwen2VLForConditionalGeneration",
+        "Qwen2VLModel",
+        "Qwen2VLPreTrainedModel",
+    ],
+    "qwen2_vl.processing": ["Qwen2VLProcessor", "process_vision_info"],
+    "qwen2_5_vl.configuration": ["Qwen2_5_VLConfig"],
+    "qwen2_5_vl.modeling": [
+        "Qwen2_5_VLForConditionalGeneration",
+        "Qwen2_5_VLModel",
+        "Qwen2_5_VLPreTrainedModel",
+    ],
+    "qwen2_5_vl.processing": ["Qwen2_5_VLProcessor"],
     "bert": [],
     "llama": [],
     "qwen2": [],
@@ -336,7 +351,9 @@ import_structure = {
     "ernie4_5": [],
     "qwen2_moe": [],
     "qwen3_moe": [],
-    "auto": ["AutoModelForCausalLM"],
+    "qwen2_vl": [],
+    "qwen2_5_vl": [],
+    "auto": ["AutoModelForCausalLM", "AutoModelForConditionalGeneration"],
 }
 
 if TYPE_CHECKING:

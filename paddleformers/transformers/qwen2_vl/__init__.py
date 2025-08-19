@@ -13,9 +13,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .bert_padding import *
-from .configuration import *
-from .flash_attn_utils import *
-from .image_processing import *
-from .modeling import *
-from .processing import *
+import sys
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "configuration": ["Qwen2VLConfig"],
+    "image_processing": ["Qwen2VLImageProcessor"],
+    "modeling": [
+        "Qwen2VLForConditionalGeneration",
+        "Qwen2VLModel",
+        "Qwen2VLPreTrainedModel",
+    ],
+    "processing": ["Qwen2VLProcessor", "process_vision_info"],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .image_processing import *
+    from .modeling import *
+    from .processing import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )
