@@ -35,6 +35,7 @@ lint:
 test: unit-test
 
 unit-test:
+	DOWNLOAD_SOURCE=aistudio \
 	PYTHONPATH=$(shell pwd) pytest -v \
 		--retries 1 --retry-delay 1 \
 		--durations 20 \
