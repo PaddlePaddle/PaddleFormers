@@ -59,7 +59,6 @@ except:
 
 __all__ = [
     "get_llama_pp_schedule",
-    "LlamaForCausalLM3DAutoPP",
 ]
 
 

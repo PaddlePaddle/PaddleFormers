@@ -42,7 +42,7 @@ from paddle.optimizer.lr import LambdaDecay
 
 from ..ops import Topology
 from ..trainer.argparser import strtobool
-from ..transformers import get_llama_pp_schedule
+from ..transformers.llama import get_llama_pp_schedule
 from ..transformers.tokenizer_utils_base import BatchEncoding
 from ..utils.env import PREFIX_CHECKPOINT_DIR, _re_checkpoint  # noqa for compatibility
 from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
