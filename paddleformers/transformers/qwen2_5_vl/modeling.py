@@ -616,7 +616,9 @@ class Qwen2_5_VLVisionBlock(paddle.nn.Layer):
 
         if flash_attn_func is None and attn_implementation == "flash_attention_2":
             attn_implementation = "eager"
-            logger.warning_once(f"Warning: Flash Attention2 is not available for vision module, fallback to normal attention.")
+            logger.warning_once(
+                f"Warning: Flash Attention2 is not available for vision module, fallback to normal attention."
+            )
 
         self.attn = QWEN2_5_VL_VISION_ATTENTION_CLASSES[attn_implementation](
             config.hidden_size, num_heads=config.num_heads
@@ -1235,10 +1237,12 @@ class Qwen2_5_VLDecoderLayer(nn.Layer):
                 f"Sliding Window Attention is enabled but not implemented for `{config._attn_implementation}`; "
                 "unexpected results may be encountered."
             )
-        
+
         if flash_attn_func is None and config._attn_implementation == "flash_attention_2":
             attn_implementation = "eager"
-            logger.warning_once(f"Warning: Flash Attention2 is not available for decoder layer, fallback to normal attention.")
+            logger.warning_once(
+                f"Warning: Flash Attention2 is not available for decoder layer, fallback to normal attention."
+            )
         else:
             attn_implementation = config._attn_implementation
 
