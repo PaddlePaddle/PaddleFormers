@@ -37,30 +37,36 @@ ALL_LOSS_FUNCTIONS = LossInterface()
 
 
 class CriterionLayer(nn.Layer):
-    def __init__(self, config, return_tuple=True, ignore_eos_token=False, use_infohub=False, **kwargs):
+    def __init__(self,
+        config,
+        return_tuple=True,
+        ignore_eos_token=False,
+        use_infohub=False,
+        **kwargs
+    ):
         super().__init__()
         self.config = config
         self.dpo_config = copy.deepcopy(config.get("dpo_config", None))
         self.kto_config = copy.deepcopy(config.get("kto_config", None))
         self.ignored_index = getattr(config, "ignored_index", -100)
-        self.use_ignored_label_loss = config.get("use_ignored_label_loss", False)  # 独立开关
+        self.use_filtered_label_loss = config.get("use_filtered_label_loss", False)
         self.loss_subbatch_seqlen = config.get(
             "loss_subbatch_seqlen", -1
         )  # 切分由loss_subbatch_seqlen决定是否开启，loss_subbatch_seqlen > 0 才启动
         self.use_subbatch = self.loss_subbatch_seqlen > 0
-
+        self.sequence_parallel = config.get("sequence_parallel", False)
+        self.tensor_parallel = config.tensor_parallel_degree > 1
         self.use_fused_head_and_loss_fn = config.get("use_fused_head_and_loss_fn", False)
         self.enable_parallel_cross_entropy = (
             config.tensor_parallel_degree > 1 and config.tensor_parallel_output
         )  # loss并行计算时，use_fused_head_and_loss_fn = False
 
         self.return_tuple = return_tuple
-        self.token_balance_loss = config.get("token_balance_loss", False)
         self.tie_word_embeddings = config.get("tie_word_embeddings", False)
         self.use_infohub = use_infohub
         self.ignore_eos_token = ignore_eos_token
 
-        if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
+        if self.enable_parallel_cross_entropy:
             logger.info("using parallel cross entroy, take care")
             self.loss_func = ParallelCrossEntropy()
         else:

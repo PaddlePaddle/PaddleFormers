@@ -31,9 +31,6 @@ def flashmask_attention_forward(
     is_causal: Optional[bool] = None,
     **kwargs
 ):
-    # TODO: support attn_mask to attn_mask_start_row_indices (liaojincheng)
-    # if attention_mask not None
-    #  attention_mask -> attn_mask_start_row_indices
     if attn_mask_start_row_indices is not None:
         attn_mask_start_row_indices = attn_mask_start_row_indices.unsqueeze(-1)
 

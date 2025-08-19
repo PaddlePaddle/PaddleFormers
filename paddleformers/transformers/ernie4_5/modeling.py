@@ -447,7 +447,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         self.config = config
 
         self.self_attn = Ernie4_5Attention(config, layer_idx)
-        self.mlp = Ernie4_5MLP(config)
+        self.mlp = Ernie4_5MLP(config, fuse_up_gate=True)
 
         self.input_layernorm = GeneralNorm.from_config(config)
         self.post_attention_layernorm = GeneralNorm.from_config(config)

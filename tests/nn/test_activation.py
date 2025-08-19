@@ -19,35 +19,10 @@ import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 
-from paddleformers.nn.activation import ACT2CLS, ACT2FN, FusedSwiglu, Swiglu
+from paddleformers.nn.activation import ACT2CLS, ACT2FN
 
 
 class TestActivationFunctions(unittest.TestCase):
-    def test_swiglu(self):
-        swiglu = Swiglu()
-        # Test with separate gate and x
-        output = swiglu(self.test_gate, self.test_input)
-
-        # Verify output shape
-        self.assertEqual(output.shape, [self.batch_size, self.feature_size])
-
-        # Verify computation (silu(gate) * x)
-        expected = F.silu(self.test_gate) * self.test_input
-        np.testing.assert_allclose(output.numpy(), expected.numpy(), rtol=1e-5)
-
-    def test_fused_swiglu(self):
-        fused_swiglu_layer = FusedSwiglu()
-        # Test with concatenated input
-        # Assuming first half is gate, second half is x
-        concat_input = paddle.concat([self.test_gate, self.test_input], axis=-1)
-        output = fused_swiglu_layer(concat_input)
-
-        # Verify output shape
-        self.assertEqual(output.shape, [self.batch_size, self.feature_size])
-
-        # Verify computation matches regular swiglu
-        expected = F.silu(self.test_gate) * self.test_input
-        np.testing.assert_allclose(output.numpy(), expected.numpy(), rtol=1e-5)
 
     def test_act2fn_instantiation(self):
         # Test all activation functions can be instantiated
@@ -56,19 +31,8 @@ class TestActivationFunctions(unittest.TestCase):
             self.assertTrue(isinstance(activation, nn.Layer))
 
             # Test forward pass for each activation
-            if act_name == "fused_swiglu":
-                # Special case for fused_swiglu which needs concatenated input
-                concat_input = paddle.concat([self.test_gate, self.test_input], axis=-1)
-                output = activation(concat_input)
-                self.assertEqual(output.shape, [self.batch_size, self.feature_size])
-            elif act_name == "swiglu":
-                # swiglu needs separate gate and x
-                output = activation(self.test_gate, self.test_input)
-                self.assertEqual(output.shape, [self.batch_size, self.feature_size])
-            else:
-                # Standard activations
-                output = activation(self.test_input)
-                self.assertEqual(output.shape, [self.batch_size, self.feature_size])
+            output = activation(self.test_input)
+            self.assertEqual(output.shape, [self.batch_size, self.feature_size])
 
 
 if __name__ == "__main__":

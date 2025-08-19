@@ -28,8 +28,7 @@ from .sequence_parallel_utils import (
 )
 from .tensor_parallel_utils import (
     fused_head_and_loss_fn,
-    parallel_linear,
-    parallel_matmul,
+    parallel_matmul
 )
 
 
@@ -187,10 +186,7 @@ class DPOCriterion(nn.Layer):
                 ignore_index=0,
             )
         elif use_sparse_head_and_loss_fn:
-            if bias is None:
-                logits = parallel_matmul(hidden_states, weight, self.config.tensor_parallel_output)
-            else:
-                logits = parallel_linear(hidden_states, weight, bias, self.config.tensor_parallel_output)
+            logits = parallel_matmul(hidden_states, weight, bias=bias, transpose_y=False, tensor_parallel_output=self.config.tensor_parallel_output)
             logits = logits.astype("float32")
             per_token_logps = -self.logprobs(logits, labels)
         else:
@@ -203,7 +199,7 @@ class DPOCriterion(nn.Layer):
                 raise ValueError("Logits (batch and sequence length dim) and labels must have the same shape.")
             # bs, seq
             per_token_logps = -self.logprobs(logits, labels.unsqueeze(2)).squeeze(2)
-
+            
         if len(response_indexs.shape) == 3:
             response_indexs = response_indexs[0]
 

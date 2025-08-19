@@ -17,6 +17,7 @@ import paddle
 import paddle.nn as nn
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 
+from ..utils.log import logger
 from ..generation.configuration_utils import PretrainedConfig
 from .criterion.loss_utils import calc_lm_head_logits
 
@@ -34,26 +35,26 @@ class LMHead(nn.Layer):
         self.transpose_y = config.get("tie_word_embeddings", False)
         self.vocab_parallel = False
 
-        rng_context = nullcontext
-
         # apply vocab tensor parallel
         if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
             vocab_size = config.vocab_size // config.tensor_parallel_degree
             self.vocab_parallel = True
-            rng_context = get_rng_state_tracker().rng_state
         else:
             vocab_size = config.vocab_size
-
+            if config.tensor_parallel_degree > 1:
+                logger.warning_once(
+                    "lm_head vocab parallelism is disabled (vocab_size=%d %% tp_degree=%d != 0).",
+                    vocab_size, tensor_parallel_degree
+                )
         self.lm_head_shape = (
             [config.hidden_size, vocab_size] if not self.transpose_y else [vocab_size, config.hidden_size]
         )
 
-        with rng_context():
-            self.weight = self.create_parameter(
-                shape=self.lm_head_shape,
-                dtype=paddle.get_default_dtype(),
-                default_initializer=nn.initializer.XavierNormal(1.0),
-            )
+        self.weight = self.create_parameter(
+            shape=self.lm_head_shape,
+            dtype=paddle.get_default_dtype(),
+            default_initializer=nn.initializer.XavierNormal(1.0),
+        )
 
         # setting distributed attr for tensor parallel
         self.weight.is_distributed = self.vocab_parallel
@@ -62,12 +63,11 @@ class LMHead(nn.Layer):
             self.weight.split_axis = 0 if self.transpose_y else 1
 
         if self.use_bias:
-            with rng_context():
-                self.bias = self.create_parameter(
-                    shape=[vocab_size],
-                    dtype=paddle.get_default_dtype(),
-                    attr=paddle.ParamAttr(initializer=paddle.nn.initializer.constant.Constant(0.0)),
-                )
+            self.bias = self.create_parameter(
+                shape=[vocab_size],
+                dtype=paddle.get_default_dtype(),
+                attr=paddle.ParamAttr(initializer=paddle.nn.initializer.constant.Constant(0.0)),
+            )
 
             # setting distributed attr for tensor parallel
             self.bias.is_distributed = self.vocab_parallel
@@ -96,7 +96,7 @@ class LMHead(nn.Layer):
                     Logits tensor of shape [batch_size, seq_len, vocab_size]
             ]
         """
-        if self.config.get("use_recompute_loss_fn", False) or self.config.get("use_fused_head_and_loss_fn", False):
+        if self.config.get("use_fused_head_and_loss_fn", False):
             return (
                 hidden_states,
                 self.weight,

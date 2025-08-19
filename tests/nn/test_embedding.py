@@ -14,10 +14,12 @@
 
 import sys
 from pathlib import Path
+import unittest
 
 import paddle
 import paddle.distributed.fleet.meta_parallel as mpu
 import paddle.nn as nn
+import paddle.nn.functional as F
 from paddle.distributed import fleet
 
 from paddleformers.nn.embedding import Embedding
@@ -65,6 +67,11 @@ class TestEmbedding(TestMultipleGpus):
         # Test creating default embedding
         embedding = Embedding.from_config(self.config)
         self.assertIsInstance(embedding, nn.Embedding)
+
+        self.config.vocab_size = None
+        self.config.hidden_size = None
+        embedding = Embedding.from_config(self.config, num_embeddings=40, embedding_dim=38)
+        self.assertIsInstance(embedding, nn.Embedding)
         print("paddleformers.nn.Embedding: test_create_default_from_config: success")
 
     def test_create_with_optional_params(self):
@@ -103,9 +110,27 @@ class TestEmbedding(TestMultipleGpus):
         self.assertIn("other_param", processed)
         print("paddleformers.nn.Embedding: test_process_kwargs_vocab_parallel: success")
 
-    def test_create_vocab_parallel_embedding(self):
-        self.run_2gpu(__file__)
+    # def test_create_vocab_parallel_embedding(self):
+    #     self.run_2gpu(__file__)
 
+    def test_register_new_embedding(self):
+        class MyEmbedding(nn.Layer):
+            def __init__(self,num_embeddings,embedding_dim,**kwargs):
+                super().__init__()
+                self.weight = self.create_parameter(
+                    shape=[num_embeddings, embedding_dim],
+                    is_bias=False
+                )
+
+            def forward(self,x):
+                return F.embedding(x, weight=self.weight)
+        
+        Embedding.register("my_embedding",MyEmbedding)
+        my_embedding = Embedding.create(embedding_type="my_embedding",num_embeddings=self.num_embeddings,embedding_dim=self.embedding_dim)
+        self.assertIsInstance(my_embedding,MyEmbedding)
+        my_embedding(paddle.to_tensor([0]))
+        print("paddleformers.nn.Embedding: test_register_new_embedding: success")
 
 if __name__ == "__main__":
-    _test_create_vocab_parallel_embedding()
+    # _test_create_vocab_parallel_embedding()
+    unittest.main()

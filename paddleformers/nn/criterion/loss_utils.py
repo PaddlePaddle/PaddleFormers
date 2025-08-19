@@ -11,8 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import functools
+import numpy as np
+import paddle
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp
 
-from ...distributed import GatherOp, parallel_matmul
+from ...transformers.tensor_parallel_utils import parallel_matmul
 
 
 def calc_lm_head_logits(
@@ -54,7 +58,72 @@ def calc_lm_head_logits(
         tensor_parallel_degree=config.tensor_parallel_degree,
         tensor_parallel_output=tensor_parallel_output,
         fuse_linear=config.get("fuse_linear", False),
-        training=training,
+        training=training
     )
 
     return logits
+
+
+def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}):
+    """
+    Converts a function to one that applies to subbatch of an input dimension.
+    This is useful for processing large tensors in smaller chunks to reduce memory usage.
+
+    Args:
+        f (Callable): Original function to be converted to subbatch processing.
+        arg_idx ([int]): Indices of the inputs to be subbatched.
+        axis ([int]): Indices of the dimensions to be subbatched for each input.
+        bs (int): Subbatch size (number of elements to process at once).
+        out_idx (int): Index of the output dimension that needs stacking.
+        use_recompute (bool, optional): Whether to use recomputation for memory savings. Defaults to False.
+        same_arg_idx (dict, optional): Mapping of argument indices that share the same tensor.
+                                     e.g. {1: 0} means args[1] == args[0], avoiding duplicate slicing.
+
+    Returns:
+        Callable: Converted function that processes inputs in subbatches.
+    """
+
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+
+        assert len(arg_idx) == len(
+            axis
+        ), "Number of batching args and number of batching dims should match."
+
+        inps = [args[i] for i in arg_idx]
+        axis_width = [inp.shape[d] for inp, d in zip(inps, axis)]
+        assert len(set(axis_width)) == 1, "Batch sizes should be kept equal."
+
+        inp_axis = {inp: d for inp, d in zip(inps, axis)}
+
+        axis_width = axis_width[0]
+        if axis_width < bs:
+            return f(*args, **kwargs)
+
+        outs = []
+        for slice_at in np.arange(0, axis_width, bs):
+            _args = []
+            for i, inp in enumerate(args):
+                if i in same_arg_idx:
+                    assert (
+                        i > same_arg_idx[i]
+                    ), f"expect i > same_arg_idx[i], but got i: {i} and same_arg_idx[i]: {same_arg_idx[i]}"
+                    _args.append(_args[same_arg_idx[i]])
+                elif i in arg_idx:
+                    inp = inp.slice(
+                        [inp_axis[inp]],
+                        [slice_at],
+                        [min(inp.shape[inp_axis[inp]], slice_at + bs)],
+                    )
+                    _args.append(inp)
+                else:
+                    _args.append(inp)
+            if use_recompute:
+                out = paddle.distributed.fleet.utils.recompute(f, *_args, **kwargs)
+            else:
+                out = f(*_args, **kwargs)
+            outs.append(out)
+
+        return paddle.concat(outs, out_idx)
+
+    return wrapper

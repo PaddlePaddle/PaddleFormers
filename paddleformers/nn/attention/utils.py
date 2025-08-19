@@ -33,18 +33,3 @@ def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
 
     hidden_states = hidden_states.unsqueeze(-2).tile([1, 1, 1, n_rep, 1])
     return hidden_states.reshape([batch, slen, num_key_value_heads * n_rep, head_dim])
-
-
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None):
-    if position_ids is None:
-        # Note: Only for LlamaForCausalLMPipe model pretraining
-        cos = cos[:, : q.shape[1], :, :]  # [bs, seq_len, 1, dim]
-        sin = sin[:, : q.shape[1], :, :]  # [bs, seq_len, 1, dim]
-    else:
-        cos = cos.squeeze(axis=[0, 2])  # [seq_len, dim]
-        sin = sin.squeeze(axis=[0, 2])  # [seq_len, dim]
-        cos = cos[position_ids].unsqueeze(2)  # [bs, seq_len, 1, dim]
-        sin = sin[position_ids].unsqueeze(2)  # [bs, seq_len, 1, dim]
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed, k_embed

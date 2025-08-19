@@ -63,8 +63,6 @@ class Ernie4_5Config(PretrainedConfig):
         rms_norm_eps=1e-6,
         use_cache=False,
         use_flash_attention=True,
-        use_sparse_flash_attn=True,
-        use_var_len_flash_attn=False,
         recompute=False,
         recompute_granularity="core_attn",
         recompute_use_reentrant=False,
@@ -89,18 +87,16 @@ class Ernie4_5Config(PretrainedConfig):
         use_recompute_loss_fn=False,
         refined_recompute=dict(),
         attention_probs_dropout_prob=0.0,
-        hidden_act="swiglu",
+        hidden_act="silu",
         hidden_dropout_prob=0.0,
         compression_ratio: float = 1.0,
         num_key_value_heads=None,
         use_sparse_head_and_loss_fn=False,
         micro_batch_size=-1,
         use_fused_head_and_loss_fn=False,
-        token_balance_loss=False,
-        token_balance_seqlen=False,  # calculated based on batchsize and seqlen
-        cachekv_quant: bool = False,
         pp_seg_method="layer:Ernie4_5DecoderLayer|EmptyLayer",
         dpo_config=None,
+        kto_config=None,
         **kwargs,
     ):
         """
@@ -116,8 +112,6 @@ class Ernie4_5Config(PretrainedConfig):
             rms_norm_eps (float): The epsilon used by the RMS normalization layers
             use_cache (bool): Whether to use caching for faster generation (decoding)
             use_flash_attention (bool): Whether to use FlashAttention for optimized attention computation
-            use_sparse_flash_attn (bool): Whether to use sparse FlashAttention
-            use_var_len_flash_attn (bool): Whether to use variable-length FlashAttention
             recompute (bool): Whether to use gradient checkpointing to save memory
             recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
@@ -148,9 +142,6 @@ class Ernie4_5Config(PretrainedConfig):
             use_sparse_head_and_loss_fn (bool): Whether to use sparse attention head and loss function
             micro_batch_size (int): Size of micro batches (-1 for automatic)
             use_fused_head_loss_fn (bool): Whether to use fused head and loss function
-            token_balance_loss (bool): Whether to balance loss by token count
-            token_balance_seqlen (bool): Whether to balance sequence lengths
-            cachekv_quant (bool): Whether to quantize key-value cache
             pp_seg_method (str): Method for pipeline parallel segmentation
             **kwargs: Additional keyword arguments passed to parent class
         """
@@ -178,9 +169,7 @@ class Ernie4_5Config(PretrainedConfig):
         self.recompute = recompute
         self.recompute_granularity = recompute_granularity
         self.use_flash_attention = use_flash_attention
-        self.use_sparse_flash_attn = use_sparse_flash_attn
         self.recompute_use_reentrant = recompute_use_reentrant
-        self.use_var_len_flash_attn = use_var_len_flash_attn
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
@@ -235,7 +224,6 @@ class Ernie4_5Config(PretrainedConfig):
         self.use_fused_head_and_loss_fn = use_fused_head_and_loss_fn
         self.token_balance_loss = token_balance_loss
         self.token_balance_seqlen = token_balance_seqlen
-        self.cachekv_quant = cachekv_quant
         self.pp_seg_method = pp_seg_method
         self.dpo_config = dpo_config
 

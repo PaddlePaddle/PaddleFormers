@@ -25,11 +25,10 @@ from ...transformers.sequence_parallel_utils import (
 )
 from ...transformers.tensor_parallel_utils import (
     fused_head_and_loss_fn,
-    parallel_linear,
-    parallel_matmul,
+    parallel_matmul
 )
 from ...utils import infohub
-
+from .loss_utils import subbatch
 
 def dpo_preprocess_inputs(self, logits, labels):
     hidden_states, lm_head_weight, lm_head_bias, transpose_y = None, None, None, None
@@ -58,7 +57,7 @@ def dpo_logps(
     transpose_y = self.tie_word_embeddings
     labels = chosen_labels + rejected_labels
     # drop ignored index token
-    if self.use_ignored_label_loss:
+    if self.use_filtered_label_loss:
         if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel and logits is None:
             labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, 0)
 
@@ -80,7 +79,8 @@ def dpo_logps(
         if hidden_states is not None:
             hidden_states = AllGatherOp.apply(hidden_states)
 
-    if self.use_fused_head_and_loss_fn and self.loss_subbatch_seqlen > 0:
+    seq_len = labels.shape[1] if labels.ndim==2 else labels.shape[0] #   bsz,seq_len,hidden_size or seq_len,hidden_size
+    if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
         per_token_logps = -fused_head_and_loss_fn(
             hidden_states,
             weight,
@@ -97,13 +97,9 @@ def dpo_logps(
             ignore_index=0,
         )
         per_token_logps = per_token_logps.reshape([1, per_token_logps.shape[-1], 1])
-
     else:
-        if self.use_fused_head_and_loss_fn and self.loss_subbatch_seqlen <= 0:
-            if bias is None:
-                logits = parallel_matmul(hidden_states, weight, self.config.tensor_parallel_output)
-            else:
-                logits = parallel_linear(hidden_states, weight, bias, self.config.tensor_parallel_output)
+        if self.use_fused_head_and_loss_fn:
+            logits = parallel_matmul(hidden_states, weight, bias, transpose_y=transpose_y, tensor_parallel_output=self.config.tensor_parallel_output)
 
         if isinstance(logits, tuple):
             logits = logits[0]
@@ -115,13 +111,29 @@ def dpo_logps(
             logits = logits.unsqueeze(0)
         elif logits.dim() == 3 and labels.dim() == 1:
             labels = labels.unsqueeze(0)
-        per_token_logps = -self.loss_func(logits, labels.unsqueeze(-1))
-
+        print(seq_len,self.loss_subbatch_seqlen)
+        if self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
+            sb_loss_func = subbatch(
+                self.loss_func,
+                [0, 1],
+                [1, 1],
+                self.loss_subbatch_seqlen,
+                1,
+            )
+            
+            per_token_logps = sb_loss_func(logits, labels.unsqueeze(-1))
+            # if paddle.distributed.get_rank() == 0:
+            #     import pdb;pdb.set_trace()
+            # paddle.distributed.barrier()  
+            print(per_token_logps)
+        else:
+            per_token_logps = self.loss_func(logits, labels.unsqueeze(-1))
+        
     if len(response_indexs.shape) == 3:
         response_indexs = response_indexs[0]
 
     offset = 1 if self.ignore_eos_token else 0
-    if self.use_ignored_label_loss:
+    if self.use_filtered_label_loss:
         chosen_logps = paddle.stack(
             [
                 (

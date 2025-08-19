@@ -17,12 +17,12 @@ import paddle
 import paddle.nn as nn
 from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 
-from ...distributed import AllGatherVarlenOp
-from ...transformers.sequence_parallel_utils import (  # AllGatherVarlenOp,
+from ...transformers.sequence_parallel_utils import (
+    AllGatherVarlenOp,
     sequence_parallel_sparse_mask_labels,
 )
 from ...transformers.tensor_parallel_utils import fused_head_and_loss_fn
-from .loss_utils import calc_lm_head_logits
+from .loss_utils import calc_lm_head_logits, subbatch
 
 
 def sft_preprocess_inputs(self, logits, labels):
@@ -42,9 +42,6 @@ def sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs):
     # 逐位对齐, 全精度聚合
     masked_lm_loss = paddle.sum(masked_lm_loss.cast(paddle.float32).reshape([-1]) * loss_mask)
     loss = masked_lm_loss / loss_mask.sum()
-    if self.token_balance_loss:
-        _loss = masked_lm_loss / self.config.token_balance_seqlen
-        loss = _loss - _loss.detach() + loss.detach()  # for 对线
     loss_sum = masked_lm_loss.sum().detach()
 
     if not self.return_tuple:  # only used in pp
@@ -65,8 +62,8 @@ def sft_loss_forward(
         self, logits, labels
     )
 
-    if self.use_ignored_label_loss:
-        if self.config.sequence_parallel and logits is None:
+    if self.use_filtered_label_loss:
+        if self.tensor_parallel and self.sequence_parallel and logits is None:
             masked_lm_labels, sparse_label_idx = sequence_parallel_sparse_mask_labels(labels, self.ignored_index)
             sparse_label_idx = sparse_label_idx.reshape([-1, 1])
             if hidden_states is not None:
@@ -82,12 +79,13 @@ def sft_loss_forward(
             if logits is not None:
                 logits = paddle.gather(logits, sparse_label_idx, axis=1)
     else:
-        if self.config.sequence_parallel:
+        if self.sequence_parallel:
             if hidden_states is not None:
                 hidden_states = AllGatherOp.apply(hidden_states)
 
         masked_lm_labels = labels
-    if self.use_fused_head_and_loss_fn and self.loss_subbatch_seqlen > 0:
+    seq_len = masked_lm_labels.shape[1] if masked_lm_labels.ndim==2 else masked_lm_labels.shape[0] #   bsz,seq_len,hidden_size or seq_len,hidden_size
+    if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
         masked_lm_loss = fused_head_and_loss_fn(
             hidden_states,
             lm_head_weight,
@@ -104,7 +102,7 @@ def sft_loss_forward(
             ignore_index=self.ignored_index,
         )
     else:
-        if self.use_fused_head_and_loss_fn and self.loss_subbatch_seqlen <= 0:
+        if self.use_fused_head_and_loss_fn:
             # go back to non-subbatch fused head loss
             logits = calc_lm_head_logits(
                 self.config,
@@ -132,6 +130,16 @@ def sft_loss_forward(
 
         # logits: bsz seq_len
         # labels: bsz seq_len vocab_size
-        masked_lm_loss = self.loss_func(logits, labels.unsqueeze(-1))
+        if self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
+            sb_loss_func = subbatch(
+                self.loss_func,
+                [0, 1],
+                [1, 1],
+                self.loss_subbatch_seqlen,
+                1,
+            )
+            masked_lm_loss = sb_loss_func(logits, labels.unsqueeze(-1))
+        else:
+            masked_lm_loss = self.loss_func(logits, labels.unsqueeze(-1))
     loss = sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs)
     return loss

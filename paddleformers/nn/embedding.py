@@ -37,10 +37,21 @@ class Embedding(GeneralInterface):
         )
 
     @classmethod
-    def from_config(self, config: PretrainedConfig):
+    def from_config(self, config: PretrainedConfig, num_embeddings=None, embedding_dim=None):
+        if num_embeddings is None and config.get("vocab_size",None) is None:
+            raise ValueError(
+                f"One of `num_embeddings` argument or `config.vocab_size` must be set. "
+            )
+        if embedding_dim is None and config.get("hidden_size",None) is None:
+            raise ValueError(
+                f"One of `embedding_dim` argument or `config.hidden_size` must be set. "
+            )
+        
+        num_embeddings = num_embeddings if num_embeddings else config.vocab_size
+        embedding_dim = embedding_dim if embedding_dim else config.hidden_size
         return self.create(
-            num_embeddings=config.vocab_size,
-            embedding_dim=config.hidden_size,
+            num_embeddings=num_embeddings,
+            embedding_dim=embedding_dim,
             embedding_type=self.get_embedding_type(config),
         )
 

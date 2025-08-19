@@ -27,8 +27,7 @@ from ...transformers.sequence_parallel_utils import (
 )
 from ...transformers.tensor_parallel_utils import (
     fused_head_and_loss_fn,
-    parallel_linear,
-    parallel_matmul,
+    parallel_matmul
 )
 from ...utils import infohub
 
@@ -75,7 +74,7 @@ def kto_logps(
     """KTO logprobs"""
     labels = response_labels + response_kl_labels
 
-    if self.use_ignored_label_loss:
+    if self.use_filtered_label_loss:
         if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel and logits is None:
             labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, self.ignored_index)
 
@@ -94,7 +93,8 @@ def kto_logps(
         if hidden_states is not None:
             hidden_states = AllGatherOp.apply(hidden_states)
 
-    if self.use_fused_head_and_loss_fn and self.loss_subbatch_seqlen > 0:
+    seq_len = labels.shape[1] if labels.ndim==2 else labels.shape[0] #   bsz,seq_len,hidden_size or seq_len,hidden_size
+    if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
         per_token_logps = -fused_head_and_loss_fn(
             hidden_states,
             weight,
@@ -113,16 +113,14 @@ def kto_logps(
         per_token_logps = per_token_logps.reshape([1, per_token_logps.shape[-1], 1])
 
     else:
-        if self.use_fused_head_and_loss_fn and self.loss_subbatch_seqlen <= 0:
-            if bias is None:
-                logits = parallel_matmul(hidden_states, weight, self.config.tensor_parallel_output)
-            else:
-                logits = parallel_linear(
-                    hidden_states,
-                    weight,
-                    bias,
-                    self.config.tensor_parallel_output,
-                )
+        if self.use_fused_head_and_loss_fn:
+            logits = parallel_matmul(
+                hidden_states,
+                weight,
+                bias,
+                transpose_y=transpose_y,
+                tensor_parallel_output=self.config.tensor_parallel_output
+            )
         if isinstance(logits, tuple):
             logits = logits[0]
         elif isinstance(logits, CausalLMOutputWithPast):
@@ -133,12 +131,21 @@ def kto_logps(
         elif logits.dim() == 3 and labels.dim() == 1:
             labels = labels.unsqueeze(0)
 
-        # [seq_len,vocab_size] and [seq_len,1]
-        per_token_logps = -self.loss_func(logits, labels.unsqueeze(-1))
+        if self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
+            sb_loss_func = subbatch(
+                self.loss_func,
+                [0, 1],
+                [1, 1],
+                self.loss_subbatch_seqlen,
+                1,
+            )
+            per_token_logps = sb_loss_func(logits, labels.unsqueeze(-1))
+        else:
+            per_token_logps = self.loss_func(logits, labels.unsqueeze(-1))
 
     if len(response_indexs.shape) == 3:
         response_indexs = response_indexs[0]
-    if self.use_ignored_label_loss:
+    if self.use_filtered_label_loss:
         chosen_logps_list = [
             (per_token_logps[response_index[1] : response_index[2]]).sum()
             for response_index in response_indexs

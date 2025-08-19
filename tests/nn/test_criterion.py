@@ -19,10 +19,12 @@ from types import SimpleNamespace
 import paddle
 
 from paddleformers.nn.criterion import CriterionLayer
+from paddleformers.transformers import LlamaConfig
 
 
 class TestCriterionLayer(unittest.TestCase):
     def setUp(self):
+        self.config = LlamaConfig()
         self.batch_size = 2
         self.seq_len = 4
         self.vocab_size = self.config.vocab_size
@@ -31,6 +33,13 @@ class TestCriterionLayer(unittest.TestCase):
 
     def test_forward_default_sft(self):
         layer = CriterionLayer(config=self.config)
+        layer(self.logits, self.labels)
+
+    def test_forward_non_fuse_subbatch_sft(self):
+        config = copy.deepcopy(self.config)
+        config.loss_subbatch_seqlen = 2
+        config.use_fused_head_and_loss_fn = False
+        layer = CriterionLayer(config=config)
         layer(self.logits, self.labels)
 
     def test_forward_with_loss_mask(self):

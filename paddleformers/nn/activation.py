@@ -16,18 +16,6 @@ from collections import OrderedDict
 
 import paddle.nn as nn
 import paddle.nn.functional as F
-from paddle.incubate.nn.functional import swiglu as fused_swiglu
-
-
-class Swiglu(nn.Layer):
-    def forward(self, gate, x):
-        return F.silu(gate) * x
-
-
-class FusedSwiglu(nn.Layer):
-    def forward(self, x):
-        return fused_swiglu(x)
-
 
 class ClassInstantier(OrderedDict):
     def __getitem__(self, key):
@@ -41,10 +29,8 @@ ACT2CLS = {
     "relu6": nn.ReLU6,
     "sigmoid": nn.Sigmoid,
     "silu": nn.Silu,
-    "swiglu": Swiglu,
     "tanh": nn.Tanh,
     "prelu": nn.PReLU,
-    "fused_swiglu": FusedSwiglu,
 }
 
 ACT2FN = ClassInstantier(ACT2CLS)

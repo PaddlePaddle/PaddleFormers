@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import paddle.nn as nn
+from paddle.incubate.nn.functional import swiglu as fused_swiglu
 
 from ..generation.configuration_utils import PretrainedConfig
 from .activation import ACT2FN
@@ -27,7 +28,7 @@ class MLP(nn.Layer):
         config: PretrainedConfig,
         hidden_size=None,
         intermediate_size=None,
-        skip_recompute_ops=None,
+        fuse_up_gate=False,
         gate_proj_name="gate_proj",
         up_proj_name="up_proj",
         gate_up_proj_name="up_gate_proj",
@@ -35,10 +36,6 @@ class MLP(nn.Layer):
         **kwargs
     ):
         super().__init__()
-        if skip_recompute_ops is None:
-            skip_recompute_ops = {}
-
-        self.skip_recompute_ops = skip_recompute_ops
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
         self.tensor_parallel = config.tensor_parallel_degree > 1
@@ -48,11 +45,11 @@ class MLP(nn.Layer):
         self.down_kwargs = Linear.get_linear_kwargs(self.down_linear_type)
         self.has_bias = config.get("mlp_bias", False)
         self.fuse_swiglu = config.get("fuse_swiglu", False)
-        self.act_type = "fused_swiglu" if self.fuse_swiglu else config.get("hidden_act", "silu")
+        self.act_type = config.get("hidden_act", "silu")
         self.act_fn = ACT2FN[self.act_type]
-        self.fuse_attention_ffn = getattr(config, "fuse_attention_ffn", False)
+        self.fuse_up_gate = fuse_up_gate
 
-        if self.fuse_attention_ffn:
+        if self.fuse_up_gate:
             setattr(
                 self,
                 gate_up_proj_name,
@@ -105,10 +102,10 @@ class MLP(nn.Layer):
         self.down_proj = getattr(self, down_proj_name)
 
     def forward(self, x):
-        if self.fuse_attention_ffn:
+        if self.fuse_up_gate:
             if self.fuse_swiglu:
                 x = self.up_gate_proj(x)
-                x = self.act_fn(x)
+                x = fused_swiglu(x)
             else:
                 gate, x = self.up_gate_proj(x).chunk(2, axis=-1)
                 x = self.act_fn(gate) * x

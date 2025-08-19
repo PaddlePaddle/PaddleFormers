@@ -16,7 +16,6 @@ import unittest
 
 import paddle
 
-# 替换为你实际的模块路径
 from paddleformers.nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 
 
