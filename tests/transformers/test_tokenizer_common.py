@@ -53,7 +53,6 @@ def filter_roberta_detectors(_, pretrained_name: str):
     return "detector" not in pretrained_name
 
 
-@unittest.skip("update to hf tokenizer")
 class TokenizerTesterMixin:
 
     tokenizer_class = None
@@ -485,7 +484,7 @@ class TokenizerTesterMixin:
                 after_tokenizer = tokenizer.__class__.from_pretrained(tmpdirname)
                 after_tokens = after_tokenizer.encode(sample_text, add_special_tokens=False)
                 after_vocab = after_tokenizer.get_vocab()
-                self.assertListEqual(before_tokens["input_ids"], after_tokens["input_ids"])
+                self.assertListEqual(before_tokens, after_tokens)
                 self.assertDictEqual(before_vocab, after_vocab)
 
                 shutil.rmtree(tmpdirname)
@@ -508,7 +507,7 @@ class TokenizerTesterMixin:
                 after_tokenizer = tokenizer.__class__.from_pretrained(tmpdirname)
                 after_tokens = after_tokenizer.encode(sample_text, add_special_tokens=False)
                 after_vocab = after_tokenizer.get_vocab()
-                self.assertListEqual(before_tokens["input_ids"], after_tokens["input_ids"])
+                self.assertListEqual(before_tokens, after_tokens)
                 self.assertDictEqual(before_vocab, after_vocab)
                 self.assertIn("bim", after_vocab)
                 self.assertIn("bambam", after_vocab)

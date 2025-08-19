@@ -18,11 +18,12 @@ import json
 import os
 import unittest
 
-from paddleformers.transformers import Qwen2Tokenizer, Qwen2TokenizerFast
-from paddleformers.transformers.qwen2.tokenizer import (
+from transformers.models.qwen2.tokenization_qwen2 import (
     VOCAB_FILES_NAMES,
     bytes_to_unicode,
 )
+
+from paddleformers.transformers import Qwen2Tokenizer, Qwen2TokenizerFast
 from tests.transformers.test_tokenizer_common import TokenizerTesterMixin
 
 
