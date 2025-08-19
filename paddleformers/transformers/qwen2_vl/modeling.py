@@ -38,7 +38,7 @@ from ..linear_utils import Linear
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
 from ..utils import logger
-from .bert_padding import IndexFirstAxis, IndexPutFirstAxis, unpad_input
+from .bert_padding import index_first_axis, pad_input, unpad_input
 from .configuration import Qwen2VLConfig, Qwen2VLVisionConfig
 from .flash_attn_utils import has_flash_attn_func
 
@@ -577,6 +577,9 @@ class Qwen2VLVisionBlock(nn.Layer):
         self.norm2 = nn.LayerNorm(config.embed_dim, epsilon=1e-6)
         mlp_hidden_dim = int(config.embed_dim * config.mlp_ratio)
 
+        if has_flash_attn_func()[0] is None:
+            attn_implementation = "eager"
+
         self.attn = QWEN2_VL_VISION_ATTENTION_CLASSES[attn_implementation](
             config.embed_dim, num_heads=config.num_heads
         )
@@ -1037,16 +1040,14 @@ class Qwen2VLFlashAttention2(Qwen2VLAttention):
                     causal=causal,
                 )[0]
 
-                # attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
-                attn_output = IndexPutFirstAxis.apply(attn_output_unpad, indices_q, batch_size * query_length)
-                attn_output = attn_output.reshape([batch_size, query_length, -1])
+                attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
                 attn_output = attn_output.astype(query_dtype)
             else:
                 query_dtype = query_states.dtype
                 attn_output = flash_attn_func(
-                    query_states,
-                    key_states,
-                    value_states,
+                    query_states.astype("bfloat16"),
+                    key_states.astype("bfloat16"),
+                    value_states.astype("bfloat16"),
                     dropout,
                     causal=causal,  # no softmax_scale=
                 )[0]
@@ -1065,15 +1066,15 @@ class Qwen2VLFlashAttention2(Qwen2VLAttention):
         batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
 
         # TODO：cuda error
-        key_layer = IndexFirstAxis.apply(
+        key_layer = index_first_axis(
             key_layer.reshape([batch_size * kv_seq_len, num_key_value_heads, head_dim]), indices_k
         )
-        value_layer = IndexFirstAxis.apply(
+        value_layer = index_first_axis(
             value_layer.reshape([batch_size * kv_seq_len, num_key_value_heads, head_dim]), indices_k
         )
 
         if query_length == kv_seq_len:
-            query_layer = IndexFirstAxis.apply(
+            query_layer = index_first_axis(
                 query_layer.reshape([batch_size * kv_seq_len, self.num_heads, head_dim]), indices_k
             )
             cu_seqlens_q = cu_seqlens_k
@@ -1113,12 +1114,18 @@ class Qwen2VLDecoderLayer(nn.Layer):
         self.hidden_size = config.hidden_size
 
         # use_sliding_window false
-        if config.use_sliding_window and config.attn_implementation != "flash_attention_2":
+        if config.use_sliding_window and config._attn_implementation != "flash_attention_2":
             logger.warning_once(
-                f"Sliding Window Attention is enabled but not implemented for `{config.attn_implementation}`; "
+                f"Sliding Window Attention is enabled but not implemented for `{config._attn_implementation}`; "
                 "unexpected results may be encountered."
             )
-        self.self_attn = QWEN2_VL_ATTENTION_CLASSES[config._attn_implementation](config, layer_idx)
+
+        if has_flash_attn_func()[0] is None:
+            attn_implementation = "eager"
+        else:
+            attn_implementation = config._attn_implementation
+
+        self.self_attn = QWEN2_VL_ATTENTION_CLASSES[attn_implementation](config, layer_idx)
         self.mlp = Qwen2MLP(config)
         self.input_layernorm = Qwen2RMSNorm(config, config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = Qwen2RMSNorm(config, config.hidden_size, eps=config.rms_norm_eps)

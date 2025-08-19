@@ -14,6 +14,7 @@
 # limitations under the License.
 from __future__ import annotations
 
+import gc
 import unittest
 
 import numpy as np
@@ -172,6 +173,10 @@ class Qwen2VLModelTest(ModelTesterMixin, unittest.TestCase):
                     check_determinism(tensor1, tensor2)
             else:
                 check_determinism(first, second)
+
+            del model
+            paddle.device.cuda.empty_cache()
+            gc.collect()
 
     @unittest.skip(reason="Hidden_states is tested in individual model tests")
     def test_hidden_states_output(self):

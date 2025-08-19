@@ -38,7 +38,6 @@ from ..configuration_utils import PretrainedConfig
 from ..linear_utils import Linear
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
-from ..qwen2_vl.bert_padding import index_first_axis, pad_input, unpad_input
 from ..qwen2_vl.flash_attn_utils import has_flash_attn_func
 from ..utils import logger
 from .configuration import Qwen2_5_VLConfig, Qwen2_5_VLVisionConfig
@@ -966,7 +965,7 @@ class Qwen2_5_VLFlashAttention2(Qwen2_5_VLAttention):
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
-        attn_output = self._flash_attention_forward2(
+        attn_output = self._flash_attention_forward(
             query_states,
             key_states,
             value_states,
@@ -976,15 +975,6 @@ class Qwen2_5_VLFlashAttention2(Qwen2_5_VLAttention):
             is_causal=self.is_causal,
         )
 
-        # attn_output = self._flash_attention_forward(
-        #     query_states,
-        #     key_states,
-        #     value_states,
-        #     attention_mask,
-        #     q_len,
-        #     dropout=self.attention_dropout if self.training else 0.0,
-        # )
-
         attn_output = attn_output.reshape([bsz, q_len, -1])
         attn_output = self.o_proj(attn_output)
         if not output_attentions:
@@ -992,71 +982,6 @@ class Qwen2_5_VLFlashAttention2(Qwen2_5_VLAttention):
         return attn_output, attn_weights, past_key_value
 
     def _flash_attention_forward(
-        self, query_states, key_states, value_states, attention_mask, query_length, dropout=0.0, softmax_scale=None
-    ):
-        """
-        Calls the forward method of Flash Attention - if the input hidden states contain at least one padding token
-        first unpad the input, then computes the attention scores and pad the final attention scores.
-
-        Args:
-            query_states (`paddle.Tensor`):
-                Input query states to be passed to Flash Attention API
-            key_states (`paddle.Tensor`):
-                Input key states to be passed to Flash Attention API
-            value_states (`paddle.Tensor`):
-                Input value states to be passed to Flash Attention API
-            attention_mask (`paddle.Tensor`):
-                The padding mask - corresponds to a tensor of size `(batch_size, seq_len)` where 0 stands for the
-                position of padding tokens and 1 for the position of non-padding tokens.
-            dropout (`int`, *optional*):
-                Attention dropout
-            softmax_scale (`float`, *optional*):
-                The scaling of QK^T before applying softmax. Default to 1 / sqrt(head_dim)
-        """
-        # Contains at least one padding token in the sequence
-        causal = self.is_causal and query_length != 1
-        head_dim = query_states.shape[-1]
-        softmax_scale = head_dim**-0.5  # TODO: 需要手动加上
-
-        if attention_mask is not None:  # attention_mask.shape # [2, 1, 1323, 1323]
-            batch_size = query_states.shape[0]  # [2, 1323, 12, 128]
-            query_states, key_states, value_states, indices_q, cu_seq_lens, max_seq_lens = self._unpad_input(
-                query_states, key_states, value_states, attention_mask, query_length
-            )
-            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
-            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
-
-            attn_output_unpad = flash_attn_varlen_func(  # TODO: flash_attn_unpadded
-                query_states,  # [5998, 16, 128]
-                key_states,  # [5998, 8, 128]
-                value_states,  # [5998, 8, 128]
-                cu_seqlens_q=cu_seqlens_q,
-                cu_seqlens_k=cu_seqlens_k,
-                max_seqlen_q=max_seqlen_in_batch_q,
-                max_seqlen_k=max_seqlen_in_batch_k,
-                scale=softmax_scale,  # not softmax_scale=
-                dropout=dropout,
-                causal=causal,
-            )[0]
-
-            attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
-        else:
-            attn_output = flash_attn_func(
-                query_states,
-                key_states,
-                value_states,
-                dropout,
-                causal=causal,  # no softmax_scale=
-            )[0]
-
-        # # 修改这里的维度转换，考虑并行策略下的维度
-        # batch_size = query_states.shape[0]
-        # hidden_size = self.num_heads * self.head_dim  # 计算实际的 hidden_size
-        # attn_output = attn_output.reshape([batch_size, query_length, hidden_size])
-
-        return attn_output
-
-    def _flash_attention_forward2(
         self,
         query_states,
         key_states,
@@ -1168,48 +1093,6 @@ class Qwen2_5_VLFlashAttention2(Qwen2_5_VLAttention):
             attn_output = attn_output.transpose([0, 2, 1, 3])
 
         return attn_output
-
-    def _unpad_input(self, query_layer, key_layer, value_layer, attention_mask, query_length):
-        # Note: This function was named _upad_input() in paddle transformers/modeling_flash_attention_utils.py
-        indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(attention_mask)
-        batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
-
-        # TODO：cuda error
-        key_layer = index_first_axis(
-            key_layer.reshape([batch_size * kv_seq_len, num_key_value_heads, head_dim]), indices_k
-        )
-        value_layer = index_first_axis(
-            value_layer.reshape([batch_size * kv_seq_len, num_key_value_heads, head_dim]), indices_k
-        )
-
-        if query_length == kv_seq_len:
-            query_layer = index_first_axis(
-                query_layer.reshape([batch_size * kv_seq_len, self.num_heads, head_dim]), indices_k
-            )
-            cu_seqlens_q = cu_seqlens_k
-            max_seqlen_in_batch_q = max_seqlen_in_batch_k
-            indices_q = indices_k
-        elif query_length == 1:
-            max_seqlen_in_batch_q = 1
-            cu_seqlens_q = paddle.arange(
-                batch_size + 1, dtype=paddle.int32
-            )  # There is a memcpy here, that is very bad.
-            indices_q = cu_seqlens_q[:-1]
-            query_layer = query_layer.squeeze(1)
-        else:
-            # The -q_len: slice assumes left padding.
-            attention_mask = attention_mask[:, -query_length:]
-            print(attention_mask)
-            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(query_layer, attention_mask)
-
-        return (
-            query_layer,
-            key_layer,
-            value_layer,
-            indices_q.to(paddle.int64),
-            (cu_seqlens_q, cu_seqlens_k),
-            (max_seqlen_in_batch_q, max_seqlen_in_batch_k),
-        )
 
 
 class Qwen2_5_VLSdpaAttention(Qwen2_5_VLAttention):
@@ -1342,9 +1225,9 @@ class Qwen2_5_VLDecoderLayer(nn.Layer):
         super().__init__()
         self.hidden_size = config.hidden_size
         # use_sliding_window false
-        if config.use_sliding_window and config.attn_implementation != "flash_attention_2":
+        if config.use_sliding_window and config._attn_implementation != "flash_attention_2":
             logger.warning_once(
-                f"Sliding Window Attention is enabled but not implemented for `{config.attn_implementation}`; "
+                f"Sliding Window Attention is enabled but not implemented for `{config._attn_implementation}`; "
                 "unexpected results may be encountered."
             )
         self.self_attn = QWEN2_5_VL_ATTENTION_CLASSES[config._attn_implementation](config, layer_idx)
