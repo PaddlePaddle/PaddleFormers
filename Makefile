@@ -35,9 +35,9 @@ lint:
 test: unit-test
 
 unit-test:
-	export PYTHONPATH=$(shell pwd):$$PYTHONPATH && \
-	export DOWNLOAD_SOURCE=$$DOWNLOAD_SOURCE && \
-	pytest -v \
+	DOWNLOAD_SOURCE=$$DOWNLOAD_SOURCE \
+	PYTHONPATH=$(shell pwd):$$PYTHONPATH \
+	pytest -v -n auto 
 		-n auto \
 		--retries 1 --retry-delay 1 \
 		--durations 20 \
