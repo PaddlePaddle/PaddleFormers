@@ -49,6 +49,35 @@ class TensorType(ExplicitEnum):
 
 
 class PaddleTokenizerMixin:
+    # only used for test
+    pretrained_resource_files_map = {
+        "vocab_file": {
+            "__internal_testing__/micro-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            "__internal_testing__/tiny-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            "facebook/llama-7b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            "facebook/llama-13b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            "facebook/llama-30b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            "facebook/llama-65b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+        },
+        "tokenizer_file": {
+            "__internal_testing__/micro-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
+            "__internal_testing__/tiny-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
+            "facebook/llama-7b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
+            "facebook/llama-13b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
+            "facebook/llama-30b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
+            "facebook/llama-65b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
+        },
+    }
+
+    pretrained_init_configuration = {
+        "__internal_testing__/micro-random-llama": {},
+        "__internal_testing__/tiny-random-llama": {},
+        "facebook/llama-7b": {},
+        "facebook/llama-13b": {},
+        "facebook/llama-30b": {},
+        "facebook/llama-65b": {},
+    }
+
     # 复写hf的tokenizer的from_pretrained
     @classmethod
     def from_pretrained(
@@ -116,6 +145,14 @@ class PaddleTokenizerMixin:
                     vocab_files[file_id] = full_file_name
                 else:
                     vocab_files[file_id] = None
+
+        if pretrained_model_name_or_path in cls.pretrained_init_configuration:
+            # From built-in pretrained models
+            # just for test, should not be used in development
+            vocab_files = {}
+            for file_id, map_list in cls.pretrained_resource_files_map.items():
+                vocab_files[file_id] = map_list[pretrained_model_name_or_path]
+            resolved_vocab_files = {}
 
         resolved_vocab_files = {}
         for file_id, file_path in vocab_files.items():

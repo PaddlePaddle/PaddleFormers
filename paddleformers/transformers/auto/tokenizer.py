@@ -141,6 +141,14 @@ def get_paddleformers_tokenizer_config(
 
 
 class AutoTokenizer(transformers.AutoTokenizer):
+    """
+    Adapted from transformers.AutoTokenizer.from_pretrained with modifications:
+    1. Added get_paddleformers_tokenizer_config() to extend tokenizer_config.json download source
+    2. Explicitly binds PaddleTokenizerMixin to the tokenizer class before final instantiation
+
+    Note: This extends HuggingFace's standard tokenizer loading logic with PaddlePaddle integration.
+    """
+
     @classmethod
     @replace_list_option_in_docstrings(TOKENIZER_MAPPING_NAMES)
     def from_pretrained(cls, pretrained_model_name_or_path, *inputs, **kwargs):

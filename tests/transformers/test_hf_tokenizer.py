@@ -54,3 +54,10 @@ class TestHFTokenizer(unittest.TestCase):
         output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input_text))
         true_ids = [18830, 3135, 93938, 93919, 5300]
         self.assertEqual(output_ids, true_ids)
+
+    def test_auto_tokenizer(self):
+        tokenizer = AutoTokenizer.from_pretrained("__internal_testing__/micro-random-llama")
+        input_text = "hello world, 你好"
+        output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input_text))
+        true_ids = [22172, 3186, 29892, 29871, 30919, 31076]
+        self.assertEqual(output_ids, true_ids)
