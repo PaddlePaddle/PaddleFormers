@@ -12,8 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import transformers
+import transformers as hf
 
 from ..tokenizer_utils import warp_tokenizer
 
-LlamaTokenizerFast = warp_tokenizer(transformers.LlamaTokenizerFast)
+LlamaTokenizerFast = warp_tokenizer(hf.LlamaTokenizerFast)

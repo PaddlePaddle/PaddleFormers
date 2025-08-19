@@ -18,8 +18,8 @@ import os
 import warnings
 from typing import Dict, Optional, Union
 
-import transformers
-from transformers import AutoConfig, PretrainedConfig
+import transformers as hf
+from transformers import PretrainedConfig
 from transformers.dynamic_module_utils import (
     get_class_from_dynamic_module,
     resolve_trust_remote_code,
@@ -41,6 +41,7 @@ from transformers.utils import cached_file
 
 from ...utils.download import resolve_file_path
 from ..tokenizer_utils import PaddleTokenizerMixin
+from .configuration import AutoConfig
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,7 @@ def get_paddleformers_tokenizer_config(
     return result
 
 
-class AutoTokenizer(transformers.AutoTokenizer):
+class AutoTokenizer(hf.AutoTokenizer):
     """
     Adapted from transformers.AutoTokenizer.from_pretrained with modifications:
     1. Added get_paddleformers_tokenizer_config() to extend tokenizer_config.json download source
