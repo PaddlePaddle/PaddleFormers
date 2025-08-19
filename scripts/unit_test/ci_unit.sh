@@ -108,9 +108,8 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
     set +e
+    DOWNLOAD_SOURCE=aistudio PYTHONPATH=$(pwd) \
     timeout ${running_time} \
-    DOWNLOAD_SOURCE=aistudio \
-	PYTHONPATH=$(pwd) \
     python -m pytest -v -n 8 \
     --dist loadgroup \
     --retries 3 --retry-delay 1 \
