@@ -84,7 +84,9 @@ def sft_loss_forward(
                 hidden_states = AllGatherOp.apply(hidden_states)
 
         masked_lm_labels = labels
-    seq_len = masked_lm_labels.shape[1] if masked_lm_labels.ndim==2 else masked_lm_labels.shape[0] #   bsz,seq_len,hidden_size or seq_len,hidden_size
+
+    # bsz,seq_len,hidden_size or seq_len,hidden_size
+    seq_len = masked_lm_labels.shape[1] if masked_lm_labels.ndim == 2 else masked_lm_labels.shape[0]
     if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
         masked_lm_loss = fused_head_and_loss_fn(
             hidden_states,
@@ -96,7 +98,7 @@ def sft_loss_forward(
             self.config.vocab_size,
             self.config.tensor_parallel_degree,
             self.config.tensor_parallel_output,
-            False,  # fused_linear
+            False,
             self.loss_subbatch_seqlen,
             return_token_loss=True,
             ignore_index=self.ignored_index,

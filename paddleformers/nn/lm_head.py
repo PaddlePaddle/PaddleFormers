@@ -11,14 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from contextlib import nullcontext
 
 import paddle
 import paddle.nn as nn
-from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 
-from ..utils.log import logger
 from ..generation.configuration_utils import PretrainedConfig
+from ..utils.log import logger
 from .criterion.loss_utils import calc_lm_head_logits
 
 __all__ = ["LMHead"]
@@ -44,7 +42,8 @@ class LMHead(nn.Layer):
             if config.tensor_parallel_degree > 1:
                 logger.warning_once(
                     "lm_head vocab parallelism is disabled (vocab_size=%d %% tp_degree=%d != 0).",
-                    vocab_size, tensor_parallel_degree
+                    vocab_size,
+                    config.tensor_parallel_degree,
                 )
         self.lm_head_shape = (
             [config.hidden_size, vocab_size] if not self.transpose_y else [vocab_size, config.hidden_size]

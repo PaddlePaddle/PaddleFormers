@@ -27,9 +27,10 @@ from ...transformers.sequence_parallel_utils import (
 )
 from ...transformers.tensor_parallel_utils import (
     fused_head_and_loss_fn,
-    parallel_matmul
+    parallel_matmul,
 )
 from ...utils import infohub
+from .loss_utils import subbatch
 
 
 def kto_preprocess_inputs(self, logits, labels):
@@ -93,7 +94,8 @@ def kto_logps(
         if hidden_states is not None:
             hidden_states = AllGatherOp.apply(hidden_states)
 
-    seq_len = labels.shape[1] if labels.ndim==2 else labels.shape[0] #   bsz,seq_len,hidden_size or seq_len,hidden_size
+    # bsz,seq_len,hidden_size or seq_len,hidden_size
+    seq_len = labels.shape[1] if labels.ndim == 2 else labels.shape[0]
     if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
         per_token_logps = -fused_head_and_loss_fn(
             hidden_states,
@@ -119,7 +121,7 @@ def kto_logps(
                 weight,
                 bias,
                 transpose_y=transpose_y,
-                tensor_parallel_output=self.config.tensor_parallel_output
+                tensor_parallel_output=self.config.tensor_parallel_output,
             )
         if isinstance(logits, tuple):
             logits = logits[0]
