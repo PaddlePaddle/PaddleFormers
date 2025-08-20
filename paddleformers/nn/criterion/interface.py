@@ -31,10 +31,6 @@ class LossInterface(GeneralInterface):
 
 ALL_LOSS_FUNCTIONS = LossInterface()
 
-"""
-暂时忽略recompute 部分
-"""
-
 
 class CriterionLayer(nn.Layer):
     def __init__(self, config, return_tuple=True, ignore_eos_token=False, use_infohub=False, **kwargs):

@@ -21,21 +21,7 @@ import_structure = {
     "tokenizer": ["copyfile", "Ernie4_5Tokenizer"],
     "tokenizer_utils": ["PretrainedTokenizer"],
     "configuration": ["Ernie4_5Config"],
-    "modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"],
-    "distributed": [],
-    "fusion_ops": [],
-    "sequence_parallel_utils": [
-        "MPScale",
-        "sequence_parallel_sparse_mask_labels",
-        "ScatterOp",
-        "GatherOp",
-        "SliceVarlenOp",
-        "AllGatherVarlenOpV2",
-        "AllGatherOp",
-        "_AllToAll",
-        "mark_as_sequence_parallel_parameter",
-        "AllGatherVarlenOp",
-    ],
+    "modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"]
 }
 
 if TYPE_CHECKING:

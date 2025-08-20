@@ -15,7 +15,6 @@
 from collections import OrderedDict
 
 import paddle.nn as nn
-import paddle.nn.functional as F
 
 class ClassInstantier(OrderedDict):
     def __getitem__(self, key):
