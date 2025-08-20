@@ -12,8 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .lokr import LoKrConfig, LoKrModel
-from .lora import LoRAAutoConfig, LoRAAutoModel, LoRAConfig, LoRAModel
-from .prefix import PrefixConfig, PrefixModelForCausalLM
-from .reft import ReFTModel
-from .vera import VeRAConfig, VeRAModel
+
+import sys
+from typing import TYPE_CHECKING
+
+from ..utils.lazy_import import _LazyModule
+
+import_structure = {
+    "lokr": ["LoKrConfig", "LoKrModel"],
+    "lora": ["LoRAAutoConfig", "LoRAAutoModel", "LoRAConfig", "LoRAModel"],
+    "prefix": ["PrefixConfig", "PrefixModelForCausalLM"],
+    "reft": ["ReFTModel"],
+    "vera": ["VeRAConfig", "VeRAModel"],
+}
+
+if TYPE_CHECKING:
+    from .lokr import LoKrConfig, LoKrModel
+    from .lora import LoRAAutoConfig, LoRAAutoModel, LoRAConfig, LoRAModel
+    from .prefix import PrefixConfig, PrefixModelForCausalLM
+    from .reft import ReFTModel
+    from .vera import VeRAConfig, VeRAModel
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

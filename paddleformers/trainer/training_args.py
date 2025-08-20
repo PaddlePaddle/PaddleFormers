@@ -627,6 +627,11 @@ class TrainingArguments:
         },
     )
 
+    load_sharded_model_remap_parameter_name: bool = field(
+        default=False,
+        metadata={"help": "Whether to remap parameter name when load_sharded_model = true."},
+    )
+
     tensor_parallel_degree: int = field(
         default=-1,
         metadata={

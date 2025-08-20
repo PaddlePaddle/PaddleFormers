@@ -21,7 +21,8 @@ from copy import deepcopy
 
 from ...utils.download import resolve_file_path
 from ...utils.log import logger
-from .. import *  # noqa
+
+# from .. import *  # noqa
 from ..configuration_utils import is_standard_config
 from .configuration import (
     CONFIG_MAPPING_NAMES,

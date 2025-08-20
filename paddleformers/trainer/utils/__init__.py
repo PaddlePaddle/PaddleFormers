@@ -12,9 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .doc import (
-    add_end_docstrings,
-    add_start_docstrings,
-    add_start_docstrings_to_model_forward,
-)
-from .helper import *
+import sys
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "ckpt_converter": ["get_rank_to_read_files", "flatten_state_dict", "CheckpointConverter"],
+    "doc": ["add_start_docstrings"],
+    "helper": [],
+    "reshard": [],
+    "async_save": [],
+    "zero_cost_checkpoint": [],
+    "sharding_io": [],
+}
+
+if TYPE_CHECKING:
+    from .doc import (
+        add_end_docstrings,
+        add_start_docstrings,
+        add_start_docstrings_to_model_forward,
+    )
+    from .helper import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

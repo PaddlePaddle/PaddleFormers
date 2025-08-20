@@ -22,6 +22,8 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
 )
 from paddle.distributed.fleet.utils.log_util import logger
 
+from paddleformers.utils.tools import get_env_device
+
 try:
     from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
         DygraphShardingOptimizerV2,
@@ -59,6 +61,49 @@ def get_sharding_strategy(optimizer):
         if tmp is not None:
             return SHARDING_STRATEGY_V2
     return SHARDING_STRATEGY_V1
+
+
+def convert_opt_name_to_tname(tensor_names, opt_names):
+    tensor_names = set(tensor_names)
+    all_names = []
+    all_names.extend(list(tensor_names))
+    all_names.extend(opt_names)
+    all_names.sort()
+    pre_t_name = ""
+    suffix = [
+        "_fp32_master_0_beta1_pow_acc_0",
+        "_fp32_master_0_beta2_pow_acc_0",
+        "_fp32_master_0_moment1_0",
+        "_fp32_master_0_moment2_0",
+        "_beta1_pow_acc_0",
+        "_beta2_pow_acc_0",
+        "_moment1_0",
+        "_moment2_0",
+    ]
+    opt_to_t = {}
+    for n in all_names:
+        if n in tensor_names:
+            # we get a param
+            pre_t_name = n
+        else:
+            assert pre_t_name
+            opt_to_t[n] = pre_t_name
+
+    for t in opt_names:
+        _find = False
+        for s in suffix:
+            if get_env_device() == "xpu" and t.endswith(s + ".SCALE_VALUE"):
+                # NOTE: for xpu adamw, all optimizer state will have an extra attribute end with SCALE_VALUE.
+                # This extra attribute won't be used, just skip it.
+                _find = True
+                break
+            if t.endswith(s):
+                logger.info(f"{t}-{t[:-len(s)]}--{t[:-len(s)] in tensor_names}")
+                opt_to_t[t] = t[: -len(s)]
+                _find = True
+                break
+        assert _find
+    return opt_to_t
 
 
 class NodeModelState:
@@ -259,43 +304,6 @@ class NodeModelState:
         change the key of master weights dict from param_name to (structure_name, param_name)
         """
         # pack key for pp convert
-        def _opt_name_to_tname(tensor_names, opt_names):
-            tensor_names = set(tensor_names)
-            all_names = []
-            all_names.extend(list(tensor_names))
-            all_names.extend(opt_names)
-            all_names.sort()
-            pre_t_name = ""
-            suffix = [
-                "_fp32_master_0_beta1_pow_acc_0",
-                "_fp32_master_0_beta2_pow_acc_0",
-                "_fp32_master_0_moment1_0",
-                "_fp32_master_0_moment2_0",
-                "_beta1_pow_acc_0",
-                "_beta2_pow_acc_0",
-                "_moment1_0",
-                "_moment2_0",
-            ]
-            opt_to_t = {}
-            for n in all_names:
-                if n in tensor_names:
-                    # we get a param
-                    pre_t_name = n
-                else:
-                    assert pre_t_name
-                    opt_to_t[n] = pre_t_name
-
-            for t in opt_names:
-                _find = False
-                for s in suffix:
-                    if t.endswith(s):
-                        logger.info(f"{t}-{t[:-len(s)]}--{t[:-len(s)] in tensor_names}")
-                        opt_to_t[t] = t[: -len(s)]
-                        _find = True
-                        break
-                assert _find
-            return opt_to_t
-
         if structure_name_mapping is not None:
             tname_to_structure_name = {v: k for (k, v) in structure_name_mapping.items()}
         else:
@@ -304,7 +312,7 @@ class NodeModelState:
 
         tensor_names = list(tname_to_structure_name.keys())
         opt_names = list(self._opt_state.keys())
-        opt_name_to_tname = _opt_name_to_tname(tensor_names, opt_names)
+        opt_name_to_tname = convert_opt_name_to_tname(tensor_names, opt_names)
 
         # model state
         model_weights_tmp = OrderedDict()

@@ -1,6 +1,6 @@
 blobfile
 colorlog
-seqeval
+scikit-learn
 multiprocess<=0.70.12.2
 datasets >= 2.0.0
 tqdm
