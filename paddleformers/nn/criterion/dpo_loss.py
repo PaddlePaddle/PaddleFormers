@@ -25,10 +25,11 @@ from ...transformers.sequence_parallel_utils import (
 )
 from ...transformers.tensor_parallel_utils import (
     fused_head_and_loss_fn,
-    parallel_matmul
+    parallel_matmul,
 )
 from ...utils import infohub
 from .loss_utils import subbatch
+
 
 def dpo_preprocess_inputs(self, logits, labels):
     hidden_states, lm_head_weight, lm_head_bias, transpose_y = None, None, None, None
@@ -79,7 +80,9 @@ def dpo_logps(
         if hidden_states is not None:
             hidden_states = AllGatherOp.apply(hidden_states)
 
-    seq_len = labels.shape[1] if labels.ndim==2 else labels.shape[0] #   bsz,seq_len,hidden_size or seq_len,hidden_size
+    #   bsz,seq_len,hidden_size or seq_len,hidden_size
+    seq_len = labels.shape[1] if labels.ndim == 2 else labels.shape[0]
+
     if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
         per_token_logps = -fused_head_and_loss_fn(
             hidden_states,
@@ -99,7 +102,13 @@ def dpo_logps(
         per_token_logps = per_token_logps.reshape([1, per_token_logps.shape[-1], 1])
     else:
         if self.use_fused_head_and_loss_fn:
-            logits = parallel_matmul(hidden_states, weight, bias, transpose_y=transpose_y, tensor_parallel_output=self.config.tensor_parallel_output)
+            logits = parallel_matmul(
+                hidden_states,
+                weight,
+                bias,
+                transpose_y=transpose_y,
+                tensor_parallel_output=self.config.tensor_parallel_output,
+            )
 
         if isinstance(logits, tuple):
             logits = logits[0]
@@ -111,7 +120,6 @@ def dpo_logps(
             logits = logits.unsqueeze(0)
         elif logits.dim() == 3 and labels.dim() == 1:
             labels = labels.unsqueeze(0)
-        print(seq_len,self.loss_subbatch_seqlen)
         if self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
             sb_loss_func = subbatch(
                 self.loss_func,
@@ -120,15 +128,11 @@ def dpo_logps(
                 self.loss_subbatch_seqlen,
                 1,
             )
-            
+
             per_token_logps = sb_loss_func(logits, labels.unsqueeze(-1))
-            # if paddle.distributed.get_rank() == 0:
-            #     import pdb;pdb.set_trace()
-            # paddle.distributed.barrier()  
-            print(per_token_logps)
         else:
             per_token_logps = self.loss_func(logits, labels.unsqueeze(-1))
-        
+
     if len(response_indexs.shape) == 3:
         response_indexs = response_indexs[0]
 

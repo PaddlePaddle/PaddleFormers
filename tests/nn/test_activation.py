@@ -14,25 +14,25 @@
 
 import unittest
 
-import numpy as np
 import paddle
 import paddle.nn as nn
-import paddle.nn.functional as F
 
 from paddleformers.nn.activation import ACT2CLS, ACT2FN
 
 
 class TestActivationFunctions(unittest.TestCase):
-
     def test_act2fn_instantiation(self):
         # Test all activation functions can be instantiated
+        batch_size = 1
+        feature_size = 32
         for act_name in ACT2CLS.keys():
+            test_input = paddle.randn([batch_size, feature_size])
             activation = ACT2FN[act_name]
             self.assertTrue(isinstance(activation, nn.Layer))
 
             # Test forward pass for each activation
-            output = activation(self.test_input)
-            self.assertEqual(output.shape, [self.batch_size, self.feature_size])
+            output = activation(test_input)
+            self.assertEqual(output.shape, [batch_size, feature_size])
 
 
 if __name__ == "__main__":

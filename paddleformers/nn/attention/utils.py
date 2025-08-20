@@ -15,13 +15,6 @@
 import paddle
 
 
-def rotate_half(x):
-    """Rotates half the hidden dims of the input."""
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.concat([-x2, x1], axis=-1)  # shape is the same as x
-
-
 def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
     """
     This is the equivalent of paddle.repeat_interleave(hidden_states, n_rep, axis=1). The hidden states go from (batch,

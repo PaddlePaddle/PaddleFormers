@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import paddle
+import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
+import paddle.nn.functional as F
+from paddle.autograd import PyLayer
 
 try:
     from paddle.nn.layer.layers import in_declarative_mode
 except:
     from paddle.fluid.dygraph.base import in_declarative_mode
-import paddle.distributed as dist
-from paddle.autograd import PyLayer
 
 from ..utils.tools import get_env_device
 
@@ -32,7 +33,8 @@ def parallel_matmul(
     tensor_parallel_degree=1,
     tensor_parallel_output=True,
     fuse_linear=False,
-    training=True):
+    training=True,
+):
     """
     Parallel matmul
     Args:
@@ -70,7 +72,7 @@ def parallel_matmul(
     try:
         hcg = fleet.get_hybrid_communicate_group()
         model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size() 
+        tensor_parallel_degree = hcg.get_model_parallel_world_size()
     except:
         is_fleet_init = False
 
@@ -81,23 +83,25 @@ def parallel_matmul(
 
     if is_fleet_init and tensor_parallel_degree > 1 and is_logit_weight_distributed:
         input_parallel = paddle.distributed.collective._c_identity(lm_output, group=model_parallel_group)
-        
+
         if transpose_y:
             logits = paddle.matmul(input_parallel, logit_weights, transpose_y=True)
         else:
             if fuse_linear:
-                logits = paddle.incubate.nn.functional.fused_linear(input_parallel, y, bias)
+                logits = paddle.incubate.nn.functional.fused_linear(input_parallel, logit_weights, bias)
             else:
-                logits = F.linear(input_parallel, y, bias)
+                logits = F.linear(input_parallel, logit_weights, bias)
         if tensor_parallel_output:
             return logits
 
         return paddle.distributed.collective._c_concat(logits, group=model_parallel_group)
     else:
         if fuse_linear:
-            logits = paddle.incubate.nn.functional.fused_linear(x, y, bias, transpose_weight=transpose_y)
+            logits = paddle.incubate.nn.functional.fused_linear(
+                lm_output, logit_weights, bias, transpose_weight=transpose_y
+            )
         else:
-            logits = paddle.matmul(x, y, transpose_y=transpose_y)
+            logits = paddle.matmul(lm_output, logit_weights, transpose_y=transpose_y)
             if bias is not None:
                 logits += bias
         return logits

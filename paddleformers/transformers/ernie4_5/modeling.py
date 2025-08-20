@@ -24,6 +24,10 @@ import paddle
 from paddle import nn
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed.fleet.utils import recompute
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    ScatterOp,
+    mark_as_sequence_parallel_parameter,
+)
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -33,67 +37,12 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Ernie4_5MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
-from ...utils.recompute_utils import (
-    RefinedRecomputeFunction,
-    create_skip_config_for_refined_recompute,
-)
 from ..model_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     CausalLMOutputWithCrossAttentions,
 )
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import Ernie4_5Config
-from .distributed import mark_as_sequence_parallel_parameter
-from .fusion_ops import fused_rope
-from .sequence_parallel_utils import ScatterOp
-
-
-class FusedDropoutImpl(nn.Layer):
-    """
-    Fused dropout implementation with residual connection support.
-
-    This layer combines dropout and residual addition in a single operation for better performance,
-    particularly on GPU devices. The dropout is conditionally applied based on the probability.
-
-    Args:
-        prob (float): Dropout probability (between 0 and 1)
-        mode (str): Dropout mode, either 'upscale_in_train' or 'downscale_in_infer'
-
-    Attributes:
-        prob (float): Stores the dropout probability
-        mode (str): Stores the dropout mode
-        dropout (nn.Dropout): The actual dropout layer instance
-    """
-
-    def __init__(self, prob, mode):
-        """
-        Initialize the fused dropout layer.
-
-        Args:
-            prob (float): Dropout probability (0 means no dropout)
-            mode (str): Dropout mode ('upscale_in_train' or 'downscale_in_infer')
-        """
-        super().__init__()
-        self.prob = prob
-        self.mode = mode
-        self.dropout = nn.Dropout(p=prob, mode=mode)
-
-    def forward(self, x, y):
-        """
-        Forward pass of the fused dropout layer.
-
-        Args:
-            x (Tensor): Input tensor to potentially apply dropout on
-            y (Tensor): Residual tensor to add to the (possibly dropped out) x
-
-        Returns:
-            Tensor: Result of x (with optional dropout) + y
-        """
-        if self.prob > 0:
-            x = self.dropout(x)
-        output = x + y
-
-        return output
 
 
 class RopeEmbedding(nn.Layer):
@@ -210,10 +159,8 @@ class Ernie4_5Attention(nn.Layer):
             self.head_dim = self.hidden_size // self.num_heads
         else:
             self.head_dim = config.head_dim
+
         self.is_gqa = config.num_key_value_heads is not None and config.num_key_value_heads != self.num_heads
-        if config.fuse_rope:
-            assert fused_rope is not None, "fused_rope is not supported"
-        self.fuse_rope = config.fuse_rope
         self.freq_allocation = getattr(config, "freq_allocation", 0)
 
         if config.tensor_parallel_degree > 1:
@@ -265,32 +212,8 @@ class Ernie4_5Attention(nn.Layer):
             freq_allocation=self.freq_allocation,
         )
         self.config = config
-
-        self._rr_flash_attn = None
-
-        if config.recompute and config.skip_recompute_ops[layer_idx].get("flash_attn", False):
-            self._rr_flash_attn = RefinedRecomputeFunction()
-
         self.scaling = self.head_dim**-0.5
         self.attn_implementation = "flashmask" if config.use_flash_attention else "eager"
-        # self.set_attn_func()
-
-    def set_attn_func(self):
-        """Configure attention function based on settings.
-
-        Selects between flash/core attention.
-        """
-        config = self.config
-        if config.use_flash_attention:
-            self.attn_func = self._flash_attention_wrapper
-        else:
-            self.attn_func = self.core_attn
-
-        # False, not support it now
-        if config.cachekv_quant:
-            from paddleslim.common.wrapper_function import FuncWrapper
-
-            self.attn_func = FuncWrapper(self.attn_func)
 
     def forward(
         self,
@@ -332,28 +255,21 @@ class Ernie4_5Attention(nn.Layer):
             q_len = max_sequence_length
         else:
             bsz, q_len, _ = hidden_states.shape
-        query_states = key_states = value_states = mix_layer = None
-        mix_layer = self.qkv_proj(hidden_states)
-        if self.is_gqa:
-            query_states, key_states, value_states = paddle.split(
-                mix_layer.reshape([bsz, q_len, -1, self.head_dim]),
-                [self.num_heads, self.num_key_value_heads, self.num_key_value_heads],
-                axis=2,
-            )
-            mix_layer = None
-        else:
-            mix_layer = mix_layer.reshape([bsz, q_len, self.num_heads, 3 * self.head_dim])
 
-        if mix_layer is not None:
-            has_gradient = not mix_layer.stop_gradient
-        else:
-            has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
+        query_states = key_states = value_states = mix_layer = None
+
+        mix_layer = self.qkv_proj(hidden_states)
+        query_states, key_states, value_states = paddle.split(
+            mix_layer.reshape([bsz, q_len, -1, self.head_dim]),
+            [self.num_heads, self.num_key_value_heads, self.num_key_value_heads],
+            axis=2,
+        )
+
+        has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
+
         if attn_mask_start_row_indices is None and attention_mask is None:
             self.attn_implementation = "sdpa"
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
-
-        if mix_layer is not None:
-            query_states, key_states, value_states = paddle.split(mix_layer, 3, axis=-1)
 
         # apply rope
         query_states_dtype = query_states.dtype
@@ -363,24 +279,12 @@ class Ernie4_5Attention(nn.Layer):
             offset = past_key_value[0].shape[-3]
             kv_seq_len += offset
 
-        if offset > 0 or position_ids is not None or not self.fuse_rope:
-            cos_sin = self.rotary_emb(kv_seq_len, position_ids).transpose([0, 2, 1, 3])  # [b,h,s,d]->[b,s,h,d]
-            if offset > 0 and position_ids is None:
-                # position_ids has been sliced in prepare_inputs_for_generation
-                cos_sin = cos_sin[:, offset:]
-            query_states, key_states = self.rotary_emb.apply_rotary(cos_sin, query_states, key_states)
+        cos_sin = self.rotary_emb(kv_seq_len, position_ids).transpose([0, 2, 1, 3])  # [b,h,s,d]->[b,s,h,d]
+        if offset > 0 and position_ids is None:
+            # position_ids has been sliced in prepare_inputs_for_generation
+            cos_sin = cos_sin[:, offset:]
 
-        else:
-            _, _, num_heads, _ = query_states.shape
-            _, kv_seq_len, num_key_value_heads, _ = key_states.shape
-            if num_heads != num_key_value_heads:
-                query_states, _, _ = fused_rope(query_states, None, None, rotary_emb_base=self.config.rope_theta)
-                key_states, _, _ = fused_rope(key_states, None, None, rotary_emb_base=self.config.rope_theta)
-            else:
-                query_states, key_states, _ = fused_rope(
-                    query_states, key_states, None, rotary_emb_base=self.config.rope_theta
-                )
-
+        query_states, key_states = self.rotary_emb.apply_rotary(cos_sin, query_states, key_states)
         query_states = query_states.astype(query_states_dtype)
         key_states = key_states.astype(query_states_dtype)
         if past_key_value is not None:
@@ -402,7 +306,7 @@ class Ernie4_5Attention(nn.Layer):
                 value_states,
                 attention_mask,
                 attn_mask_start_row_indices,
-                self.config.attention_probs_dropout_prob if self.training else 0.0,
+                self.config.get("attention_dropout_prob", 0.0) if self.training else 0.0,
                 self.scaling,
                 use_reentrant=self.config.recompute_use_reentrant,
             )
@@ -414,7 +318,7 @@ class Ernie4_5Attention(nn.Layer):
                 value=value_states,
                 attention_mask=attention_mask,
                 attn_mask_start_row_indices=attn_mask_start_row_indices,
-                dropout=self.config.attention_probs_dropout_prob if self.training else 0.0,
+                dropout=self.config.get("attention_dropout_prob", 0.0) if self.training else 0.0,
                 scaling=self.scaling,
             )
 
@@ -445,15 +349,13 @@ class Ernie4_5DecoderLayer(nn.Layer):
         self.hidden_size = config.hidden_size
         self.layer_idx = layer_idx
         self.config = config
-
         self.self_attn = Ernie4_5Attention(config, layer_idx)
         self.mlp = Ernie4_5MLP(config, fuse_up_gate=True)
 
         self.input_layernorm = GeneralNorm.from_config(config)
         self.post_attention_layernorm = GeneralNorm.from_config(config)
 
-        self.residual_add1 = FusedDropoutImpl(config.hidden_dropout_prob, mode="upscale_in_train")
-        self.residual_add2 = FusedDropoutImpl(config.hidden_dropout_prob, mode="upscale_in_train")
+        self.hidden_dropout = nn.Dropout(p=config.hidden_dropout_prob, mode="upscale_in_train")
 
         if config.sequence_parallel:
             mark_as_sequence_parallel_parameter(self.post_attention_layernorm.weight)
@@ -526,7 +428,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
             )
 
         with self.model_parallel_dropout():
-            hidden_states = self.residual_add1(hidden_states, residual)
+            hidden_states = self.hidden_dropout(hidden_states) + residual
 
         # Fully Connected
         residual = hidden_states
@@ -534,7 +436,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         hidden_states = self.mlp(hidden_states)
 
         with self.model_parallel_dropout():
-            hidden_states = self.residual_add2(hidden_states, residual)
+            hidden_states = self.hidden_dropout(hidden_states) + residual
 
         outputs = (hidden_states,)
 
@@ -777,13 +679,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         self.hidden_size = config.hidden_size
         self.config = config
         self.embed_tokens = GeneralEmbedding.from_config(config)
-        self.layers = nn.LayerList(
-            [
-                Ernie4_5DecoderLayer(create_skip_config_for_refined_recompute(i, config), i)
-                # Ernie4_5DecoderLayer(config, i)
-                for i in range(config.num_hidden_layers)
-            ]
-        )
+        self.layers = nn.LayerList([Ernie4_5DecoderLayer(config, i) for i in range(config.num_hidden_layers)])
         self.norm = GeneralNorm.from_config(config)
 
     def get_input_embeddings(self):
@@ -1025,19 +921,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         self.ernie = Ernie4_5Model(config)
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
-
         self.tie_weights()
-
-        if self.config.use_rmsnorm:
-            if self.config.fuse_rms_norm:
-                logger.info("Use fusedRMSNorm")
-            else:
-                logger.info("Use normal RMSNorm")
-        else:
-            if self.config.fuse_ln:
-                logger.info("Use fusedLN")
-            else:
-                logger.info("Use normal LayerNorm")
 
     @paddle.no_grad()
     def set_state_dict(self, state_dict, *args, **kwargs):
@@ -1287,9 +1171,6 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
 
         # Pretrain & Eval must have labels
         assert labels is not None
-        #
-        # use_sparse_head_and_loss_fn or use_fused_head_and_loss_fn is true logits is tuple
-        # else logtis is Tensor
         return self.criterion(logits, labels, loss_mask)
 
 

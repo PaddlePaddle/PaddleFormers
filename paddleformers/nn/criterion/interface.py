@@ -37,13 +37,7 @@ ALL_LOSS_FUNCTIONS = LossInterface()
 
 
 class CriterionLayer(nn.Layer):
-    def __init__(self,
-        config,
-        return_tuple=True,
-        ignore_eos_token=False,
-        use_infohub=False,
-        **kwargs
-    ):
+    def __init__(self, config, return_tuple=True, ignore_eos_token=False, use_infohub=False, **kwargs):
         super().__init__()
         self.config = config
         self.dpo_config = copy.deepcopy(config.get("dpo_config", None))
@@ -60,6 +54,9 @@ class CriterionLayer(nn.Layer):
         self.enable_parallel_cross_entropy = (
             config.tensor_parallel_degree > 1 and config.tensor_parallel_output
         )  # loss并行计算时，use_fused_head_and_loss_fn = False
+        logger.info(
+            f"loss_subbatch_seqlen: {self.loss_subbatch_seqlen} , use_fused_head_and_loss_fn: {self.use_fused_head_and_loss_fn}, use_filtered_label_loss: {self.use_filtered_label_loss}"
+        )
 
         self.return_tuple = return_tuple
         self.tie_word_embeddings = config.get("tie_word_embeddings", False)
