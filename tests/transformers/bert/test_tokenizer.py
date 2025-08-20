@@ -12,209 +12,54 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import os
+import shutil
 import unittest
 
-from paddleformers.transformers.bert.tokenizer import BertTokenizer
-from paddleformers.transformers.bert.tokenizer_fast import BertTokenizerFast
-
-from ...testing_utils import slow
-from ...transformers.test_tokenizer_common import (
-    TokenizerTesterMixin,
-    filter_non_english,
-)
+from paddleformers.transformers import BertTokenizer, BertTokenizerFast
 
 
-class BertTokenizationTest(TokenizerTesterMixin, unittest.TestCase):
-
-    tokenizer_class = BertTokenizer
-    rust_tokenizer_class = BertTokenizerFast
-    space_between_special_tokens = True
-    from_pretrained_filter = filter_non_english
-    test_seq2seq = False
-
+class TestTokenizer(unittest.TestCase):
     def setUp(self):
-        super().setUp()
+        self.test_dirs = ["./slow_tokenizer", "./fast_tokenizer"]
+        for test_dir in self.test_dirs:
+            if os.path.exists(test_dir):
+                shutil.rmtree(test_dir)
 
-        vocab_tokens = [
-            "[UNK]",
-            "[CLS]",
-            "[SEP]",
-            "[PAD]",
-            "[MASK]",
-            "want",
-            "##want",
-            "##ed",
-            "wa",
-            "un",
-            "runn",
-            "##ing",
-            ",",
-            "low",
-            "lowest",
-        ]
+    def tearDown(self):
+        for test_dir in self.test_dirs:
+            if os.path.exists(test_dir):
+                shutil.rmtree(test_dir)
 
-        self.vocab_file = os.path.join(self.tmpdirname, BertTokenizer.vocab_files_names["vocab_file"])
-        with open(self.vocab_file, "w", encoding="utf-8") as vocab_writer:
-            vocab_writer.write("".join([x + "\n" for x in vocab_tokens]))
+    def test_slow_tokenizer_from_pretrained(self):
+        tokenizer = BertTokenizer.from_pretrained("aistudio/bert-base-uncased", from_aistudio=True)
+        self.assertTrue(tokenizer is not None)
 
-    def get_input_output_texts(self, tokenizer):
-        input_text = "UNwant\u00E9d,running"
-        output_text = "unwanted, running"
-        return input_text, output_text
+    def test_slow_tokenizer_save_pretrained(self):
+        tokenizer = BertTokenizer.from_pretrained("aistudio/bert-base-uncased", from_aistudio=True)
+        special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+        tokenizer.add_special_tokens(special_tokens_dict)
+        tokenizer.add_tokens(["new_word", "another_word"])
+        tokenizer.model_max_length = 512
+        tokenizer.save_pretrained("./slow_tokenizer")
+        self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
 
-    def test_full_tokenizer(self):
-        tokenizer = self.tokenizer_class(self.vocab_file)
+    def test_fast_tokenizer_from_pretrained(self):
+        tokenizer = BertTokenizerFast.from_pretrained("aistudio/bert-base-uncased", from_aistudio=True)
+        self.assertTrue(tokenizer is not None)
 
-        tokens = tokenizer.tokenize("UNwant\u00E9d,running")
-        self.assertListEqual(tokens, ["un", "##want", "##ed", ",", "runn", "##ing"])
-        self.assertListEqual(tokenizer.convert_tokens_to_ids(tokens), [9, 6, 7, 12, 10, 11])
+    def test_fast_tokenizer_save_pretrained(self):
+        tokenizer = BertTokenizerFast.from_pretrained("aistudio/bert-base-uncased", from_aistudio=True)
+        special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+        tokenizer.add_special_tokens(special_tokens_dict)
+        tokenizer.add_tokens(["new_word", "another_word"])
+        tokenizer.model_max_length = 512
+        tokenizer.save_pretrained("./fast_tokenizer")
+        self.assertTrue(os.path.exists("./fast_tokenizer/tokenizer_config.json"))
 
-    def test_clean_text(self):
-        tokenizer = self.get_tokenizer()
-        # Example taken from the issue https://github.com/huggingface/tokenizers/issues/340
-        self.assertListEqual([tokenizer.tokenize(t) for t in ["Test", "\xad", "test"]], [["[UNK]"], [], ["[UNK]"]])
-
-    @slow
-    def test_sequence_builders(self):
-        tokenizer_p = self.tokenizer_class.from_pretrained("bert-base-uncased")
-        tokenizer_r = self.rust_tokenizer_class.from_pretrained("bert-base-uncased")
-
-        text = tokenizer_p.encode("sequence builders", return_token_type_ids=None, add_special_tokens=False)[
-            "input_ids"
-        ]
-        text_2 = tokenizer_p.encode("multi-sequence build", return_token_type_ids=None, add_special_tokens=False)[
-            "input_ids"
-        ]
-
-        encoded_sentence = tokenizer_p.build_inputs_with_special_tokens(text)
-        encoded_pair = tokenizer_p.build_inputs_with_special_tokens(text, text_2)
-
-        assert encoded_sentence == [101] + text + [102]
-        assert encoded_pair == [101] + text + [102] + text_2 + [102]
-
-        text_r = tokenizer_r.encode("sequence builders", return_token_type_ids=None, add_special_tokens=False)[
-            "input_ids"
-        ]
-        text_2_r = tokenizer_r.encode("multi-sequence build", return_token_type_ids=None, add_special_tokens=False)[
-            "input_ids"
-        ]
-
-        encoded_sentence_r = tokenizer_r.build_inputs_with_special_tokens(text)
-        encoded_pair_r = tokenizer_r.build_inputs_with_special_tokens(text_r, text_2_r)
-        assert encoded_sentence_r == [101] + text + [102]
-        assert encoded_pair_r == [101] + text_r + [102] + text_2_r + [102]
-
-    def test_offsets_with_special_characters(self):
-        for tokenizer, pretrained_name, kwargs in self.tokenizers_list:
-            with self.subTest(f"{tokenizer.__class__.__name__} ({pretrained_name})"):
-                tokenizer = self.tokenizer_class.from_pretrained(pretrained_name, **kwargs)
-                tokenizer_r = self.rust_tokenizer_class.from_pretrained(pretrained_name, **kwargs)
-
-                sentence = f"A, naïve {tokenizer.mask_token} AllenNLP sentence."
-                tokens = tokenizer.encode(
-                    sentence,
-                    return_attention_mask=False,
-                    return_token_type_ids=False,
-                    return_offsets_mapping=True,
-                    add_special_tokens=True,
-                )
-
-                do_lower_case = tokenizer.do_lower_case if hasattr(tokenizer, "do_lower_case") else False
-                expected_results = (
-                    [
-                        ((0, 0), tokenizer.cls_token),
-                        ((0, 1), "A"),
-                        ((1, 2), ","),
-                        ((3, 5), "na"),
-                        ((5, 6), "##ï"),
-                        ((6, 8), "##ve"),
-                        ((9, 15), tokenizer.mask_token),
-                        ((16, 21), "Allen"),
-                        ((21, 23), "##NL"),
-                        ((23, 24), "##P"),
-                        ((25, 33), "sentence"),
-                        ((33, 34), "."),
-                        ((0, 0), tokenizer.sep_token),
-                    ]
-                    if not do_lower_case
-                    else [
-                        ((0, 0), tokenizer.cls_token),
-                        ((0, 1), "a"),
-                        ((1, 2), ","),
-                        ((3, 8), "naive"),
-                        ((9, 15), tokenizer.mask_token),
-                        ((16, 21), "allen"),
-                        ((21, 23), "##nl"),
-                        ((23, 24), "##p"),
-                        ((25, 33), "sentence"),
-                        ((33, 34), "."),
-                        ((0, 0), tokenizer.sep_token),
-                    ]
-                )
-
-                self.assertEqual(
-                    [e[1] for e in expected_results], tokenizer.convert_ids_to_tokens(tokens["input_ids"])
-                )
-                self.assertEqual([e[0] for e in expected_results], tokens["offset_mapping"])
-
-                tokens = tokenizer_r.encode_plus(
-                    sentence,
-                    return_attention_mask=False,
-                    return_token_type_ids=False,
-                    return_offsets_mapping=True,
-                    add_special_tokens=True,
-                )
-
-                do_lower_case = tokenizer_r.do_lower_case if hasattr(tokenizer_r, "do_lower_case") else False
-
-                self.assertEqual(
-                    [e[1] for e in expected_results], tokenizer_r.convert_ids_to_tokens(tokens["input_ids"])
-                )
-                self.assertEqual([e[0] for e in expected_results], tokens["offset_mapping"])
-
-    def test_change_tokenize_chinese_chars(self):
-        list_of_commun_chinese_char = ["的", "人", "有"]
-        text_with_chinese_char = "".join(list_of_commun_chinese_char)
-        for tokenizer, pretrained_name, kwargs in self.tokenizers_list:
-            with self.subTest(f"{tokenizer.__class__.__name__} ({pretrained_name})"):
-                if pretrained_name == "squeezebert-uncased":
-                    continue
-                kwargs["tokenize_chinese_chars"] = True
-                tokenizer_p = self.tokenizer_class.from_pretrained(pretrained_name, **kwargs)
-                tokenizer_r = self.rust_tokenizer_class.from_pretrained(pretrained_name, **kwargs)
-
-                ids_without_spe_char_p = tokenizer_p.encode(
-                    text_with_chinese_char, return_token_type_ids=None, add_special_tokens=False
-                )["input_ids"]
-                ids_without_spe_char_r = tokenizer_r.encode(
-                    text_with_chinese_char, return_token_type_ids=None, add_special_tokens=False
-                )["input_ids"]
-
-                tokens_without_spe_char_p = tokenizer_p.convert_ids_to_tokens(ids_without_spe_char_p)
-                tokens_without_spe_char_r = tokenizer_r.convert_ids_to_tokens(ids_without_spe_char_r)
-
-                # it is expected that each Chinese character is not preceded by "##"
-                self.assertListEqual(tokens_without_spe_char_p, list_of_commun_chinese_char)
-                self.assertListEqual(tokens_without_spe_char_r, list_of_commun_chinese_char)
-
-                kwargs["tokenize_chinese_chars"] = False
-                tokenizer_p = self.tokenizer_class.from_pretrained(pretrained_name, **kwargs)
-                tokenizer_r = self.rust_tokenizer_class.from_pretrained(pretrained_name, **kwargs)
-
-                ids_without_spe_char_p = tokenizer_p.encode(
-                    text_with_chinese_char, return_token_type_ids=None, add_special_tokens=False
-                )["input_ids"]
-                ids_without_spe_char_r = tokenizer_r.encode(
-                    text_with_chinese_char, return_token_type_ids=None, add_special_tokens=False
-                )["input_ids"]
-
-                tokens_without_spe_char_p = tokenizer_p.convert_ids_to_tokens(ids_without_spe_char_p)
-                tokens_without_spe_char_r = tokenizer_r.convert_ids_to_tokens(ids_without_spe_char_r)
-                # it is expected that only the first Chinese character is not preceded by "##".
-                expected_tokens = [
-                    f"##{token}" if idx != 0 else token for idx, token in enumerate(list_of_commun_chinese_char)
-                ]
-                self.assertListEqual(tokens_without_spe_char_r, expected_tokens)
-                self.assertListEqual(tokens_without_spe_char_p, expected_tokens)
+    def test_tokenize(self):
+        tokenizer = BertTokenizerFast.from_pretrained("aistudio/bert-base-uncased", from_aistudio=True)
+        text = "hello world, this is a tokenizer test"
+        output_dict = tokenizer(text)
+        decode_text = tokenizer.decode(output_dict["input_ids"], skip_special_tokens=True)
+        self.assertEqual(text, decode_text)

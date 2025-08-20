@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import os
 import re
+from functools import wraps
 from typing import Any, Dict, List, Union
 
+from transformers import BatchEncoding
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_base import (
     ADDED_TOKENS_FILE,
@@ -78,6 +80,57 @@ class PaddleTokenizerMixin:
         "facebook/llama-65b": {},
     }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._wrap_return_tensor_methods()
+
+    def _wrap_return_tensor_methods(self):
+        methods_to_wrap = [
+            "__call__",
+            "pad",
+            "encode_plus",
+            "batch_encode_plus",
+            "encode",
+            "batch_encode",
+            "apply_chat_template",
+        ]
+
+        for method_name in methods_to_wrap:
+            if hasattr(self, method_name):
+                self._wrap_single_method(method_name)
+
+    def _wrap_single_method(self, method_name):
+        original_method = getattr(self, method_name)
+
+        def convert_to_paddle(inputs):
+            import paddle
+
+            if isinstance(inputs, list):
+                if isinstance(inputs[0], int):
+                    return paddle.to_tensor([inputs])
+                else:
+                    return paddle.to_tensor(inputs)
+            elif isinstance(inputs, int):
+                return paddle.to_tensor(inputs)
+            elif isinstance(inputs, BatchEncoding):
+                for key, value in inputs.items():
+                    inputs[key] = convert_to_paddle(value)
+                return inputs
+            else:
+                return inputs
+
+        @wraps(original_method)
+        def wrapper(*args, **kwargs):
+            return_tensors = kwargs.get("return_tensors", None)
+            if return_tensors == "pd":
+                return_tensors = kwargs.pop("return_tensors", None)
+            result = original_method(*args, **kwargs)
+            if return_tensors == "pd":
+                result = convert_to_paddle(result)
+            return result
+
+        setattr(self, method_name, wrapper)
+
     # 复写hf的tokenizer的from_pretrained
     @classmethod
     def from_pretrained(
@@ -108,10 +161,10 @@ class PaddleTokenizerMixin:
                     pretrained_model_name_or_path = os.path.join(download_source["ai_studio"], model_name)
                 elif from_modelscope:
                     pretrained_model_name_or_path = os.path.join(download_source["modelscope"], model_name)
-            else:
-                print(
-                    "this repo is not supported by paddleformers download source, please check the difference for repo id"
-                )
+            # else:
+            #     print(
+            #         "this repo is not supported by paddleformers download source, please check the difference for repo id"
+            #     )
 
         # 如果从hf下载，则使用原生的hf的from_pretrained
         if from_hf_hub:
