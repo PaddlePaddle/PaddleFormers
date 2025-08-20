@@ -15,6 +15,7 @@
 import numpy as np
 import paddle
 
+from .import_utils import is_paddle_available
 from .log import logger
 
 
@@ -240,3 +241,28 @@ def get_span(start_ids, end_ids, with_prob=False):
     result = [(couple_dict[end], end) for end in couple_dict]
     result = set(result)
     return result
+
+
+def device_guard(device="cpu", dev_id=0):
+    """
+    设备上下文管理器，延迟导入 paddle 以避免循环导入
+    """
+    import contextlib
+
+    @contextlib.contextmanager
+    def _device_guard():
+        if not is_paddle_available():
+            raise ImportError("PaddlePaddle is not available. Please install it first.")
+        import paddle
+
+        origin_device = paddle.device.get_device()
+        if device == "cpu":
+            paddle.set_device(device)
+        elif device in ["gpu", "xpu", "npu"]:
+            paddle.set_device("{}:{}".format(device, dev_id))
+        try:
+            yield
+        finally:
+            paddle.set_device(origin_device)
+
+    return _device_guard()

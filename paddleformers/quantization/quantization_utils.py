@@ -197,7 +197,7 @@ def convert_to_qlora_state_dict(state_dict, name, quantization_config, dtype, we
     else:
         qweight_scale_name = name + ".qweight_scale"
         double_weight_scale_name = name + ".double_weight_scale"
-        quant_sacle_offset_name = name + ".quant_sacle_offset"
+        quant_sacle_offset_name = name + ".weight_scale_offset"
         quant_name_list += [qweight_scale_name, double_weight_scale_name, quant_sacle_offset_name]
 
     if all(quant_name in state_dict for quant_name in quant_name_list):
@@ -252,7 +252,7 @@ def update_loaded_state_dict_keys(state_dict, quantization_linear_list, quantiza
         activation_scale_name = name + ".activation_scale"
         qweight_scale_name = name + ".qweight_scale"
         double_weight_scale_name = name + ".double_weight_scale"
-        quant_sacle_offset_name = name + ".quant_sacle_offset"
+        quant_sacle_offset_name = name + ".weight_scale_offset"
 
         if quant_weight_name in state_dict and weight_scale_name in state_dict:
             continue

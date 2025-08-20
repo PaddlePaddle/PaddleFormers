@@ -12,7 +12,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Package"""
+import sys
+from typing import TYPE_CHECKING
 
-from .configuration import *
-from .modeling import *
-from .tokenizer import *
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "tokenizer": ["copyfile", "Ernie4_5Tokenizer"],
+    "tokenizer_utils": ["PretrainedTokenizer"],
+    "configuration": ["Ernie4_5Config"],
+    "modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"],
+    "distributed": [],
+    "fusion_ops": [],
+    "sequence_parallel_utils": [
+        "MPScale",
+        "sequence_parallel_sparse_mask_labels",
+        "ScatterOp",
+        "GatherOp",
+        "SliceVarlenOp",
+        "AllGatherVarlenOpV2",
+        "AllGatherOp",
+        "_AllToAll",
+        "mark_as_sequence_parallel_parameter",
+        "AllGatherVarlenOp",
+    ],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
+    from .tokenizer import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

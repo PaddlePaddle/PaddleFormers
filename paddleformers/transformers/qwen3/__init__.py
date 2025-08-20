@@ -13,6 +13,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration import *
-from .modeling import *
-from .modeling_pp import *
+import sys
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "modeling_pp": [
+        "recompute",
+        "get_env_device",
+        "get_skip_recompute_ops",
+        "rr_recompute",
+        "parse_args",
+        "return_args",
+        "get_attr",
+        "Qwen3EmbeddingPipe",
+        "Qwen3DecoderLayerPipe",
+        "Qwen3RMSNormPipe",
+        "Qwen3LMHeadPipe",
+        "Qwen3ForCausalLMPipe",
+    ],
+    "dpo_criterion": ["DPOCriterion"],
+    "model_utils": ["PipelinePretrainedModel"],
+    "configuration": ["Qwen3Config"],
+    "modeling": [
+        "Qwen3Model",
+        "Qwen3PretrainedModel",
+        "Qwen3ForCausalLM",
+        "Qwen3PretrainingCriterion",
+        "Qwen3ForSequenceClassification",
+        "Qwen3ForTokenClassification",
+        "Qwen3SentenceEmbedding",
+    ],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
+    from .modeling_pp import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )
