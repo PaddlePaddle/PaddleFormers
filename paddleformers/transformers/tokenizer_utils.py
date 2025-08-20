@@ -32,12 +32,8 @@ from transformers.tokenization_utils_base import (
 )
 from transformers.utils import ExplicitEnum
 
-from ..utils.download import resolve_file_path
-
-DOWNDLOAD_SOURCE_MAPPING = {
-    "Qwen": {"hf": "Qwen", "modelscope": "Qwen", "ai_studio": "PaddleNLP"},
-    "DeepSeek": {"hf": "deepseek-ai", "modelscope": "deepseek-ai", "aistudio": "PaddleNLP"},
-}
+from ..utils.download import DownloadSource, resolve_file_path
+from ..utils.log import logger
 
 
 class TensorType(ExplicitEnum):
@@ -51,35 +47,6 @@ class TensorType(ExplicitEnum):
 
 
 class PaddleTokenizerMixin:
-    # only used for test
-    pretrained_resource_files_map = {
-        "vocab_file": {
-            "__internal_testing__/micro-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-            "__internal_testing__/tiny-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-            "facebook/llama-7b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-            "facebook/llama-13b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-            "facebook/llama-30b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-            "facebook/llama-65b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-        },
-        "tokenizer_file": {
-            "__internal_testing__/micro-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
-            "__internal_testing__/tiny-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
-            "facebook/llama-7b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
-            "facebook/llama-13b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
-            "facebook/llama-30b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
-            "facebook/llama-65b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/tokenizer.json",
-        },
-    }
-
-    pretrained_init_configuration = {
-        "__internal_testing__/micro-random-llama": {},
-        "__internal_testing__/tiny-random-llama": {},
-        "facebook/llama-7b": {},
-        "facebook/llama-13b": {},
-        "facebook/llama-30b": {},
-        "facebook/llama-65b": {},
-    }
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._wrap_return_tensor_methods()
@@ -139,35 +106,15 @@ class PaddleTokenizerMixin:
         *args,
         **kwargs,
     ):
-        from_hf_hub = kwargs.get("from_hf_hub", False)
-        from_aistudio = kwargs.get("from_aistudio", False)
-        from_modelscope = kwargs.get("from_modelscope", False)
-        local_files_only = kwargs.get("local_files_only", False)
+        download_hub = kwargs.pop("download_hub", None)
+        local_files_only = kwargs.pop("local_files_only", False)
 
-        # if not from_hf_hub and not from_aistudio and not from_modelscope:
-        #     from_aistudio = True
-
-        if not os.path.isdir(pretrained_model_name_or_path):
-            download_source = None
-            model_name = pretrained_model_name_or_path.split("/")[-1]
-            for key in DOWNDLOAD_SOURCE_MAPPING.keys():
-                if key in model_name:
-                    download_source = DOWNDLOAD_SOURCE_MAPPING.get(key, None)
-                    break
-            if download_source is not None:
-                if from_hf_hub:
-                    pretrained_model_name_or_path = os.path.join(download_source["hf"], model_name)
-                elif from_aistudio:
-                    pretrained_model_name_or_path = os.path.join(download_source["ai_studio"], model_name)
-                elif from_modelscope:
-                    pretrained_model_name_or_path = os.path.join(download_source["modelscope"], model_name)
-            # else:
-            #     print(
-            #         "this repo is not supported by paddleformers download source, please check the difference for repo id"
-            #     )
+        if download_hub is None:
+            download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
+        logger.info(f"Using download source: {download_hub}")
 
         # 如果从hf下载，则使用原生的hf的from_pretrained
-        if from_hf_hub:
+        if download_hub == DownloadSource.HUGGINGFACE:
             return super().from_pretrained(
                 pretrained_model_name_or_path,
                 *args,
@@ -199,13 +146,13 @@ class PaddleTokenizerMixin:
                 else:
                     vocab_files[file_id] = None
 
-        if pretrained_model_name_or_path in cls.pretrained_init_configuration:
-            # From built-in pretrained models
-            # just for test, should not be used in development
-            vocab_files = {}
-            for file_id, map_list in cls.pretrained_resource_files_map.items():
-                vocab_files[file_id] = map_list[pretrained_model_name_or_path]
-            resolved_vocab_files = {}
+        # if pretrained_model_name_or_path in cls.pretrained_init_configuration:
+        #     # From built-in pretrained models
+        #     # just for test, should not be used in development
+        #     vocab_files = {}
+        #     for file_id, map_list in cls.pretrained_resource_files_map.items():
+        #         vocab_files[file_id] = map_list[pretrained_model_name_or_path]
+        #     resolved_vocab_files = {}
 
         resolved_vocab_files = {}
         for file_id, file_path in vocab_files.items():
@@ -218,10 +165,7 @@ class PaddleTokenizerMixin:
                     [file_path],
                     subfolder,
                     cache_dir=cache_dir,
-                    local_dir=cache_dir,
-                    from_aistudio=from_aistudio,
-                    from_modelscope=from_modelscope,
-                    from_hf_hub=False,
+                    download_hub=download_hub,
                     local_files_only=local_files_only,
                 )
             except Exception:

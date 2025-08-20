@@ -32,11 +32,11 @@ class TestTokenizer(unittest.TestCase):
                 shutil.rmtree(test_dir)
 
     def test_slow_tokenizer_from_pretrained(self):
-        tokenizer = LlamaTokenizer.from_pretrained("PaddleNLP/Llama-2-7b", from_aistudio=True)
+        tokenizer = LlamaTokenizer.from_pretrained("PaddleNLP/Llama-2-7b")
         self.assertTrue(tokenizer is not None)
 
     def test_slow_tokenizer_save_pretrained(self):
-        tokenizer = LlamaTokenizer.from_pretrained("PaddleNLP/Llama-2-7b", from_aistudio=True)
+        tokenizer = LlamaTokenizer.from_pretrained("PaddleNLP/Llama-2-7b")
         special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
         tokenizer.add_special_tokens(special_tokens_dict)
         tokenizer.add_tokens(["new_word", "another_word"])
@@ -45,11 +45,11 @@ class TestTokenizer(unittest.TestCase):
         self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
 
     def test_fast_tokenizer_from_pretrained(self):
-        tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b", from_aistudio=True)
+        tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b")
         self.assertTrue(tokenizer is not None)
 
     def test_fast_tokenizer_save_pretrained(self):
-        tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b", from_aistudio=True)
+        tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b")
         special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
         tokenizer.add_special_tokens(special_tokens_dict)
         tokenizer.add_tokens(["new_word", "another_word"])
@@ -58,7 +58,7 @@ class TestTokenizer(unittest.TestCase):
         self.assertTrue(os.path.exists("./fast_tokenizer/tokenizer_config.json"))
 
     def test_tokenize(self):
-        tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b", from_aistudio=True)
+        tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b")
         text = "hello world, this is a tokenizer test"
         output_dict = tokenizer(text)
         decode_text = tokenizer.decode(output_dict["input_ids"], skip_special_tokens=True)

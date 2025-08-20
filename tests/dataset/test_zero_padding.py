@@ -36,7 +36,7 @@ def read_local_dataset(path):
 
 
 class ZeroPaddingTestCommon:
-    tokenizer = AutoTokenizer.from_pretrained("__internal_testing__/micro-random-llama")
+    tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/micro-random-llama")
     expected_output = {
         "input_ids": [1, 29871, 30429, 1, 29871, 30429, 2, 1, 29871, 31427, 1, 29871, 31427, 2],
         "labels": [-100, -100, -100, 1, 29871, 30429, 2, -100, -100, -100, 1, 29871, 31427, 2],

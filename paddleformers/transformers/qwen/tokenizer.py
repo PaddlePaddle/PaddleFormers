@@ -23,10 +23,12 @@ from typing import Collection, Dict, List, Set, Tuple, Union
 import tiktoken
 from transformers import AddedToken, PreTrainedTokenizer
 
+from ..tokenizer_utils import PaddleTokenizerMixin
+
 logger = logging.getLogger(__name__)
 
 
-VOCAB_FILES_NAMES = {"vocab_file": "qwen.tiktoken"}
+VOCAB_FILES_NAMES = {"vocab_file": "qwen.tiktoken", "chat_template_file": "chat_template.json"}
 
 PAT_STR = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
 ENDOFTEXT = "<|endoftext|>"
@@ -62,7 +64,7 @@ def _load_tiktoken_bpe(tiktoken_bpe_file: str) -> Dict[bytes, int]:
     }
 
 
-class QWenTokenizer(PreTrainedTokenizer):
+class QWenTokenizer(PaddleTokenizerMixin, PreTrainedTokenizer):
     """QWen tokenizer."""
 
     vocab_files_names = VOCAB_FILES_NAMES

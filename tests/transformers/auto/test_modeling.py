@@ -28,8 +28,7 @@ from paddleformers.transformers import (
     AutoModelForQuestionAnswering,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
-    BertConfig,
-    BertModel,
+    LlamaConfig,
     LlamaModel,
 )
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
@@ -38,35 +37,35 @@ from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
 
 from ...utils.test_module.custom_configuration import CustomConfig
 from ...utils.test_module.custom_model import CustomModel
-from ..bert.test_modeling import BertModelTester
+from ..llama.test_modeling import LlamaModelTester
 
 
 class AutoModelTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.model = AutoModel.from_pretrained("__internal_testing__/tiny-random-bert")
+        cls.model = AutoModel.from_pretrained("test_paddleformers/tiny-random-llama")
 
     def test_from_pretrained_local(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             self.model.save_pretrained(tmp_dir)
             model = AutoModel.from_pretrained(tmp_dir)
-            self.assertIsInstance(model, BertModel)
+            self.assertIsInstance(model, LlamaModel)
 
     def test_from_pretrained_no_init_class_with_model_name(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             model = copy.deepcopy(self.model)
             # when init_class is not found, we rely on the filename to get the import class
-            model_save_path = os.path.join(tmp_dir, "tiny-random-bert")
+            model_save_path = os.path.join(tmp_dir, "tiny-random-llama")
             model.save_pretrained(model_save_path)
             config = model.config.to_dict()
             config.pop("architectures")
             with open(os.path.join(model_save_path, "config.json"), "w", encoding="utf-8") as writer:
                 writer.write(json.dumps(config, indent=2, sort_keys=True) + "\n")
             reloaded_model = AutoModel.from_pretrained(model_save_path)
-            self.assertIsInstance(reloaded_model, BertModel)
+            self.assertIsInstance(reloaded_model, LlamaModel)
 
     def test_model_from_pretrained_cache_dir(self):
-        model_name = "__internal_testing__/tiny-random-bert"
+        model_name = "test_paddleformers/tiny-random-llama"
         with tempfile.TemporaryDirectory() as tempdir:
             AutoModel.from_pretrained(model_name, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))
@@ -76,17 +75,17 @@ class AutoModelTest(unittest.TestCase):
 
     @unittest.skip("skipping due to connection error!")
     def test_from_hf_hub(self):
-        model = AutoModel.from_pretrained("dfargveazd/tiny-random-llama", from_hf_hub=True, convert_from_torch=False)
+        model = AutoModel.from_pretrained("dfargveazd/tiny-random-llama", download_hub="huggingface")
         self.assertIsInstance(model, LlamaModel)
 
     @unittest.skip("skipping due to connection error!")
     def test_from_aistudio(self):
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-llama", from_aistudio=True)
+        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-llama", download_hub="aistudio")
         self.assertIsInstance(model, LlamaModel)
 
     @unittest.skip("skipping due to connection error!")
     def test_from_modelscope(self):
-        model = AutoModel.from_pretrained("sqlhuman/tiny-random-llama", from_modelscope=True)
+        model = AutoModel.from_pretrained("sqlhuman/tiny-random-llama", download_hub="modelscope")
         self.assertIsInstance(model, LlamaModel)
 
     def test_new_model_registration(self):
@@ -107,14 +106,14 @@ class AutoModelTest(unittest.TestCase):
                 with self.subTest(auto_class.__name__):
                     # Wrong config class will raise an error
                     with self.assertRaises(ValueError):
-                        auto_class.register(BertConfig, CustomModel)
+                        auto_class.register(LlamaConfig, CustomModel)
                     auto_class.register(CustomConfig, CustomModel)
                     # Trying to register something existing in the Transformers library will raise an error
                     with self.assertRaises(ValueError):
-                        auto_class.register(BertConfig, BertModel)
+                        auto_class.register(LlamaConfig, LlamaModel)
 
                     # Now that the config is registered, it can be used as any other config with the auto-API
-                    tiny_config = BertModelTester(self).get_config()
+                    tiny_config = LlamaModelTester(self).get_config()
                     config = CustomConfig(**tiny_config.to_dict())
                     model = auto_class.from_config(config)
                     self.assertIsInstance(model, CustomModel)

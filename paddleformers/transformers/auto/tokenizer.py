@@ -39,7 +39,7 @@ from transformers.models.auto.tokenization_auto import (
 from transformers.tokenization_utils_base import TOKENIZER_CONFIG_FILE
 from transformers.utils import cached_file
 
-from ...utils.download import resolve_file_path
+from ...utils.download import DownloadSource, resolve_file_path
 from ..tokenizer_utils import PaddleTokenizerMixin
 from .configuration import AutoConfig
 
@@ -119,6 +119,7 @@ def get_paddleformers_tokenizer_config(
     tokenizer.save_pretrained("tokenizer-test")
     tokenizer_config = get_tokenizer_config("tokenizer-test")
     ```"""
+    download_hub = kwargs.get("download_hub", None)
 
     resolved_config_file = resolve_file_path(
         pretrained_model_name_or_path,
@@ -131,6 +132,7 @@ def get_paddleformers_tokenizer_config(
         revision=revision,
         local_files_only=local_files_only,
         subfolder=subfolder,
+        download_hub=download_hub,
     )
     if resolved_config_file is None:
         logger.info("Could not locate the tokenizer configuration file, will try to use the model config instead.")
@@ -153,6 +155,10 @@ class AutoTokenizer(hf.AutoTokenizer):
     @classmethod
     @replace_list_option_in_docstrings(TOKENIZER_MAPPING_NAMES)
     def from_pretrained(cls, pretrained_model_name_or_path, *inputs, **kwargs):
+        download_hub = kwargs.pop("download_hub", None)
+        if download_hub is None:
+            download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
+        logger.info(f"Using download source: {download_hub}")
         use_auth_token = kwargs.pop("use_auth_token", None)
         if use_auth_token is not None:
             warnings.warn(
@@ -204,7 +210,7 @@ class AutoTokenizer(hf.AutoTokenizer):
 
         # Next, let's try to use the tokenizer_config file to get the tokenizer class.
         # download tokenizer_config.json file to get tokenizer class name
-        if kwargs.get("from_hf_hub", False):
+        if download_hub == DownloadSource.HUGGINGFACE:
             tokenizer_config = get_tokenizer_config(pretrained_model_name_or_path, **kwargs)
             if "_commit_hash" in tokenizer_config:
                 kwargs["_commit_hash"] = tokenizer_config["_commit_hash"]

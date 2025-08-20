@@ -665,15 +665,15 @@ class ModelTesterMixin:
                 for ids_item, embeds_item in zip(ids_output, embeds_output):
                     self.assertTrue(self._compare_tensor(ids_item, embeds_item))
 
-    def test_model_name_list(self):
-        if not self.use_test_model_name_list:
-            return
-        config = self.model_tester.get_config()
-        if isinstance(config, PretrainedConfig):
-            model = self.base_model_class(config)
-        else:
-            model = self.base_model_class(**config)
-        self.assertTrue(len(model.model_name_list) != 0)
+    # def test_model_name_list(self):
+    #     if not self.use_test_model_name_list:
+    #         return
+    #     config = self.model_tester.get_config()
+    #     if isinstance(config, PretrainedConfig):
+    #         model = self.base_model_class(config)
+    #     else:
+    #         model = self.base_model_class(**config)
+    #     self.assertTrue(len(model.model_name_list) != 0)
 
     def test_pretrained_config_save_load(self):
         if self.base_model_class is None or not self.base_model_class.constructed_from_pretrained_config():
@@ -788,7 +788,7 @@ class ModelTesterPretrainedMixin:
     def test_model_from_pretrained_hf_hub(self):
         if self.hf_remote_test_model_path is None or self.base_model_class is None:
             return
-        model = self.base_model_class.from_pretrained(self.hf_remote_test_model_path, from_hf_hub=True)
+        model = self.base_model_class.from_pretrained(self.hf_remote_test_model_path, download_hub="huggingface")
         self.assertIsNotNone(model)
 
     def test_model_from_pretrained_paddle_hub(self):

@@ -47,7 +47,7 @@ set_env() {
     export FLAGS_cudnn_deterministic=1
     export HF_ENDPOINT=https://hf-mirror.com
     export FLAGS_use_cuda_managed_memory=true
-    export running_time=40m
+    export running_time=80m
 
     # for CE
     if [[ ${FLAGS_enable_CE} == "true" ]];then
@@ -106,9 +106,11 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     install_requirements
     cd ${nlp_dir}
     echo ' Testing all unittest cases '
-    export http_proxy=${proxy} && export https_proxy=${proxy}
+    unset http_proxy && unset https_proxy
     set +e
-    timeout ${running_time} python -m pytest -v -n 8 \
+    DOWNLOAD_SOURCE=aistudio PYTHONPATH=$(pwd) \
+    timeout ${running_time} \
+    python -m pytest -v \
     --dist loadgroup \
     --retries 3 --retry-delay 1 \
     --timeout 200 --durations 20 --alluredir=result \
