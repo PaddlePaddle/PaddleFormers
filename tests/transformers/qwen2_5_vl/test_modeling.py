@@ -81,7 +81,7 @@ class Qwen2_5_VLModelTester:
                 "tokens_per_second": 2,
                 "temporal_patch_size": 2,
             },
-            "rope_scaling": {"type": "mrope", "mrope_section": [4, 4, 8]},
+            "rope_scaling": {"type": "mrope", "mrope_section": [8, 8, 16]},
             "vocab_size": 151936,
         }
         return Qwen2_5_VLConfig(**test_config)
