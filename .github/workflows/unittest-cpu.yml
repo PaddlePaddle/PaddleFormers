@@ -90,9 +90,8 @@ jobs:
           source $work_dir/../../../proxy_aistudio
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers
-          #set -e
+          set -e
           make test
-          sleep 1d
           echo "finished"
           '
 

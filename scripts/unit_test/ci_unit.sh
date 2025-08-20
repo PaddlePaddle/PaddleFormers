@@ -110,7 +110,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     set +e
     DOWNLOAD_SOURCE=aistudio PYTHONPATH=$(pwd) \
     timeout ${running_time} \
-    python -m pytest -v -n 8 \
+    python -m pytest -v \
     --dist loadgroup \
     --retries 3 --retry-delay 1 \
     --timeout 200 --durations 20 --alluredir=result \
