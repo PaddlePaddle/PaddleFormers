@@ -14,11 +14,11 @@
 """Config for parse dataset to same format"""
 import os
 
-DATASET_WORKROOT = os.getenv("ERNIE_DATASET_WORKROOT", os.path.abspath(os.path.join(os.path.dirname(__file__))))
+DATASET_WORKROOT = os.getenv("DATASET_WORKROOT", "/root/.cache/paddleformers")
 DATASET_DOWNLOAD_ROOT = os.path.join(DATASET_WORKROOT, "download")
 DATASET_OUTPUT_ROOT = os.path.join(DATASET_WORKROOT, "output")
 
-DATA_INFO_FILE = os.path.join(DATASET_WORKROOT, "data_info.json")
+DATA_INFO_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), "data_info.json")
 
 DEFAULT_DOC_FORMATTING = "json"
 
