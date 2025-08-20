@@ -44,7 +44,6 @@ class QuantizationLoRABaseLinear(nn.Layer):
         else:
             self.weight_scale = layer.weight_scale
         self.bias = layer.bias
-
         # LoRA related parameters
         self.lora_config = lora_config
         if not isinstance(self.lora_config.r, int) or self.lora_config.r <= 0:
