@@ -15,15 +15,18 @@
 import sys
 from contextlib import suppress
 from typing import TYPE_CHECKING
+
 from ..utils.lazy_import import _LazyModule
 
 import_structure = {
+    "attention": ["AttentionInterface", "ALL_ATTENTION_FUNCTIONS"],
+    "criterion": ["LossInterface", "ALL_LOSS_FUNCTIONS", "CriterionLayer"],
     "attention.eager_attention": ["eager_attention_forward"],
     "attention.flashmask_attention": ["flashmask_attention_forward"],
     "attention.interface": ["AttentionInterface", "ALL_ATTENTION_FUNCTIONS"],
     "attention.sdpa_attention": ["sdpa_attention_forward"],
     "attention.utils": ["repeat_kv"],
-    "criterion.dpo_loss": ["dpo_preprocess_inputs","dpo_logps", "cal_dpo_loss", "dpo_loss_forward"],
+    "criterion.dpo_loss": ["dpo_preprocess_inputs", "dpo_logps", "cal_dpo_loss", "dpo_loss_forward"],
     "criterion.interface": ["LossInterface", "ALL_LOSS_FUNCTIONS", "CriterionLayer"],
     "criterion.kto_loss": ["kto_preprocess_inputs", "_nested_gather", "kto_logps", "kto_loss", "kto_loss_forward"],
     "criterion.loss_utils": ["calc_lm_head_logits", "subbatch"],
@@ -42,9 +45,9 @@ import_structure = {
 }
 
 if TYPE_CHECKING:
+    from .activation import *
     from .attention import *
     from .criterion import *
-    from .activation import *
     from .embedding import *
     from .general import *
     from .linear import *

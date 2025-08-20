@@ -52,6 +52,7 @@ if "datasets" in sys.modules.keys():
 modules = [
     "data",
     "datasets",
+    "nn",
     "mergekit",
     "ops",
     "peft",
@@ -69,6 +70,7 @@ if TYPE_CHECKING:
         data,
         datasets,
         mergekit,
+        nn,
         ops,
         peft,
         quantization,
