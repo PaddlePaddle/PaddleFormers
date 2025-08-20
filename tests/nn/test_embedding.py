@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import sys
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 import paddle
 import paddle.distributed.fleet.meta_parallel as mpu
@@ -115,21 +115,21 @@ class TestEmbedding(TestMultipleGpus):
 
     def test_register_new_embedding(self):
         class MyEmbedding(nn.Layer):
-            def __init__(self,num_embeddings,embedding_dim,**kwargs):
+            def __init__(self, num_embeddings, embedding_dim, **kwargs):
                 super().__init__()
-                self.weight = self.create_parameter(
-                    shape=[num_embeddings, embedding_dim],
-                    is_bias=False
-                )
+                self.weight = self.create_parameter(shape=[num_embeddings, embedding_dim], is_bias=False)
 
-            def forward(self,x):
+            def forward(self, x):
                 return F.embedding(x, weight=self.weight)
-        
-        Embedding.register("my_embedding",MyEmbedding)
-        my_embedding = Embedding.create(embedding_type="my_embedding",num_embeddings=self.num_embeddings,embedding_dim=self.embedding_dim)
-        self.assertIsInstance(my_embedding,MyEmbedding)
+
+        Embedding.register("my_embedding", MyEmbedding)
+        my_embedding = Embedding.create(
+            embedding_type="my_embedding", num_embeddings=self.num_embeddings, embedding_dim=self.embedding_dim
+        )
+        self.assertIsInstance(my_embedding, MyEmbedding)
         my_embedding(paddle.to_tensor([0]))
         print("paddleformers.nn.Embedding: test_register_new_embedding: success")
+
 
 if __name__ == "__main__":
     # _test_create_vocab_parallel_embedding()

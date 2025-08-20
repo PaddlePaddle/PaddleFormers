@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import functools
+
 import numpy as np
 import paddle
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp
@@ -58,7 +59,7 @@ def calc_lm_head_logits(
         tensor_parallel_degree=config.tensor_parallel_degree,
         tensor_parallel_output=tensor_parallel_output,
         fuse_linear=config.get("fuse_linear", False),
-        training=training
+        training=training,
     )
 
     return logits
@@ -86,9 +87,7 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
 
-        assert len(arg_idx) == len(
-            axis
-        ), "Number of batching args and number of batching dims should match."
+        assert len(arg_idx) == len(axis), "Number of batching args and number of batching dims should match."
 
         inps = [args[i] for i in arg_idx]
         axis_width = [inp.shape[d] for inp, d in zip(inps, axis)]

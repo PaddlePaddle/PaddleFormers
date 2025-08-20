@@ -40,7 +40,7 @@ def sdpa_attention_forward(
     elif hasattr(module, "num_key_value_groups"):
         num_key_value_heads = module.num_key_value_groups
 
-    if num_key_value_heads is not None:    
+    if num_key_value_heads is not None:
         key = repeat_kv(key, module.num_key_value_heads)
         value = repeat_kv(value, module.num_key_value_heads)
 

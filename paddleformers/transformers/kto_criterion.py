@@ -27,10 +27,7 @@ from .sequence_parallel_utils import (
     AllGatherVarlenOp,
     sequence_parallel_sparse_mask_labels,
 )
-from .tensor_parallel_utils import (
-    fused_head_and_loss_fn,
-    parallel_matmul
-)
+from .tensor_parallel_utils import fused_head_and_loss_fn, parallel_matmul
 
 
 class KTOCriterion(nn.Layer):
