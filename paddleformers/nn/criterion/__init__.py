@@ -16,10 +16,11 @@
 import sys
 from contextlib import suppress
 from typing import TYPE_CHECKING
+
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "dpo_loss": ["dpo_preprocess_inputs","dpo_logps", "cal_dpo_loss", "dpo_loss_forward"],
+    "dpo_loss": ["dpo_preprocess_inputs", "dpo_logps", "cal_dpo_loss", "dpo_loss_forward"],
     "interface": ["LossInterface", "ALL_LOSS_FUNCTIONS", "CriterionLayer"],
     "kto_loss": ["kto_preprocess_inputs", "_nested_gather", "kto_logps", "kto_loss", "kto_loss_forward"],
     "loss_utils": ["calc_lm_head_logits", "subbatch"],

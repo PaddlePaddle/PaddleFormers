@@ -16,6 +16,7 @@ from collections import OrderedDict
 
 import paddle.nn as nn
 
+
 class ClassInstantier(OrderedDict):
     def __getitem__(self, key):
         content = super().__getitem__(key)

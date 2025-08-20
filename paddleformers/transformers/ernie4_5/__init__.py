@@ -21,7 +21,7 @@ import_structure = {
     "tokenizer": ["copyfile", "Ernie4_5Tokenizer"],
     "tokenizer_utils": ["PretrainedTokenizer"],
     "configuration": ["Ernie4_5Config"],
-    "modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"]
+    "modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"],
 }
 
 if TYPE_CHECKING:

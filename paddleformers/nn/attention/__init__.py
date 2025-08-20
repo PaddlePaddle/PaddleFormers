@@ -15,6 +15,7 @@
 import sys
 from contextlib import suppress
 from typing import TYPE_CHECKING
+
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
@@ -27,8 +28,8 @@ import_structure = {
 
 if TYPE_CHECKING:
     from .eager_attention import *
-    from .interface import *
     from .flashmask_attention import *
+    from .interface import *
     from .sdpa_attention import *
     from .utils import *
 else:
