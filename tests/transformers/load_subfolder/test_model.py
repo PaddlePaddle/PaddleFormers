@@ -19,6 +19,7 @@ import unittest
 import pytest
 
 from paddleformers.transformers import AutoModel, BertModel
+from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.log import logger
 from tests.testing_utils import slow
 
@@ -40,9 +41,7 @@ class ModelLoadTester(unittest.TestCase):
         repo_id="",
         subfolder=None,
         use_safetensors=False,
-        from_aistudio=False,
-        from_hf_hub=False,
-        from_modelscope=False,
+        download_hub=None,
     ):
         with tempfile.TemporaryDirectory() as cache_dir:
             model_cls.from_pretrained(
@@ -50,9 +49,7 @@ class ModelLoadTester(unittest.TestCase):
                 subfolder=subfolder,
                 cache_dir=cache_dir,
                 use_safetensors=use_safetensors,
-                from_aistudio=from_aistudio,
-                from_modelscope=from_modelscope,
-                from_hf_hub=from_hf_hub,
+                download_hub=download_hub,
             )
             file_list = []
             for root, dirs, files in os.walk(cache_dir):
@@ -63,7 +60,7 @@ class ModelLoadTester(unittest.TestCase):
             if use_safetensors:
                 assert any(".safetensors" in f for f in file_list), "*.safetensors not in cache_dir"
             else:
-                if from_hf_hub:
+                if download_hub == DownloadSource.HUGGINGFACE:
                     assert any(".bin" in f for f in file_list), "*.bin not in cache_dir"
                 else:
                     assert any(".pdparams" in f for f in file_list), "*.pdparams not in cache_dir"
@@ -72,69 +69,89 @@ class ModelLoadTester(unittest.TestCase):
     def test_bert_load(self):
         # BOS
         logger.info("Download model from PaddleFormers BOS")
-        bert_model_bos = BertModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=False, from_hf_hub=False)
-        bert_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=False, from_hf_hub=False)
+        bert_model_bos = BertModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=False, download_hub="bos")
+        bert_model_bos_auto = AutoModel.from_pretrained(
+            "baicai/tiny-bert-2", use_safetensors=False, download_hub="bos"
+        )
         self.test_config_diff(bert_model_bos.config, bert_model_bos_auto.config)
 
         logger.info("Download model from PaddleFormers BOS with subfolder")
         bert_model_bos_sub = BertModel.from_pretrained(
-            "baicai/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=False, from_hf_hub=False
+            "baicai/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=False, download_hub="bos"
         )
         self.test_config_diff(bert_model_bos.config, bert_model_bos_sub.config)
 
         bert_model_bos_sub_auto = AutoModel.from_pretrained(
-            "baicai/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=False, from_hf_hub=False
+            "baicai/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=False, download_hub="bos"
         )
         self.test_config_diff(bert_model_bos_sub.config, bert_model_bos_sub_auto.config)
 
         # aistudio
         logger.info("Download model from aistudio")
         bert_model_aistudio = BertModel.from_pretrained(
-            "aistudio/tiny-bert", use_safetensors=False, from_aistudio=True
+            "aistudio/tiny-bert", use_safetensors=False, download_hub="aistudio"
         )
         self.test_config_diff(bert_model_bos.config, bert_model_aistudio.config)
         bert_model_aistudio_auto = AutoModel.from_pretrained(
-            "aistudio/tiny-bert", use_safetensors=False, from_aistudio=True
+            "aistudio/tiny-bert", use_safetensors=False, download_hub="aistudio"
         )
         self.test_config_diff(bert_model_aistudio.config, bert_model_aistudio_auto.config)
 
         # hf
         logger.info("Download model from hf")
-        bert_model_hf = BertModel.from_pretrained("Baicai003/tiny-bert", from_hf_hub=True, use_safetensors=False)
-        bert_model_hf_auto = AutoModel.from_pretrained("Baicai003/tiny-bert", from_hf_hub=True, use_safetensors=False)
+        bert_model_hf = BertModel.from_pretrained(
+            "Baicai003/tiny-bert", download_hub="huggingface", use_safetensors=False
+        )
+        bert_model_hf_auto = AutoModel.from_pretrained(
+            "Baicai003/tiny-bert", download_hub="huggingface", use_safetensors=False
+        )
         self.test_config_diff(bert_model_hf.config, bert_model_hf_auto.config)
         logger.info("Download model from hf with subfolder")
         bert_model_hf_sub = BertModel.from_pretrained(
-            "Baicai003/paddleformers-test-model", subfolder="tiny-bert", from_hf_hub=True, use_safetensors=False
+            "Baicai003/paddleformers-test-model",
+            subfolder="tiny-bert",
+            download_hub="huggingface",
+            use_safetensors=False,
         )
         self.test_config_diff(bert_model_hf.config, bert_model_hf_sub.config)
         bert_model_hf_sub_auto = AutoModel.from_pretrained(
-            "Baicai003/paddleformers-test-model", subfolder="tiny-bert", from_hf_hub=True, use_safetensors=False
+            "Baicai003/paddleformers-test-model",
+            subfolder="tiny-bert",
+            download_hub="huggingface",
+            use_safetensors=False,
         )
         self.test_config_diff(bert_model_hf_sub.config, bert_model_hf_sub_auto.config)
-        bert_model_hf = BertModel.from_pretrained("Baicai003/tiny-bert-one", from_hf_hub=True, use_safetensors=False)
+        bert_model_hf = BertModel.from_pretrained(
+            "Baicai003/tiny-bert-one", download_hub="huggingface", use_safetensors=False
+        )
         self.test_config_diff(bert_model_hf.config, bert_model_hf.config)
         bert_model_hf_auto = AutoModel.from_pretrained(
-            "Baicai003/tiny-bert-one", from_hf_hub=True, use_safetensors=False
+            "Baicai003/tiny-bert-one", download_hub="huggingface", use_safetensors=False
         )
         self.test_config_diff(bert_model_hf.config, bert_model_hf_auto.config)
         logger.info("Download model from hf with subfolder")
         bert_model_hf_sub = BertModel.from_pretrained(
-            "Baicai003/paddleformers-test-model", subfolder="tiny-bert-one", from_hf_hub=True, use_safetensors=False
+            "Baicai003/paddleformers-test-model",
+            subfolder="tiny-bert-one",
+            download_hub="huggingface",
+            use_safetensors=False,
         )
         self.test_config_diff(bert_model_hf.config, bert_model_hf_sub.config)
         bert_model_hf_sub_auto = AutoModel.from_pretrained(
-            "Baicai003/paddleformers-test-model", subfolder="tiny-bert-one", from_hf_hub=True, use_safetensors=False
+            "Baicai003/paddleformers-test-model",
+            subfolder="tiny-bert-one",
+            download_hub="huggingface",
+            use_safetensors=False,
         )
         self.test_config_diff(bert_model_hf_sub.config, bert_model_hf_sub_auto.config)
 
         logger.info("Download model from aistudio with subfolder")
         bert_model_aistudio_sub = BertModel.from_pretrained(
-            "aistudio/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=False, from_aistudio=True
+            "aistudio/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=False, download_hub="aistudio"
         )
         self.test_config_diff(bert_model_aistudio.config, bert_model_aistudio_sub.config)
         bert_model_aistudio_sub_auto = AutoModel.from_pretrained(
-            "aistudio/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=False, from_aistudio=True
+            "aistudio/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=False, download_hub="aistudio"
         )
         self.test_config_diff(bert_model_aistudio_sub.config, bert_model_aistudio_sub_auto.config)
 
@@ -152,72 +169,72 @@ class ModelLoadTester(unittest.TestCase):
 
         logger.info("Test cache_dir")
         # BOS
-        self.test_cache_dir(BertModel, "baicai/tiny-bert-2", use_safetensors=False, from_hf_hub=False)
-        self.test_cache_dir(AutoModel, "baicai/tiny-bert-2", use_safetensors=False, from_hf_hub=False)
+        self.test_cache_dir(BertModel, "baicai/tiny-bert-2", use_safetensors=False, download_hub="bos")
+        self.test_cache_dir(AutoModel, "baicai/tiny-bert-2", use_safetensors=False, download_hub="bos")
         self.test_cache_dir(
             BertModel,
             "baicai/paddleformers-test-model",
             subfolder="tiny-bert",
             use_safetensors=False,
-            from_hf_hub=False,
+            download_hub="bos",
         )
         self.test_cache_dir(
             AutoModel,
             "baicai/paddleformers-test-model",
             subfolder="tiny-bert",
             use_safetensors=False,
-            from_hf_hub=False,
+            download_hub="bos",
         )
 
         # aistudio
-        self.test_cache_dir(BertModel, "aistudio/tiny-bert", use_safetensors=False, from_aistudio=True)
-        self.test_cache_dir(AutoModel, "aistudio/tiny-bert", use_safetensors=False, from_aistudio=True)
+        self.test_cache_dir(BertModel, "aistudio/tiny-bert", use_safetensors=False, download_hub="aistudio")
+        self.test_cache_dir(AutoModel, "aistudio/tiny-bert", use_safetensors=False, download_hub="aistudio")
         self.test_cache_dir(
             BertModel,
             "aistudio/paddleformers-test-model",
             subfolder="tiny-bert",
             use_safetensors=False,
-            from_aistudio=True,
+            download_hub="aistudio",
         )
         self.test_cache_dir(
             AutoModel,
             "aistudio/paddleformers-test-model",
             subfolder="tiny-bert",
             use_safetensors=False,
-            from_aistudio=True,
+            download_hub="aistudio",
         )
 
         # hf
-        self.test_cache_dir(BertModel, "Baicai003/tiny-bert", from_hf_hub=True, use_safetensors=False)
-        self.test_cache_dir(AutoModel, "Baicai003/tiny-bert", from_hf_hub=True, use_safetensors=False)
+        self.test_cache_dir(BertModel, "Baicai003/tiny-bert", download_hub="huggingface", use_safetensors=False)
+        self.test_cache_dir(AutoModel, "Baicai003/tiny-bert", download_hub="huggingface", use_safetensors=False)
         self.test_cache_dir(
             BertModel,
             "Baicai003/paddleformers-test-model",
             subfolder="tiny-bert",
-            from_hf_hub=True,
+            download_hub="huggingface",
             use_safetensors=False,
         )
         self.test_cache_dir(
             AutoModel,
             "Baicai003/paddleformers-test-model",
             subfolder="tiny-bert",
-            from_hf_hub=True,
+            download_hub="huggingface",
             use_safetensors=False,
         )
-        self.test_cache_dir(BertModel, "Baicai003/tiny-bert-one", from_hf_hub=True, use_safetensors=False)
-        self.test_cache_dir(AutoModel, "Baicai003/tiny-bert-one", from_hf_hub=True, use_safetensors=False)
+        self.test_cache_dir(BertModel, "Baicai003/tiny-bert-one", download_hub="huggingface", use_safetensors=False)
+        self.test_cache_dir(AutoModel, "Baicai003/tiny-bert-one", download_hub="huggingface", use_safetensors=False)
         self.test_cache_dir(
             BertModel,
             "Baicai003/paddleformers-test-model",
             subfolder="tiny-bert-one",
-            from_hf_hub=True,
+            download_hub="huggingface",
             use_safetensors=False,
         )
         self.test_cache_dir(
             AutoModel,
             "Baicai003/paddleformers-test-model",
             subfolder="tiny-bert-one",
-            from_hf_hub=True,
+            download_hub="huggingface",
             use_safetensors=False,
         )
 
@@ -225,67 +242,87 @@ class ModelLoadTester(unittest.TestCase):
     def test_bert_load_safe(self):
         # BOS
         logger.info("Download model from PaddleFormers BOS")
-        bert_model_bos = BertModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=True, from_hf_hub=False)
-        bert_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=True, from_hf_hub=False)
+        bert_model_bos = BertModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=True, download_hub="bos")
+        bert_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-bert-2", use_safetensors=True, download_hub="bos")
         self.test_config_diff(bert_model_bos.config, bert_model_bos_auto.config)
 
         logger.info("Download model from PaddleFormers BOS with subfolder")
         bert_model_bos_sub = BertModel.from_pretrained(
-            "baicai/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=True, from_hf_hub=False
+            "baicai/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=True, download_hub="bos"
         )
         self.test_config_diff(bert_model_bos.config, bert_model_bos_sub.config)
 
         bert_model_bos_sub_auto = AutoModel.from_pretrained(
-            "baicai/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=True, from_hf_hub=False
+            "baicai/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=True, download_hub="bos"
         )
         self.test_config_diff(bert_model_bos_sub.config, bert_model_bos_sub_auto.config)
 
         # aistudio
         logger.info("Download model from aistudio")
-        bert_model_aistudio = BertModel.from_pretrained("aistudio/tiny-bert", use_safetensors=True, from_aistudio=True)
+        bert_model_aistudio = BertModel.from_pretrained(
+            "aistudio/tiny-bert", use_safetensors=True, download_hub="aistudio"
+        )
         self.test_config_diff(bert_model_bos.config, bert_model_aistudio.config)
         bert_model_aistudio_auto = AutoModel.from_pretrained(
-            "aistudio/tiny-bert", use_safetensors=True, from_aistudio=True
+            "aistudio/tiny-bert", use_safetensors=True, download_hub="aistudio"
         )
         self.test_config_diff(bert_model_aistudio.config, bert_model_aistudio_auto.config)
 
         # hf
         logger.info("Download model from hf")
-        bert_model_hf = BertModel.from_pretrained("Baicai003/tiny-bert", from_hf_hub=True, use_safetensors=True)
-        bert_model_hf_auto = AutoModel.from_pretrained("Baicai003/tiny-bert", from_hf_hub=True, use_safetensors=True)
+        bert_model_hf = BertModel.from_pretrained(
+            "Baicai003/tiny-bert", download_hub="huggingface", use_safetensors=True
+        )
+        bert_model_hf_auto = AutoModel.from_pretrained(
+            "Baicai003/tiny-bert", download_hub="huggingface", use_safetensors=True
+        )
         self.test_config_diff(bert_model_hf.config, bert_model_hf_auto.config)
         logger.info("Download model from hf with subfolder")
         bert_model_hf_sub = BertModel.from_pretrained(
-            "Baicai003/paddleformers-test-model", subfolder="tiny-bert", from_hf_hub=True, use_safetensors=True
+            "Baicai003/paddleformers-test-model",
+            subfolder="tiny-bert",
+            download_hub="huggingface",
+            use_safetensors=True,
         )
         self.test_config_diff(bert_model_hf.config, bert_model_hf_sub.config)
         bert_model_hf_sub_auto = AutoModel.from_pretrained(
-            "Baicai003/paddleformers-test-model", subfolder="tiny-bert", from_hf_hub=True, use_safetensors=True
+            "Baicai003/paddleformers-test-model",
+            subfolder="tiny-bert",
+            download_hub="huggingface",
+            use_safetensors=True,
         )
         self.test_config_diff(bert_model_hf_sub.config, bert_model_hf_sub_auto.config)
-        bert_model_hf = BertModel.from_pretrained("Baicai003/tiny-bert-one", from_hf_hub=True, use_safetensors=True)
+        bert_model_hf = BertModel.from_pretrained(
+            "Baicai003/tiny-bert-one", download_hub="huggingface", use_safetensors=True
+        )
         self.test_config_diff(bert_model_hf.config, bert_model_hf.config)
         bert_model_hf_auto = AutoModel.from_pretrained(
-            "Baicai003/tiny-bert-one", from_hf_hub=True, use_safetensors=True
+            "Baicai003/tiny-bert-one", download_hub="huggingface", use_safetensors=True
         )
         self.test_config_diff(bert_model_hf.config, bert_model_hf_auto.config)
         logger.info("Download model from hf with subfolder")
         bert_model_hf_sub = BertModel.from_pretrained(
-            "Baicai003/paddleformers-test-model", subfolder="tiny-bert-one", from_hf_hub=True, use_safetensors=True
+            "Baicai003/paddleformers-test-model",
+            subfolder="tiny-bert-one",
+            download_hub="huggingface",
+            use_safetensors=True,
         )
         self.test_config_diff(bert_model_hf.config, bert_model_hf_sub.config)
         bert_model_hf_sub_auto = AutoModel.from_pretrained(
-            "Baicai003/paddleformers-test-model", subfolder="tiny-bert-one", from_hf_hub=True, use_safetensors=True
+            "Baicai003/paddleformers-test-model",
+            subfolder="tiny-bert-one",
+            download_hub="huggingface",
+            use_safetensors=True,
         )
         self.test_config_diff(bert_model_hf_sub.config, bert_model_hf_sub_auto.config)
 
         logger.info("Download model from aistudio with subfolder")
         bert_model_aistudio_sub = BertModel.from_pretrained(
-            "aistudio/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=True, from_aistudio=True
+            "aistudio/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=True, download_hub="aistudio"
         )
         self.test_config_diff(bert_model_aistudio.config, bert_model_aistudio_sub.config)
         bert_model_aistudio_sub_auto = AutoModel.from_pretrained(
-            "aistudio/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=True, from_aistudio=True
+            "aistudio/paddleformers-test-model", subfolder="tiny-bert", use_safetensors=True, download_hub="aistudio"
         )
         self.test_config_diff(bert_model_aistudio_sub.config, bert_model_aistudio_sub_auto.config)
 
@@ -303,72 +340,72 @@ class ModelLoadTester(unittest.TestCase):
 
         logger.info("Test cache_dir")
         # BOS
-        self.test_cache_dir(BertModel, "baicai/tiny-bert-2", use_safetensors=True, from_hf_hub=False)
-        self.test_cache_dir(AutoModel, "baicai/tiny-bert-2", use_safetensors=True, from_hf_hub=False)
+        self.test_cache_dir(BertModel, "baicai/tiny-bert-2", use_safetensors=True, download_hub="bos")
+        self.test_cache_dir(AutoModel, "baicai/tiny-bert-2", use_safetensors=True, download_hub="bos")
         self.test_cache_dir(
             BertModel,
             "baicai/paddleformers-test-model",
             subfolder="tiny-bert",
             use_safetensors=True,
-            from_hf_hub=False,
+            download_hub="bos",
         )
         self.test_cache_dir(
             AutoModel,
             "baicai/paddleformers-test-model",
             subfolder="tiny-bert",
             use_safetensors=True,
-            from_hf_hub=False,
+            download_hub="bos",
         )
 
         # aistudio
-        self.test_cache_dir(BertModel, "aistudio/tiny-bert", use_safetensors=True, from_aistudio=True)
-        self.test_cache_dir(AutoModel, "aistudio/tiny-bert", use_safetensors=True, from_aistudio=True)
+        self.test_cache_dir(BertModel, "aistudio/tiny-bert", use_safetensors=True, download_hub="aistudio")
+        self.test_cache_dir(AutoModel, "aistudio/tiny-bert", use_safetensors=True, download_hub="aistudio")
         self.test_cache_dir(
             BertModel,
             "aistudio/paddleformers-test-model",
             subfolder="tiny-bert",
             use_safetensors=True,
-            from_aistudio=True,
+            download_hub="aistudio",
         )
         self.test_cache_dir(
             AutoModel,
             "aistudio/paddleformers-test-model",
             subfolder="tiny-bert",
             use_safetensors=True,
-            from_aistudio=True,
+            download_hub="aistudio",
         )
 
         # hf
-        self.test_cache_dir(BertModel, "Baicai003/tiny-bert", from_hf_hub=True, use_safetensors=True)
-        self.test_cache_dir(AutoModel, "Baicai003/tiny-bert", from_hf_hub=True, use_safetensors=True)
+        self.test_cache_dir(BertModel, "Baicai003/tiny-bert", download_hub="huggingface", use_safetensors=True)
+        self.test_cache_dir(AutoModel, "Baicai003/tiny-bert", download_hub="huggingface", use_safetensors=True)
         self.test_cache_dir(
             BertModel,
             "Baicai003/paddleformers-test-model",
             subfolder="tiny-bert",
-            from_hf_hub=True,
+            download_hub="huggingface",
             use_safetensors=True,
         )
         self.test_cache_dir(
             AutoModel,
             "Baicai003/paddleformers-test-model",
             subfolder="tiny-bert",
-            from_hf_hub=True,
+            download_hub="huggingface",
             use_safetensors=True,
         )
-        self.test_cache_dir(BertModel, "Baicai003/tiny-bert-one", from_hf_hub=True, use_safetensors=True)
-        self.test_cache_dir(AutoModel, "Baicai003/tiny-bert-one", from_hf_hub=True, use_safetensors=True)
+        self.test_cache_dir(BertModel, "Baicai003/tiny-bert-one", download_hub="huggingface", use_safetensors=True)
+        self.test_cache_dir(AutoModel, "Baicai003/tiny-bert-one", download_hub="huggingface", use_safetensors=True)
         self.test_cache_dir(
             BertModel,
             "Baicai003/paddleformers-test-model",
             subfolder="tiny-bert-one",
-            from_hf_hub=True,
+            download_hub="huggingface",
             use_safetensors=True,
         )
         self.test_cache_dir(
             AutoModel,
             "Baicai003/paddleformers-test-model",
             subfolder="tiny-bert-one",
-            from_hf_hub=True,
+            download_hub="huggingface",
             use_safetensors=True,
         )
 
@@ -376,71 +413,71 @@ class ModelLoadTester(unittest.TestCase):
     # def test_clip_load(self):
     #     # BOS
     #     logger.info("Download model from PaddleFormers BOS")
-    #     clip_model_bos = CLIPTextModel.from_pretrained("baicai/tiny-clip", use_safetensors=False, from_hf_hub=False)
-    #     clip_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-clip", use_safetensors=False, from_hf_hub=False)
+    #     clip_model_bos = CLIPTextModel.from_pretrained("baicai/tiny-clip", use_safetensors=False, download_hub="bos")
+    #     clip_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-clip", use_safetensors=False, download_hub="bos")
     #     self.test_config_diff(clip_model_bos.config, clip_model_bos_auto.config)
 
     #     logger.info("Download model from PaddleFormers BOS with subfolder")
     #     clip_model_bos_sub = CLIPTextModel.from_pretrained(
-    #         "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=False, from_hf_hub=False
+    #         "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=False, download_hub="bos"
     #     )
     #     self.test_config_diff(clip_model_bos.config, clip_model_bos_sub.config)
 
     #     clip_model_bos_sub_auto = AutoModel.from_pretrained(
-    #         "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=False, from_hf_hub=False
+    #         "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=False, download_hub="bos"
     #     )
     #     self.test_config_diff(clip_model_bos_sub.config, clip_model_bos_sub_auto.config)
 
     #     # aistudio
     #     logger.info("Download model from aistudio")
     #     clip_model_aistudio = CLIPTextModel.from_pretrained(
-    #         "aistudio/tiny-clip", use_safetensors=False, from_aistudio=True
+    #         "aistudio/tiny-clip", use_safetensors=False, download_hub="aistudio"
     #     )
     #     self.test_config_diff(clip_model_bos.config, clip_model_aistudio.config)
     #     clip_model_aistudio_auto = AutoModel.from_pretrained(
-    #         "aistudio/tiny-clip", use_safetensors=False, from_aistudio=True
+    #         "aistudio/tiny-clip", use_safetensors=False, download_hub="aistudio"
     #     )
     #     self.test_config_diff(clip_model_aistudio.config, clip_model_aistudio_auto.config)
 
     #     logger.info("Download model from aistudio with subfolder")
     #     clip_model_aistudio_sub = CLIPTextModel.from_pretrained(
-    #         "aistudio/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=False, from_aistudio=True
+    #         "aistudio/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=False, download_hub="aistudio"
     #     )
     #     self.test_config_diff(clip_model_aistudio.config, clip_model_aistudio_sub.config)
     #     clip_model_aistudio_sub_auto = AutoModel.from_pretrained(
-    #         "aistudio/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=False, from_aistudio=True
+    #         "aistudio/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=False, download_hub="aistudio"
     #     )
     #     self.test_config_diff(clip_model_aistudio_sub.config, clip_model_aistudio_sub_auto.config)
 
     #     # hf
     #     logger.info("Download model from hf")
-    #     clip_model_hf = CLIPTextModel.from_pretrained("Baicai003/tiny-clip", from_hf_hub=True, use_safetensors=False)
-    #     clip_model_hf_auto = AutoModel.from_pretrained("Baicai003/tiny-clip", from_hf_hub=True, use_safetensors=False)
+    #     clip_model_hf = CLIPTextModel.from_pretrained("Baicai003/tiny-clip", download_hub="huggingface", use_safetensors=False)
+    #     clip_model_hf_auto = AutoModel.from_pretrained("Baicai003/tiny-clip", download_hub="huggingface", use_safetensors=False)
     #     self.test_config_diff(clip_model_hf.config, clip_model_hf_auto.config)
     #     logger.info("Download model from hf with subfolder")
     #     clip_model_hf_sub = CLIPTextModel.from_pretrained(
-    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip", from_hf_hub=True, use_safetensors=False
+    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip", download_hub="huggingface", use_safetensors=False
     #     )
     #     self.test_config_diff(clip_model_hf.config, clip_model_hf_sub.config)
     #     clip_model_hf_sub_auto = AutoModel.from_pretrained(
-    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip", from_hf_hub=True, use_safetensors=False
+    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip", download_hub="huggingface", use_safetensors=False
     #     )
     #     self.test_config_diff(clip_model_hf_sub.config, clip_model_hf_sub_auto.config)
     #     clip_model_hf = CLIPTextModel.from_pretrained(
-    #         "Baicai003/tiny-clip-one", from_hf_hub=True, use_safetensors=False
+    #         "Baicai003/tiny-clip-one", download_hub="huggingface", use_safetensors=False
     #     )
     #     self.test_config_diff(clip_model_hf.config, clip_model_hf.config)
     #     clip_model_hf_auto = AutoModel.from_pretrained(
-    #         "Baicai003/tiny-clip-one", from_hf_hub=True, use_safetensors=False
+    #         "Baicai003/tiny-clip-one", download_hub="huggingface", use_safetensors=False
     #     )
     #     self.test_config_diff(clip_model_hf.config, clip_model_hf_auto.config)
     #     logger.info("Download model from hf with subfolder")
     #     clip_model_hf_sub = CLIPTextModel.from_pretrained(
-    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip-one", from_hf_hub=True, use_safetensors=False
+    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip-one", download_hub="huggingface", use_safetensors=False
     #     )
     #     self.test_config_diff(clip_model_hf.config, clip_model_hf_sub.config)
     #     clip_model_hf_sub_auto = AutoModel.from_pretrained(
-    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip-one", from_hf_hub=True, use_safetensors=False
+    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip-one", download_hub="huggingface", use_safetensors=False
     #     )
     #     self.test_config_diff(clip_model_hf_sub.config, clip_model_hf_sub_auto.config)
 
@@ -458,64 +495,64 @@ class ModelLoadTester(unittest.TestCase):
 
     #     logger.info("Test cache_dir")
     #     # BOS
-    #     self.test_cache_dir(CLIPTextModel, "baicai/tiny-clip", use_safetensors=False, from_hf_hub=False)
-    #     self.test_cache_dir(AutoModel, "baicai/tiny-clip", use_safetensors=False, from_hf_hub=False)
+    #     self.test_cache_dir(CLIPTextModel, "baicai/tiny-clip", use_safetensors=False, download_hub="bos")
+    #     self.test_cache_dir(AutoModel, "baicai/tiny-clip", use_safetensors=False, download_hub="bos")
     #     self.test_cache_dir(
     #         CLIPTextModel,
     #         "baicai/paddleformers-test-model",
     #         subfolder="tiny-clip",
     #         use_safetensors=False,
-    #         from_hf_hub=False,
+    #         download_hub="bos",
     #     )
     #     self.test_cache_dir(
-    #         AutoModel, "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=False, from_hf_hub=False
+    #         AutoModel, "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=False, download_hub="bos"
     #     )
 
     #     # aistudio
-    #     self.test_cache_dir(CLIPTextModel, "aistudio/tiny-clip", use_safetensors=False, from_aistudio=True)
-    #     self.test_cache_dir(AutoModel, "aistudio/tiny-clip", use_safetensors=False, from_aistudio=True)
+    #     self.test_cache_dir(CLIPTextModel, "aistudio/tiny-clip", use_safetensors=False, download_hub="aistudio")
+    #     self.test_cache_dir(AutoModel, "aistudio/tiny-clip", use_safetensors=False, download_hub="aistudio")
     #     self.test_cache_dir(
     #         CLIPTextModel,
     #         "aistudio/paddleformers-test-model",
     #         subfolder="tiny-clip",
     #         use_safetensors=False,
-    #         from_aistudio=True,
+    #         download_hub="aistudio",
     #     )
     #     self.test_cache_dir(
     #         AutoModel,
     #         "aistudio/paddleformers-test-model",
     #         subfolder="tiny-clip",
     #         use_safetensors=False,
-    #         from_aistudio=True,
+    #         download_hub="aistudio",
     #     )
 
     #     # hf
-    #     self.test_cache_dir(CLIPTextModel, "Baicai003/tiny-clip", from_hf_hub=True, use_safetensors=False)
-    #     self.test_cache_dir(AutoModel, "Baicai003/tiny-clip", from_hf_hub=True, use_safetensors=False)
+    #     self.test_cache_dir(CLIPTextModel, "Baicai003/tiny-clip", download_hub="huggingface", use_safetensors=False)
+    #     self.test_cache_dir(AutoModel, "Baicai003/tiny-clip", download_hub="huggingface", use_safetensors=False)
     #     self.test_cache_dir(
     #         CLIPTextModel,
     #         "Baicai003/paddleformers-test-model",
     #         subfolder="tiny-clip",
-    #         from_hf_hub=True,
+    #         download_hub="huggingface",
     #         use_safetensors=False,
     #     )
     #     self.test_cache_dir(
-    #         AutoModel, "Baicai003/paddleformers-test-model", subfolder="tiny-clip", from_hf_hub=True, use_safetensors=False
+    #         AutoModel, "Baicai003/paddleformers-test-model", subfolder="tiny-clip", download_hub="huggingface", use_safetensors=False
     #     )
-    #     self.test_cache_dir(CLIPTextModel, "Baicai003/tiny-clip-one", from_hf_hub=True, use_safetensors=False)
-    #     self.test_cache_dir(AutoModel, "Baicai003/tiny-clip-one", from_hf_hub=True, use_safetensors=False)
+    #     self.test_cache_dir(CLIPTextModel, "Baicai003/tiny-clip-one", download_hub="huggingface", use_safetensors=False)
+    #     self.test_cache_dir(AutoModel, "Baicai003/tiny-clip-one", download_hub="huggingface", use_safetensors=False)
     #     self.test_cache_dir(
     #         CLIPTextModel,
     #         "Baicai003/paddleformers-test-model",
     #         subfolder="tiny-clip-one",
-    #         from_hf_hub=True,
+    #         download_hub="huggingface",
     #         use_safetensors=False,
     #     )
     #     self.test_cache_dir(
     #         AutoModel,
     #         "Baicai003/paddleformers-test-model",
     #         subfolder="tiny-clip-one",
-    #         from_hf_hub=True,
+    #         download_hub="huggingface",
     #         use_safetensors=False,
     #     )
 
@@ -523,71 +560,71 @@ class ModelLoadTester(unittest.TestCase):
     # def test_clip_load_safe(self):
     #     # BOS
     #     logger.info("Download model from PaddleFormers BOS")
-    #     clip_model_bos = CLIPTextModel.from_pretrained("baicai/tiny-clip", use_safetensors=True, from_hf_hub=False)
-    #     clip_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-clip", use_safetensors=True, from_hf_hub=False)
+    #     clip_model_bos = CLIPTextModel.from_pretrained("baicai/tiny-clip", use_safetensors=True, download_hub="bos")
+    #     clip_model_bos_auto = AutoModel.from_pretrained("baicai/tiny-clip", use_safetensors=True, download_hub="bos")
     #     self.test_config_diff(clip_model_bos.config, clip_model_bos_auto.config)
 
     #     logger.info("Download model from PaddleFormers BOS with subfolder")
     #     clip_model_bos_sub = CLIPTextModel.from_pretrained(
-    #         "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, from_hf_hub=False
+    #         "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, download_hub="bos"
     #     )
     #     self.test_config_diff(clip_model_bos.config, clip_model_bos_sub.config)
 
     #     clip_model_bos_sub_auto = AutoModel.from_pretrained(
-    #         "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, from_hf_hub=False
+    #         "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, download_hub="bos"
     #     )
     #     self.test_config_diff(clip_model_bos_sub.config, clip_model_bos_sub_auto.config)
 
     #     # aistudio
     #     logger.info("Download model from aistudio")
     #     clip_model_aistudio = CLIPTextModel.from_pretrained(
-    #         "aistudio/tiny-clip", use_safetensors=True, from_aistudio=True
+    #         "aistudio/tiny-clip", use_safetensors=True, download_hub="aistudio"
     #     )
     #     self.test_config_diff(clip_model_bos.config, clip_model_aistudio.config)
     #     clip_model_aistudio_auto = AutoModel.from_pretrained(
-    #         "aistudio/tiny-clip", use_safetensors=True, from_aistudio=True
+    #         "aistudio/tiny-clip", use_safetensors=True, download_hub="aistudio"
     #     )
     #     self.test_config_diff(clip_model_aistudio.config, clip_model_aistudio_auto.config)
 
     #     logger.info("Download model from aistudio with subfolder")
     #     clip_model_aistudio_sub = CLIPTextModel.from_pretrained(
-    #         "aistudio/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, from_aistudio=True
+    #         "aistudio/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, download_hub="aistudio"
     #     )
     #     self.test_config_diff(clip_model_aistudio.config, clip_model_aistudio_sub.config)
     #     clip_model_aistudio_sub_auto = AutoModel.from_pretrained(
-    #         "aistudio/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, from_aistudio=True
+    #         "aistudio/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, download_hub="aistudio"
     #     )
     #     self.test_config_diff(clip_model_aistudio_sub.config, clip_model_aistudio_sub_auto.config)
 
     #     # hf
     #     logger.info("Download model from hf")
-    #     clip_model_hf = CLIPTextModel.from_pretrained("Baicai003/tiny-clip", from_hf_hub=True, use_safetensors=True)
-    #     clip_model_hf_auto = AutoModel.from_pretrained("Baicai003/tiny-clip", from_hf_hub=True, use_safetensors=True)
+    #     clip_model_hf = CLIPTextModel.from_pretrained("Baicai003/tiny-clip", download_hub="huggingface", use_safetensors=True)
+    #     clip_model_hf_auto = AutoModel.from_pretrained("Baicai003/tiny-clip", download_hub="huggingface", use_safetensors=True)
     #     self.test_config_diff(clip_model_hf.config, clip_model_hf_auto.config)
     #     logger.info("Download model from hf with subfolder")
     #     clip_model_hf_sub = CLIPTextModel.from_pretrained(
-    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip", from_hf_hub=True, use_safetensors=True
+    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip", download_hub="huggingface", use_safetensors=True
     #     )
     #     self.test_config_diff(clip_model_hf.config, clip_model_hf_sub.config)
     #     clip_model_hf_sub_auto = AutoModel.from_pretrained(
-    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip", from_hf_hub=True, use_safetensors=True
+    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip", download_hub="huggingface", use_safetensors=True
     #     )
     #     self.test_config_diff(clip_model_hf_sub.config, clip_model_hf_sub_auto.config)
     #     clip_model_hf = CLIPTextModel.from_pretrained(
-    #         "Baicai003/tiny-clip-one", from_hf_hub=True, use_safetensors=True
+    #         "Baicai003/tiny-clip-one", download_hub="huggingface", use_safetensors=True
     #     )
     #     self.test_config_diff(clip_model_hf.config, clip_model_hf.config)
     #     clip_model_hf_auto = AutoModel.from_pretrained(
-    #         "Baicai003/tiny-clip-one", from_hf_hub=True, use_safetensors=True
+    #         "Baicai003/tiny-clip-one", download_hub="huggingface", use_safetensors=True
     #     )
     #     self.test_config_diff(clip_model_hf.config, clip_model_hf_auto.config)
     #     logger.info("Download model from hf with subfolder")
     #     clip_model_hf_sub = CLIPTextModel.from_pretrained(
-    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip-one", from_hf_hub=True, use_safetensors=True
+    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip-one", download_hub="huggingface", use_safetensors=True
     #     )
     #     self.test_config_diff(clip_model_hf.config, clip_model_hf_sub.config)
     #     clip_model_hf_sub_auto = AutoModel.from_pretrained(
-    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip-one", from_hf_hub=True, use_safetensors=True
+    #         "Baicai003/paddleformers-test-model", subfolder="tiny-clip-one", download_hub="huggingface", use_safetensors=True
     #     )
     #     self.test_config_diff(clip_model_hf_sub.config, clip_model_hf_sub_auto.config)
 
@@ -605,59 +642,59 @@ class ModelLoadTester(unittest.TestCase):
 
     #     logger.info("Test cache_dir")
     #     # BOS
-    #     self.test_cache_dir(CLIPTextModel, "baicai/tiny-clip", use_safetensors=True, from_hf_hub=False)
-    #     self.test_cache_dir(AutoModel, "baicai/tiny-clip", use_safetensors=True, from_hf_hub=False)
+    #     self.test_cache_dir(CLIPTextModel, "baicai/tiny-clip", use_safetensors=True, download_hub="bos")
+    #     self.test_cache_dir(AutoModel, "baicai/tiny-clip", use_safetensors=True, download_hub="bos")
     #     self.test_cache_dir(
     #         CLIPTextModel,
     #         "baicai/paddleformers-test-model",
     #         subfolder="tiny-clip",
     #         use_safetensors=True,
-    #         from_hf_hub=False,
+    #         download_hub="bos",
     #     )
     #     self.test_cache_dir(
-    #         AutoModel, "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, from_hf_hub=False
+    #         AutoModel, "baicai/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, download_hub="bos"
     #     )
 
     #     # aistudio
-    #     self.test_cache_dir(CLIPTextModel, "aistudio/tiny-clip", use_safetensors=True, from_aistudio=True)
-    #     self.test_cache_dir(AutoModel, "aistudio/tiny-clip", use_safetensors=True, from_aistudio=True)
+    #     self.test_cache_dir(CLIPTextModel, "aistudio/tiny-clip", use_safetensors=True, download_hub="aistudio")
+    #     self.test_cache_dir(AutoModel, "aistudio/tiny-clip", use_safetensors=True, download_hub="aistudio")
     #     self.test_cache_dir(
     #         CLIPTextModel,
     #         "aistudio/paddleformers-test-model",
     #         subfolder="tiny-clip",
     #         use_safetensors=True,
-    #         from_aistudio=True,
+    #         download_hub="aistudio",
     #     )
     #     self.test_cache_dir(
-    #         AutoModel, "aistudio/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, from_aistudio=True
+    #         AutoModel, "aistudio/paddleformers-test-model", subfolder="tiny-clip", use_safetensors=True, download_hub="aistudio"
     #     )
 
     #     # hf
-    #     self.test_cache_dir(CLIPTextModel, "Baicai003/tiny-clip", from_hf_hub=True, use_safetensors=True)
-    #     self.test_cache_dir(AutoModel, "Baicai003/tiny-clip", from_hf_hub=True, use_safetensors=True)
+    #     self.test_cache_dir(CLIPTextModel, "Baicai003/tiny-clip", download_hub="huggingface", use_safetensors=True)
+    #     self.test_cache_dir(AutoModel, "Baicai003/tiny-clip", download_hub="huggingface", use_safetensors=True)
     #     self.test_cache_dir(
     #         CLIPTextModel,
     #         "Baicai003/paddleformers-test-model",
     #         subfolder="tiny-clip",
-    #         from_hf_hub=True,
+    #         download_hub="huggingface",
     #         use_safetensors=True,
     #     )
     #     self.test_cache_dir(
-    #         AutoModel, "Baicai003/paddleformers-test-model", subfolder="tiny-clip", from_hf_hub=True, use_safetensors=True
+    #         AutoModel, "Baicai003/paddleformers-test-model", subfolder="tiny-clip", download_hub="huggingface", use_safetensors=True
     #     )
-    #     self.test_cache_dir(CLIPTextModel, "Baicai003/tiny-clip-one", from_hf_hub=True, use_safetensors=True)
-    #     self.test_cache_dir(AutoModel, "Baicai003/tiny-clip-one", from_hf_hub=True, use_safetensors=True)
+    #     self.test_cache_dir(CLIPTextModel, "Baicai003/tiny-clip-one", download_hub="huggingface", use_safetensors=True)
+    #     self.test_cache_dir(AutoModel, "Baicai003/tiny-clip-one", download_hub="huggingface", use_safetensors=True)
     #     self.test_cache_dir(
     #         CLIPTextModel,
     #         "Baicai003/paddleformers-test-model",
     #         subfolder="tiny-clip-one",
-    #         from_hf_hub=True,
+    #         download_hub="huggingface",
     #         use_safetensors=True,
     #     )
     #     self.test_cache_dir(
     #         AutoModel,
     #         "Baicai003/paddleformers-test-model",
     #         subfolder="tiny-clip-one",
-    #         from_hf_hub=True,
+    #         download_hub="huggingface",
     #         use_safetensors=True,
     #     )

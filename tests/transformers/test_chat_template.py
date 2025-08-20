@@ -170,7 +170,7 @@ class ChatTemplateContextDataTest(unittest.TestCase):
 
 class ChatTemplateIntegrationTest(unittest.TestCase):
     def test_linlyai_chinese_llama_2_chat_template(self):
-        tokenizer = AutoTokenizer.from_pretrained("linly-ai/chinese-llama-2-7b")
+        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/chinese-llama-2-7b-linly")
         query = "你好"
         final_query = tokenizer.apply_chat_template(query, tokenize=False)
         expected_query = f"<s>### Instruction:{query}  ### Response:"
@@ -183,7 +183,7 @@ class ChatTemplateIntegrationTest(unittest.TestCase):
         self.assertEqual(final_query, expected_query)
 
     def test_linlyai_chinese_llama_2_chat_template_with_none_saved(self):
-        tokenizer = AutoTokenizer.from_pretrained("linly-ai/chinese-llama-2-7b")
+        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/chinese-llama-2-7b-linly")
         tokenizer.chat_template = None
         with tempfile.TemporaryDirectory() as tempdir:
             tokenizer.save_pretrained(tempdir)
@@ -195,7 +195,7 @@ class ChatTemplateIntegrationTest(unittest.TestCase):
         # refer to: https://huggingface.co/Qwen/Qwen-14B-Chat/blob/main/qwen_generation_utils.py#L119
 
         # 1. test render base on query & conversation data
-        tokenizer = AutoTokenizer.from_pretrained("qwen/qwen-14b-chat")
+        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/qwen-14b-chat")
         query = "你好"
         final_query = tokenizer.apply_chat_template(query, tokenize=False)
 
@@ -216,7 +216,7 @@ class ChatTemplateIntegrationTest(unittest.TestCase):
 @parameterized_class(
     ["model_name"],
     [
-        ["linly-ai/chinese-llama-2-7b"],
+        ["test_paddleformers/chinese-llama-2-7b-linly"],
     ],
 )
 class TestChatTemplateSpecialTokens(unittest.TestCase):
@@ -267,7 +267,7 @@ class TestChatTemplateTruncation(unittest.TestCase):
         return ChatTemplate.from_file(self.chat_template_config_file)
 
     def test_must_have_system(self):
-        tokenizer = AutoTokenizer.from_pretrained("qwen/qwen-14b-chat")
+        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/qwen-14b-chat")
 
         # get the length of system
         system = tokenizer.chat_template.render_system()
@@ -283,7 +283,7 @@ class TestChatTemplateTruncation(unittest.TestCase):
 
     def test_at_least_one_turn(self):
         query = [["你好", "您好，我是个人人工智能助手"], ["今天吃啥", "你可以选择不同的菜系"]]
-        tokenizer = AutoTokenizer.from_pretrained("linly-ai/chinese-llama-2-7b")
+        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/chinese-llama-2-7b-linly")
         # tokenizer.init_chat_template(self.chat_template_config_file)
 
         # get all query sentence
@@ -322,7 +322,7 @@ class TestChatTemplateTruncation(unittest.TestCase):
         )
 
     def test_inference_template_with_context_data(self):
-        tokenizer = AutoTokenizer.from_pretrained("__internal_testing__/tiny-random-llama")
+        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama")
         chat_template_config_file = "./tests/fixtures/chat_template_with_context.json"
         tokenizer.init_chat_template(chat_template_config_file)
 
@@ -346,7 +346,7 @@ class TemplateIntegrationTest(unittest.TestCase):
             self.src_length: int = src_length
 
     def setUp(self) -> None:
-        self.tokenizer = AutoTokenizer.from_pretrained("qwen/qwen-7b-chat")
+        self.tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/qwen-7b-chat")
         qwen_jinja = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
         self.tokenizer.init_chat_template(qwen_jinja)
         sys.path.insert(0, "./llm")

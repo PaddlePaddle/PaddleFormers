@@ -910,18 +910,14 @@ class ChatTemplateMixin:
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
         cache_dir = kwargs.pop("cache_dir", None)
-        from_hf_hub = kwargs.pop("from_hf_hub", False)
-        from_aistudio = kwargs.pop("from_aistudio", False)
-        from_modelscope = kwargs.pop("from_modelscope", False)
+        download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", "")
         if subfolder is None:
             subfolder = ""
 
         kwargs["subfolder"] = subfolder
         kwargs["cache_dir"] = cache_dir
-        kwargs["from_hf_hub"] = from_hf_hub
-        kwargs["from_aistudio"] = from_aistudio
-        kwargs["from_modelscope"] = from_modelscope
+        kwargs["download_hub"] = download_hub
         kwargs["return_tokenizer_file_dir"] = True
         tokenizer, tokenizer_config_file_dir = super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
 

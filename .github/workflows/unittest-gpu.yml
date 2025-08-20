@@ -28,11 +28,6 @@ env:
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_name: unittest-gpu-ci
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-  HF_ENDPOINT: https://hf-mirror.com
-  STUDIO_GIT_HOST: http://git.prod.idc-to-cloud.aistudio.baidu-int.com
-  PPNLP_HOME: /ssd1/PaddleNLP
-  HF_DATASETS_CACHE: /ssd1/PaddleNLP/huggingface/datasets
-  TRANSFORMERS_CACHE: /ssd1/PaddleNLP/huggingface
   RUN_DOWNSTREAM: ${{ inputs.run_downstream }}
 
 defaults:
@@ -84,7 +79,6 @@ jobs:
               -v $work_dir/../../..:$work_dir/../../.. \
               -v $work_dir:/workspace \
               -v /home/.cache/pip:/home/.cache/pip \
-              -v /ssd1/PaddleNLP:/ssd1/PaddleNLP \
               -e BRANCH \
               -e AGILE_COMPILE_BRANCH \
               -e PR_ID \
@@ -96,7 +90,6 @@ jobs:
               -e paddle_whl \
               -e FLAGS_dynamic_static_unified_comm \
               -e python_version \
-              -e CUDA_VISIBLE_DEVICES=$cudaid \
               -w /workspace --runtime=nvidia $IMAGE_NAME
           fi
             
@@ -142,7 +135,9 @@ jobs:
             ln -sf $(which python${python_version}) /usr/bin/python3
             pip config set global.cache-dir "/home/.cache/pip"
             set -e
+            rm -rf /root/.cache/aistudio/
             cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
+            source $work_dir/../../../proxy
             timeout 50m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
             '
           fi

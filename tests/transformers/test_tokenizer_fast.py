@@ -33,7 +33,7 @@ class PreTrainedTokenizationFastTest(TokenizerTesterMixin, unittest.TestCase):
         super().setUp()
         self.test_rust_tokenizer = True
 
-        model_paths = ["__internal_testing__/tiny-random-llama-fast"]
+        model_paths = ["test_paddleformers/tiny-random-llama-fast"]
         # self.bytelevel_bpe_model_name = "SaulLu/dummy-tokenizer-bytelevel-bpe"
 
         # Inclusion of 2 tokenizers to test different types of models (Unigram and WordLevel for the moment)

@@ -54,7 +54,7 @@ class TokenizerUtilsTest(unittest.TestCase):
         self.assertEqual(data["tokenizer_class"], "SubEmptyTokenizer")
 
     def test_from_pretrained_cache_dir(self):
-        model_name = "__internal_testing__/tiny-random-bert"
+        model_name = "test_paddleformers/tiny-random-bert"
         with tempfile.TemporaryDirectory() as tempdir:
             BertTokenizer.from_pretrained(model_name, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, TOKENIZER_CONFIG_NAME)))

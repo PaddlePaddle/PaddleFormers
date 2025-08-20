@@ -33,7 +33,7 @@ VOCAB_FILES_NAMES = {
 
 __all__ = ["Qwen2Tokenizer"]
 
-MAX_MODEL_INPUT_SIZES = {"__internal_testing__/tiny-random-qwen2": 32768}
+MAX_MODEL_INPUT_SIZES = {}  # {"__internal_testing__/tiny-random-qwen2": 32768}
 
 PRETOKENIZE_REGEX = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
 
@@ -134,7 +134,7 @@ class Qwen2Tokenizer(PretrainedTokenizer):
 
     pretrained_resource_files_map = {
         "vocab_file": {
-            "__internal_testing__/tiny-random-qwen2": "https://bj.bcebos.com/paddlenlp/models/community/qwen2/vocab.json",
+            # "__internal_testing__/tiny-random-qwen2": "https://bj.bcebos.com/paddlenlp/models/community/qwen2/vocab.json",
         },
     }
 

@@ -26,7 +26,7 @@ from ..tokenizer_utils_base import AddedToken
 __all__ = ["QWenTokenizer"]
 
 
-VOCAB_FILES_NAMES = {"vocab_file": "qwen.tiktoken"}
+VOCAB_FILES_NAMES = {"vocab_file": "qwen.tiktoken", "chat_template_file": "chat_template.json"}
 
 PAT_STR = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
 ENDOFTEXT = "<|endoftext|>"

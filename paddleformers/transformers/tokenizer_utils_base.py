@@ -50,7 +50,7 @@ from huggingface_hub import (
 )
 from huggingface_hub.utils import EntryNotFoundError
 
-from ..utils.download import resolve_file_path
+from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.env import (
     CHAT_TEMPLATE_CONFIG_NAME,
     NONE_CHAT_TEMPLATE,
@@ -1513,7 +1513,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
                 - Name of a community-contributed pretrained model.
                 - Local directory path which contains tokenizer related resources
                   and tokenizer config file ("tokenizer_config.json").
-            from_hf_hub (bool, optional): whether to load from Huggingface Hub
+            download_hub (DownloadSource, optional): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
             subfolder (str, optional) An optional value corresponding to a folder inside the repo.
                 Only works when loading from Huggingface Hub.
             *args (tuple): position arguments for model `__init__`. If provided,
@@ -1540,9 +1540,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
                 tokenizer = BertTokenizer.from_pretrained('./my_bert/')
         """
         cache_dir = kwargs.pop("cache_dir", None)
-        from_hf_hub = kwargs.pop("from_hf_hub", False)
-        from_aistudio = kwargs.pop("from_aistudio", False)
-        from_modelscope = kwargs.pop("from_modelscope", False)
+        download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", "")
         return_tokenizer_file_dir = kwargs.pop("return_tokenizer_file_dir", False)
 
@@ -1567,7 +1565,11 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
             )
         vocab_files_target = {**cls.resource_files_names, **additional_files_names}
         # From HF Hub or AI Studio
-        if from_hf_hub or from_aistudio or from_modelscope:
+        if (
+            download_hub == DownloadSource.HUGGINGFACE
+            or download_hub == DownloadSource.AISTUDIO
+            or download_hub == DownloadSource.MODELSCOPE
+        ) and not os.path.isdir(pretrained_model_name_or_path):
             # Only include the necessary resource files specified by the tokenizer cls
             # Deep copy to avoid modifying the class attributes
             vocab_files = copy.deepcopy(cls.resource_files_names)
@@ -1600,9 +1602,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
                 [file_path],
                 subfolder,
                 cache_dir=cache_dir,
-                from_aistudio=from_aistudio,
-                from_modelscope=from_modelscope,
-                from_hf_hub=from_hf_hub,
+                download_hub=download_hub,
             )
         for file_id, file_path in resolved_vocab_files.items():
             if resolved_vocab_files[file_id] is not None:
@@ -1615,7 +1615,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
             *args,
             cache_dir=cache_dir,
             return_tokenizer_file_dir=return_tokenizer_file_dir,
-            from_hf_hub=from_hf_hub,
+            download_hub=download_hub,
             **kwargs,
         )
 
@@ -1628,7 +1628,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
         *init_inputs,
         cache_dir=None,
         return_tokenizer_file_dir=False,
-        from_hf_hub=False,
+        download_hub=None,
         **kwargs,
     ):
         if cls.__name__.endswith("Fast"):
@@ -1732,7 +1732,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
                 init_kwargs[args_name] = file_path
 
         # TODO(zhoushunjie): It's not supported to load tokenizer.json of hf so far.
-        if from_hf_hub and "tokenizer_file" in init_kwargs:
+        if download_hub == DownloadSource.HUGGINGFACE and "tokenizer_file" in init_kwargs:
             init_kwargs.pop("tokenizer_file")
 
         # TODO(guosheng): avoid reduplication of position args and key word args

@@ -20,7 +20,7 @@ from paddleformers.transformers import QWenTokenizer
 
 
 class Qwen2TokenizationTest(unittest.TestCase):
-    from_pretrained_id = "qwen/qwen-7b"
+    from_pretrained_id = "PaddleNLP/qwen-7b"
     tokenizer_class = QWenTokenizer
     test_slow_tokenizer = True
     space_between_special_tokens = False

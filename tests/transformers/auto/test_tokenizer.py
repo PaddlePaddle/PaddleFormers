@@ -23,7 +23,10 @@ from paddleformers.transformers.auto.configuration import CONFIG_MAPPING, AutoCo
 from paddleformers.transformers.auto.tokenizer import TOKENIZER_MAPPING
 from paddleformers.transformers.bert.configuration import BertConfig
 from paddleformers.transformers.bert.tokenizer import BertTokenizer
-from paddleformers.transformers.bert.tokenizer_fast import BertTokenizerFast
+from paddleformers.transformers.bert.tokenizer_fast import (
+    BertTokenizerFast,
+    PretrainedTokenizerFast,
+)
 from paddleformers.utils.env import TOKENIZER_CONFIG_NAME
 
 from ...utils.test_module.custom_configuration import CustomConfig
@@ -37,16 +40,16 @@ from ...utils.test_module.custom_tokenizer_fast import (
 class AutoTokenizerTest(unittest.TestCase):
     @unittest.skip("skipping due to connection error!")
     def test_from_mdoelscope(self):
-        tokenizer = AutoTokenizer.from_pretrained("sqlhuman/tiny-random-llama", from_mdoelscope=True)
+        tokenizer = AutoTokenizer.from_pretrained("sqlhuman/tiny-random-llama", download_hub="modelscope")
         self.assertIsInstance(tokenizer, paddleformers.transformers.LlamaTokenizer)
 
     @unittest.skip("skipping due to connection error!")
     def test_from_aistudio(self):
-        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama", from_aistudio=True)
+        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama", download_hub="aistudio")
         self.assertIsInstance(tokenizer, paddleformers.transformers.LlamaTokenizer)
 
     def test_from_pretrained_cache_dir(self):
-        model_name = "__internal_testing__/tiny-random-bert"
+        model_name = "test_paddleformers/tiny-random-bert"
         with tempfile.TemporaryDirectory() as tempdir:
             AutoTokenizer.from_pretrained(model_name, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, TOKENIZER_CONFIG_NAME)))
@@ -54,8 +57,8 @@ class AutoTokenizerTest(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_name, model_name)))
 
     def test_from_pretrained_tokenizer_fast(self):
-        tokenizer = AutoTokenizer.from_pretrained("intfloat/e5-base-v2", use_fast=True)
-        self.assertIsInstance(tokenizer, BertTokenizerFast)
+        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama-fast", use_fast=True)
+        self.assertIsInstance(tokenizer, PretrainedTokenizerFast)
 
     def test_new_tokenizer_registration(self):
         try:
@@ -66,7 +69,7 @@ class AutoTokenizerTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 AutoTokenizer.register(BertConfig, slow_tokenizer_class=BertTokenizer)
 
-            tokenizer = CustomTokenizer.from_pretrained("julien-c/bert-xsmall-dummy")
+            tokenizer = CustomTokenizer.from_pretrained("test_paddleformers/tiny-random-bert")
             with tempfile.TemporaryDirectory() as tmp_dir:
                 tokenizer.save_pretrained(tmp_dir)
 
@@ -119,7 +122,7 @@ class AutoTokenizerTest(unittest.TestCase):
             # We pass through a llama tokenizer fast cause there is no converter slow to fast for our new toknizer
             # and that model does not have a tokenizer.json
             with tempfile.TemporaryDirectory() as tmp_dir:
-                llama_tokenizer = BertTokenizerFast.from_pretrained("julien-c/bert-xsmall-dummy", from_hf_hub=True)
+                llama_tokenizer = BertTokenizerFast.from_pretrained("test_paddleformers/tiny-random-bert")
                 llama_tokenizer.save_pretrained(tmp_dir)
                 tokenizer = CustomTokenizerFast.from_pretrained(tmp_dir)
 
