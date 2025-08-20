@@ -47,7 +47,7 @@ set_env() {
     export FLAGS_cudnn_deterministic=1
     export HF_ENDPOINT=https://hf-mirror.com
     export FLAGS_use_cuda_managed_memory=true
-    export running_time=40m
+    export running_time=80m
 
     # for CE
     if [[ ${FLAGS_enable_CE} == "true" ]];then
