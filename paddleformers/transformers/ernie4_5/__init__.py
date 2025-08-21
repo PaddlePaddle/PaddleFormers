@@ -22,26 +22,11 @@ import_structure = {
     "tokenizer_utils": ["PretrainedTokenizer"],
     "configuration": ["Ernie4_5Config"],
     "modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"],
-    "distributed": [],
-    "fusion_ops": [],
-    "sequence_parallel_utils": [
-        "MPScale",
-        "sequence_parallel_sparse_mask_labels",
-        "ScatterOp",
-        "GatherOp",
-        "SliceVarlenOp",
-        "AllGatherVarlenOpV2",
-        "AllGatherOp",
-        "_AllToAll",
-        "mark_as_sequence_parallel_parameter",
-        "AllGatherVarlenOp",
-    ],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
     from .modeling import *
-    from .tokenizer import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

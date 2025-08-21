@@ -29,6 +29,8 @@ from paddle.utils import map_structure
 from ..transformers.model_outputs import ModelOutput
 from ..transformers.utils import get_scale_by_dtype
 from ..utils.log import logger
+from ..utils.masking_utils import _expand_2d_mask, _make_causal_mask
+from ..utils.tools import get_env_device
 from .configuration_utils import DEFAULT_MAX_NEW_TOKENS, GenerationConfig
 from .logits_process import (
     ForcedBOSTokenLogitsProcessor,
@@ -339,13 +341,61 @@ class GenerationMixin(object):
         is_pad_token_not_equal_to_eos_token_id = (eos_token_id is None) or (
             (eos_token_id is not None) and (pad_token_id != eos_token_id)
         )
-        if is_pad_token_in_inputs_ids and is_pad_token_not_equal_to_eos_token_id:
-            attention_mask = (input_ids == pad_token_id).astype(paddle.get_default_dtype()) * get_scale_by_dtype(
-                return_positive=False
-            )
+        inputs_tensor = input_ids
+
+        # No information for attention mask inference -> return default attention mask
+        default_attention_mask = paddle.ones(input_ids.shape[:2], dtype=paddle.get_default_dtype())
+        if pad_token_id is None:
+            return default_attention_mask
+        can_infer_attention_mask = is_pad_token_in_inputs_ids * is_pad_token_not_equal_to_eos_token_id
+        attention_mask_from_padding = (inputs_tensor != pad_token_id).astype(paddle.get_default_dtype())
+
+        attention_mask = (
+            attention_mask_from_padding * can_infer_attention_mask + default_attention_mask * ~can_infer_attention_mask
+        )
+        return attention_mask
+
+    @staticmethod
+    def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
+        if attention_mask is not None:
+            # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+            if len(attention_mask.shape) == 2:
+                expanded_attn_mask = _expand_2d_mask(attention_mask, dtype, tgt_length=input_shape[-1])
+                # For decoding phase in generation, seq_length = 1, we don't need to add causal mask
+                if input_shape[-1] > 1:
+                    combined_attention_mask = _make_causal_mask(
+                        input_shape, past_key_values_length=past_key_values_length
+                    )
+                    if get_env_device() in ["npu", "mlu", "intel_hpu"]:
+                        expanded_attn_mask = expanded_attn_mask.astype("bool") & combined_attention_mask.astype("bool")
+                    else:
+                        expanded_attn_mask = expanded_attn_mask & combined_attention_mask
+            # [bsz, seq_len, seq_len] -> [bsz, 1, seq_len, seq_len]
+            elif len(attention_mask.shape) == 3:
+                expanded_attn_mask = attention_mask.unsqueeze(1).astype("bool")
+            # if attention_mask is already 4-D, do nothing
+            else:
+                expanded_attn_mask = attention_mask
         else:
-            attention_mask = paddle.zeros_like(input_ids, dtype=paddle.get_default_dtype())
-        return paddle.unsqueeze(attention_mask, axis=[1, 2])
+            expanded_attn_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
+        # Convert bool attention_mask to float attention mask, which will be added to attention_scores later
+        if get_env_device() in ["npu", "mlu", "intel_hpu"]:
+            x = paddle.to_tensor(0.0, dtype="float32")
+            y = paddle.to_tensor(paddle.finfo(dtype).min, dtype="float32")
+            expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), x, y).astype(dtype)
+        elif get_env_device() == "xpu":
+            x = paddle.to_tensor(0.0, dtype="float32")
+            y = paddle.to_tensor(-1.7005809656952787e38, dtype="float32")
+            expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), x, y)
+        elif get_env_device() == "gcu":
+            min_val = paddle.finfo(dtype).min
+            x = paddle.to_tensor(0.0, dtype=dtype)
+            y = paddle.to_tensor(min_val, dtype=dtype)
+            expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), x, y).astype(dtype)
+        else:
+            expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), 0.0, paddle.finfo(dtype).min)
+            expanded_attn_mask = expanded_attn_mask.astype(dtype)
+        return expanded_attn_mask
 
     @staticmethod
     def prepare_seq_len_for_generation(input_ids, pad_token_id, eos_token_id):
@@ -853,12 +903,8 @@ class GenerationMixin(object):
                 bos_token_id, encoder_output=model_kwargs["inputs_embeds"]
             )
 
-        if model_kwargs.get("attention_mask", None) is None:
-            # TODO
-            # Init `attention_mask` depending on `pad_token_id`
-            model_kwargs["attention_mask"] = self.prepare_attention_mask_for_generation(
-                input_ids, pad_token_id, eos_token_id
-            )
+        kwargs_has_attention_mask = model_kwargs.get("attention_mask", None) is not None
+        accepts_attention_mask = "attention_mask" in set(inspect.signature(self.forward).parameters.keys())
         self.is_encoder_decoder = self.config.is_encoder_decoder
 
         if self.is_encoder_decoder:
@@ -879,6 +925,11 @@ class GenerationMixin(object):
                 )
 
         pad_token_id = self.set_pad_token_id(pad_token_id, eos_token_id)
+
+        if not kwargs_has_attention_mask and accepts_attention_mask:
+            model_kwargs["attention_mask"] = self.prepare_attention_mask_for_generation(
+                input_ids, pad_token_id, eos_token_id
+            )
 
         if generation_config.max_length != 0 and generation_config.max_new_tokens == DEFAULT_MAX_NEW_TOKENS:
             logger.warning("`max_length` will be deprecated in future releases, use `max_new_tokens` instead.")

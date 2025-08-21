@@ -25,7 +25,7 @@ import paddle
 
 from ..utils.download import resolve_file_path
 from ..utils.log import logger
-from .tokenizer_utils_base import TensorType
+from .tokenizer_utils import TensorType
 
 FEATURE_EXTRACTOR_NAME = "preprocessor_config.json"
 

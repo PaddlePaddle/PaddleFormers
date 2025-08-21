@@ -77,6 +77,14 @@ import_structure = {
     "optimizer": ["AdamWMini", "AdamWCustom", "AdamWLoRAPro"],
     "env": ["CONFIG_NAME", "GENERATION_CONFIG_NAME", "LEGACY_CONFIG_NAME"],
     "log": ["logger"],
+    "masking_utils": [
+        "_gen_from_sparse_attn_mask_indices",
+        "masked_fill",
+        "is_casual_mask",
+        "_make_causal_mask",
+        "_expand_2d_mask",
+        "build_alibi_tensor",
+    ],
     "tools": ["device_guard"],
     "downloader": ["get_weights_path_from_url"],
 }

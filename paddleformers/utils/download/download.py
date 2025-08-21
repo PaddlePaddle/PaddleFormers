@@ -197,8 +197,7 @@ def resolve_file_path(
                     if index < len(filenames) - 1:
                         continue
                     else:
-                        print(f"please make sure one of the {filenames} under the repo {repo_id}")
-                        return None
+                        raise EntryNotFoundError(f"please make sure one of the {filenames} under the repo {repo_id}")
 
         elif download_hub == DownloadSource.AISTUDIO:
             for index, filename in enumerate(filenames):
@@ -213,8 +212,7 @@ def resolve_file_path(
                     if index < len(filenames) - 1:
                         continue
                     else:
-                        print(f"please make sure one of the {filenames} under the repo {repo_id}")
-                        return None
+                        raise EntryNotFoundError(f"please make sure one of the {filenames} under the repo {repo_id}")
 
         elif download_hub == DownloadSource.HUGGINGFACE:
             log_endpoint = "Huggingface Hub"

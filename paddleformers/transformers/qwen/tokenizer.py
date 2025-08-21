@@ -15,15 +15,17 @@
 """Tokenization classes for QWen."""
 
 import base64
+import logging
 import os
 import unicodedata
 from typing import Collection, Dict, List, Set, Tuple, Union
 
-from ...utils.import_utils import is_tiktoken_available
-from .. import PretrainedTokenizer
-from ..tokenizer_utils_base import AddedToken
+import tiktoken
+from transformers import AddedToken, PreTrainedTokenizer
 
-__all__ = ["QWenTokenizer"]
+from ..tokenizer_utils import PaddleTokenizerMixin
+
+logger = logging.getLogger(__name__)
 
 
 VOCAB_FILES_NAMES = {"vocab_file": "qwen.tiktoken", "chat_template_file": "chat_template.json"}
@@ -36,13 +38,22 @@ IMEND = "<|im_end|>"
 # regular texts, the surface forms of special tokens need to be
 # as different as possible to minimize the impact
 EXTRAS = tuple((f"<|extra_{i}|>" for i in range(205)))
-SPECIAL_TOKENS = (
-    ENDOFTEXT,
-    IMSTART,
-    IMEND,
-) + EXTRAS
-
-tiktoken = None
+# changed to use actual index to avoid misconfiguration with vocabulary expansion
+SPECIAL_START_ID = 151643
+SPECIAL_TOKENS = tuple(
+    enumerate(
+        (
+            (
+                ENDOFTEXT,
+                IMSTART,
+                IMEND,
+            )
+            + EXTRAS
+        ),
+        start=SPECIAL_START_ID,
+    )
+)
+SPECIAL_TOKENS_SET = set(t for i, t in SPECIAL_TOKENS)
 
 
 def _load_tiktoken_bpe(tiktoken_bpe_file: str) -> Dict[bytes, int]:
@@ -53,33 +64,40 @@ def _load_tiktoken_bpe(tiktoken_bpe_file: str) -> Dict[bytes, int]:
     }
 
 
-class QWenTokenizer(PretrainedTokenizer):
+class QWenTokenizer(PaddleTokenizerMixin, PreTrainedTokenizer):
     """QWen tokenizer."""
 
-    model_input_names = ["input_ids", "attention_mask", "position_ids"]
-    resource_files_names = VOCAB_FILES_NAMES
+    vocab_files_names = VOCAB_FILES_NAMES
 
     def __init__(
         self,
         vocab_file,
         errors="replace",
-        padding_side="left",
+        extra_vocab_file=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        if not is_tiktoken_available():
-            raise ValueError("tiktoken is not installed, please install it use: pip install tiktoken")
 
-        import tiktoken as tk
+        # how to handle errors in decoding UTF-8 byte sequences
+        # use ignore if you are in streaming inference
+        self.errors = errors
 
-        tiktoken = tk
+        self.mergeable_ranks = _load_tiktoken_bpe(vocab_file)  # type: Dict[bytes, int]
+        self.special_tokens = {token: index for index, token in SPECIAL_TOKENS}
 
-        self.errors = errors  # how to handle errors in decoding
-
-        self.mergeable_ranks = _load_tiktoken_bpe(vocab_file)  # type: dict[bytes, int]
-        self.special_tokens = {
-            token: index for index, token in enumerate(SPECIAL_TOKENS, start=len(self.mergeable_ranks))
-        }
+        # try load extra vocab from file
+        if extra_vocab_file is not None:
+            used_ids = set(self.mergeable_ranks.values()) | set(self.special_tokens.values())
+            extra_mergeable_ranks = _load_tiktoken_bpe(extra_vocab_file)
+            for token, index in extra_mergeable_ranks.items():
+                if token in self.mergeable_ranks:
+                    logger.info(f"extra token {token} exists, skipping")
+                    continue
+                if index in used_ids:
+                    logger.info(f"the index {index} for extra token {token} exists, skipping")
+                    continue
+                self.mergeable_ranks[token] = index
+            # the index may be sparse after this, but don't worry tiktoken.Encoding will handle this
 
         enc = tiktoken.Encoding(
             "Qwen",
@@ -100,10 +118,22 @@ class QWenTokenizer(PretrainedTokenizer):
         self.im_start_id = self.special_tokens[IMSTART]
         self.im_end_id = self.special_tokens[IMEND]
 
-        if "pad_token_id" in kwargs:
-            self.pad_token_id = kwargs["pad_token_id"]
-        if "eos_token_id" in kwargs:
-            self.eos_token_id = kwargs["eos_token_id"]
+    def __getstate__(self):
+        # for pickle lovers
+        state = self.__dict__.copy()
+        del state["tokenizer"]
+        return state
+
+    def __setstate__(self, state):
+        # tokenizer is not python native; don't pass it; rebuild it
+        self.__dict__.update(state)
+        enc = tiktoken.Encoding(
+            "Qwen",
+            pat_str=PAT_STR,
+            mergeable_ranks=self.mergeable_ranks,
+            special_tokens=self.special_tokens,
+        )
+        self.tokenizer = enc
 
     def __len__(self) -> int:
         return self.tokenizer.n_vocab
@@ -125,46 +155,22 @@ class QWenTokenizer(PretrainedTokenizer):
                 ids.append(self.mergeable_ranks.get(token))
         return ids
 
-    def _update_tiktoken(self, tokens: List[str], special_tokens: bool = False) -> int:
-        if special_tokens:
-            added_tokens = []
-            for token in tokens:
-                if token in self.special_tokens:
-                    continue
-
-                token_id = len(self.mergeable_ranks) + len(self.special_tokens)
-                self.special_tokens[token] = token_id
-                self.decoder[token_id] = token
-
-                added_tokens.append(token)
-
-            import tiktoken
-
-            self.tokenizer = tiktoken.Encoding(
-                "Qwen",
-                pat_str=PAT_STR,
-                mergeable_ranks=self.mergeable_ranks,
-                special_tokens=self.special_tokens,
-            )
-
-            return len(added_tokens)
-        else:
-            raise ValueError("Adding regular tokens is not supported")
-
-    def _add_tokens(self, new_tokens: Union[List[str], List[AddedToken]], special_tokens: bool = False) -> int:
+    def _add_tokens(
+        self,
+        new_tokens: Union[List[str], List[AddedToken]],
+        special_tokens: bool = False,
+    ) -> int:
         if not special_tokens and new_tokens:
             raise ValueError("Adding regular tokens is not supported")
-        new_tokens_str = []
         for token in new_tokens:
             surface_form = token.content if isinstance(token, AddedToken) else token
-            new_tokens_str.append(surface_form)
-
-        return self._update_tiktoken(new_tokens_str, special_tokens)
+            if surface_form not in SPECIAL_TOKENS_SET:
+                raise ValueError("Adding unknown special tokens is not supported")
+        return 0
 
     def save_vocabulary(self, save_directory: str, **kwargs) -> Tuple[str]:
         """
         Save only the vocabulary of the tokenizer (vocabulary).
-
         Returns:
             `Tuple(str)`: Paths to the files saved.
         """
@@ -184,7 +190,6 @@ class QWenTokenizer(PretrainedTokenizer):
     ) -> List[Union[bytes, str]]:
         """
         Converts a string in a sequence of tokens.
-
         Args:
             text (`str`):
                 The sequence to be encoded.
@@ -194,10 +199,8 @@ class QWenTokenizer(PretrainedTokenizer):
             disallowed_special (`Literal["all"]` or `Collection`):
                 The surface forms of the tokens that should not be in regular texts and trigger errors.
                 Default to an empty tuple.
-
             kwargs (additional keyword arguments, *optional*):
                 Will be passed to the underlying model specific encode method.
-
         Returns:
             `List[bytes|str]`: The list of tokens.
         """
@@ -251,7 +254,6 @@ class QWenTokenizer(PretrainedTokenizer):
         """
         Converts a string in a sequence of tokens (string), using the tokenizer. Split in words for word-based
         vocabulary or sub-words for sub-word-based vocabularies (BPE/SentencePieces/WordPieces).
-
         Do NOT take care of added tokens.
         """
         raise NotImplementedError

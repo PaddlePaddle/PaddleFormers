@@ -24,7 +24,6 @@ import_structure = {
     "kto_criterion": [
         "sequence_parallel_sparse_mask_labels",
         "fused_head_and_loss_fn",
-        "parallel_linear",
         "parallel_matmul",
         "KTOCriterion",
     ],
@@ -71,7 +70,8 @@ import_structure = {
         "BertPretrainingCriterion",
         "BertForQuestionAnswering",
     ],
-    "bert.tokenizer": ["BasicTokenizer", "BertTokenizer", "WordpieceTokenizer"],
+    "bert.tokenizer": ["BertTokenizer"],
+    "bert.tokenizer_fast": ["BertTokenizerFast"],
     "bert.configuration": ["BERT_PRETRAINED_INIT_CONFIGURATION", "BertConfig", "BERT_PRETRAINED_RESOURCE_FILES_MAP"],
     "auto.configuration": ["AutoConfig"],
     "auto.image_processing": ["AutoImageProcessor"],
@@ -173,18 +173,6 @@ import_structure = {
     "ernie4_5.configuration": ["Ernie4_5Config"],
     "ernie4_5.modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"],
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
-    "ernie4_5.sequence_parallel_utils": [
-        "MPScale",
-        "sequence_parallel_sparse_mask_labels",
-        "ScatterOp",
-        "GatherOp",
-        "SliceVarlenOp",
-        "AllGatherVarlenOpV2",
-        "AllGatherOp",
-        "_AllToAll",
-        "mark_as_sequence_parallel_parameter",
-        "AllGatherVarlenOp",
-    ],
     "export": ["export_model"],
     "llama.configuration": [
         "LLAMA_PRETRAINED_INIT_CONFIGURATION",
@@ -394,7 +382,7 @@ if TYPE_CHECKING:
     from .image_utils import ImageInput
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
-    from .tensor_parallel_utils import parallel_matmul, parallel_linear, fused_head_and_loss_fn
+    from .tensor_parallel_utils import parallel_matmul, fused_head_and_loss_fn
     from .moe_gate import *
     from .moe_layer import *
     from .export import export_model

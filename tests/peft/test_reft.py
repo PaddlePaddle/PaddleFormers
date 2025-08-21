@@ -51,12 +51,12 @@ class TestReftDataCollator(unittest.TestCase):
         reft_data_collator = ReftDataCollator(data_collator)
         instances = [
             {
-                "input_ids": paddle.to_tensor([[1, 2, 3], [4, 5, 6]]),
-                "intervention_locations": paddle.to_tensor([[0, 1, 0], [1, 0, 1]]),
+                "input_ids": [[1, 2, 3], [4, 5, 6]],
+                "intervention_locations": [[0, 1, 0], [1, 0, 1]],
             },
             {
-                "input_ids": paddle.to_tensor([[7, 8, 9], [10, 11, 12]]),
-                "intervention_locations": paddle.to_tensor([[1, 0, 1], [0, 1, 0]]),
+                "input_ids": [[7, 8, 9], [10, 11, 12]],
+                "intervention_locations": [[1, 0, 1], [0, 1, 0]],
             },
         ]
 
