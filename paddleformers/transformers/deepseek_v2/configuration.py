@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ DeepSeekV2 model configuration"""
-from ..configuration_utils import PretrainedConfig
+from paddleformers.transformers.configuration_utils import PretrainedConfig
 
 __all__ = [
     "DeepseekV2Config",
@@ -179,6 +179,18 @@ class DeepseekV2Config(PretrainedConfig):
         attention_dropout=0.0,
         speculate_model_type=False,
         using_flex_token=False,
+        use_dualpipev=False,
+        send_mtp_embed=False,
+        using_post_norm_recompute=False,
+        recompute_fwd_gate_up=0,
+        is_split_group_gemm=False,
+        fakse_gate_restrict_balance=False,
+        adaptive_remained_O1_recompute_ratio=0,
+        offline_quant_expert_weight=True,
+        clear_origin_weight_when_offline_quant=True,
+        mlp_bwd_subbatch_rows=0,
+        mlp_fwd_subbatch_rows=0,
+        output_subbatch_rows=0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -227,6 +239,18 @@ class DeepseekV2Config(PretrainedConfig):
         self.speculate_model_type = speculate_model_type
         self.use_fp8 = False
         self.using_flex_token = using_flex_token
+        self.use_dualpipev = use_dualpipev
+        self.send_mtp_embed = send_mtp_embed
+        self.using_post_norm_recompute = using_post_norm_recompute
+        self.recompute_fwd_gate_up = recompute_fwd_gate_up
+        self.is_split_group_gemm = is_split_group_gemm
+        self.fakse_gate_restrict_balance = fakse_gate_restrict_balance
+        self.adaptive_remained_O1_recompute_ratio = adaptive_remained_O1_recompute_ratio
+        self.offline_quant_expert_weight = offline_quant_expert_weight
+        self.clear_origin_weight_when_offline_quant = clear_origin_weight_when_offline_quant
+        self.mlp_bwd_subbatch_rows = mlp_bwd_subbatch_rows
+        self.mlp_fwd_subbatch_rows = mlp_fwd_subbatch_rows
+        self.output_subbatch_rows = output_subbatch_rows
 
         super().__init__(
             pad_token_id=pad_token_id,
