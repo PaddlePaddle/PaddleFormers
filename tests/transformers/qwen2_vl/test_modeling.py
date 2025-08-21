@@ -34,7 +34,7 @@ class Qwen2VLModelTester:
     def __init__(self, parent):
         self.parent = parent
         self.model_name_or_path = "Qwen/Qwen2-VL-2B-Instruct"
-        self.processor = Qwen2VLProcessor.from_pretrained(self.model_name_or_path, from_hf_hub=True)
+        self.processor = Qwen2VLProcessor.from_pretrained(self.model_name_or_path, download_hub="modelscope")
 
     def get_config(self):
         test_config = {
@@ -187,7 +187,9 @@ class Qwen2VLModelTest(ModelTesterMixin, unittest.TestCase):
         self.model_tester.create_and_check_model(**inputs_dict)
 
     def test_model_from_pretrained(self):
-        model = Qwen2VLForConditionalGeneration.from_pretrained(self.model_tester.model_name_or_path)
+        model = Qwen2VLForConditionalGeneration.from_pretrained(
+            self.model_tester.model_name_or_path, download_hub="modelscope"
+        )
         self.assertIsNotNone(model)
 
 

@@ -35,6 +35,7 @@ from ...transformers import linear_utils
 from ...utils.tools import get_env_device
 from ..activations import ACT2FN
 from ..configuration_utils import PretrainedConfig
+from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..linear_utils import Linear
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
@@ -1334,6 +1335,68 @@ class Qwen2_5_VLPreTrainedModel(PretrainedModel):
             if layer._padding_idx is not None:
                 with paddle.no_grad():
                     layer.weight[layer._padding_idx] = 0.0
+
+    @classmethod
+    def _get_name_mappings(cls, config: Qwen2_5_VLConfig) -> list[StateDictNameMapping]:
+        mappings: list[StateDictNameMapping] = []
+        model_mappings = [
+            ["embed_tokens.weight"],
+            ["norm.weight"],
+            ["merger.ln_q.weight"],
+            ["merger.mlp.0.weight", None, "transpose"],
+            ["merger.mlp.2.weight", None, "transpose"],
+            ["merger.mlp.0.bias"],
+            ["merger.mlp.2.bias"],
+            ["patch_embed.proj.weight"],
+        ]
+        for layer_index in range(config.num_hidden_layers):
+            layer_mappings = [
+                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.k_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.v_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.q_proj.bias", None],
+                [f"layers.{layer_index}.self_attn.k_proj.bias", None],
+                [f"layers.{layer_index}.self_attn.v_proj.bias", None],
+                [f"layers.{layer_index}.mlp.up_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.gate_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.down_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.input_layernorm.weight"],
+                [f"layers.{layer_index}.post_attention_layernorm.weight"],
+            ]
+            model_mappings.extend(layer_mappings)
+
+        for block_index in range(config.vision_config.depth):
+            block_mappings = [
+                [f"blocks.{block_index}.attn.proj.weight", None, "transpose"],
+                [f"blocks.{block_index}.attn.qkv.weight", None, "transpose"],
+                [f"blocks.{block_index}.attn.proj.bias", None],
+                [f"blocks.{block_index}.attn.qkv.bias", None],
+                [f"blocks.{block_index}.mlp.up_proj.weight", None, "transpose"],
+                [f"blocks.{block_index}.mlp.gate_proj.weight", None, "transpose"],
+                [f"blocks.{block_index}.mlp.down_proj.weight", None, "transpose"],
+                [f"blocks.{block_index}.mlp.up_proj.bias", None],
+                [f"blocks.{block_index}.mlp.gate_proj.bias", None],
+                [f"blocks.{block_index}.mlp.down_proj.bias", None],
+                [f"blocks.{block_index}.norm1.weight"],
+                [f"blocks.{block_index}.norm2.weight"],
+            ]
+            model_mappings.extend(block_mappings)
+        init_name_mappings(mappings=model_mappings)
+
+        if "Qwen2_5_VLModel" not in config.architectures:
+            for mapping in model_mappings:
+                if "blocks" in mapping[0] or "merger" in mapping[0] or "patch_embed" in mapping[0]:
+                    mapping[0] = "visual." + mapping[0]
+                    mapping[1] = "visual." + mapping[1]
+                else:
+                    mapping[0] = "model." + mapping[0]
+                    mapping[1] = "model." + mapping[1]
+            if not config.tie_word_embeddings:
+                model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
+
+        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
+        return mappings
 
 
 class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPreTrainedModel):

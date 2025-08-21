@@ -19,13 +19,15 @@
 # limitations under the License.
 
 import math
+import operator
 from dataclasses import dataclass
-from functools import partial
+from functools import partial, reduce
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import paddle
 import paddle.distributed.fleet.meta_parallel as mpu
 import paddle.nn.functional as F
+from einops import rearrange, repeat
 from paddle import Tensor, nn
 from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
@@ -34,16 +36,102 @@ from paddle.distributed.fleet.utils import recompute
 from ...transformers import linear_utils
 from ..activations import ACT2FN
 from ..configuration_utils import PretrainedConfig
+from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..linear_utils import Linear
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
 from ..utils import logger
-from .bert_padding import index_first_axis, pad_input, unpad_input
 from .configuration import Qwen2VLConfig, Qwen2VLVisionConfig
 from .flash_attn_utils import has_flash_attn_func
 
 flash_attn_func, flash_attn_varlen_func = has_flash_attn_func()
 _IS_NPU = "npu" in paddle.get_device()
+
+
+class IndexFirstAxis(paddle.autograd.PyLayer):
+    @staticmethod
+    def forward(ctx, input, indices):
+        ctx.save_for_backward(indices)
+        assert input.ndim >= 2
+        ctx.first_axis_dim, other_shape = input.shape[0], input.shape[1:]
+        second_dim = reduce(operator.mul, other_shape, 1)
+        return paddle.take_along_axis(
+            arr=rearrange(input, "b ... -> b (...)"), axis=0, indices=repeat(indices, "z -> z d", d=second_dim)
+        ).reshape([-1, *other_shape])
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        """Class Attribute: torch.autograd.function.FunctionCtx.saved_tensors, can not convert, please check whether it is torch.Tensor.*/torch.autograd.function.FunctionCtx.*/torch.distributions.Distribution.* and convert manually"""
+        (indices,) = ctx.saved_tensor()
+        assert grad_output.ndim >= 2
+        other_shape = grad_output.shape[1:]
+        grad_output = rearrange(grad_output, "b ... -> b (...)")
+        grad_input = paddle.zeros(shape=[ctx.first_axis_dim, tuple(grad_output.shape)[1]], dtype=grad_output.dtype)
+
+        grad_input.put_along_axis_(
+            axis=0,
+            indices=repeat(indices, "z -> z d", d=tuple(grad_output.shape)[1]),
+            values=grad_output,
+        )
+        return grad_input.reshape([ctx.first_axis_dim, *other_shape]), None
+
+
+class IndexPutFirstAxis(paddle.autograd.PyLayer):
+    @staticmethod
+    def forward(ctx, values, indices, first_axis_dim):
+        ctx.save_for_backward(indices)
+        assert indices.ndim == 1
+        assert values.ndim >= 2
+        output = paddle.zeros(shape=[first_axis_dim, *tuple(values.shape)[1:]], dtype=values.dtype)
+        output[indices] = values
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        """Class Attribute: torch.autograd.function.FunctionCtx.saved_tensors, can not convert, please check whether it is torch.Tensor.*/torch.autograd.function.FunctionCtx.*/torch.distributions.Distribution.* and convert manually"""
+        (indices,) = ctx.saved_tensor()
+        grad_values = grad_output[indices]
+        return grad_values, None
+
+
+def unpad_input(hidden_states, attention_mask):
+    """
+    Arguments:
+        hidden_states: (batch, seqlen, ...)
+        attention_mask: (batch, seqlen), bool / int, 1 means valid and 0 means not valid.
+    Return:
+        hidden_states: (total_nnz, ...), where total_nnz = number of tokens in selected in attention_mask.
+        indices: (total_nnz), the indices of non-masked tokens from the flattened input sequence.
+        cu_seqlens: (batch + 1), the cumulative sequence lengths, used to index into hidden_states.
+        max_seqlen_in_batch: int
+    """
+    index_first_axis = IndexFirstAxis.apply
+    seqlens_in_batch = paddle.sum(attention_mask, axis=-1, dtype="int32")
+    indices = paddle.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
+    max_seqlen_in_batch = paddle.max(seqlens_in_batch).item()
+    cu_seqlens = F.pad(paddle.cumsum(seqlens_in_batch, axis=0), [1, 0])
+
+    return (
+        index_first_axis(rearrange(hidden_states, "b s ... -> (b s) ..."), indices),
+        indices,
+        cu_seqlens,
+        max_seqlen_in_batch,
+    )
+
+
+def pad_input(hidden_states, indices, batch, seqlen):
+    """
+    Arguments:
+        hidden_states: (total_nnz, ...), where total_nnz = number of tokens in selected in attention_mask.
+        indices: (total_nnz), the indices that represent the non-masked tokens of the original padded input sequence.
+        batch: int, batch size for the padded sequence.
+        seqlen: int, maximum sequence length for the padded sequence.
+    Return:
+        hidden_states: (batch, seqlen, ...)
+    """
+    index_put_first_axis = IndexPutFirstAxis.apply
+    output = index_put_first_axis(hidden_states, indices, batch * seqlen)
+    return rearrange(output, "(b s) ... -> b s ...", b=batch)
 
 
 def get_triangle_upper_mask(x, mask=None):
@@ -1065,6 +1153,7 @@ class Qwen2VLFlashAttention2(Qwen2VLAttention):
 
     def _unpad_input(self, query_layer, key_layer, value_layer, attention_mask, query_length):
         # Note: This function was named _upad_input() in torch transformers/modeling_flash_attention_utils.py
+        index_first_axis = IndexFirstAxis.apply
         indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(attention_mask)
         batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
 
@@ -1216,6 +1305,69 @@ class Qwen2VLPreTrainedModel(PretrainedModel):
             if layer._padding_idx is not None:
                 with paddle.no_grad():
                     layer.weight[layer._padding_idx] = 0.0
+
+    @classmethod
+    def _get_name_mappings(cls, config: Qwen2VLConfig) -> list[StateDictNameMapping]:
+        mappings: list[StateDictNameMapping] = []
+        model_mappings = [
+            ["embed_tokens.weight"],
+            ["norm.weight"],
+            ["merger.ln_q.weight"],
+            ["merger.ln_q.bias"],
+            ["merger.mlp.0.weight", None, "transpose"],
+            ["merger.mlp.2.weight", None, "transpose"],
+            ["merger.mlp.0.bias"],
+            ["merger.mlp.2.bias"],
+            ["patch_embed.proj.weight"],
+        ]
+        for layer_index in range(config.num_hidden_layers):
+            layer_mappings = [
+                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.k_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.v_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.q_proj.bias", None],
+                [f"layers.{layer_index}.self_attn.k_proj.bias", None],
+                [f"layers.{layer_index}.self_attn.v_proj.bias", None],
+                [f"layers.{layer_index}.mlp.up_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.gate_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.down_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.input_layernorm.weight"],
+                [f"layers.{layer_index}.post_attention_layernorm.weight"],
+            ]
+            model_mappings.extend(layer_mappings)
+
+        for block_index in range(config.vision_config.depth):
+            block_mappings = [
+                [f"blocks.{block_index}.attn.proj.weight", None, "transpose"],
+                [f"blocks.{block_index}.attn.qkv.weight", None, "transpose"],
+                [f"blocks.{block_index}.attn.proj.bias", None],
+                [f"blocks.{block_index}.attn.qkv.bias", None],
+                [f"blocks.{block_index}.mlp.fc1.weight", None, "transpose"],
+                [f"blocks.{block_index}.mlp.fc2.weight", None, "transpose"],
+                [f"blocks.{block_index}.mlp.fc1.bias", None],
+                [f"blocks.{block_index}.mlp.fc2.bias", None],
+                [f"blocks.{block_index}.norm1.weight"],
+                [f"blocks.{block_index}.norm2.weight"],
+                [f"blocks.{block_index}.norm1.bias"],
+                [f"blocks.{block_index}.norm2.bias"],
+            ]
+            model_mappings.extend(block_mappings)
+        init_name_mappings(mappings=model_mappings)
+
+        if "Qwen2VLModel" not in config.architectures:
+            for mapping in model_mappings:
+                if "blocks" in mapping[0] or "merger" in mapping[0] or "patch_embed" in mapping[0]:
+                    mapping[0] = "visual." + mapping[0]
+                    mapping[1] = "visual." + mapping[1]
+                else:
+                    mapping[0] = "model." + mapping[0]
+                    mapping[1] = "model." + mapping[1]
+            if not config.tie_word_embeddings:
+                model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
+
+        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
+        return mappings
 
 
 class Qwen2VisionTransformerPretrainedModel(Qwen2VLPreTrainedModel):

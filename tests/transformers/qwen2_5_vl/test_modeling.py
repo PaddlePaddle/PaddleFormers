@@ -33,8 +33,8 @@ from tests.transformers.test_modeling_common import ModelTesterMixin
 class Qwen2_5_VLModelTester:
     def __init__(self, parent):
         self.parent = parent
-        self.model_name_or_path = "Qwen/Qwen2.5-VL-3B-Instruct"
-        self.processor = Qwen2_5_VLProcessor.from_pretrained(self.model_name_or_path)
+        self.model_name_or_path = "PaddleMIX/Qwen2.5-VL-3B-Instruct"
+        self.processor = Qwen2_5_VLProcessor.from_pretrained(self.model_name_or_path, download_hub="aistudio")
 
     def get_config(self):
         test_config = {
@@ -191,7 +191,9 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, unittest.TestCase):
         self.model_tester.create_and_check_model(**inputs_dict)
 
     def test_model_from_pretrained(self):
-        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(self.model_tester.model_name_or_path)
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            self.model_tester.model_name_or_path, download_hub="aistudio"
+        )
         self.assertIsNotNone(model)
 
 

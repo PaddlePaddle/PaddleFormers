@@ -108,7 +108,38 @@ register_model_group(
 )
 
 
-# qwen2.5
+# qwen2_vl
+register_model_group(
+    models={
+        "Qwen2-VL-2B": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2-VL-2B",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2-VL-2B",
+        },
+        "Qwen2-VL-7B": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2-VL-7B",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2-VL-7B",
+        },
+        "Qwen2-VL-72B": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2-VL-72B",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2-VL-72B",
+        },
+        "Qwen2-VL-2B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2-VL-2B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2-VL-2B-Instruct",
+        },
+        "Qwen2-VL-7B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2-VL-7B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2-VL-7B-Instruct",
+        },
+        "Qwen2-VL-72B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2-VL-72B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2-VL-72B-Instruct",
+        },
+    }
+)
+
+
+# qwen2_5
 register_model_group(
     models={
         "Qwen2.5-0.5B": {
@@ -282,6 +313,31 @@ register_model_group(
             DownloadSource.MODELSCOPE: "Qwen/QwQ-32B",
             DownloadSource.AISTUDIO: "PaddleNLP/QwQ-32B",
             DownloadSource.HUGGINGFACE: "Qwen/QwQ-32B",
+        },
+    }
+)
+
+
+# qwen2_5_vl
+register_model_group(
+    models={
+        "Qwen2.5-VL-3B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-VL-3B-Instruct",
+            DownloadSource.AISTUDIO: "PaddleMIX/Qwen2.5-VL-3B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-VL-3B-Instruct",
+        },
+        "Qwen2.5-VL-7B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-VL-7B-Instruct",
+            DownloadSource.AISTUDIO: "PaddleMIX/Qwen2.5-VL-7B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-VL-7B-Instruct",
+        },
+        "Qwen2.5-VL-32B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-VL-32B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-VL-32B-Instruct",
+        },
+        "Qwen2.5-VL-72B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-VL-72B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-VL-72B-Instruct",
         },
     }
 )

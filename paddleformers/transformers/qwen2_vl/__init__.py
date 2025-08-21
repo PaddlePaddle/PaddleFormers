@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "bert_padding": ["index_first_axis", "pad_input", "unpad_input"],
     "configuration": ["Qwen2VLConfig"],
     "flash_attn_utils": ["has_flash_attn_func"],
     "image_processing": ["Qwen2VLImageProcessor"],
