@@ -155,7 +155,7 @@ class AutoTokenizer(hf.AutoTokenizer):
     @classmethod
     @replace_list_option_in_docstrings(TOKENIZER_MAPPING_NAMES)
     def from_pretrained(cls, pretrained_model_name_or_path, *inputs, **kwargs):
-        download_hub = kwargs.pop("download_hub", None)
+        download_hub = kwargs.get("download_hub", None)
         if download_hub is None:
             download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
         logger.info(f"Using download source: {download_hub}")

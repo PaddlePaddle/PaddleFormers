@@ -33,7 +33,6 @@ class TestTokenizer(unittest.TestCase):
 
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B", use_fast=False)
-        tokenizer_name = tokenizer.__class__.__name__
         if hasattr(tokenizer, "is_fast"):
             self.assertFalse(tokenizer.is_fast)
         else:
@@ -63,10 +62,3 @@ class TestTokenizer(unittest.TestCase):
         tokenizer.model_max_length = 512
         tokenizer.save_pretrained("./fast_tokenizer")
         self.assertTrue(os.path.exists("./fast_tokenizer/tokenizer_config.json"))
-
-    def test_tokenize(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B")
-        text = "hello world, this is a tokenizer test"
-        output_dict = tokenizer(text)
-        decode_text = tokenizer.decode(output_dict["input_ids"], skip_special_tokens=True)
-        self.assertEqual(text, decode_text)

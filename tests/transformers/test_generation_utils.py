@@ -17,7 +17,6 @@ from __future__ import annotations
 import unittest
 
 import paddle
-from transformers.tokenization_utils import PreTrainedTokenizer
 
 from paddleformers.generation import (
     BeamSearchScorer,

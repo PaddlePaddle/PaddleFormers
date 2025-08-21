@@ -52,13 +52,27 @@ class PaddleTokenizerMixin:
         self._wrap_return_tensor_methods()
 
     def _wrap_return_tensor_methods(self):
+        """Wrap all relevant methods of the class to support Paddle tensor return types.
+
+        This method identifies and wraps several key methods that should support optional
+        conversion of their return values to PaddlePaddle tensors when requested through
+        the 'return_tensors="pd"' parameter.
+
+        The methods being wrapped typically include:
+        - Core calling functionality (__call__)
+        - Padding operations
+        - Various encoding methods
+        - Batch processing methods
+        - Chat template processing
+
+        Only methods that actually exist in the class will be wrapped.
+        """
         methods_to_wrap = [
             "__call__",
             "pad",
             "encode_plus",
             "batch_encode_plus",
             "encode",
-            "batch_encode",
             "apply_chat_template",
         ]
 
@@ -67,9 +81,35 @@ class PaddleTokenizerMixin:
                 self._wrap_single_method(method_name)
 
     def _wrap_single_method(self, method_name):
+        """Wrap a single method of the class to convert its output to Paddle tensors when requested.
+
+        This decorator modifies the specified method to optionally convert its return value to
+        PaddlePaddle tensors when the 'return_tensors="pd"' parameter is provided.
+
+        Args:
+            method_name (str): The name of the method to be wrapped.
+
+        Returns:
+            None: This method modifies the class instance in-place by replacing the original method
+            with the wrapped version.
+        """
         original_method = getattr(self, method_name)
 
         def convert_to_paddle(inputs):
+            """Convert various input types to Paddle tensors recursively.
+
+            Handles conversion of:
+            - Lists (both single and nested)
+            - Integers
+            - BatchEncoding objects (converts values recursively)
+            - Other types (returns unchanged)
+
+            Args:
+                inputs: The input data to be converted
+
+            Returns:
+                The converted Paddle tensor or the original input if no conversion was needed
+            """
             import paddle
 
             if isinstance(inputs, list):
@@ -98,7 +138,7 @@ class PaddleTokenizerMixin:
 
         setattr(self, method_name, wrapper)
 
-    # 复写hf的tokenizer的from_pretrained
+    # Rewrite hf's tokenizer function from_pretrained
     @classmethod
     def from_pretrained(
         cls,
@@ -106,14 +146,14 @@ class PaddleTokenizerMixin:
         *args,
         **kwargs,
     ):
-        download_hub = kwargs.pop("download_hub", None)
+        download_hub = kwargs.get("download_hub", None)
         local_files_only = kwargs.pop("local_files_only", False)
 
         if download_hub is None:
             download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
         logger.info(f"Using download source: {download_hub}")
 
-        # 如果从hf下载，则使用原生的hf的from_pretrained
+        # If downloaded from hf, use the native hf from pretrained
         if download_hub == DownloadSource.HUGGINGFACE:
             return super().from_pretrained(
                 pretrained_model_name_or_path,
@@ -134,10 +174,9 @@ class PaddleTokenizerMixin:
             "tokenizer_file": FULL_TOKENIZER_FILE,
             "chat_template_file": CHAT_TEMPLATE_FILE,
         }
-        # get hf的所有跟tokenizer相关的文件
+        # get all tokenizer-related files
         vocab_files = {**cls.vocab_files_names, **additional_files_names}
 
-        # 返回所有文件的local file path
         if os.path.isdir(pretrained_model_name_or_path):
             for file_id, file_name in vocab_files.items():
                 full_file_name = os.path.join(pretrained_model_name_or_path, subfolder, file_name)
@@ -145,14 +184,6 @@ class PaddleTokenizerMixin:
                     vocab_files[file_id] = full_file_name
                 else:
                     vocab_files[file_id] = None
-
-        # if pretrained_model_name_or_path in cls.pretrained_init_configuration:
-        #     # From built-in pretrained models
-        #     # just for test, should not be used in development
-        #     vocab_files = {}
-        #     for file_id, map_list in cls.pretrained_resource_files_map.items():
-        #         vocab_files[file_id] = map_list[pretrained_model_name_or_path]
-        #     resolved_vocab_files = {}
 
         resolved_vocab_files = {}
         for file_id, file_path in vocab_files.items():
