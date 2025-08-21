@@ -24,7 +24,7 @@
 #         repo_id = "PaddleNLP/DeepSeek-R1-Distill-Qwen-1.5B"
 #         filename = "model.safetensors"
 #         revision = "master"
-#         local_dir = "./local/model"
+#         cache_dir = "./local/model"
 
 #         # 调用待测试的函数
 #         result = resolve_file_path(
@@ -32,12 +32,11 @@
 #             filenames=filename,
 #             revision=revision,
 #             download_hub="aistudio",
-#             local_dir=local_dir,
+#             cache_dir=cache_dir,
 #         )
 
 #         # 验证结果
-#         print(result)
-#         self.assertEqual(result, f"{local_dir}/{filename}")
+#         self.assertEqual(result, f"{cache_dir}/{repo_id}/{filename}")
 
 #     def test_aistudio_download_transformer(self):
 #         # 设置测试数据
@@ -55,7 +54,6 @@
 #         )
 
 #         # 验证结果
-#         print(result)
 #         self.assertEqual(result, f"{cache_dir}/{filename}")
 
 

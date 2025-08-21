@@ -230,13 +230,6 @@ def resolve_file_path(
                     endpoint=endpoint,
                 )
                 if is_available:
-                    import json
-
-                    with open(
-                        "/root/paddlejob/workspace/env_run/fujinji/erniekit/mine_test/download_source/download_kwargs.json",
-                        "w",
-                    ) as f:
-                        json.dump(download_kwargs, f)
                     cached_file = hf_hub_download(
                         **download_kwargs,
                     )
