@@ -186,10 +186,11 @@ def manual_model_split(model, stage_idx, group, mode, pp_degree, need_shared_par
 
     layer_lists = model.layers
 
-    if need_shared_params:
-        shared_params_names = [["embedding_0.w_0.dist", "ernie_lm_head_0.w_0.dist"]]
-    else:
-        shared_params_names = []
+    # if need_shared_params:
+    #     shared_params_names = [["embedding_0.w_0.dist", "ernie_lm_head_0.w_0.dist"]]
+    # else:
+    #     shared_params_names = []
+    shared_params_names = []
     shared_mp = build_shared_param_map(model, shared_params_names)
 
     def _build_stage(model, stage_idx, group):
