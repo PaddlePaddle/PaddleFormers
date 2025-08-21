@@ -32,7 +32,7 @@ import threading
 import time
 from contextlib import contextmanager
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
 import paddle
@@ -41,9 +41,7 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
-
-if TYPE_CHECKING:
-    from transformers.tokenization_utils_base import BatchEncoding
+from transformers.tokenization_utils_base import BatchEncoding
 
 from ..ops import Topology
 from ..trainer.argparser import strtobool
