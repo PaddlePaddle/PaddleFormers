@@ -14,74 +14,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
 import paddle
 from paddle.distributed.communication.group import Group
 
 from .fused_a2a import fused_combine, fused_dispatch
-from .moe_utils import permute, unpermute
+from .moe_utils import permute, topk_to_permuted_indices, unpermute
 
 
-class _DispatchManager(ABC):
-    """
-    A manager class to handle dispatch and combine processes for MoE models.
-
-    DispatcherManager handles token dispatching according to the routing_map of format
-    [num_local_tokens, world_size, num_instances]. The routing_map is a 3D tensor where each
-    element indicates whether a token should be sent to a specific rank.
-
-    num_instances is the maximum number of tokens instances dispatched into a target rank, it
-    can be the number of local experts, or the size of sub_group.
-    """
-
-    @abstractmethod
-    def setup_metadata(self, routing_map: paddle.Tensor, probs: paddle.Tensor):
-        """Set up metadata of routing_map and probs."""
-        pass
-
-    @abstractmethod
-    def dispatch(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        """Dispatch the hidden_states according to the routing_map."""
-        pass
-
-    @abstractmethod
-    def combine(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        """Combine the hidden_states after expert processing."""
-        pass
-
-    @abstractmethod
-    def get_dispatched_metadata(self) -> paddle.Tensor:
-        """Get the metadata of the dispatched hidden_states."""
-        pass
-
-    @abstractmethod
-    def get_permuted_hidden_states_by_experts(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        """Get the permuted hidden states by instances."""
-        pass
-
-    @abstractmethod
-    def get_restored_hidden_states_by_experts(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        """Get the restored hidden states by instances."""
-        pass
-
-
-class _DeepepManager(_DispatchManager):
+class _DeepepManager:
     """
     A manager class to handle fused all-to-all communication processes for MoE models using
     DeepEP backend. See https://github.com/deepseek-ai/deepep for more details.
 
     The workflow of the DeepEP dispatcher is:
-    (1) setup_metadata(): Process routing map and probabilities to prepare dispatch metadata
-    (2) dispatch():
+    (1) dispatch():
         - Use fused kernel to permute tokens and perform all-to-all communication in single step
-    (3) get_permuted_hidden_states_by_instances():
+    (2) get_permuted_hidden_states_by_instances():
         - Convert routing map and probabilities to multihot format
         - Permute tokens using fused kernel
-    (4) get_restored_hidden_states_by_instances():
+    (3) get_restored_hidden_states_by_instances():
         - Reverse permutation using fused kernel
-    (5) combine():
+    (4) combine():
         - Reverse process using fused kernel to unpermute and perform all-to-all in single step
 
     This implementation uses fused communication kernels (fused_dispatch/fused_combine) that
@@ -101,33 +56,22 @@ class _DeepepManager(_DispatchManager):
         self.num_experts = num_experts
         self.num_local_experts = num_local_experts
 
-        # Metadata
-        self.token_indices = None
-        self.token_probs = None
-        # Handle used for combine operation
         self.handle = None
 
         if fused_dispatch is None:
             raise ImportError("DeepEP is not supported in your paddlepaddle whl package.")
 
-    def setup_metadata(self, routing_map: paddle.Tensor, probs: paddle.Tensor):
-        num_tokens = routing_map.shape[0]
-
-        routing_map = routing_map.reshape([num_tokens, self.num_experts])
-        probs = probs.reshape([num_tokens, self.num_experts])
-        # Convert the format of routing map from multihot to indices.
-        self.token_probs, self.token_indices = paddle.topk(probs, self.router_topk, axis=-1)
-
-    def dispatch(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
+    def dispatch(
+        self, hidden_states: paddle.Tensor, token_indices: paddle.Tensor, token_probs: paddle.Tensor
+    ) -> paddle.Tensor:
         hidden_states, dispatched_probs, states = fused_dispatch(
-            hidden_states, self.token_indices, self.token_probs, self.num_experts, self.group
+            hidden_states, token_indices, token_probs, self.num_experts, self.group
         )
         self.handle = states["handle"]
-        self.tokens_per_expert = states["tokens_per_expert"]
-        self.dispatched_indices = states["dispatched_indices"]
-        self.dispatched_probs = dispatched_probs
+        self.tokens_per_expert_list = states["tokens_per_expert"]
+        dispatched_indices = states["dispatched_indices"]
 
-        return hidden_states
+        return hidden_states, dispatched_indices, dispatched_probs
 
     def _indices_to_multihot(self, indices, probs):
         """
@@ -154,56 +98,55 @@ class _DeepepManager(_DispatchManager):
         multihot_probs[row_indices, valid_indices] = probs[mask]
         return multihot_routing_map.cast(paddle.bool), multihot_probs
 
-    def get_dispatched_metadata(self) -> paddle.Tensor:
-        return self.dispatched_indices, self.dispatched_probs
-
-    def get_number_of_tokens_per_expert(self) -> paddle.Tensor:
-        """
-        Get the number of tokens per expert.
-        """
-        return self.tokens_per_expert
-
     def combine(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         hidden_states = fused_combine(hidden_states, self.group, self.handle)
-        # Release the handle after combine operation
-        self.handle = None
         return hidden_states
 
-    def get_permuted_hidden_states_by_experts(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        self.dispatched_routing_map, self.dispatched_probs = self._indices_to_multihot(
-            self.dispatched_indices, self.dispatched_probs
-        )
+    def get_permuted_hidden_states_by_experts(
+        self, hidden_states: paddle.Tensor, dispatched_indices: paddle.Tensor
+    ) -> paddle.Tensor:
         self.hidden_shape_before_permute = hidden_states.shape
-        hidden_states, self.reversed_mapping_for_combine = permute(
-            hidden_states,
-            self.dispatched_routing_map,
-            num_out_tokens=sum(self.tokens_per_expert),
+        token_permuted_indices, prob_permuted_indices = topk_to_permuted_indices(
+            dispatched_indices, self.tokens_per_expert_list, self.router_topk
         )
-        return hidden_states
+        hidden_states = permute(hidden_states, token_permuted_indices)
+        return hidden_states, token_permuted_indices, prob_permuted_indices
 
-    def get_restored_hidden_states_by_experts(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
+    def get_restored_hidden_states_by_experts(
+        self,
+        hidden_states: paddle.Tensor,
+        token_permuted_indices: paddle.Tensor,
+        prob_permuted_indices: paddle.Tensor,
+        dispatched_probs: paddle.Tensor,
+    ) -> paddle.Tensor:
         input_dtype = hidden_states.dtype
-        assert self.dispatched_probs.dtype == paddle.float32, "DeepEP only supports float32 probs"
+        assert dispatched_probs.dtype == paddle.float32, "DeepEP only supports float32 probs"
         hidden_states = unpermute(
-            hidden_states,
-            self.reversed_mapping_for_combine,
+            permuted_tokens=hidden_states,
+            token_permuted_indices=token_permuted_indices,
+            prob_permuted_indices=prob_permuted_indices,
             restore_shape=self.hidden_shape_before_permute,
-            routing_map=self.dispatched_routing_map,
-            probs=self.dispatched_probs,
+            probs=dispatched_probs,
         )
         return hidden_states.to(input_dtype)
 
 
-class MoETokenDispatcher:
+class MoEFlexTokenDispatcher:
     """
-    MoE Token Dispatcher
+    Flexible token dispatcher for MoE models with Efficient-A2A communication kernels.
     """
 
-    def __init__(self, ep_group) -> None:
-        """
-        Initialize the MoE Token Dispatcher.
-        """
+    def __init__(self, num_local_experts: int, moe_router_topk: int, num_moe_experts: int, ep_group: Group):
         self._ep_group = ep_group
+
+        self.num_local_experts = num_local_experts
+        assert self.ep_size > 1, "Flex token dispatcher requires EP > 1"
+        self._comm_manager = _DeepepManager(
+            group=self.ep_group,
+            router_topk=moe_router_topk,
+            num_experts=num_moe_experts,
+            num_local_experts=self.num_local_experts,
+        )
 
     @property
     def ep_group(self):
@@ -215,70 +158,106 @@ class MoETokenDispatcher:
         """Get expert model parallel world_size."""
         return self.ep_group.world_size
 
-    @abstractmethod
-    def token_permutation(self, tokens: paddle.Tensor, probs: paddle.Tensor, routing_map: paddle.Tensor):
-        """Dispatch tokens to experts.
+    def pre_dispatch(self, hidden_states, probs, routing_map):
+        self.hidden_shape = hidden_states.shape
+        hidden_states = hidden_states.view([-1, self.hidden_shape[-1]])
+        num_tokens = routing_map.shape[0]
+        routing_map = routing_map.reshape([num_tokens, self._comm_manager.num_experts])
+        probs = probs.reshape([num_tokens, self._comm_manager.num_experts])
+        # Convert the format of routing map from multihot to indices.
+        token_probs, token_indices = paddle.topk(probs, self._comm_manager.router_topk, axis=-1)
+        return hidden_states, token_indices, token_probs
 
-        Args:
-            tokens (paddle.Tensor): Input tokens.
-            probs (paddle.Tensor): The routing probability tensor [num_tokens, num_experts].
-            routing_map (paddle.Tensor): Token to expert mapping tensor.
+    def post_dispatch(self, hidden_states, dispatched_indices):
+        (
+            global_input_tokens,
+            token_permuted_indices,
+            prob_permuted_indices,
+        ) = self._comm_manager.get_permuted_hidden_states_by_experts(hidden_states, dispatched_indices)
+        return (global_input_tokens, token_permuted_indices, prob_permuted_indices)
 
-        Returns:
-            paddle.Tensor: Tokens tensor.
-        """
-        raise NotImplementedError("Dispatch function not implemented.")
-
-    @abstractmethod
-    def token_unpermutation(self, expert_output: paddle.Tensor, bias: paddle.Tensor = None):
-        """Restores the expert output to its original ordering.
-
-        Args:
-            expert_output (paddle.Tensor): The output tensor from the expert models.
-            bias (paddle.Tensor): The bias tensor.
-
-        Returns:
-            (paddle.Tensor, paddle.Tensor): Unpermuted activation and optional bias.
-        """
-        raise NotImplementedError("Restore function not implemented.")
-
-
-class MoEFlexTokenDispatcher(MoETokenDispatcher):
-    """
-    Flexible token dispatcher for MoE models with Efficient-A2A communication kernels.
-    """
-
-    def __init__(self, num_local_experts: int, moe_router_topk: int, num_moe_experts: int, ep_group: Group):
-        super().__init__(ep_group)
-
-        self.num_local_experts = num_local_experts
-        assert self.ep_size > 1, "Flex token dispatcher requires EP > 1"
-        self._comm_manager = _DeepepManager(
-            group=self.ep_group,
-            router_topk=moe_router_topk,
-            num_experts=num_moe_experts,
-            num_local_experts=self.num_local_experts,
+    def pre_combine(self, hidden_states, token_permuted_indices, prob_permuted_indices, dispatched_probs):
+        hidden_states = self._comm_manager.get_restored_hidden_states_by_experts(
+            hidden_states, token_permuted_indices, prob_permuted_indices, dispatched_probs
         )
+        return hidden_states
+
+    def post_combine(self, hidden_states):
+        hidden_states = hidden_states.reshape(self.hidden_shape)
+        return hidden_states
 
     def token_permutation(
         self, hidden_states: paddle.Tensor, probs: paddle.Tensor, routing_map: paddle.Tensor
     ) -> Tuple[paddle.Tensor, paddle.Tensor]:
-        self.hidden_shape = hidden_states.shape
-        hidden_states = hidden_states.view([-1, self.hidden_shape[-1]])
+        hidden_states, token_indices, token_probs = self.pre_dispatch(hidden_states, probs, routing_map)
+        hidden_states, dispatched_indices, dispatched_probs = self._comm_manager.dispatch(
+            hidden_states, token_indices, token_probs
+        )
+        (global_input_tokens, token_permuted_indices, prob_permuted_indices) = self.post_dispatch(
+            hidden_states, dispatched_indices
+        )
 
-        self._comm_manager.setup_metadata(routing_map, probs)
-        hidden_states = self._comm_manager.dispatch(hidden_states)
-        global_input_tokens = self._comm_manager.get_permuted_hidden_states_by_experts(hidden_states)
-        tokens_per_expert = self._comm_manager.get_number_of_tokens_per_expert()
-
-        return global_input_tokens, tokens_per_expert
+        return (
+            global_input_tokens,
+            token_permuted_indices,
+            prob_permuted_indices,
+            dispatched_probs,
+        )
 
     def token_unpermutation(
-        self, hidden_states: paddle.Tensor, bias: Optional[paddle.Tensor] = None
+        self,
+        hidden_states: paddle.Tensor,
+        token_permuted_indices,
+        prob_permuted_indices,
+        dispatched_probs,
+        bias: Optional[paddle.Tensor] = None,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor]]:
         assert bias is None, "Bias is not supported in MoEFlexTokenDispatcher"
-        hidden_states = self._comm_manager.get_restored_hidden_states_by_experts(hidden_states)
+        hidden_states = self.pre_combine(
+            hidden_states, token_permuted_indices, prob_permuted_indices, dispatched_probs
+        )
         hidden_states = self._comm_manager.combine(hidden_states)
 
-        hidden_states = hidden_states.reshape(self.hidden_shape)
+        hidden_states = self.post_combine(hidden_states)
         return hidden_states, None
+
+
+class PreDispatchNode:
+    def __init__(self, token_dispatcher):
+        self.token_dispatcher = token_dispatcher
+        self.probs_origin_shape = None
+
+    def reset_status(self):
+        self.probs = None
+        self.reshaped_probs = None
+        self.token_indices = None
+
+    @paddle.no_grad()
+    def forward(self, routing_map, probs):
+        num_tokens = routing_map.shape[0]
+        self.probs_origin_shape = probs.shape
+        # routing_map = routing_map.reshape([num_tokens, token_dispatcher._comm_manager.num_experts])
+        self.probs = probs
+        reshaped_probs = probs.reshape([num_tokens, self.token_dispatcher._comm_manager.num_experts])
+        self.reshaped_probs = reshaped_probs
+        token_probs, token_indices = paddle.topk(
+            reshaped_probs, self.token_dispatcher._comm_manager.router_topk, axis=-1
+        )
+        self.token_indices = token_indices
+        token_probs.stop_gradient = False
+        return token_indices, token_probs
+
+    @paddle.no_grad()
+    def backward(self, token_probs_g):
+        probs_grad = paddle._C_ops.topk_grad(
+            self.reshaped_probs,
+            self.token_indices,
+            token_probs_g,
+            self.token_dispatcher._comm_manager.router_topk,
+            -1,
+            True,
+            True,
+        )
+        probs_reshape_g = paddle._C_ops.reshape_grad(self.probs, probs_grad)
+        self.reset_status()
+        return probs_reshape_g
