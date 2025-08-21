@@ -31,6 +31,13 @@ import_structure = {
     "model_outputs": ["CausalLMOutputWithPast"],
     "sequence_parallel_utils": ["AllGatherVarlenOp", "sequence_parallel_sparse_mask_labels"],
     "model_utils": ["PretrainedModel", "register_base_model"],
+    "tokenizer_utils_base": [
+        "PaddingStrategy",
+        "PreTokenizedInput",
+        "TensorType",
+        "TextInput",
+        "TruncationStrategy",
+    ],
     "tokenizer_utils": [
         "PretrainedTokenizer",
         "BPETokenizer",
@@ -47,6 +54,7 @@ import_structure = {
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["ImageProcessingMixin"],
+    "image_utils": ["ImageInput"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": [],
     "moe_layer": ["combining", "_AllToAll", "MoELayer", "dispatching", "MoEFlexTokenLayer"],
@@ -360,6 +368,13 @@ import_structure = {
 if TYPE_CHECKING:
     from .configuration_utils import PretrainedConfig
     from .model_utils import PretrainedModel, register_base_model
+    from ..tokenizer_utils_base import (
+        PaddingStrategy,
+        PreTokenizedInput,
+        TensorType,
+        TextInput,
+        TruncationStrategy,
+    )
     from .tokenizer_utils import (
         PretrainedTokenizer,
         BPETokenizer,
@@ -374,6 +389,7 @@ if TYPE_CHECKING:
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
     from .image_processing_utils import ImageProcessingMixin
+    from .image_utils import ImageInput
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
     from .tensor_parallel_utils import parallel_matmul, parallel_linear, fused_head_and_loss_fn
@@ -414,6 +430,8 @@ if TYPE_CHECKING:
     from .qwen2_moe import *
     from .qwen3 import *
     from .qwen3_moe import *
+    from .qwen2_vl import *
+    from .qwen2_5_vl import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
