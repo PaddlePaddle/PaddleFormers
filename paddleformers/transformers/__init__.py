@@ -32,6 +32,7 @@ import_structure = {
     "sequence_parallel_utils": ["AllGatherVarlenOp", "sequence_parallel_sparse_mask_labels"],
     "model_utils": ["PretrainedModel", "register_base_model"],
     "tokenizer_utils_base": [
+        "ExplicitEnum",
         "PaddingStrategy",
         "PreTokenizedInput",
         "TensorType",
@@ -369,6 +370,7 @@ if TYPE_CHECKING:
     from .configuration_utils import PretrainedConfig
     from .model_utils import PretrainedModel, register_base_model
     from ..tokenizer_utils_base import (
+        ExplicitEnum,
         PaddingStrategy,
         PreTokenizedInput,
         TensorType,
