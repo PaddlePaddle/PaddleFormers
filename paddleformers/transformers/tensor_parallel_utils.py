@@ -11,11 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import contextlib
+
 import paddle
 import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
 import paddle.nn.functional as F
 from paddle.autograd import PyLayer
+from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 
 try:
     from paddle.nn.layer.layers import in_declarative_mode
@@ -577,3 +581,15 @@ class FusedHeadAndCrossEntropy(PyLayer):
                 grad_lm_head_bias,
                 None,
             )
+
+
+def model_parallel_dropout(config):
+    """Get context manager for model-parallel dropout with proper seed control.
+
+    Returns:
+        Context manager for dropout operation
+    """
+    if config.tensor_parallel_degree > 1 and config.hidden_dropout_prob > 0.0:
+        current_seed = "local_seed" if config.sequence_parallel else "global_seed"
+        return get_rng_state_tracker().rng_state(current_seed)
+    return contextlib.nullcontext()

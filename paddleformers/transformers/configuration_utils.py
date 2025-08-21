@@ -471,6 +471,13 @@ class PretrainedConfig:
             Problem type for `XxxForSequenceClassification` models. Can be one of `"regression"`,
             `"single_label_classification"` or `"multi_label_classification"`.
 
+        > Parameters for general components
+
+        _attn_implementation (`str`, defaults to `sdpa`)
+        use_fused_head_loss_fn (`bool`, defaults to `False`): Whether to use fused head and loss function
+        use_filtered_label_loss (`bool`, defaults to `False`): Whether to use filtered label loss
+        loss_subbatch_seqlen (`int`, defaults to `-1`): Sequence length large than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch)
+
         > Parameters linked to the tokenizer
 
         tokenizer_class (`str`, *optional*):
@@ -554,6 +561,12 @@ class PretrainedConfig:
         # for transformers fuse
         self.fuse_attention_qkv = kwargs.pop("fuse_attention_qkv", False)
         self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
+
+        # for general components
+        self._attn_implementation = kwargs.pop("_attn_implementation", "sdpa")
+        self.use_fused_head_and_loss_fn = kwargs.pop("use_fused_head_and_loss_fn", False)
+        self.use_filtered_label_loss = kwargs.pop("use_filtered_label_loss", False)
+        self.loss_subbatch_seqlen = kwargs.pop("loss_subbatch_seqlen", -1)
 
         if "quantization_config" in kwargs and isinstance(kwargs["quantization_config"], Dict):
             kwargs["quantization_config"] = QuantizationConfig.from_dict(kwargs["quantization_config"])

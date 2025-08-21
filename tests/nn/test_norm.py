@@ -26,7 +26,7 @@ class TestNormLayers(unittest.TestCase):
         # Test LayerNorm initialization
         config.use_rmsnorm = False
         config.hidden_size = 10
-        layer_norm = Norm.from_config(config)
+        layer_norm = Norm.create(config)
         assert isinstance(layer_norm, LayerNorm)
 
         input = paddle.randn([1, 10, config.hidden_size])
@@ -36,7 +36,7 @@ class TestNormLayers(unittest.TestCase):
         # Test LayerNorm with sequence parallel
         config = LlamaConfig()
         config.sequence_parallel = True
-        layer_norm = Norm.from_config(config)
+        layer_norm = Norm.create(config)
         assert isinstance(layer_norm, LayerNorm)
 
         input = paddle.randn([1, 10, config.hidden_size])
@@ -46,7 +46,7 @@ class TestNormLayers(unittest.TestCase):
         # Test RMSNorm initialization
         config = LlamaConfig()
         config.use_rmsnorm = True
-        rms_norm = Norm.from_config(config)
+        rms_norm = Norm.create(config)
         assert isinstance(rms_norm, RMSNorm)
 
         input = paddle.randn([1, 10, config.hidden_size])
@@ -57,7 +57,7 @@ class TestNormLayers(unittest.TestCase):
         config = LlamaConfig()
         config.use_rmsnorm = True
         config.sequence_parallel = True
-        rms_norm = Norm.from_config(config)
+        rms_norm = Norm.create(config)
         input = paddle.randn([1, 10, config.hidden_size])
         rms_norm(input)
         assert isinstance(rms_norm, RMSNorm)

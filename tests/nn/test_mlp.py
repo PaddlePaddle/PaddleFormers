@@ -29,8 +29,8 @@ class TestMLP(unittest.TestCase):
         self.config.tensor_parallel_degree = 1
         self.config.mlp_bias = False
         self.config.fuse_swiglu = False
-        self.config.fuse_attention_ffn = False
         self.config.hidden_act = "silu"
+        self.config.fuse_linear = False
 
         # Default test input
         self.batch_size = 2
@@ -50,20 +50,11 @@ class TestMLP(unittest.TestCase):
         self.assertTrue(hasattr(mlp, "gate_proj"))
         self.assertTrue(hasattr(mlp, "down_proj"))
 
-    def test_initialization_fused_swiglu(self):
-        # Test initialization with fused swiglu
-        self.config.fuse_swiglu = True
-        mlp = MLP(self.config)
-
-        self.assertTrue(mlp.fuse_swiglu)
-        self.assertEqual(mlp.act_type, "fused_swiglu")
-
     def test_initialization_fuse_ffn(self):
         # Test initialization with custom sizes
         custom_hidden = self.config.hidden_size
         custom_intermediate = self.config.intermediate_size
-        self.config.fuse_attention_ffn = True
-        mlp = MLP(self.config, hidden_size=custom_hidden, intermediate_size=custom_intermediate)
+        mlp = MLP(self.config, hidden_size=custom_hidden, intermediate_size=custom_intermediate, fuse_up_gate=True)
 
         self.assertEqual(mlp.hidden_size, custom_hidden)
         self.assertEqual(mlp.intermediate_size, custom_intermediate)
@@ -74,8 +65,7 @@ class TestMLP(unittest.TestCase):
         # Test initialization with custom sizes
         custom_hidden = self.config.hidden_size
         custom_intermediate = self.config.intermediate_size
-        self.config.fuse_attention_ffn = False
-        mlp = MLP(self.config, hidden_size=custom_hidden, intermediate_size=custom_intermediate)
+        mlp = MLP(self.config, hidden_size=custom_hidden, intermediate_size=custom_intermediate, fuse_up_gate=False)
 
         self.assertEqual(mlp.hidden_size, custom_hidden)
         self.assertEqual(mlp.intermediate_size, custom_intermediate)
@@ -87,9 +77,8 @@ class TestMLP(unittest.TestCase):
 
     def test_custom_proj_names(self):
         # Test initialization with custom projection names
-        self.config.fuse_attention_ffn = True
         custom_names = {"gate_up_proj_name": "custom_gate_up", "down_proj_name": "custom_down"}
-        mlp = MLP(self.config, **custom_names)
+        mlp = MLP(self.config, **custom_names, fuse_up_gate=True)
         mlp(self.test_input)
 
         self.assertTrue(hasattr(mlp, "custom_gate_up"))

@@ -39,8 +39,10 @@ class LayerNorm(nn.LayerNorm):
         self.norm_eps = config.get("norm_eps", 1e-5) if norm_eps is None else norm_eps
         super().__init__(self.hidden_size, epsilon=self.norm_eps)
         self.config = config
-        if config.get("sequence_parallel", False):
-            mark_as_sequence_parallel_parameter(self.weight)
+
+    def enable_sequence_parallel(self):
+        mark_as_sequence_parallel_parameter(self.weight)
+        if self.bias is not None:
             mark_as_sequence_parallel_parameter(self.bias)
 
 
@@ -56,9 +58,6 @@ class RMSNorm(nn.Layer):
         )
         self.config = config
 
-        if config.get("sequence_parallel", False):
-            mark_as_sequence_parallel_parameter(self.weight)
-
     def forward(self, hidden_states):
         if paddle.in_dynamic_mode():
             with paddle.amp.auto_cast(False):
@@ -72,15 +71,18 @@ class RMSNorm(nn.Layer):
             hidden_states = paddle.cast(hidden_states, self.weight.dtype)
         return hidden_states * self.weight
 
+    def enable_sequence_parallel(self):
+        mark_as_sequence_parallel_parameter(self.weight)
+
 
 class Norm(GeneralInterface):
     _global_mapping = {"layer_norm": LayerNorm, "rms_norm": RMSNorm}
 
     @classmethod
-    def from_config(self, config, norm_type=None, hidden_size=None, has_bias=None, **kwargs):
+    def create(self, config, hidden_size=None, has_bias=None, norm_eps=None, norm_type=None, **kwargs):
         if norm_type is None:
             norm_type = "rms_norm" if config.get("use_rmsnorm", False) else "layer_norm"
         if has_bias is None:
             has_bias = config.get("use_bias", False)
         norm_cls = self._global_mapping[norm_type]
-        return norm_cls(config, hidden_size, has_bias=has_bias, **kwargs)
+        return norm_cls(config, hidden_size, has_bias=has_bias, norm_eps=norm_eps, **kwargs)

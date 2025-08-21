@@ -28,16 +28,16 @@ class Embedding(GeneralInterface):
     }
 
     @classmethod
-    def create(self, num_embeddings, embedding_dim, weight_attr=None, name=None, **kwargs):
-        embedding_type = kwargs.pop("embedding_type", "default")
-        embdding_cls = self._global_mapping[embedding_type]
-        kwargs = self.process_kwargs(embedding_type, **kwargs)
-        return embdding_cls(
-            num_embeddings=num_embeddings, embedding_dim=embedding_dim, weight_attr=weight_attr, name=name, **kwargs
-        )
-
-    @classmethod
-    def from_config(self, config: PretrainedConfig, num_embeddings=None, embedding_dim=None):
+    def create(
+        self,
+        config: PretrainedConfig,
+        num_embeddings=None,
+        embedding_dim=None,
+        embedding_type=None,
+        weight_attr=None,
+        name=None,
+        **kwargs,
+    ):
         if num_embeddings is None and config.get("vocab_size", None) is None:
             raise ValueError("One of `num_embeddings` argument or `config.vocab_size` must be set. ")
         if embedding_dim is None and config.get("hidden_size", None) is None:
@@ -45,10 +45,12 @@ class Embedding(GeneralInterface):
 
         num_embeddings = num_embeddings if num_embeddings else config.vocab_size
         embedding_dim = embedding_dim if embedding_dim else config.hidden_size
-        return self.create(
-            num_embeddings=num_embeddings,
-            embedding_dim=embedding_dim,
-            embedding_type=self.get_embedding_type(config),
+        embedding_type = embedding_type if embedding_type else self.get_embedding_type(config)
+
+        embdding_cls = self._global_mapping[embedding_type]
+        kwargs = self.process_kwargs(embedding_type, **kwargs)
+        return embdding_cls(
+            num_embeddings=num_embeddings, embedding_dim=embedding_dim, weight_attr=weight_attr, name=name, **kwargs
         )
 
     @classmethod

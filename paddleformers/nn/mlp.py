@@ -28,6 +28,7 @@ class MLP(nn.Layer):
         config: PretrainedConfig,
         hidden_size=None,
         intermediate_size=None,
+        has_bias=None,
         fuse_up_gate=False,
         gate_proj_name="gate_proj",
         up_proj_name="up_proj",
@@ -39,11 +40,7 @@ class MLP(nn.Layer):
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
         self.tensor_parallel = config.tensor_parallel_degree > 1
-        self.gate_up_linear_type = Linear.get_linear_type(config)
-        self.down_linear_type = Linear.get_linear_type(config, is_column_parallel=False)
-        self.gate_up_kwargs = Linear.get_linear_kwargs(self.gate_up_linear_type)
-        self.down_kwargs = Linear.get_linear_kwargs(self.down_linear_type)
-        self.has_bias = config.get("mlp_bias", False)
+        self.has_bias = has_bias if has_bias else config.get("mlp_bias", False)
         self.fuse_swiglu = config.get("fuse_swiglu", False)
         self.act_type = config.get("hidden_act", "silu")
         self.act_fn = ACT2FN[self.act_type]
@@ -57,7 +54,9 @@ class MLP(nn.Layer):
                     self.hidden_size,
                     self.intermediate_size * 2,
                     has_bias=self.has_bias,
-                    **self.gate_up_kwargs,
+                    config=config,
+                    fuse_matmul_bias=config.fuse_linear,
+                    tp_plan="colwise",
                 ),
             )
             self.up_gate_proj = getattr(self, gate_up_proj_name)
@@ -70,7 +69,9 @@ class MLP(nn.Layer):
                     self.hidden_size,
                     self.intermediate_size,
                     has_bias=self.has_bias,
-                    **self.gate_up_kwargs,
+                    config=config,
+                    fuse_matmul_bias=config.fuse_linear,
+                    tp_plan="colwise",
                 ),
             )
             self.gate_proj = getattr(self, gate_proj_name)
@@ -83,7 +84,9 @@ class MLP(nn.Layer):
                     self.hidden_size,
                     self.intermediate_size,
                     has_bias=self.has_bias,
-                    **self.gate_up_kwargs,
+                    config=config,
+                    fuse_matmul_bias=config.fuse_linear,
+                    tp_plan="colwise",
                 ),
             )
             self.up_proj = getattr(self, up_proj_name)
@@ -96,7 +99,9 @@ class MLP(nn.Layer):
                 self.intermediate_size,
                 self.hidden_size,
                 has_bias=self.has_bias,
-                **self.down_kwargs,
+                config=config,
+                fuse_matmul_bias=config.fuse_linear,
+                tp_plan="rowwise",
             ),
         )
         self.down_proj = getattr(self, down_proj_name)

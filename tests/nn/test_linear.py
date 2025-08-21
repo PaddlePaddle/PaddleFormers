@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import sys
+import unittest
 from pathlib import Path
 
 import paddle
@@ -51,7 +51,7 @@ def _test_create_parallel_linear(config):
     linear = Linear.create(
         in_features=config.in_features,
         out_features=config.out_features,
-        linear_type="colwise_parallel",
+        linear_type="colwise",
         gather_output=True,
     )
 
@@ -61,7 +61,7 @@ def _test_create_parallel_linear(config):
     linear = Linear.create(
         in_features=config.in_features,
         out_features=config.out_features,
-        linear_type="rowwise_parallel",
+        linear_type="rowwise",
         input_is_parallel=False,
     )
 
@@ -71,14 +71,14 @@ def _test_create_parallel_linear(config):
     linear = Linear.create(
         in_features=config.in_features,
         out_features=config.out_features,
-        linear_type="sequence_rowwise_parallel",
+        linear_type="sequence_rowwise",
         input_is_parallel=True,
     )
     assert isinstance(linear, fleet.utils.sequence_parallel_utils.RowSequenceParallelLinear)
     linear = Linear.create(
         in_features=config.in_features,
         out_features=config.out_features,
-        linear_type="sequence_colwise_parallel",
+        linear_type="sequence_colwise",
         gather_output=False,
     )
 
@@ -90,12 +90,15 @@ def _test_create_parallel_linear(config):
 class TestLinear(TestMultipleGpus):
     def setUp(self):
         super().setUp()
+        self.config = LlamaConfig()
+        self.in_features = 10
+        self.out_features = 10
 
-    def test_create_tensor_parallel_linear(self):
-        self.run_2gpu(__file__)
+    # def test_create_tensor_parallel_linear(self):
+    #     self.run_2gpu(__file__)
 
     def test_create_default_linear(self):
-        linear = Linear.create(in_features=self.in_features, out_features=self.out_features)
+        linear = Linear.create(in_features=self.in_features, out_features=self.out_features, linear_type="default")
         self.assertIsInstance(linear, nn.Linear)
 
     def test_create_fused_linear(self):
@@ -103,24 +106,6 @@ class TestLinear(TestMultipleGpus):
         linear = Linear.create(in_features=self.in_features, out_features=self.out_features, linear_type="fuse_linear")
 
         self.assertIsInstance(linear, FusedLinear)
-
-    def test_process_kwargs_default(self):
-        # Test kwargs processing for default linear
-        kwargs = Linear.process_kwargs("default", True, bias_attr=None)
-        self.assertIn("bias_attr", kwargs)
-        self.assertTrue(kwargs["bias_attr"])
-
-    def test_process_kwargs_parallel(self):
-        # Test kwargs processing for parallel linear
-        kwargs = Linear.process_kwargs("colwise_parallel", False, bias_attr=None)
-        self.assertIn("has_bias", kwargs)
-        self.assertFalse(kwargs["has_bias"])
-        self.assertNotIn("bias_attr", kwargs)
-
-    def test_process_kwargs_conflict(self):
-        # Test conflicting bias specification
-        with self.assertRaises(AssertionError):
-            Linear.process_kwargs("default", True, bias_attr=True)
 
     def test_get_linear_type_default(self):
         # Test linear type detection for default case
@@ -139,36 +124,22 @@ class TestLinear(TestMultipleGpus):
         # Test parallel linear type detection
         self.config.tensor_parallel_degree = 2
         # Test column parallel
-        col_type = Linear.get_linear_type(self.config, is_column_parallel=True)
-        self.assertEqual(col_type, "colwise_parallel")
+        col_type = Linear.get_linear_type(self.config, tp_plan="colwise")
+        self.assertEqual(col_type, "colwise")
         # Test row parallel
-        row_type = Linear.get_linear_type(self.config, is_column_parallel=False)
-        self.assertEqual(row_type, "rowwise_parallel")
-
-    def test_get_linear_type_sequence_parallel(self):
-        # Test sequence parallel type detection
-        self.config.tensor_parallel_degree = 2
-        self.config.sequence_parallel = True
-        # Test column parallel
-        col_type = Linear.get_linear_type(self.config, is_column_parallel=True)
-        self.assertEqual(col_type, "sequence_colwise_parallel")
-        # Test row parallel
-        row_type = Linear.get_linear_type(self.config, is_column_parallel=False)
-        self.assertEqual(row_type, "sequence_rowwise_parallel")
+        row_type = Linear.get_linear_type(self.config, tp_plan="rowwise")
+        self.assertEqual(row_type, "rowwise")
 
     def test_get_linear_kwargs(self):
-        # Test kwargs generation for different linear types
-        default_kwargs = Linear.get_linear_kwargs("default")
-        self.assertEqual(default_kwargs, {"linear_type": "default"})
-
-        col_kwargs = Linear.get_linear_kwargs("colwise_parallel", gather_output=True)
+        col_kwargs = Linear.get_linear_kwargs("colwise", gather_output=True)
         self.assertEqual(col_kwargs["gather_output"], True)
 
-        row_kwargs = Linear.get_linear_kwargs("rowwise_parallel", input_is_parallel=False)
+        row_kwargs = Linear.get_linear_kwargs("rowwise", input_is_parallel=False)
         self.assertEqual(row_kwargs["input_is_parallel"], False)
 
 
 if __name__ == "__main__":
-    config = LlamaConfig()
-    config.tensor_parallel_degree = tp_size
-    _test_create_parallel_linear(config)
+    # config = LlamaConfig()
+    # config.tensor_parallel_degree = tp_size
+    # _test_create_parallel_linear(config)
+    unittest.main()

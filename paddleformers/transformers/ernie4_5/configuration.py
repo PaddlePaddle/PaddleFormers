@@ -86,9 +86,6 @@ class Ernie4_5Config(PretrainedConfig):
         compression_ratio: float = 1.0,
         num_key_value_heads=None,
         micro_batch_size=-1,
-        use_fused_head_and_loss_fn=False,
-        use_filtered_label_loss=False,
-        loss_subbatch_seqlen=1024,
         pp_seg_method="layer:Ernie4_5DecoderLayer|EmptyLayer",
         dpo_config=None,
         kto_config=None,
@@ -130,9 +127,6 @@ class Ernie4_5Config(PretrainedConfig):
             compression_ratio (float): Ratio for KV cache compression (1.0 = no compression)
             num_key_value_heads (int): Number of key/value heads (for Grouped Query Attention)
             micro_batch_size (int): Size of micro batches (-1 for automatic)
-            use_fused_head_loss_fn (bool): Whether to use fused head and loss function
-            use_filtered_label_loss (bool): Whether to use filtered label loss
-            loss_subbatch_seqlen (int): Sequence length large than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch)
             pp_seg_method (str): Method for pipeline parallel segmentation
             dpo_config (DPOConfig | None): DPO training configuration
             kto_config (KTOConfig | None): KTO training configuration
@@ -184,9 +178,6 @@ class Ernie4_5Config(PretrainedConfig):
         self.hidden_dropout_prob = hidden_dropout_prob
         self.compression_ratio = compression_ratio
         self.num_key_value_heads = num_key_value_heads
-        self.use_fused_head_and_loss_fn = use_fused_head_and_loss_fn
-        self.use_filtered_label_loss = use_filtered_label_loss
-        self.loss_subbatch_seqlen = loss_subbatch_seqlen
         self.pp_seg_method = pp_seg_method
         self.dpo_config = dpo_config
         self.kto_config = kto_config
@@ -199,9 +190,6 @@ class Ernie4_5Config(PretrainedConfig):
                 "pp_seg_method",
                 "micro_batch_size",
                 "fuse_softmax_mask",
-                "use_fused_head_and_loss_fn",
-                "use_filtered_label_loss",
-                "loss_subbatch_seqlen",
                 "max_sequence_length",
                 "dpo_config",
                 "kto_config",
