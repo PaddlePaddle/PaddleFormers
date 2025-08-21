@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
 
 import datasets
 import numpy as np
@@ -24,7 +24,9 @@ import paddle.nn as nn
 from datasets import Dataset
 from paddle.distributed import fleet
 from paddle.io import BatchSampler, DataLoader, DistributedBatchSampler
-from transformers.tokenization_utils import PreTrainedTokenizer
+
+if TYPE_CHECKING:
+    from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..data import DataCollator, DataCollatorForSeq2Seq
 from ..trainer import Trainer

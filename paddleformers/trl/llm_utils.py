@@ -18,7 +18,7 @@ import math
 import os
 import shutil
 import struct
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 import numpy as np
 import paddle
@@ -26,7 +26,9 @@ import paddle.distributed as dist
 import paddle.incubate.multiprocessing as mp
 from paddle.distributed import fleet
 from sklearn.metrics import accuracy_score
-from transformers.tokenization_utils import PreTrainedTokenizer
+
+if TYPE_CHECKING:
+    from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..datasets import ZeroPaddingIterableDataset
 from ..generation import GenerationConfig

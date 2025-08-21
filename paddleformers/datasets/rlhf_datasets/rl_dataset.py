@@ -11,15 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import paddle
 from datasets import load_dataset
 from paddle.io import Dataset
-from transformers.tokenization_utils import PreTrainedTokenizer
+
+if TYPE_CHECKING:
+    from transformers.tokenization_utils import PreTrainedTokenizer
+
 from transformers.utils import PaddingStrategy
 
 

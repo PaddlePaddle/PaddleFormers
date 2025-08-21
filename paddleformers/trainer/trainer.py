@@ -15,6 +15,7 @@
 
 # This file is modified from
 #  https://github.com/huggingface/transformers/blob/main/src/transformers/trainer.py
+from __future__ import annotations
 
 import collections
 import contextlib
@@ -33,7 +34,7 @@ import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import paddle
@@ -97,8 +98,8 @@ try:
     )
 except:
     pass
-
-from transformers.tokenization_utils import PreTrainedTokenizer
+if TYPE_CHECKING:
+    from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..transformers.context_parallel_utils import split_inputs_sequence_dim_load_balance
 from ..transformers.image_processing_utils import ImageProcessingMixin

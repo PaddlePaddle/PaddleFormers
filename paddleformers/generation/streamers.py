@@ -11,11 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
 from queue import Queue
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from transformers.tokenization_utils import PreTrainedTokenizer
+if TYPE_CHECKING:
+    from transformers.tokenization_utils import PreTrainedTokenizer
 
 
 class BaseStreamer:

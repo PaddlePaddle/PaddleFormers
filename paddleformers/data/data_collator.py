@@ -12,16 +12,31 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
 import copy
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    NewType,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import numpy as np
 import paddle
-from transformers.tokenization_utils_base import BatchEncoding, PreTrainedTokenizerBase
-from transformers.utils import PaddingStrategy
+
+if TYPE_CHECKING:
+    from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+    from transformers.utils import PaddingStrategy
+
+from transformers.tokenization_utils_base import BatchEncoding
 
 __all__ = [
     "DataCollatorWithPadding",

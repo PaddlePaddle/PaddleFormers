@@ -19,10 +19,9 @@ from __future__ import annotations
 import os
 import re
 from functools import wraps
-from typing import Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Union
 
 from transformers import BatchEncoding
-from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_base import (
     ADDED_TOKENS_FILE,
     CHAT_TEMPLATE_FILE,
@@ -30,10 +29,13 @@ from transformers.tokenization_utils_base import (
     SPECIAL_TOKENS_MAP_FILE,
     TOKENIZER_CONFIG_FILE,
 )
-from transformers.utils import ExplicitEnum
+from transformers.utils.generic import ExplicitEnum
 
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.log import logger
+
+if TYPE_CHECKING:
+    from transformers.tokenization_utils import PreTrainedTokenizer
 
 
 class TensorType(ExplicitEnum):
