@@ -24,7 +24,7 @@ import_structure = {
     "interface": ["AttentionInterface", "ALL_ATTENTION_FUNCTIONS"],
     "sdpa_attention": ["sdpa_attention_forward"],
     "utils": ["repeat_kv"],
-    "sink_attention": ["sink_attention_forward"]
+    "sink_attention": ["sink_attention_forward"],
 }
 
 if TYPE_CHECKING:
