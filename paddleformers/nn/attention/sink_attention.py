@@ -370,7 +370,7 @@ class FlashMaskSinkPyLayer(PyLayer):
             return grad_q, grad_k, grad_v, grad_sink, None
 
 # ================== Unified Entry Function ==================
-def flashmask_sink_forward(
+def sink_attention_forward(
     q, k, v, sink: paddle.Tensor, 
     startend_row_indices: paddle.Tensor = None,
     dropout_p=0.0, 
