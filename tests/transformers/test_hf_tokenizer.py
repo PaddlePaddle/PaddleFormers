@@ -68,7 +68,7 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
 
 class TestHFTokenizer(unittest.TestCase):
     def setUp(self):
-        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B", from_hf_hub=True)
+        self.tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B", download_hub="aistudio")
 
     def test_encode(self):
         input_text = "hello world, this is paddle format checker"

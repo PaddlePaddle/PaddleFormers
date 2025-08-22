@@ -19,7 +19,7 @@ import warnings
 from typing import Dict, Optional, Union
 
 import transformers as hf
-from transformers import PretrainedConfig
+from transformers import PretrainedConfig, AutoConfig
 from transformers.dynamic_module_utils import (
     get_class_from_dynamic_module,
     resolve_trust_remote_code,
@@ -41,9 +41,7 @@ from transformers.utils import cached_file
 
 from ...utils.download import DownloadSource, resolve_file_path
 from ..tokenizer_utils import PaddleTokenizerMixin
-from .configuration import AutoConfig
-
-logger = logging.getLogger(__name__)
+from ...utils.log import logger
 
 
 def get_paddleformers_tokenizer_config(
@@ -158,7 +156,6 @@ class AutoTokenizer(hf.AutoTokenizer):
         download_hub = kwargs.get("download_hub", None)
         if download_hub is None:
             download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
-        logger.info(f"Using download source: {download_hub}")
         use_auth_token = kwargs.pop("use_auth_token", None)
         if use_auth_token is not None:
             warnings.warn(
@@ -216,7 +213,26 @@ class AutoTokenizer(hf.AutoTokenizer):
                 kwargs["_commit_hash"] = tokenizer_config["_commit_hash"]
             config_tokenizer_class = tokenizer_config.get("tokenizer_class")
         else:
-            tokenizer_config = get_paddleformers_tokenizer_config(pretrained_model_name_or_path, **kwargs)
+            try:
+                tokenizer_config = get_paddleformers_tokenizer_config(pretrained_model_name_or_path, **kwargs)
+            except Exception as e:
+                if any(keyword in str(e).lower() for keyword in ["not exist", "not found", "entrynotfound", "notexist", "does not appear"]):
+                    hf_link = f"https://huggingface.co/{pretrained_model_name_or_path}"
+                    modelscope_link = f"https://modelscope.cn/models/{pretrained_model_name_or_path}"
+                    encoded_model_name = pretrained_model_name_or_path.replace('/', '%2F')
+                    aistudio_link = f"https://aistudio.baidu.com/modelsoverview?sortBy=weight&q={encoded_model_name}"
+                    
+                    raise ValueError(
+                        f"Unable to find {TOKENIZER_CONFIG_FILE} in the model repository '{pretrained_model_name_or_path}'. Please check:\n"
+                        f"The model repository ID is correct for your chosen source:\n"
+                        f"   - Hugging Face Hub: {hf_link}\n"
+                        f"   - ModelScope: {modelscope_link}\n"
+                        f"   - AI Studio: {aistudio_link}\n"
+                        f"Note: The repository ID may differ between ModelScope, AI Studio, and Hugging Face Hub.\n"
+                        f"You are currently using the download source: {download_hub}. Please check the repository ID on the official website."
+                    ) from None 
+                else:
+                    raise
             config_tokenizer_class = tokenizer_config.get("tokenizer_class")
 
         tokenizer_auto_map = None

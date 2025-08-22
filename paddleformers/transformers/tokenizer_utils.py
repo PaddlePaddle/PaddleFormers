@@ -37,6 +37,8 @@ from ..utils.log import logger
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
+from transformers.tokenization_utils import PreTrainedTokenizer
+PretrainedTokenizer = PreTrainedTokenizer
 
 class TensorType(ExplicitEnum):
     """
@@ -201,14 +203,38 @@ class PaddleTokenizerMixin:
                     download_hub=download_hub,
                     local_files_only=local_files_only,
                 )
-            except Exception:
+            except (FileNotFoundError, EnvironmentError):
                 pass
+            except Exception as e:
+                raise e
         # 获得cache_dir的目录
         for file_id, file_path in resolved_vocab_files.items():
             if resolved_vocab_files[file_id] is not None:
                 cache_dir = os.path.dirname(resolved_vocab_files[file_id])
                 break
-
+        
+        if not any(key in resolved_vocab_files for key in cls.vocab_files_names.keys()):
+            hf_link = f"https://huggingface.co/{pretrained_model_name_or_path}"
+            modelscope_link = f"https://modelscope.cn/models/{pretrained_model_name_or_path}"
+            encoded_model_name = pretrained_model_name_or_path.replace('/', '%2F')
+            aistudio_link = f"https://aistudio.baidu.com/modelsoverview?sortBy=weight&q={encoded_model_name}"
+            
+            raise ValueError(
+                f"No vocabulary files found for model '{pretrained_model_name_or_path}'. "
+                f"Please check:\n"
+                f"1. The model repository ID is correct for your chosen source:\n"
+                f"   - Hugging Face Hub: {hf_link}\n"
+                f"   - ModelScope: {modelscope_link}\n"
+                f"   - AI Studio: {aistudio_link}\n"
+                f"2. You have permission to access this model repository\n"
+                f"3. Network connection is working properly\n"
+                f"4. Try clearing cache and downloading again\n"
+                f"Expected vocabulary files: {list(cls.vocab_files_names.keys())}\n"
+                f"Valid files found: {list(resolved_vocab_files.keys())}\n"
+                f"Note: The repository ID may differ between ModelScope, AI Studio, and Hugging Face Hub.\n"
+                f"You are currently using the download source: {download_hub}. Please check the repository ID on the official website."
+            )
+        
         return super()._from_pretrained(
             resolved_vocab_files,
             pretrained_model_name_or_path,
