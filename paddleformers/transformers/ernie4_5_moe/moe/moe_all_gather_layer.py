@@ -37,7 +37,7 @@ from paddle.incubate.tensor.manipulation import async_offload
 # from paddleformers.peft.lora.lora_quantization_layers import QuantizationLoRALinear
 from paddleformers.utils.log import logger
 
-from ...ernie4_5.distributed.common_dist_utils import (
+from ...ernie4_5_moe.ernie4_5.distributed.common_dist_utils import (
     AllGatherGroupOp,
     ReduceScatterGroupOp,
     all_gather_group,
