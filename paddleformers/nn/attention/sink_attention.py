@@ -17,6 +17,7 @@ from paddle.autograd.py_layer import PyLayer
 
 _C_ops = paddle._C_ops
 
+
 # GQA Helper Function
 def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
     """
@@ -380,6 +381,7 @@ class FlashMaskSinkPyLayer(PyLayer):
             return grad_q, grad_k, grad_v, grad_sink
         else:
             return grad_q, grad_k, grad_v, grad_sink, None
+
 
 # ================== Unified Entry Function ==================
 def sink_attention_forward(
