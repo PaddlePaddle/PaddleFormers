@@ -37,8 +37,6 @@ from ..utils.log import logger
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
-from transformers.tokenization_utils import PreTrainedTokenizer
-PretrainedTokenizer = PreTrainedTokenizer
 
 class TensorType(ExplicitEnum):
     """
@@ -212,13 +210,13 @@ class PaddleTokenizerMixin:
             if resolved_vocab_files[file_id] is not None:
                 cache_dir = os.path.dirname(resolved_vocab_files[file_id])
                 break
-        
+
         if not any(key in resolved_vocab_files for key in cls.vocab_files_names.keys()):
             hf_link = f"https://huggingface.co/{pretrained_model_name_or_path}"
             modelscope_link = f"https://modelscope.cn/models/{pretrained_model_name_or_path}"
-            encoded_model_name = pretrained_model_name_or_path.replace('/', '%2F')
+            encoded_model_name = pretrained_model_name_or_path.replace("/", "%2F")
             aistudio_link = f"https://aistudio.baidu.com/modelsoverview?sortBy=weight&q={encoded_model_name}"
-            
+
             raise ValueError(
                 f"No vocabulary files found for model '{pretrained_model_name_or_path}'. "
                 f"Please check:\n"
@@ -234,7 +232,7 @@ class PaddleTokenizerMixin:
                 f"Note: The repository ID may differ between ModelScope, AI Studio, and Hugging Face Hub.\n"
                 f"You are currently using the download source: {download_hub}. Please check the repository ID on the official website."
             )
-        
+
         return super()._from_pretrained(
             resolved_vocab_files,
             pretrained_model_name_or_path,
