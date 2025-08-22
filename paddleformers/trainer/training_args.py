@@ -401,6 +401,10 @@ class TrainingArguments:
             Whether to release gradients during training. Default is `False`.
         ckpt_quant_stage (`str`, *optional*):
             Whether activate checkpoint quantization. O0: deactivate, O1: Int8 compression, O2: Int4 compression. (default: O0).
+        using_flex_checkpoint(`bool`, *optional*):
+            Whether to use FlexCheckpoint for save and load. Default is False.
+        aoa_config (`Optional[dict[str, list[str]]]`, *optional*):
+            The AoA configuration of FlexCheckpoint, used to describe the mapping between model weights and the checkpoint content. Default is None.
     """
 
     output_dir: str = field(
@@ -1079,6 +1083,16 @@ class TrainingArguments:
     split_norm_comm: Optional[bool] = field(
         default=False,
         metadata={"help": "是否开启单路sharding时global norm通信拆分全局通信组为pp通信和mp通信分别做"},
+    )
+    using_flex_checkpoint: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether use FlexCheckpoint."},
+    )
+    aoa_config: Optional[dict[str, list[str]]] = field(
+        default=None,
+        metadata={
+            "help": "The AoA configuration of FlexCheckpoint, used to describe the mapping between model weights and the checkpoint content. Default is None."
+        },
     )
 
     def __post_init__(self):
