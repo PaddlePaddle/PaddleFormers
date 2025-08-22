@@ -36,24 +36,24 @@ from paddle.distributed.fleet.utils import recompute
 from paddle.incubate.tensor.manipulation import async_offload
 
 from ...utils.log import logger
-from ..ernie4_5.distributed import ScatterOp, mark_as_sequence_parallel_parameter
-from ..ernie4_5.distributed.common_dist_utils import get_async_loader, hack_offload_wait
-from ..ernie4_5.fusion_ops import fused_swiglu
-
-# from ..ernie4_5.loss.dpo import ErnieDPOCriterion
-from ..ernie4_5.modeling import Ernie4_5Attention, Ernie4_5LMHead, Ernie4_5MLP
-from ..ernie4_5.modeling import (
-    ErniePretrainingCriterion as ErniePretrainingCriterionBase,
-)
-from ..ernie4_5.modeling import FusedDropoutImpl, LayerNorm, RMSNorm
-from ..ernie4_5.refined_recompute.utils import create_skip_config_for_refined_recompute
-from ..ernie4_5.sequence_parallel_utils import GatherOp
 from ..model_outputs import (
     BaseModelOutputWithPastAndCrossAttentions as _BaseModelOutput,
 )
 from ..model_outputs import CausalLMOutputWithCrossAttentions as _CausalLMOutput
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import Ernie4_5_MoeConfig
+from .ernie4_5.distributed import ScatterOp, mark_as_sequence_parallel_parameter
+from .ernie4_5.distributed.common_dist_utils import get_async_loader, hack_offload_wait
+from .ernie4_5.fusion_ops import fused_swiglu
+
+# from .ernie4_5.loss.dpo import ErnieDPOCriterion
+from .ernie4_5.modeling import Ernie4_5Attention, Ernie4_5LMHead, Ernie4_5MLP
+from .ernie4_5.modeling import (
+    ErniePretrainingCriterion as ErniePretrainingCriterionBase,
+)
+from .ernie4_5.modeling import FusedDropoutImpl, LayerNorm, RMSNorm
+from .ernie4_5.refined_recompute.utils import create_skip_config_for_refined_recompute
+from .ernie4_5.sequence_parallel_utils import GatherOp
 from .moe.moe_all_gather_layer import MOEAllGatherLayerV2
 from .moe.moe_layer import MOELayer, MoEStatics
 from .moe.topk_gate import TopKGate
@@ -284,15 +284,10 @@ class Ernie4_5_MoeMLP(Ernie4_5MLP):
             paddle.Tensor: Output tensor with same shape as input
         """
         if self.fuse_swiglu:
-            # x = self.up_gate_proj(x)
-            x = paddle.concat([self.gate_proj(x), self.up_proj(x)], axis=-1)
-            x = fused_swiglu(x)
+            x = self.up_gate_proj(x)
         else:
-            # x, gate = self.up_gate_proj(x).chunk(2, axis=-1)
-            # x = F.silu(x) * gate
-            gate = self.gate_proj(x)
-            x = self.up_proj(x)
-            x = F.silu(gate) * x
+            x, gate = self.up_gate_proj(x).chunk(2, axis=-1)
+            x = F.silu(x) * gate
         if self.moe_dropout_prob > 0:
             with get_rng_state_tracker().rng_state("local_seed"):
                 x = F.dropout(x=x, p=self.moe_dropout_prob)
@@ -367,40 +362,19 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         self.use_moe = config.use_moe
         self.self_attn = Ernie4_5Attention(config, layer_idx)
 
-        moe_layer_start_index = (
-            min(config.moe_layer_start_index)
-            if isinstance(config.moe_layer_start_index, (tuple, list))
-            else config.moe_layer_start_index
-        )
-        moe_layer_end_index = (
-            max(config.moe_layer_end_index)
-            if isinstance(config.moe_layer_end_index, (tuple, list))
-            else config.moe_layer_end_index
-        )
+        moe_layer_start_index = config.moe_layer_start_index
+        moe_layer_end_index = config.moe_layer_end_index
 
         if (
             self.use_moe
             and ((layer_idx + 1) % config.moe_layer_interval == 0)
-            and layer_idx >= moe_layer_start_index  # 3
-            and layer_idx <= moe_layer_end_index  # 53
+            and layer_idx >= moe_layer_start_index
+            and layer_idx <= moe_layer_end_index
         ):
             gate, experts, lm_gate, lm_experts, moe_statics = self._init_gate_and_experts(layer_idx)
             shared_experts = self._init_shared_experts() if hasattr(config, "moe_num_shared_experts") else None
-            dense_experts = None
+            # dense_experts = None
             moe_cls = MOELayer
-            if config.moe_multimodal_dispatch_use_allgather:  # v2
-                logger.info("Enable MOEAllGatherLayerV2!")
-                moe_cls = partial(
-                    MOEAllGatherLayerV2,
-                    use_expert_out_alltoall="alltoall" in config.moe_multimodal_dispatch_use_allgather,  # false
-                    use_padding="unpad" not in config.moe_multimodal_dispatch_use_allgather,  # true
-                    enable_reverse_token_drop=config.moe_reverse_token_drop,  # false
-                    dense_token_type=config.moe_dense_experts_token_type_id,  # 3
-                )
-            else:
-                assert dense_experts is None, "only `MOEAllGatherLayerV2` can process dense experts"
-
-            logger.info(f"moe-logging: {config.moe_multimodal_dispatch_use_allgather} moe_cls={moe_cls}")
 
             self.mlp = moe_cls(
                 gate=gate,
@@ -646,7 +620,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
     base_model_prefix = "model"
     _keep_in_fp32_modules = ["mlp.gate", "e_score_correction_bias"]
 
-    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    # transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):

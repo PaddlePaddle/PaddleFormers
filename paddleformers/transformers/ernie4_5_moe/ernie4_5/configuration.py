@@ -12,12 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Ernie4_5_Moe model configuration """
-import json
-from typing import Optional, Union
-
-from ...utils.log import logger
-from ..configuration_utils import PretrainedConfig
+""" Ernie4_5 model configuration."""
+from ...configuration_utils import PretrainedConfig
 
 ERNIE_PRETRAINED_INIT_CONFIGURATION = {
     "ernie/tiny-random-ernie": {
@@ -41,34 +37,28 @@ ERNIE_PRETRAINED_INIT_CONFIGURATION = {
 }
 
 
-class Ernie4_5_MoeConfig(PretrainedConfig):
+class Ernie4_5Config(PretrainedConfig):
     """
-    Configuration class for Ernie4_5_Moe model.
+    Configuration class for Ernie4_5 model.
 
-    This class stores the configuration of an Ernie4_5_Moe model, defining the model architecture.
+    This class stores the configuration of an Ernie4_5 model, defining the model architecture.
     It inherits from PretrainedConfig and can be used to control model outputs.
     """
 
-    model_type = "ernie4_5_moe"
-    attribute_map = {
-        "n_positions": "max_position_embeddings",
-        "n_embd": "hidden_size",
-        "n_layer": "num_hidden_layers",
-        "n_head": "num_attention_heads",
-        "n_inner": "intermediate_size",
-        "activation_function": "hidden_act",
-    }
+    model_type = "ernie4_5"
+
     pretrained_init_configuration = ERNIE_PRETRAINED_INIT_CONFIGURATION
 
     def __init__(
         self,
-        vocab_size=103424,
-        hidden_size=2560,
-        intermediate_size=12288,
+        vocab_size=32000,
+        hidden_size=768,
+        intermediate_size=11008,
         max_position_embeddings=32768,
-        num_hidden_layers=3,
+        num_hidden_layers=2,
         num_attention_heads=2,
         head_dim=None,
+        scale_qk_coeff=1.0,
         initializer_range=0.02,
         rms_norm_eps=1e-6,
         use_cache=False,
@@ -107,48 +97,12 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         token_balance_loss=False,
         token_balance_seqlen=False,  # calculated based on batchsize and seqlen
         cachekv_quant: bool = False,
-        pp_seg_method="layer:Ernie4_5_MoeDecoderLayer|EmptyLayer",
-        moe_num_experts: Optional[Union[int, list]] = 16,
-        use_recompute_moe=False,
-        moe_capacity=(64,),
-        moe_layer_interval=1,
-        moe_layer_start_index=0,
-        moe_layer_end_index=-1,
-        moe_aux_loss_lambda=1e-2,
-        moe_z_loss_lambda=1e-4,
-        moe_orthogonal_loss_lambda=1e-2,
-        sinkhorn_2gate=True,
-        sinkhorn_temp=3e-2,
-        global_aux_loss=False,
-        moe_dropout_prob=0.0,
-        moe_group="dummy",
-        moe_gate="topk",
-        moe_intermediate_size: Union[int, list] = 0,
-        moe_num_shared_experts: int = 2,
-        moe_reverse_token_drop: bool = False,
-        moe_gate_act: str = "softmax",
-        moe_norm_gate_logits=True,
-        moe_all_to_all_dropout: float = 0.0,
-        moe_k=2,
-        moe_use_aux_free: bool = False,
-        # `moe_group_experts` must be used with `moe_use_hard_gate=True`
-        moe_group_experts: bool = False,
-        moe_group_orthogonal_loss: bool = True,
-        enable_delay_scale_loss: bool = True,
-        num_acc_steps: int = 1,
-        fuse_gate_detach_matmul: bool = False,
+        pp_seg_method="layer:Ernie4_5DecoderLayer|EmptyLayer",
         dpo_config=None,
-        moe_multimodal_dispatch_use_allgather: str = "",
-        moe_use_hard_gate=False,
-        moe_dense_experts_token_type_id=3,
-        num_nextn_predict_layers=0,
-        multi_token_pred_lambda=0.1,
-        enable_mtp_magic_send=False,
-        use_recompute_mtp=False,
         **kwargs,
     ):
         """
-        Initialize Ernie4_5_Moe model configuration with default or specified parameters.
+        Initialize Ernie4_5 model configuration with default or specified parameters.
 
         Args:
             vocab_size (int): Size of the vocabulary (number of unique tokens)
@@ -194,50 +148,12 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             token_balance_seqlen (bool): Whether to balance sequence lengths
             cachekv_quant (bool): Whether to quantize key-value cache
             pp_seg_method (str): Method for pipeline parallel segmentation
-            moe_num_experts: Number of experts in MoE layers
-            use_recompute_moe: Whether to use recomputation for MoE layers
-            moe_capacity: Capacity configuration for MoE layers
-            moe_layer_interval: Interval between MoE layers
-            moe_layer_start_index: Starting layer index for MoE
-            moe_layer_end_index: Ending layer index for MoE (-1 means last layer)
-            moe_aux_loss_lambda: Weight for auxiliary loss
-            moe_z_loss_lambda: Weight for z-loss
-            moe_orthogonal_loss_lambda: Weight for orthogonal loss
-            sinkhorn_2gate: Whether to use sinkhorn 2-gate routing
-            sinkhorn_temp: Temperature for sinkhorn routing
-            global_aux_loss: Whether to use global auxiliary loss
-            moe_dropout_prob: Dropout probability for MoE layers
-            moe_group: Group configuration for MoE experts
-            moe_gate: Type of gating mechanism ('top2', etc.)
-            moe_intermediate_size: Intermediate size for MoE layers
-            moe_num_shared_experts: Number of shared experts
-            moe_reverse_token_drop: Whether to use reverse token dropping
-            moe_gate_act: Activation function for gating
-            moe_norm_gate_logits: Whether to normalize gate logits
-            moe_all_to_all_dropout: Dropout for all-to-all communication
-            moe_k: Number of experts to route to
-            moe_use_aux_free: Whether to use auxiliary-free routing
-            moe_group_experts: Whether to group experts (requires hard gating)
-            moe_group_orthogonal_loss: Whether to use group orthogonal loss
-            enable_delay_scale_loss: Whether to enable delayed loss scaling
-            num_acc_steps: Number of accumulation steps
-            fuse_gate_detach_matmul: Whether to fuse gate detach matmul
             **kwargs: Additional keyword arguments passed to parent class
-
-        Note:
-            When use_recompute_moe is True, recompute_granularity will be changed to full_attn.
         """
-
-        if use_recompute_moe:
-            logger.warning(
-                "set `use_recompute_moe`=True, disabling `recompute_granularity=full`, change to full_attn."
-            )
-            if kwargs["recompute"] and kwargs["recompute_granularity"] == "full":
-                kwargs["recompute_granularity"] = "full_attn"
 
         # Set default for tied embeddings if not specified.
         if "tie_word_embeddings" not in kwargs:
-            kwargs["tie_word_embeddings"] = True
+            kwargs["tie_word_embeddings"] = False
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
@@ -251,6 +167,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.head_dim = head_dim
+        self.scale_qk_coeff = scale_qk_coeff
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
@@ -314,44 +231,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.token_balance_seqlen = token_balance_seqlen
         self.cachekv_quant = cachekv_quant
         self.pp_seg_method = pp_seg_method
-
-        self.moe_num_experts = moe_num_experts
-        self.use_recompute_moe = use_recompute_moe
-        self.moe_capacity = moe_capacity
-        self.moe_aux_loss_lambda = moe_aux_loss_lambda
-        self.moe_z_loss_lambda = moe_z_loss_lambda
-        self.moe_orthogonal_loss_lambda = moe_orthogonal_loss_lambda
-        self.global_aux_loss = global_aux_loss
-        self.sinkhorn_2gate = sinkhorn_2gate
-        self.sinkhorn_temp = sinkhorn_temp
-        self.moe_layer_interval = moe_layer_interval
-        self.moe_dropout_prob = moe_dropout_prob
-        self.moe_group = moe_group
-        self.moe_gate = moe_gate
-        self.moe_intermediate_size = moe_intermediate_size
-        self.moe_num_shared_experts = moe_num_shared_experts
-        self.moe_reverse_token_drop = moe_reverse_token_drop
-        self.moe_k = moe_k
-        self.moe_all_to_all_dropout = moe_all_to_all_dropout
-        self.moe_group_experts = moe_group_experts
-        self.moe_group_orthogonal_loss = moe_group_orthogonal_loss
-        self.enable_delay_scale_loss = enable_delay_scale_loss
-        self.num_acc_steps = num_acc_steps
-        self.moe_layer_start_index = moe_layer_start_index
-        self.moe_layer_end_index = self.num_hidden_layers - 1 if moe_layer_end_index == -1 else moe_layer_end_index
-        self.moe_gate_act = moe_gate_act
-        self.moe_norm_gate_logits = moe_norm_gate_logits
-        self.moe_use_aux_free = moe_use_aux_free
-        self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
         self.dpo_config = dpo_config
-        self.moe_multimodal_dispatch_use_allgather = moe_multimodal_dispatch_use_allgather
-        self.moe_use_hard_gate = moe_use_hard_gate
-        self.moe_dense_experts_token_type_id = moe_dense_experts_token_type_id
-        self.num_nextn_predict_layers = num_nextn_predict_layers
-        self.multi_token_pred_lambda = multi_token_pred_lambda
-        self.enable_mtp_magic_send = enable_mtp_magic_send
-        self.use_recompute_mtp = use_recompute_mtp
-        self.multimodel_experts = None
 
         self.register_unsavable_keys(
             [
@@ -371,65 +251,9 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
                 "cachekv_quant",
                 "use_fused_head_and_loss_fn",
                 "max_sequence_length",
-                "moe_group",
                 "dpo_config",
-                "use_recompute_moe",
-                "enable_delay_scale_loss",
-                "moe_dropout_prob",
-                "moe_all_to_all_dropout",
-                "num_acc_steps",
-                "disable_ffn_model_parallel",
-                "moe_group_origin",
-                "moe_multimodal_dispatch_use_allgather",
-                "moe_rank",
-                "moe_world_size",
             ]
         )
 
-    @property
-    def use_moe(self) -> bool:
-        """
-        Check if model is using MoE architecture.
 
-        Returns:
-            bool: True if moe_num_experts > 0, False otherwise
-        """
-        return self.moe_num_experts is not None and self.moe_num_experts > 0
-
-    def to_json_string(self, use_diff: bool = True, saving_file=False) -> str:
-        """
-        Serialize the configuration to a JSON string with special handling for non-serializable objects.
-
-        This method overrides the default JSON serialization to handle special objects like
-        paddle.distributed.communication.group.Group that cannot be serialized normally.
-
-        Args:
-            use_diff (bool, optional): If True, only outputs the differences from the default configuration.
-                                    If False, outputs the full configuration. Defaults to True.
-
-        Returns:
-            str: A JSON formatted string representation of the configuration, with proper indentation
-                and handling for non-serializable objects.
-        """
-        if use_diff is True:
-            config_dict = self.to_diff_dict(saving_file=saving_file)
-        else:
-            config_dict = self.to_dict(saving_file=saving_file)
-
-        def _serializer(obj):
-            """
-            Handle non-serializable objects during JSON conversion.
-
-            Args:
-                obj: The object to be serialized
-
-            Returns:
-                The serializable representation of the object
-
-            """
-            return repr(obj)
-
-        return json.dumps(config_dict, indent=2, sort_keys=True, ensure_ascii=False, default=_serializer) + "\n"
-
-
-__all__ = ["Ernie4_5_MoeConfig"]
+__all__ = ["Ernie4_5Config"]
