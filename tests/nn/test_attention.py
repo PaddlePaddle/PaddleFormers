@@ -14,12 +14,34 @@
 
 import unittest
 
+import numpy as np
 import paddle
 
 from paddleformers.nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 
 
 class TestAttentionInterface(unittest.TestCase):
+    def gen_random_flashmask(bz, num_head, seqlen, has_end, causal):
+        mask_num = 1
+        if not causal:
+            mask_num *= 2
+        if has_end:
+            mask_num *= 2
+        m = np.random.randint(0, seqlen, (bz, num_head, seqlen, mask_num))
+        diag = np.arange(seqlen).reshape((1, 1, seqlen))
+        m[:, :, :, 0] = np.maximum(diag + 1, m[:, :, :, 0])
+        if not causal:
+            if has_end:
+                raise NotImplementedError
+            else:
+                m[:, :, :, 1] = np.minimum(diag, m[:, :, :, 1])
+        else:
+            if has_end:
+                m[:, :, :, 1] = m[:, :, :, 0] + 1
+                m[:, :, :, 1] = np.maximum(m[:, :, :, 0], m[:, :, :, 1])
+
+        return paddle.to_tensor(m, dtype="int32")
+
     def setUp(self):
         self.batch_size = 2
         self.seq_len = 32
@@ -31,6 +53,10 @@ class TestAttentionInterface(unittest.TestCase):
         self.query = paddle.randn([self.batch_size, self.seq_len, self.num_heads, self.head_dim], dtype="float16")
         self.key = paddle.randn([self.batch_size, self.seq_len, self.num_heads, self.head_dim], dtype="float16")
         self.value = paddle.randn([self.batch_size, self.seq_len, self.num_heads, self.head_dim], dtype="float16")
+        self.sink = paddle.randn([self.num_heads], dtype="float16")
+        self.startend_row_indices = self.gen_random_flashmask(
+            self.batch_size, self.num_heads, self.seq_len, has_end=False, causal=False
+        )
 
     def test_forward_calls_correct_function(self):
         eager_interface = ALL_ATTENTION_FUNCTIONS["eager"]
@@ -57,6 +83,18 @@ class TestAttentionInterface(unittest.TestCase):
             self.key,
             self.value,
             scaling=self.scaling,
+        )
+        sink_attention_interface = ALL_ATTENTION_FUNCTIONS["sink"]
+        sink_attention_interface(
+            self,
+            self.query,
+            self.key,
+            self.value,
+            self.sink,
+            startend_row_indices=self.startend_row_indices,
+            dropout_p=0.0,
+            softmax_scale=self.scaling,
+            causal=False,
         )
 
 

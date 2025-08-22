@@ -23,11 +23,11 @@ def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
     """
     Manually repeat the heads of Key and Value tensors for GQA (Grouped-Query Attention).
     Input shape: [B, S, H_kv, D] -> Output shape: [B, S, H_q, D]
-    
+
     Args:
         hidden_states: Input tensor with shape [batch, seq_len, num_kv_heads, head_dim]
         n_rep: Number of repetitions (num_q_heads // num_kv_heads)
-    
+
     Returns:
         Repeated tensor with shape [batch, seq_len, num_q_heads, head_dim]
     """
@@ -35,87 +35,106 @@ def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
         return hidden_states
 
     batch, seq_len, num_key_value_heads, head_dim = hidden_states.shape
-    hidden_states = hidden_states.unsqueeze(3).expand(
-        [batch, seq_len, num_key_value_heads, n_rep, head_dim]
-    )
+    hidden_states = hidden_states.unsqueeze(3).expand([batch, seq_len, num_key_value_heads, n_rep, head_dim])
 
     return hidden_states.reshape([batch, seq_len, num_key_value_heads * n_rep, head_dim])
+
 
 def _get_fa_version():
     """Get the FlashAttention version based on environment flags."""
     if paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]:
         return 2
-    return paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])[
-        "FLAGS_flash_attn_version"
-    ]
+    return paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])["FLAGS_flash_attn_version"]
+
 
 def _flash_attention_forward_dispatch(
-    query, key, value, dropout=0.0, causal=False, return_softmax=False,
-    *, fixed_seed_offset=None, rng_name="", training=True, name=None, softmax_scale=None,
+    query,
+    key,
+    value,
+    dropout=0.0,
+    causal=False,
+    return_softmax=False,
+    *,
+    fixed_seed_offset=None,
+    rng_name="",
+    training=True,
+    name=None,
+    softmax_scale=None,
 ):
     """
     Dispatch FlashAttention forward pass based on version.
-    Note: For FlashAttention, seq_q = seq_k = seq_v is required.
+    Note: For FlashAttention, seq_k = seq_v is required.
     """
     assert not return_softmax, "return_softmax must be false"
-    
+
     # Validate sequence length consistency for FlashAttention
-    seq_q, seq_k, seq_v = query.shape[1], key.shape[1], value.shape[1]
-    assert seq_q == seq_k == seq_v, f"FlashAttention requires equal sequence lengths: seq_q={seq_q}, seq_k={seq_k}, seq_v={seq_v}"
-    
+    seq_k, seq_v = key.shape[1], value.shape[1]
+    assert seq_k == seq_v, f"FlashAttention requires equal sequence lengths: seq_k={seq_k}, seq_v={seq_v}"
+
     fa_version = _get_fa_version()
-    
+
     if fa_version == 2:
         # FlashAttention v2 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
         out, _, lse, _ = _C_ops.flash_attn(
-            query, key, value, fixed_seed_offset, None, dropout,
-            causal, False, not training, rng_name
+            query, key, value, fixed_seed_offset, None, dropout, causal, False, not training, rng_name
         )
-        lse = lse[:, :, :query.shape[1]]
+        lse = lse[:, :, : query.shape[1]]
     elif fa_version == 3:
         # FlashAttention v3 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
         out, lse = _C_ops.flash_attn_v3(
-            query, key, value, None, None, None, None,
-            softmax_scale, causal, -1, -1, 0.0, 1, False, False, 0
+            query, key, value, None, None, None, None, softmax_scale, causal, -1, -1, 0.0, 1, False, False, 0
         )
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
-    
+
     return out, lse
 
+
 def _flash_attention_backward_dispatch(
-    grad_output, query, key, value, output, lse, dropout=0.0,
-    causal=False, softmax_scale=None,
+    grad_output,
+    query,
+    key,
+    value,
+    output,
+    lse,
+    dropout=0.0,
+    causal=False,
+    softmax_scale=None,
 ):
     """
     Dispatch FlashAttention backward pass based on version.
     """
     fa_version = _get_fa_version()
-    
+
     if fa_version == 2:
         # FlashAttention v2 supports custom softmax_scale
         seed_offset = paddle.zeros(shape=[2], dtype="int64")
         grad_q, grad_k, grad_v = _C_ops.flash_attn_grad(
-            query, key, value, output, lse, seed_offset, None,
-            grad_output, dropout, causal
+            query, key, value, output, lse, seed_offset, None, grad_output, dropout, causal
         )
     elif fa_version == 3:
         # FlashAttention v3 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
         grad_q, grad_k, grad_v = _C_ops.flash_attn_v3_grad(
-            query, key, value, output, lse, grad_output,
-            softmax_scale, causal, -1, -1, 0.0, 0
+            query, key, value, output, lse, grad_output, softmax_scale, causal, -1, -1, 0.0, 0
         )
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
-    
+
     return grad_q, grad_k, grad_v
 
+
 def _flashmask_attention_forward_dispatch(
-    query, key, value, startend_row_indices, dropout=0.0, causal=False,
-    training=True, softmax_scale=None,
+    query,
+    key,
+    value,
+    startend_row_indices,
+    dropout=0.0,
+    causal=False,
+    training=True,
+    softmax_scale=None,
 ):
     """
     Dispatch FlashMask attention forward pass.
@@ -123,14 +142,18 @@ def _flashmask_attention_forward_dispatch(
     Note: Only FlashMask v1 doesn't support custom softmax_scale.
     """
     fa_version = _get_fa_version()
-    
+
     if fa_version == 2:
         # FlashMask v1 doesn't support custom softmax_scale
         if softmax_scale is not None and softmax_scale != 1.0 / (query.shape[-1] ** 0.5):
-            print(f"Warning: FlashMask v1 doesn't support custom softmax_scale, ignoring provided value: {softmax_scale}")
-        
+            print(
+                f"Warning: FlashMask v1 doesn't support custom softmax_scale, ignoring provided value: {softmax_scale}"
+            )
+
         output, log_sum_exp = paddle.nn.functional.flashmask_attention(
-            query, key, value,
+            query,
+            key,
+            value,
             startend_row_indices=startend_row_indices,
             causal=causal,
             dropout=dropout,
@@ -140,7 +163,9 @@ def _flashmask_attention_forward_dispatch(
     else:
         # FlashMask v2 and later support custom softmax_scale
         output, log_sum_exp = paddle.nn.functional.flashmask_attention(
-            query, key, value,
+            query,
+            key,
+            value,
             startend_row_indices=startend_row_indices,
             causal=causal,
             dropout=dropout,
@@ -148,60 +173,79 @@ def _flashmask_attention_forward_dispatch(
             return_softmax_lse=True,
             training=training,
         )
-    
+
     return output, log_sum_exp
 
+
 def _flashmask_attention_backward_dispatch(
-    grad_output, query, key, value, output, lse, startend_row_indices,
-    dropout=0.0, causal=False, softmax_scale=None,
+    grad_output,
+    query,
+    key,
+    value,
+    output,
+    lse,
+    startend_row_indices,
+    dropout=0.0,
+    causal=False,
+    softmax_scale=None,
 ):
     """
     Dispatch FlashMask attention backward pass based on version.
     Note: Only FlashMask v1 doesn't support custom softmax_scale.
     """
     fa_version = _get_fa_version()
-    
+
     if fa_version == 2:
         # FlashMask v1 doesn't support custom softmax_scale
         seed_offset = paddle.zeros(shape=[2], dtype="int64")
         grad_q, grad_k, grad_v = _C_ops.flashmask_attention_grad(
-            query, key, value, startend_row_indices, output, lse,
-            seed_offset, grad_output, dropout, causal
+            query, key, value, startend_row_indices, output, lse, seed_offset, grad_output, dropout, causal
         )
     elif fa_version == 3:
         # FlashMask v2 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
         grad_q, grad_k, grad_v = _C_ops.flashmask_attention_v2_grad(
-            query, key, value, output, lse, startend_row_indices,
-            grad_output, softmax_scale, causal
+            query, key, value, output, lse, startend_row_indices, grad_output, softmax_scale, causal
         )
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
-    
+
     return grad_q, grad_k, grad_v
+
 
 class FlashMaskSinkPyLayer(PyLayer):
     """
     Custom PyLayer implementing FlashAttention/FlashMask with Sink mechanism.
-    
+
     The Sink mechanism modifies attention outputs by applying a learned sink parameter
     that affects the attention distribution. This is particularly useful for handling
     attention sinks in long sequences.
     """
-    
+
     @staticmethod
     def forward(
         ctx,
-        query, key, value, sink, startend_row_indices,
-        dropout=0.0, causal=False, return_softmax=False,
-        *, fixed_seed_offset=None, rng_name="", training=True, name=None, softmax_scale=None,
+        query,
+        key,
+        value,
+        sink,
+        startend_row_indices,
+        dropout=0.0,
+        causal=False,
+        return_softmax=False,
+        *,
+        fixed_seed_offset=None,
+        rng_name="",
+        training=True,
+        name=None,
+        softmax_scale=None,
     ):
         """
         Forward pass of FlashMask with Sink mechanism.
-        
+
         Args:
             query: Query tensor [B, S, H_q, D]
-            key: Key tensor [B, S, H_kv, D]  
+            key: Key tensor [B, S, H_kv, D]
             value: Value tensor [B, S, H_kv, D]
             sink: Sink parameter tensor [H_q]
             startend_row_indices: Optional indices for FlashMask (variable length sequences)
@@ -214,65 +258,90 @@ class FlashMaskSinkPyLayer(PyLayer):
         assert key.ndim == 4, f"Key must be 4D tensor, got {key.ndim}D"
         assert value.ndim == 4, f"Value must be 4D tensor, got {value.ndim}D"
         assert sink.ndim == 1, f"Sink must be 1D tensor, got {sink.ndim}D"
-        
+
         batch_q, seq_q, num_q_heads, head_dim_q = query.shape
         batch_k, seq_k, num_kv_heads, head_dim_k = key.shape
         batch_v, seq_v, num_kv_heads_v, head_dim_v = value.shape
-        
+
         # Validate batch dimensions
-        assert batch_q == batch_k == batch_v, f"Batch sizes must match: query={batch_q}, key={batch_k}, value={batch_v}"
-        
+        assert (
+            batch_q == batch_k == batch_v
+        ), f"Batch sizes must match: query={batch_q}, key={batch_k}, value={batch_v}"
+
         # Validate head dimensions
-        assert head_dim_q == head_dim_k == head_dim_v, f"Head dimensions must match: query={head_dim_q}, key={head_dim_k}, value={head_dim_v}"
-        assert num_kv_heads == num_kv_heads_v, f"Key and value must have same number of heads: key={num_kv_heads}, value={num_kv_heads_v}"
-        
+        assert (
+            head_dim_q == head_dim_k == head_dim_v
+        ), f"Head dimensions must match: query={head_dim_q}, key={head_dim_k}, value={head_dim_v}"
+        assert (
+            num_kv_heads == num_kv_heads_v
+        ), f"Key and value must have same number of heads: key={num_kv_heads}, value={num_kv_heads_v}"
+
         # Validate GQA compatibility
-        assert num_q_heads % num_kv_heads == 0, f"Query heads ({num_q_heads}) must be divisible by key/value heads ({num_kv_heads})"
-        
+        assert (
+            num_q_heads % num_kv_heads == 0
+        ), f"Query heads ({num_q_heads}) must be divisible by key/value heads ({num_kv_heads})"
+
         # Validate sink parameter
-        assert sink.shape[0] == num_q_heads, f"Sink parameter size ({sink.shape[0]}) must match number of query heads ({num_q_heads})"
-        
+        assert (
+            sink.shape[0] == num_q_heads
+        ), f"Sink parameter size ({sink.shape[0]}) must match number of query heads ({num_q_heads})"
+
         # Sequence length validation based on attention type
         if startend_row_indices is None:
             # FlashAttention requires equal sequence lengths
-            assert seq_q == seq_k == seq_v, f"FlashAttention requires equal sequence lengths: seq_q={seq_q}, seq_k={seq_k}, seq_v={seq_v}"
+            assert (
+                seq_q == seq_k == seq_v
+            ), f"FlashAttention requires equal sequence lengths: seq_q={seq_q}, seq_k={seq_k}, seq_v={seq_v}"
         else:
             # FlashMask allows variable sequence lengths, but key and value must match
             assert seq_k == seq_v, f"Key and value sequence lengths must match: seq_k={seq_k}, seq_v={seq_v}"
-        
+
         # Handle GQA by repeating key/value heads if necessary
         num_attention_heads = query.shape[2]
         num_key_value_heads = key.shape[2]
         num_key_value_groups = num_attention_heads // num_key_value_heads
         key_states = repeat_kv(key, num_key_value_groups)
         value_states = repeat_kv(value, num_key_value_groups)
-        
+
         # Choose between FlashAttention and FlashMask based on startend_row_indices
         if startend_row_indices is None:
             # Use standard FlashAttention
             raw_output, lse_original = _flash_attention_forward_dispatch(
-                query, key_states, value_states, dropout, causal,
-                fixed_seed_offset=fixed_seed_offset, rng_name=rng_name,
-                training=training, name=name, softmax_scale=softmax_scale,
+                query,
+                key_states,
+                value_states,
+                dropout,
+                causal,
+                fixed_seed_offset=fixed_seed_offset,
+                rng_name=rng_name,
+                training=training,
+                name=name,
+                softmax_scale=softmax_scale,
             )
         else:
             # Use FlashMask attention for variable length sequences
             raw_output, lse_original = _flashmask_attention_forward_dispatch(
-                query, key_states, value_states, startend_row_indices, dropout, causal,
-                training=training, softmax_scale=softmax_scale,
+                query,
+                key_states,
+                value_states,
+                startend_row_indices,
+                dropout,
+                causal,
+                training=training,
+                softmax_scale=softmax_scale,
             )
 
         # Apply sink mechanism
         origin_dtype = raw_output.dtype
         scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
-        
+
         # Reshape tensors for sink computation
         lse_transposed = lse_original.transpose(perm=[0, 2, 1]).unsqueeze(-1)
         sink_reshaped = sink.reshape(shape=[1, 1, -1, 1])
-        
+
         batch_size, seq_len, num_heads, _ = query.shape
         sink_expanded = sink_reshaped.expand([batch_size, seq_len, num_heads, 1])
-        
+
         # Compute sink multiplier: 1 / (exp(sink - lse) + 1)
         multiplier = 1 / (paddle.exp(sink_expanded - lse_transposed) + 1)
         final_out = (raw_output * multiplier).to(origin_dtype)
@@ -287,7 +356,7 @@ class FlashMaskSinkPyLayer(PyLayer):
         ctx.training = training
         ctx.name = name
         ctx.num_key_value_groups = num_key_value_groups
-        
+
         return final_out
 
     @staticmethod
@@ -296,56 +365,82 @@ class FlashMaskSinkPyLayer(PyLayer):
         Backward pass computing gradients for all inputs.
         """
         query, key, value, sink, raw_output, lse_original, multiplier, startend_row_indices = ctx.saved_tensor()
-        
+
         # Restore context variables
         num_key_value_groups = ctx.num_key_value_groups
         key_states = repeat_kv(key, num_key_value_groups)
         value_states = repeat_kv(value, num_key_value_groups)
-        
+
         dropout, causal, scale = ctx.dropout, ctx.causal, ctx.softmax_scale
         fixed_seed_offset, rng_name = ctx.fixed_seed_offset, ctx.rng_name
         training, name = ctx.training, ctx.name
-        
+
         # Compute gradient w.r.t. raw attention output
         grad_raw_output = (grad_output * multiplier).to(query.dtype)
 
         # Compute main gradients using appropriate attention backward
         if startend_row_indices is None:
             grad_q_main, grad_k_repeated, grad_v_repeated = _flash_attention_backward_dispatch(
-                grad_raw_output, query, key_states, value_states, raw_output, lse_original,
-                dropout, causal, scale,
+                grad_raw_output,
+                query,
+                key_states,
+                value_states,
+                raw_output,
+                lse_original,
+                dropout,
+                causal,
+                scale,
             )
         else:
             grad_q_main, grad_k_repeated, grad_v_repeated = _flashmask_attention_backward_dispatch(
-                grad_raw_output, query, key_states, value_states, raw_output, lse_original, startend_row_indices,
-                dropout, causal, scale,
+                grad_raw_output,
+                query,
+                key_states,
+                value_states,
+                raw_output,
+                lse_original,
+                startend_row_indices,
+                dropout,
+                causal,
+                scale,
             )
-        
+
         # Handle GQA: sum gradients across repeated heads
         if num_key_value_groups > 1:
             batch, seq_len, num_kv_heads, head_dim = key.shape
-            grad_k_main = grad_k_repeated.reshape([batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]).sum(axis=3)
-            grad_v = grad_v_repeated.reshape([batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]).sum(axis=3)
+            grad_k_main = grad_k_repeated.reshape([batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]).sum(
+                axis=3
+            )
+            grad_v = grad_v_repeated.reshape([batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]).sum(
+                axis=3
+            )
         else:
             grad_k_main = grad_k_repeated
             grad_v = grad_v_repeated
-        
+
         # Compute sink-related gradients
         g_r = paddle.sum(grad_output * raw_output, axis=-1)
         multiplier_for_grad = multiplier.squeeze(-1)
         g_ell = g_r * multiplier_for_grad * (1 - multiplier_for_grad)
-        
+
         # Gradient w.r.t. sink parameter
         grad_sink_temp = -paddle.sum(g_ell, axis=1)
         grad_sink = grad_sink_temp.sum(axis=0)
-        
+
         # Compute additional gradients through sink mechanism
         if startend_row_indices is None:
             # Use FlashAttention for computing mu_k (attention between query and key)
             mu_k, lse_k = _flash_attention_forward_dispatch(
-                query, key_states, key_states, dropout, causal,
-                fixed_seed_offset=fixed_seed_offset, rng_name=rng_name,
-                training=training, name=name, softmax_scale=scale,
+                query,
+                key_states,
+                key_states,
+                dropout,
+                causal,
+                fixed_seed_offset=fixed_seed_offset,
+                rng_name=rng_name,
+                training=training,
+                name=name,
+                softmax_scale=scale,
             )
             x = (g_ell.unsqueeze(-1) * query).to(query.dtype)
             _, grad_k_extra_repeated, _ = _flash_attention_backward_dispatch(
@@ -354,8 +449,14 @@ class FlashMaskSinkPyLayer(PyLayer):
         else:
             # Use FlashMask for computing mu_k
             mu_k, lse_k = _flashmask_attention_forward_dispatch(
-                query, key_states, key_states, startend_row_indices, dropout, causal,
-                training=training, softmax_scale=scale,
+                query,
+                key_states,
+                key_states,
+                startend_row_indices,
+                dropout,
+                causal,
+                training=training,
+                softmax_scale=scale,
             )
             x = (g_ell.unsqueeze(-1) * query).to(query.dtype)
             _, grad_k_extra_repeated, _ = _flashmask_attention_backward_dispatch(
@@ -364,14 +465,16 @@ class FlashMaskSinkPyLayer(PyLayer):
 
         # Additional gradients from sink mechanism
         grad_q_extra = scale * g_ell.unsqueeze(-1) * mu_k
-        
+
         if num_key_value_groups > 1:
             batch, seq_len, num_kv_heads, head_dim = key.shape
-            grad_k_extra_repeated = grad_k_extra_repeated.reshape([batch, seq_len, num_kv_heads, num_key_value_groups, head_dim])
+            grad_k_extra_repeated = grad_k_extra_repeated.reshape(
+                [batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]
+            )
             grad_k_extra = scale * grad_k_extra_repeated.sum(axis=3)
         else:
             grad_k_extra = scale * grad_k_extra_repeated
-        
+
         # Combine main and extra gradients
         grad_q = grad_q_main + grad_q_extra
         grad_k = grad_k_main + grad_k_extra
@@ -385,27 +488,30 @@ class FlashMaskSinkPyLayer(PyLayer):
 
 # ================== Unified Entry Function ==================
 def sink_attention_forward(
-    q, k, v, sink: paddle.Tensor, 
+    q,
+    k,
+    v,
+    sink: paddle.Tensor,
     startend_row_indices: paddle.Tensor = None,
-    dropout_p=0.0, 
-    softmax_scale=None, 
+    dropout_p=0.0,
+    softmax_scale=None,
     causal=False,
 ):
     """
     A unified, high-performance attention implementation with Sink mechanism support.
-    
+
     This function automatically chooses between FlashAttention and FlashMask based on
     the presence of startend_row_indices:
     - If startend_row_indices is None: Uses standard FlashAttention (requires seq_q = seq_k = seq_v)
     - If startend_row_indices is provided: Uses FlashMask attention (supports variable length sequences)
-    
+
     The Sink mechanism modifies attention outputs by applying a learned sink parameter
     that affects the attention distribution, which is useful for handling attention sinks
     in long sequences.
-    
+
     Also supports GQA (Grouped-Query Attention) where the number of key/value heads
     is smaller than the number of query heads.
-    
+
     Args:
         q: Query tensor with shape [batch_size, seq_len, num_q_heads, head_dim]
         k: Key tensor with shape [batch_size, seq_len, num_kv_heads, head_dim]
@@ -416,10 +522,10 @@ def sink_attention_forward(
         softmax_scale: Custom softmax scaling factor (default: 1/sqrt(head_dim))
                       Note: Only FlashMask v1 doesn't support custom softmax_scale
         causal: Whether to apply causal masking (default: False)
-    
+
     Returns:
         Attention output tensor with shape [batch_size, seq_len, num_q_heads, head_dim]
-    
+
     Notes:
         - For standard FlashAttention: seq_q = seq_k = seq_v is required
         - FlashMask allows variable sequence lengths, but key and value lengths must match
@@ -427,12 +533,19 @@ def sink_attention_forward(
         - The function automatically handles GQA by repeating key/value heads when necessary
         - Input tensors must be 4D with proper shape validation
         - Sink parameter size must match the number of query heads
-    
+
     Raises:
         AssertionError: If input tensor shapes are incompatible or requirements are not met
         ValueError: If unsupported FlashAttention version is detected
     """
     return FlashMaskSinkPyLayer.apply(
-        q, k, v, sink, startend_row_indices, dropout_p, causal,
-        return_softmax=False, softmax_scale=softmax_scale,
+        q,
+        k,
+        v,
+        sink,
+        startend_row_indices,
+        dropout_p,
+        causal,
+        return_softmax=False,
+        softmax_scale=softmax_scale,
     )

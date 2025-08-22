@@ -32,8 +32,8 @@ if TYPE_CHECKING:
     from .flashmask_attention import *
     from .interface import *
     from .sdpa_attention import *
-    from .utils import *
     from .sink_attention import *
+    from .utils import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
