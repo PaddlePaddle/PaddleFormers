@@ -24,7 +24,7 @@ import_structure = {
     "interface": ["AttentionInterface", "ALL_ATTENTION_FUNCTIONS"],
     "sdpa_attention": ["sdpa_attention_forward"],
     "utils": ["repeat_kv"],
-    "sink_attention": ["sink_attention_forward"],
+    "sink_impl": ["sink_attention_forward"],
 }
 
 if TYPE_CHECKING:
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from .flashmask_attention import *
     from .interface import *
     from .sdpa_attention import *
-    from .sink_attention import *
+    from .sink_impl import *
     from .utils import *
 else:
     sys.modules[__name__] = _LazyModule(

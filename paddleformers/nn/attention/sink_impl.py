@@ -15,29 +15,9 @@
 import paddle
 from paddle.autograd.py_layer import PyLayer
 
+from .utils import repeat_kv
+
 _C_ops = paddle._C_ops
-
-
-# GQA Helper Function
-def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
-    """
-    Manually repeat the heads of Key and Value tensors for GQA (Grouped-Query Attention).
-    Input shape: [B, S, H_kv, D] -> Output shape: [B, S, H_q, D]
-
-    Args:
-        hidden_states: Input tensor with shape [batch, seq_len, num_kv_heads, head_dim]
-        n_rep: Number of repetitions (num_q_heads // num_kv_heads)
-
-    Returns:
-        Repeated tensor with shape [batch, seq_len, num_q_heads, head_dim]
-    """
-    if n_rep == 1:
-        return hidden_states
-
-    batch, seq_len, num_key_value_heads, head_dim = hidden_states.shape
-    hidden_states = hidden_states.unsqueeze(3).expand([batch, seq_len, num_key_value_heads, n_rep, head_dim])
-
-    return hidden_states.reshape([batch, seq_len, num_key_value_heads * n_rep, head_dim])
 
 
 def _get_fa_version():
@@ -300,8 +280,12 @@ class FlashMaskSinkPyLayer(PyLayer):
         num_attention_heads = query.shape[2]
         num_key_value_heads = key.shape[2]
         num_key_value_groups = num_attention_heads // num_key_value_heads
-        key_states = repeat_kv(key, num_key_value_groups)
-        value_states = repeat_kv(value, num_key_value_groups)
+        if startend_row_indices is None:
+            key_states = repeat_kv(key, num_key_value_groups)
+            value_states = repeat_kv(value, num_key_value_groups)
+        else:
+            key_states = key
+            value_states = value
 
         # Choose between FlashAttention and FlashMask based on startend_row_indices
         if startend_row_indices is None:
@@ -368,8 +352,12 @@ class FlashMaskSinkPyLayer(PyLayer):
 
         # Restore context variables
         num_key_value_groups = ctx.num_key_value_groups
-        key_states = repeat_kv(key, num_key_value_groups)
-        value_states = repeat_kv(value, num_key_value_groups)
+        if startend_row_indices is None:
+            key_states = repeat_kv(key, num_key_value_groups)
+            value_states = repeat_kv(value, num_key_value_groups)
+        else:
+            key_states = key
+            value_states = value
 
         dropout, causal, scale = ctx.dropout, ctx.causal, ctx.softmax_scale
         fixed_seed_offset, rng_name = ctx.fixed_seed_offset, ctx.rng_name
@@ -406,7 +394,8 @@ class FlashMaskSinkPyLayer(PyLayer):
             )
 
         # Handle GQA: sum gradients across repeated heads
-        if num_key_value_groups > 1:
+        # Only if grad_k_repeated.shape[2] == num_kv_heads * num_key_value_groups, (kv_head is expanded)
+        if num_key_value_groups > 1 and grad_k_repeated.shape[2] == key.shape[2] * num_key_value_groups:
             batch, seq_len, num_kv_heads, head_dim = key.shape
             grad_k_main = grad_k_repeated.reshape([batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]).sum(
                 axis=3
@@ -466,7 +455,7 @@ class FlashMaskSinkPyLayer(PyLayer):
         # Additional gradients from sink mechanism
         grad_q_extra = scale * g_ell.unsqueeze(-1) * mu_k
 
-        if num_key_value_groups > 1:
+        if num_key_value_groups > 1 and grad_k_extra_repeated.shape[2] == key.shape[2] * num_key_value_groups:
             batch, seq_len, num_kv_heads, head_dim = key.shape
             grad_k_extra_repeated = grad_k_extra_repeated.reshape(
                 [batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]
@@ -486,7 +475,6 @@ class FlashMaskSinkPyLayer(PyLayer):
             return grad_q, grad_k, grad_v, grad_sink, None
 
 
-# ================== Unified Entry Function ==================
 def sink_attention_forward(
     q,
     k,
