@@ -76,6 +76,14 @@ class TestAttentionInterface(unittest.TestCase):
             self.value,
             scaling=self.scaling,
         )
+        sdpa_interface(
+            self,
+            self.query,
+            self.key,
+            self.value,
+            sink=self.sink,
+            scaling=self.scaling,
+        )
         flashmask_interface = ALL_ATTENTION_FUNCTIONS["flashmask"]
         flashmask_interface(
             self,
@@ -84,17 +92,14 @@ class TestAttentionInterface(unittest.TestCase):
             self.value,
             scaling=self.scaling,
         )
-        sink_attention_interface = ALL_ATTENTION_FUNCTIONS["sink"]
-        sink_attention_interface(
+        flashmask_interface(
             self,
             self.query,
             self.key,
             self.value,
-            self.sink,
-            startend_row_indices=self.startend_row_indices,
-            dropout_p=0.0,
-            softmax_scale=self.scaling,
-            causal=False,
+            scaling=self.scaling,
+            attn_mask_start_row_indices=self.startend_row_indices,
+            sink=self.sink,
         )
 
 
