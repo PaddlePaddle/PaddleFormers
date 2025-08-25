@@ -60,6 +60,8 @@ from .tokenizer_utils_base import (
     TextInputPair,
     TruncationStrategy,
 )
+import warnings
+warnings.filterwarnings("always", category=DeprecationWarning)
 
 if is_tokenizers_available():
     from tokenizers import AddedToken
@@ -1028,6 +1030,13 @@ class PretrainedTokenizer(ChatTemplateMixin, PretrainedTokenizerBase):
         init_dict = fn_args_to_dict(original_init, *((self,) + args), **kwargs)
         init_dict.pop("self", None)
         super(PretrainedTokenizer, self).__init__(**init_dict)
+
+        warnings.warn(
+            "PretrainedTokenizer will be deprecated and removed in the next major release. "
+            "Please migrate to Hugging Face’s transformers.PreTrainedTokenizer.",
+            category=DeprecationWarning,
+            stacklevel=2
+        )
 
         self.added_tokens_decoder: Dict[int, AddedToken] = {}
         self.added_tokens_decoder.update(kwargs.pop("added_tokens_decoder", {}))
