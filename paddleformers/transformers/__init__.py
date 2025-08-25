@@ -171,6 +171,8 @@ import_structure = {
     "ernie4_5.configuration": ["Ernie4_5Config"],
     "ernie4_5.modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"],
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
+    "ernie4_5_moe.configuration": ["Ernie4_5_MoeConfig"],
+    "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "export": ["export_model"],
     "llama.configuration": [
         "LLAMA_PRETRAINED_INIT_CONFIGURATION",

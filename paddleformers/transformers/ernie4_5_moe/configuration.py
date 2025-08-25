@@ -110,7 +110,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         pp_seg_method="layer:Ernie4_5_MoeDecoderLayer|EmptyLayer",
         moe_num_experts: Optional[Union[int, list]] = 16,
         use_recompute_moe=False,
-        moe_capacity=(64,),
+        moe_capacity=[64, 64, 64],
         moe_layer_interval=1,
         moe_layer_start_index=0,
         moe_layer_end_index=-1,
