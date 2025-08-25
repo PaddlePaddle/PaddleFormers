@@ -15,6 +15,7 @@
 
 # This file is modified from
 #  https://github.com/huggingface/transformers/blob/main/src/transformers/trainer.py
+from __future__ import annotations
 
 import collections
 import contextlib
@@ -33,7 +34,7 @@ import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import paddle
@@ -84,6 +85,7 @@ from ..data import (
     init_dataloader_comm_group,
 )
 from ..peft import LoKrModel, LoRAModel, PrefixModelForCausalLM, ReFTModel, VeRAModel
+from ..peft.lora import QuantizationLoRABaseLinear
 from ..quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
@@ -96,6 +98,8 @@ try:
     )
 except:
     pass
+if TYPE_CHECKING:
+    from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..transformers.context_parallel_utils import split_inputs_sequence_dim_load_balance
 from ..transformers.image_processing_utils import ImageProcessingMixin
@@ -106,7 +110,6 @@ from ..transformers.model_utils import (
     unwrap_model,
 )
 from ..transformers.segment_parallel_utils import split_inputs_sequence_dim
-from ..transformers.tokenizer_utils import PretrainedTokenizer
 from ..utils import empty_device_cache
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
@@ -254,7 +257,7 @@ class Trainer:
              The dataset to use for evaluation. If it is a [`~datasets.Dataset`], columns not accepted by the
              `model.forward()` method are automatically removed. If it is a dictionary, it will evaluate on each
              dataset prepending the dictionary key to the metric name.
-        tokenizer ([`PretrainedTokenizer`], *optional*):
+        tokenizer ([`PreTrainedTokenizer`], *optional*):
             The tokenizer used to preprocess the data. If provided, will be used to automatically pad the inputs the
             maximum length when batching inputs, and it will be saved along the model to make it easier to rerun an
             interrupted training or reuse the fine-tuned model.
@@ -293,7 +296,7 @@ class Trainer:
         data_collator: Optional[DataCollator] = None,
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Union[Dataset, Dict[str, Dataset]] = None,
-        tokenizer: Optional[PretrainedTokenizer] = None,
+        tokenizer: Optional[PreTrainedTokenizer] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[paddle.optimizer.Optimizer, paddle.optimizer.lr.LRScheduler] = (None, None),
@@ -377,7 +380,13 @@ class Trainer:
         self.optimizer_grouped_parameters = None
         self.sharding_io = None
         if self.args.should_save_sharding_stage1_model or self.args.should_load_sharding_stage1_model:
-            self.sharding_io = ShardingIO(self.args, self.model, self.optimizer)
+            self.sharding_io = ShardingIO(
+                self.args,
+                self.model,
+                self.optimizer,
+                remap_parameter_name=self.args.load_sharded_model_remap_parameter_name,
+            )
+
         if self.args.unified_checkpoint:
             self.unified_checkpoint_handler = UnifiedCheckpointHandler(self.args)
 
@@ -525,7 +534,12 @@ class Trainer:
                 models=model,
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
-                excluded_layers=[QuantizationLinear, ColumnParallelQuantizationLinear, RowParallelQuantizationLinear]
+                excluded_layers=[
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
+                    QuantizationLoRABaseLinear,
+                ]
                 + self._decorate_exclude_layers(model),
             )
         # for pipeline mode and pure tensor parallel
@@ -2195,7 +2209,12 @@ class Trainer:
                 optimizers=self.optimizer,
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
-                excluded_layers=[QuantizationLinear, ColumnParallelQuantizationLinear, RowParallelQuantizationLinear]
+                excluded_layers=[
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
+                    QuantizationLoRABaseLinear,
+                ]
                 + self._decorate_exclude_layers(model),
             )
 

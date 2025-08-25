@@ -18,7 +18,6 @@ from unittest import TestCase
 
 import numpy as np
 import paddle
-from huggingface_hub import hf_hub_download
 from parameterized import parameterized
 
 from paddleformers.utils import load_torch
@@ -63,32 +62,4 @@ class SerializationTest(TestCase):
                 assert np.allclose(
                     paddle.to_tensor(arr).cast("float32").cpu().numpy(),
                     torch_data[key].detach().cpu().to(torch.float32).numpy(),
-                )
-
-    @parameterized.expand(
-        [
-            "hf-internal-testing/tiny-random-codegen",
-            "hf-internal-testing/tiny-random-Data2VecTextModel",
-            "hf-internal-testing/tiny-random-SwinModel",
-        ]
-    )
-    @require_package("torch")
-    def test_load_bert_model(self, repo_id):
-        import torch
-
-        with tempfile.TemporaryDirectory() as tempdir:
-            weight_file = hf_hub_download(
-                repo_id=repo_id,
-                filename="pytorch_model.bin",
-                cache_dir=tempdir,
-                library_name="PaddleNLP",
-            )
-            torch_weight = torch.load(weight_file)
-            torch_weight = {key: value for key, value in torch_weight.items()}
-            paddle_weight = load_torch(weight_file)
-
-            for key, arr in paddle_weight.items():
-                assert np.allclose(
-                    arr,
-                    torch_weight[key].numpy(),
                 )

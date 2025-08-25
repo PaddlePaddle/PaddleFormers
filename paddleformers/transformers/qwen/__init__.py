@@ -11,9 +11,54 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration import *
-from .modeling import *
-from .modeling_auto import *
-from .modeling_network import *
-from .modeling_pp import *
-from .tokenizer import *
+import sys
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "tokenizer": ["is_tiktoken_available", "QWenTokenizer"],
+    "tokenizer_utils": ["PretrainedTokenizer"],
+    "configuration": ["QWenConfig"],
+    "modeling": [
+        "QWenBlock",
+        "QWenForCausalLM",
+        "QWenLMHeadModel",
+        "QWenPretrainedModel",
+        "QWenModel",
+        "QWenLMHead",
+        "QWenPretrainingCriterion",
+    ],
+    "modeling_auto": [
+        "QWenBlockAuto",
+        "QWenForCausalLM3DAuto",
+        "QWenPretrainedModelAuto",
+        "QWenModelAuto",
+        "QWenLMHeadAuto",
+        "QWenPretrainingCriterionAuto",
+    ],
+    "modeling_network": [
+        "QWenBlockNet",
+        "QWenForCausalLMNet",
+        "QWenPretrainedModelNet",
+        "QWenModelNet",
+        "QWenLMHeadNet",
+        "QWenPretrainingCriterionNet",
+    ],
+    "modeling_pp": ["QWenForCausalLMPipe"],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
+    from .modeling_auto import *
+    from .modeling_network import *
+    from .modeling_pp import *
+    from .tokenizer import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

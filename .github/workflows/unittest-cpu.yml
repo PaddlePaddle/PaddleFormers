@@ -11,8 +11,6 @@ env:
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   BRANCH: ${{ github.event.pull_request.base.ref }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-cpu
-  HF_ENDPOINT: https://hf-mirror.com
-  STUDIO_GIT_HOST: http://git.prod.idc-to-cloud.aistudio.baidu-int.com
 
 jobs:
   unittest-cpu-ci:
@@ -41,8 +39,6 @@ jobs:
             -e work_dir \
             -e no_proxy \
             -e python_version \
-            -e HF_ENDPOINT \
-            -e STUDIO_GIT_HOST \
             -w /workspace ${docker_image}
 
       - name: Download Code
@@ -92,17 +88,18 @@ jobs:
       - name: Test
         run: |
           docker exec -t $container_name /bin/bash -c '
-          source $work_dir/../../../proxy
+          source $work_dir/../../../proxy_aistudio
+          rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers
           set -e
           make test
+          echo "finished"
           '
 
-      # - name: Upload Coverage To Codecov
-      #   uses: codecov/codecov-action@v3
-      #   timeout-minutes: 2
-      #   env:
-      #     CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload Coverage To Codecov
+        uses: codecov/codecov-action@v3
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       
       - name: Terminate And Delete the Container
         if: always()

@@ -22,6 +22,7 @@ import paddle
 from paddleformers.transformers import (
     AutoConfig,
     BertModel,
+    LlamaModel,
     PretrainedConfig,
     PretrainedModel,
     register_base_model,
@@ -63,13 +64,10 @@ class TestFromPretrained(unittest.TestCase):
     def test_from_pretrained_low_cpu_mem_usage_functional(self):
         # test that we can use `from_pretrained(..., low_cpu_mem_usage=True)` with normal and
         # sharded models
-        mnames = [
-            "__internal_testing__/tiny-random-bert-sharded",
-            "__internal_testing__/tiny-random-bert",
-        ]
+        mnames = ["test_paddleformers/tiny-random-llama-shard", "test_paddleformers/tiny-random-llama"]
         for mname in mnames:
-            m1 = BertModel.from_pretrained(mname, low_cpu_mem_usage=True)
-            m2 = BertModel.from_pretrained(mname, low_cpu_mem_usage=False)
+            m1 = LlamaModel.from_pretrained(mname, low_cpu_mem_usage=True)
+            m2 = LlamaModel.from_pretrained(mname, low_cpu_mem_usage=False)
             for p1, p2 in zip(m1.parameters(), m2.parameters()):
                 self.assertTrue(paddle.allclose(p1, p2))
 
@@ -92,12 +90,12 @@ class TestFromPretrained(unittest.TestCase):
             self.assertEqual(new_model.norm.weight.dtype, paddle.float32)
 
     def test_load_sharded_checkpoint(self):
-        config = AutoConfig.from_pretrained("__internal_testing__/bert-shard")
-        model = BertModel.from_pretrained("__internal_testing__/bert-shard")
+        config = AutoConfig.from_pretrained("test_paddleformers/tiny-random-llama-shard")
+        model = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama-shard")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, max_shard_size="200kiB")
-            model_load = BertModel.from_config(config)
+            model_load = LlamaModel.from_config(config)
             missing_keys, unexpected_keys = load_sharded_checkpoint(model_load, tmp_dir)
 
         self.assertEqual(missing_keys, [])
@@ -117,7 +115,7 @@ class TestFromPretrained(unittest.TestCase):
             str_src_dtype = str(src_dtype)[dtype_prefix_len:]
             str_dst_dtype = str(dst_dtype)[dtype_prefix_len:]
 
-            config = AutoConfig.from_pretrained("__internal_testing__/tiny-random-bert")
+            config = AutoConfig.from_pretrained("test_paddleformers/tiny-random-bert")
             model = BertModel.from_config(config, dtype=str_src_dtype)
 
             with tempfile.TemporaryDirectory() as tmp_dir:
@@ -212,7 +210,7 @@ class TestShardCheckpoint(unittest.TestCase):
             )
 
     def test_checkpoint_sharding_local(self):
-        model = BertModel.from_pretrained("__internal_testing__/bert-shard")
+        model = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama-shard")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             # We use the same folder for various sizes to make sure a new save erases the old checkpoint.
@@ -252,20 +250,20 @@ class TestShardCheckpoint(unittest.TestCase):
                 self.assertSetEqual(all_shards, shards_found)
 
                 # Finally, check the model can be reloaded
-                new_model = BertModel.from_pretrained(tmp_dir)
+                new_model = LlamaModel.from_pretrained(tmp_dir)
                 for p1, p2 in zip(model.parameters(), new_model.parameters()):
                     self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_sharding_from_hub(self):
-        model = BertModel.from_pretrained("__internal_testing__/tiny-random-bert-sharded")
+        model = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama-shard")
 
         # the model above is the same as the model below, just a sharded version.
-        ref_model = BertModel.from_pretrained("__internal_testing__/tiny-random-bert-no-sharded")
+        ref_model = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama-shard")
         for p1, p2 in zip(model.parameters(), ref_model.parameters()):
             self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_variant_local(self):
-        model = BertModel.from_pretrained("__internal_testing__/tiny-random-bert")
+        model = BertModel.from_pretrained("test_paddleformers/tiny-random-bert")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2")
@@ -285,7 +283,7 @@ class TestShardCheckpoint(unittest.TestCase):
             self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_variant_local_sharded(self):
-        model = BertModel.from_pretrained("__internal_testing__/tiny-random-bert")
+        model = BertModel.from_pretrained("test_paddleformers/tiny-random-bert")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2", max_shard_size="50kB")
@@ -310,7 +308,7 @@ class TestShardCheckpoint(unittest.TestCase):
 
     @require_package("safetensors")
     def test_checkpoint_variant_local_safe(self):
-        model = BertModel.from_pretrained("__internal_testing__/tiny-random-bert")
+        model = BertModel.from_pretrained("test_paddleformers/tiny-random-bert")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2", safe_serialization=True)
@@ -332,7 +330,7 @@ class TestShardCheckpoint(unittest.TestCase):
 
     @require_package("safetensors")
     def test_checkpoint_variant_local_sharded_safe(self):
-        model = BertModel.from_pretrained("__internal_testing__/tiny-random-bert")
+        model = BertModel.from_pretrained("test_paddleformers/tiny-random-bert")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2", max_shard_size="50kB", safe_serialization=True)
@@ -358,28 +356,34 @@ class TestShardCheckpoint(unittest.TestCase):
     def test_checkpoint_variant_hub(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             with self.assertRaises(EnvironmentError):
-                _ = BertModel.from_pretrained("__internal_testing__/tiny-random-bert-variant", cache_dir=tmp_dir)
+                _ = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama-variant", cache_dir=tmp_dir)
 
-            model = BertModel.from_pretrained(
-                "__internal_testing__/tiny-random-bert-variant", cache_dir=tmp_dir, variant="v2"
+            model = LlamaModel.from_pretrained(
+                "test_paddleformers/tiny-random-llama-variant",
+                cache_dir=tmp_dir,
+                variant="v2",
             )
         self.assertIsNotNone(model)
 
     def test_checkpoint_variant_hub_sharded(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             with self.assertRaises(EnvironmentError):
-                _ = BertModel.from_pretrained(
-                    "__internal_testing__/tiny-random-bert-variant-sharded", cache_dir=tmp_dir
+                _ = LlamaModel.from_pretrained(
+                    "test_paddleformers/tiny-random-llama-variant-sharded", cache_dir=tmp_dir
                 )
-            model = BertModel.from_pretrained(
-                "__internal_testing__/tiny-random-bert-variant-sharded", cache_dir=tmp_dir, variant="v2"
+            model = LlamaModel.from_pretrained(
+                "test_paddleformers/tiny-random-llama-variant-sharded",
+                cache_dir=tmp_dir,
+                variant="v2",
             )
         self.assertIsNotNone(model)
 
     def test_checkpoint_variant_save_load(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            model = BertModel.from_pretrained(
-                "__internal_testing__/tiny-random-bert-variant", cache_dir=tmp_dir, variant="v2"
+            model = LlamaModel.from_pretrained(
+                "test_paddleformers/tiny-random-llama-variant",
+                cache_dir=tmp_dir,
+                variant="v2",
             )
             weights_name = ".".join(PADDLE_WEIGHTS_NAME.split(".")[:-1] + ["v2"] + ["pdparams"])
 

@@ -14,9 +14,18 @@
 
 import os
 import sys
+from contextlib import suppress
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+from .utils.lazy_import import _LazyModule
 
 PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
+
+with suppress(Exception):
+    import paddle
+
+    paddle.disable_signal_handler()
 
 # this version is used for develop and test.
 # release version will be added fixed version by setup.py.
@@ -38,20 +47,44 @@ if "datasets" in sys.modules.keys():
         "This may cause PaddleFormers datasets to be unavailable in intranet. "
         "Please import paddleformers before datasets module to avoid download issues"
     )
-import paddle
 
-from . import (
-    data,
-    datasets,
-    mergekit,
-    ops,
-    peft,
-    quantization,
-    trainer,
-    transformers,
-    trl,
-    utils,
-    version,
-)
+# module index
+modules = [
+    "data",
+    "datasets",
+    "nn",
+    "mergekit",
+    "ops",
+    "peft",
+    "quantization",
+    "trainer",
+    "transformers",
+    "trl",
+    "utils",
+    "version",
+]
+import_structure = {module: [] for module in modules}
 
-paddle.disable_signal_handler()
+if TYPE_CHECKING:
+    from . import (
+        data,
+        datasets,
+        mergekit,
+        nn,
+        ops,
+        peft,
+        quantization,
+        trainer,
+        transformers,
+        trl,
+        utils,
+        version,
+    )
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+        extra_objects={"__version__": __version__},
+    )

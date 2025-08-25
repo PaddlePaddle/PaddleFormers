@@ -27,11 +27,7 @@ from .sequence_parallel_utils import (
     AllGatherVarlenOp,
     sequence_parallel_sparse_mask_labels,
 )
-from .tensor_parallel_utils import (
-    fused_head_and_loss_fn,
-    parallel_linear,
-    parallel_matmul,
-)
+from .tensor_parallel_utils import fused_head_and_loss_fn, parallel_matmul
 
 
 class KTOCriterion(nn.Layer):
@@ -120,15 +116,13 @@ class KTOCriterion(nn.Layer):
                 ignore_index=self.ignore_label,
             )
         elif use_sparse_head_and_loss_fn:
-            if bias is None:
-                logits = parallel_matmul(hidden_states, weight, self.config.tensor_parallel_output)
-            else:
-                logits = parallel_linear(
-                    hidden_states,
-                    weight,
-                    bias,
-                    self.config.tensor_parallel_output,
-                )
+            logits = parallel_matmul(
+                hidden_states,
+                weight,
+                bias=bias,
+                transpose_y=transpose_y,
+                tensor_parallel_output=self.config.tensor_parallel_output,
+            )
             logits = logits.astype("float32")
             per_token_logps = -self.logprobs(logits, labels)
         else:
