@@ -37,6 +37,11 @@ from ..utils.log import logger
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
+# legacy PretrainedTokenizer, which is different from huggingface PreTrainedTokenizer
+from .legacy.tokenizer_utils import PretrainedTokenizer
+
+PretrainedTokenizer = PretrainedTokenizer
+
 
 class TensorType(ExplicitEnum):
     """
