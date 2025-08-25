@@ -1,4 +1,4 @@
-name: Unittest GPU CI
+name: Unittest GPU CI 
 
 on:
   pull_request:
