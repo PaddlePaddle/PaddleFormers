@@ -44,7 +44,6 @@ try:
 except ImportError:
     from backports.functools_lru_cache import lru_cache
 
-import warnings
 
 from ...data.vocab import Vocab
 from ...utils.import_utils import is_tokenizers_available
@@ -63,7 +62,6 @@ from .tokenizer_utils_base import (
     TruncationStrategy,
 )
 
-warnings.filterwarnings("always", category=DeprecationWarning)
 
 if is_tokenizers_available():
     from tokenizers import AddedToken
@@ -1033,11 +1031,9 @@ class PretrainedTokenizer(ChatTemplateMixin, PretrainedTokenizerBase):
         init_dict.pop("self", None)
         super(PretrainedTokenizer, self).__init__(**init_dict)
 
-        warnings.warn(
+        logger.warning_once(
             "PretrainedTokenizer will be deprecated and removed in the next major release. "
             "Please migrate to Hugging Face’s transformers.PreTrainedTokenizer.",
-            category=DeprecationWarning,
-            stacklevel=2,
         )
 
         self.added_tokens_decoder: Dict[int, AddedToken] = {}

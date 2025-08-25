@@ -37,11 +37,6 @@ from ..utils.log import logger
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
-# legacy PretrainedTokenizer, which is different from huggingface PreTrainedTokenizer
-from .legacy.tokenizer_utils import PretrainedTokenizer
-
-PretrainedTokenizer = PretrainedTokenizer
-
 
 class TensorType(ExplicitEnum):
     """
@@ -363,3 +358,13 @@ class PaddleTokenizerMixin:
 
 def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer):
     return type(hf_tokenizer_class.__name__, (PaddleTokenizerMixin, hf_tokenizer_class), {})
+
+
+# legacy PretrainedTokenizer, which is different from huggingface PreTrainedTokenizer
+try:
+    # do not direct import PretrainedTokenizer from legacy package
+    # PretrainedTokenizer should be combined with PaddleTokenizerMixin to support multisource download 
+    from .legacy.tokenizer_utils import PretrainedTokenizer
+    PretrainedTokenizer = type(PretrainedTokenizer.__name__, (PaddleTokenizerMixin, PretrainedTokenizer), {})
+except:
+    pass
