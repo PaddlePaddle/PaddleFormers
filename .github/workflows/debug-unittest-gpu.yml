@@ -12,11 +12,6 @@ env:
   ci_scripts: /workspace/PaddleFormers/scripts/unit_test
   CI_name: unittest-gpu-debug
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-  HF_ENDPOINT: https://hf-mirror.com
-  STUDIO_GIT_HOST: http://git.prod.idc-to-cloud.aistudio.baidu-int.com
-  PPNLP_HOME: /ssd1/PaddleNLP
-  HF_DATASETS_CACHE: /ssd1/PaddleNLP/huggingface/datasets
-  TRANSFORMERS_CACHE: /ssd1/PaddleNLP/huggingface
 
 defaults:
   run:
@@ -25,13 +20,12 @@ defaults:
 jobs:
   debug-container:
     name: unittest-gpu-debug
-    runs-on: [self-hosted, ernie-8gpu]
+    runs-on: [self-hosted, 4gpu]
     timeout-minutes: 30
     steps:
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
-          CACHE_DIR: /home/data/cfs/.cache
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
           paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
@@ -44,7 +38,6 @@ jobs:
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
-            -v /ssd1/PaddleNLP:/ssd1/PaddleNLP \
             -e BRANCH \
             -e PR_ID \
             -e COMMIT_ID \
