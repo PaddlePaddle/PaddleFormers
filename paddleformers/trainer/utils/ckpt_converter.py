@@ -19,17 +19,36 @@ from functools import reduce
 from typing import List, Union
 
 import paddle
-from paddle.distributed.fleet.utils.log_util import logger
-from paddle.distributed.flex_checkpoint.dcp.load_state_dict import (
-    _load_state_dict,
-    get_rank_to_read_files,
-)
-from paddle.distributed.flex_checkpoint.dcp.metadata import (
-    LocalTensorIndex,
-    LocalTensorMetadata,
-    Metadata,
-)
-from paddle.distributed.flex_checkpoint.dcp.utils import flatten_state_dict
+
+try:
+    from paddle.distributed.fleet.utils.log_util import logger
+except:
+    logger = None
+
+try:
+    from paddle.distributed.flex_checkpoint.dcp.load_state_dict import (
+        _load_state_dict,
+        get_rank_to_read_files,
+    )
+except:
+    _load_state_dict = None
+    get_rank_to_read_files = None
+
+try:
+    from paddle.distributed.flex_checkpoint.dcp.metadata import (
+        LocalTensorIndex,
+        LocalTensorMetadata,
+        Metadata,
+    )
+except:
+    LocalTensorIndex = None
+    LocalTensorMetadata = None
+    Metadata = None
+
+try:
+    from paddle.distributed.flex_checkpoint.dcp.utils import flatten_state_dict
+except:
+    flatten_state_dict = None
 
 MODEL_WEIGHT_SUFFIX = ".pdparams"
 OPTIMIZER_WEIGHT_SUFFIX = ".pdopt"
