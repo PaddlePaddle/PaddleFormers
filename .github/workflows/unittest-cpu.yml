@@ -1,4 +1,4 @@
-name: Unittest CPU CI
+name: Unittest CPU CI 
 
 on: [pull_request]
 
