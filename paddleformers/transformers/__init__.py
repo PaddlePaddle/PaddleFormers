@@ -42,6 +42,7 @@ import_structure = {
     "tokenizer_utils_base": [
         "PaddingStrategy",
         "TextInput",
+        "TensorType",
     ],
     "attention_utils": ["create_bigbird_rand_mask_idx_list"],
     "tensor_parallel_utils": [],
