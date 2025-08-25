@@ -36,7 +36,7 @@ from paddle.incubate.nn.functional import moe_combine, moe_gate_dispatch
 
 from paddleformers.utils.log import logger
 
-from ...ernie4_5_moe.ernie4_5.sequence_parallel_utils import ScatterOp
+from ..sequence_parallel_utils import ScatterOp
 
 GateOutput = namedtuple(
     "GateOutput",

@@ -36,8 +36,8 @@ from paddle.distributed.fleet.utils import recompute
 
 from ...utils.log import logger
 from ..model_utils import PipelinePretrainedModel
+from .comm_utils.distributed import ScatterOp, mark_as_sequence_parallel_parameter
 from .configuration import Ernie4_5_MoeConfig
-from .distributed import ScatterOp, mark_as_sequence_parallel_parameter
 
 # from .loss.dpo import ErnieDPOCriterion
 from .modeling import (

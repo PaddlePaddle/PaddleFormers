@@ -41,22 +41,25 @@ from ..model_outputs import (
 )
 from ..model_outputs import CausalLMOutputWithCrossAttentions as _CausalLMOutput
 from ..model_utils import PretrainedModel, register_base_model
-from .configuration import Ernie4_5_MoeConfig
-from .ernie4_5.distributed import ScatterOp, mark_as_sequence_parallel_parameter
-from .ernie4_5.distributed.common_dist_utils import get_async_loader, hack_offload_wait
-from .ernie4_5.fusion_ops import fused_swiglu
+from .comm_utils.distributed import ScatterOp, mark_as_sequence_parallel_parameter
+from .comm_utils.distributed.common_dist_utils import (
+    get_async_loader,
+    hack_offload_wait,
+)
+from .comm_utils.fusion_ops import fused_swiglu
 
-# from .ernie4_5.loss.dpo import ErnieDPOCriterion
-from .ernie4_5.modeling import Ernie4_5Attention, Ernie4_5LMHead, Ernie4_5MLP
-from .ernie4_5.modeling import (
+# from .comm_utils.loss.dpo import ErnieDPOCriterion
+from .comm_utils.modeling_modules import Ernie4_5Attention, Ernie4_5LMHead, Ernie4_5MLP
+from .comm_utils.modeling_modules import (
     ErniePretrainingCriterion as ErniePretrainingCriterionBase,
 )
-from .ernie4_5.modeling import FusedDropoutImpl, LayerNorm, RMSNorm
-from .ernie4_5.refined_recompute.utils import create_skip_config_for_refined_recompute
-from .ernie4_5.sequence_parallel_utils import GatherOp
-from .moe.moe_all_gather_layer import MOEAllGatherLayerV2
-from .moe.moe_layer import MOELayer, MoEStatics
-from .moe.topk_gate import TopKGate
+from .comm_utils.modeling_modules import FusedDropoutImpl, LayerNorm, RMSNorm
+from .comm_utils.moe.moe_all_gather_layer import MOEAllGatherLayerV2
+from .comm_utils.moe.moe_layer import MOELayer, MoEStatics
+from .comm_utils.moe.topk_gate import TopKGate
+from .comm_utils.refined_recompute.utils import create_skip_config_for_refined_recompute
+from .comm_utils.sequence_parallel_utils import GatherOp
+from .configuration import Ernie4_5_MoeConfig
 
 # Note: ProcessGroupNCCL do not support deepcopy protocol, we made modifications here.
 paddle.distributed.communication.group.Group.__deepcopy__ = lambda self, _: self

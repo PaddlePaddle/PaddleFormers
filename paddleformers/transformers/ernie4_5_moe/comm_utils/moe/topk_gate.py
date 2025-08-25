@@ -30,7 +30,7 @@ from paddle.utils import unique_name
 
 from paddleformers.utils.log import logger
 
-from ...ernie4_5_moe.ernie4_5.fusion_ops import cal_aux_loss
+from ..fusion_ops import cal_aux_loss
 
 
 def masked_fill(x, mask, value):
