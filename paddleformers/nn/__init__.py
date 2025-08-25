@@ -42,6 +42,7 @@ import_structure = {
     "lm_head": ["LMHead"],
     "mlp": ["MLP"],
     "norm": ["Norm", "LayerNorm", "RMSNorm"],
+    "pp_model": ["GeneralModelForCausalLMPipe"],
 }
 
 if TYPE_CHECKING:
