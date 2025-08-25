@@ -92,6 +92,10 @@ from ..quantization.quantization_linear import (
 )
 
 try:
+    from ..quantization.quantization_linear import QuantizationLinear
+except:
+    QuantizationLinear = None
+try:
     from paddle.distributed.fleet.utils.sequence_parallel_utils import (
         register_sequence_parallel_allreduce_hooks,
     )
@@ -148,6 +152,7 @@ from .trainer_callback import (
     TrainerState,
 )
 from .trainer_utils import (  # set_hyrbid_parallel_seed,
+    PREFIX_CHECKPOINT_DIR,
     EvalLoopOutput,
     EvalPrediction,
     IntervalStrategy,
@@ -198,6 +203,15 @@ from .utils.sharding_io import ShardingIO
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
+
+# Name of the files used for checkpointing
+TRAINING_ARGS_NAME = "training_args.bin"
+TRAINER_STATE_NAME = "trainer_state.json"
+
+OPTIMIZER_NAME = "optimizer.pdopt"
+SCHEDULER_NAME = "scheduler.pdparams"
+SCALER_NAME = "scaler.pdparams"
+
 
 if is_datasets_available():
     import datasets
@@ -533,10 +547,7 @@ class Trainer:
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
                 excluded_layers=[
-                    QuantizationLinear,
-                    ColumnParallelQuantizationLinear,
-                    RowParallelQuantizationLinear,
-                    QuantizationLoRABaseLinear,
+                    QuantizationLinear
                 ]
                 + self._decorate_exclude_layers(model),
             )
@@ -1771,6 +1782,7 @@ class Trainer:
                 batch_size=self.args.per_device_train_batch_size,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                prefetch_factor=32,
                 **additional_configs,
             )
         else:
@@ -1783,6 +1795,7 @@ class Trainer:
                 batch_sampler=train_sampler,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                prefetch_factor=32,
                 **additional_configs,
             )
 
@@ -2208,10 +2221,7 @@ class Trainer:
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
                 excluded_layers=[
-                    QuantizationLinear,
-                    ColumnParallelQuantizationLinear,
-                    RowParallelQuantizationLinear,
-                    QuantizationLoRABaseLinear,
+                    QuantizationLinear
                 ]
                 + self._decorate_exclude_layers(model),
             )
@@ -2326,11 +2336,7 @@ class Trainer:
                 assert (
                     ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.SHARD_OP in self.args.sharding
                 ), "Only support tensor parallel + sharding stage1/stage2 hybrid parallel now."
-                # NOTE: TensorParallel will be called in distributed_model when sharding stage1, so no need to call here
-                if ShardingOption.SHARD_GRAD_OP in self.args.sharding:
-                    model = paddle.distributed.fleet.meta_parallel.TensorParallel(
-                        model, hcg, strategy=fleet.fleet._user_defined_strategy
-                    )
+                model = paddle.distributed.fleet.meta_parallel.TensorParallel(model, hcg, strategy=None)
 
             if ShardingOption.SHARD_OP in self.args.sharding:
                 if self.args.amp_master_grad:
@@ -2773,7 +2779,7 @@ class Trainer:
 
         # only save model state dict, ignore optimizer and scheduler
         if not self.args.ignore_save_lr_and_optim:
-            optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
+            optimizer_name = _add_variant(OPTIMIZER_NAME, self.args.optimizer_name_suffix)
             saved_signal_path = os.path.join(output_dir, f"saved_signal_{dist.get_rank()}")
 
             if self.args.unified_checkpoint and self.args.offload_optim:
@@ -2860,9 +2866,6 @@ class Trainer:
                             or "remove_master_weight" not in self.args.unified_checkpoint_config
                         ):
                             paddle.save(global_rank, os.path.join(signal_dir, f".master_weight.done.{global_rank}"))
-
-            if self.args.unified_checkpoint and (self.args.offload_optim or self.args.tensorwise_offload_optimizer):
-                self._offload_optimizer()
 
         self.runtime_timer.stop()
 
@@ -3123,7 +3126,7 @@ class Trainer:
         opt_state_dict = None
         if self.args.should_load_sharding_stage1_model:
             opt_state_dict = self.sharding_io.load_optimizer_state_with_reshard(
-                checkpoint, PADDLE_OPTIMIZER_NAME, self.model_wrapped
+                checkpoint, OPTIMIZER_NAME, self.model_wrapped
             )
         else:
             use_unified_checkpoint = False
@@ -3135,7 +3138,7 @@ class Trainer:
 
             if not use_unified_checkpoint:
                 if self.args.data_parallel_rank == 0 or self.args.use_expert_parallel:
-                    optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
+                    optimizer_name = _add_variant(OPTIMIZER_NAME, self.args.optimizer_name_suffix)
                     path = os.path.join(checkpoint, optimizer_name)
                     if os.path.isfile(path):
                         opt_state_dict = paddle.load(path)
@@ -3178,7 +3181,7 @@ class Trainer:
             # Load in optimizer and scheduler states
             self.optimizer.set_state_dict(opt_state_dict)
         else:
-            optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
+            optimizer_name = _add_variant(OPTIMIZER_NAME, self.args.optimizer_name_suffix)
             raise ValueError(f"optimizer-state-dict not found, opt: {os.path.join(checkpoint, optimizer_name)}.")
         gc.collect()
         empty_device_cache()
