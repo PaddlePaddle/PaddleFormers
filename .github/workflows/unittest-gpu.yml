@@ -2,8 +2,9 @@ name: Unittest GPU CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-    branches: [develop]
+    branches:
+      - develop
+      - 'release*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
