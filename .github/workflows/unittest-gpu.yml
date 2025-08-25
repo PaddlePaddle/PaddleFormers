@@ -2,8 +2,9 @@ name: Unittest GPU CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-    branches: [develop]
+    branches:
+      - develop
+      - 'release*'
   schedule:
     - cron: "4 0 * * *"
   workflow_call:
@@ -28,11 +29,6 @@ env:
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_name: unittest-gpu-ci
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-  HF_ENDPOINT: https://hf-mirror.com
-  STUDIO_GIT_HOST: http://git.prod.idc-to-cloud.aistudio.baidu-int.com
-  PPNLP_HOME: /ssd1/PaddleNLP
-  HF_DATASETS_CACHE: /ssd1/PaddleNLP/huggingface/datasets
-  TRANSFORMERS_CACHE: /ssd1/PaddleNLP/huggingface
   RUN_DOWNSTREAM: ${{ inputs.run_downstream }}
 
 defaults:
@@ -54,23 +50,9 @@ jobs:
             echo "IMAGE_NAME=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest" >> "$GITHUB_ENV"
           fi
       
-      - name: Parse GPU ID From Runner Label
-        id: parse-gpu
-        run: |
-          echo "Runner labels: $MACHINE_TAG"
-          if [[ "$MACHINE_TAG" == *"gpu-0-3"* ]]; then
-            echo "cudaid=0,1,2,3" >> "$GITHUB_ENV"
-          elif [[ "$MACHINE_TAG" == *"gpu-4-7"* ]]; then
-            echo "cudaid=4,5,6,7" >> "$GITHUB_ENV"
-          else
-            echo "Unknown runner label, fallback to default CUDA"
-            echo "cudaid=0,1,2,3" >> "$GITHUB_ENV"
-          fi
-
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
-          CACHE_DIR: /home/data/cfs/.cache
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
           paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
@@ -84,7 +66,6 @@ jobs:
               -v $work_dir/../../..:$work_dir/../../.. \
               -v $work_dir:/workspace \
               -v /home/.cache/pip:/home/.cache/pip \
-              -v /ssd1/PaddleNLP:/ssd1/PaddleNLP \
               -e BRANCH \
               -e AGILE_COMPILE_BRANCH \
               -e PR_ID \
@@ -96,7 +77,6 @@ jobs:
               -e paddle_whl \
               -e FLAGS_dynamic_static_unified_comm \
               -e python_version \
-              -e CUDA_VISIBLE_DEVICES=$cudaid \
               -w /workspace --runtime=nvidia $IMAGE_NAME
           fi
             
@@ -142,8 +122,10 @@ jobs:
             ln -sf $(which python${python_version}) /usr/bin/python3
             pip config set global.cache-dir "/home/.cache/pip"
             set -e
+            rm -rf /root/.cache/aistudio/
             cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-            timeout 50m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
+            source $work_dir/../../../proxy
+            timeout 100m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
             '
           fi
           

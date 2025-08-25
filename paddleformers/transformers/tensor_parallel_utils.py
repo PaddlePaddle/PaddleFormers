@@ -11,27 +11,45 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import contextlib
+
 import paddle
+import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
+import paddle.nn.functional as F
+from paddle.autograd import PyLayer
+from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 
 try:
     from paddle.nn.layer.layers import in_declarative_mode
 except:
     from paddle.fluid.dygraph.base import in_declarative_mode
-import paddle.distributed as dist
-from paddle.autograd import PyLayer
 
 from ..utils.tools import get_env_device
 
 
-def parallel_matmul(lm_output, logit_weights, tensor_parallel_output=True, training=True):
+def parallel_matmul(
+    lm_output,
+    logit_weights,
+    bias=None,
+    transpose_y=False,
+    tensor_parallel_degree=1,
+    tensor_parallel_output=True,
+    fuse_linear=False,
+    training=True,
+):
     """
     Parallel matmul
     Args:
         lm_output: x for matmul
         logit_weights: y for matmul
-        tensor_parallel_output: the output is paralleled or not
-        training: args for xpu
+        bias (Tensor, optional): Bias tensor. Default is None.
+        transpose_y (bool, optional): Whether to transpose y. Default is False.
+        tensor_parallel_degree (int, optional): Tensor parallel degree. Default is 1.
+        tensor_parallel_output (bool, optional): Whether to output tensor parallel. Default is True.
+        fuse_linear (bool, optional): Whether to fuse linear. Default is False.
+        training (bool, optional): Training state. Default is False.
 
     Returns:
         rst for matmul
@@ -44,6 +62,9 @@ def parallel_matmul(lm_output, logit_weights, tensor_parallel_output=True, train
             logits = xpu_parallel_matmul(
                 lm_output,
                 logit_weights,
+                bias=bias,
+                transpose_y=transpose_y,
+                tensor_parallel_degree=tensor_parallel_degree,
                 tensor_parallel_output=tensor_parallel_output,
                 training=training,
             )
@@ -52,7 +73,6 @@ def parallel_matmul(lm_output, logit_weights, tensor_parallel_output=True, train
             pass
 
     is_fleet_init = True
-    tensor_parallel_degree = 1
     try:
         hcg = fleet.get_hybrid_communicate_group()
         model_parallel_group = hcg.get_model_parallel_group()
@@ -67,45 +87,27 @@ def parallel_matmul(lm_output, logit_weights, tensor_parallel_output=True, train
 
     if is_fleet_init and tensor_parallel_degree > 1 and is_logit_weight_distributed:
         input_parallel = paddle.distributed.collective._c_identity(lm_output, group=model_parallel_group)
-        logits = paddle.matmul(input_parallel, logit_weights, transpose_y=True)
 
+        if transpose_y:
+            logits = paddle.matmul(input_parallel, logit_weights, transpose_y=True)
+        else:
+            if fuse_linear:
+                logits = paddle.incubate.nn.functional.fused_linear(input_parallel, logit_weights, bias)
+            else:
+                logits = F.linear(input_parallel, logit_weights, bias)
         if tensor_parallel_output:
             return logits
 
         return paddle.distributed.collective._c_concat(logits, group=model_parallel_group)
     else:
-        logits = paddle.matmul(lm_output, logit_weights, transpose_y=True)
-        return logits
-
-
-def parallel_linear(lm_output, logit_weights, bias, tensor_parallel_output=True):
-    is_fleet_init = True
-    tensor_parallel_degree = 1
-    try:
-        hcg = fleet.get_hybrid_communicate_group()
-        model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
-    except:
-        is_fleet_init = False
-
-    is_logit_weight_distributed = logit_weights.is_distributed
-    #  `is_distributed` in static mode is always False
-    if in_declarative_mode() and tensor_parallel_degree > 1:
-        is_logit_weight_distributed = True
-
-    if is_fleet_init and tensor_parallel_degree > 1 and is_logit_weight_distributed:
-        input_parallel = paddle.distributed.collective._c_identity(lm_output, group=model_parallel_group)
-        bias_parallel = paddle.distributed.collective._c_identity(bias, group=model_parallel_group)
-        logits = paddle.matmul(input_parallel, logit_weights)
-        logits += bias_parallel
-
-        if tensor_parallel_output:
-            return logits
-
-        return paddle.distributed.collective._c_concat(logits, group=model_parallel_group)
-    else:
-        logits = paddle.matmul(lm_output, logit_weights)
-        logits += bias
+        if fuse_linear:
+            logits = paddle.incubate.nn.functional.fused_linear(
+                lm_output, logit_weights, bias, transpose_weight=transpose_y
+            )
+        else:
+            logits = paddle.matmul(lm_output, logit_weights, transpose_y=transpose_y)
+            if bias is not None:
+                logits += bias
         return logits
 
 
@@ -579,3 +581,15 @@ class FusedHeadAndCrossEntropy(PyLayer):
                 grad_lm_head_bias,
                 None,
             )
+
+
+def model_parallel_dropout(config):
+    """Get context manager for model-parallel dropout with proper seed control.
+
+    Returns:
+        Context manager for dropout operation
+    """
+    if config.tensor_parallel_degree > 1 and config.hidden_dropout_prob > 0.0:
+        current_seed = "local_seed" if config.sequence_parallel else "global_seed"
+        return get_rng_state_tracker().rng_state(current_seed)
+    return contextlib.nullcontext()

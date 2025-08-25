@@ -135,17 +135,17 @@ class StandardConfigMappingTest(unittest.TestCase):
         class FakeBertConfig(BertConfig):
             pass
 
-        config = FakeBertConfig.from_pretrained("__internal_testing__/bert")
+        config = FakeBertConfig.from_pretrained("test_paddleformers/tiny-random-bert")
         hidden_size = config.hidden_size
 
         FakeBertConfig.attribute_map = {"fake_field": "hidden_size"}
 
-        loaded_config = FakeBertConfig.from_pretrained("__internal_testing__/bert")
+        loaded_config = FakeBertConfig.from_pretrained("test_paddleformers/tiny-random-bert")
         fake_field = loaded_config.fake_field
         self.assertEqual(fake_field, hidden_size)
 
     def test_from_pretrained_cache_dir(self):
-        model_id = "__internal_testing__/tiny-random-bert"
+        model_id = "test_paddleformers/tiny-random-bert"
         with tempfile.TemporaryDirectory() as tempdir:
             BertConfig.from_pretrained(model_id, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))
@@ -155,7 +155,7 @@ class StandardConfigMappingTest(unittest.TestCase):
     @unittest.skip("skipping due to connection error!")
     def test_load_from_hf(self):
         """test load config from hf"""
-        config = BertConfig.from_pretrained("hf-internal-testing/tiny-random-BertModel", from_hf_hub=True)
+        config = BertConfig.from_pretrained("hf-internal-testing/tiny-random-BertModel", download_hub="huggingface")
         self.assertEqual(config.hidden_size, 32)
 
         with tempfile.TemporaryDirectory() as tempdir:
@@ -172,7 +172,7 @@ class StandardConfigMappingTest(unittest.TestCase):
             pass
 
         with tempfile.TemporaryDirectory() as tempdir:
-            config = FakeBertConfig.from_pretrained("bert-base-uncased")
+            config = FakeBertConfig.from_pretrained("test_paddleformers/bert-base-uncased")
             config.save_pretrained(tempdir)
 
             # rename `config.json` -> `model_config.json`

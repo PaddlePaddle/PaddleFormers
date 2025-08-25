@@ -68,7 +68,7 @@ from ..quantization.quantization_utils import (
 )
 from ..quantization.unified_checkpoint_quantization import dequant_unified_optimizer
 from ..utils import device_guard
-from ..utils.download import resolve_file_path
+from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.env import (
     ASYMMETRY_QUANT_SCALE_MAX,
     ASYMMETRY_QUANT_SCALE_MIN,
@@ -1746,9 +1746,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
     def _resolve_model_file_path(
         cls: Type[PretrainedModel],
         pretrained_model_name_or_path: str,
-        from_hf_hub: bool = False,
-        from_aistudio: bool = False,
-        from_modelscope: bool = False,
+        download_hub: DownloadSource = None,
         cache_dir: str | None = None,
         subfolder: Optional[str] = "",
         config: PretrainedConfig = None,
@@ -1871,7 +1869,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         pretrained_model_name_or_path, subfolder, _add_variant(PYTORCH_WEIGHTS_INDEX_NAME, variant)
                     )
                 ):
-                    if from_hf_hub or convert_from_torch:
+                    if download_hub == DownloadSource.HUGGINGFACE or convert_from_torch:
                         archive_file = os.path.join(
                             pretrained_model_name_or_path, subfolder, _add_variant(PYTORCH_WEIGHTS_INDEX_NAME, variant)
                         )
@@ -1883,7 +1881,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 elif os.path.isfile(
                     os.path.join(pretrained_model_name_or_path, subfolder, _add_variant(PYTORCH_WEIGHTS_NAME, variant))
                 ):
-                    if from_hf_hub or convert_from_torch:
+                    if download_hub == DownloadSource.HUGGINGFACE or convert_from_torch:
                         archive_file = os.path.join(
                             pretrained_model_name_or_path, subfolder, _add_variant(PYTORCH_WEIGHTS_NAME, variant)
                         )
@@ -1903,9 +1901,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     pretrained_model_name_or_path,
                     subfolder,
                     cache_dir=cache_dir,
-                    from_aistudio=from_aistudio,
-                    from_hf_hub=from_hf_hub,
-                    from_modelscope=from_modelscope,
+                    download_hub=download_hub,
                 )
 
             elif pretrained_model_name_or_path in cls.pretrained_init_configuration:
@@ -1916,9 +1912,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     [resource_file_url],
                     subfolder,
                     cache_dir=cache_dir,
-                    from_aistudio=from_aistudio,
-                    from_hf_hub=from_hf_hub,
-                    from_modelscope=from_modelscope,
+                    download_hub=download_hub,
                 )
             else:
                 if use_safetensors is True:
@@ -1947,16 +1941,14 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     filenames,
                     subfolder,
                     cache_dir=cache_dir,
-                    from_aistudio=from_aistudio,
-                    from_hf_hub=from_hf_hub,
-                    from_modelscope=from_modelscope,
+                    download_hub=download_hub,
                 )
                 if resolved_archive_file is None:
                     raise EnvironmentError(
                         f"Error no files {filenames} found in repo {pretrained_model_name_or_path}."
                     )
                 elif "pytorch_model.bin" in str(resolved_archive_file):
-                    if not from_hf_hub and not convert_from_torch:
+                    if download_hub == DownloadSource.AISTUDIO and not convert_from_torch:
                         raise ValueError(
                             f"Download pytorch weight in "
                             f" {resolved_archive_file}. Please set convert_from_torch=True in from_pretrained. eg, Model.from_pretrained(model_name, convert_from_torch=True) "
@@ -1979,9 +1971,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             resolved_sharded_files, sharded_metadata = get_checkpoint_shard_files(
                 pretrained_model_name_or_path,
                 resolved_archive_file,
-                from_aistudio=from_aistudio,
-                from_hf_hub=from_hf_hub,
-                from_modelscope=from_modelscope,
+                download_hub=download_hub,
                 cache_dir=cache_dir,
                 subfolder=subfolder,
             )
@@ -2470,7 +2460,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 - Name of a community-contributed pretrained model.
                 - Local directory path which contains model weights file("model_state.pdparams")
                   and model config file ("model_config.json").
-            from_hf_hub (bool): load model from huggingface hub. Default to `False`.
+            download_hub (DownloadSource, optional): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
             subfolder (str, optional) An optional value corresponding to a folder inside the repo.
                 Only works when loading from Huggingface Hub.
             *args (tuple): Position arguments for model `__init__`. If provided,
@@ -2515,9 +2505,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         force_download = kwargs.get("force_download", False)
         ignore_mismatched_sizes = kwargs.pop("ignore_mismatched_sizes", False)
         dtype = kwargs.pop("dtype", None)
-        from_hf_hub = kwargs.pop("from_hf_hub", False)
-        from_aistudio = kwargs.pop("from_aistudio", False)
-        from_modelscope = kwargs.pop("from_modelscope", False)
+        download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", None)
         if subfolder is None:
             subfolder = ""
@@ -2532,7 +2520,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         model_kwargs = kwargs
 
-        if convert_from_torch is None and from_modelscope:
+        if convert_from_torch is None and download_hub == DownloadSource.MODELSCOPE:
             logger.warning(
                 "If you are attempting to load weights from ModelScope Hub and want to disable the default behavior of considering torch weights,"
                 " you can set ·convert_from_torch=False·. By default, `convert_from_torch` is set to `True`. "
@@ -2540,7 +2528,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             convert_from_torch = True
 
         # from_hf_hub default enable convert_from_torch
-        if from_hf_hub and convert_from_torch is None:
+        if download_hub == DownloadSource.HUGGINGFACE and convert_from_torch is None:
             logger.warning(
                 "If you are attempting to load weights from Hugging Face Hub and want to disable the default behavior of considering torch weights,"
                 " you can set ·convert_from_torch=False·. By default, `convert_from_torch` is set to `True`. "
@@ -2556,21 +2544,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             config, model_kwargs = cls.config_class.from_pretrained(
                 config_path,
                 cache_dir=cache_dir,
-                from_hf_hub=from_hf_hub,
-                from_aistudio=from_aistudio,
-                from_modelscope=from_modelscope,
+                download_hub=download_hub,
                 subfolder=subfolder,
                 return_unused_kwargs=True,
                 **kwargs,
             )
-        if "from_aistudio" in model_kwargs:
-            model_kwargs.pop("from_aistudio")
-        if "from_modelscope" in model_kwargs:
-            model_kwargs.pop("from_modelscope")
-
-        # if not from_hf_hub and not from_aistudio:
-        #     if not os.path.exists(os.path.join(cache_dir, pretrained_model_name_or_path, subfolder, CONFIG_NAME)):
-        #         config.save_pretrained(os.path.join(cache_dir, pretrained_model_name_or_path, subfolder))
 
         # refine options for config
         convert_from_torch = cls.support_conversion(config) and convert_from_torch
@@ -2605,9 +2583,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             pretrained_model_name_or_path,
             cache_dir=cache_dir,
             subfolder=subfolder,
-            from_hf_hub=from_hf_hub,
-            from_aistudio=from_aistudio,
-            from_modelscope=from_modelscope,
+            download_hub=download_hub,
             config=config,
             convert_from_torch=convert_from_torch,
             use_safetensors=use_safetensors,
@@ -2729,9 +2705,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     pretrained_model_name_or_path,
                     cache_dir=cache_dir,
                     force_download=force_download,
-                    from_hf_hub=from_hf_hub,
-                    from_aistudio=from_aistudio,
-                    from_modelscope=from_modelscope,
+                    download_hub=download_hub,
                     subfolder=subfolder,
                     **kwargs,
                 )

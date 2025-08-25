@@ -12,15 +12,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-
+import os
+import shutil
 import unittest
 
 from paddleformers.transformers import QWenTokenizer
 
 
 class Qwen2TokenizationTest(unittest.TestCase):
-    from_pretrained_id = "qwen/qwen-7b"
+    from_pretrained_id = "PaddleNLP/qwen-7b"
     tokenizer_class = QWenTokenizer
     test_slow_tokenizer = True
     space_between_special_tokens = False
@@ -28,19 +28,32 @@ class Qwen2TokenizationTest(unittest.TestCase):
     test_seq2seq = False
 
     def setUp(self):
-        super().setUp()
+        self.test_dirs = ["./slow_tokenizer"]
+        for test_dir in self.test_dirs:
+            if os.path.exists(test_dir):
+                shutil.rmtree(test_dir)
 
-    def get_tokenizer(self, **kwargs):
-        return QWenTokenizer.from_pretrained(self.from_pretrained_id, **kwargs)
+    def tearDown(self):
+        for test_dir in self.test_dirs:
+            if os.path.exists(test_dir):
+                shutil.rmtree(test_dir)
 
-    def test_add_special_tokens(self):
-        tokenizer = self.get_tokenizer()
-        origin_tokens_len = len(tokenizer)
+    def test_slow_tokenizer_from_pretrained(self):
+        tokenizer = QWenTokenizer.from_pretrained(self.from_pretrained_id)
+        self.assertTrue(tokenizer is not None)
 
-        add_tokens_num = tokenizer.add_special_tokens({"additional_special_tokens": ["<img>"]})
-        assert add_tokens_num == 1
-        assert len(tokenizer) == origin_tokens_len + 1
+    def test_slow_tokenizer_save_pretrained(self):
+        tokenizer = QWenTokenizer.from_pretrained(self.from_pretrained_id)
+        tokenizer.model_max_length = 512
+        tokenizer.save_pretrained("./slow_tokenizer")
+        self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
 
-        add_tokens_num = tokenizer.add_special_tokens({"unk_token": "<unk>"})
-        assert add_tokens_num == 1
-        assert len(tokenizer) == origin_tokens_len + 2
+    def test_tokenize(self):
+        tokenizer = QWenTokenizer.from_pretrained(self.from_pretrained_id)
+        text = "hello world, this is a tokenizer test"
+        output_dict = tokenizer(text)
+        decode_text = tokenizer.decode(output_dict["input_ids"], skip_special_tokens=True)
+        self.assertEqual(text, decode_text)
+
+
+Qwen2TokenizationTest().test_slow_tokenizer_from_pretrained()

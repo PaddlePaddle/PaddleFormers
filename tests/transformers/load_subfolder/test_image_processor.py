@@ -49,15 +49,15 @@
 #         )
 
 #         logger.info("Download model from aistudio")
-#         clip_processor = CLIPImageProcessor.from_pretrained("aistudio/clip-vit-base-patch32", from_aistudio=True)
-#         clip_processor = AutoImageProcessor.from_pretrained("aistudio/clip-vit-base-patch32", from_aistudio=True)
+#         clip_processor = CLIPImageProcessor.from_pretrained("aistudio/clip-vit-base-patch32", download_hub="aistudio")
+#         clip_processor = AutoImageProcessor.from_pretrained("aistudio/clip-vit-base-patch32", download_hub="aistudio")
 
 #         logger.info("Download model from aistudio with subfolder")
 #         clip_processor = CLIPImageProcessor.from_pretrained(
-#             "aistudio/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
+#             "aistudio/paddleformers-test-model", subfolder="clip-vit-base-patch32", download_hub="aistudio"
 #         )
 #         clip_processor = AutoImageProcessor.from_pretrained(
-#             "aistudio/paddleformers-test-model", subfolder="clip-vit-base-patch32", from_aistudio=True
+#             "aistudio/paddleformers-test-model", subfolder="clip-vit-base-patch32", download_hub="aistudio"
 #         )
 
 
