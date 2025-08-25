@@ -19,6 +19,7 @@ import paddle
 from paddleformers.transformers import AutoTokenizer, Qwen2Tokenizer
 
 
+@unittest.skip("don't support multisource download")
 class TestHFMultiSourceTokenizer(unittest.TestCase):
     def encode(self, tokenizer):
         input_text = "hello world, 你好"
