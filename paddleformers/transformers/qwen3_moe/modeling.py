@@ -51,16 +51,13 @@ __all__ = [
 from ..qwen2_moe.modeling import Qwen2MoeGate, Qwen2MoeMLP, load_balancing_loss_func
 from ..qwen3.modeling import (
     Qwen3Attention,
-    Qwen3LMHead,
-    Qwen3PretrainingCriterion,
-    Qwen3RMSNorm,
     _expand_2d_mask,
     _make_causal_mask,
     is_casual_mask,
 )
 
 
-class Qwen3MoeRMSNorm(Qwen3RMSNorm):
+class Qwen3MoeRMSNorm:
     pass
 
 
@@ -775,11 +772,11 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         )
 
 
-class Qwen3MoePretrainingCriterion(Qwen3PretrainingCriterion):
+class Qwen3MoePretrainingCriterion:
     pass
 
 
-class Qwen3MoeLMHead(Qwen3LMHead):
+class Qwen3MoeLMHead:
     pass
 
 

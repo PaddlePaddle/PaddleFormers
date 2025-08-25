@@ -563,7 +563,7 @@ class PretrainedConfig:
         self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
 
         # for general components
-        self._attn_implementation = kwargs.pop("_attn_implementation", "sdpa")
+        self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
         self.use_fused_head_and_loss_fn = kwargs.pop("use_fused_head_and_loss_fn", False)
         self.use_filtered_label_loss = kwargs.pop("use_filtered_label_loss", False)
         self.loss_subbatch_seqlen = kwargs.pop("loss_subbatch_seqlen", -1)
