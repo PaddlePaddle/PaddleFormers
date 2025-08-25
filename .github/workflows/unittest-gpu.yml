@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - develop
-      - 'release*'
+      - 'release/v*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
