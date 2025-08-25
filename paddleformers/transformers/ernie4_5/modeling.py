@@ -158,6 +158,8 @@ class Ernie4_5Attention(nn.Layer):
 
         self.is_gqa = config.num_key_value_heads is not None and config.num_key_value_heads != self.num_heads
         self.freq_allocation = getattr(config, "freq_allocation", 0)
+        if self.is_gqa:
+            self.num_key_value_groups = self.num_heads // self.num_key_value_heads
 
         if config.tensor_parallel_degree > 1:
             assert (
