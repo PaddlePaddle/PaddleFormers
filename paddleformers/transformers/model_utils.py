@@ -489,6 +489,7 @@ def load_state_dict(
             metadata = {"format": "np"}
 
         if metadata.get("format", "np") not in ["pd", "np"]:
+            print("metadata: ", metadata)
             raise OSError(
                 f"The safetensors archive passed at {checkpoint_file} does not contain the valid metadata. Make sure "
                 "you save your model with the `save_pretrained` method."
