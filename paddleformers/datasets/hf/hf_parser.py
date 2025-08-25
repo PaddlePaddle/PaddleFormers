@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ HuggingFace datasets implement. """
-import glob
 import json
 import os
 import random
@@ -47,14 +46,9 @@ class BaseDatasetParser(IterableDataset):
             self.r_columns[v] = k
 
         self.data = []
-        self.failed_row = 0
 
         self.process_fn = process_fn
         self.shuffle_file = shuffle_file
-
-        self.output_file_name = self.file_name + ".ernie.json"
-        self.output_file_path = os.path.join(parse_config.DATASET_OUTPUT_ROOT, self.output_file_name)
-        self.output_json_indent = parse_config.DEFAULT_OUTPUT_JSON_INDENT
 
     def update_columns(self, columns):
         """Update columns for parser."""
@@ -78,6 +72,12 @@ class BaseDatasetParser(IterableDataset):
         system = item.get("system", None)
         if isinstance(system, str):
             output["system"] = system
+        # history
+        history = item.get("history", None)
+        if isinstance(history, list):
+            for each_diag in history[::-1]:
+                output["src"].insert(0, each_diag[0])
+                output["tgt"].insert(0, each_diag[1])
         return output
 
     def _alpaca_dpo_to_erine(self, item):
@@ -97,6 +97,12 @@ class BaseDatasetParser(IterableDataset):
         system = item.get("system", None)
         if isinstance(system, str):
             output["system"] = system
+        # history
+        history = item.get("history", None)
+        if isinstance(history, list):
+            for each_diag in history[:-1]:
+                output["src"].insert(0, each_diag[0])
+                output["tgt"].insert(0, each_diag[1])
         return output
 
     def _alpaca_to_erine(self, item):
@@ -107,13 +113,73 @@ class BaseDatasetParser(IterableDataset):
             return self._alpaca_dpo_to_erine(item)
         return self._alpaca_sft_to_erine(item)
 
+    def _sharegpt_sft_to_erine(self, item):
+        """Transform sharegpt formatted sft data to ernie formatting"""
+        output = {"src": [], "tgt": []}
+        broken_data = False
+
+        odd_tags = ("human", "observation")
+        even_tags = ("gpt", "function_call")
+        accept_tags = (odd_tags, even_tags)
+
+        for turn_idx, message in enumerate(item["messages"]):
+            if "role" in message:
+                key_1 = "role"
+                key_2 = "content"
+            else:
+                key_1 = "from"
+                key_2 = "value"
+            if message[key_1] not in accept_tags[turn_idx % 2]:
+                print("Invalid role tag.")
+                broken_data = True
+                break
+            if message[key_1] == "human" or message[key_1] == "observation":
+                output["src"].append(message[key_2])
+            elif message[key_1] == "gpt" or message[key_1] == "function_call":
+                output["tgt"].append(message[key_2])
+
+        if broken_data:
+            output = {"src": [], "tgt": []}
+
+        return output
+
+    def _sharegpt_dpo_to_erine(self, item):
+        """Transform sharegpt formatted sft data to ernie formatting"""
+        output = {
+            "src": [],
+            "tgt": [],
+            "response": "",
+            "sort": [1, 0],
+        }
+
+        message = item.get("messages", "")
+        assert isinstance(message, list)
+        output["src"] = message[0]["value"]
+
+        chosen = item.get("chosen", "")
+        rejected = item.get("rejected", "")
+        output["response"] = [chosen["value"], rejected["value"]]
+
+        return output
+
+    def _sharegpt_to_ernie(self, item):
+        """
+        If train_type is defined as either 'sft' or 'dpo', parse accordingly based on train_type.
+        """
+        if self.train_type == "dpo":
+            return self._sharegpt_dpo_to_erine(item)
+        return self._sharegpt_sft_to_erine(item)
+
     def __iter__(self):
         """Iterator function for dataset."""
         self.run()
         if self.shuffle_file:
             random.shuffle(self.data)
         for item in self.data:
-            ex = self._alpaca_to_erine(item)
+            if self.formatting == "alpaca":
+                ex = self._alpaca_to_erine(item)
+            else:
+                ex = self._sharegpt_to_ernie(item)
             if self.process_fn is not None:
                 try:
                     ex = self.process_fn(ex, self.file_name)
@@ -124,65 +190,6 @@ class BaseDatasetParser(IterableDataset):
             if ex is None:
                 continue
             yield ex
-
-    def scan_dataset_file(self):
-        """
-        Scan files under dataset folder and return the first one filename.
-        """
-        files = glob.glob(os.path.join(self.download_path, "*"))
-        filenames_under_workspace = sorted([filepath.split(os.sep)[-1] for filepath in files])
-        filenames = []
-        for filename in filenames_under_workspace:
-            if filename.lower() == "readme.md":
-                continue
-            filenames.append(filename)
-        if len(filenames) == 0:
-            msg = f"{self.repo_id} cannot find dataset files after scan, please check or define in dataset_config.py"
-            raise errors.DataSetFileNotFoundError(msg)
-        elif len(filenames) > 1:
-            msg = (
-                f"{self.repo_id} cannot find more than one file in dataset files after scan. "
-                f"please check and define in dataset_config.py. Scanned files: {filenames}"
-            )
-        return filenames[0]
-
-    def check_and_fill_row_alpaca(self, row):
-        """
-        For alpaca formatting, check and fill default value for the essential field like:
-            'SFT': prompt/instruction or query/input, response/output.
-            'DPO': prompt/instruction or query/input, chosen, rejected
-        """
-        has_data = False
-        for key in row:
-            if row[key] is not None and len(row[key]) > 0:
-                has_data = True
-
-        value_mapping = parse_config.DEFAULT_COLUMN_VALUE_MAPPING
-        if self.train_type == "dpo":
-            value_mapping = parse_config.DEFAULT_ALPACA_DPO_COLUMNS_VALUE_MAPPING
-        for key in value_mapping:
-            if key not in row:
-                row[key] = ""
-        return has_data
-
-    def check_row(self, row):
-        """
-        Check if the data meets the format requirements.
-        """
-        if self.formatting == "alpaca":
-            return self.check_and_fill_row_alpaca(row)
-        return True
-
-    def append_data(self, row):
-        """
-        Append the correct row into data.
-        """
-        if not isinstance(row, dict):
-            return
-        if self.check_row(row):
-            self.data.append(row)
-        else:
-            self.failed_row += 1
 
     def add_dict_row(self, dict_row):
         """
@@ -198,38 +205,21 @@ class BaseDatasetParser(IterableDataset):
                 self.update_columns(parse_config.DEFAULT_ALPACA_DPO_COLUMNS_MAPPING)
             else:
                 self.train_type = "sft"
-                self.update_columns(parse_config.DEFAULT_ALPACA_COLUMNS_MAPPING)
-
-        default_values_mapping = parse_config.DEFAULT_COLUMN_VALUE_MAPPING
-        if self.formatting == "alpaca" and self.train_type == "dpo":
-            default_values_mapping = parse_config.DEFAULT_ALPACA_DPO_COLUMNS_VALUE_MAPPING
+                self.update_columns(parse_config.DEFAULT_ALPACA_SFT_COLUMNS_MAPPING)
+        elif self.formatting == "sharegpt" and self.train_type == "":
+            if dict_row.get("chosen", None) is not None and dict_row.get("rejected", None) is not None:
+                self.train_type = "dpo"
+                self.update_columns(parse_config.DEFAULT_SHAREGPT_DPO_COLUMNS_MAPPING)
+            else:
+                self.train_type = "sft"
+                self.update_columns(parse_config.DEFAULT_SHAREGPT_SFT_COLUMNS_MAPPING)
 
         row = {}
         for input_key, output_key in self.r_columns.items():
             value = dict_row.get(input_key, None)
             if value is not None:
                 row[output_key] = value
-                continue
-            default_value = default_values_mapping.get(output_key, None)
-            if default_value is not None:
-                row[output_key] = default_value
         return row
-
-    def add_str_row(self, str_row):
-        """
-        Mapping the raw json string into the columns.
-        """
-        line = str_row.strip()
-        if len(line) == 0:
-            return None
-        try:
-            input = json.loads(str_row)
-            return self.add_dict_row(input)
-        except json.decoder.JSONDecodeError:
-            msg = f"Unformatted json-line: {str_row}, stop"
-            raise errors.DataSetParseError(msg)
-        except Exception as e:
-            print("line error:%s" % str(e))
 
     def parse_json_file(self):
         """
@@ -247,19 +237,14 @@ class BaseDatasetParser(IterableDataset):
                 json_data = json.load(fp)
                 if isinstance(json_data, list):
                     for item in json_data:
-                        self.append_data(self.add_dict_row(item))
+                        self.data.append(self.add_dict_row(item))
                 elif isinstance(json_data, dict):
-                    self.append_data(self.add_dict_row(json_data))
+                    self.data.append(self.add_dict_row(json_data))
                 else:
                     return False
-        except OSError:
-            msg = f"Cannot open dataset file: {self.file_path}"
-            raise errors.DataSetFileCannotOpenError(msg)
-        except json.decoder.JSONDecodeError:
-            msg = f"Unformatted json file: {self.file_path}, stop"
-            raise errors.DataSetParseError(msg)
         except Exception as e:
-            print("Fail to load file:%s" % str(e))
+            print("Fail to load file : %s" % str(e))
+            return False
         return True
 
     def parse_json_lines_file(self):
@@ -273,31 +258,14 @@ class BaseDatasetParser(IterableDataset):
             errors.DataSetFileCannotOpenError (OSError): Cannot open the file.
             errors.DataSetParseError (json.decoder.JSONDecodeError): Cannot open the file using json parser.
         """
-        line = ""
         try:
             with open(self.file_path) as fp:
                 for line in fp:
-                    self.append_data(self.add_str_row(line))
-        except OSError:
-            msg = f"Cannot open dataset file: {self.file_path}"
-            raise errors.DataSetFileCannotOpenError(msg)
-        except json.decoder.JSONDecodeError as ee:
-            print(f"bad line:{line}, {ee}")
-            msg = f"Unformatted json file: {self.file_path}, stop"
-            raise errors.DataSetParseError(msg)
+                    self.data.append(self.add_dict_row(json.loads(line)))
+        except Exception as e:
+            print("Fail to load file : %s" % str(e))
+            return False
         return True
-
-    def output_json(self):
-        """
-        Output data into file which is json format.
-        """
-        if not parse_config.DEBUG_DATASET_OUTPUT_FORMATTED_FILE:
-            return
-        if not os.path.exists(parse_config.DATASET_OUTPUT_ROOT):
-            os.makedirs(parse_config.DATASET_OUTPUT_ROOT)
-        with open(self.output_file_path, "w") as ofp:
-            ofp.write(json.dumps(self.data, ensure_ascii=False, indent=2))
-        print(f"[DEBUG]Output parsed result as ernie-formatted json at {self.output_file_path}")
 
     def parse(self):
         """
@@ -318,30 +286,12 @@ class BaseDatasetParser(IterableDataset):
                         self.doc_formatting = func_name
                 except Exception:
                     continue
-        print(
-            f"{self.file_name} read {len(self.data)} items successfully and "
-            f"{self.failed_row} failed from {self.file_path}, doc formatting:{self.doc_formatting}"
-        )
-
-    def check_dataset_filename(self):
-        """
-        Check if file exists.
-        """
-        if self.file_path == "":
-            msg = "file_path should not be empty"
-            raise errors.DataSetFileNotFoundError(msg)
-        if not os.path.isfile(os.path.join(self.file_path)):
-            print(f"Checking file_path:{self.file_path}")
-            msg = f"cannot find dataset file:{self.file_path}"
-            raise errors.DataSetFileNotFoundError(msg)
 
     def run(self):
         """
         Parse the dataset from file.
         """
-        self.check_dataset_filename()
         self.parse()
-        # self.output_json()
 
 
 class HFBaseParser(BaseDatasetParser):
@@ -356,10 +306,17 @@ class HFBaseParser(BaseDatasetParser):
 
         self.formatting = config_map.get("formatting", "alpaca")
         self.doc_formatting = config_map.get("doc_formatting", parse_config.DEFAULT_DOC_FORMATTING)
-        self.columns = config_map.get("columns", parse_config.DEFAULT_ALPACA_COLUMNS_MAPPING)
         train_type = config_map.get("train_type", "")
-        if train_type == "dpo":
+        if self.formatting == "alpaca" and train_type == "sft":
+            self.columns = config_map.get("columns", parse_config.DEFAULT_ALPACA_SFT_COLUMNS_MAPPING)
+        elif self.formatting == "alpaca" and train_type == "dpo":
             self.columns = config_map.get("columns", parse_config.DEFAULT_ALPACA_DPO_COLUMNS_MAPPING)
+        elif self.formatting == "sharegpt" and train_type == "sft":
+            self.columns = config_map.get("columns", parse_config.DEFAULT_SHAREGPT_SFT_COLUMNS_MAPPING)
+        else:
+            self.columns = config_map.get("columns", parse_config.DEFAULT_SHAREGPT_DPO_COLUMNS_MAPPING)
+        self.update_columns(self.columns)
+
         super().__init__(
             self.file_path,
             self.formatting,
@@ -368,93 +325,31 @@ class HFBaseParser(BaseDatasetParser):
             process_fn,
             shuffle_file,
         )
+
         self.train_type = train_type
-        self.update_columns(self.columns)
-
-        self.output_file_name = repo_id.replace("/", ".") + ".json"
-        self.output_file_path = os.path.join(parse_config.DATASET_OUTPUT_ROOT, self.output_file_name)
-        self.output_json_indent = parse_config.DEFAULT_OUTPUT_JSON_INDENT
-
-    def _base_download(self):
-        """
-        Download dataset from hugging-face.
-        """
-        snapshot_download(repo_id=self.repo_id, repo_type="dataset", local_dir=self.download_path)
 
     def download(self):
         """
         Download dataset function.
         """
-        self._base_download()
-
-    def check_dataset_filename(self):
-        """
-        Check if file exists.
-        """
-        if self.file_name == "":
-            msg = f"file_name should be defined for {self.repo_id} in data_info.json"
-            raise errors.DataSetFileNotFoundError(msg)
-        if not os.path.isfile(os.path.join(self.file_path)):
-            print(f"Checking file_path:{self.file_path}")
-            msg = (
-                f"{self.repo_id} cannot find dataset file:{self.file_name} "
-                f'under path: "{self.download_path}". Please check data_info.json.'
-            )
-            raise errors.DataSetFileNotFoundError(msg)
+        hf_download_proxy = os.getenv("https_proxy")
+        if hf_download_proxy is None:
+            hf_download_proxy = os.getenv("HTTPS_PROXY")
+        snapshot_download(
+            repo_id=self.repo_id,
+            repo_type="dataset",
+            proxies={"http": hf_download_proxy},
+            resume_download=True,
+            max_workers=8,
+            local_dir=self.download_path,
+        )
 
     def run(self):
         """
         Download and parse the dataset.
         """
         self.download()
-        self.check_dataset_filename()
         self.parse()
-        # self.output_json()
-
-
-class HFScanParser(HFBaseParser):
-    """Dataset parser which scan the dataset files without definition in data_info.json"""
-
-    def __init__(self, repo_id, process_fn=None, shuffle_file=False):
-        """
-        Init a HFScanParser to parse the dataset which is not defined in data_info.json.
-
-        Args:
-            repo_id (str): repo id for hugging-face hub.
-        """
-        super().__init__(repo_id, {}, process_fn, shuffle_file)
-
-    def parse(self):
-        """
-        Parse the dataset file which is not defined in data_info.json.
-        Firstly try to parse as a json file, then jsonl file.
-
-        Raises:
-            errors.DataSetFileCannotOpenError (OSError): Cannot open the file.
-            errors.DataSetParseError (json.decoder.JSONDecodeError): Cannot open the file using json parser.
-        """
-        try:
-            self.parse_json_file()
-        except errors.DataSetParseError:
-            self.parse_json_lines_file()
-        except errors.DataSetFileCannotOpenError as e:
-            raise e
-        print(
-            f"{self.repo_id} read {len(self.data)} items successfully and "
-            f"{self.failed_row} failed from {self.file_path}"
-        )
-
-    def run(self):
-        """
-        Download and parse the dataset. Some parameters are defined after dataset has been downloaded.
-        """
-        self.download()
-        self.file_name = self.scan_dataset_file()
-        print(f'Find {self.file_name} under {self.download_path} when scanning "*.json".')
-        self.file_path = os.path.join(self.download_path, self.file_name)
-        self.check_dataset_filename()
-        self.parse()
-        self.output_json()
 
 
 def load_data_info():
@@ -483,10 +378,7 @@ def create_hf_dataset(repo_id, process_fn=None, shuffle_file=True):
     """
     global hf_repo_config_map
     config_map = hf_repo_config_map.get(repo_id, None)
-    if config_map:
-        parser = HFBaseParser(repo_id, config_map, process_fn, shuffle_file)
-    else:
-        parser = HFScanParser(repo_id, process_fn, shuffle_file)
+    parser = HFBaseParser(repo_id, config_map, process_fn, shuffle_file)
     return parser
 
 

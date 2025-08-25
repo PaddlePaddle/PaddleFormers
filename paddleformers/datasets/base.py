@@ -210,10 +210,10 @@ class MultiSourceDataset(IterableDataset):
                     shuffle_file=shuffle_file,
                     shuffle_files=shuffle_files,
                 )
-            elif each_sub_dataset_type in ["alpaca"]:
+            elif each_sub_dataset_type in ["alpaca", "sharegpt"]:
                 task["dataset"] = hf_parser.create_dataset_from_file(
                     file_path=task["filepath"],
-                    formatting="alpaca",
+                    formatting=each_sub_dataset_type,
                     doc_formatting="auto",
                     process_fn=(
                         partial(process_fn, task_name=task["task_name"]) if "task_name" in task else process_fn

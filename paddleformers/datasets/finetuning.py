@@ -191,7 +191,9 @@ def process_example(data, input_file):
         data["label"] = [1] * len(data["src"])
 
     if not (len(data["src"]) == len(data["tgt"]) == len(data["label"])):
-        raise ValueError("The length of src & tgt & label must be equal.")
+        raise ValueError(
+            f"The length of src & tgt & label must be equal, but get len(data['src']) : {len(data['src'])}, ' len(data['tgt']) : {len(data['tgt'])}, ' len(data['label']) : {len(data['label'])}"
+        )
 
     if "is_system" not in data:
         # If is_system is 1, it indicates that the sample includes system settings

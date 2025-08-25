@@ -334,5 +334,47 @@
             "rejected": "rejected",
             "system": "system"
         }
+    },
+    "shibing624/sharegpt_gpt4": {
+        "hf_hub_url": "shibing624/sharegpt_gpt4",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "sharegpt_gpt4.jsonl"
+    },
+    "llamafactory/lima": {
+        "hf_hub_url": "llamafactory/lima",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "lima.json"
+    },
+    "Open-Orca/SlimOrca": {
+        "hf_hub_url": "Open-Orca/SlimOrca",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "oo-labeled_correct.gpt4.sharegpt.jsonl"
+    },
+    "totally-not-an-llm/sharegpt-hyperfiltered-3k": {
+        "hf_hub_url": "totally-not-an-llm/sharegpt-hyperfiltered-3k",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "sharegptclean_final.json"
+    },
+    "m-a-p/neo_sft_phase2": {
+        "hf_hub_url": "m-a-p/neo_sft_phase2",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "neo_sft_phase2.json"
+    },
+    "llamafactory/DPO-En-Zh-20k": {
+        "hf_hub_url": "llamafactory/DPO-En-Zh-20k",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "dpo_zh.json"
     }
 }

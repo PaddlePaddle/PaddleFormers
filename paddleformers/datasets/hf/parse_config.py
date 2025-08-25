@@ -15,37 +15,37 @@
 import os
 
 DATASET_WORKROOT = os.getenv("DATASET_WORKROOT", "/root/.cache/paddleformers")
+
 DATASET_DOWNLOAD_ROOT = os.path.join(DATASET_WORKROOT, "download")
-DATASET_OUTPUT_ROOT = os.path.join(DATASET_WORKROOT, "output")
 
 DATA_INFO_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), "data_info.json")
 
 DEFAULT_DOC_FORMATTING = "json"
 
-DEFAULT_ALPACA_COLUMNS_MAPPING = {
+DEFAULT_ALPACA_SFT_COLUMNS_MAPPING = {
     "prompt": "instruction",
     "query": "input",
     "response": "output",
     "system": "system",
+    "history": "history",
 }
-DEFAULT_COLUMN_VALUE_MAPPING = {"prompt": "", "query": "", "response": ""}
+
 DEFAULT_ALPACA_DPO_COLUMNS_MAPPING = {
     "prompt": "instruction",
     "query": "input",
     "chosen": "chosen",
     "rejected": "rejected",
     "system": "system",
+    "history": "history",
 }
-DEFAULT_ALPACA_DPO_COLUMNS_VALUE_MAPPING = {
-    "prompt": "",
-    "query": "",
-    "chosen": "",
-    "rejected": "",
+
+DEFAULT_SHAREGPT_SFT_COLUMNS_MAPPING = {
+    "messages": "conversations",
 }
-DEFAULT_DATASET_COLUMNS_MAPPING = {"alpaca": DEFAULT_ALPACA_COLUMNS_MAPPING}
 
-DEFAULT_OUTPUT_JSON_INDENT = 2
+DEFAULT_SHAREGPT_DPO_COLUMNS_MAPPING = {"messages": "conversations", "chosen": "chosen", "rejected": "rejected"}
 
-ALPACA_COLUMNS_EMPTY_CHECK_LIST = ["prompt", "query", "response"]
-
-DEBUG_DATASET_OUTPUT_FORMATTED_FILE = True
+DEFAULT_DATASET_COLUMNS_MAPPING = {
+    "alpaca": DEFAULT_ALPACA_SFT_COLUMNS_MAPPING,
+    "sharegpt": DEFAULT_SHAREGPT_SFT_COLUMNS_MAPPING,
+}
