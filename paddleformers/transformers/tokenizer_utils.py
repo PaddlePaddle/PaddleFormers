@@ -363,8 +363,9 @@ def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer):
 # legacy PretrainedTokenizer, which is different from huggingface PreTrainedTokenizer
 try:
     # do not direct import PretrainedTokenizer from legacy package
-    # PretrainedTokenizer should be combined with PaddleTokenizerMixin to support multisource download 
+    # PretrainedTokenizer should be combined with PaddleTokenizerMixin to support multisource download
     from .legacy.tokenizer_utils import PretrainedTokenizer
+
     PretrainedTokenizer = type(PretrainedTokenizer.__name__, (PaddleTokenizerMixin, PretrainedTokenizer), {})
 except:
     pass

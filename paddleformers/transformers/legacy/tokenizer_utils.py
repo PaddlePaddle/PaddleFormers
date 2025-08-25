@@ -44,7 +44,6 @@ try:
 except ImportError:
     from backports.functools_lru_cache import lru_cache
 
-
 from ...data.vocab import Vocab
 from ...utils.import_utils import is_tokenizers_available
 from ..utils import InitTrackerMeta, convert_to_dict_message, fn_args_to_dict
@@ -61,7 +60,6 @@ from .tokenizer_utils_base import (
     TextInputPair,
     TruncationStrategy,
 )
-
 
 if is_tokenizers_available():
     from tokenizers import AddedToken
