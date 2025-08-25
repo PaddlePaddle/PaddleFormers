@@ -20,7 +20,7 @@ PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
 
 # this version is used for develop and test.
 # release version will be added fixed version by setup.py.
-__version__ = "0.1.2.post"
+__version__ = "0.1.3.post"
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
 else:
