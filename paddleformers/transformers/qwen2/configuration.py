@@ -62,6 +62,8 @@ class Qwen2Config(PretrainedConfig):
         use_cache (`bool`, *optional*, defaults to `True`):
             Whether or not the model should return the last key/values attentions (not used by all models). Only
             relevant if `config.is_decoder=True`.
+        use_flash_attention (`bool`, *optional*, defaults to `False`):
+            Whether to use FlashAttention for optimized attention computation.
         tie_word_embeddings (`bool`, *optional*, defaults to `False`):
             Whether the model's input and output word embeddings should be tied.
         rope_theta (`float`, *optional*, defaults to 10000.0):
@@ -101,10 +103,13 @@ class Qwen2Config(PretrainedConfig):
         num_key_value_heads=32,
         hidden_act="silu",
         max_position_embeddings=32768,
-        # seq_length=32768,
         initializer_range=0.02,
         rms_norm_eps=1e-6,
+        recompute=False,
+        recompute_granularity="core_attn",
+        recompute_use_reentrant=False,
         use_cache=True,
+        use_flash_attention=False,
         tie_word_embeddings=False,
         rope_theta=10000.0,
         pad_token_id=151643,
@@ -115,15 +120,17 @@ class Qwen2Config(PretrainedConfig):
         max_window_layers=28,
         attention_bias=True,
         attention_dropout=0.0,
+        fuse_linear=False,
+        fuse_attention_qkv=False,
+        fuse_attention_ffn=False,
         rope_scaling_factor=1.0,
         rope_scaling_type=None,
         dpo_config=None,
-        use_fused_head_and_loss_fn=False,
+        kto_config=None,
         **kwargs,
     ):
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
-        # self.seq_length = seq_length
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
@@ -144,8 +151,15 @@ class Qwen2Config(PretrainedConfig):
         self.rope_theta = rope_theta
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
+        self.fuse_linear = fuse_linear
+        self.fuse_attention_qkv = fuse_attention_qkv
+        self.fuse_attention_ffn = fuse_attention_ffn
 
+        self.recompute = recompute
+        self.recompute_granularity = recompute_granularity
+        self.recompute_use_reentrant = recompute_use_reentrant
         self.use_cache = use_cache
+        self.use_flash_attention = use_flash_attention
         self.rope_scaling_factor = rope_scaling_factor
         self.rope_scaling_type = rope_scaling_type
 
@@ -153,7 +167,7 @@ class Qwen2Config(PretrainedConfig):
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
         self.dpo_config = dpo_config
-        self.use_fused_head_and_loss_fn = use_fused_head_and_loss_fn
+        self.kto_config = kto_config
 
         super().__init__(
             pad_token_id=pad_token_id,
