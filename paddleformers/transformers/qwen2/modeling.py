@@ -176,6 +176,7 @@ class Qwen2Attention(nn.Layer):
         self.attn_implementation = config._attn_implementation
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
+        self.num_attention_heads = config.num_attention_heads
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.scaling = self.head_dim**-0.5
 
@@ -200,8 +201,8 @@ class Qwen2Attention(nn.Layer):
             ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
             self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
 
-        kv_hidden_size = self.num_key_value_heads * self.head_dim
-        q_hidden_size = self.num_heads * self.head_dim
+        kv_hidden_size = self.config.num_key_value_heads * self.head_dim
+        q_hidden_size = self.config.num_attention_heads * self.head_dim
 
         if self.fuse_attention_qkv:
             qkv_hidden_size = q_hidden_size + kv_hidden_size * 2

@@ -473,7 +473,7 @@ class PretrainedConfig:
 
         > Parameters for general components
 
-        _attn_implementation (`str`, defaults to `sdpa`)
+        _attn_implementation (`str`, defaults to `eager`)
         use_fused_head_loss_fn (`bool`, defaults to `False`): Whether to use fused head and loss function
         use_filtered_label_loss (`bool`, defaults to `False`): Whether to use filtered label loss
         loss_subbatch_seqlen (`int`, defaults to `-1`): Sequence length large than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch)
