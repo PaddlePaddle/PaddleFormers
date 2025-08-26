@@ -35,10 +35,7 @@ from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.log import logger
 from .legacy.tokenizer_utils import PretrainedTokenizer
 
-
 # legacy PretrainedTokenizer, which is different from huggingface PreTrainedTokenizer
-
-
 
 
 class TensorType(ExplicitEnum):
@@ -342,9 +339,6 @@ class PaddleTokenizerMixin:
             ans.append(ans_roundi)
 
         non_learnable_parts = self._extract_non_learnable_parts(origin_msg, ans)
-        # assert len(non_learnable_parts) == len(
-        #     ans
-        # ), f"Get non_learnable_parts len: {len(non_learnable_parts)}, but ans len: {len(ans)}."
 
         conversation_ids = []
         for i in range(len(non_learnable_parts)):
@@ -384,7 +378,8 @@ class PaddleTokenizerMixin:
 
 
 def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer):
-    return type(hf_tokenizer_class.__name__, (PreTrainedTokenizer, hf_tokenizer_class), {})
+    return type(hf_tokenizer_class.__name__, (PaddleTokenizerMixin, hf_tokenizer_class), {})
+
 
 class PreTrainedTokenizer(PaddleTokenizerMixin, PretrainedTokenizer):
     def init(self, *args, **kwargs):
