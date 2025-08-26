@@ -17,11 +17,8 @@
 import os
 
 import sentencepiece as spm
-from transformers.tokenization_utils import PreTrainedTokenizer
+from ..tokenizer_utils import PreTrainedTokenizer
 from transformers.utils import logging
-
-# Fix relative import issues
-from ..tokenizer_utils import PaddleTokenizerMixin
 
 logger = logging.get_logger(__name__)
 
@@ -30,7 +27,7 @@ __all__ = [
 ]
 
 
-class Ernie4_5_VLTokenizer(PaddleTokenizerMixin, PreTrainedTokenizer):
+class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
     """
     ERNIE 4.5 VL Tokenizer based on SentencePiece with smart tensor support.
 

@@ -28,7 +28,7 @@ from paddle.distributed import fleet
 from sklearn.metrics import accuracy_score
 
 if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+    from ..transformers.tokenizer_utils import PreTrainedTokenizer
 
 from ..datasets import ZeroPaddingIterableDataset
 from ..generation import GenerationConfig

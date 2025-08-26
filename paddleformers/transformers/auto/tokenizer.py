@@ -40,7 +40,7 @@ from transformers.utils import cached_file
 
 from ...utils.download import DownloadSource, resolve_file_path
 from ...utils.log import logger
-from ..tokenizer_utils import PaddleTokenizerMixin
+from ..tokenizer_utils import PreTrainedTokenizer, warp_tokenizer
 
 
 def get_paddleformers_tokenizer_config(
@@ -140,18 +140,6 @@ def get_paddleformers_tokenizer_config(
     return result
 
 
-def _bind_paddle_mixin_if_available(tokenizer_class):
-    """
-    Bind the PaddleTokenizerMixin if Paddle is available; otherwise, return the original class.
-
-    Args:
-        tokenizer_class: The original tokenizer class.
-
-    Returns:
-        The tokenizer class bound with PaddleTokenizerMixin, or the original class.
-    """
-    return type(tokenizer_class.__name__, (PaddleTokenizerMixin, tokenizer_class), {})
-
 
 class AutoTokenizer(hf.AutoTokenizer):
     """
@@ -223,7 +211,7 @@ class AutoTokenizer(hf.AutoTokenizer):
                 raise ValueError(f"Tokenizer class {tokenizer_class_name} is not currently imported.")
 
             # Bind PaddleTokenizerMixin
-            tokenizer_class = _bind_paddle_mixin_if_available(tokenizer_class)
+            tokenizer_class = warp_tokenizer(tokenizer_class)
             return tokenizer_class.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
 
         # Next, let's try to use the tokenizer_config file to get the tokenizer class.
@@ -310,7 +298,7 @@ class AutoTokenizer(hf.AutoTokenizer):
             tokenizer_class.register_for_auto_class()
 
             # Bind PaddleTokenizerMixin
-            tokenizer_class = _bind_paddle_mixin_if_available(tokenizer_class)
+            tokenizer_class = warp_tokenizer(tokenizer_class)
             return tokenizer_class.from_pretrained(
                 pretrained_model_name_or_path, *inputs, trust_remote_code=trust_remote_code, **kwargs
             )
@@ -329,7 +317,7 @@ class AutoTokenizer(hf.AutoTokenizer):
                 )
 
             # Bind PaddleTokenizerMixin
-            tokenizer_class = _bind_paddle_mixin_if_available(tokenizer_class)
+            tokenizer_class = warp_tokenizer(tokenizer_class)
             return tokenizer_class.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
 
         # Otherwise we have to be creative.
@@ -350,12 +338,12 @@ class AutoTokenizer(hf.AutoTokenizer):
 
             if tokenizer_class_fast and (use_fast or tokenizer_class_py is None):
                 # Bind PaddleTokenizerMixin
-                tokenizer_class_fast = _bind_paddle_mixin_if_available(tokenizer_class_fast)
+                tokenizer_class_fast = warp_tokenizer(tokenizer_class_fast)
                 return tokenizer_class_fast.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
             else:
                 if tokenizer_class_py is not None:
                     # Bind PaddleTokenizerMixin
-                    tokenizer_class_py = _bind_paddle_mixin_if_available(tokenizer_class_py)
+                    tokenizer_class_py = warp_tokenizer(tokenizer_class_py)
                     return tokenizer_class_py.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
                 else:
                     raise ValueError(

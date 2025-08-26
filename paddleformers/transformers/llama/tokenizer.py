@@ -25,7 +25,7 @@ import os
 import unicodedata
 from typing import Collection, Dict, List, Set, Tuple, Union
 
-from transformers.tokenization_utils import PreTrainedTokenizer
+from ..tokenizer_utils import PreTrainedTokenizer
 
 from ...utils.import_utils import is_tiktoken_available
 from ...utils.log import logger

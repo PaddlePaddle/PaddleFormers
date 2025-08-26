@@ -35,10 +35,10 @@ from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.log import logger
 from .legacy.tokenizer_utils import PretrainedTokenizer
 
+
 # legacy PretrainedTokenizer, which is different from huggingface PreTrainedTokenizer
 
 
-PreTrainedTokenizer = PretrainedTokenizer
 
 
 class TensorType(ExplicitEnum):
@@ -384,4 +384,8 @@ class PaddleTokenizerMixin:
 
 
 def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer):
-    return type(hf_tokenizer_class.__name__, (PaddleTokenizerMixin, hf_tokenizer_class), {})
+    return type(hf_tokenizer_class.__name__, (PreTrainedTokenizer, hf_tokenizer_class), {})
+
+class PreTrainedTokenizer(PaddleTokenizerMixin, PretrainedTokenizer):
+    def init(self, *args, **kwargs):
+        super().init(*args, **kwargs)
