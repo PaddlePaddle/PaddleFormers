@@ -18,6 +18,8 @@ from contextlib import suppress
 from typing import TYPE_CHECKING
 from ..utils.lazy_import import _LazyModule
 
+from .download_utils import *
+
 # from .auto.modeling import AutoModelForCausalLM
 import_structure = {
     "kto_criterion": [

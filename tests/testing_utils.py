@@ -30,6 +30,7 @@ import paddle.distributed.fleet as fleet
 import yaml
 
 from paddleformers.trainer.argparser import strtobool
+from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.import_utils import is_package_available, is_paddle_available
 
 __all__ = ["get_vocab_list", "stable_softmax", "cross_entropy"]
@@ -539,3 +540,53 @@ class GPUsTesting(unittest.TestCase):
 
         fleet.init(is_collective=True, strategy=strategy)
         fleet.get_hybrid_communicate_group()
+
+
+def set_proxy(download_hub: DownloadSource = None):
+    """
+    set network proxy for downloading model from aistudio/huggingface/modelscope
+    """
+
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            if download_hub is None:
+                return func(*args, **kwargs)
+            elif download_hub == DownloadSource.HUGGINGFACE:
+                command = "source $work_dir/../../../proxy_hf && env"
+            elif download_hub == DownloadSource.AISTUDIO:
+                command = "source $work_dir/../../../proxy_aistudio && env"
+            elif download_hub == DownloadSource.MODELSCOPE:
+                command = "source $work_dir/../../../proxy_aistudio && env"  # proxy_aistudio also suit for modelscope
+
+            proc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
+            out, _ = proc.communicate()
+
+            proxy_env = {}
+            for line in out.decode().splitlines():
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                proxy_env[key] = value
+
+            ori_env = {}
+            proxy_vars = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]
+            if download_hub == DownloadSource.AISTUDIO:
+                proxy_vars.extend(["STUDIO_GIT_HOST", "STUDIO_CDN_HOST"])
+
+            for key in proxy_vars:
+                if key in proxy_env:
+                    ori_env[key] = os.environ.get(key, "")
+                    os.environ[key] = proxy_env[key]
+
+            try:
+                return func(*args, **kwargs)
+            finally:
+                for key, old_value in ori_env.items():
+                    if old_value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = old_value
+
+        return wrapper
+
+    return decorator

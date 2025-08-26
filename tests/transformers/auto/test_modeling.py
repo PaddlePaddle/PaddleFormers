@@ -33,7 +33,9 @@ from paddleformers.transformers import (
 )
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.auto.modeling import MODEL_MAPPING
+from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
+from tests.testing_utils import set_proxy
 
 from ...utils.test_module.custom_configuration import CustomConfig
 from ...utils.test_module.custom_model import CustomModel
@@ -74,16 +76,19 @@ class AutoModelTest(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_name, model_name)))
 
     @unittest.skip("skipping due to connection error!")
+    # @set_proxy(DownloadSource.HUGGINGFACE)
     def test_from_hf_hub(self):
-        model = AutoModel.from_pretrained("dfargveazd/tiny-random-llama", download_hub="huggingface")
+        model = AutoModel.from_pretrained("dfargveazd/tiny-random-llama-paddle", download_hub="huggingface")
         self.assertIsInstance(model, LlamaModel)
 
-    @unittest.skip("skipping due to connection error!")
+    # @unittest.skip("skipping due to connection error!")
+    @set_proxy(DownloadSource.AISTUDIO)
     def test_from_aistudio(self):
         model = AutoModel.from_pretrained("test_paddleformers/tiny-random-llama", download_hub="aistudio")
         self.assertIsInstance(model, LlamaModel)
 
-    @unittest.skip("skipping due to connection error!")
+    # @unittest.skip("skipping due to connection error!")
+    @set_proxy(DownloadSource.MODELSCOPE)
     def test_from_modelscope(self):
         model = AutoModel.from_pretrained("sqlhuman/tiny-random-llama", download_hub="modelscope")
         self.assertIsInstance(model, LlamaModel)
