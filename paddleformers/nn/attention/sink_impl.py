@@ -56,16 +56,22 @@ def _flash_attention_forward_dispatch(
     if fa_version == 2:
         # FlashAttention v2 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
-        out, _, lse, _ = _C_ops.flash_attn(
-            query, key, value, fixed_seed_offset, None, dropout, causal, False, not training, rng_name
-        )
+        if hasattr(paddle.base.libpaddle.pir.ops, "flash_attn"):
+            out, _, lse, _ = _C_ops.flash_attn(
+                query, key, value, fixed_seed_offset, None, dropout, causal, False, not training, rng_name
+            )
+        else:
+            assert False, "flash_attn_v2 is not supported, may be due to paddle version"
         lse = lse[:, :, : query.shape[1]]
     elif fa_version == 3:
         # FlashAttention v3 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
-        out, lse = _C_ops.flash_attn_v3(
-            query, key, value, None, None, None, None, softmax_scale, causal, -1, -1, 0.0, 1, False, False, 0
-        )
+        if hasattr(paddle.base.libpaddle.pir.ops, "flash_attn_v3"):
+            out, lse = _C_ops.flash_attn_v3(
+                query, key, value, None, None, None, None, softmax_scale, causal, -1, -1, 0.0, 1, False, False, 0
+            )
+        else:
+            assert False, "flash_attn_v3 is not supported, may be due to paddle version"
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
 
@@ -91,15 +97,21 @@ def _flash_attention_backward_dispatch(
     if fa_version == 2:
         # FlashAttention v2 supports custom softmax_scale
         seed_offset = paddle.zeros(shape=[2], dtype="int64")
-        grad_q, grad_k, grad_v = _C_ops.flash_attn_grad(
-            query, key, value, output, lse, seed_offset, None, grad_output, dropout, causal
-        )
+        if hasattr(paddle.base.libpaddle.pir.ops, "flash_attn_grad"):
+            grad_q, grad_k, grad_v = _C_ops.flash_attn_grad(
+                query, key, value, output, lse, seed_offset, None, grad_output, dropout, causal
+            )
+        else:
+            assert False, "flash_attn_v2_grad is not supported, may be due to paddle version"
     elif fa_version == 3:
         # FlashAttention v3 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
-        grad_q, grad_k, grad_v = _C_ops.flash_attn_v3_grad(
-            query, key, value, output, lse, grad_output, softmax_scale, causal, -1, -1, 0.0, 0
-        )
+        if hasattr(paddle.base.libpaddle.pir.ops, "flash_attn_v3_grad"):
+            grad_q, grad_k, grad_v = _C_ops.flash_attn_v3_grad(
+                query, key, value, output, lse, grad_output, softmax_scale, causal, -1, -1, 0.0, 0
+            )
+        else:
+            assert False, "flash_attn_v3_grad is not supported, may be due to paddle version"
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
 
@@ -178,15 +190,21 @@ def _flashmask_attention_backward_dispatch(
     if fa_version == 2:
         # FlashMask v1 doesn't support custom softmax_scale
         seed_offset = paddle.zeros(shape=[2], dtype="int64")
-        grad_q, grad_k, grad_v = _C_ops.flashmask_attention_grad(
-            query, key, value, startend_row_indices, output, lse, seed_offset, grad_output, dropout, causal
-        )
+        if hasattr(paddle.base.libpaddle.pir.ops, "flashmask_attention_grad"):
+            grad_q, grad_k, grad_v = _C_ops.flashmask_attention_grad(
+                query, key, value, startend_row_indices, output, lse, seed_offset, grad_output, dropout, causal
+            )
+        else:
+            assert False, "flashmask_attention_grad is not supported, may be due to paddle version"
     elif fa_version == 3:
         # FlashMask v2 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
-        grad_q, grad_k, grad_v = _C_ops.flashmask_attention_v2_grad(
-            query, key, value, output, lse, startend_row_indices, grad_output, softmax_scale, causal
-        )
+        if hasattr(paddle.base.libpaddle.pir.ops, "flashmask_attention_v2_grad"):
+            grad_q, grad_k, grad_v = _C_ops.flashmask_attention_v2_grad(
+                query, key, value, output, lse, startend_row_indices, grad_output, softmax_scale, causal
+            )
+        else:
+            assert False, "flashmask_attention_v2_grad is not supported, may be due to paddle version"
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
 

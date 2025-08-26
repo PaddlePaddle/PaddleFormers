@@ -36,8 +36,6 @@ def flashmask_attention_forward(
 ):
     # b,l,h,d
     if sink is None:
-        if attn_mask_start_row_indices is not None:
-            attn_mask_start_row_indices = attn_mask_start_row_indices.unsqueeze(-1)
         out = flashmask_attention(
             query,
             key,
