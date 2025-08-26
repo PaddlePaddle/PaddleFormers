@@ -40,11 +40,11 @@ class TestTokenizer(unittest.TestCase):
                 shutil.rmtree(test_dir)
 
     def test_slow_tokenizer_from_pretrained(self):
-        tokenizer = Qwen2Tokenizer.from_pretrained(self.from_pretrained_id, from_aistudio=True)
+        tokenizer = Qwen2Tokenizer.from_pretrained(self.from_pretrained_id, download_hub="aistudio")
         self.assertTrue(tokenizer is not None)
 
     def test_slow_tokenizer_save_pretrained(self):
-        tokenizer = Qwen2Tokenizer.from_pretrained(self.from_pretrained_id, from_aistudio=True)
+        tokenizer = Qwen2Tokenizer.from_pretrained(self.from_pretrained_id)
         special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
         tokenizer.add_special_tokens(special_tokens_dict)
         tokenizer.add_tokens(["new_word", "another_word"])
@@ -53,11 +53,11 @@ class TestTokenizer(unittest.TestCase):
         self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
 
     def test_fast_tokenizer_from_pretrained(self):
-        tokenizer = Qwen2TokenizerFast.from_pretrained(self.from_pretrained_id, from_aistudio=True)
+        tokenizer = Qwen2TokenizerFast.from_pretrained(self.from_pretrained_id, download_hub="aistudio")
         self.assertTrue(tokenizer is not None)
 
     def test_fast_tokenizer_save_pretrained(self):
-        tokenizer = Qwen2TokenizerFast.from_pretrained(self.from_pretrained_id, from_aistudio=True)
+        tokenizer = Qwen2TokenizerFast.from_pretrained(self.from_pretrained_id, download_hub="aistudio")
         special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
         tokenizer.add_special_tokens(special_tokens_dict)
         tokenizer.add_tokens(["new_word", "another_word"])
@@ -66,7 +66,7 @@ class TestTokenizer(unittest.TestCase):
         self.assertTrue(os.path.exists("./fast_tokenizer/tokenizer_config.json"))
 
     def test_tokenize(self):
-        tokenizer = Qwen2TokenizerFast.from_pretrained(self.from_pretrained_id, from_aistudio=True)
+        tokenizer = Qwen2TokenizerFast.from_pretrained(self.from_pretrained_id, download_hub="aistudio")
         text = "hello world, this is a tokenizer test"
         output_dict = tokenizer(text)
         decode_text = tokenizer.decode(output_dict["input_ids"], skip_special_tokens=True)
