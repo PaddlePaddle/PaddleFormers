@@ -19,8 +19,6 @@
 # limitations under the License.
 """Paddle DeepSeek model."""
 
-from __future__ import annotations
-
 import contextlib
 import math
 import os
@@ -37,13 +35,7 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.jit import to_static
-from paddle.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from paddle.utils import try_import
-
-try:
-    from paddle.incubate.nn.functional import fused_rotary_position_embedding
-except ImportError:
-    fused_rotary_position_embedding = None
 
 try:
     from paddle.distributed.fleet.utils.sequence_parallel_utils import (
@@ -55,10 +47,6 @@ except:
     pass
 
 from paddle import _C_ops
-try:
-    from paddle.nn.functional.flash_attention import flash_attention
-except:
-    flash_attention = None
 from paddleformers.transformers.model_utils import dtype_guard
 
 from ...utils.initializer import kaiming_uniform_
@@ -87,9 +75,7 @@ from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import WeightGradS
 from ..fp8_utils import (
     FP8KeepXLinear,
     FP8Linear,
-    FP8LinearFunctionBase,
     FP8Mlp,
-    cache_fp8_weight,
     set_parameter_color,
 )
 from .fp8_linear import Linear
@@ -120,37 +106,23 @@ __all__ = [
     "DeepseekV2PretrainedModelFast",
 ]
 
-from .modeling import set_global_step, scaled_dot_product_attention, is_casual_mask, _make_causal_mask, _expand_2d_mask, yarn_get_mscale, apply_rotary_pos_emb
+from .modeling import (set_global_step, scaled_dot_product_attention, is_casual_mask, _make_causal_mask, _expand_2d_mask, yarn_get_mscale, apply_rotary_pos_emb, DeepseekV2RMSNorm, DeepseekV2YarnRotaryEmbedding, FusedRMSLinear, MemroyRecomputeAttn, FusedNormGateFunc, FakeGate)
 
-# 相比原DeepseekV2MLP， 引入fuse_attention_ffn、swiglu
 class DeepseekV2MLP(nn.Layer):
     def __init__(self, config: DeepseekV2Config, hidden_size=None, intermediate_size=None, is_moe=False):
-        # 调用父类的初始化方法
         super().__init__()
-        # 保存传入的配置
         self.config = config
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
-        # 如果hidden_size未指定，则使用config中的hidden_size，否则使用传入的hidden_size
-            self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
-        # 如果intermediate_size未指定，则使用config中的intermediate_size，否则使用传入的intermediate_size
-            self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
-        # 保存是否融合attention和ffn的标志
         self.fuse_attention_ffn = config.fuse_attention_ffn
 
         def linear_dtype_gaurd():
-        # 定义linear_dtype_gaurd函数
-            def linear_dtype_gaurd():
-            # 如果config中指定使用fp8，则返回使用fp8的上下文管理器
             if config.use_fp8:
                 return dtype_guard("float8_e4m3fn")
             else:
-                # 否则返回空上下文管理器
                 return contextlib.nullcontext()
 
         if config.sequence_parallel:
-        # 根据config中的sequence_parallel标志，选择不同的ParallelLinear类
-            if config.sequence_parallel:
             ColumnParallelLinear = linear_utils.ColumnSequenceParallelLinear
             RowParallelLinear = linear_utils.RowSequenceParallelLinear
         else:
@@ -158,9 +130,6 @@ class DeepseekV2MLP(nn.Layer):
             RowParallelLinear = linear_utils.RowParallelLinear
 
         with linear_dtype_gaurd():
-        # 使用linear_dtype_gaurd上下文管理器
-            with linear_dtype_gaurd():
-            # 如果使用了tensor并行且不是moe模型
             if config.tensor_parallel_degree > 1 and not is_moe:
                 self.gate_proj = ColumnParallelLinear(
                     self.hidden_size,
@@ -171,51 +140,23 @@ class DeepseekV2MLP(nn.Layer):
                 self.up_proj = ColumnParallelLinear(
                     self.hidden_size,
                     self.intermediate_size,
-                # 初始化gate_proj，使用ColumnParallelLinear
-                    self.gate_proj = ColumnParallelLinear(
-                        self.hidden_size,
-                        self.intermediate_size,
                     gather_output=False,
                     has_bias=False,
                 )
                 self.down_proj = RowParallelLinear(
                     self.intermediate_size,
-                # 初始化up_proj，使用ColumnParallelLinear
-                    self.up_proj = ColumnParallelLinear(
                     self.hidden_size,
                     input_is_parallel=True,
                     has_bias=False,
-                        self.intermediate_size,
-                    has_bias=False,
-                        has_bias=False,
                 )
             else:
                 if config.fuse_attention_ffn:
                     self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False)
-                # 初始化down_proj，使用RowParallelLinear
-                    self.down_proj = RowParallelLinear(
-                        self.intermediate_size,
-                        self.hidden_size,
-                        input_is_parallel=True,
-                        has_bias=False,
-                    )
                 else:
                     self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
                     self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
                 self.down_proj = Linear(self.intermediate_size, self.hidden_size, bias_attr=False)
-                # 如果启用了fuse_attention_ffn
-                    if config.fuse_attention_ffn:
-                    # 初始化gate_up_fused_proj，使用Linear
-                        self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False)
-                    else:
-                    # 初始化gate_proj，使用Linear
-                        self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
-                    # 初始化up_proj，使用Linear
-                        self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
-                # 初始化down_proj，使用Linear
-                    self.down_proj = Linear(self.intermediate_size, self.hidden_size, bias_attr=False)
 
-        # 根据config中的hidden_act设置激活函数
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
@@ -796,7 +737,7 @@ class DeepseekV2Attention(nn.Layer):
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
 
-        return outputs 多了norm
+        return outputs
 
 
 class DeepseekV2DecoderLayer(nn.Layer):
@@ -1071,8 +1012,254 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         return hidden_states
 
 
+class DeepseekV2PretrainedModelFast(PretrainedModel):
+    config_class = DeepseekV2Config
+    base_model_prefix = "deepseek_v2"
+    _no_split_modules = ["DeepseekV2DecoderLayer"]
+
+    def _get_model_flops(self, batch_size=1, seq_length=None, **kwargs):
+        from .mfu_utils import DeepSeekProjection
+
+        # self._
+        mfu_cal_proj = DeepSeekProjection(self.config)
+        if seq_length is None:
+            if hasattr(self.config, "seq_length"):
+                seq_length = self.config.seq_length
+            else:
+                seq_length = 2048
+
+        return mfu_cal_proj.get_num_flop_per_token()
+
+    def _get_hardware_flops(self, *args, **kwargs):
+        return self._get_model_flops(*args, **kwargs)
+
+    @classmethod
+    def _get_name_mappings(cls, config: DeepseekV2Config) -> list[StateDictNameMapping]:
+        mappings: list[StateDictNameMapping] = []
+        model_mappings = [
+            ["embed_tokens.weight"],
+            ["norm.weight"],
+        ]
+        # last one layer contains MTP (eagle) parameters for inference
+        for layer_index in range(config.num_hidden_layers + config.num_nextn_predict_layers):
+            layer_mappings = [
+                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.q_a_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.q_a_layernorm.weight"],
+                [f"layers.{layer_index}.self_attn.q_b_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.kv_a_proj_with_mqa.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.kv_a_layernorm.weight"],
+                [f"layers.{layer_index}.self_attn.kv_b_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.gate_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.up_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.down_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.input_layernorm.weight"],
+                [f"layers.{layer_index}.post_attention_layernorm.weight"],
+            ]
+            model_mappings.extend(layer_mappings)
+
+            # MoE parameters
+            model_mappings.append([f"layers.{layer_index}.mlp.gate.weight", None, "transpose"])
+            model_mappings.append([f"layers.{layer_index}.mlp.gate.e_score_correction_bias"])
+            for expert_idx in range(config.n_routed_experts):
+                expert_mappings = [
+                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.gate_proj.weight", None, "transpose"],
+                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.up_proj.weight", None, "transpose"],
+                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.down_proj.weight", None, "transpose"],
+                ]
+                model_mappings.extend(expert_mappings)
+            model_mappings.append([f"layers.{layer_index}.mlp.shared_experts.gate_proj.weight", None, "transpose"])
+            model_mappings.append([f"layers.{layer_index}.mlp.shared_experts.up_proj.weight", None, "transpose"])
+            model_mappings.append([f"layers.{layer_index}.mlp.shared_experts.down_proj.weight", None, "transpose"])
+
+            # MTP (eagle) parameters for inference
+            if layer_index >= config.num_hidden_layers:
+                model_mappings.append([f"layers.{layer_index}.embed_tokens.weight"])
+                model_mappings.append([f"layers.{layer_index}.enorm.weight"])
+                model_mappings.append([f"layers.{layer_index}.hnorm.weight"])
+                model_mappings.append([f"layers.{layer_index}.eh_proj.weight", None, "transpose"])
+                model_mappings.append([f"layers.{layer_index}.shared_head.norm.weight"])
+                model_mappings.append([f"layers.{layer_index}.shared_head.head.weight", None, "transpose"])
+
+        init_name_mappings(mappings=model_mappings)
+        if cls.base_model_class.__name__ not in config.architectures:
+            for mapping in model_mappings:
+                mapping[0] = "model." + mapping[0]
+                mapping[1] = f"{cls.base_model_prefix}." + mapping[1]
+            if not config.tie_word_embeddings:
+                model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
+
+        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
+        return mappings
+
+    @classmethod
+    def _get_tensor_parallel_mappings(cls, config: DeepseekV2Config, is_split=True):
+        from paddleformers.transformers.conversion_utils import split_or_merge_func
+
+        fn = split_or_merge_func(
+            is_split=is_split,
+            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_parallel_rank=config.tensor_parallel_rank,
+            num_attention_heads=config.num_attention_heads,
+        )
+
+        def get_tensor_parallel_split_mappings(num_layers):
+            final_actions = {}
+
+            base_actions = {
+                # Row Linear
+                "embed_tokens.weight": partial(fn, is_column=False),
+                "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
+            }
+            if config.use_fp8:
+                base_actions["layers.0.self_attn.o_proj.weight.weight_scale_inv"] = partial(fn, is_column=False)
+
+            if config.tie_word_embeddings:
+                base_actions["lm_head.weight"] = partial(fn, is_column=False)
+            else:
+                base_actions["lm_head.weight"] = partial(fn, is_column=True)
+
+            if not config.vocab_size % config.tensor_parallel_degree == 0:
+                base_actions.pop("lm_head.weight")
+                base_actions.pop("embed_tokens.weight")
+
+            # Column Linear
+            base_actions["layers.0.self_attn.q_proj.weight"] = partial(fn, is_column=True)
+            base_actions["layers.0.self_attn.q_proj.bias"] = partial(fn, is_column=True)
+            base_actions["layers.0.self_attn.q_b_proj.weight"] = partial(fn, is_column=True)
+
+            # if we have enough num_key_value_heads to split, then split it.
+            # ???
+            if config.num_key_value_heads % config.tensor_parallel_degree == 0:
+                base_actions["layers.0.self_attn.kv_b_proj.weight"] = partial(fn, is_column=True)
+                if config.use_fp8:
+                    base_actions["layers.0.self_attn.kv_b_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
+
+            # dense mlp
+            base_actions["layers.0.mlp.up_proj.weight"] = partial(fn, is_column=True)
+            base_actions["layers.0.mlp.gate_proj.weight"] = partial(fn, is_column=True)
+            base_actions["layers.0.mlp.down_proj.weight"] = partial(fn, is_column=False)
+            if config.use_fp8:
+                base_actions["layers.0.mlp.up_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
+                base_actions["layers.0.mlp.gate_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
+                base_actions["layers.0.mlp.down_proj.weight.weight_scale_inv"] = partial(fn, is_column=False)
+
+            # moe unit routed experts
+            moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
+            expert_parallel_degree = dist.get_world_size(moe_group)
+            if expert_parallel_degree <= 1:
+                for e_i in range(config.n_routed_experts):
+                    base_actions[f"layers.0.mlp.experts.{e_i}.up_proj.weight"] = partial(fn, is_column=True)
+                    base_actions[f"layers.0.mlp.experts.{e_i}.gate_proj.weight"] = partial(fn, is_column=True)
+                    base_actions[f"layers.0.mlp.experts.{e_i}.down_proj.weight"] = partial(fn, is_column=False)
+
+            # moe unit shared experts
+            base_actions["layers.0.mlp.shared_experts.gate_proj.weight"] = partial(fn, is_column=True)
+            base_actions["layers.0.mlp.shared_experts.up_proj.weight"] = partial(fn, is_column=True)
+            base_actions["layers.0.mlp.shared_experts.down_proj.weight"] = partial(fn, is_column=False)
+            if config.use_fp8:
+                base_actions["layers.0.mlp.shared_experts.gate_proj.weight.weight_scale_inv"] = partial(
+                    fn, is_column=True
+                )
+                base_actions["layers.0.mlp.shared_experts.up_proj.weight.weight_scale_inv"] = partial(
+                    fn, is_column=True
+                )
+                base_actions["layers.0.mlp.shared_experts.down_proj.weight.weight_scale_inv"] = partial(
+                    fn, is_column=False
+                )
+
+            for key, action in base_actions.items():
+                if "layers.0." in key:
+                    for i in range(num_layers):
+                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
+                final_actions[key] = action
+
+            # for MTP (eagle) parameters for inference
+            base_actions.pop("embed_tokens.weight")
+            base_actions.pop("lm_head.weight")
+            base_actions["layers.0.embed_tokens.weight"] = partial(fn, is_column=False)
+            base_actions["layers.0.shared_head.head.weight"] = partial(fn, is_column=True)
+            for key, action in base_actions.items():
+                if "layers.0." in key:
+                    for i in range(
+                        config.num_hidden_layers, config.num_hidden_layers + config.num_nextn_predict_layers
+                    ):
+                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
+                else:
+                    final_actions[key] = action
+
+            return final_actions
+
+        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
+
+        return mappings
+
+    def _init_weights(self, layer):
+        if self.config.tensor_parallel_degree > 1:
+            rng_tracker = get_rng_state_tracker().rng_state
+
+        if isinstance(
+            layer,
+            (
+                nn.Linear,
+                nn.Embedding,
+                mpu.VocabParallelEmbedding,
+                mpu.RowParallelLinear,
+                mpu.ColumnParallelLinear,
+                linear_utils.RowSequenceParallelLinear,
+                linear_utils.ColumnSequenceParallelLinear,
+                Linear,
+            ),
+        ):
+            # In the dygraph mode, use the `set_value` to reset the parameter directly,
+            # and reset the `state_dict` to update parameter in static mode.
+            if isinstance(layer.weight, paddle.Tensor):
+                if layer.weight.is_distributed:
+                    with rng_tracker():
+                        layer.weight.set_value(
+                            paddle.tensor.normal(
+                                mean=0.0,
+                                std=self.config.initializer_range
+                                if hasattr(self.config, "initializer_range")
+                                else self.config.initializer_range,
+                                shape=layer.weight.shape,
+                            )
+                        )
+                else:
+                    layer.weight.set_value(
+                        paddle.tensor.normal(
+                            mean=0.0,
+                            std=self.config.initializer_range
+                            if hasattr(self.config, "initializer_range")
+                            else self.config.initializer_range,
+                            shape=layer.weight.shape,
+                        )
+                    )
+
+                # set bias to zeros
+                if getattr(layer, "bias", None) is not None:
+                    layer.bias.set_value(paddle.zeros(shape=layer.bias.shape))
+
+        if isinstance(layer, nn.Embedding):
+            if layer._padding_idx is not None:
+                layer.weight.data[layer._padding_idx].fill_(0)
+
+        if isinstance(layer, MoEGate):
+            kaiming_uniform_(layer.weight, a=math.sqrt(5))
+
+        moe_grad_group = fleet.get_hybrid_communicate_group().expert_grad_comm_group
+        if moe_grad_group is not None and moe_grad_group.nranks > 1:
+            for p in layer.parameters():
+                if hasattr(p, "color") and "color" in p.color:
+                    if p.color["color"] == "moe_expert":
+                        paddle.distributed.broadcast(p, src=moe_grad_group.ranks[0], group=moe_grad_group)
+
+    def step_flex_token(self, cur_step):
+        set_global_step(cur_step)
+
 @register_base_model
-class DeepseekV2ModelFast(DeepseekV2PretrainedModel):
+class DeepseekV2ModelFast(DeepseekV2PretrainedModelFast):
     """
     Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`DeepseekV2DecoderLayer`]
 
@@ -1391,250 +1578,3 @@ class DeepseekV2ModelFast(DeepseekV2PretrainedModel):
             attentions=all_self_attns,
             mtp_outputs=mtp_outputs,
         )
-
-
-class DeepseekV2PretrainedModelFast(PretrainedModel):
-    config_class = DeepseekV2Config
-    base_model_prefix = "deepseek_v2"
-    _no_split_modules = ["DeepseekV2DecoderLayer"]
-
-    def _get_model_flops(self, batch_size=1, seq_length=None, **kwargs):
-        from .mfu_utils import DeepSeekProjection
-
-        # self._
-        mfu_cal_proj = DeepSeekProjection(self.config)
-        if seq_length is None:
-            if hasattr(self.config, "seq_length"):
-                seq_length = self.config.seq_length
-            else:
-                seq_length = 2048
-
-        return mfu_cal_proj.get_num_flop_per_token()
-
-    def _get_hardware_flops(self, *args, **kwargs):
-        return self._get_model_flops(*args, **kwargs)
-
-    @classmethod
-    def _get_name_mappings(cls, config: DeepseekV2Config) -> list[StateDictNameMapping]:
-        mappings: list[StateDictNameMapping] = []
-        model_mappings = [
-            ["embed_tokens.weight"],
-            ["norm.weight"],
-        ]
-        # last one layer contains MTP (eagle) parameters for inference
-        for layer_index in range(config.num_hidden_layers + config.num_nextn_predict_layers):
-            layer_mappings = [
-                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.q_a_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.q_a_layernorm.weight"],
-                [f"layers.{layer_index}.self_attn.q_b_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.kv_a_proj_with_mqa.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.kv_a_layernorm.weight"],
-                [f"layers.{layer_index}.self_attn.kv_b_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.gate_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.up_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.down_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.input_layernorm.weight"],
-                [f"layers.{layer_index}.post_attention_layernorm.weight"],
-            ]
-            model_mappings.extend(layer_mappings)
-
-            # MoE parameters
-            model_mappings.append([f"layers.{layer_index}.mlp.gate.weight", None, "transpose"])
-            model_mappings.append([f"layers.{layer_index}.mlp.gate.e_score_correction_bias"])
-            for expert_idx in range(config.n_routed_experts):
-                expert_mappings = [
-                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.gate_proj.weight", None, "transpose"],
-                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.up_proj.weight", None, "transpose"],
-                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.down_proj.weight", None, "transpose"],
-                ]
-                model_mappings.extend(expert_mappings)
-            model_mappings.append([f"layers.{layer_index}.mlp.shared_experts.gate_proj.weight", None, "transpose"])
-            model_mappings.append([f"layers.{layer_index}.mlp.shared_experts.up_proj.weight", None, "transpose"])
-            model_mappings.append([f"layers.{layer_index}.mlp.shared_experts.down_proj.weight", None, "transpose"])
-
-            # MTP (eagle) parameters for inference
-            if layer_index >= config.num_hidden_layers:
-                model_mappings.append([f"layers.{layer_index}.embed_tokens.weight"])
-                model_mappings.append([f"layers.{layer_index}.enorm.weight"])
-                model_mappings.append([f"layers.{layer_index}.hnorm.weight"])
-                model_mappings.append([f"layers.{layer_index}.eh_proj.weight", None, "transpose"])
-                model_mappings.append([f"layers.{layer_index}.shared_head.norm.weight"])
-                model_mappings.append([f"layers.{layer_index}.shared_head.head.weight", None, "transpose"])
-
-        init_name_mappings(mappings=model_mappings)
-        if cls.base_model_class.__name__ not in config.architectures:
-            for mapping in model_mappings:
-                mapping[0] = "model." + mapping[0]
-                mapping[1] = f"{cls.base_model_prefix}." + mapping[1]
-            if not config.tie_word_embeddings:
-                model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
-
-        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
-        return mappings
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config: DeepseekV2Config, is_split=True):
-        from paddleformers.transformers.conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        def get_tensor_parallel_split_mappings(num_layers):
-            final_actions = {}
-
-            base_actions = {
-                # Row Linear
-                "embed_tokens.weight": partial(fn, is_column=False),
-                "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
-            }
-            if config.use_fp8:
-                base_actions["layers.0.self_attn.o_proj.weight.weight_scale_inv"] = partial(fn, is_column=False)
-
-            if config.tie_word_embeddings:
-                base_actions["lm_head.weight"] = partial(fn, is_column=False)
-            else:
-                base_actions["lm_head.weight"] = partial(fn, is_column=True)
-
-            if not config.vocab_size % config.tensor_parallel_degree == 0:
-                base_actions.pop("lm_head.weight")
-                base_actions.pop("embed_tokens.weight")
-
-            # Column Linear
-            base_actions["layers.0.self_attn.q_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.self_attn.q_proj.bias"] = partial(fn, is_column=True)
-            base_actions["layers.0.self_attn.q_b_proj.weight"] = partial(fn, is_column=True)
-
-            # if we have enough num_key_value_heads to split, then split it.
-            # ???
-            if config.num_key_value_heads % config.tensor_parallel_degree == 0:
-                base_actions["layers.0.self_attn.kv_b_proj.weight"] = partial(fn, is_column=True)
-                if config.use_fp8:
-                    base_actions["layers.0.self_attn.kv_b_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
-
-            # dense mlp
-            base_actions["layers.0.mlp.up_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.mlp.gate_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.mlp.down_proj.weight"] = partial(fn, is_column=False)
-            if config.use_fp8:
-                base_actions["layers.0.mlp.up_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
-                base_actions["layers.0.mlp.gate_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
-                base_actions["layers.0.mlp.down_proj.weight.weight_scale_inv"] = partial(fn, is_column=False)
-
-            # moe unit routed experts
-            moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
-            expert_parallel_degree = dist.get_world_size(moe_group)
-            if expert_parallel_degree <= 1:
-                for e_i in range(config.n_routed_experts):
-                    base_actions[f"layers.0.mlp.experts.{e_i}.up_proj.weight"] = partial(fn, is_column=True)
-                    base_actions[f"layers.0.mlp.experts.{e_i}.gate_proj.weight"] = partial(fn, is_column=True)
-                    base_actions[f"layers.0.mlp.experts.{e_i}.down_proj.weight"] = partial(fn, is_column=False)
-
-            # moe unit shared experts
-            base_actions["layers.0.mlp.shared_experts.gate_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.mlp.shared_experts.up_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.mlp.shared_experts.down_proj.weight"] = partial(fn, is_column=False)
-            if config.use_fp8:
-                base_actions["layers.0.mlp.shared_experts.gate_proj.weight.weight_scale_inv"] = partial(
-                    fn, is_column=True
-                )
-                base_actions["layers.0.mlp.shared_experts.up_proj.weight.weight_scale_inv"] = partial(
-                    fn, is_column=True
-                )
-                base_actions["layers.0.mlp.shared_experts.down_proj.weight.weight_scale_inv"] = partial(
-                    fn, is_column=False
-                )
-
-            for key, action in base_actions.items():
-                if "layers.0." in key:
-                    for i in range(num_layers):
-                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
-                final_actions[key] = action
-
-            # for MTP (eagle) parameters for inference
-            base_actions.pop("embed_tokens.weight")
-            base_actions.pop("lm_head.weight")
-            base_actions["layers.0.embed_tokens.weight"] = partial(fn, is_column=False)
-            base_actions["layers.0.shared_head.head.weight"] = partial(fn, is_column=True)
-            for key, action in base_actions.items():
-                if "layers.0." in key:
-                    for i in range(
-                        config.num_hidden_layers, config.num_hidden_layers + config.num_nextn_predict_layers
-                    ):
-                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
-                else:
-                    final_actions[key] = action
-
-            return final_actions
-
-        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
-
-        return mappings
-
-    def _init_weights(self, layer):
-        if self.config.tensor_parallel_degree > 1:
-            rng_tracker = get_rng_state_tracker().rng_state
-
-        if isinstance(
-            layer,
-            (
-                nn.Linear,
-                nn.Embedding,
-                mpu.VocabParallelEmbedding,
-                mpu.RowParallelLinear,
-                mpu.ColumnParallelLinear,
-                linear_utils.RowSequenceParallelLinear,
-                linear_utils.ColumnSequenceParallelLinear,
-                Linear,
-            ),
-        ):
-            # In the dygraph mode, use the `set_value` to reset the parameter directly,
-            # and reset the `state_dict` to update parameter in static mode.
-            if isinstance(layer.weight, paddle.Tensor):
-                if layer.weight.is_distributed:
-                    with rng_tracker():
-                        layer.weight.set_value(
-                            paddle.tensor.normal(
-                                mean=0.0,
-                                std=self.config.initializer_range
-                                if hasattr(self.config, "initializer_range")
-                                else self.config.initializer_range,
-                                shape=layer.weight.shape,
-                            )
-                        )
-                else:
-                    layer.weight.set_value(
-                        paddle.tensor.normal(
-                            mean=0.0,
-                            std=self.config.initializer_range
-                            if hasattr(self.config, "initializer_range")
-                            else self.config.initializer_range,
-                            shape=layer.weight.shape,
-                        )
-                    )
-
-                # set bias to zeros
-                if getattr(layer, "bias", None) is not None:
-                    layer.bias.set_value(paddle.zeros(shape=layer.bias.shape))
-
-        if isinstance(layer, nn.Embedding):
-            if layer._padding_idx is not None:
-                layer.weight.data[layer._padding_idx].fill_(0)
-
-        if isinstance(layer, MoEGate):
-            kaiming_uniform_(layer.weight, a=math.sqrt(5))
-
-        moe_grad_group = fleet.get_hybrid_communicate_group().expert_grad_comm_group
-        if moe_grad_group is not None and moe_grad_group.nranks > 1:
-            for p in layer.parameters():
-                if hasattr(p, "color") and "color" in p.color:
-                    if p.color["color"] == "moe_expert":
-                        paddle.distributed.broadcast(p, src=moe_grad_group.ranks[0], group=moe_grad_group)
-
-    def step_flex_token(self, cur_step):
-        set_global_step(cur_step)
