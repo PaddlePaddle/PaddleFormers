@@ -376,5 +376,12 @@
         "train_type": "sft",
         "doc_formatting": "json",
         "file_name": "dpo_zh.json"
+    },
+    "avemio/German-RAG-DPO-ShareGPT-HESSIAN-AI": {
+        "hf_hub_url": "avemio/German-RAG-DPO-ShareGPT-HESSIAN-AI",
+        "formatting": "sharegpt",
+        "train_type": "dpo",
+        "doc_formatting": "jsonl",
+        "file_name": "qa-with-multiple-references/DPO_equally-distributed-wikipedia-trainingdata-qa-with-multiple-references_id-over-800k-under-1000k_sharegpt.jsonl"
     }
 }
