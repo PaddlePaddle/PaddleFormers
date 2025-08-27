@@ -294,19 +294,15 @@ class AutoConfig(PretrainedConfig):
         subfolder = kwargs.get("subfolder", "")
         if subfolder is None:
             subfolder = ""
-        from_hf_hub = kwargs.get("from_hf_hub", False)
-        from_aistudio = kwargs.get("from_aistudio", False)
-        from_modelscope = kwargs.get("from_modelscope", False)
         cache_dir = kwargs.pop("cache_dir", None)
+        download_hub = kwargs.get("download_hub", None)
 
         config_file = resolve_file_path(
             pretrained_model_name_or_path,
             [cls.config_file, cls.legacy_config_file],
             subfolder,
             cache_dir=cache_dir,
-            from_hf_hub=from_hf_hub,
-            from_aistudio=from_aistudio,
-            from_modelscope=from_modelscope,
+            download_hub=download_hub,
         )
         config_dict, unused_kwargs = PretrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
         if "model_type" in config_dict:

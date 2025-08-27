@@ -23,8 +23,8 @@ class ConfigLoadTester(unittest.TestCase):
     @slow
     def test_bert_config_load(self):
         logger.info("Download Bert Config from PaddleFormers BOS")
-        bert_config = BertConfig.from_pretrained("bert-base-uncased", from_hf_hub=False)
-        bert_config = AutoConfig.from_pretrained("bert-base-uncased", from_hf_hub=False)
+        bert_config = BertConfig.from_pretrained("bert-base-uncased", download_hub="bos")
+        bert_config = AutoConfig.from_pretrained("bert-base-uncased", download_hub="bos")
 
         logger.info("Download config from local")
         bert_config.save_pretrained("./paddleformers-test-config/bert-base-uncased")
@@ -36,12 +36,12 @@ class ConfigLoadTester(unittest.TestCase):
 
         logger.info("Download Bert Config from PaddleFormers BOS with subfolder")
         bert_config = BertConfig.from_pretrained(
-            "baicai/paddleformers-test-model", subfolder="bert-base-uncased", from_hf_hub=False
+            "baicai/paddleformers-test-model", subfolder="bert-base-uncased", download_hub="bos"
         )
         bert_config = AutoConfig.from_pretrained(
-            "baicai/paddleformers-test-model", subfolder="bert-base-uncased", from_hf_hub=False
+            "baicai/paddleformers-test-model", subfolder="bert-base-uncased", download_hub="bos"
         )
 
         logger.info("Download Bert Config from aistudio")
-        bert_config = BertConfig.from_pretrained("aistudio/bert-base-uncased", from_aistudio=True)
-        bert_config = AutoConfig.from_pretrained("aistudio/bert-base-uncased", from_aistudio=True)
+        bert_config = BertConfig.from_pretrained("test_paddleformers/bert-base-uncased", download_hub="aistudio")
+        bert_config = AutoConfig.from_pretrained("test_paddleformers/bert-base-uncased", download_hub="aistudio")

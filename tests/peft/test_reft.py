@@ -37,7 +37,7 @@ from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
 
 class TestReftDataCollator(unittest.TestCase):
     def test_call(self):
-        model_name = "__internal_testing__/tiny-random-llama"
+        model_name = "test_paddleformers/tiny-random-llama"
         tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             model_max_length=512,
@@ -51,12 +51,12 @@ class TestReftDataCollator(unittest.TestCase):
         reft_data_collator = ReftDataCollator(data_collator)
         instances = [
             {
-                "input_ids": paddle.to_tensor([[1, 2, 3], [4, 5, 6]]),
-                "intervention_locations": paddle.to_tensor([[0, 1, 0], [1, 0, 1]]),
+                "input_ids": [[1, 2, 3], [4, 5, 6]],
+                "intervention_locations": [[0, 1, 0], [1, 0, 1]],
             },
             {
-                "input_ids": paddle.to_tensor([[7, 8, 9], [10, 11, 12]]),
-                "intervention_locations": paddle.to_tensor([[1, 0, 1], [0, 1, 0]]),
+                "input_ids": [[7, 8, 9], [10, 11, 12]],
+                "intervention_locations": [[1, 0, 1], [0, 1, 0]],
             },
         ]
 
@@ -79,7 +79,7 @@ class TestBasicUtils(unittest.TestCase):
         set_seed(66)
 
     def test_count_param(self):
-        model = AutoModelForCausalLM.from_pretrained("__internal_testing__/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained("test_paddleformers/tiny-random-llama")
         count_parameters(model)
 
 
@@ -191,7 +191,7 @@ class TestTinyIntervention(unittest.TestCase):
 
 class TestReftModel(unittest.TestCase):
     def test_get_reft_model(self):
-        model = AutoModelForCausalLM.from_pretrained("__internal_testing__/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained("test_paddleformers/tiny-random-llama")
         layers = [0]
         representations = [
             {
@@ -216,7 +216,7 @@ class TestReftModel(unittest.TestCase):
         self.assertTrue(type(reft_model), ReFTModel)
 
     def test_reft_model_forward(self):
-        model = AutoModelForCausalLM.from_pretrained("__internal_testing__/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained("test_paddleformers/tiny-random-llama")
 
         layers = [0]
         representations = [

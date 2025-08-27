@@ -223,9 +223,7 @@ class _BaseAutoModelClass:
             else:
                 print("We only support task choice for AutoModel.")
         cache_dir = kwargs.get("cache_dir", None)
-        from_hf_hub = kwargs.get("from_hf_hub", False)
-        from_aistudio = kwargs.get("from_aistudio", False)
-        from_modelscope = kwargs.get("from_modelscope", False)
+        download_hub = kwargs.get("download_hub", None)
         subfolder = kwargs.get("subfolder", "")
         if subfolder is None:
             subfolder = ""
@@ -273,9 +271,7 @@ class _BaseAutoModelClass:
             [cls.model_config_file, cls.legacy_model_config_file],
             subfolder,
             cache_dir=cache_dir,
-            from_hf_hub=from_hf_hub,
-            from_aistudio=from_aistudio,
-            from_modelscope=from_modelscope,
+            download_hub=download_hub,
         )
         if config_file is not None and os.path.exists(config_file):
             model_class = cls._get_model_class_from_config(pretrained_model_name_or_path, config_file)

@@ -30,7 +30,7 @@ from .image_utils import (
     infer_channel_dimension_format,
     to_numpy_array,
 )
-from .tokenizer_utils_base import ExplicitEnum, TensorType
+from .tokenizer_utils import ExplicitEnum, TensorType
 
 
 def is_paddle_tensor(tensor):
