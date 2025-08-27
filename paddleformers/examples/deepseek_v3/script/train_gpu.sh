@@ -45,7 +45,7 @@ if [[ -z "$LAUNCH_CMD" ]]; then
     exit 0
 fi
 
-# export PYTHONPATH=../../../:$PYTHONPATH
+export PYTHONPATH=../../../:$PYTHONPATH
 
 export PATH=/opt/nvidia/nsight-systems/2025.3.1/bin/:$PATH
 

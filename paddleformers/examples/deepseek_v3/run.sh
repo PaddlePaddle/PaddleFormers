@@ -18,5 +18,4 @@
 # wget https://bj.bcebos.com/paddlenlp/models/transformers/llama/data/llama_openwebtext_100k.idx
 
 rm -rf output
-GLOG_v=6 nohup sh script/train_gpu.sh config/pretrain_argument.json > run.log 2>&1 & 
-
+nohup sh script/train_gpu.sh config/pretrain_argument.json > run.log 2>&1 & 

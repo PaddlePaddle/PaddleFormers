@@ -402,7 +402,7 @@ def main():
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path, **{"download_hub": "bos"})
     config = AutoConfig.from_pretrained(model_args.model_name_or_path)
 
     # set all llm config
