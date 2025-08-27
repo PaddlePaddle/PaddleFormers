@@ -93,6 +93,10 @@ from ..quantization.quantization_linear import (
 )
 
 try:
+    from ..quantization.quantization_linear import QuantizationLinear
+except:
+    QuantizationLinear = None
+try:
     from paddle.distributed.fleet.utils.sequence_parallel_utils import (
         register_sequence_parallel_allreduce_hooks,
     )
@@ -200,6 +204,14 @@ from .utils.sharding_io import ShardingIO
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
+
+# Name of the files used for checkpointing
+TRAINING_ARGS_NAME = "training_args.bin"
+TRAINER_STATE_NAME = "trainer_state.json"
+
+SCHEDULER_NAME = "scheduler.pdparams"
+SCALER_NAME = "scaler.pdparams"
+
 
 if is_datasets_available():
     import datasets

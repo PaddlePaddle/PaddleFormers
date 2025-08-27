@@ -1005,3 +1005,9 @@ def caculate_llm_per_token_flops(
     # 2 for mul + add in matmul
     # 1 for forward, 2 for backwards since we caluate gradients for input_x and input_y
     return 2 * (layer_num * (flops_per_transformer * 3 + flops_recompute_transformer) + 3 * flops_loggits) / seq_length
+
+def cast_if_needed(x, dtype):
+    """
+    cast_if_needed
+    """
+    return x.cast(dtype) if x.dtype != dtype else x
