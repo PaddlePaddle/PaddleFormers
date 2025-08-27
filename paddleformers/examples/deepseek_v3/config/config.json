@@ -1,13 +1,13 @@
 {
     "architectures": [
-      "DeepseekV3ForCausalLMFast"
+      "DeepseekV3ForCausalLM"
     ],
     "attention_bias": false,
     "attention_dropout": 0.0,
     "auto_map": {
       "AutoConfig": "configuration_deepseek.DeepseekV3Config",
       "AutoModel": "modeling_deepseek.DeepseekV3Model",
-      "AutoModelForCausalLM": "modeling_deepseek.DeepseekV3ForCausalLMFast"
+      "AutoModelForCausalLM": "modeling_deepseek.DeepseekV3ForCausalLM"
     },
     "aux_loss_alpha": 0.001,
     "bos_token_id": 0,
