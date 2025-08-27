@@ -20,7 +20,12 @@ import os
 import paddle
 
 from ...peft import LoRAModel, PrefixModelForCausalLM
-from ...transformers.model_utils import _load_state_dict_into_model, load_state_dict
+from ...transformers.conversion_utils import ConversionMixin
+from ...transformers.model_utils import (
+    _load_state_dict_into_model,
+    load_state_dict,
+    prepare_safe_save_state_dict,
+)
 from ...transformers.utils import (
     dtype_byte_size,
     get_checkpoint_shard_files,
@@ -54,17 +59,19 @@ __all__ = [
 ]
 
 
-def save_file_sync(state_dict, path):
-    for k in list(state_dict.keys()):
-        if isinstance(state_dict[k], paddle.Tensor):
-            state_dict[k] = state_dict.pop(k).cpu().numpy()
-    safe_save_file(state_dict, path, metadata={"format": "np"})
+def save_file_sync(state_dict, path, save_to_hf=False):
+    state_dict, metadata = prepare_safe_save_state_dict(state_dict, save_to_hf=save_to_hf)
+    safe_save_file(state_dict, path, metadata=metadata)
 
 
-def save_single_card_checkpoint(model_to_save, output_dir):
+def save_single_card_checkpoint(model_to_save, output_dir, save_to_hf=False):
     """Save checkpoint for non-distributed environment."""
 
     state_dict = get_expected_state_dict(model_to_save, concat_additional_adapter=True)
+    if save_to_hf:
+        transpose_weight_keys = getattr(model_to_save, "transpose_weight_keys", None)
+        state_dict = ConversionMixin.convert_transpose_selected_weights(state_dict, transpose_weight_keys)
+
     if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
         weight_filename = "peft_model-00001-of-00001.safetensors"
         index_filename = SAFE_PEFT_WEIGHTS_INDEX_NAME
@@ -92,7 +99,7 @@ def save_single_card_checkpoint(model_to_save, output_dir):
 
     # save checkpoint, do no support asynchronous save for single card currently.
     logger.warning("Asynchronous saving is not supported for single card environment currently.")
-    save_file_sync(state_dict, path=os.path.join(output_dir, weight_filename))
+    save_file_sync(state_dict, path=os.path.join(output_dir, weight_filename), save_to_hf=save_to_hf)
 
     save_model_config(model_to_save, output_dir)
 
@@ -162,7 +169,7 @@ def save_single_card_optimizer(model, optimizer, output_dir):
         save_file_sync(master_weights, path=os.path.join(output_dir, "master_weights-00001-of-00001.safetensors"))
 
 
-def load_single_card_checkpoint(model, resume_from_checkpoint: str):
+def load_single_card_checkpoint(model, resume_from_checkpoint: str, convert_from_hf=False):
     if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
         index_filename = SAFE_PEFT_WEIGHTS_INDEX_NAME
     else:
@@ -180,7 +187,14 @@ def load_single_card_checkpoint(model, resume_from_checkpoint: str):
     if len(missing_keys) > 0:
         raise ValueError(f"Missing keys: {missing_keys}")
 
-    state_dict = load_state_dict(resolved_archive_file[0], None, expected_keys)
+    transpose_weight_keys = getattr(model, "transpose_weight_keys", None)
+    state_dict = load_state_dict(
+        resolved_archive_file[0],
+        None,
+        expected_keys,
+        convert_from_hf=convert_from_hf,
+        transpose_weight_keys=transpose_weight_keys,
+    )
     error_msgs = _load_state_dict_into_model(model, state_dict, "")
     del state_dict
     gc.collect()
