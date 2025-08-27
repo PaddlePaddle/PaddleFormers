@@ -637,7 +637,9 @@ class Trainer:
             elif isinstance(self.model, LoKrModel):
                 weights_file = os.path.join(resume_from_checkpoint, LOKR_WEIGHTS_NAME)
             elif isinstance(self.model, ReFTModel):
-                self.model.from_pretrained(resume_from_checkpoint, self.model.model)
+                self.model.from_pretrained(
+                    resume_from_checkpoint, self.model.model, convert_from_hf=self.args.convert_from_hf
+                )
                 return
 
             if self.args.dataset_rank == 0:
@@ -689,6 +691,7 @@ class Trainer:
                     self.unified_checkpoint_handler.load_unified_checkpoint(
                         self.model,
                         resume_from_checkpoint,
+                        convert_from_hf=self.args.convert_from_hf,
                     )
                     if isinstance(self.model, LoRAModel) and self.model.lora_config.loraga:
                         self.model.reinit_base_model = True
@@ -1452,6 +1455,7 @@ class Trainer:
                     self.unified_checkpoint_handler.load_unified_checkpoint(
                         self.model,
                         self.state.best_model_checkpoint,
+                        convert_from_hf=self.args.convert_from_hf,
                     )
                     if self.args.sharding_parallel_degree > 1 or self.args.data_parallel_degree > 1:
                         broadcast_dataset_rank0_model(self.model)
@@ -1502,6 +1506,7 @@ class Trainer:
             self.unified_checkpoint_handler.load_unified_checkpoint(
                 self.model,
                 self.state.best_model_checkpoint,
+                convert_from_hf=self.args.convert_from_hf,
             )
             if self.args.sharding_parallel_degree > 1 or self.args.data_parallel_degree > 1:
                 broadcast_dataset_rank0_model(self.model)
@@ -3010,7 +3015,9 @@ class Trainer:
             # backup and remove unified_checkpoint_config for not trine stage
             if not self.is_in_train:
                 self.args.unified_checkpoint_config = []
-            self.unified_checkpoint_handler.save_unified_checkpoint(self.model, self.optimizer, output_dir, signal_dir)
+            self.unified_checkpoint_handler.save_unified_checkpoint(
+                self.model, self.optimizer, output_dir, signal_dir, save_to_hf=self.args.save_to_hf
+            )
 
             # recover unified_checkpoint_config for not trine stage
             if not self.is_in_train:
@@ -3034,6 +3041,7 @@ class Trainer:
                 merge_tensor_parallel=merge_tensor_parallel,
                 is_main_process=self.args.should_save,
                 max_shard_size="1024GB",
+                save_to_hf=self.args.save_to_hf,
             )
         # TODO: @ZHUI unify unwrap_model(self.model) and self.model
         elif not isinstance(self.model, PretrainedModel):
@@ -3052,6 +3060,7 @@ class Trainer:
                         save_function=self._save_ckpt_func,
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
+                        save_to_hf=self.args.save_to_hf,
                     )
                 else:
                     unwrap_model(self.model).save_pretrained(
@@ -3061,6 +3070,7 @@ class Trainer:
                         save_function=self._save_ckpt_func,
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
+                        save_to_hf=self.args.save_to_hf,
                     )
             else:
                 logger.info("Trainer.model is not a `PretrainedModel`, only saving its state dict.")
@@ -3093,6 +3103,7 @@ class Trainer:
                     save_function=self._save_ckpt_func,
                     is_main_process=self.args.should_save,
                     max_shard_size="1024GB",
+                    save_to_hf=self.args.save_to_hf,
                 )
             else:
                 self.model.save_pretrained(
@@ -3102,6 +3113,7 @@ class Trainer:
                     save_function=self._save_ckpt_func,
                     is_main_process=self.args.should_save,
                     max_shard_size="1024GB",
+                    save_to_hf=self.args.save_to_hf,
                 )
         if self.args.should_save_sharding_stage1_model:
             model_meta = self.sharding_io.gather_distributed_model_meta()
