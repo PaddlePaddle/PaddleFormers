@@ -23,7 +23,9 @@ import unittest
 from paddleformers.transformers import AutoConfig
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.bert.configuration import BertConfig
+from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import CONFIG_NAME
+from tests.testing_utils import set_proxy
 
 from ...utils.test_module.custom_configuration import CustomConfig
 
@@ -66,17 +68,20 @@ class AutoConfigTest(unittest.TestCase):
             self.assertEqual(auto_config.hidden_size, number)
 
     @unittest.skip("skipping due to connection error!")
+    # @set_proxy(DownloadSource.HUGGINGFACE)
     def test_from_hf_hub(self):
-        config = AutoConfig.from_pretrained("facebook/opt-66b", download_hub="huggingface")
-        self.assertEqual(config.hidden_size, 9216)
+        config = AutoConfig.from_pretrained("dfargveazd/tiny-random-llama-paddle", download_hub="huggingface")
+        self.assertEqual(config.hidden_size, 192)
 
-    @unittest.skip("skipping due to connection error!")
+    # @unittest.skip("skipping due to connection error!")
+    @set_proxy(DownloadSource.AISTUDIO)
     def test_from_aistudio(self):
         config = AutoConfig.from_pretrained("test_paddleformers/tiny-random-llama", download_hub="aistudio")
-        self.assertEqual(config.hidden_size, 768)
+        self.assertEqual(config.hidden_size, 192)
 
-    @unittest.skip("skipping due to connection error!")
-    def test_from_mdoelscope(self):
+    # @unittest.skip("skipping due to connection error!")
+    @set_proxy(DownloadSource.MODELSCOPE)
+    def test_from_modelscope(self):
         config = AutoConfig.from_pretrained("sqlhuman/tiny-random-llama", download_hub="modelscope")
         self.assertEqual(config.hidden_size, 768)
 

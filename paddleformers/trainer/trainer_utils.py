@@ -19,6 +19,8 @@
 """
 Utilities for the Trainer class.
 """
+from __future__ import annotations
+
 import datetime
 import gc
 import inspect
@@ -39,10 +41,10 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
+from transformers.tokenization_utils_base import BatchEncoding
 
 from ..ops import Topology
 from ..trainer.argparser import strtobool
-from ..transformers.tokenizer_utils_base import BatchEncoding
 from ..utils.env import PREFIX_CHECKPOINT_DIR, _re_checkpoint  # noqa for compatibility
 from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
 from ..utils.import_utils import is_paddle_cuda_available, is_psutil_available
@@ -653,11 +655,11 @@ def metrics_format(self, metrics: Dict[str, float]) -> Dict[str, float]:
     metrics_copy = metrics.copy()
     for k, v in metrics_copy.items():
         if "_mem_" in k:
-            metrics_copy[k] = f"{ v >> 20 }MB"
+            metrics_copy[k] = f"{v >> 20}MB"
         elif "_runtime" in k:
             metrics_copy[k] = _secs2timedelta(v)
         elif k == "total_flos":
-            metrics_copy[k] = f"{ int(v) >> 30 }GF"
+            metrics_copy[k] = f"{int(v) >> 30}GF"
         elif isinstance(metrics_copy[k], float):
             metrics_copy[k] = round(v, 4)
 

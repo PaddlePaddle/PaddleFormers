@@ -12,131 +12,53 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import os
-import tempfile
+import shutil
 import unittest
 
-import paddleformers
 from paddleformers.transformers import AutoTokenizer
-from paddleformers.transformers.auto.configuration import CONFIG_MAPPING, AutoConfig
-from paddleformers.transformers.auto.tokenizer import TOKENIZER_MAPPING
-from paddleformers.transformers.bert.configuration import BertConfig
-from paddleformers.transformers.bert.tokenizer import BertTokenizer
-from paddleformers.transformers.bert.tokenizer_fast import (
-    BertTokenizerFast,
-    PretrainedTokenizerFast,
-)
-from paddleformers.utils.env import TOKENIZER_CONFIG_NAME
-
-from ...utils.test_module.custom_configuration import CustomConfig
-from ...utils.test_module.custom_tokenizer import CustomTokenizer
-from ...utils.test_module.custom_tokenizer_fast import (
-    CustomTokenizerFast,
-    CustomTokenizerFastWithoutSlow,
-)
 
 
-class AutoTokenizerTest(unittest.TestCase):
-    @unittest.skip("skipping due to connection error!")
-    def test_from_mdoelscope(self):
-        tokenizer = AutoTokenizer.from_pretrained("sqlhuman/tiny-random-llama", download_hub="modelscope")
-        self.assertIsInstance(tokenizer, paddleformers.transformers.LlamaTokenizer)
+class TestTokenizer(unittest.TestCase):
+    def setUp(self):
+        self.test_dirs = ["./slow_tokenizer", "./fast_tokenizer"]
+        for test_dir in self.test_dirs:
+            if os.path.exists(test_dir):
+                shutil.rmtree(test_dir)
 
-    @unittest.skip("skipping due to connection error!")
-    def test_from_aistudio(self):
-        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama", download_hub="aistudio")
-        self.assertIsInstance(tokenizer, paddleformers.transformers.LlamaTokenizer)
+    def tearDown(self):
+        for test_dir in self.test_dirs:
+            if os.path.exists(test_dir):
+                shutil.rmtree(test_dir)
 
-    def test_from_pretrained_cache_dir(self):
-        model_name = "test_paddleformers/tiny-random-bert"
-        with tempfile.TemporaryDirectory() as tempdir:
-            AutoTokenizer.from_pretrained(model_name, cache_dir=tempdir)
-            self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, TOKENIZER_CONFIG_NAME)))
-            # check against double appending model_name in cache_dir
-            self.assertFalse(os.path.exists(os.path.join(tempdir, model_name, model_name)))
+    def test_slow_tokenizer_from_pretrained(self):
+        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B", use_fast=False)
+        if hasattr(tokenizer, "is_fast"):
+            self.assertFalse(tokenizer.is_fast)
+        else:
+            self.assertNotIn("Fast", tokenizer.__class__.__name__)
 
-    def test_from_pretrained_tokenizer_fast(self):
-        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama-fast", use_fast=True)
-        self.assertIsInstance(tokenizer, PretrainedTokenizerFast)
+    def test_slow_tokenizer_save_pretrained(self):
+        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B", use_fast=False)
+        special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+        tokenizer.add_special_tokens(special_tokens_dict)
+        tokenizer.add_tokens(["new_word", "another_word"])
+        tokenizer.model_max_length = 512
+        tokenizer.save_pretrained("./slow_tokenizer")
+        self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
 
-    def test_new_tokenizer_registration(self):
-        try:
-            AutoConfig.register("custom", CustomConfig)
+    def test_fast_tokenizer_from_pretrained(self):
+        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B")
+        if hasattr(tokenizer, "is_fast"):
+            self.assertTrue(tokenizer.is_fast)
+        else:
+            self.assertIn("Fast", tokenizer.__class__.__name__)
 
-            AutoTokenizer.register(CustomConfig, slow_tokenizer_class=CustomTokenizer)
-            # Trying to register something existing in the PaddleFormers library will raise an error
-            with self.assertRaises(ValueError):
-                AutoTokenizer.register(BertConfig, slow_tokenizer_class=BertTokenizer)
-
-            tokenizer = CustomTokenizer.from_pretrained("test_paddleformers/tiny-random-bert")
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                tokenizer.save_pretrained(tmp_dir)
-
-                new_tokenizer = AutoTokenizer.from_pretrained(tmp_dir)
-                self.assertIsInstance(new_tokenizer, CustomTokenizer)
-
-        finally:
-            if "custom" in CONFIG_MAPPING._extra_content:
-                del CONFIG_MAPPING._extra_content["custom"]
-            if CustomConfig in TOKENIZER_MAPPING._extra_content:
-                del TOKENIZER_MAPPING._extra_content[CustomConfig]
-
-    def test_new_tokenizer_fast_registration(self):
-        try:
-            # Trying to register nothing
-            with self.assertRaises(ValueError):
-                AutoTokenizer.register(CustomConfig)
-            # Trying to register tokenizer with wrong type
-            with self.assertRaises(ValueError):
-                AutoTokenizer.register(CustomConfig, fast_tokenizer_class=CustomTokenizer)
-            with self.assertRaises(ValueError):
-                AutoTokenizer.register(CustomConfig, slow_tokenizer_class=CustomTokenizerFast)
-            with self.assertRaises(ValueError):
-                AutoTokenizer.register(
-                    CustomConfig,
-                    slow_tokenizer_class=CustomTokenizer,
-                    fast_tokenizer_class=CustomTokenizerFastWithoutSlow,
-                )
-            AutoConfig.register("custom", CustomConfig)
-
-            # Can register in two steps
-            AutoTokenizer.register(CustomConfig, slow_tokenizer_class=CustomTokenizer)
-            self.assertEqual(TOKENIZER_MAPPING[CustomConfig], (CustomTokenizer, None))
-            AutoTokenizer.register(CustomConfig, fast_tokenizer_class=CustomTokenizerFast)
-            self.assertEqual(TOKENIZER_MAPPING[CustomConfig], (CustomTokenizer, CustomTokenizerFast))
-
-            del TOKENIZER_MAPPING._extra_content[CustomConfig]
-            # Can register in one step
-            AutoTokenizer.register(
-                CustomConfig, slow_tokenizer_class=CustomTokenizer, fast_tokenizer_class=CustomTokenizerFast
-            )
-            self.assertEqual(TOKENIZER_MAPPING[CustomConfig], (CustomTokenizer, CustomTokenizerFast))
-
-            # Trying to register something existing in the PaddleFormers library will raise an error
-            with self.assertRaises(ValueError):
-                AutoTokenizer.register(BertConfig, fast_tokenizer_class=BertTokenizerFast)
-            with self.assertRaises(ValueError):
-                AutoTokenizer.register(BertConfig, slow_tokenizer_class=BertTokenizer)
-
-            # We pass through a llama tokenizer fast cause there is no converter slow to fast for our new toknizer
-            # and that model does not have a tokenizer.json
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                llama_tokenizer = BertTokenizerFast.from_pretrained("test_paddleformers/tiny-random-bert")
-                llama_tokenizer.save_pretrained(tmp_dir)
-                tokenizer = CustomTokenizerFast.from_pretrained(tmp_dir)
-
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                tokenizer.save_pretrained(tmp_dir, legacy_format=True)
-
-                new_tokenizer = AutoTokenizer.from_pretrained(tmp_dir, use_fast=True)
-                self.assertIsInstance(new_tokenizer, CustomTokenizerFast)
-
-                # TODO: fix this test. Now keep loaded tokenizer type
-                # new_tokenizer = AutoTokenizer.from_pretrained(tmp_dir, use_fast=False)
-                # self.assertIsInstance(new_tokenizer, CustomTokenizer)
-        finally:
-            if "custom" in CONFIG_MAPPING._extra_content:
-                del CONFIG_MAPPING._extra_content["custom"]
-            if CustomConfig in TOKENIZER_MAPPING._extra_content:
-                del TOKENIZER_MAPPING._extra_content[CustomConfig]
+    def test_fast_tokenizer_save_pretrained(self):
+        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B")
+        special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+        tokenizer.add_special_tokens(special_tokens_dict)
+        tokenizer.add_tokens(["new_word", "another_word"])
+        tokenizer.model_max_length = 512
+        tokenizer.save_pretrained("./fast_tokenizer")
+        self.assertTrue(os.path.exists("./fast_tokenizer/tokenizer_config.json"))

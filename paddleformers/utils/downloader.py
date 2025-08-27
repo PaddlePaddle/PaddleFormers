@@ -24,7 +24,6 @@ import zipfile
 from collections import OrderedDict
 from typing import Optional, Union
 
-import paddle.distributed as dist
 import requests
 from filelock import FileLock
 from huggingface_hub import get_hf_file_metadata, hf_hub_url
@@ -530,6 +529,7 @@ def get_static_model_on_pdc(remote_path, local_path, timeout, enable_flash_devic
     Returns:
         str: path to load static model
     """
+    # TODO: This function will be removed in a future release.
     try:
         base_dir, target_dir = os.path.split(os.path.normpath(local_path))
         if not os.path.exists(base_dir) and base_dir != "":
@@ -543,6 +543,9 @@ def get_static_model_on_pdc(remote_path, local_path, timeout, enable_flash_devic
     persistent_path = local_path
 
     device_id = int(os.getenv("FLAGS_selected_gpus", "0"))
+
+    import paddle.distributed as dist
+
     if device_id != 0:
         logger.info("Waiting local process 0...")
         dist.barrier()
