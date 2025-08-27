@@ -44,12 +44,16 @@ if TYPE_CHECKING:
     from paddleformers.transformers import PretrainedModel
 
 import numpy as np
-import paddle
 import tqdm
 from huggingface_hub import hf_hub_download, try_to_load_from_cache
 from huggingface_hub.utils import EntryNotFoundError
-from paddle.common_ops_import import convert_dtype
-from paddle.nn import Layer
+
+try:
+    import paddle
+    from paddle.common_ops_import import convert_dtype
+    from paddle.nn import Layer
+except:
+    pass
 from requests.exceptions import HTTPError
 
 from ..utils.download import resolve_file_path

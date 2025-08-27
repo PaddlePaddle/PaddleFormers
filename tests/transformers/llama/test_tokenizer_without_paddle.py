@@ -1,5 +1,5 @@
-# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2024 The Qwen team, Alibaba Group and the HuggingFace Team. All rights reserved.
+# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright 2020 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,24 +17,12 @@ import shutil
 import sys
 import unittest
 
-from paddleformers.transformers import Ernie4_5_VLTokenizer
-
-sys.modules["paddle"] = None
-
-HUB_FLAG = "aistudio"
+from paddleformers.transformers import LlamaTokenizer, LlamaTokenizerFast
 
 
-@unittest.skip("skipping due to connection error!")
-class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
-    from_pretrained_id = "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Base-PT"
-    tokenizer_class = Ernie4_5_VLTokenizer
-    test_slow_tokenizer = True
-    space_between_special_tokens = False
-    from_pretrained_kwargs = None
-    test_seq2seq = False
-
+class TestTokenizer(unittest.TestCase):
     def setUp(self):
-        self.test_dirs = ["./slow_tokenizer"]
+        self.test_dirs = ["./slow_tokenizer", "./fast_tokenizer"]
         for test_dir in self.test_dirs:
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
@@ -45,31 +33,36 @@ class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
         for test_dir in self.test_dirs:
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
-        if "paddle" in sys.modules:
-            del sys.modules["paddle"]
 
     def test_slow_tokenizer_from_pretrained(self):
-        tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
-        )
+        tokenizer = LlamaTokenizer.from_pretrained("PaddleNLP/Llama-2-7b")
         self.assertTrue(tokenizer is not None)
 
     def test_slow_tokenizer_save_pretrained(self):
-        tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
-        )
+        tokenizer = LlamaTokenizer.from_pretrained("PaddleNLP/Llama-2-7b")
+        special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+        tokenizer.add_special_tokens(special_tokens_dict)
+        tokenizer.add_tokens(["new_word", "another_word"])
         tokenizer.model_max_length = 512
         tokenizer.save_pretrained("./slow_tokenizer")
         self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
 
+    def test_fast_tokenizer_from_pretrained(self):
+        tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b")
+        self.assertTrue(tokenizer is not None)
+
+    def test_fast_tokenizer_save_pretrained(self):
+        tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b")
+        special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+        tokenizer.add_special_tokens(special_tokens_dict)
+        tokenizer.add_tokens(["new_word", "another_word"])
+        tokenizer.model_max_length = 512
+        tokenizer.save_pretrained("./fast_tokenizer")
+        self.assertTrue(os.path.exists("./fast_tokenizer/tokenizer_config.json"))
+
     def test_tokenize(self):
-        tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
-        )
+        tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b")
         text = "hello world, this is a tokenizer test"
         output_dict = tokenizer(text)
         decode_text = tokenizer.decode(output_dict["input_ids"], skip_special_tokens=True)
         self.assertEqual(text, decode_text)
-
-
-Ernie4_5_VL_TokenizationTest().test_slow_tokenizer_from_pretrained()

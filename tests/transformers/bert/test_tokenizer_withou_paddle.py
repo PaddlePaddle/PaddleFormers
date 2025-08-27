@@ -23,6 +23,7 @@ from paddleformers.transformers import BertTokenizer, BertTokenizerFast
 
 class TestTokenizer(unittest.TestCase):
     def setUp(self):
+
         self.test_dirs = ["./slow_tokenizer", "./fast_tokenizer"]
         for test_dir in self.test_dirs:
             if os.path.exists(test_dir):
@@ -32,6 +33,8 @@ class TestTokenizer(unittest.TestCase):
         for test_dir in self.test_dirs:
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
+        if "paddle" in sys.modules:
+            del sys.modules["paddle"]
 
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = BertTokenizer.from_pretrained("aistudio/bert-base-uncased")

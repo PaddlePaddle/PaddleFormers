@@ -33,7 +33,11 @@ from transformers.utils.generic import ExplicitEnum
 
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.log import logger
-from .legacy.tokenizer_utils import PretrainedTokenizer
+
+try:
+    from .legacy.tokenizer_utils import PretrainedTokenizer
+except:
+    from transformers import PreTrainedTokenizer as PretrainedTokenizer
 
 # legacy PretrainedTokenizer, which is different from huggingface PreTrainedTokenizer
 

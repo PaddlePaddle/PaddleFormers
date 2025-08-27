@@ -38,6 +38,8 @@ class TestTokenizer(unittest.TestCase):
                 shutil.rmtree(test_dir)
 
     def tearDown(self):
+        if "paddle" in sys.modules:
+            del sys.modules["paddle"]
         for test_dir in self.test_dirs:
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
