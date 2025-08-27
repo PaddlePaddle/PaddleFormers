@@ -20,7 +20,6 @@
 """Paddle Qwen3 model."""
 from __future__ import annotations
 
-import os
 from functools import partial
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -38,7 +37,6 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Qwen3MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
-from ...utils.tools import get_env_device
 from ..contrastive_loss import SimpleContrastiveLoss
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..embedding_utils import dist_gather_tensor_with_gradient
@@ -49,14 +47,7 @@ from ..model_outputs import (
     TokenClassifierOutput,
 )
 from ..model_utils import PretrainedModel, register_base_model
-from ..qwen2.modeling import (
-    Qwen2Attention,
-    _expand_2d_mask,
-    _make_causal_mask,
-    apply_rotary_pos_emb,
-    is_casual_mask,
-)
-from ..utils import caculate_llm_per_token_flops
+from ..qwen2.modeling import Qwen2Attention, Qwen2RotaryEmbedding, apply_rotary_pos_emb
 from .configuration import Qwen3Config
 
 __all__ = [
@@ -69,43 +60,8 @@ __all__ = [
 ]
 
 
-class Qwen3RotaryEmbedding(nn.Layer):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000):
-        super().__init__()
-        self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        # [dim / 2]
-        self.inv_freq = 1.0 / (self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim))
-        self._set_cos_sin_cache(seq_len=max_position_embeddings)
-
-    def _set_cos_sin_cache(self, seq_len):
-        self.max_seq_len_cached = seq_len
-        if self.inv_freq.dtype != paddle.float32:
-            self.inv_freq = 1.0 / (
-                self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim)
-            )
-        # [seq_len]
-        t = paddle.arange(seq_len, dtype="float32")
-        # [seq_len, dim/2]
-        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        # [seq_len, dim]
-        emb = paddle.concat([freqs, freqs], axis=-1)
-        # [1, seqlen, 1, dim]
-        self.cos_cached = emb.cos()[None, :, None, :]
-        self.sin_cached = emb.sin()[None, :, None, :]
-
-    def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        if seq_len > self.max_seq_len_cached:
-            self._set_cos_sin_cache(seq_len)
-        cos = self.cos_cached[:, :seq_len, :, :]
-        sin = self.sin_cached[:, :seq_len, :, :]
-        return (
-            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
-            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
-        )
+class Qwen3RotaryEmbedding(Qwen2RotaryEmbedding):
+    pass
 
 
 class Qwen3Attention(Qwen2Attention):
@@ -138,57 +94,33 @@ class Qwen3Attention(Qwen2Attention):
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         """Input shape: Batch x Time x Channel"""
         # [bs, seq_len, num_head * head_dim] -> [seq_len / n, bs, num_head * head_dim] (n is model parallelism)
+        query_states = self.q_proj(hidden_states)
+        key_states = self.k_proj(hidden_states)
+        value_states = self.v_proj(hidden_states)
 
-        if self.fuse_attention_qkv:
-            mix_layer = self.qkv_proj(hidden_states)
-            if self.sequence_parallel:
-                target_shape = [
-                    batch_size,
-                    -1,
-                    self.num_key_value_heads,
-                    (self.num_key_value_groups + 2) * self.head_dim,
-                ]
-            else:
-                target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
-            mix_layer = paddle.reshape_(mix_layer, target_shape)
-            query_states, key_states, value_states = paddle.split(
-                mix_layer,
-                num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
-                axis=-1,
-            )
-            # Add qk norm for Qwen3 model.
-            query_states = self.q_norm(query_states)
-            key_states = self.k_norm(key_states)
+        if self.sequence_parallel:
+            target_query_shape = [batch_size, -1, self.num_heads, self.head_dim]
+            target_key_value_shape = [batch_size, -1, self.num_key_value_heads, self.head_dim]
         else:
-            query_states = self.q_proj(hidden_states)
-            key_states = self.k_proj(hidden_states)
-            value_states = self.v_proj(hidden_states)
-
-            if self.sequence_parallel:
-                target_query_shape = [batch_size, -1, self.num_heads, self.head_dim]
-                target_key_value_shape = [batch_size, -1, self.num_key_value_heads, self.head_dim]
-            else:
-                target_query_shape = [0, 0, self.num_heads, self.head_dim]
-                target_key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
-            # Add qk norm for Qwen3 model.
-            query_states = self.q_norm(query_states.reshape(shape=target_query_shape))
-            key_states = self.k_norm(key_states.reshape(shape=target_key_value_shape))
-            value_states = value_states.reshape(shape=target_key_value_shape)
+            target_query_shape = [0, 0, self.num_heads, self.head_dim]
+            target_key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
+        # Add qk norm for Qwen3 model.
+        query_states = self.q_norm(query_states.reshape(shape=target_query_shape))
+        key_states = self.k_norm(key_states.reshape(shape=target_key_value_shape))
+        value_states = value_states.reshape(shape=target_key_value_shape)
 
         if attn_mask_startend_row_indices is None and attention_mask is None:
             self.attn_implementation = "sdpa"
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
-        kv_seq_len = key_states.shape[-3]
-        if past_key_value is not None:
-            kv_seq_len += past_key_value[0].shape[-3]
-        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+        cos, sin = position_embedding
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
         # [bs, seq_len, num_head, head_dim]
@@ -214,18 +146,9 @@ class Qwen3Attention(Qwen2Attention):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
 
-        outputs = (attn_output,)
-
-        if output_attentions:
-            outputs += (attn_weights,)
-
-        if use_cache:
-            outputs += (past_key_value,)
-
-        if type(outputs) is tuple and len(outputs) == 1:
-            outputs = outputs[0]
-
-        return outputs
+        if not output_attentions:
+            attn_weights = None
+        return attn_output, attn_weights, past_key_value
 
 
 class Qwen3DecoderLayer(nn.Layer):
@@ -262,8 +185,8 @@ class Qwen3DecoderLayer(nn.Layer):
         output_attentions: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
+        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-        batch_size: Optional[int] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         """
@@ -286,7 +209,7 @@ class Qwen3DecoderLayer(nn.Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        outputs = self.self_attn(
+        hidden_states, self_attn_weights, present_key_value = self.self_attn(
             hidden_states=hidden_states,
             past_key_value=past_key_value,
             attention_mask=attention_mask,
@@ -294,18 +217,8 @@ class Qwen3DecoderLayer(nn.Layer):
             position_ids=position_ids,
             output_attentions=output_attentions,
             use_cache=use_cache,
+            position_embedding=position_embedding,
         )
-
-        if type(outputs) is tuple:
-            hidden_states = outputs[0]
-        else:
-            hidden_states = outputs
-
-        if output_attentions:
-            self_attn_weights = outputs[1]
-
-        if use_cache:
-            present_key_value = outputs[2 if output_attentions else 1]
 
         hidden_states = residual + hidden_states
 
@@ -483,37 +396,6 @@ class Qwen3PretrainedModel(PretrainedModel):
                     final_actions[keys] = partial(fn, split_nums=2)
         return final_actions
 
-    def _get_model_flops(self):
-        if hasattr(self.config, "seq_length"):
-            seq_length = self.config.seq_length
-        else:
-            seq_length = 2048
-
-        return caculate_llm_per_token_flops(
-            hidden_size=self.config.hidden_size,
-            intermediate_size=self.config.intermediate_size,
-            layer_num=self.config.num_hidden_layers,
-            vocab_size=self.config.vocab_size,
-            seq_length=seq_length,
-            recompute=False,
-        )
-
-    def _get_hardware_flops(self):
-        if hasattr(self.config, "seq_length"):
-            seq_length = self.config.seq_length
-        else:
-            seq_length = 2048
-
-        return caculate_llm_per_token_flops(
-            hidden_size=self.config.hidden_size,
-            intermediate_size=self.config.intermediate_size,
-            layer_num=self.config.num_hidden_layers,
-            vocab_size=self.config.vocab_size,
-            seq_length=seq_length,
-            recompute=self.config.recompute,
-            recompute_granularity=self.config.recompute_granularity,
-        )
-
 
 @register_base_model
 class Qwen3Model(Qwen3PretrainedModel):
@@ -526,18 +408,12 @@ class Qwen3Model(Qwen3PretrainedModel):
 
     def __init__(self, config: Qwen3Config):
         super().__init__(config)
-        self.padding_idx = config.pad_token_id
-        self.vocab_size = config.vocab_size
-
-        self.hidden_size = config.hidden_size
+        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.sequence_parallel = config.sequence_parallel
-        self.recompute_granularity = config.recompute_granularity
-        self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
 
         self.embed_tokens = GeneralEmbedding.create(
             config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
         )
-
         self.layers = nn.LayerList(
             [Qwen3DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
@@ -547,7 +423,11 @@ class Qwen3Model(Qwen3PretrainedModel):
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
         )
-
+        self.rotary_emb = Qwen3RotaryEmbedding(
+            self.head_dim,
+            max_position_embeddings=config.max_position_embeddings,
+            base=config.rope_theta,
+        )
         if config.sequence_parallel:
             self.norm.enable_sequence_parallel()
 
@@ -556,41 +436,6 @@ class Qwen3Model(Qwen3PretrainedModel):
 
     def set_input_embeddings(self, value):
         self.embed_tokens = value
-
-    @staticmethod
-    def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
-        if attention_mask is not None:
-            # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-            if len(attention_mask.shape) == 2:
-                expanded_attn_mask = _expand_2d_mask(attention_mask, dtype, tgt_length=input_shape[-1])
-                # For decoding phase in generation, seq_length = 1, we don't need to add causal mask
-                if input_shape[-1] > 1:
-                    combined_attention_mask = _make_causal_mask(
-                        input_shape,
-                        past_key_values_length=past_key_values_length,
-                    )
-                    expanded_attn_mask = expanded_attn_mask & combined_attention_mask
-            # [bsz, seq_len, seq_len] -> [bsz, 1, seq_len, seq_len]
-            elif len(attention_mask.shape) == 3:
-                expanded_attn_mask = attention_mask.unsqueeze(1).astype("bool")
-            # if attention_mask is already 4-D, do nothing
-            else:
-                expanded_attn_mask = attention_mask
-        else:
-            expanded_attn_mask = _make_causal_mask(
-                input_shape,
-                past_key_values_length=past_key_values_length,
-            )
-        # Convert bool attention_mask to float attention mask, which will be added to attention_scores later
-        if get_env_device() == "xpu":
-            x = paddle.to_tensor(0.0, dtype="float32")
-            y = paddle.to_tensor(-1.7005809656952787e38, dtype="float32")
-            expanded_attn_mask = paddle.where(expanded_attn_mask, x, y)
-        else:
-            expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), 0.0, paddle.finfo(dtype).min).astype(
-                dtype
-            )
-        return expanded_attn_mask
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -602,6 +447,7 @@ class Qwen3Model(Qwen3PretrainedModel):
         output_attentions: bool,
         past_key_value: Tensor,
         use_cache: bool,
+        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
         batch_size: int = None,
     ):
@@ -619,6 +465,7 @@ class Qwen3Model(Qwen3PretrainedModel):
             output_attentions,
             past_key_value,
             use_cache,
+            position_embedding,
             attn_mask_startend_row_indices,
             batch_size,
         )
@@ -654,16 +501,14 @@ class Qwen3Model(Qwen3PretrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-        # NOTE: to make cache can be clear in-time
-        past_key_values = list(past_key_values)
-
         seq_length_with_past = seq_length
         cache_length = 0
-        if past_key_values[0] is not None:
+        if past_key_values is None:
+            past_key_values = tuple([None] * len(self.layers))
+        else:
             cache_length = past_key_values[0][0].shape[1]
             seq_length_with_past += cache_length
+
         if inputs_embeds is None:
             # [bs, seq_len, dim]
             inputs_embeds = self.embed_tokens(input_ids)
@@ -675,26 +520,17 @@ class Qwen3Model(Qwen3PretrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        # embed positions
-        if attn_mask_startend_row_indices is not None or (os.getenv("USE_CASUAL_MASK", "False") == "True"):
+        if attn_mask_startend_row_indices is not None:
             attention_mask = None
         else:
-            # [bs, seq_len]
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
             attention_mask = self._prepare_decoder_attention_mask(
                 attention_mask, (batch_size, seq_length), cache_length, inputs_embeds.dtype
-            )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                attention_mask = None if is_casual_mask(attention_mask) else attention_mask
-
-        if position_ids is None:
-            position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
+            )
 
         hidden_states = inputs_embeds
+
+        # create position embeddings to be shared across the decoder layers
+        position_embedding = self.rotary_emb(hidden_states, seq_length_with_past)
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -704,8 +540,8 @@ class Qwen3Model(Qwen3PretrainedModel):
         for idx, (decoder_layer) in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
 
+            past_key_value = past_key_values[idx] if past_key_values is not None else None
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
                 layer_outputs = self.recompute_training_full(
@@ -716,6 +552,7 @@ class Qwen3Model(Qwen3PretrainedModel):
                     output_attentions,
                     past_key_value,
                     use_cache,
+                    position_embedding,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     batch_size=batch_size,
                 )
@@ -727,13 +564,12 @@ class Qwen3Model(Qwen3PretrainedModel):
                     output_attentions,
                     past_key_value,
                     use_cache,
+                    position_embedding,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     batch_size=batch_size,
                 )
 
-            # NOTE: clear outdate cache after it has been used for memory saving
-            past_key_value = past_key_values[idx] = None
-            if type(layer_outputs) is tuple:
+            if isinstance(layer_outputs, (tuple, list)):
                 hidden_states = layer_outputs[0]
             else:
                 hidden_states = layer_outputs

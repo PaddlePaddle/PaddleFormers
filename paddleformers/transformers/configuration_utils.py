@@ -559,6 +559,7 @@ class PretrainedConfig:
         self.use_cache = kwargs.pop("use_cache", False)
 
         # for transformers fuse
+        self.fuse_linear = kwargs.pop("fuse_linear", False)
         self.fuse_attention_qkv = kwargs.pop("fuse_attention_qkv", False)
         self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
 
@@ -614,6 +615,9 @@ class PretrainedConfig:
         self.num_choices = kwargs.pop("num_choices", None)
 
         self.classifier_dropout = kwargs.pop("classifier_dropout", None)
+
+        self.dpo_config = kwargs.pop("dpo_config", None)
+        self.kto_config = kwargs.pop("kto_config", None)
 
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config
         self.tokenizer_class = kwargs.pop("tokenizer_class", None)

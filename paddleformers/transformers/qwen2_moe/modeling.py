@@ -35,7 +35,6 @@ from ..activations import ACT2FN
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..linear_utils import Linear
 from ..llama import fusion_ops
-from ..llama.modeling import get_use_casual_mask
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
@@ -1348,23 +1347,12 @@ class Qwen2MoeModel(Qwen2MoePretrainedModel):
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         # embed positions
-        if attn_mask_startend_row_indices is not None or get_use_casual_mask():
+        if attn_mask_startend_row_indices is not None:
             attention_mask = None
         else:
-            # [bs, seq_len]
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
             attention_mask = self._prepare_decoder_attention_mask(
                 attention_mask, (batch_size, seq_length), cache_length, inputs_embeds.dtype
-            )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                attention_mask = None if is_casual_mask(attention_mask) else attention_mask
-
-        if position_ids is None:
-            position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
+            )
 
         hidden_states = inputs_embeds
 

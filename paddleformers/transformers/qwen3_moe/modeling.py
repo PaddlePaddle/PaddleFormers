@@ -29,7 +29,6 @@ from paddle.distributed.fleet.utils import recompute
 
 from .. import linear_utils
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
-from ..llama.modeling import get_use_casual_mask
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_layer import MoELayer
@@ -49,12 +48,7 @@ __all__ = [
 ]
 
 from ..qwen2_moe.modeling import Qwen2MoeGate, Qwen2MoeMLP, load_balancing_loss_func
-from ..qwen3.modeling import (
-    Qwen3Attention,
-    _expand_2d_mask,
-    _make_causal_mask,
-    is_casual_mask,
-)
+from ..qwen3.modeling import Qwen3Attention
 
 
 class Qwen3MoeRMSNorm:
@@ -552,34 +546,6 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
     def set_input_embeddings(self, value):
         self.embed_tokens = value
 
-    @staticmethod
-    def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
-        if attention_mask is not None:
-            # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-            if len(attention_mask.shape) == 2:
-                expanded_attn_mask = _expand_2d_mask(attention_mask, dtype, tgt_length=input_shape[-1])
-                # For decoding phase in generation, seq_length = 1, we don't need to add causal mask
-                if input_shape[-1] > 1:
-                    combined_attention_mask = _make_causal_mask(
-                        input_shape,
-                        past_key_values_length=past_key_values_length,
-                    )
-                    expanded_attn_mask = expanded_attn_mask & combined_attention_mask
-            # [bsz, seq_len, seq_len] -> [bsz, 1, seq_len, seq_len]
-            elif len(attention_mask.shape) == 3:
-                expanded_attn_mask = attention_mask.unsqueeze(1).astype("bool")
-            # if attention_mask is already 4-D, do nothing
-            else:
-                expanded_attn_mask = attention_mask
-        else:
-            expanded_attn_mask = _make_causal_mask(
-                input_shape,
-                past_key_values_length=past_key_values_length,
-            )
-        # Convert bool attention_mask to float attention mask, which will be added to attention_scores later
-        expanded_attn_mask = paddle.where(expanded_attn_mask.to("bool"), 0.0, paddle.finfo(dtype).min).astype(dtype)
-        return expanded_attn_mask
-
     @paddle.jit.not_to_static
     def recompute_training_full(
         self,
@@ -672,23 +638,12 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         # embed positions
-        if attn_mask_startend_row_indices is not None or get_use_casual_mask():
+        if attn_mask_startend_row_indices is not None:
             attention_mask = None
         else:
-            # [bs, seq_len]
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
             attention_mask = self._prepare_decoder_attention_mask(
                 attention_mask, (batch_size, seq_length), cache_length, inputs_embeds.dtype
-            )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                attention_mask = None if is_casual_mask(attention_mask) else attention_mask
-
-        if position_ids is None:
-            position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
+            )
 
         hidden_states = inputs_embeds
 

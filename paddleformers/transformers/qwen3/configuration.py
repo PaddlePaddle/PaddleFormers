@@ -64,8 +64,6 @@ class Qwen3Config(PretrainedConfig):
         use_cache (`bool`, *optional*, defaults to `True`):
             Whether or not the model should return the last key/values attentions (not used by all models). Only
             relevant if `config.is_decoder=True`.
-        use_flash_attention (`bool`, *optional*, defaults to `False`):
-            Whether to use FlashAttention for optimized attention computation.
         tie_word_embeddings (`bool`, *optional*, defaults to `False`):
             Whether the model's input and output word embeddings should be tied.
         rope_theta (`float`, *optional*, defaults to 10000.0):
@@ -147,11 +145,7 @@ class Qwen3Config(PretrainedConfig):
         max_position_embeddings=32768,
         initializer_range=0.02,
         rms_norm_eps=1e-6,
-        recompute=False,
-        recompute_granularity="core_attn",
-        recompute_use_reentrant=False,
         use_cache=True,
-        use_flash_attention=False,
         tie_word_embeddings=False,
         rope_theta=10000.0,
         rope_scaling=None,
@@ -160,12 +154,6 @@ class Qwen3Config(PretrainedConfig):
         sliding_window=4096,
         max_window_layers=28,
         attention_dropout=0.0,
-        fuse_linear=False,
-        fuse_attention_qkv=False,
-        fuse_attention_ffn=False,
-        dpo_config=None,
-        kto_config=None,
-        use_fused_head_and_loss_fn=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -187,27 +175,17 @@ class Qwen3Config(PretrainedConfig):
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
-        self.use_flash_attention = use_flash_attention
         self.use_cache = use_cache
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
-        self.fuse_linear = fuse_linear
-        self.fuse_attention_qkv = fuse_attention_qkv
-        self.fuse_attention_ffn = fuse_attention_ffn
-        self.recompute = recompute
-        self.recompute_granularity = recompute_granularity
-        self.recompute_use_reentrant = recompute_use_reentrant
 
         # Validate the correctness of rotary position embeddings parameters
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
         # rope_config_validation(self)
-        self.dpo_config = dpo_config
-        self.kto_config = kto_config
-        self.use_fused_head_and_loss_fn = use_fused_head_and_loss_fn
 
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,
