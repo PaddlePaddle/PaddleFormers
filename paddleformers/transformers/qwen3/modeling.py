@@ -73,10 +73,10 @@ class Qwen3Attention(Qwen2Attention):
     def __init__(self, config: Qwen3Config, layer_idx: int = 0):
         super().__init__(config, layer_idx)
         self.q_norm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
+            config, hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
         )  # unlike olmo, only on the head dim!
         self.k_norm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
+            config, hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
         )  # thus post q_norm does not need reshape
         self.sliding_window = config.sliding_window
         if not (
@@ -161,13 +161,11 @@ class Qwen3DecoderLayer(nn.Layer):
         self.mlp = Qwen3MLP(config)
         self.input_layernorm = GeneralNorm.create(
             config=config,
-            norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
         )
         self.post_attention_layernorm = GeneralNorm.create(
             config=config,
-            norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
         )
@@ -247,6 +245,7 @@ class Qwen3PretrainedModel(PretrainedModel):
     config_class = Qwen3Config
     base_model_prefix = "model"
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
     def _get_name_mappings(cls, config: Qwen3Config) -> list[StateDictNameMapping]:
@@ -419,7 +418,6 @@ class Qwen3Model(Qwen3PretrainedModel):
         )
         self.norm = GeneralNorm.create(
             config=config,
-            norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
         )
@@ -735,8 +733,6 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
 
         hidden_states = outputs[0]
 
-        # if labels is None，means we need full output, instead of tensor_parallel_output
-        # tensor_parallel_output is together with ParallelCrossEntropy
         logits = self.lm_head(hidden_states)
 
         loss = None

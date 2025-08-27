@@ -130,7 +130,6 @@ class Qwen2Attention(nn.Layer):
 
     def __init__(self, config: Qwen2Config, layer_idx: int = 0):
         super().__init__()
-        self.layer_idx = layer_idx
         self.config = config
         self.attention_bias = config.attention_bias
         self.attn_implementation = config._attn_implementation
@@ -258,20 +257,17 @@ class Qwen2Attention(nn.Layer):
 class Qwen2DecoderLayer(nn.Layer):
     def __init__(self, config: Qwen2Config, layer_idx: int):
         super().__init__()
-        self.layer_idx = layer_idx
         self.config = config
         self.hidden_size = config.hidden_size
         self.self_attn = Qwen2Attention(config, layer_idx)
         self.mlp = Qwen2MLP(config)
         self.input_layernorm = GeneralNorm.create(
             config=config,
-            norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
         )
         self.post_attention_layernorm = GeneralNorm.create(
             config=config,
-            norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
         )
@@ -351,6 +347,7 @@ class Qwen2PretrainedModel(PretrainedModel):
     config_class = Qwen2Config
     base_model_prefix = "model"
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
     def _get_name_mappings(cls, config: Qwen2Config) -> list[StateDictNameMapping]:
@@ -534,7 +531,6 @@ class Qwen2Model(Qwen2PretrainedModel):
         )
         self.norm = GeneralNorm.create(
             config=config,
-            norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
         )
@@ -848,8 +844,6 @@ class Qwen2ForCausalLM(Qwen2PretrainedModel):
 
         hidden_states = outputs[0]
 
-        # if labels is None，means we need full output, instead of tensor_parallel_output
-        # tensor_parallel_output is togather with ParallelCrossEntropy
         logits = self.lm_head(hidden_states)
 
         loss = None
