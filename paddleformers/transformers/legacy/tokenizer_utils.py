@@ -29,16 +29,12 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy
 import numpy as np
+import paddle
 import six
 from jinja2 import Template
 from jinja2.exceptions import TemplateError, TemplateSyntaxError
 from jinja2.sandbox import ImmutableSandboxedEnvironment
-
-try:
-    import paddle
-    from paddle.utils import try_import
-except:
-    pass
+from paddle.utils import try_import
 
 from ...utils.env import CHAT_TEMPLATE_CONFIG_NAME
 from ...utils.log import logger

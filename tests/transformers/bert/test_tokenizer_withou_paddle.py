@@ -17,8 +17,12 @@ import shutil
 import sys
 import unittest
 
+import paddle as paddle_shadow
+
 sys.modules["paddle"] = None
 from paddleformers.transformers import BertTokenizer, BertTokenizerFast
+
+sys.modules["paddle"] = paddle_shadow
 
 
 class TestTokenizer(unittest.TestCase):
@@ -33,8 +37,6 @@ class TestTokenizer(unittest.TestCase):
         for test_dir in self.test_dirs:
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
-        if "paddle" in sys.modules:
-            del sys.modules["paddle"]
 
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = BertTokenizer.from_pretrained("aistudio/bert-base-uncased")

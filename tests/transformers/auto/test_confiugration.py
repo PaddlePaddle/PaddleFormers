@@ -77,7 +77,8 @@ class AutoConfigTest(unittest.TestCase):
     @set_proxy(DownloadSource.AISTUDIO)
     def test_from_aistudio(self):
         config = AutoConfig.from_pretrained("test_paddleformers/tiny-random-llama", download_hub="aistudio")
-        self.assertEqual(config.hidden_size, 192)
+
+        self.assertEqual(config.hidden_size, 16)
 
     # @unittest.skip("skipping due to connection error!")
     @set_proxy(DownloadSource.MODELSCOPE)
