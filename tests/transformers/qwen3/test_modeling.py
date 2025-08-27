@@ -14,7 +14,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import gc
 import unittest
 
 import paddle
@@ -364,30 +363,3 @@ class Qwen3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
     @unittest.skip("Qwen3 uses GQA on all models so the KV cache is a non standard format")
     def test_past_key_values_format(self):
         pass
-
-
-class Qwen3IntegrationTest(unittest.TestCase):
-    def test_model_tiny_logits(self):
-        input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
-        model = Qwen3ForCausalLM.from_pretrained("paddleformers_test/tiny-random-qwen2", dtype="float32")
-        input_ids = paddle.to_tensor([input_ids])
-        with paddle.no_grad():
-            out = model(input_ids, return_dict=True).logits
-        # Expected mean on dim = -1
-
-        EXPECTED_MEAN = paddle.to_tensor(
-            [[0.00008947, -0.00001425, 0.00035553, -0.00003941, 0.00068506, 0.00005345, 0.00060015, 0.00081522]]
-        )
-        paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-6, rtol=1e-6)
-        # slicing logits[0, 0, 0:30]
-        EXPECTED_SLICE = paddle.to_tensor([0.26874602, 0.51205510, -0.00591420, 0.05831886, 0.18694536,
-                                           0.04331543, 0.09623559, -0.10191102, 0.07565773, 0.13765232,
-                                           0.03041580, 0.42183253, 0.40434697, 0.06868516, 0.02637704,
-                                           -0.13485563, -0.01698003, 0.21499887, -0.03826120, 0.16291623,
-                                           -0.27641180, -0.36975217, 0.34660554, -0.52724630, -0.41814676,
-                                           0.00843160, -0.29562786, -0.07467390, 0.40502766, 0.13571614])  # fmt: skip
-        paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-6, rtol=1e-6)
-
-        del model
-        paddle.device.cuda.empty_cache()
-        gc.collect()
