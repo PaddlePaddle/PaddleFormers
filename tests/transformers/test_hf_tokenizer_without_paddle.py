@@ -16,10 +16,12 @@
 import sys
 import unittest
 
+import paddle as paddle_shadow
+
 sys.modules["paddle"] = None
 from paddleformers.transformers import AutoTokenizer, Qwen2Tokenizer
 
-del sys.modules["paddle"]
+sys.modules["paddle"] = paddle_shadow
 
 
 @unittest.skip("don't support multisource download")

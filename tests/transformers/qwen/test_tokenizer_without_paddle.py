@@ -17,10 +17,12 @@ import shutil
 import sys
 import unittest
 
+import paddle as paddle_shadow
+
 sys.modules["paddle"] = None
 from paddleformers.transformers import QWenTokenizer
 
-del sys.modules["paddle"]
+sys.modules["paddle"] = paddle_shadow
 
 
 class QwenTokenizationTest(unittest.TestCase):
