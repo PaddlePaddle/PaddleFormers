@@ -28,7 +28,12 @@ from huggingface_hub.utils import (
     RepositoryNotFoundError,
     RevisionNotFoundError,
 )
-from paddle import __version__
+
+try:
+    from paddle import __version__
+except ImportError:
+    __version__ = ""
+
 from requests import HTTPError
 
 from ..log import logger
@@ -173,7 +178,6 @@ def resolve_file_path(
     subfolder: Optional[str] = None,
     repo_type: Optional[str] = None,
     revision: Optional[str] = None,
-    library_name: Optional[str] = "PaddleNLP",
     library_version: Optional[str] = __version__,
     cache_dir: Union[str, Path, None] = None,
     local_dir: Union[str, Path, None] = None,
@@ -186,10 +190,6 @@ def resolve_file_path(
     token: Union[bool, str, None] = None,
     local_files_only: bool = False,
     endpoint: Optional[str] = None,
-    url: Optional[str] = None,
-    from_aistudio: bool = False,
-    from_hf_hub: bool = False,
-    from_bos: bool = True,
     download_hub: Optional[DownloadSource] = None,
 ) -> str:
     """
@@ -198,8 +198,6 @@ def resolve_file_path(
     It supports downloading files from four different download sources, including BOS, AiStudio,
     HuggingFace Hub and ModelScope.
 
-    If you want to download a file from ModelScope, you need to set os.environ["from_modelscope"] = "True"
-
     Args:
         repo_id('str'): A path to a folder containing the file, a path of the file, a url or repo name.
         filenames('str' or list): Name of the file to be downloaded. If it is a str, the file will be downloaded directly,
@@ -207,10 +205,7 @@ def resolve_file_path(
         subfolder('str'): Some repos will exist subfolder.
         repo_type('str'): The default is model.
         cache_dir('str' or Path): Where to save or load the file after downloading.
-        url('str'): If it is not None, then it will be downloaded from BOS.
-        from_aistudio('bool'): If this value is true, it will be downloaded from aistudio.
-        from_hf_hub('bool'): If this value is true, it will be downloaded from hf hub.
-        from_bos('bool'): If this value is true, it will be downloaded from bos (default).
+        download_hub (DownloadSource): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
 
 
     Returns:
@@ -221,6 +216,14 @@ def resolve_file_path(
 
     if isinstance(filenames, str):
         filenames = [filenames]
+    # check repo id
+    if download_hub is None:
+        download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
+        logger.info(f"Using download source: {download_hub}")
+    checked_repo_id = check_repo(repo_id, download_hub)
+    if repo_id != checked_repo_id:
+        repo_id = checked_repo_id
+        logger.warning(f"The repo id check failed, changed to {repo_id}")
 
     download_kwargs = dict(
         repo_id=repo_id,
@@ -228,7 +231,6 @@ def resolve_file_path(
         subfolder=subfolder if subfolder is not None else "",
         repo_type=repo_type,
         revision=revision,
-        library_name=library_name,
         library_version=library_version,
         cache_dir=cache_dir,
         local_dir=local_dir,
@@ -263,32 +265,15 @@ def resolve_file_path(
 
     # check cache
     for filename in filenames:
-        cache_file_name = bos_aistudio_hf_try_to_load_from_cache(
-            repo_id, filename, cache_dir, subfolder, revision, repo_type, from_bos, from_aistudio, from_hf_hub
-        )
-        if from_hf_hub and cache_file_name is _CACHED_NO_EXIST:
+        cache_file_name = hf_try_to_load_from_cache(repo_id, filename, cache_dir, subfolder, revision, repo_type)
+        if download_hub == DownloadSource.HUGGINGFACE and cache_file_name is _CACHED_NO_EXIST:
             cache_file_name = None
-        if cache_file_name is not None:
+        if cache_file_name is not None and os.path.exists(str(cache_file_name)):
             return cache_file_name
-
-    from_modelscope = strtobool(os.environ.get("from_modelscope", False))
 
     # download file from different origins
     try:
-        if filenames[0].startswith("http://") or filenames[0].startswith("https://"):
-            log_endpoint = "BOS"
-            download_kwargs["url"] = filenames[0]
-            download_kwargs["repo_id"] = repo_id
-            if filenames[0].split("/")[-1].endswith("pdparams"):
-                download_kwargs["filename"] = "model_state.pdparams"
-            else:
-                download_kwargs["filename"] = None
-            cached_file = bos_download(
-                **download_kwargs,
-            )
-            return cached_file
-
-        elif from_modelscope:
+        if download_hub == DownloadSource.MODELSCOPE:
             for index, filename in enumerate(filenames):
                 try:
                     from modelscope.hub.file_download import (
@@ -300,36 +285,28 @@ def resolve_file_path(
                     if index < len(filenames) - 1:
                         continue
                     else:
-                        print(f"please make sure one of the {filenames} under the repo {repo_id}")
-                        return None
+                        raise EntryNotFoundError(f"please make sure one of the {filenames} under the repo {repo_id}")
 
-        elif from_aistudio:
-            log_endpoint = "Aistudio Hub"
-            for filename in filenames:
-                download_kwargs["filename"] = filename
-                is_available = bos_aistudio_hf_file_exist(
-                    repo_id,
-                    filename,
-                    subfolder=subfolder,
-                    repo_type=repo_type,
-                    revision=revision,
-                    token=token,
-                    endpoint=endpoint,
-                    from_bos=from_bos,
-                    from_aistudio=from_aistudio,
-                    from_hf_hub=from_hf_hub,
-                )
-                if is_available:
-                    cached_file = aistudio_hub_download(
-                        **download_kwargs,
+        elif download_hub == DownloadSource.AISTUDIO:
+            for index, filename in enumerate(filenames):
+                try:
+                    from aistudio_sdk.file_download import (
+                        model_file_download as aistudio_download,
                     )
-                    if cached_file is not None:
-                        return cached_file
-        elif from_hf_hub:
+
+                    aistudio_cache_dir = os.path.join(cache_dir, repo_id) if cache_dir is not None else None
+                    return aistudio_download(repo_id, filename, revision, local_files_only, aistudio_cache_dir)
+                except Exception:
+                    if index < len(filenames) - 1:
+                        continue
+                    else:
+                        raise EntryNotFoundError(f"please make sure one of the {filenames} under the repo {repo_id}")
+
+        elif download_hub == DownloadSource.HUGGINGFACE:
             log_endpoint = "Huggingface Hub"
             for filename in filenames:
                 download_kwargs["filename"] = filename
-                is_available = bos_aistudio_hf_file_exist(
+                is_available = hf_file_exist(
                     repo_id,
                     filename,
                     subfolder=subfolder,
@@ -337,9 +314,6 @@ def resolve_file_path(
                     revision=revision,
                     token=token,
                     endpoint=endpoint,
-                    from_bos=from_bos,
-                    from_aistudio=from_aistudio,
-                    from_hf_hub=from_hf_hub,
                 )
                 if is_available:
                     cached_file = hf_hub_download(
@@ -349,7 +323,6 @@ def resolve_file_path(
                         return cached_file
         else:
             log_endpoint = "BOS"
-            download_kwargs["url"] = url
             for filename in filenames:
                 download_kwargs["filename"] = filename
                 is_available = bos_aistudio_hf_file_exist(
@@ -360,9 +333,9 @@ def resolve_file_path(
                     revision=revision,
                     token=token,
                     endpoint=endpoint,
-                    from_bos=from_bos,
-                    from_aistudio=from_aistudio,
-                    from_hf_hub=from_hf_hub,
+                    from_bos=True,
+                    from_aistudio=False,
+                    from_hf_hub=False,
                 )
                 if is_available:
                     cached_file = bos_download(

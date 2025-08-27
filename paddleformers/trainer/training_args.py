@@ -1541,12 +1541,6 @@ class TrainingArguments:
                         assert (
                             "split_param" in sharding_parallel_config
                         ), "split_param should be set when enable_stage1_allgather_overlap."
-                        use_casual_mask = os.getenv("USE_CASUAL_MASK", "False")
-                        assert use_casual_mask, "enable_stage1_allgather_overlap requires USE_CASUAL_MASK=True."
-                        assert self.logging_steps > 1, (
-                            "The logging_steps should be greater than 1 for enable_stage1_allgather_overlap, "
-                            f"but got logging_steps={self.logging_steps}."
-                        )
 
                     if "split_param" in sharding_parallel_config:
                         if ShardingOption.SHARD_OP not in self.sharding:
@@ -1907,12 +1901,32 @@ class TrainingArguments:
             self.refined_recompute = refined_recompute_dict
 
         # process fault tolerance settings
-        if not is_ft_env():
-            if self.pdc_download_ckpt:
-                logger.warning(
-                    "pdc_download_ckpt can only be set as true inside FT environment. Automatically disable it now."
-                )
-                self.pdc_download_ckpt = False
+        pdc_zcc_init_step = os.getenv("PDC_FC_INIT_STEP")
+        if pdc_zcc_init_step is not None and int(pdc_zcc_init_step) > 0:
+            self.resume_from_checkpoint = os.path.join(FLASH_DEVICE, f"{PREFIX_CHECKPOINT_DIR}-{pdc_zcc_init_step}")
+            logger.warning(
+                f"PDC_FC_INIT_STEP {pdc_zcc_init_step} has been specified, automatically resume from FLASH_DEVICE: {self.resume_from_checkpoint}"
+            )
+        if self.flash_device_save_steps > 0:
+            assert (
+                self.enable_zero_cost_checkpoint
+            ), "flash_device_save_steps should only be set in zero cost checkpoint save mode with flash device mounted."
+
+        if self.enable_zero_cost_checkpoint:
+            assert (
+                "enable_fuse_optimizer_states" in sharding_parallel_config
+            ), "zero cost checkpoint must be used when enable_fuse_optimizer_states is enabled in sharding parallel config"
+
+        assert (
+            self.flash_device_save_steps % self.zcc_ema_interval == 0
+        ), f"flash_device_save_steps[{self.flash_device_save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
+        assert (
+            self.save_steps % self.zcc_ema_interval == 0
+        ), f"save_steps[{self.save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
+        if self.zcc_save_ema_coef is not None:
+            assert (
+                self.zcc_workers_num == 1
+            ), "EMA function in zero cost checkpoint mode does not support zcc_workers_num > 1 for now."
 
     def _post_init_parallel_degree(self):
         self.use_hybrid_parallel = False
@@ -1978,11 +1992,6 @@ class TrainingArguments:
             if sharding_parallel_degree == 1 and len(self.sharding) > 0:
                 logger.warning("sharding_parallel_degree=1 means no sharding, please set sharding to empty!")
                 self.sharding = []
-
-            if sharding_parallel_degree > 1:
-                assert (
-                    sharding_parallel_degree % expert_parallel_degree == 0
-                ), f"sharding_parallel_degree should be divided by expert_parallel_degree, current sharding_parallel_degree: {sharding_parallel_degree}, expert_parallel_degree: {expert_parallel_degree}."
 
             self.data_parallel_degree = world_size // (
                 sharding_parallel_degree

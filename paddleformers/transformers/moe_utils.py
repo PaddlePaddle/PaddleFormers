@@ -66,7 +66,8 @@ def topk_to_permuted_indices(x, num_tokens_per_expert_list, topk):
 
 def permute(
     tokens,
-    token_permuted_indices,
+    routing_map,
+    num_out_tokens: Optional[int] = None,
     drop_and_pad: bool = False,
 ):
     """Permute the tokens and probs based on the mask.
@@ -76,21 +77,35 @@ def permute(
 
     Args:
         tokens (paddle.Tensor): The input token tensor, [num_tokens, hidden].
+        routing_map (paddle.Tensor): The sparse token to expert mapping, [num_tokens, num_experts].
+        num_out_tokens (int, optional): The number of output tokens. If None, it's set to
+                                        the number of input tokens.
         drop_and_pad (bool, optional): Whether or not the token dispatcher uses token-drop
                                        and pads the number of tokens to the expert capacity.
     """
     assert not drop_and_pad, "token-drop and pads is not supported"
-    # permuted_input = paddle.gather(tokens, token_permuted_indices)
-    permuted_input = tokens.index_select(axis=0, index=token_permuted_indices)
-    return permuted_input
+    num_tokens, hidden = tokens.shape
+    num_experts = routing_map.shape[1]
+
+    # mask [num_tokens, num_experts] -> [num_experts, num_tokens]
+    routing_map = routing_map.cast(paddle.bool).T.contiguous()
+
+    # Create a dense expert-to-token mapping from the sparse token-to-expert mapping
+    token_indices = paddle.arange(num_tokens).unsqueeze(0).expand([num_experts, -1])
+    sorted_indices = token_indices.masked_select(routing_map)
+
+    # use the mapping to permute the tokens
+    permuted_input = tokens.index_select(axis=0, index=sorted_indices)
+
+    return permuted_input, sorted_indices
 
 
 def unpermute(
     permuted_tokens: paddle.Tensor,
-    token_permuted_indices: paddle.Tensor,
-    prob_permuted_indices: paddle.Tensor,
+    sorted_indices: paddle.Tensor,
     restore_shape: paddle.shape,
     probs: paddle.Tensor = None,
+    routing_map: paddle.Tensor = None,
     drop_and_pad: bool = False,
 ):
     """
@@ -99,9 +114,11 @@ def unpermute(
 
     Args:
         permuted_tokens (paddle.Tensor): The permuted token tensor.
-        token_permuted_indices (paddle.Tensor): The indices used to sort the tokens.
+        sorted_indices (paddle.Tensor): The indices used to sort the tokens.
         restore_shape (paddle.shape): The shape of the unpermuted tensor.
         probs (paddle.Tensor, optional): The unpermuted probs tensor,
+        routing_map (paddle.Tensor, optional): Token to expert mapping, shape
+            [num_tokens, num_experts].
         drop_and_pad (bool, optional): Whether or not the token dispatcher uses token-drop
                                        and pads the number of tokens to the expert capacity.
 
@@ -110,22 +127,23 @@ def unpermute(
     """
     assert not drop_and_pad, "token-drop and pads is not supported"
     _, hidden = restore_shape
+
     if probs is not None:
-        permuted_probs = paddle.gather(probs.flatten(), prob_permuted_indices)
+        assert routing_map is not None, "Mask must be provided to permute the probs."
+        permuted_probs = probs.T.contiguous().masked_select(routing_map.T.contiguous())
         permuted_tokens = permuted_tokens * permuted_probs.unsqueeze(-1)
+
     # Create an output tensor filled with zeros
     output_tokens = paddle.zeros(restore_shape, dtype=permuted_tokens.dtype)
     # Scatter add the permuted_input back to the original positions
-
     output_tokens.put_along_axis_(
         axis=0,
-        indices=token_permuted_indices.unsqueeze(1).expand([-1, hidden]),
+        indices=sorted_indices.unsqueeze(1).expand([-1, hidden]),
         values=permuted_tokens,
         reduce="add",
         include_self=True,
     )
     return output_tokens
-
 
 class UnZipNode:
     def __init__(self, name="unzip"):
