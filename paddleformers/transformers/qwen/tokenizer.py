@@ -21,8 +21,9 @@ import unicodedata
 from typing import Collection, Dict, List, Set, Tuple, Union
 
 import tiktoken
-from transformers import AddedToken
-from ..tokenizer_utils import PreTrainedTokenizer
+from transformers import AddedToken, PreTrainedTokenizer
+
+from ..tokenizer_utils import PaddleTokenizerMixin
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def _load_tiktoken_bpe(tiktoken_bpe_file: str) -> Dict[bytes, int]:
     }
 
 
-class QWenTokenizer(PreTrainedTokenizer):
+class QWenTokenizer(PaddleTokenizerMixin, PreTrainedTokenizer):
     """QWen tokenizer."""
 
     vocab_files_names = VOCAB_FILES_NAMES
