@@ -122,6 +122,10 @@ import_structure = {
         "get_triangle_upper_mask",
         "DeepseekV2LinearScalingRotaryEmbedding",
     ],
+    "deepseek_v2.modeling_fast": [
+        "DeepseekV2ModelFast",
+        "DeepseekV2PretrainedModelFast",
+    ],
     "deepseek_v2.modeling_auto": [
         "DeepseekV2LMHeadAuto",
         "DeepseekV2ForCausalLMAuto",

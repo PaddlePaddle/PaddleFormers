@@ -40,7 +40,7 @@ from ...utils.log import logger
 from ...utils.tools import get_env_device
 from ..model_utils import PipelinePretrainedModel
 
-if not strtobool(os.getenv("DSV3_FAST_PRETRAIN", "False")):
+if not os.getenv("DSV3_FAST_PRETRAIN", "False"):
     from .modeling import (
         DeepseekV2Config,
         DeepseekV2DecoderLayer,
