@@ -25,9 +25,6 @@ import_structure = {
         "DeepseekV3Model",
         "DeepseekV3PretrainedModel",
     ],
-    "modeling_fast": [
-        "DeepseekV3ForCausalLMFast",
-    ],
     "modeling_auto": [
         "DeepseekV3LMHeadAuto",
         "DeepseekV3ForCausalLMAuto",
