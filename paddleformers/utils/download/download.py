@@ -39,6 +39,7 @@ class DownloadSource(str, Enum):
     HUGGINGFACE = "huggingface"
     AISTUDIO = "aistudio"
     MODELSCOPE = "modelscope"
+    BOS = "bos"
 
 
 MODEL_MAPPINGS = {}
@@ -59,6 +60,7 @@ def check_repo(model_name_or_path, download_hub):
             DownloadSource.HUGGINGFACE,
             DownloadSource.AISTUDIO,
             DownloadSource.MODELSCOPE,
+            DownloadSource.BOS,
         ], f"download_hub must be one of {DownloadSource.HUGGINGFACE}, {DownloadSource.AISTUDIO}, {DownloadSource.MODELSCOPE}"
         if model_name_or_path not in HF_MODEL_MAPPINGS.keys():
             # repo id set by user
