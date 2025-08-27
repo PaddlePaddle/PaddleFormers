@@ -130,6 +130,7 @@ class Qwen2Attention(nn.Layer):
 
     def __init__(self, config: Qwen2Config, layer_idx: int = 0):
         super().__init__()
+        self.layer_idx = layer_idx
         self.config = config
         self.attention_bias = config.attention_bias
         self.attn_implementation = config._attn_implementation
