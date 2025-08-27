@@ -14,9 +14,15 @@
 # limitations under the License.
 import os
 import shutil
+import sys
 import unittest
 
+import paddle as paddle_shadow
+
+sys.modules["paddle"] = None
 from paddleformers.transformers import QWenTokenizer
+
+sys.modules["paddle"] = paddle_shadow
 
 
 class QwenTokenizationTest(unittest.TestCase):

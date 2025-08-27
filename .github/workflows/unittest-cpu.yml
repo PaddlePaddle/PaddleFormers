@@ -96,11 +96,6 @@ jobs:
           echo "finished"
           '
 
-      # - name: Upload Coverage To Codecov
-      #   uses: codecov/codecov-action@v3
-      #   timeout-minutes: 2
-      #   env:
-      #     CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       
       - name: Terminate And Delete the Container
         if: always()

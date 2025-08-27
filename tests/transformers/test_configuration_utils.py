@@ -153,6 +153,7 @@ class StandardConfigMappingTest(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
 
     @unittest.skip("skipping due to connection error!")
+    # @set_proxy(DownloadSource.HUGGINGFACE)
     def test_load_from_hf(self):
         """test load config from hf"""
         config = BertConfig.from_pretrained("hf-internal-testing/tiny-random-BertModel", download_hub="huggingface")

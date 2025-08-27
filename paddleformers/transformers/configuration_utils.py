@@ -29,7 +29,6 @@ from dataclasses import field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import paddle
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
 
@@ -581,6 +580,8 @@ class PretrainedConfig:
         if "torch_dtype" in kwargs:
             self.dtype = kwargs.pop("torch_dtype")
         else:
+            import paddle
+
             self.dtype = kwargs.pop("dtype", paddle.get_default_dtype())
 
         # Is decoder is used in encoder-decoder models to differentiate encoder from decoder
