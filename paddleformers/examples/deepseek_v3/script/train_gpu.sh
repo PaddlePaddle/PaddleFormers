@@ -70,6 +70,7 @@ export FLAGS_small_pool_size_in_mb=10
 export FLAGS_samll_pool_pre_alloc_in_mb=500
 export FLAGS_large_pool_pre_alloc_in_mb=61440
 
+export DSV3_FAST_PRETRAIN=true
 # nsys profile --stats=true -t cuda,nvtx -o test_no_quant_cache --force-overwrite true \
 python3.10 -m paddle.distributed.launch \
     --log_dir output/paddle_distributed_logs \
