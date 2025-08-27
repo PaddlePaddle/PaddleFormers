@@ -189,6 +189,7 @@ class Qwen3Config(PretrainedConfig):
         self.head_dim = head_dim
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
+        self.use_swiglu = use_swiglu
         self.use_rmsnorm = use_rmsnorm
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache

@@ -14,7 +14,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import gc
 import unittest
 
 import paddle
@@ -387,7 +386,3 @@ class Qwen2IntegrationTest(unittest.TestCase):
                                            -0.27641180, -0.36975217, 0.34660554, -0.52724630, -0.41814676,
                                            0.00843160, -0.29562786, -0.07467390, 0.40502766, 0.13571614])  # fmt: skip
         paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-6, rtol=1e-6)
-
-        del model
-        paddle.device.cuda.empty_cache()
-        gc.collect()
