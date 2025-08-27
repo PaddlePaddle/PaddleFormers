@@ -19,12 +19,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from .utils.lazy_import import _LazyModule
-from .utils.paddle_patch import *
 
 PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
 
 with suppress(Exception):
     import paddle
+
+    from .utils.paddle_patch import *
 
     paddle.disable_signal_handler()
 
