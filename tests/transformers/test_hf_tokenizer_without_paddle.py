@@ -14,12 +14,12 @@
 
 
 import sys
-
-sys.modules["paddle"] = None
 import unittest
 
-# import paddle
+sys.modules["paddle"] = None
 from paddleformers.transformers import AutoTokenizer, Qwen2Tokenizer
+
+del sys.modules["paddle"]
 
 
 @unittest.skip("don't support multisource download")
@@ -73,10 +73,6 @@ class TestHFTokenizer(unittest.TestCase):
     def setUp(self):
         self.tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B")
 
-    def tearDown(self):
-        if "paddle" in sys.modules:
-            del sys.modules["paddle"]
-
     def test_encode(self):
         input_text = "hello world, this is paddle format checker"
         output_ids = self.tokenizer.encode(input_text, return_tensors="np")[0]
@@ -129,10 +125,6 @@ class TestHFTokenizer(unittest.TestCase):
 
 
 class TestPaddleTokenizerMethod(unittest.TestCase):
-    def tearDown(self):
-        if "paddle" in sys.modules:
-            del sys.modules["paddle"]
-
     def test_encode_chat_inputs(self):
         tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B", download_hub="aistudio")
         query = [["你好", "您好，我是个人人工智能助手"], ["今天吃啥", "你可以选择不同的菜系"]]

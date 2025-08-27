@@ -20,6 +20,8 @@ import unittest
 sys.modules["paddle"] = None
 from paddleformers.transformers import AutoTokenizer
 
+del sys.modules["paddle"]
+
 
 class TestTokenizer(unittest.TestCase):
     def setUp(self):
@@ -33,8 +35,6 @@ class TestTokenizer(unittest.TestCase):
         for test_dir in self.test_dirs:
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
-        if "paddle" in sys.modules:
-            del sys.modules["paddle"]
 
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B", use_fast=False)

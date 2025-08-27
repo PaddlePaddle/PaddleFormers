@@ -20,6 +20,8 @@ import unittest
 sys.modules["paddle"] = None
 from paddleformers.transformers import QWenTokenizer
 
+del sys.modules["paddle"]
+
 
 class QwenTokenizationTest(unittest.TestCase):
     from_pretrained_id = "PaddleNLP/qwen-7b"
@@ -36,8 +38,6 @@ class QwenTokenizationTest(unittest.TestCase):
                 shutil.rmtree(test_dir)
 
     def tearDown(self):
-        if "paddle" in sys.modules:
-            del sys.modules["paddle"]
         for test_dir in self.test_dirs:
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)

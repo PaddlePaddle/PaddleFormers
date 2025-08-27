@@ -18,8 +18,9 @@ import sys
 import unittest
 
 sys.modules["paddle"] = None
-
 from paddleformers.transformers import Qwen2Tokenizer, Qwen2TokenizerFast
+
+del sys.modules["paddle"]
 
 
 class TestTokenizer(unittest.TestCase):
@@ -38,8 +39,7 @@ class TestTokenizer(unittest.TestCase):
                 shutil.rmtree(test_dir)
 
     def tearDown(self):
-        if "paddle" in sys.modules:
-            del sys.modules["paddle"]
+
         for test_dir in self.test_dirs:
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)

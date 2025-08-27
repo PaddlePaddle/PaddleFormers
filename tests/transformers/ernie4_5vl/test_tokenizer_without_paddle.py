@@ -17,9 +17,11 @@ import shutil
 import sys
 import unittest
 
+sys.modules["paddle"] = None
 from paddleformers.transformers import Ernie4_5_VLTokenizer
 
-sys.modules["paddle"] = None
+del sys.modules["paddle"]
+
 
 HUB_FLAG = "aistudio"
 
@@ -40,13 +42,9 @@ class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
                 shutil.rmtree(test_dir)
 
     def tearDown(self):
-        if "paddle" in sys.modules:
-            del sys.modules["paddle"]
         for test_dir in self.test_dirs:
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
-        if "paddle" in sys.modules:
-            del sys.modules["paddle"]
 
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
