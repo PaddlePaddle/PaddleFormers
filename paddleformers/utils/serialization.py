@@ -208,6 +208,8 @@ def dumpy(*args, **kwarsg):
 def load_torch(path: str, **pickle_load_args):
     from ..transformers.utils import device_guard
 
+    state_dict = {}
+
     if path.endswith(PYTORCH_WEIGHTS_NAME) or os.path.split(path)[-1].startswith("pytorch_model-"):
         import torch
 

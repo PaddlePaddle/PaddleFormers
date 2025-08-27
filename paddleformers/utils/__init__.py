@@ -17,6 +17,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from ..utils.lazy_import import _LazyModule
+from .paddle_patch import *
 
 import_structure = {
     "nested": [
@@ -119,7 +120,6 @@ if TYPE_CHECKING:
     except:
         logger.info("Not support custom optimizer")
 
-    from .paddle_patch import *
     from .serialization import load_torch
 
     # hack impl for EagerParamBase to function

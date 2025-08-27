@@ -710,3 +710,58 @@ register_model_group(
         },
     }
 )
+
+register_model_group(
+    models={
+        "ERNIE-4.5-300B-A47B-Base": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-300B-A47B-Base-Paddle",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-300B-A47B-Base-Paddle",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-300B-A47B-Base-Paddle",
+        },
+        "ERNIE-4.5-300B-A47B": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-300B-A47B-Paddle",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-300B-A47B-Paddle",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-300B-A47B-Paddle",
+        },
+        "ERNIE-4.5-21B-A3B-Base": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-21B-A3B-Base-Paddle",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-21B-A3B-Base-Paddle",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-21B-A3B-Base-Paddle",
+        },
+        "ERNIE-4.5-21B-A3B": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-21B-A3B-Paddle",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-21B-A3B-Paddle",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-21B-A3B-Paddle",
+        },
+        "ERNIE-4.5-0.3B-Base": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-0.3B-Base-Paddle",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-0.3B-Base-Paddle",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-0.3B-Base-Paddle",
+        },
+        "ERNIE-4.5-0.3B": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-0.3B-Paddle",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-0.3B-Paddle",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-0.3B-Paddle",
+        },
+        "ERNIE-4.5-VL-424B-A47B-Base": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-VL-424B-A47B-Base-Paddle",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-VL-424B-A47B-Base-Paddle",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-VL-424B-A47B-Base-Paddle",
+        },
+        "ERNIE-4.5-VL-424B": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-VL-424B-Paddle",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-VL-424B-Paddle",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-VL-424B-Paddle",
+        },
+        "ERNIE-4.5-VL-28B-A3B-Base": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-VL-28B-A3B-Base-Paddle",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Base-Paddle",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Base-Paddle",
+        },
+        "ERNIE-4.5-VL-28B-A3B": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-VL-28B-A3B-Paddle",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Paddle",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Paddle",
+        },
+    }
+)
