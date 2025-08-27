@@ -711,6 +711,7 @@ register_model_group(
     }
 )
 
+# ernie
 register_model_group(
     models={
         "ERNIE-4.5-300B-A47B-Base": {

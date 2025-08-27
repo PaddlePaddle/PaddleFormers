@@ -552,11 +552,14 @@ def set_proxy(download_hub: DownloadSource = None):
             if download_hub is None:
                 return func(*args, **kwargs)
             elif download_hub == DownloadSource.HUGGINGFACE:
-                command = "source $work_dir/../../../proxy_hf && env"
+                proxy_path = os.path.abspath(os.environ["HF_PROXY_PATH"])
             elif download_hub == DownloadSource.AISTUDIO:
-                command = "source $work_dir/../../../proxy_aistudio && env"
+                proxy_path = os.path.abspath(os.environ["AISTUDIO_PROXY_PATH"])
             elif download_hub == DownloadSource.MODELSCOPE:
-                command = "source $work_dir/../../../proxy_aistudio && env"  # proxy_aistudio also suit for modelscope
+                proxy_path = os.path.abspath(
+                    os.environ["AISTUDIO_PROXY_PATH"]
+                )  # proxy_aistudio also suit for modelscope
+            command = f"source {proxy_path} && env"
 
             proc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
             out, _ = proc.communicate()
@@ -572,7 +575,6 @@ def set_proxy(download_hub: DownloadSource = None):
             proxy_vars = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]
             if download_hub == DownloadSource.AISTUDIO:
                 proxy_vars.extend(["STUDIO_GIT_HOST", "STUDIO_CDN_HOST"])
-
             for key in proxy_vars:
                 if key in proxy_env:
                     ori_env[key] = os.environ.get(key, "")
