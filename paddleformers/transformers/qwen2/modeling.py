@@ -546,12 +546,6 @@ class Qwen2Model(Qwen2PretrainedModel):
         if config.sequence_parallel:
             self.norm.enable_sequence_parallel()
 
-    def get_input_embeddings(self):
-        return self.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.embed_tokens = value
-
     @paddle.jit.not_to_static
     def recompute_training_full(
         self,
@@ -722,24 +716,6 @@ class Qwen2ForCausalLM(Qwen2PretrainedModel):
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
         self.tie_weights()
-
-    def get_input_embeddings(self):
-        return self.model.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.model.embed_tokens = value
-
-    def get_output_embeddings(self):
-        return self.lm_head
-
-    def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
-
-    def set_decoder(self, decoder):
-        self.model = decoder
-
-    def get_decoder(self):
-        return self.model
 
     def prepare_inputs_for_generation(
         self, input_ids, use_cache=False, past_key_values=None, attention_mask=None, inputs_embeds=None, **kwargs

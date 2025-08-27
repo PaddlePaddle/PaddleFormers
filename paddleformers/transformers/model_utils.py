@@ -1405,14 +1405,24 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         Returns:
             nn.Embedding: embedding of model
         """
-        base_model = getattr(self, self.base_model_prefix, self)
-        if base_model is not self:
-            return base_model.get_input_embeddings()
+        name = getattr(self, "_input_embed_layer", "embed_tokens")
+        default_embedding = getattr(self, name, None)
+        if default_embedding is not None:
+            return default_embedding
 
-        raise NotImplementedError(
-            f"model of {type(base_model)} has not implemented the `get_input_embeddings`"
-            " or `set_input_embeddings` method"
-        )
+        if hasattr(self, "model") and hasattr(self.model, "embed_tokens"):
+            return self.model.embed_tokens
+        elif hasattr(self.model, "embed_tokens"):
+            return self.embed_tokens
+        else:
+            base_model = getattr(self, self.base_model_prefix, self)
+            if base_model is not self:
+                return base_model.get_input_embeddings()
+
+            raise NotImplementedError(
+                f"model of {type(base_model)} has not implemented the `get_input_embeddings`"
+                " or `set_input_embeddings` method"
+            )
 
     def set_input_embeddings(self, value: Embedding):
         """set new input embedding for model
@@ -1423,21 +1433,65 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         Raises:
             NotImplementedError: Model has not implement `set_input_embeddings` method
         """
-        base_model = getattr(self, self.base_model_prefix, self)
-        if base_model is not self:
-            return base_model.set_input_embeddings(value)
-        raise NotImplementedError(
-            f"model of {type(base_model)} has not implemented the `get_input_embeddings`"
-            " or `set_input_embeddings` method"
-        )
+        name = getattr(self, "_input_embed_layer", "embed_tokens")
+        if hasattr(self, "model") and hasattr(self.model, name):
+            setattr(self.model, name, value)
+        # 2) as well as vanilla decoder‑only architectures
+        elif hasattr(self, name):
+            setattr(self, name, value)
+        elif getattr(self, self.base_model_prefix, self) is not self:
+            base_model = getattr(self, self.base_model_prefix, self)
+            base_model.set_input_embeddings(value)
+        else:
+            raise NotImplementedError(
+                f"model of {type(base_model)} has not implemented the `get_input_embeddings`"
+                " or `set_input_embeddings` method"
+            )
 
     def get_output_embeddings(self) -> Optional[Embedding]:
-        """To be overwrited for models with output embeddings
-
-        Returns:
-            Optional[Embedding]: the otuput embedding of model
         """
+        Gets the model's output embedding, defaulting to getting new_embeddings from lm_head.
+        """
+        if not hasattr(self, "lm_head"):
+            return None
+        try:
+            self.get_input_embeddings()
+        except NotImplementedError:
+            return None
+        return self.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        """
+        Sets the model's output embedding, defaulting to setting new_embeddings to lm_head.
+        """
+        if getattr(self, "lm_head"):
+            self.lm_head = new_embeddings
+
+    def get_decoder(self):
+        """
+        Gets the decoder of the model.
+        """
+        if hasattr(self, "decoder"):
+            return self.decoder
+
+        if hasattr(self, "model"):
+            inner = self.model
+            if hasattr(inner, "get_decoder"):
+                return inner.get_decoder()
+            return inner
+
         return None
+
+    def set_decoder(self, decoder):
+        if hasattr(self, "decoder"):
+            self.decoder = decoder
+
+        if hasattr(self, "model"):
+            inner = self.model
+            if hasattr(inner, "set_decoder"):
+                inner.set_decoder(decoder)
+            else:
+                self.model = decoder
 
     def tie_weights(self):
         """
