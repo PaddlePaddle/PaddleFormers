@@ -33,6 +33,7 @@ class Example:
     label: List[int]
     is_system: int
     source: str
+    is_function_call: bool = False
 
 
 def pad_batch_data(
