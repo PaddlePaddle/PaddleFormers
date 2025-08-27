@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import re
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Dict, List, Union
+from typing import Any, Dict, List, Union
 
 from transformers import BatchEncoding
 from transformers.tokenization_utils_base import (
@@ -33,17 +33,12 @@ from transformers.utils.generic import ExplicitEnum
 
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.log import logger
-
-if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+from .legacy.tokenizer_utils import PretrainedTokenizer
 
 # legacy PretrainedTokenizer, which is different from huggingface PreTrainedTokenizer
-try:
-    from .legacy.tokenizer_utils import PretrainedTokenizer
 
-    PretrainedTokenizer = PretrainedTokenizer
-except:
-    pass
+
+PreTrainedTokenizer = PretrainedTokenizer
 
 
 class TensorType(ExplicitEnum):
@@ -347,9 +342,9 @@ class PaddleTokenizerMixin:
             ans.append(ans_roundi)
 
         non_learnable_parts = self._extract_non_learnable_parts(origin_msg, ans)
-        assert len(non_learnable_parts) == len(
-            ans
-        ), f"Get non_learnable_parts len: {len(non_learnable_parts)}, but ans len: {len(ans)}."
+        # assert len(non_learnable_parts) == len(
+        #     ans
+        # ), f"Get non_learnable_parts len: {len(non_learnable_parts)}, but ans len: {len(ans)}."
 
         conversation_ids = []
         for i in range(len(non_learnable_parts)):

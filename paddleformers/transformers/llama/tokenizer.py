@@ -25,10 +25,11 @@ import os
 import unicodedata
 from typing import Collection, Dict, List, Set, Tuple, Union
 
+from transformers.tokenization_utils import PreTrainedTokenizer
+
 from ...utils.import_utils import is_tiktoken_available
 from ...utils.log import logger
 from ..legacy.tokenizer_utils_base import AddedToken
-from ..tokenizer_utils import PretrainedTokenizer
 
 VOCAB_FILES_NAMES = {"vocab_file": "tokenizer.model"}
 
@@ -55,7 +56,7 @@ def _load_tiktoken_bpe(tiktoken_bpe_file: str) -> Dict[bytes, int]:
     }
 
 
-class Llama3Tokenizer(PretrainedTokenizer):
+class Llama3Tokenizer(PreTrainedTokenizer):
     """QWen tokenizer."""
 
     model_input_names = ["input_ids", "attention_mask", "position_ids"]

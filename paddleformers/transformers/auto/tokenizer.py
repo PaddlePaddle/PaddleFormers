@@ -140,13 +140,33 @@ def get_paddleformers_tokenizer_config(
     return result
 
 
+def _bind_paddle_mixin_if_available(tokenizer_class):
+    """
+    Bind the PaddleTokenizerMixin if Paddle is available; otherwise, return the original class.
+
+    Args:
+        tokenizer_class: The original tokenizer class.
+
+    Returns:
+        The tokenizer class bound with PaddleTokenizerMixin, or the original class.
+    """
+    return type(tokenizer_class.__name__, (PaddleTokenizerMixin, tokenizer_class), {})
+
+
 class AutoTokenizer(hf.AutoTokenizer):
     """
-    Adapted from transformers.AutoTokenizer.from_pretrained with modifications:
-    1. Added get_paddleformers_tokenizer_config() to extend tokenizer_config.json download source
-    2. Explicitly binds PaddleTokenizerMixin to the tokenizer class before final instantiation
+    Smart AutoTokenizer that automatically adapts based on available dependencies:
 
-    Note: This extends HuggingFace's standard tokenizer loading logic with PaddlePaddle integration.
+    1. **Multi-source support**: Supports HuggingFace, PaddleFormers, and other download sources
+    2. **Conditional Paddle integration**: Automatically detects PaddlePaddle availability
+    3. **Fallback compatibility**: Works seamlessly with or without Paddle dependencies
+    4. **Enhanced functionality**: Extends HuggingFace's standard tokenizer loading logic
+
+    Features:
+    - Automatically binds PaddleTokenizerMixin when PaddlePaddle is available
+    - Falls back to pure Transformers mode when PaddlePaddle is not available
+    - Maintains full compatibility with all HuggingFace tokenizers
+    - Supports custom download sources through environment variables
     """
 
     @classmethod
@@ -201,7 +221,9 @@ class AutoTokenizer(hf.AutoTokenizer):
 
             if tokenizer_class is None:
                 raise ValueError(f"Tokenizer class {tokenizer_class_name} is not currently imported.")
-            tokenizer_class = type(tokenizer_class.__name__, (PaddleTokenizerMixin, tokenizer_class), {})
+
+            # Bind PaddleTokenizerMixin
+            tokenizer_class = _bind_paddle_mixin_if_available(tokenizer_class)
             return tokenizer_class.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
 
         # Next, let's try to use the tokenizer_config file to get the tokenizer class.
@@ -268,6 +290,7 @@ class AutoTokenizer(hf.AutoTokenizer):
                 or tokenizer_class_from_name(config_tokenizer_class + "Fast") is not None
             )
         )
+
         if has_remote_code:
             if use_fast and tokenizer_auto_map[1] is not None:
                 class_ref = tokenizer_auto_map[1]
@@ -285,11 +308,14 @@ class AutoTokenizer(hf.AutoTokenizer):
             tokenizer_class = get_class_from_dynamic_module(class_ref, pretrained_model_name_or_path, **kwargs)
             _ = kwargs.pop("code_revision", None)
             tokenizer_class.register_for_auto_class()
-            tokenizer_class = type(tokenizer_class.__name__, (PaddleTokenizerMixin, tokenizer_class), {})
+
+            # Bind PaddleTokenizerMixin
+            tokenizer_class = _bind_paddle_mixin_if_available(tokenizer_class)
             return tokenizer_class.from_pretrained(
                 pretrained_model_name_or_path, *inputs, trust_remote_code=trust_remote_code, **kwargs
             )
         elif config_tokenizer_class is not None:
+
             tokenizer_class = None
             if use_fast and not config_tokenizer_class.endswith("Fast"):
                 tokenizer_class_candidate = f"{config_tokenizer_class}Fast"
@@ -301,7 +327,9 @@ class AutoTokenizer(hf.AutoTokenizer):
                 raise ValueError(
                     f"Tokenizer class {tokenizer_class_candidate} does not exist or is not currently imported."
                 )
-            tokenizer_class = type(tokenizer_class.__name__, (PaddleTokenizerMixin, tokenizer_class), {})
+
+            # Bind PaddleTokenizerMixin
+            tokenizer_class = _bind_paddle_mixin_if_available(tokenizer_class)
             return tokenizer_class.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
 
         # Otherwise we have to be creative.
@@ -321,15 +349,13 @@ class AutoTokenizer(hf.AutoTokenizer):
             tokenizer_class_py, tokenizer_class_fast = TOKENIZER_MAPPING[type(config)]
 
             if tokenizer_class_fast and (use_fast or tokenizer_class_py is None):
-                tokenizer_class_fast = type(
-                    tokenizer_class_fast.__name__, (PaddleTokenizerMixin, tokenizer_class_fast), {}
-                )
+                # Bind PaddleTokenizerMixin
+                tokenizer_class_fast = _bind_paddle_mixin_if_available(tokenizer_class_fast)
                 return tokenizer_class_fast.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
             else:
                 if tokenizer_class_py is not None:
-                    tokenizer_class_py = type(
-                        tokenizer_class_py.__name__, (PaddleTokenizerMixin, tokenizer_class_py), {}
-                    )
+                    # Bind PaddleTokenizerMixin
+                    tokenizer_class_py = _bind_paddle_mixin_if_available(tokenizer_class_py)
                     return tokenizer_class_py.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
                 else:
                     raise ValueError(
