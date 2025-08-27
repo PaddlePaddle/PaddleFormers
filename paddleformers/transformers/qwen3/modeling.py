@@ -763,12 +763,6 @@ class Qwen3ForSequenceClassification(Qwen3PretrainedModel):
         self.model = Qwen3Model(config)
         self.score = GeneralLinear.create(config.hidden_size, self.num_labels, has_bias=False, linear_type="default")
 
-    def get_input_embeddings(self):
-        return self.model.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.model.embed_tokens = value
-
     def forward(
         self,
         input_ids: paddle.Tensor = None,
@@ -873,12 +867,6 @@ class Qwen3ForTokenClassification(Qwen3PretrainedModel):
             classifier_dropout = 0.1
         self.dropout = nn.Dropout(classifier_dropout)
         self.score = GeneralLinear.create(config.hidden_size, config.num_labels, has_bias=False, linear_type="default")
-
-    def get_input_embeddings(self):
-        return self.model.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.model.embed_tokens = value
 
     def forward(
         self,
