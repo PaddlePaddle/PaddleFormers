@@ -43,6 +43,8 @@ from ..moe_layer import MoELayer
 from ..utils import logger
 from .configuration import Qwen2MoeConfig
 
+from paddleformers.nn.moe.moe_block import create_moe_block
+
 try:
     from paddle.incubate.nn.functional import fused_rotary_position_embedding
 except ImportError:
@@ -821,7 +823,10 @@ class Qwen2MoeDecoderLayer(nn.Layer):
         self.self_attn = Qwen2MoeAttention(config, layerwise_recompute)
 
         if config.num_experts > 0:
-            self.mlp = Qwen2MoeSparseMoeBlock(config)
+            self.mlp = create_moe_block(config=config, 
+                                        expert_class=Qwen2MoeMLP,
+                                        use_shared_expert=True,
+                                        moe_mode="qwen")
         else:
             # num_experts == 0 or this layer is not sparse layer
             self.mlp = Qwen2MoeMLP(config)

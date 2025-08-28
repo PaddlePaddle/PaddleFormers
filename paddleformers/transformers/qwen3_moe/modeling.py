@@ -35,6 +35,7 @@ from ..model_utils import PretrainedModel, register_base_model
 from ..moe_layer import MoELayer
 from ..utils import logger
 from .configuration import Qwen3MoeConfig
+from paddleformers.nn.moe.moe_block import create_moe_block
 
 try:
     from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
@@ -166,7 +167,10 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         self.self_attn = Qwen3MoeAttention(config, layerwise_recompute)
 
         if config.num_experts > 0:
-            self.mlp = ExpertParallelQwen3MoeSparseMoeBlock(config)
+            self.mlp = create_moe_block(config=config, 
+                                        expert_class=Qwen3MoeMLP,
+                                        use_shared_expert=False,
+                                        moe_mode="qwen")
         else:
             # num_experts == 0 or this layer is not sparse layer
             self.mlp = Qwen3MoeMLP(config)
