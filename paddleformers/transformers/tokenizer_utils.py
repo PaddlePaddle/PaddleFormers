@@ -21,8 +21,10 @@ import re
 from functools import wraps
 from typing import Any, Dict, List, Union
 
-import transformers.PreTrainedTokenizer as PreTrainedTokenizer_tf
 from transformers import BatchEncoding
+from transformers.tokenization_utils import (
+    PreTrainedTokenizer as PreTrainedTokenizer_tf,
+)
 from transformers.tokenization_utils_base import (
     ADDED_TOKENS_FILE,
     CHAT_TEMPLATE_FILE,
@@ -397,5 +399,4 @@ def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer_tf):
 
 class PreTrainedTokenizer(PaddleTokenizerMixin, PreTrainedTokenizer_tf):
     def init(self, *args, **kwargs):
-        PaddleTokenizerMixin.__init__(self, *args, **kwargs)
-        PreTrainedTokenizer_tf.__init__(self, *args, **kwargs)
+        super().init(*args, **kwargs)
