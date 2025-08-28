@@ -32,12 +32,11 @@ import_structure = {
     ],
     "configuration": ["Qwen2MoeConfig"],
     "modeling": [
+        "Qwen2MoeGate",
         "Qwen2MoeDecoderLayer",
-        "Qwen2MoeLMHead",
         "Qwen2MoeModel",
         "Qwen2MoePretrainedModel",
-        "Qwen2MoePretrainingCriterion",
-        "Qwen2MoeRMSNorm",
+        "Qwen2MoeForCausalLM",
     ],
 }
 

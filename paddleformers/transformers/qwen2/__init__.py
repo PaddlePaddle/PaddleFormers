@@ -27,7 +27,6 @@ import_structure = {
         "Qwen2Model",
         "Qwen2PretrainedModel",
         "Qwen2ForCausalLM",
-        "Qwen2PretrainingCriterion",
         "Qwen2ForSequenceClassification",
         "Qwen2ForTokenClassification",
         "Qwen2SentenceEmbedding",

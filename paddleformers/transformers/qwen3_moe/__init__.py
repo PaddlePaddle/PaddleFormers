@@ -33,13 +33,10 @@ import_structure = {
     "model_utils": ["PipelinePretrainedModel"],
     "configuration": ["Qwen3MoeConfig"],
     "modeling": [
-        "Qwen3MoeModel",
-        "Qwen3MoeForCausalLM",
         "Qwen3MoeDecoderLayer",
-        "Qwen3MoeLMHead",
+        "Qwen3MoeModel",
         "Qwen3MoePretrainedModel",
-        "Qwen3MoePretrainingCriterion",
-        "Qwen3MoeRMSNorm",
+        "Qwen3MoeForCausalLM",
     ],
 }
 if TYPE_CHECKING:

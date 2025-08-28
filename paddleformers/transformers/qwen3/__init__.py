@@ -40,7 +40,6 @@ import_structure = {
         "Qwen3Model",
         "Qwen3PretrainedModel",
         "Qwen3ForCausalLM",
-        "Qwen3PretrainingCriterion",
         "Qwen3ForSequenceClassification",
         "Qwen3ForTokenClassification",
         "Qwen3SentenceEmbedding",
