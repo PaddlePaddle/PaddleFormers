@@ -62,6 +62,7 @@ def sdpa_attention_forward(
             key,
             value,
             sink,
+            attention_mask=attention_mask,
             startend_row_indices=None,
             dropout_p=dropout,
             softmax_scale=scaling,

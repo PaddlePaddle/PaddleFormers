@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional
 import paddle
 from paddle.autograd.py_layer import PyLayer
 
@@ -34,6 +35,7 @@ def _flash_attention_forward_dispatch(
     dropout=0.0,
     causal=False,
     return_softmax=False,
+    attention_mask: Optional[paddle.Tensor] = None,
     *,
     fixed_seed_offset=None,
     rng_name="",
@@ -58,7 +60,7 @@ def _flash_attention_forward_dispatch(
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
         if hasattr(paddle.base.libpaddle.pir.ops, "flash_attn"):
             out, _, lse, _ = _C_ops.flash_attn(
-                query, key, value, fixed_seed_offset, None, dropout, causal, False, not training, rng_name
+                query, key, value, fixed_seed_offset, attention_mask, dropout, causal, False, not training, rng_name
             )
         else:
             assert False, "flash_attn_v2 is not supported, may be due to paddle version"
@@ -72,6 +74,8 @@ def _flash_attention_forward_dispatch(
             )
         else:
             assert False, "flash_attn_v3 is not supported, may be due to paddle version"
+        
+        assert attention_mask is None, f"FA3 do not support dense mask(attention_mask)"
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
 
@@ -86,6 +90,7 @@ def _flash_attention_backward_dispatch(
     output,
     lse,
     dropout=0.0,
+    attention_mask: Optional[paddle.Tensor] = None,
     causal=False,
     softmax_scale=None,
 ):
@@ -99,7 +104,7 @@ def _flash_attention_backward_dispatch(
         seed_offset = paddle.zeros(shape=[2], dtype="int64")
         if hasattr(paddle.base.libpaddle.pir.ops, "flash_attn_grad"):
             grad_q, grad_k, grad_v = _C_ops.flash_attn_grad(
-                query, key, value, output, lse, seed_offset, None, grad_output, dropout, causal
+                query, key, value, output, lse, seed_offset, attention_mask, grad_output, dropout, causal
             )
         else:
             assert False, "flash_attn_v2_grad is not supported, may be due to paddle version"
@@ -112,6 +117,7 @@ def _flash_attention_backward_dispatch(
             )
         else:
             assert False, "flash_attn_v3_grad is not supported, may be due to paddle version"
+        assert attention_mask is None, f"FA3 do not support dense mask(attention_mask)"
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
 
@@ -228,6 +234,7 @@ class FlashMaskSinkPyLayer(PyLayer):
         value,
         sink,
         startend_row_indices,
+        attention_mask: Optional[paddle.Tensor] = None,
         dropout=0.0,
         causal=False,
         return_softmax=False,
@@ -247,6 +254,7 @@ class FlashMaskSinkPyLayer(PyLayer):
             value: Value tensor [B, S, H_kv, D]
             sink: Sink parameter tensor [H_q]
             startend_row_indices: Optional indices for FlashMask (variable length sequences)
+            attention_mask: Dense mask tensor [B, H_q, S, S]
             dropout: Dropout probability
             causal: Whether to apply causal mask
             softmax_scale: Custom softmax scaling factor
@@ -290,9 +298,11 @@ class FlashMaskSinkPyLayer(PyLayer):
             assert (
                 seq_q == seq_k == seq_v
             ), f"FlashAttention requires equal sequence lengths: seq_q={seq_q}, seq_k={seq_k}, seq_v={seq_v}"
+
         else:
             # FlashMask allows variable sequence lengths, but key and value must match
             assert seq_k == seq_v, f"Key and value sequence lengths must match: seq_k={seq_k}, seq_v={seq_v}"
+            assert attention_mask is None, f"Flashmask do not support dense mask(attention_mask)"
 
         # Handle GQA by repeating key/value heads if necessary
         num_attention_heads = query.shape[2]
@@ -314,6 +324,7 @@ class FlashMaskSinkPyLayer(PyLayer):
                 value_states,
                 dropout,
                 causal,
+                attention_mask=attention_mask,
                 fixed_seed_offset=fixed_seed_offset,
                 rng_name=rng_name,
                 training=training,
@@ -349,7 +360,7 @@ class FlashMaskSinkPyLayer(PyLayer):
         final_out = (raw_output * multiplier).to(origin_dtype)
 
         # Save tensors for backward pass
-        ctx.save_for_backward(query, key, value, sink, raw_output, lse_original, multiplier, startend_row_indices)
+        ctx.save_for_backward(query, key, value, sink, attention_mask, raw_output, lse_original, multiplier, startend_row_indices)
         ctx.dropout = dropout
         ctx.causal = causal
         ctx.softmax_scale = scale
@@ -366,7 +377,7 @@ class FlashMaskSinkPyLayer(PyLayer):
         """
         Backward pass computing gradients for all inputs.
         """
-        query, key, value, sink, raw_output, lse_original, multiplier, startend_row_indices = ctx.saved_tensor()
+        query, key, value, sink, attention_mask, raw_output, lse_original, multiplier, startend_row_indices = ctx.saved_tensor()
 
         # Restore context variables
         num_key_value_groups = ctx.num_key_value_groups
@@ -394,6 +405,7 @@ class FlashMaskSinkPyLayer(PyLayer):
                 raw_output,
                 lse_original,
                 dropout,
+                attention_mask,
                 causal,
                 scale,
             )
@@ -443,6 +455,7 @@ class FlashMaskSinkPyLayer(PyLayer):
                 key_states,
                 dropout,
                 causal,
+                attention_mask=attention_mask,
                 fixed_seed_offset=fixed_seed_offset,
                 rng_name=rng_name,
                 training=training,
@@ -498,7 +511,8 @@ def sink_attention_forward(
     k,
     v,
     sink: paddle.Tensor,
-    startend_row_indices: paddle.Tensor = None,
+    attention_mask: Optional[paddle.Tensor] = None,
+    startend_row_indices: Optional[paddle.Tensor] = None,
     dropout_p=0.0,
     softmax_scale=None,
     causal=False,
@@ -523,6 +537,7 @@ def sink_attention_forward(
         k: Key tensor with shape [batch_size, seq_len, num_kv_heads, head_dim]
         v: Value tensor with shape [batch_size, seq_len, num_kv_heads, head_dim]
         sink: Sink parameter tensor with shape [num_q_heads]
+        attention_mask: Dense mask, only supported for FA2
         startend_row_indices: Optional tensor for FlashMask attention to handle variable length sequences
         dropout_p: Dropout probability (default: 0.0)
         softmax_scale: Custom softmax scaling factor (default: 1/sqrt(head_dim))
@@ -550,8 +565,9 @@ def sink_attention_forward(
         v,
         sink,
         startend_row_indices,
-        dropout_p,
-        causal,
+        attention_mask=attention_mask,
+        dropout=dropout_p,
+        causal=causal,
         return_softmax=False,
         softmax_scale=softmax_scale,
     )
