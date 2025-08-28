@@ -77,6 +77,8 @@ jobs:
               -e paddle_whl \
               -e FLAGS_dynamic_static_unified_comm \
               -e python_version \
+              -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
+              -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
               -w /workspace --runtime=nvidia $IMAGE_NAME
           fi
             

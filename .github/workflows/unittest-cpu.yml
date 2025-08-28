@@ -39,6 +39,8 @@ jobs:
             -e work_dir \
             -e no_proxy \
             -e python_version \
+            -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
+            -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
             -w /workspace ${docker_image}
 
       - name: Download Code

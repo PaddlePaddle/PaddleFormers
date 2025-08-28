@@ -552,13 +552,27 @@ def set_proxy(download_hub: DownloadSource = None):
             if download_hub is None:
                 return func(*args, **kwargs)
             elif download_hub == DownloadSource.HUGGINGFACE:
+                if "HF_PROXY_PATH" not in os.environ:
+                    print(
+                        "`HF_PROXY_PATH` environment variable does not defined before using `set_proxy`, please define it first"
+                    )
                 proxy_path = os.path.abspath(os.environ["HF_PROXY_PATH"])
             elif download_hub == DownloadSource.AISTUDIO:
+                if "AISTUDIO_PROXY_PATH" not in os.environ:
+                    print(
+                        "`AISTUDIO_PROXY_PATH` environment variable does not defined before using `set_proxy`, please define it first"
+                    )
                 proxy_path = os.path.abspath(os.environ["AISTUDIO_PROXY_PATH"])
             elif download_hub == DownloadSource.MODELSCOPE:
+                if "AISTUDIO_PROXY_PATH" not in os.environ:
+                    print(
+                        "`AISTUDIO_PROXY_PATH` environment variable does not defined before using `set_proxy`, please define it first"
+                    )
                 proxy_path = os.path.abspath(
                     os.environ["AISTUDIO_PROXY_PATH"]
                 )  # proxy_aistudio also suit for modelscope
+
+            print(f"set proxy for {download_hub}, proxy path: {proxy_path}")
             command = f"source {proxy_path} && env"
 
             proc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
@@ -572,7 +586,7 @@ def set_proxy(download_hub: DownloadSource = None):
                 proxy_env[key] = value
 
             ori_env = {}
-            proxy_vars = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]
+            proxy_vars = ["http_proxy", "https_proxy", "no_proxy"]
             if download_hub == DownloadSource.AISTUDIO:
                 proxy_vars.extend(["STUDIO_GIT_HOST", "STUDIO_CDN_HOST"])
             for key in proxy_vars:
