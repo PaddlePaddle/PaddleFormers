@@ -347,7 +347,7 @@ class PaddleTokenizerMixin:
         # ), f"Get non_learnable_parts len: {len(non_learnable_parts)}, but ans len: {len(ans)}."
 
         conversation_ids = []
-        for i in range(min(len(non_learnable_parts), len(ans))):
+        for i in range(len(non_learnable_parts)):
             conversation_ids.append(
                 self([non_learnable_parts[i], ans[i]], add_special_tokens=False, padding=False)["input_ids"]
             )

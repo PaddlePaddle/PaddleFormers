@@ -201,6 +201,7 @@ def main():
 
     # Load tokenizer & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, download_hub=model_args.download_hub)
+    tokenizer.chat_template = None
 
     # init chat_template for tokenizer
     init_chat_template(tokenizer, model_args.model_name_or_path, data_args.chat_template)

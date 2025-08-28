@@ -107,7 +107,6 @@ def tokenize_example(tokenizer, example, data_args):
         source,
         max_length=data_args.src_length,
         truncation=True,
-        truncation_side="left",
         add_special_tokens=True,
     )
 
@@ -116,7 +115,6 @@ def tokenize_example(tokenizer, example, data_args):
         target,
         max_length=tgt_max_length,
         truncation=True,
-        truncation_side="right",
         add_special_tokens=False,
     )
 
