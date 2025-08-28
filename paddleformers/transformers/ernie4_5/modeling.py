@@ -984,7 +984,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
             )
 
         # if labels is None，means we need full output, instead of tensor_parallel_output
-        # tensor_parallel_output is togather with ParallelCrossEntropy
+        # tensor_parallel_output is together with ParallelCrossEntropy
         logits = self.lm_head(hidden_states)
 
         if return_dict:  # aka Generate Decoding

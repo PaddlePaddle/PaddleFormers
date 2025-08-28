@@ -2319,7 +2319,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                             base_model_prefix=prefix,
                         )
                     if post_quantize:
-                        # Split -> quantize(Not support mdoel save)
+                        # Split -> quantize(Not support model save)
                         state_dict = load_state_dict(
                             shard_file,
                             tp_actions if pre_tensor_parallel_split else None,
@@ -2334,7 +2334,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                             dtype,
                         )
                     else:
-                        # quantize -> split(Support mdoel save)
+                        # quantize -> split(Support model save)
                         state_dict = load_state_dict(
                             shard_file,
                             tp_actions if pre_tensor_parallel_split else None,

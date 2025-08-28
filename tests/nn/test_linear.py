@@ -67,7 +67,7 @@ def _test_create_parallel_linear(config):
 
     assert isinstance(linear, mpu.RowParallelLinear)
     config.sequence_parallel = False
-    # Test createing squence row parallel linear
+    # Test creating sequence row parallel linear
     linear = Linear.create(
         in_features=config.in_features,
         out_features=config.out_features,

@@ -215,7 +215,7 @@ class ConfigTestUtils:
     def test_config_common_kwargs_is_complete(self):
         base_config = PretrainedConfig()
         missing_keys = [key for key in base_config.__dict__ if key not in config_common_kwargs]
-        # If this part of the test fails, you have arguments to addin config_common_kwargs above.
+        # If this part of the test fails, you have arguments to add in config_common_kwargs above.
         self.assertListEqual(
             missing_keys,
             [
