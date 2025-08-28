@@ -60,12 +60,13 @@ modules = [
     "peft",
     "quantization",
     "trainer",
-    "transformers",
     "trl",
     "utils",
     "version",
+    "transformers",
 ]
 import_structure = {module: [] for module in modules}
+import_structure["transformers.tokenizer_utils"] = ["PreTrainedTokenizer"]
 
 if TYPE_CHECKING:
     from . import (
