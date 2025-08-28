@@ -1568,8 +1568,9 @@ class TrainingArguments:
                 fleet.init(is_collective=True, strategy=strategy)
                 logger.info(strategy)
 
-                if self.expert_parallel_degree > 1:
-                    self.add_moe_comm_group()
+                if os.getenv("DSV3_FAST_PRETRAIN", "False"):
+                    if self.expert_parallel_degree > 1:
+                        self.add_moe_comm_group()
 
         elif self.enable_auto_parallel:
             self.tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
