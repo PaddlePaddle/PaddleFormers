@@ -94,6 +94,7 @@ class Ernie4_5_VLTokenizer(PaddleTokenizerMixin, PreTrainedTokenizer):
             **kwargs: Additional keyword arguments
         """
         # Handle possible parameter renaming
+
         if vocab_file is None:
             for key in ["tokenizer_file", "model_file", "spm_file"]:
                 if key in kwargs:
