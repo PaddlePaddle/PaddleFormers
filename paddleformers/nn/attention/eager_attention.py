@@ -31,15 +31,10 @@ def eager_attention_forward(
     is_causal: Optional[bool] = None,
     **kwargs,
 ):
-    num_key_value_heads = None
-    if hasattr(module, "num_key_value_heads"):
-        num_key_value_heads = module.num_key_value_heads
-    elif hasattr(module, "num_key_value_groups"):
-        num_key_value_heads = module.num_key_value_groups
-
-    if num_key_value_heads is not None:
-        key = repeat_kv(key, module.num_key_value_heads)
-        value = repeat_kv(value, module.num_key_value_heads)
+    if hasattr(module, "num_key_value_groups"):
+        num_key_value_groups = module.num_key_value_groups
+        key = repeat_kv(key, num_key_value_groups)
+        value = repeat_kv(value, num_key_value_groups)
 
     perm = [0, 2, 1, 3]  # b l h d -> b h l d
     query = paddle.transpose(x=query, perm=perm)

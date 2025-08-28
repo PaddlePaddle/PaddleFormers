@@ -31,7 +31,7 @@ ERNIE_PRETRAINED_INIT_CONFIGURATION = {
         "pad_token_id": 0,
         "use_cache": False,
         "recompute": False,
-        "use_flash_attentionn": True,
+        "use_flash_attention": False,
         "use_pure_fp16": False,
     },
 }
@@ -57,7 +57,7 @@ class Ernie4_5Config(PretrainedConfig):
         max_position_embeddings=32768,
         num_hidden_layers=2,
         num_attention_heads=2,
-        head_dim=None,
+        head_dim=128,
         scale_qk_coeff=1.0,
         initializer_range=0.02,
         rms_norm_eps=1e-6,
@@ -135,7 +135,7 @@ class Ernie4_5Config(PretrainedConfig):
 
         # Set default for tied embeddings if not specified.
         if "tie_word_embeddings" not in kwargs:
-            kwargs["tie_word_embeddings"] = False
+            kwargs["tie_word_embeddings"] = True
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,

@@ -19,7 +19,7 @@ import paddle
 from paddleformers.transformers import AutoTokenizer, Qwen2Tokenizer
 
 
-@unittest.skip("multi source download CI not support")
+@unittest.skip("don't support multisource download")
 class TestHFMultiSourceTokenizer(unittest.TestCase):
     def encode(self, tokenizer):
         input_text = "hello world, 你好"
@@ -68,7 +68,7 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
 
 class TestHFTokenizer(unittest.TestCase):
     def setUp(self):
-        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B", from_hf_hub=True)
+        self.tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B")
 
     def test_encode(self):
         input_text = "hello world, this is paddle format checker"

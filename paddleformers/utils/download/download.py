@@ -28,7 +28,12 @@ from huggingface_hub.utils import (
     RepositoryNotFoundError,
     RevisionNotFoundError,
 )
-from paddle import __version__
+
+try:
+    from paddle import __version__
+except ImportError:
+    __version__ = ""
+
 from requests import HTTPError
 
 from ..log import logger
@@ -180,7 +185,7 @@ def resolve_file_path(
         cache_file_name = hf_try_to_load_from_cache(repo_id, filename, cache_dir, subfolder, revision, repo_type)
         if download_hub == DownloadSource.HUGGINGFACE and cache_file_name is _CACHED_NO_EXIST:
             cache_file_name = None
-        if cache_file_name is not None:
+        if cache_file_name is not None and os.path.exists(str(cache_file_name)):
             return cache_file_name
 
     # download file from different origins

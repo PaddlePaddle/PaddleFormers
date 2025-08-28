@@ -19,7 +19,6 @@ import paddle.nn as nn
 
 from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
 from .sink_impl import sink_attention_forward
-from .utils import repeat_kv
 
 
 def sdpa_attention_forward(
@@ -36,15 +35,6 @@ def sdpa_attention_forward(
     **kwargs,
 ):
     # query: b l h d
-    num_key_value_heads = None
-    if hasattr(module, "num_key_value_heads"):
-        num_key_value_heads = module.num_key_value_heads
-    elif hasattr(module, "num_key_value_groups"):
-        num_key_value_heads = module.num_key_value_groups
-
-    if num_key_value_heads is not None:
-        key = repeat_kv(key, module.num_key_value_heads)
-        value = repeat_kv(value, module.num_key_value_heads)
 
     if is_causal is None and attn_mask_start_row_indices is None:
         is_causal = query.shape[1] > 1 and attention_mask is None and getattr(module, "is_causal", True)

@@ -25,6 +25,8 @@ PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
 with suppress(Exception):
     import paddle
 
+    from .utils.paddle_patch import *
+
     paddle.disable_signal_handler()
 
 # this version is used for develop and test.

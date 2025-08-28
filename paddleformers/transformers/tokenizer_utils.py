@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import re
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Dict, List, Union
+from typing import Any, Dict, List, Union
 
 from transformers import BatchEncoding
 from transformers.tokenization_utils_base import (
@@ -31,11 +31,24 @@ from transformers.tokenization_utils_base import (
 )
 from transformers.utils.generic import ExplicitEnum
 
+from ..utils import is_paddle_available
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.log import logger
 
-if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+if is_paddle_available():
+    from .legacy.tokenizer_utils import PretrainedTokenizer
+else:
+
+    class _MissingPaddleTokenizer:
+        def __init__(self, *args, **kwargs):
+            raise ImportError(
+                "PretrainedTokenizer requires Paddle, but Paddle is not available. "
+                "Please install Paddle to use this feature."
+            )
+
+    PretrainedTokenizer = _MissingPaddleTokenizer
+
+# legacy PretrainedTokenizer, which is different from huggingface PreTrainedTokenizer
 
 
 class TensorType(ExplicitEnum):
@@ -201,13 +214,37 @@ class PaddleTokenizerMixin:
                     download_hub=download_hub,
                     local_files_only=local_files_only,
                 )
-            except Exception:
+            except (FileNotFoundError, EnvironmentError):
                 pass
+            except Exception as e:
+                raise e
         # 获得cache_dir的目录
         for file_id, file_path in resolved_vocab_files.items():
             if resolved_vocab_files[file_id] is not None:
                 cache_dir = os.path.dirname(resolved_vocab_files[file_id])
                 break
+
+        if not any(key in resolved_vocab_files for key in cls.vocab_files_names.keys()):
+            hf_link = f"https://huggingface.co/{pretrained_model_name_or_path}"
+            modelscope_link = f"https://modelscope.cn/models/{pretrained_model_name_or_path}"
+            encoded_model_name = pretrained_model_name_or_path.replace("/", "%2F")
+            aistudio_link = f"https://aistudio.baidu.com/modelsoverview?sortBy=weight&q={encoded_model_name}"
+
+            raise ValueError(
+                f"No vocabulary files found for model '{pretrained_model_name_or_path}'. "
+                f"Please check:\n"
+                f"1. The model repository ID is correct for your chosen source:\n"
+                f"   - Hugging Face Hub: {hf_link}\n"
+                f"   - ModelScope: {modelscope_link}\n"
+                f"   - AI Studio: {aistudio_link}\n"
+                f"2. You have permission to access this model repository\n"
+                f"3. Network connection is working properly\n"
+                f"4. Try clearing cache and downloading again\n"
+                f"Expected vocabulary files: {list(cls.vocab_files_names.keys())}\n"
+                f"Valid files found: {list(resolved_vocab_files.keys())}\n"
+                f"Note: The repository ID may differ between ModelScope, AI Studio, and Hugging Face Hub.\n"
+                f"You are currently using the download source: {download_hub}. Please check the repository ID on the official website."
+            )
 
         return super()._from_pretrained(
             resolved_vocab_files,
@@ -263,6 +300,7 @@ class PaddleTokenizerMixin:
 
     def _extract_non_learnable_parts(self, origin_msg: List[Dict[str, str]], split_s: List[str]):
         """Split the entire chat by specified words. Extract the non-learnable parts."""
+        # TODO：We will upgrade this feature later
         # distinguish and replace the special words in original string to an uncompiled form: Like | -> \|
         regex_pattern = "|".join(map(re.escape, split_s))
         # splited by replaced specified words
@@ -270,6 +308,7 @@ class PaddleTokenizerMixin:
             r"(?:%s)" % regex_pattern,
             self.apply_chat_template(conversation=origin_msg, add_generation_prompt=False, tokenize=False),
         )
+
         if non_learnable_parts[-1] == "":
             non_learnable_parts.pop()
         return non_learnable_parts
@@ -313,12 +352,7 @@ class PaddleTokenizerMixin:
             )
             ans_roundi = roundi_str[len(roundi_no_ans_str) :]
             ans.append(ans_roundi)
-
         non_learnable_parts = self._extract_non_learnable_parts(origin_msg, ans)
-        assert len(non_learnable_parts) == len(
-            ans
-        ), f"Get non_learnable_parts len: {len(non_learnable_parts)}, but ans len: {len(ans)}."
-
         conversation_ids = []
         for i in range(len(non_learnable_parts)):
             conversation_ids.append(
@@ -358,3 +392,8 @@ class PaddleTokenizerMixin:
 
 def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer):
     return type(hf_tokenizer_class.__name__, (PaddleTokenizerMixin, hf_tokenizer_class), {})
+
+
+class PreTrainedTokenizer(PaddleTokenizerMixin, PretrainedTokenizer):
+    def init(self, *args, **kwargs):
+        super().init(*args, **kwargs)
