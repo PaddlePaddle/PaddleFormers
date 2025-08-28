@@ -15,6 +15,7 @@
 
 # This file is modified from
 #  https://github.com/huggingface/transformers/blob/main/src/transformers/trainer.py
+from __future__ import annotations
 
 import collections
 import contextlib
@@ -33,7 +34,7 @@ import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import paddle
@@ -84,6 +85,7 @@ from ..data import (
     init_dataloader_comm_group,
 )
 from ..peft import LoKrModel, LoRAModel, PrefixModelForCausalLM, ReFTModel, VeRAModel
+from ..peft.lora import QuantizationLoRABaseLinear
 from ..quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
@@ -96,6 +98,8 @@ try:
     )
 except:
     pass
+if TYPE_CHECKING:
+    from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..transformers.context_parallel_utils import split_inputs_sequence_dim_load_balance
 from ..transformers.image_processing_utils import ImageProcessingMixin
@@ -106,7 +110,6 @@ from ..transformers.model_utils import (
     unwrap_model,
 )
 from ..transformers.segment_parallel_utils import split_inputs_sequence_dim
-from ..transformers.tokenizer_utils import PretrainedTokenizer
 from ..utils import empty_device_cache
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
@@ -157,6 +160,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     ShardingOption,
     TrainerMemoryTracker,
     TrainOutput,
+    _insert_sync,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
     get_last_checkpoint,
@@ -253,7 +257,7 @@ class Trainer:
              The dataset to use for evaluation. If it is a [`~datasets.Dataset`], columns not accepted by the
              `model.forward()` method are automatically removed. If it is a dictionary, it will evaluate on each
              dataset prepending the dictionary key to the metric name.
-        tokenizer ([`PretrainedTokenizer`], *optional*):
+        tokenizer ([`PreTrainedTokenizer`], *optional*):
             The tokenizer used to preprocess the data. If provided, will be used to automatically pad the inputs the
             maximum length when batching inputs, and it will be saved along the model to make it easier to rerun an
             interrupted training or reuse the fine-tuned model.
@@ -292,7 +296,7 @@ class Trainer:
         data_collator: Optional[DataCollator] = None,
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Union[Dataset, Dict[str, Dataset]] = None,
-        tokenizer: Optional[PretrainedTokenizer] = None,
+        tokenizer: Optional[PreTrainedTokenizer] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[paddle.optimizer.Optimizer, paddle.optimizer.lr.LRScheduler] = (None, None),
@@ -376,7 +380,13 @@ class Trainer:
         self.optimizer_grouped_parameters = None
         self.sharding_io = None
         if self.args.should_save_sharding_stage1_model or self.args.should_load_sharding_stage1_model:
-            self.sharding_io = ShardingIO(self.args, self.model, self.optimizer)
+            self.sharding_io = ShardingIO(
+                self.args,
+                self.model,
+                self.optimizer,
+                remap_parameter_name=self.args.load_sharded_model_remap_parameter_name,
+            )
+
         if self.args.unified_checkpoint:
             self.unified_checkpoint_handler = UnifiedCheckpointHandler(self.args)
 
@@ -524,7 +534,12 @@ class Trainer:
                 models=model,
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
-                excluded_layers=[QuantizationLinear, ColumnParallelQuantizationLinear, RowParallelQuantizationLinear]
+                excluded_layers=[
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
+                    QuantizationLoRABaseLinear,
+                ]
                 + self._decorate_exclude_layers(model),
             )
         # for pipeline mode and pure tensor parallel
@@ -622,7 +637,9 @@ class Trainer:
             elif isinstance(self.model, LoKrModel):
                 weights_file = os.path.join(resume_from_checkpoint, LOKR_WEIGHTS_NAME)
             elif isinstance(self.model, ReFTModel):
-                self.model.from_pretrained(resume_from_checkpoint, self.model.model)
+                self.model.from_pretrained(
+                    resume_from_checkpoint, self.model.model, convert_from_hf=self.args.convert_from_hf
+                )
                 return
 
             if self.args.dataset_rank == 0:
@@ -674,6 +691,7 @@ class Trainer:
                     self.unified_checkpoint_handler.load_unified_checkpoint(
                         self.model,
                         resume_from_checkpoint,
+                        convert_from_hf=self.args.convert_from_hf,
                     )
                     if isinstance(self.model, LoRAModel) and self.model.lora_config.loraga:
                         self.model.reinit_base_model = True
@@ -1437,6 +1455,7 @@ class Trainer:
                     self.unified_checkpoint_handler.load_unified_checkpoint(
                         self.model,
                         self.state.best_model_checkpoint,
+                        convert_from_hf=self.args.convert_from_hf,
                     )
                     if self.args.sharding_parallel_degree > 1 or self.args.data_parallel_degree > 1:
                         broadcast_dataset_rank0_model(self.model)
@@ -1487,6 +1506,7 @@ class Trainer:
             self.unified_checkpoint_handler.load_unified_checkpoint(
                 self.model,
                 self.state.best_model_checkpoint,
+                convert_from_hf=self.args.convert_from_hf,
             )
             if self.args.sharding_parallel_degree > 1 or self.args.data_parallel_degree > 1:
                 broadcast_dataset_rank0_model(self.model)
@@ -2194,7 +2214,12 @@ class Trainer:
                 optimizers=self.optimizer,
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
-                excluded_layers=[QuantizationLinear, ColumnParallelQuantizationLinear, RowParallelQuantizationLinear]
+                excluded_layers=[
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
+                    QuantizationLoRABaseLinear,
+                ]
                 + self._decorate_exclude_layers(model),
             )
 
@@ -2395,6 +2420,9 @@ class Trainer:
                     and "enable_stage1_broadcast_overlap" in self.args.sharding_parallel_config
                 ):
                     self.optimizer._set_broadcast_overlap(True, model)
+
+        # To solve DPO pin-memory problem, temporarily modify the _insert_sync method.
+        self.optimizer._insert_sync = types.MethodType(_insert_sync, self.optimizer)
 
         return model
 
@@ -2987,7 +3015,9 @@ class Trainer:
             # backup and remove unified_checkpoint_config for not trine stage
             if not self.is_in_train:
                 self.args.unified_checkpoint_config = []
-            self.unified_checkpoint_handler.save_unified_checkpoint(self.model, self.optimizer, output_dir, signal_dir)
+            self.unified_checkpoint_handler.save_unified_checkpoint(
+                self.model, self.optimizer, output_dir, signal_dir, save_to_hf=self.args.save_to_hf
+            )
 
             # recover unified_checkpoint_config for not trine stage
             if not self.is_in_train:
@@ -3011,6 +3041,7 @@ class Trainer:
                 merge_tensor_parallel=merge_tensor_parallel,
                 is_main_process=self.args.should_save,
                 max_shard_size="1024GB",
+                save_to_hf=self.args.save_to_hf,
             )
         # TODO: @ZHUI unify unwrap_model(self.model) and self.model
         elif not isinstance(self.model, PretrainedModel):
@@ -3029,6 +3060,7 @@ class Trainer:
                         save_function=self._save_ckpt_func,
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
+                        save_to_hf=self.args.save_to_hf,
                     )
                 else:
                     unwrap_model(self.model).save_pretrained(
@@ -3038,6 +3070,7 @@ class Trainer:
                         save_function=self._save_ckpt_func,
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
+                        save_to_hf=self.args.save_to_hf,
                     )
             else:
                 logger.info("Trainer.model is not a `PretrainedModel`, only saving its state dict.")
@@ -3070,6 +3103,7 @@ class Trainer:
                     save_function=self._save_ckpt_func,
                     is_main_process=self.args.should_save,
                     max_shard_size="1024GB",
+                    save_to_hf=self.args.save_to_hf,
                 )
             else:
                 self.model.save_pretrained(
@@ -3079,6 +3113,7 @@ class Trainer:
                     save_function=self._save_ckpt_func,
                     is_main_process=self.args.should_save,
                     max_shard_size="1024GB",
+                    save_to_hf=self.args.save_to_hf,
                 )
         if self.args.should_save_sharding_stage1_model:
             model_meta = self.sharding_io.gather_distributed_model_meta()

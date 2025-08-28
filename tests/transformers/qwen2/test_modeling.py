@@ -377,7 +377,7 @@ class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
 class Qwen2IntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
-        model = Qwen2ForCausalLM.from_pretrained("__internal_testing__/tiny-random-qwen2", dtype="float32")
+        model = Qwen2ForCausalLM.from_pretrained("paddleformers_test/tiny-random-qwen2", dtype="float32")
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
             out = model(input_ids, return_dict=True).logits

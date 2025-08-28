@@ -357,6 +357,7 @@ class QuantizationLinear(nn.Layer):
                     dtype="float32",
                     is_bias=False,
                 )
+                self.weight_scale = None
             else:
                 self.weight_scale = self.create_parameter(
                     shape=[in_features * out_features // self.quantization_config.qlora_weight_blocksize],
@@ -496,6 +497,74 @@ class ColumnParallelQuantizationLinear(nn.Layer):
                 self.activation_scale.is_distributed = False
                 self.activation_scale.stop_gradient = True
                 self.group = get_activation_scale_group()
+        elif self.weight_quantize_algo in ["nf4", "fp4"]:
+            if qlora_weight_linear is None:
+                raise ImportError(
+                    "Please run the following commands to install: qlora related package first\n"
+                    "1) git clone https://github.com/PaddlePaddle/PaddleSlim \n"
+                    "2) cd PaddleSlim && pip install -e .\n"
+                    "3) cd csrc &&  python ./setup_cuda.py install"
+                )
+            # print(self.output_size_per_partition, in_features)
+            self.quant_weight = self.create_parameter(
+                shape=[self.output_size_per_partition * in_features // 2, 1],
+                attr=paddle.nn.initializer.Constant(value=0),
+                dtype="uint8",
+                is_bias=False,
+            )
+            self.quant_weight.is_distributed = True if self.is_mp else False
+            if self.quant_weight.is_distributed:
+                self.quant_weight.split_axis = 0
+            if self.quantization_config.qlora_weight_double_quant:
+                # quantized weight_scale
+                self.qweight_scale = self.create_parameter(
+                    shape=[
+                        in_features * self.output_size_per_partition // self.quantization_config.qlora_weight_blocksize
+                    ],
+                    dtype="uint8",
+                    is_bias=False,
+                )
+                # double weight_scale: weight_scale of quantized weight_scale
+                self.qweight_scale.stop_gradient = True
+                self.qweight_scale.is_distributed = True if self.is_mp else False
+                if self.qweight_scale.is_distributed:
+                    self.qweight_scale.split_axis = 0
+                self.double_weight_scale = self.create_parameter(
+                    shape=[
+                        in_features
+                        * self.output_size_per_partition
+                        // self.quantization_config.qlora_weight_blocksize
+                        // self.quantization_config.qlora_weight_double_quant_block_size
+                    ],
+                    dtype="float32",
+                    is_bias=False,
+                )
+                self.double_weight_scale.stop_gradient = True
+                self.double_weight_scale.is_distributed = True if self.is_mp else False
+                if self.double_weight_scale.is_distributed:
+                    self.double_weight_scale.split_axis = 0
+                self.weight_scale_offset = self.create_parameter(
+                    shape=[],
+                    dtype="float32",
+                    is_bias=False,
+                )
+                self.weight_scale_offset.stop_gradient = True
+                self.weight_scale_offset.is_distributed = True if self.is_mp else False
+                if self.weight_scale_offset.is_distributed:
+                    self.weight_scale_offset.split_axis = 0
+            else:
+                self.weight_scale = self.create_parameter(
+                    shape=[
+                        in_features * self.output_size_per_partition // self.quantization_config.qlora_weight_blocksize
+                    ],
+                    dtype="float32",
+                    is_bias=False,
+                )
+                self.weight_scale.stop_gradient = True
+                self.weight_scale.is_distributed = True if self.is_mp else False
+                if self.weight_scale.is_distributed:
+                    self.weight_scale.split_axis = 0
+
         else:
             raise NotImplementedError(f"Not yet support weight_quantize_algo: {self.weight_quantize_algo}")
         if bias_attr is False:
@@ -647,6 +716,74 @@ class RowParallelQuantizationLinear(nn.Layer):
                 self.activation_scale.is_distributed = False
                 self.activation_scale.stop_gradient = True
                 self.group = get_activation_scale_group(is_row=True)
+        elif self.weight_quantize_algo in ["nf4", "fp4"]:
+            if qlora_weight_linear is None:
+                raise ImportError(
+                    "Please run the following commands to install: qlora related package first\n"
+                    "1) git clone https://github.com/PaddlePaddle/PaddleSlim \n"
+                    "2) cd PaddleSlim && pip install -e .\n"
+                    "3) cd csrc &&  python ./setup_cuda.py install"
+                )
+            self.quant_weight = self.create_parameter(
+                shape=[out_features * self.input_size_per_partition // 2, 1],
+                attr=paddle.nn.initializer.Constant(value=0),
+                dtype="uint8",
+                is_bias=False,
+            )
+            self.quant_weight.is_distributed = True if self.is_mp else False
+            if self.quant_weight.is_distributed:
+                self.quant_weight.split_axis = 1
+            if self.quantization_config.qlora_weight_double_quant:
+                # quantized weight_scale
+                self.qweight_scale = self.create_parameter(
+                    shape=[
+                        self.input_size_per_partition * out_features // self.quantization_config.qlora_weight_blocksize
+                    ],
+                    dtype="uint8",
+                    is_bias=False,
+                )
+                self.qweight_scale.stop_gradient = True
+                self.qweight_scale.is_distributed = True if self.is_mp else False
+                if self.qweight_scale.is_distributed:
+                    self.qweight_scale.split_axis = 0
+                # double weight_scale: weight_scale of quantized weight_scale
+                self.double_weight_scale = self.create_parameter(
+                    shape=[
+                        self.input_size_per_partition
+                        * out_features
+                        // self.quantization_config.qlora_weight_blocksize
+                        // self.quantization_config.qlora_weight_double_quant_block_size
+                    ],
+                    dtype="float32",
+                    is_bias=False,
+                )
+                self.double_weight_scale.stop_gradient = True
+                self.double_weight_scale.is_distributed = True if self.is_mp else False
+                if self.double_weight_scale.is_distributed:
+                    self.double_weight_scale.split_axis = 1
+                self.weight_scale_offset = self.create_parameter(
+                    shape=[],
+                    dtype="float32",
+                    is_bias=False,
+                )
+                self.weight_scale_offset.stop_gradient = True
+                self.weight_scale_offset.is_distributed = True if self.is_mp else False
+                if self.weight_scale_offset.is_distributed:
+                    self.weight_scale_offset.split_axis = 0
+            else:
+                self.weight_scale = self.create_parameter(
+                    shape=[
+                        self.input_size_per_partition * out_features // self.quantization_config.qlora_weight_blocksize
+                    ],
+                    dtype="float32",
+                    is_bias=False,
+                )
+
+                self.weight_scale.stop_gradient = True
+                self.weight_scale.is_distributed = True if self.is_mp else False
+                if self.weight_scale.is_distributed:
+                    self.weight_scale.split_axis = 0
+
         else:
             raise NotImplementedError(f"Not yet support weight_quantize_algo: {self.weight_quantize_algo}")
 

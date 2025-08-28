@@ -25,7 +25,7 @@ import paddle
 
 from ..utils.download import resolve_file_path
 from ..utils.log import logger
-from .tokenizer_utils_base import TensorType
+from .tokenizer_utils import TensorType
 
 FEATURE_EXTRACTOR_NAME = "preprocessor_config.json"
 
@@ -243,9 +243,7 @@ class FeatureExtractionMixin(object):
             `Tuple[Dict, Dict]`: The dictionary(ies) that will be used to instantiate the feature extractor object.
         """
         cache_dir = kwargs.pop("cache_dir", None)
-        from_hf_hub = kwargs.pop("from_hf_hub", False)
-        from_aistudio = kwargs.pop("from_aistudio", False)
-        from_modelscope = kwargs.pop("from_modelscope", False)
+        download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", "")
         if subfolder is None:
             subfolder = ""
@@ -256,9 +254,7 @@ class FeatureExtractionMixin(object):
             [FEATURE_EXTRACTOR_NAME],
             subfolder,
             cache_dir=cache_dir,
-            from_aistudio=from_aistudio,
-            from_hf_hub=from_hf_hub,
-            from_modelscope=from_modelscope,
+            download_hub=download_hub,
         )
         assert (
             resolved_feature_extractor_file is not None

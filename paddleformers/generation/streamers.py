@@ -11,11 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
 from queue import Queue
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from ..transformers.tokenizer_utils import PretrainedTokenizer
+if TYPE_CHECKING:
+    from transformers.tokenization_utils import PreTrainedTokenizer
 
 
 class BaseStreamer:
@@ -59,7 +61,7 @@ class TextStreamer(BaseStreamer):
         ```
     """
 
-    def __init__(self, tokenizer: PretrainedTokenizer, skip_prompt: bool = False, **decode_kwargs):
+    def __init__(self, tokenizer: PreTrainedTokenizer, skip_prompt: bool = False, **decode_kwargs):
         self.tokenizer = tokenizer
         self.skip_prompt = skip_prompt
         self.decode_kwargs = decode_kwargs
@@ -189,7 +191,7 @@ class TextIteratorStreamer(TextStreamer):
 
     def __init__(
         self,
-        tokenizer: PretrainedTokenizer,
+        tokenizer: PreTrainedTokenizer,
         skip_prompt: bool = False,
         timeout: Optional[float] = None,
         **decode_kwargs
