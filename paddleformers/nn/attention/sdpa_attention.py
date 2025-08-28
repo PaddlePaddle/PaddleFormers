@@ -35,7 +35,6 @@ def sdpa_attention_forward(
     **kwargs,
 ):
     # query: b l h d
-
     if is_causal is None and attn_mask_start_row_indices is None:
         is_causal = query.shape[1] > 1 and attention_mask is None and getattr(module, "is_causal", True)
     elif attn_mask_start_row_indices is not None:
