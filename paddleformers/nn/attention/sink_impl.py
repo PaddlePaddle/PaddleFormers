@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from typing import Optional
+
 import paddle
 from paddle.autograd.py_layer import PyLayer
 
@@ -74,8 +75,8 @@ def _flash_attention_forward_dispatch(
             )
         else:
             assert False, "flash_attn_v3 is not supported, may be due to paddle version"
-        
-        assert attention_mask is None, f"FA3 do not support dense mask(attention_mask)"
+
+        assert attention_mask is None, "FA3 do not support dense mask(attention_mask)"
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
 
@@ -117,7 +118,7 @@ def _flash_attention_backward_dispatch(
             )
         else:
             assert False, "flash_attn_v3_grad is not supported, may be due to paddle version"
-        assert attention_mask is None, f"FA3 do not support dense mask(attention_mask)"
+        assert attention_mask is None, "FA3 do not support dense mask(attention_mask)"
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
 
@@ -302,7 +303,7 @@ class FlashMaskSinkPyLayer(PyLayer):
         else:
             # FlashMask allows variable sequence lengths, but key and value must match
             assert seq_k == seq_v, f"Key and value sequence lengths must match: seq_k={seq_k}, seq_v={seq_v}"
-            assert attention_mask is None, f"Flashmask do not support dense mask(attention_mask)"
+            assert attention_mask is None, "Flashmask do not support dense mask(attention_mask)"
 
         # Handle GQA by repeating key/value heads if necessary
         num_attention_heads = query.shape[2]
@@ -360,7 +361,9 @@ class FlashMaskSinkPyLayer(PyLayer):
         final_out = (raw_output * multiplier).to(origin_dtype)
 
         # Save tensors for backward pass
-        ctx.save_for_backward(query, key, value, sink, attention_mask, raw_output, lse_original, multiplier, startend_row_indices)
+        ctx.save_for_backward(
+            query, key, value, sink, attention_mask, raw_output, lse_original, multiplier, startend_row_indices
+        )
         ctx.dropout = dropout
         ctx.causal = causal
         ctx.softmax_scale = scale
@@ -377,7 +380,17 @@ class FlashMaskSinkPyLayer(PyLayer):
         """
         Backward pass computing gradients for all inputs.
         """
-        query, key, value, sink, attention_mask, raw_output, lse_original, multiplier, startend_row_indices = ctx.saved_tensor()
+        (
+            query,
+            key,
+            value,
+            sink,
+            attention_mask,
+            raw_output,
+            lse_original,
+            multiplier,
+            startend_row_indices,
+        ) = ctx.saved_tensor()
 
         # Restore context variables
         num_key_value_groups = ctx.num_key_value_groups
