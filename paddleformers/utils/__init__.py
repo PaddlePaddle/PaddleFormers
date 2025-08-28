@@ -17,7 +17,6 @@ import sys
 from typing import TYPE_CHECKING
 
 from ..utils.lazy_import import _LazyModule
-from .paddle_patch import *
 
 import_structure = {
     "nested": [
