@@ -40,6 +40,7 @@ def eager_attention_forward(
     query = paddle.transpose(x=query, perm=perm)
     key = paddle.transpose(x=key, perm=perm)
     value = paddle.transpose(x=value, perm=perm)
+
     attn_weights = paddle.matmul(query, key.transpose([0, 1, 3, 2])) * scaling
     if attention_mask is not None:
         causal_mask = attention_mask[:, :, :, : key.shape[-2]]
