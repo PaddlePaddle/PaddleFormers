@@ -40,7 +40,6 @@ export NVSHMEM_BOOTSTRAP=UID
 unset NVSHMEM_HCA_LIST 
 unset NVSHMEM_ENABLE_NIC_PE_MAPPING
 
-LAUNCH_CMD=`python script/selective_launch.py 36677`
 if [[ -z "$LAUNCH_CMD" ]]; then
     exit 0
 fi
@@ -60,9 +59,6 @@ export USE_DS_GEMM=false
 
 bash script/kill_process.sh
 
-# source /root/paddlejob/workspace/env_run/zhangbo/env_ds/bin/activate
-source /root/paddlejob/workspace/env_run/chenxi/chenxi_py3.10/bin/activate
-
 export FLAGS_large_pool_auto_growth_chunk_size_in_mb=500
 export FLAGS_small_pool_auto_growth_chunk_size_in_mb=20
 export FLAGS_small_pool_size_in_mb=10
@@ -74,7 +70,7 @@ export DSV3_FAST_PRETRAIN=true
 # nsys profile --stats=true -t cuda,nvtx -o test_no_quant_cache --force-overwrite true \
 python3.10 -m paddle.distributed.launch \
     --log_dir output/paddle_distributed_logs \
-    $LAUNCH_CMD \
+    --nnodes 256 \
     --run_mode=collective \
     ${script:-run_pretrain.py}  \
     $@
