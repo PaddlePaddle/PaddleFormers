@@ -2,9 +2,16 @@ name: Unittest GPU CI
 
 on:
   pull_request:
-    branches:
-      - develop
-      - 'release/v*'
+  schedule:
+    - cron: "3 0 * * *"
+  workflow_call:
+    inputs:
+      run_downstream:
+        required: true
+        type: string
+      image_name:
+        required: true
+        type: string
 
 concurrency:
   group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -20,7 +27,6 @@ env:
   CI_name: unittest-gpu-ci
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
   HF_ENDPOINT: https://hf-mirror.com
-  STUDIO_GIT_HOST: http://git.prod.idc-to-cloud.aistudio.baidu-int.com
   PPNLP_HOME: /ssd1/paddlenlp
   NLP_DIR: /workspace/PaddleFormers
   HF_DATASETS_CACHE: /ssd1/paddlenlp/huggingface/datasets
