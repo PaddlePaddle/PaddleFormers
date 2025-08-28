@@ -391,7 +391,7 @@ class PaddleTokenizerMixin:
         return query
 
 
-def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer):
+def warp_tokenizer(hf_tokenizer_class: transformers.PreTrainedTokenizer):
     return type(hf_tokenizer_class.__name__, (PaddleTokenizerMixin, hf_tokenizer_class), {})
 
 
