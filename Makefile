@@ -46,7 +46,7 @@ unit-test:
 
 .PHONY: install
 install:
-	pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
+	pip install paddlepaddle==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 	pip install -r requirements-dev.txt
 	pip install -r requirements.txt
 	pre-commit install
