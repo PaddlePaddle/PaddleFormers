@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - develop
-      - 'release*'
+      - 'release/v*'
   schedule:
     - cron: "4 0 * * *"
   workflow_call:
