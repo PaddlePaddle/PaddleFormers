@@ -212,7 +212,8 @@ class LoRAModel(nn.Layer):
                         single_name = [prefixes[idx]]
                         single_name.extend(name_splited[1:])
                     elif "shared_layers" in idx:
-                        single_name = re.sub(r"^shared_layers.embed_weight_share.", "ernie.", k)
+                        single_name = ["ernie"]
+                        single_name.extend(k.split("shared_layers.embed_weight_share.")[1:])
                     else:
                         raise ValueError(f"Unexpected key: {k} for pp lora layer.")
                 rename_lora_split_mapping[".".join(single_name)] = self.lora_split_mapping[k]
