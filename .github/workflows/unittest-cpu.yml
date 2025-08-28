@@ -61,7 +61,7 @@ jobs:
             git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
             git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-            git fetch upstream ${BRANCH}
+            git fetch upstream ${BRANCH}:${BRANCH}
             git merge ${BRANCH} --no-edit
             git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
           else

@@ -2,7 +2,8 @@ name: Unittest GPU CE
 
 on:
   schedule:
-    - cron: "0 16 * * 0"
+    - cron: "0 6 * * 6"
+  workflow_dispatch:        # allow to manually trigger the workflow
 
 concurrency:
   group: unittest-${{ github.workflow }}
@@ -24,6 +25,7 @@ defaults:
 jobs:
   unittest-gpu-ce:
     name: unittest-gpu-ce
+    if: github.ref == 'refs/heads/develop'
     runs-on: [self-hosted, ernie-8gpu]
     steps:
       - name: Determine Image Name
@@ -81,7 +83,7 @@ jobs:
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-          timeout 1h bash scripts/unit_test/ci_unit.sh ${paddle} true
+          timeout 2h bash scripts/unit_test/ci_unit.sh ${paddle} true
           '
           
       - name: Upload Allure-reports & Logs

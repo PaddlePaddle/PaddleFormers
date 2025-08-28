@@ -2,7 +2,8 @@ name: Deadlink CE
 
 on:
   schedule:
-    - cron: "0 16 * * 1"
+    - cron: "0 8 * * 6"     # every Saturday at 6:00 AM
+  workflow_dispatch:        # allow to manually trigger the workflow
 
 concurrency:
   group: deadlink-${{ github.workflow }}
@@ -22,6 +23,7 @@ defaults:
 jobs:
   deadlink-ce:
     name: deadlink-ce
+    if: github.ref == 'refs/heads/develop'
     runs-on: [self-hosted, ernie-8gpu]
     steps:
       - name: Determine Image Name
@@ -83,7 +85,6 @@ jobs:
           ln -sf $(which python${python_version}) /usr/bin/python3
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
-          cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           python -m pip install beautifulsoup4 openpyxl
           bash run.sh PaddleFormers develop liujie44@baidu.com PaddleFormers死链检测汇总报告
           '
