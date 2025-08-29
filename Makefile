@@ -36,7 +36,7 @@ test: unit-test
 
 unit-test:
 	DOWNLOAD_SOURCE=aistudio \
-	PYTHONPATH=$(shell pwd) pytest -v \
+	PYTHONPATH=$(shell pwd) pytest -v -n auto \
 		--retries 1 --retry-delay 1 \
 		--durations 20 \
 		--cov paddleformers \
