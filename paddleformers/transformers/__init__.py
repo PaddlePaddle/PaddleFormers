@@ -30,6 +30,7 @@ import_structure = {
     "sequence_parallel_utils": ["AllGatherVarlenOp", "sequence_parallel_sparse_mask_labels"],
     "model_utils": ["PretrainedModel", "register_base_model"],
     "tokenizer_utils": [
+        "PreTrainedTokenizer",
         "PretrainedTokenizer",
         "BPETokenizer",
         "tokenize_chinese_chars",
@@ -38,7 +39,6 @@ import_structure = {
         "normalize_chars",
         "tokenize_special_chars",
         "convert_to_unicode",
-        "PreTrainedTokenizer",
     ],
     "attention_utils": ["create_bigbird_rand_mask_idx_list"],
     "tensor_parallel_utils": [],

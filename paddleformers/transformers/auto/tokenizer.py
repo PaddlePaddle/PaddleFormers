@@ -24,7 +24,6 @@ from transformers.dynamic_module_utils import (
     resolve_trust_remote_code,
 )
 from transformers.modeling_gguf_pytorch_utils import load_gguf_checkpoint
-from transformers.models import EncoderDecoderConfig
 from transformers.models.auto.configuration_auto import (
     config_class_to_model_type,
     replace_list_option_in_docstrings,
@@ -34,6 +33,9 @@ from transformers.models.auto.tokenization_auto import (
     TOKENIZER_MAPPING_NAMES,
     get_tokenizer_config,
     tokenizer_class_from_name,
+)
+from transformers.models.encoder_decoder.configuration_encoder_decoder import (
+    EncoderDecoderConfig,
 )
 from transformers.tokenization_utils_base import TOKENIZER_CONFIG_FILE
 from transformers.utils import cached_file
