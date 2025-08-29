@@ -74,9 +74,7 @@ class ZeroPaddingTestCommon:
         return_attention_mask=True,
     ):
         inputs = example["sentence"][:2]
-        model_inputs = self.tokenizer(
-            inputs, max_length=max_src_length, truncation=True, return_attention_mask=False, return_position_ids=False
-        )
+        model_inputs = self.tokenizer(inputs, max_length=max_src_length, truncation=True, return_attention_mask=False)
         labels_input_ids = model_inputs["input_ids"] + [self.tokenizer.eos_token_id]
         model_inputs["labels"] = [-100] * len(model_inputs["input_ids"]) + labels_input_ids
         model_inputs["input_ids"] = model_inputs["input_ids"] + labels_input_ids

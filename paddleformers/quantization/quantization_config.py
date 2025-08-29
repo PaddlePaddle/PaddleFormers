@@ -16,7 +16,10 @@ import copy
 import json
 from dataclasses import dataclass
 
-from paddle.nn.quant.quantized_linear import _get_arch_info
+try:
+    from paddle.nn.quant.quantized_linear import _get_arch_info
+except:
+    _get_arch_info = None
 
 quant_inference_mapping = {"avg": "abs_max", "abs_max_channel_wise": "abs_max_channel_wise", "abs_max": "abs_max"}
 fp8_format_mapping = {
@@ -114,7 +117,8 @@ class QuantizationConfig:
                     f"weight_quantize_algo:{weight_quantize_algo} not in supported list ['weight_only_int8', 'weight_only_int4', 'llm.int8', 'a8w8', 'nf4', 'fp4']"
                 )
         if (
-            (isinstance(weight_quantize_algo, dict) and "fp8linear" in weight_quantize_algo)
+            _get_arch_info is not None
+            and (isinstance(weight_quantize_algo, dict) and "fp8linear" in weight_quantize_algo)
             or weight_quantize_algo == "fp8linear"
         ) and _get_arch_info() not in [89, 90]:
             raise RuntimeError("fp8Linear is only supported on NVIDIA Hopper GPUs.")
