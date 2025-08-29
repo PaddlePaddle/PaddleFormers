@@ -170,10 +170,10 @@ class PaddleTokenizerMixin:
             {"role": "assistant", "content": "Hi! How can I help?"}
         ]
 
-        2. Multi-turn grouped format:
+        2. Batch Conversation Format:
         [
-            [{"role": "user", "content": "First question"}],
-            [{"role": "assistant", "content": "First response"}]
+            [{"role": "user", "content": "user messages"}, {"role": "assistant", "content": "assistant messages"}],
+            [{"role": "user", "content": "user messages"}]
         ]
 
         3. Enhanced dictionary format (not natively supported by HuggingFace):
@@ -187,9 +187,9 @@ class PaddleTokenizerMixin:
         }
         """
         if isinstance(conversation, dict):
-            messages = conversation.get("messages", [])
-            tools = conversation.get("tools", [])
-            documents = conversation.get("documents", [])
+            messages = conversation.get("messages", None)
+            tools = conversation.get("tools", None)
+            documents = conversation.get("documents", None)
 
             # Allow kwargs override for empty values
             if not tools and "tools" in kwargs:
