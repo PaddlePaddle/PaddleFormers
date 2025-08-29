@@ -12,8 +12,87 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration import *
-from .modeling import *
-from .modeling_auto import *
-from .modeling_pp import *
-from .tokenizer_fast import *
+
+import sys
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "configuration": ["DeepseekV2Config"],
+    "modeling": [
+        "masked_fill",
+        "DeepseekV2Attention",
+        "MoEGate",
+        "FakeGate",
+        "DeepseekV2ForCausalLM",
+        "_make_causal_mask",
+        "is_casual_mask",
+        "DeepseekV2MoE",
+        "DeepseekV2MoEFlexToken",
+        "scaled_dot_product_attention",
+        "DeepseekV2RotaryEmbedding",
+        "rotate_half",
+        "DeepseekV2MTPLayer",
+        "DeepseekV2RMSNorm",
+        "DeepseekV2YarnRotaryEmbedding",
+        "parallel_matmul",
+        "DeepseekV2PretrainedModel",
+        "AddAuxiliaryLoss",
+        "apply_rotary_pos_emb",
+        "assign_kv_heads",
+        "DeepseekV2ForSequenceClassification",
+        "_expand_2d_mask",
+        "DeepseekV2Model",
+        "repeat_kv",
+        "yarn_find_correction_dim",
+        "yarn_linear_ramp_mask",
+        "DeepseekV2DynamicNTKScalingRotaryEmbedding",
+        "DeepseekV2MLP",
+        "yarn_get_mscale",
+        "DeepseekV2LMHead",
+        "DeepseekV2DecoderLayer",
+        "DeepseekV2PretrainingCriterion",
+        "yarn_find_correction_range",
+        "get_triangle_upper_mask",
+        "DeepseekV2LinearScalingRotaryEmbedding",
+    ],
+    "modeling_auto": [
+        "DeepseekV2LMHeadAuto",
+        "DeepseekV2ForCausalLMAuto",
+        "DeepseekV2ModelAuto",
+        "DeepseekV2PretrainedModelAuto",
+    ],
+    "modeling_pp": ["DeepseekV2ForCausalLMPipe"],
+    "mfu_utils": ["DeepSeekProjection"],
+    "kernel": [
+        "act_quant",
+        "weight_dequant",
+        "fp8_gemm",
+        "weight_dequant_kernel",
+        "act_quant_kernel",
+        "fp8_gemm_kernel",
+    ],
+    "tokenizer_fast": ["DeepseekTokenizerFast"],
+    "fp8_linear": [
+        "Linear",
+        "ColumnParallelLinear",
+        "RowParallelLinear",
+        "ColumnSequenceParallelLinear",
+        "RowSequenceParallelLinear",
+    ],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
+    from .modeling_auto import *
+    from .modeling_pp import *
+    from .tokenizer_fast import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

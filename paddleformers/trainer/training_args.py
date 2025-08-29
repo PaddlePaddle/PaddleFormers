@@ -627,6 +627,11 @@ class TrainingArguments:
         },
     )
 
+    load_sharded_model_remap_parameter_name: bool = field(
+        default=False,
+        metadata={"help": "Whether to remap parameter name when load_sharded_model = true."},
+    )
+
     tensor_parallel_degree: int = field(
         default=-1,
         metadata={
@@ -1074,6 +1079,14 @@ class TrainingArguments:
     split_norm_comm: Optional[bool] = field(
         default=False,
         metadata={"help": "是否开启单路sharding时global norm通信拆分全局通信组为pp通信和mp通信分别做"},
+    )
+    convert_from_hf: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Load model from HuggingFace safetensors."},
+    )
+    save_to_hf: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Save model to HuggingFace safetensors."},
     )
 
     def __post_init__(self):

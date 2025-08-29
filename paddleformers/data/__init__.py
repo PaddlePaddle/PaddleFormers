@@ -12,10 +12,96 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .blendable_dataset import *
-from .causal_dataset import *
-from .collate import *
-from .data_collator import *
-from .dist_dataloader import *
-from .sampler import *
-from .vocab import *
+
+import sys
+from typing import TYPE_CHECKING
+
+from ..utils.lazy_import import _LazyModule
+
+import_structure = {
+    "sampler": ["SamplerHelper"],
+    "causal_dataset": [
+        "check_data_split",
+        "get_train_valid_test_split_",
+        "get_datasets_weights_and_num_samples",
+        "print_rank_0",
+        "build_train_valid_test_datasets",
+        "_build_train_valid_test_datasets",
+        "get_indexed_dataset_",
+        "GPTDataset",
+        "_build_index_mappings",
+        "_num_tokens",
+        "_num_epochs",
+        "_build_doc_idx",
+        "_build_sample_idx",
+        "_build_shuffle_idx",
+    ],
+    "data_collator": [
+        "DataCollatorForSeq2Seq",
+        "default_data_collator",
+        "DataCollator",
+        "DataCollatorWithPadding",
+        "InputDataClass",
+        "DataCollatorMixin",
+        "paddle_default_data_collator",
+        "numpy_default_data_collator",
+        "DefaultDataCollator",
+        "DataCollatorForTokenClassification",
+        "DataCollatorForEmbedding",
+        "_paddle_collate_batch",
+        "_numpy_collate_batch",
+        "tolist",
+        "DataCollatorForLanguageModeling",
+    ],
+    "dist_dataloader": ["DummyDataset", "IterableDummyDataset", "DistDataLoader", "init_dataloader_comm_group"],
+    "blendable_dataset": ["print_rank_0", "BlendableDataset"],
+    "collate": ["Dict", "Pad", "Stack", "Tuple"],
+    "vocab": ["Vocab"],
+    "tokenizer": ["BaseTokenizer"],
+    "indexed_dataset": [
+        "print_rank_0",
+        "get_available_dataset_impl",
+        "make_dataset",
+        "make_sft_dataset",
+        "dataset_exists",
+        "read_longs",
+        "write_longs",
+        "read_shorts",
+        "write_shorts",
+        "dtypes",
+        "code",
+        "index_file_path",
+        "sft_index_file_path",
+        "sft_data_file_path",
+        "data_file_path",
+        "loss_mask_file_path",
+        "create_doc_idx",
+        "IndexedDataset",
+        "IndexedDatasetBuilder",
+        "_warmup_mmap_file",
+        "MMapIndexedDataset",
+        "SFTMMapIndexedDataset",
+        "make_builder",
+        "SFTMMapIndexedDatasetBuilder",
+        "MMapIndexedDatasetBuilder",
+        "get_indexed_dataset_",
+        "CompatibleIndexedDataset",
+    ],
+}
+
+
+if TYPE_CHECKING:
+    from .blendable_dataset import *
+    from .causal_dataset import *
+    from .collate import *
+    from .data_collator import *
+    from .dist_dataloader import *
+    from .sampler import *
+    from .vocab import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

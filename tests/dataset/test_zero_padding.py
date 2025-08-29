@@ -36,7 +36,7 @@ def read_local_dataset(path):
 
 
 class ZeroPaddingTestCommon:
-    tokenizer = AutoTokenizer.from_pretrained("__internal_testing__/micro-random-llama")
+    tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/micro-random-llama")
     expected_output = {
         "input_ids": [1, 29871, 30429, 1, 29871, 30429, 2, 1, 29871, 31427, 1, 29871, 31427, 2],
         "labels": [-100, -100, -100, 1, 29871, 30429, 2, -100, -100, -100, 1, 29871, 31427, 2],
@@ -74,9 +74,7 @@ class ZeroPaddingTestCommon:
         return_attention_mask=True,
     ):
         inputs = example["sentence"][:2]
-        model_inputs = self.tokenizer(
-            inputs, max_length=max_src_length, truncation=True, return_attention_mask=False, return_position_ids=False
-        )
+        model_inputs = self.tokenizer(inputs, max_length=max_src_length, truncation=True, return_attention_mask=False)
         labels_input_ids = model_inputs["input_ids"] + [self.tokenizer.eos_token_id]
         model_inputs["labels"] = [-100] * len(model_inputs["input_ids"]) + labels_input_ids
         model_inputs["input_ids"] = model_inputs["input_ids"] + labels_input_ids

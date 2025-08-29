@@ -26,7 +26,7 @@ from paddleformers import __version__
 
 from ..transformers.configuration_utils import PretrainedConfig
 from ..utils import GENERATION_CONFIG_NAME
-from ..utils.download import resolve_file_path
+from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.downloader import hf_file_exists
 from ..utils.log import logger
 
@@ -337,9 +337,7 @@ class GenerationConfig:
     def from_pretrained(
         cls,
         pretrained_model_name_or_path: Union[str, os.PathLike],
-        from_hf_hub: bool = False,
-        from_aistudio: bool = False,
-        from_modelscope: bool = False,
+        download_hub: DownloadSource = None,
         config_file_name: Optional[Union[str, os.PathLike]] = None,
         cache_dir: Optional[Union[str, os.PathLike]] = None,
         force_download: bool = False,
@@ -358,8 +356,8 @@ class GenerationConfig:
                 - a path to a *directory* containing a configuration file saved using the
                   [`~PretrainedConfig.save_pretrained`] method, e.g., `./my_model_directory/`.
                 - a path or url to a saved configuration JSON *file*, e.g., `./my_model_directory/configuration.json`.
-            from_hf_hub (bool, *optional*):
-                load config from huggingface hub: https://huggingface.co/models
+            download_hub (DownloadSource, *optional*):
+                The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
             cache_dir (`str` or `os.PathLike`, *optional*):
                 Path to a directory in which a downloaded pretrained model configuration should be cached if the
                 standard cache should not be used.
@@ -418,9 +416,7 @@ class GenerationConfig:
             subfolder,
             cache_dir=cache_dir,
             force_download=force_download,
-            from_aistudio=from_aistudio,
-            from_hf_hub=from_hf_hub,
-            from_modelscope=from_modelscope,
+            download_hub=download_hub,
         )
         assert (
             resolved_config_file is not None

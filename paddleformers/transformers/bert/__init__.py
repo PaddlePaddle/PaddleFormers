@@ -12,7 +12,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration import *
-from .modeling import *
-from .tokenizer import *
-from .tokenizer_fast import *
+
+import sys
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
+    "tokenizer": ["BasicTokenizer", "BertTokenizer", "WordpieceTokenizer"],
+    "tokenizer_fast": ["BertTokenizerFast"],
+    "modeling": [
+        "BertForSequenceClassification",
+        "BertPretrainingHeads",
+        "BertForMaskedLM",
+        "BertForPretraining",
+        "BertPretrainedModel",
+        "BertForTokenClassification",
+        "BertForMultipleChoice",
+        "BertModel",
+        "BertPretrainingCriterion",
+        "BertForQuestionAnswering",
+    ],
+    "configuration": ["BERT_PRETRAINED_INIT_CONFIGURATION", "BertConfig", "BERT_PRETRAINED_RESOURCE_FILES_MAP"],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
+    from .tokenizer import *
+    from .tokenizer_fast import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

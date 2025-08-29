@@ -25,7 +25,7 @@ import PIL.ImageOps
 import requests
 from packaging import version
 
-from .tokenizer_utils_base import ExplicitEnum
+from .tokenizer_utils import ExplicitEnum
 
 IMAGENET_DEFAULT_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_DEFAULT_STD = [0.229, 0.224, 0.225]
