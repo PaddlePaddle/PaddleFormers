@@ -22,6 +22,8 @@ import numpy as np
 from paddle.io import IterableDataset
 from scipy.linalg import block_diag
 
+from paddleformers.utils.env import NONE_CHAT_TEMPLATE
+
 from ..utils.log import logger
 from .base import MultiSourceDataset
 from .mix_datasets import create_dataset_instance
@@ -590,6 +592,9 @@ class SequenceDataset(IterableDataset):
         cur_len = 0
 
         # encoded_messages: List[List[int]]
+        if not self.tokenizer.chat_template:
+            print("Tokenizer chat_template is None, using default chat template.")
+            self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
         chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example.chosen)
         rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example.rejected)
 

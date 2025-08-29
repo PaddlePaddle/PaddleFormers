@@ -19,9 +19,9 @@ from typing import List
 
 import numpy as np
 from paddle.io import IterableDataset
-from transformers import PreTrainedTokenizer
 
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
+from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 
 from ..utils.log import logger
 from .base import MultiSourceDataset
@@ -531,7 +531,9 @@ class SequenceDataset(IterableDataset):
         Returns:
             Sequence: Processed sequence or None if invalid.
         """
-
+        if not self.tokenizer.chat_template:
+            print("Tokenizer chat_template is None, using default chat template.")
+            self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
         if example.is_function_call:
             encoded_messages = self._postprocess_fc_sequence(example)
         else:

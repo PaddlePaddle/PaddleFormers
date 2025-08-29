@@ -18,6 +18,8 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
+from paddleformers.utils.env import NONE_CHAT_TEMPLATE
+
 from ..utils.log import logger
 
 INF = 1000000
@@ -126,6 +128,9 @@ def convert_to_tokens_for_sft(
     Returns:
         List of processed tokens ready for model input
     """
+    if not tokenizer.chat_template:
+        print("Tokenizer chat_template is None, using default chat template.")
+        tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
     encoded_messages = tokenizer.encode_chat_inputs({"messages": dial})
 
     num_reserved_tokens_for_each_dialog = 1  # only break_turn_token or end_token
