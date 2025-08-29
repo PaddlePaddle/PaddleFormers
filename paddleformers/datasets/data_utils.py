@@ -129,7 +129,6 @@ def convert_to_tokens_for_sft(
         List of processed tokens ready for model input
     """
     if not tokenizer.chat_template:
-        print("Tokenizer chat_template is None, using default chat template.")
         tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
     encoded_messages = tokenizer.encode_chat_inputs({"messages": dial})
 

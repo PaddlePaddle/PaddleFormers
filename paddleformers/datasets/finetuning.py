@@ -532,7 +532,6 @@ class SequenceDataset(IterableDataset):
             Sequence: Processed sequence or None if invalid.
         """
         if not self.tokenizer.chat_template:
-            print("Tokenizer chat_template is None, using default chat template.")
             self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
         if example.is_function_call:
             encoded_messages = self._postprocess_fc_sequence(example)

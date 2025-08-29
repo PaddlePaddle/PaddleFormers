@@ -593,7 +593,6 @@ class SequenceDataset(IterableDataset):
 
         # encoded_messages: List[List[int]]
         if not self.tokenizer.chat_template:
-            print("Tokenizer chat_template is None, using default chat template.")
             self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
         chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example.chosen)
         rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example.rejected)
