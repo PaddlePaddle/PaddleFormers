@@ -27,6 +27,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Qwen2MLP
 from ...nn.norm import Norm as GeneralNorm
@@ -184,8 +185,8 @@ class Qwen2MoeSparseMoeBlock(MoELayer):
         self.top_k = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
 
-        self.shared_expert = Qwen2MoeMLP(config, intermediate_size=config.moe_intermediate_size)
-        self.shared_expert_gate = nn.Linear(config.hidden_size, 1, bias_attr=False)
+        self.shared_expert = Qwen2MoeMLP(config, intermediate_size=config.shared_expert_intermediate_size)
+        self.shared_expert_gate = GeneralLinear.create(config.hidden_size, 1, has_bias=False, linear_type="default")
 
     def forward(self, hidden_states):
         final_hidden_states, l_aux, _ = super().forward(hidden_states)
@@ -207,7 +208,7 @@ class Qwen2MoeDecoderLayer(nn.Layer):
             self.mlp = Qwen2MoeSparseMoeBlock(config)
         else:
             # num_experts == 0 or this layer is not sparse layer
-            self.mlp = Qwen2MoeMLP(config, config.itermediate_size)
+            self.mlp = Qwen2MoeMLP(config)
 
         self.input_layernorm = GeneralNorm.create(
             config=config,
@@ -314,6 +315,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
         "gate_proj",
         "up_proj",
         "down_proj",
+        "gate",
         "shared_expert_gate",
         "lm_head",
     ]

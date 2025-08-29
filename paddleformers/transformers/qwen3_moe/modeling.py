@@ -98,7 +98,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             self.mlp = ExpertParallelQwen3MoeSparseMoeBlock(config)
         else:
             # num_experts == 0 or this layer is not sparse layer
-            self.mlp = Qwen3MoeMLP(config, config.itermediate_size)
+            self.mlp = Qwen3MoeMLP(config)
 
         self.input_layernorm = GeneralNorm.create(
             config=config,
