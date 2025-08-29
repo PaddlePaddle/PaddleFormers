@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import re
 from functools import wraps
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from transformers import BatchEncoding
 from transformers.tokenization_utils import (
@@ -446,6 +446,36 @@ class PaddleTokenizerMixin:
                 conversations.update(add_generation_prompt=add_generation_prompt)
                 query = self._encode_chat_inputs_openai_format(conversations)
         return query
+
+    def decode_token(
+        self,
+        all_input_ids: List[int],
+        prefix_offset: int = 0,
+        read_offset: int = 0,
+        skip_special_tokens: bool = False,
+    ) -> Tuple[str, int, int]:
+        """tokenizer decoding for the streaming generation use case. This method can be overridden for tokenizer that doesn't follow this API"""
+        # The prefix text is necessary only to defeat cleanup algorithms in the decode
+        # which decide to add a space or not depending on the surrounding ids.
+        prefix_text = self.decode(
+            all_input_ids[prefix_offset:read_offset],
+            skip_special_tokens=skip_special_tokens,
+            clean_up_tokenization_spaces=False,
+        )
+        new_text = self.decode(
+            all_input_ids[prefix_offset:], skip_special_tokens=skip_special_tokens, clean_up_tokenization_spaces=False
+        )
+
+        if len(new_text) > len(prefix_text) and not prefix_text.endswith("�") and not new_text.endswith("�"):
+            # utf-8 char at the end means it's a potential unfinished byte sequence
+            # from byte fallback tokenization.
+            # If it's in the middle, it's probably a real invalid id generated
+            # by the model
+            prefix_index = new_text.index(prefix_text)
+            new_text = new_text[prefix_index + len(prefix_text) :]
+            return new_text, read_offset, len(all_input_ids)
+        else:
+            return "", prefix_offset, read_offset
 
 
 def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer_tf):
