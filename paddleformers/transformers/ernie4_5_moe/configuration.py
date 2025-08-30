@@ -19,26 +19,7 @@ from typing import Optional, Union
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig
 
-ERNIE_PRETRAINED_INIT_CONFIGURATION = {
-    "ernie/tiny-random-ernie": {
-        "hidden_size": 768,
-        "initializer_range": 0.02,
-        "intermediate_size": 11008,
-        "max_position_embeddings": 2048,
-        "model_type": "ernie",
-        "num_attention_heads": 2,
-        "num_hidden_layers": 2,
-        "rms_norm_eps": 1e-06,
-        "vocab_size": 32000,
-        "bos_token_id": 1,
-        "eos_token_id": 2,
-        "pad_token_id": 0,
-        "use_cache": False,
-        "recompute": False,
-        "use_flash_attn": True,
-        "use_pure_fp16": False,
-    },
-}
+__all__ = ["Ernie4_5_MoeConfig"]
 
 
 class Ernie4_5_MoeConfig(PretrainedConfig):
@@ -50,15 +31,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
     """
 
     model_type = "ernie4_5_moe"
-    attribute_map = {
-        "n_positions": "max_position_embeddings",
-        "n_embd": "hidden_size",
-        "n_layer": "num_hidden_layers",
-        "n_head": "num_attention_heads",
-        "n_inner": "intermediate_size",
-        "activation_function": "hidden_act",
-    }
-    pretrained_init_configuration = ERNIE_PRETRAINED_INIT_CONFIGURATION
 
     def __init__(
         self,
@@ -69,51 +41,30 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         num_hidden_layers=3,
         num_attention_heads=2,
         head_dim=None,
+        hidden_act="silu",
         initializer_range=0.02,
         rms_norm_eps=1e-6,
         use_cache=False,
         use_flash_attention=True,
-        use_sparse_flash_attn=True,
-        use_var_len_flash_attn=False,
-        recompute=False,
-        recompute_granularity="core_attn",
-        recompute_use_reentrant=False,
         use_rmsnorm=True,
-        fuse_rms_norm=False,
-        fuse_ln=False,
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
         fuse_swiglu=False,
         use_bias=False,
         rope_theta=10000,
-        fuse_rope=False,
-        fuse_softmax_mask=False,
         weight_share_add_bias=True,
-        fuse_linear=False,
         max_sequence_length=None,
         ignored_index=-100,
-        add_tail_layers=False,
-        use_recompute_lm_head=False,
-        use_recompute_loss_fn=False,
-        refined_recompute=dict(),
-        attention_probs_dropout_prob=0.0,
+        attention_dropout_prob=0.0,
         hidden_dropout_prob=0.0,
         compression_ratio: float = 1.0,
         num_key_value_heads=None,
-        use_sparse_head_and_loss_fn=False,
         micro_batch_size=-1,
-        use_fused_head_and_loss_fn=False,
-        token_balance_loss=False,
-        token_balance_seqlen=False,  # calculated based on batchsize and seqlen
-        cachekv_quant: bool = False,
-        pp_seg_method="layer:Ernie4_5_MoeDecoderLayer|EmptyLayer",
         moe_num_experts: Optional[Union[int, list]] = 16,
         use_recompute_moe=False,
         moe_capacity=[64, 64, 64],
-        moe_layer_interval=1,
-        moe_layer_start_index=0,
-        moe_layer_end_index=-1,
+        moe_norm_min=1e-12,
         moe_aux_loss_lambda=1e-2,
         moe_z_loss_lambda=1e-4,
         moe_orthogonal_loss_lambda=1e-2,
@@ -125,23 +76,23 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         moe_gate="topk",
         moe_intermediate_size: Union[int, list] = 0,
         moe_num_shared_experts: int = 2,
+        moe_layer_start_index=1,
+        moe_layer_end_index=-1,
+        moe_layer_interval=1,
         moe_reverse_token_drop: bool = False,
         moe_gate_act: str = "softmax",
         moe_norm_gate_logits=True,
         moe_all_to_all_dropout: float = 0.0,
         moe_k=2,
-        moe_use_aux_free: bool = False,
-        # `moe_group_experts` must be used with `moe_use_hard_gate=True`
+        moe_use_aux_free: bool = True,
         moe_group_experts: bool = False,
         moe_group_orthogonal_loss: bool = True,
         enable_delay_scale_loss: bool = True,
         num_acc_steps: int = 1,
         fuse_gate_detach_matmul: bool = False,
-        dpo_config=None,
-        moe_multimodal_dispatch_use_allgather: str = "",
         moe_use_hard_gate=False,
         moe_dense_experts_token_type_id=3,
-        num_nextn_predict_layers=0,
+        num_nextn_predict_layers=1,
         multi_token_pred_lambda=0.1,
         enable_mtp_magic_send=False,
         use_recompute_mtp=False,
@@ -157,46 +108,33 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             max_position_embeddings (int): Maximum sequence length the model can handle
             num_hidden_layers (int): Number of hidden layers in the Transformer encoder
             num_attention_heads (int): Number of attention heads for each attention layer
+            head_dim (int): Dimensionality of each attention head
+            hidden_act (str): Name of the activation function used in the feed-forward network
             rms_norm_eps (float): The epsilon used by the RMS normalization layers
             use_cache (bool): Whether to use caching for faster generation (decoding)
             use_flash_attention (bool): Whether to use FlashAttention for optimized attention computation
-            use_sparse_flash_attn (bool): Whether to use sparse FlashAttention
-            use_var_len_flash_attn (bool): Whether to use variable-length FlashAttention
             recompute (bool): Whether to use gradient checkpointing to save memory
             recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
             use_rmsnorm (bool): Whether to use RMSNorm instead of LayerNorm
-            fuse_rms_norm (bool): Whether to fuse RMSNorm operations for optimization
-            fuse_ln (bool): Whether to fuse LayerNorm operations
             pad_token_id (int): Token ID used for padding sequences
             bos_token_id (int): Token ID used for beginning-of-sequence
             eos_token_id (int): Token ID used for end-of-sequence
             fuse_swiglu (bool): Whether to fuse SwiGLU operations
             use_bias (bool): Whether to use bias terms in linear layers
             rope_theta (float): The base period of the RoPE embeddings
-            fuse_rope (bool): Whether to fuse RoPE operations
             weight_share_add_bias (bool): Whether to share bias weights in certain layers
-            fuse_linear (bool): Whether to fuse linear operations
             max_sequence_length (int): Maximum sequence length for positional embeddings
             ignored_index (int): Target value that is ignored during loss computation
-            add_tail_layers (int): Whether to add additional layers at the end
-            use_recompute_lm_head (bool): Whether to recompute gradients for language model head
-            use_recompute_loss_fn (bool): Whether to recompute gradients for loss function
-            refined_recompute (dict): Dictionary specifying refined recomputation settings
             attention_probs_dropout_prob (float): Dropout probability for attention weights
             hidden_dropout_prob (float): Dropout probability for hidden layers
             compression_ratio (float): Ratio for KV cache compression (1.0 = no compression)
             num_key_value_heads (int): Number of key/value heads (for Grouped Query Attention)
-            use_sparse_head_and_loss_fn (bool): Whether to use sparse attention head and loss function
             micro_batch_size (int): Size of micro batches (-1 for automatic)
-            use_fused_head_loss_fn (bool): Whether to use fused head and loss function
-            token_balance_loss (bool): Whether to balance loss by token count
-            token_balance_seqlen (bool): Whether to balance sequence lengths
-            cachekv_quant (bool): Whether to quantize key-value cache
-            pp_seg_method (str): Method for pipeline parallel segmentation
             moe_num_experts: Number of experts in MoE layers
             use_recompute_moe: Whether to use recomputation for MoE layers
             moe_capacity: Capacity configuration for MoE layers
+            moe_norm_min: Minimum value for routing normalization
             moe_layer_interval: Interval between MoE layers
             moe_layer_start_index: Starting layer index for MoE
             moe_layer_end_index: Ending layer index for MoE (-1 means last layer)
@@ -250,74 +188,31 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.max_position_embeddings = max_position_embeddings
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
-        self.head_dim = head_dim
+        self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
+        self.hidden_act = hidden_act
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-        self.recompute = recompute
-        self.recompute_granularity = recompute_granularity
         self.use_flash_attention = use_flash_attention
-        self.use_sparse_flash_attn = use_sparse_flash_attn
-        self.recompute_use_reentrant = recompute_use_reentrant
-        self.use_var_len_flash_attn = use_var_len_flash_attn
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
         self.fuse_swiglu = fuse_swiglu
-        self.fuse_rms_norm = fuse_rms_norm
-        self.fuse_ln = fuse_ln
         self.use_rmsnorm = use_rmsnorm
         self.micro_batch_size = micro_batch_size
-
         self.max_sequence_length = max_sequence_length
         self.use_bias = use_bias
         self.weight_share_add_bias = weight_share_add_bias
         self.rope_theta = rope_theta
-        self.fuse_rope = fuse_rope
-        self.fuse_softmax_mask = fuse_softmax_mask
-
-        self.fuse_linear = fuse_linear
         self.ignored_index = ignored_index
-        self.add_tail_layers = add_tail_layers
-        self.use_recompute_lm_head = use_recompute_lm_head
-        self.use_recompute_loss_fn = use_recompute_loss_fn
-
-        self.refined_recompute = refined_recompute
-        self.skip_recompute_ops = dict()
-        """
-            `refined_recompute` is a dictionary that specifies fine-grained gradient recomputation settings,
-            which currently only takes effect in Pipeline Parallel (PP) mode.
-
-            In PP mode, this dictionary populates `self.skip_recompute_ops` with the following structure:
-            - Key (`op_name`): The operation name to configure, with possible values:
-            * "mlp_row_ln" - MLP row-wise layer normalization
-            * "flash_attn" - Flash attention operation
-            * "attention_row_ln" - Attention row-wise layer normalization
-            * "attention_column_ln" - Attention column-wise layer normalization
-            * "mlp_column_ln" - MLP column-wise layer normalization
-
-            - Value (`skip_num`): Controls how many times to skip recomputation:
-            * 0: Never skip recomputation (minimum memory usage)
-            * -1: Always skip recomputation (maximum memory usage)
-            * [0,1,...,12]: Skip recomputation for specified number of times
-            * ≥12: Equivalent to -1 (always skip recomputation)
-
-            This allows precise control over memory/computation tradeoffs for different operations.
-        """
-        self.attention_probs_dropout_prob = attention_probs_dropout_prob
+        self.attention_dropout_prob = attention_dropout_prob
         self.hidden_dropout_prob = hidden_dropout_prob
         self.compression_ratio = compression_ratio
         self.num_key_value_heads = num_key_value_heads
-        self.use_sparse_head_and_loss_fn = use_sparse_head_and_loss_fn
-        self.use_fused_head_and_loss_fn = use_fused_head_and_loss_fn
-        self.token_balance_loss = token_balance_loss
-        self.token_balance_seqlen = token_balance_seqlen
-        self.cachekv_quant = cachekv_quant
-        self.pp_seg_method = pp_seg_method
-
         self.moe_num_experts = moe_num_experts
         self.use_recompute_moe = use_recompute_moe
         self.moe_capacity = moe_capacity
+        self.moe_norm_min = moe_norm_min
         self.moe_aux_loss_lambda = moe_aux_loss_lambda
         self.moe_z_loss_lambda = moe_z_loss_lambda
         self.moe_orthogonal_loss_lambda = moe_orthogonal_loss_lambda
@@ -330,6 +225,9 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.moe_gate = moe_gate
         self.moe_intermediate_size = moe_intermediate_size
         self.moe_num_shared_experts = moe_num_shared_experts
+        self.moe_layer_start_index = moe_layer_start_index
+        self.moe_layer_end_index = self.num_hidden_layers - 1 if moe_layer_end_index == -1 else moe_layer_end_index
+        self.moe_layer_interval = moe_layer_interval
         self.moe_reverse_token_drop = moe_reverse_token_drop
         self.moe_k = moe_k
         self.moe_all_to_all_dropout = moe_all_to_all_dropout
@@ -343,58 +241,31 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.moe_norm_gate_logits = moe_norm_gate_logits
         self.moe_use_aux_free = moe_use_aux_free
         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
-        self.dpo_config = dpo_config
-        self.moe_multimodal_dispatch_use_allgather = moe_multimodal_dispatch_use_allgather
         self.moe_use_hard_gate = moe_use_hard_gate
         self.moe_dense_experts_token_type_id = moe_dense_experts_token_type_id
         self.num_nextn_predict_layers = num_nextn_predict_layers
         self.multi_token_pred_lambda = multi_token_pred_lambda
         self.enable_mtp_magic_send = enable_mtp_magic_send
         self.use_recompute_mtp = use_recompute_mtp
-        self.multimodel_experts = None
 
         self.register_unsavable_keys(
             [
-                "recompute",
-                "recompute_use_reentrant",
-                "refined_recompute",
-                "recompute_granularity",
-                "use_recompute_lm_head",
-                "use_recompute_loss_fn",
-                "pp_seg_method",
-                "skip_recompute_ops",
-                "use_sparse_flash_attn",
-                "use_var_len_flash_attn",
-                "use_sparse_head_and_loss_fn",
                 "micro_batch_size",
-                "fuse_softmax_mask",
-                "cachekv_quant",
-                "use_fused_head_and_loss_fn",
                 "max_sequence_length",
                 "moe_group",
                 "dpo_config",
                 "use_recompute_moe",
                 "enable_delay_scale_loss",
                 "moe_dropout_prob",
+                "moe_use_aux_free",
                 "moe_all_to_all_dropout",
                 "num_acc_steps",
                 "disable_ffn_model_parallel",
                 "moe_group_origin",
-                "moe_multimodal_dispatch_use_allgather",
                 "moe_rank",
                 "moe_world_size",
             ]
         )
-
-    @property
-    def use_moe(self) -> bool:
-        """
-        Check if model is using MoE architecture.
-
-        Returns:
-            bool: True if moe_num_experts > 0, False otherwise
-        """
-        return self.moe_num_experts is not None and self.moe_num_experts > 0
 
     def to_json_string(self, use_diff: bool = True, saving_file=False) -> str:
         """

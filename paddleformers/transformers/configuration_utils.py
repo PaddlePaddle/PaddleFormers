@@ -29,7 +29,6 @@ from dataclasses import field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import paddle
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
 
@@ -236,6 +235,7 @@ class LlmMetaConfig:
         ("use_fused_linear", bool, False, "GPT3 model, use fused linear layer"),
         ("use_fused_dropout_add", bool, False, "GPT3 model, use fused `dropout + residual add` op."),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
+        ("fuse_linear",bool, False, "Use fused linear layer instead of normal linear layer.")
     ]
 
     hybrid_parallel_attributes = [
@@ -473,7 +473,7 @@ class PretrainedConfig:
 
         > Parameters for general components
 
-        _attn_implementation (`str`, defaults to `sdpa`)
+        _attn_implementation (`str`, defaults to `eager`)
         use_fused_head_loss_fn (`bool`, defaults to `False`): Whether to use fused head and loss function
         use_filtered_label_loss (`bool`, defaults to `False`): Whether to use filtered label loss
         loss_subbatch_seqlen (`int`, defaults to `-1`): Sequence length large than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch)
@@ -563,7 +563,7 @@ class PretrainedConfig:
         self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
 
         # for general components
-        self._attn_implementation = kwargs.pop("_attn_implementation", "sdpa")
+        self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
         self.use_fused_head_and_loss_fn = kwargs.pop("use_fused_head_and_loss_fn", False)
         self.use_filtered_label_loss = kwargs.pop("use_filtered_label_loss", False)
         self.loss_subbatch_seqlen = kwargs.pop("loss_subbatch_seqlen", -1)
@@ -581,6 +581,8 @@ class PretrainedConfig:
         if "torch_dtype" in kwargs:
             self.dtype = kwargs.pop("torch_dtype")
         else:
+            import paddle
+
             self.dtype = kwargs.pop("dtype", paddle.get_default_dtype())
 
         # Is decoder is used in encoder-decoder models to differentiate encoder from decoder

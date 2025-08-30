@@ -18,7 +18,6 @@ import math
 from functools import partial
 from typing import Optional, Tuple
 
-import numpy as np
 import paddle
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
@@ -158,6 +157,8 @@ class Ernie4_5Attention(nn.Layer):
 
         self.is_gqa = config.num_key_value_heads is not None and config.num_key_value_heads != self.num_heads
         self.freq_allocation = getattr(config, "freq_allocation", 0)
+        if self.is_gqa:
+            self.num_key_value_groups = self.num_heads // self.num_key_value_heads
 
         if config.tensor_parallel_degree > 1:
             assert (
@@ -170,7 +171,9 @@ class Ernie4_5Attention(nn.Layer):
                 ), f"num_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
                 self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
         if self.is_gqa:
-            logger.info(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
+            logger.warning_once(
+                f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}"
+            )
             assert (
                 self.num_heads % self.num_key_value_heads == 0
             ), f"num_heads: {self.num_heads}, num_key_value_heads: {self.num_key_value_heads}"
@@ -179,16 +182,31 @@ class Ernie4_5Attention(nn.Layer):
         else:
             q_hidden_size = kv_hidden_size = self.head_dim * config.num_attention_heads
 
-        qkv_hidden_size = q_hidden_size + kv_hidden_size * 2
-
-        self.qkv_proj = GeneralLinear.create(
+        self.q_proj = GeneralLinear.create(
             self.hidden_size,
-            qkv_hidden_size,
+            q_hidden_size,
             has_bias=config.use_bias,
             config=config,
             fuse_matmul_bias=config.fuse_linear,
             tp_plan="colwise",
         )
+        self.k_proj = GeneralLinear.create(
+            self.hidden_size,
+            kv_hidden_size,
+            has_bias=config.use_bias,
+            config=config,
+            fuse_matmul_bias=config.fuse_linear,
+            tp_plan="colwise",
+        )
+        self.v_proj = GeneralLinear.create(
+            self.hidden_size,
+            kv_hidden_size,
+            has_bias=config.use_bias,
+            config=config,
+            fuse_matmul_bias=config.fuse_linear,
+            tp_plan="colwise",
+        )
+
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
             self.hidden_size,
@@ -242,17 +260,10 @@ class Ernie4_5Attention(nn.Layer):
         else:
             bsz, q_len, _ = hidden_states.shape
 
-        query_states = key_states = value_states = mix_layer = None
+        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
+        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
+        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
 
-        mix_layer = self.qkv_proj(hidden_states)
-        query_states, key_states, value_states = paddle.split(
-            mix_layer.reshape([bsz, q_len, -1, self.head_dim]),
-            [self.num_heads, self.num_key_value_heads, self.num_key_value_heads],
-            axis=2,
-        )
-
-        if attn_mask_start_row_indices is None and attention_mask is None:
-            self.attn_implementation = "sdpa"
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
         # apply rope
@@ -317,7 +328,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         self.layer_idx = layer_idx
         self.config = config
         self.self_attn = Ernie4_5Attention(config, layer_idx)
-        self.mlp = Ernie4_5MLP(config, fuse_up_gate=True)
+        self.mlp = Ernie4_5MLP(config)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -414,21 +425,13 @@ class Ernie4_5PretrainedModel(PretrainedModel):
     """Base class for ERNIE pretrained models."""
 
     config_class = Ernie4_5Config
-    base_model_prefix = "ernie"
+    base_model_prefix = "model"
+
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):
-        """Generate tensor parallel mappings for model conversion.
-
-        Args:
-            config (Ernie4_5Config): Model configuration.
-            is_split (bool): Whether to generate split mappings (True)
-                            or merge mappings (False). Defaults to True.
-
-        Returns:
-            Dict[str, Callable[[Any], Any]]: Dictionary mapping parameter names
-                to their corresponding split/merge functions for tensor parallelism.
-        """
+        """Generate tensor parallel mappings for model conversion."""
 
         from ..conversion_utils import split_or_merge_func
 
@@ -439,174 +442,56 @@ class Ernie4_5PretrainedModel(PretrainedModel):
             num_attention_heads=config.num_attention_heads,
         )
 
-        def gqa_qkv_split_func(
-            weight,
-            tensor_parallel_degree,
-            tensor_parallel_rank,
-            num_attention_heads,
-            num_key_value_heads,
-            head_dim,
-            is_quant=False,
-            is_split=True,
-        ):
-            if is_quant:
-                weight = weight.T
+        LAYER_COLWISE = [
+            "self_attn.q_proj.weight",
+            "self_attn.k_proj.weight",
+            "self_attn.v_proj.weight",
+        ]
+        LAYER_ROWWISE = ["self_attn.o_proj.weight"]
 
-            def get_shape(tensor):
-                return tensor.get_shape() if hasattr(tensor, "get_shape") else tensor.shape
-
-            def slice_tensor(tensor, start, end):
-                shape = get_shape(tensor)
-                if len(shape) == 1:
-                    return tensor[start:end]
-                else:
-                    return tensor[..., start:end]
-
-            q_end = num_attention_heads * head_dim
-            k_end = q_end + num_key_value_heads * head_dim
-            v_end = k_end + num_key_value_heads * head_dim
-
-            q = slice_tensor(weight, 0, q_end)
-            k = slice_tensor(weight, q_end, k_end)
-            v = slice_tensor(weight, k_end, v_end)
-
-            def split_tensor(tensor, degree):
-                shape = get_shape(tensor)
-                size = shape[-1]
-                block_size = size // degree
-                if hasattr(tensor, "get_shape"):
-                    return [slice_tensor(tensor, i * block_size, (i + 1) * block_size) for i in range(degree)]
-                else:
-                    return np.split(tensor, degree, axis=-1)
-
-            q_list = split_tensor(q, tensor_parallel_degree)
-            k_list = split_tensor(k, tensor_parallel_degree)
-            v_list = split_tensor(v, tensor_parallel_degree)
-
-            if tensor_parallel_rank is None:
-                out = [np.concatenate([q_i, k_i, v_i], axis=-1) for q_i, k_i, v_i in zip(q_list, k_list, v_list)]
-            else:
-                out = np.concatenate(
-                    [q_list[tensor_parallel_rank], k_list[tensor_parallel_rank], v_list[tensor_parallel_rank]], axis=-1
-                )
-            if is_quant:
-                out = out.T
-            return out
-
-        def gqa_qkv_merge_func(
-            weight_list, num_attention_heads, num_key_value_heads, head_dim, is_quant=False, is_split=False
-        ):
-            tensor_parallel_degree = len(weight_list)
-            num_attention_heads = num_attention_heads // tensor_parallel_degree
-            num_key_value_heads = num_key_value_heads // tensor_parallel_degree
-
-            is_paddle_tensor = not isinstance(weight_list[0], np.ndarray)
-
-            def get_shape(tensor):
-                return tensor.get_shape() if hasattr(tensor, "get_shape") else tensor.shape
-
-            def slice_tensor(tensor, start, end):
-                if len(get_shape(tensor)) == 1:
-                    return tensor[start:end]
-                else:
-                    return tensor[..., start:end]
-
-            q_list, k_list, v_list = [], [], []
-
-            for weight in weight_list:
-                if is_quant:
-                    weight = weight.T
-                q_end = num_attention_heads * head_dim
-                k_end = q_end + num_key_value_heads * head_dim
-                v_end = k_end + num_key_value_heads * head_dim
-
-                q = slice_tensor(weight, 0, q_end)
-                k = slice_tensor(weight, q_end, k_end)
-                v = slice_tensor(weight, k_end, v_end)
-
-                q_list.append(q)
-                k_list.append(k)
-                v_list.append(v)
-
-            merged = q_list + k_list + v_list
-
-            if is_paddle_tensor:
-                tensor = paddle.concat(merged, axis=-1)
-                if tensor.place.is_gpu_place():
-                    tensor = tensor._copy_to(paddle.CUDAPinnedPlace(), False)
-
-            else:
-                tensor = np.concatenate(merged, axis=-1)
-            if is_quant:
-                tensor = tensor.T
-            return tensor
-
-        if config.num_key_value_heads is not None and config.num_key_value_heads != config.num_attention_heads:
-            if is_split:
-                qkv_fn = partial(
-                    gqa_qkv_split_func,
-                    tensor_parallel_degree=config.tensor_parallel_degree,
-                    tensor_parallel_rank=config.tensor_parallel_rank,
-                    num_attention_heads=config.num_attention_heads,
-                    num_key_value_heads=config.num_key_value_heads,
-                    head_dim=(
-                        config.hidden_size // config.num_attention_heads
-                        if config.head_dim is None
-                        else config.head_dim
-                    ),
-                    is_quant=False,
-                    is_split=True,
-                )
-            else:
-                qkv_fn = partial(
-                    gqa_qkv_merge_func,
-                    num_attention_heads=config.num_attention_heads,
-                    num_key_value_heads=config.num_key_value_heads,
-                    head_dim=(
-                        config.hidden_size // config.num_attention_heads
-                        if config.head_dim is None
-                        else config.head_dim
-                    ),
-                    is_quant=False,
-                    is_split=False,
-                )
-        else:
-            qkv_fn = partial(fn, is_column=True)
-
-        def get_tensor_parallel_split_mappings(num_hidden_layers):
-            final_actions = {}
-
-            base_actions = {
-                # Column Linear
-                "layers.0.self_attn.qkv_proj.weight": qkv_fn,
-                "layers.0.mlp.up_gate_proj.weight": partial(fn, is_column=True, is_naive_2fuse=True),
+        def make_base_actions():
+            actions = {
                 "lm_head.weight": partial(fn, is_column=not config.tie_word_embeddings),
-                # Row Linear
                 "embed_tokens.weight": partial(fn, is_column=False),
-                "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
-                "layers.0.mlp.down_proj.weight": partial(fn, is_column=False),
             }
 
+            actions.update(
+                {f"{cls.base_model_prefix}.layers.0.{k}": partial(fn, is_column=True) for k in LAYER_COLWISE}
+            )
+            actions.update(
+                {f"{cls.base_model_prefix}.layers.0.{k}": partial(fn, is_column=False) for k in LAYER_ROWWISE}
+            )
+
+            # bias
             if config.use_bias:
-                base_actions.update(
-                    {
-                        # Column Linear
-                        "layers.0.self_attn.qkv_proj.bias": qkv_fn,
-                        "layers.0.mlp.up_gate_proj.bias": partial(fn, is_column=True, is_naive_2fuse=True),
-                        "layers.0.mlp.down_proj.bias": lambda x: x[:],  # convert PySafeSlice to ndarray.
-                        "lm_head.bias": partial(fn, is_column=True),
-                    }
+                bias_keys = [
+                    "self_attn.q_proj.bias",
+                    "self_attn.k_proj.bias",
+                    "self_attn.v_proj.bias",
+                    "mlp.gate_proj.bias",
+                    "mlp.up_proj.bias",
+                    "self_attn.o_proj.bias",
+                    "mlp.down_proj.bias",
+                    "lm_head.bias",
+                ]
+                actions.update(
+                    {f"{cls.base_model_prefix}.layers.0.{b}": partial(fn, is_column=True) for b in bias_keys}
                 )
+            return actions
 
+        def expand_actions(base_actions, num_layers):
+            final = {}
             for key, action in base_actions.items():
-                if "layers.0." in key:
-                    for i in range(num_hidden_layers):
-                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
+                if key.startswith(f"{cls.base_model_prefix}.layers.0."):
+                    for i in range(num_layers):
+                        newkey = key.replace("layers.0.", f"layers.{i}.")
+                        final[newkey] = action
                 else:
-                    final_actions[key] = action
-            return final_actions
+                    final[key] = action
+            return final
 
-        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
+        base_actions = make_base_actions()
+        mappings = expand_actions(base_actions, config.num_hidden_layers)
         return mappings
 
 
@@ -867,7 +752,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")
         config.initializer_range = new_initializer_range
         self.config = config
-        self.ernie = Ernie4_5Model(config)
+        self.model = Ernie4_5Model(config)
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
         self.tie_weights()
@@ -885,11 +770,11 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
 
     def get_input_embeddings(self):
         """Returns the input embeddings layer."""
-        return self.ernie.embed_tokens
+        return self.model.embed_tokens
 
     def set_input_embeddings(self, value):
         """Sets the input embeddings layer."""
-        self.ernie.embed_tokens = value
+        self.model.embed_tokens = value
 
     def get_output_embeddings(self):
         """Returns the output embeddings (LM head)."""
@@ -901,7 +786,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
 
     def set_decoder(self, decoder):
         """Sets the ERNIE decoder model."""
-        self.ernie = decoder
+        self.model = decoder
 
     def get_decoder(self):
         """Get the transformer decoder.
@@ -909,7 +794,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         Returns:
             nn.Layer: The decoder module
         """
-        return self.ernie
+        return self.model
 
     def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
         """Avoid using attention_mask with flash_attn on generation."""
@@ -1061,7 +946,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
 
-        outputs = self.ernie(
+        outputs = self.model(
             input_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,
@@ -1076,7 +961,6 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
 
         hidden_states = outputs.last_hidden_state
 
-        # if isinstance(self.criterion, ErnieDPOCriterion):
         if self.criterion.loss_type == "dpo":
             logits = self.lm_head(hidden_states)
             chosen_labels = kwargs.get("chosen_labels", None)

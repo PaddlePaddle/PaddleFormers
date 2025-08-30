@@ -1563,6 +1563,14 @@ class MoECausalLMOutputWithPast(ModelOutput):
     aux_loss: Optional[paddle.Tensor] = None
     logits: paddle.Tensor = None
     past_key_values: Optional[Tuple[Tuple[paddle.Tensor]]] = None
+    last_hidden_state: Optional[paddle.Tensor] = None
     hidden_states: Optional[Tuple[paddle.Tensor]] = None
     attentions: Optional[Tuple[paddle.Tensor]] = None
+    gate_logits: Optional[paddle.Tensor] = None
     router_logits: Optional[Tuple[paddle.Tensor]] = None
+    router_loss: Optional[paddle.Tensor] = None
+
+
+@dataclass
+class MoECausalLMOutputWithPastAndMTP(MoECausalLMOutputWithPast):
+    mtp_outputs: Optional[Tuple[paddle.Tensor]] = None

@@ -30,7 +30,10 @@ from paddle.utils import unique_name
 
 from paddleformers.utils.log import logger
 
-from ..fusion_ops import cal_aux_loss
+if paddle.device.is_compiled_with_custom_device("npu"):
+    from .npu_fusion_ops import npu_cal_aux_loss_func as cal_aux_loss
+else:
+    from paddle.incubate.nn.functional import cal_aux_loss
 
 
 def masked_fill(x, mask, value):
@@ -66,8 +69,6 @@ def compute_optimal_transport(M, r, c, lam=1.0, epsilon=1e-8, max_iters: int = 1
         tuple: (optimal transport matrix, Sinkhorn distance)
     """
     n, _ = M.shape
-    # P = (- lam * M).exp()
-    # P /= P.sum()
     P = F.softmax(-M / lam)
     u = paddle.zeros(n, "float32")
     # normalize this matrix
@@ -181,7 +182,9 @@ class TopKGate(nn.Layer):
 
         self.model_dim = config.hidden_size
         self.num_experts = config.moe_num_experts
-        self.num_experts_tensor = sum(config.moe_num_experts) if config.multimodel_experts else config.moe_num_experts
+        self.use_multimodel_experts = config.get("multimodel_experts", False)
+
+        self.num_experts_tensor = sum(config.moe_num_experts) if self.use_multimodel_experts else config.moe_num_experts
 
         self.cap = config.moe_capacity
         self.group = group
@@ -230,7 +233,7 @@ class TopKGate(nn.Layer):
                 ), "orthogonal loss will cause twice gradient accumulate, will break pp/sharding overlap"
 
         self.eps = paddle.to_tensor([1e-12], dtype="float32")
-        if config.multimodel_experts:
+        if self.use_multimodel_experts:
             if config.get("moe_use_hard_gate", False):
                 self.num_experts_list = []
                 self.experts_type_mask = []
@@ -274,7 +277,7 @@ class TopKGate(nn.Layer):
         """
         Create gate weight parameter.
         """
-        if self.config.multimodel_experts:
+        if self.use_multimodel_experts:
             # support setting lambda for each expert group
             self.moe_z_loss_lambda = self.moe_z_loss_lambda.expand(len(self.num_experts))
             self.moe_aux_loss_lambda = self.moe_aux_loss_lambda.expand(len(self.num_experts))
@@ -314,7 +317,7 @@ class TopKGate(nn.Layer):
         在`multimodel_experts` 的情况下，将多个 weights merge 成一个整体
         transform_weight: bool, 按照 local-expert id 将 多模态 weight 交叠
         """
-        if not self.config.multimodel_experts:
+        if not self.use_multimodel_experts:
             return self.weight
         if not transform_weight:
             return paddle.concat(
@@ -382,7 +385,7 @@ class TopKGate(nn.Layer):
         Returns:
             int: Calculated capacity
         """
-        num_experts = sum(self.num_experts) if self.config.multimodel_experts else self.num_experts
+        num_experts = sum(self.num_experts) if self.use_multimodel_experts else self.num_experts
         if cap_factor is not None:
             cap = cap_factor
         else:
@@ -475,8 +478,6 @@ class TopKGate(nn.Layer):
             dispatch_mask = dispatch_mask.sum(0)
         ce = dispatch_mask.astype(gate_prob.dtype).detach() / seqlen_float
         me = paddle.sum(gate_prob, axis=0) / seqlen_float
-        # me = paddle.mean(gate_prob, axis=0)
-        # ce = paddle.mean(dispatch_mask.cast("float32"), axis=0)
         if self.global_aux_loss:
             me_list, ce_list = [], []
             dist.all_gather(me_list, me, group=self.group)
@@ -508,7 +509,6 @@ class TopKGate(nn.Layer):
             Tensor: Calculated Z-loss
         """
 
-        # l_zloss = logits.exp().sum(1).log().square().mean()
         if loss_mask is not None:
             loss_mask = loss_mask.astype(logits.dtype)
             l_zloss = (logits.logsumexp(1).square() * loss_mask).sum() / paddle.clip(loss_mask.sum(), min=1e-6)
@@ -565,12 +565,12 @@ class TopKGate(nn.Layer):
             if weight_id == 0:
                 w_ = self.weight
             else:
-                assert self.config.multimodel_experts
+                assert self.use_multimodel_experts
                 w_ = getattr(self, f"weight_{weight_id}")
             return self._cal_orthogonal_loss_opt_each_weight(w_, use_group)
 
         orthogonal_loss = self._cal_orthogonal_loss_opt_each_weight(self.weight, use_group)
-        if self.config.multimodel_experts:
+        if self.use_multimodel_experts:
             for i in range(1, len(self.config.moe_num_experts)):
                 w_ = getattr(self, f"weight_{i}")
                 orthogonal_loss += self._cal_orthogonal_loss_opt_each_weight(w_, use_group=False)

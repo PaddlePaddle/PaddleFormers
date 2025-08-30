@@ -20,8 +20,7 @@ Returns:
 
 import inspect
 import itertools
-from collections import namedtuple
-from typing import Any, Callable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import paddle
 import paddle.distributed as dist
@@ -29,65 +28,15 @@ import paddle.nn.functional as F
 from paddle import Tensor, _C_ops, framework, nn
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
-from paddle.distributed.communication import stream
 from paddle.distributed.communication.group import Group
 from paddle.distributed.fleet.utils import recompute
 from paddle.incubate.nn.functional import moe_combine, moe_gate_dispatch
 
 from paddleformers.utils.log import logger
 
-from ..sequence_parallel_utils import ScatterOp
-
-GateOutput = namedtuple(
-    "GateOutput",
-    [
-        "aux",
-        "z",
-        "logits",
-    ],
-)
-
-
-class MoEStatics(nn.Layer):
-    """
-    Stores MoE (Mixture of Experts) statistics
-    and expert usage information.
-    """
-
-    def __init__(self, config, layer_idx):
-        """
-        Initialize MoE statistics tracking.
-
-        Args:
-            config: Model configuration containing MoE parameters
-            layer_idx: Index of the MoE layer in the model
-        """
-        super().__init__()
-        self._cast_to_low_precision = False  # 兼容develop分支paddle
-        self._cast_to_low_precison = False
-        num_experts = config.moe_num_experts[0] if config.multimodel_experts else config.moe_num_experts
-        if config.multimodel_experts:
-            assert (
-                len(set(config.moe_num_experts)) == 1
-            ), f"assume expert group has same size, got: {config.moe_num_experts}"
-
-        with paddle.utils.unique_name.guard(f"mm_layer_{layer_idx}_"):
-            num_experts_groups = len(config.moe_num_experts) if config.multimodel_experts else 1
-            p = self.create_parameter(
-                shape=[num_experts_groups, num_experts],
-                dtype="float32",
-                is_bias=True,
-                attr=paddle.ParamAttr(name=paddle.utils.unique_name.generate("corr_bias")),
-            )
-            p.stop_gradient = True
-            self.e_score_correction_bias = p
-            self.e_score_correction_bias.is_distributed = True
-            p = paddle.zeros(
-                shape=[num_experts_groups, num_experts],
-                dtype="int64",
-            )
-            p.stop_gradient = True
-            self.expert_usage = p
+from .abstract import MOELayerBase
+from .all_to_all import AlltoAll, AlltoAllAsync
+from .utils import ScatterOp
 
 
 class GateCombine(PyLayer):
@@ -161,225 +110,7 @@ def combining(x, combine_weights, scatter_index, hard_gate=False):
     return ret
 
 
-class AlltoAll(PyLayer):
-    """
-    Custom PyLayer for All-to-All communication with backward pass.
-    """
-
-    @staticmethod
-    def forward(ctx, x, group, sync_op=True):
-        """
-        Perform All-to-All communication in the group.
-
-        Args:
-            x: Input tensor
-            group: Communication group
-            sync_op: Whether to perform synchronous operation
-
-        Returns:
-            Tensor: Output tensor
-        """
-        ctx.group = group
-        if dist.get_world_size(group) <= 1:
-            return x
-        output = paddle.empty_like(x)
-        output.stop_gradient = False
-        task = stream.alltoall_single(output, x, None, None, group, sync_op=sync_op, use_calc_stream=sync_op)
-        if not sync_op:
-            return output, task
-        else:
-            return output
-
-    @staticmethod
-    def backward(ctx, *dx):
-        """
-        Backward pass for All-to-All communication.
-
-        Args:
-            dx: Gradient tensor
-
-        Returns:
-            Tensor: Gradient after backward All-to-All
-        """
-        return AlltoAll.apply(*dx, group=ctx.group)
-
-
-class AlltoAllAsync(PyLayer):
-    """
-    Custom PyLayer for asynchronous All-to-All communication.
-    """
-
-    @staticmethod
-    def forward(ctx, x, *fn_args, group=None, fn=None, is_first_fwd=False):
-        """
-        Asynchronous All-to-All communication with function execution.
-
-        Args:
-            x: Input tensor
-            fn_args: Arguments for the function
-            group: Communication group
-            fn: Function to execute
-            is_first_fwd: Whether this is the first forward pass
-
-        Returns:
-            tuple: (output tensor, function outputs)
-        """
-        assert fn is not None, "use AlltoAll no async"
-        ctx.group = group
-        if dist.get_world_size(group) <= 1:
-            ctx.bwf, fn_out = manual_backward(fn, is_first_fwd, *fn_args)
-            return (x,) + fn_out
-        x_out = paddle.empty_like(x)
-        x_out.stop_gradient = False
-        task = stream.alltoall_single(
-            x_out,
-            x,
-            None,
-            None,
-            group,
-            sync_op=False,
-        )
-        ctx.bwf, fn_out = manual_backward(fn, is_first_fwd, *fn_args)
-        task.wait()
-        return (x_out,) + fn_out
-
-    @staticmethod
-    def backward(ctx, dx_out, *fn_out_grads):
-        """
-        Backward pass for asynchronous All-to-All.
-
-        Args:
-            dx_out: Gradient of output
-            fn_out_grads: Gradients of function outputs
-
-        Returns:
-            tuple: (gradient tensor, function argument gradients)
-        """
-        if dist.get_world_size(ctx.group) <= 1:
-            fn_args_grads = ctx.bwf(*fn_out_grads)
-            return (dx_out,) + fn_args_grads
-
-        dx = paddle.empty_like(dx_out)
-        dx.stop_gradient = False
-        task = stream.alltoall_single(
-            dx,
-            dx_out,
-            None,
-            None,
-            ctx.group,
-            sync_op=False,
-        )
-        fn_args_grads = ctx.bwf(*fn_out_grads)
-        task.wait()
-        return (dx,) + fn_args_grads
-
-
-def detach_and_requires_grad_(*args):
-    """
-    Detach tensors while preserving their requires_grad status.
-
-    Args:
-        args: Input tensors
-
-    Returns:
-        list: Detached tensors
-    """
-    ret = [a.detach() if a is not None else None for a in args]
-    for r, a in zip(ret, args):
-        if a is not None:
-            r.stop_gradient = a.stop_gradient
-    return ret
-
-
-class FakeClone(paddle.autograd.PyLayer):
-    """
-    Fake clone operation that preserves computation graph without data copy.
-    """
-
-    @staticmethod
-    def forward(ctx, input):
-        """
-        Create fake clone of input tensor.
-
-        Args:
-            input: Input tensor
-
-        Returns:
-            Tensor: Fake cloned tensor
-        """
-        if input.is_contiguous():
-            fake_output = paddle.empty_like(input)
-            input._share_buffer_to(fake_output)
-        else:
-            fake_output = input.clone()
-        return fake_output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        """
-        Backward pass for fake clone.
-
-        Args:
-            grad_output: Gradient of output
-
-        Returns:
-            Tensor: Gradient of input
-        """
-        return grad_output
-
-
-def manual_backward(f: Callable, is_first_fwd: bool, *args: List[Any]):
-    """
-    Perform manual backward pass with gradient tracing control.
-
-    Args:
-        f: Function to execute
-        is_first_fwd: Whether this is the first forward pass
-        args: Arguments for the function
-
-    Returns:
-        tuple: (backward function, function outputs)
-    """
-    tracer = framework._dygraph_tracer()
-    orig = tracer._has_grad
-    if not is_first_fwd:
-        tracer._has_grad = True  # turn on grad trace so we can manual backward
-
-    detached_args = detach_and_requires_grad_(*args)
-    detached_args_clone = [FakeClone.apply(a) if a is not None else None for a in detached_args]
-    out = f(*detached_args_clone)
-    if isinstance(out, list):
-        out = tuple(out)
-    elif not isinstance(out, tuple):
-        out = (out,)
-
-    if is_first_fwd:
-        tracer._has_grad = orig
-        return None, out
-
-    out_cached = [FakeClone.apply(o) for o in out if o is not None]  # do not cache stop_gradient output
-
-    for o in out_cached:
-        o._clear_dataptr()  # free mem
-    tracer._has_grad = orig
-
-    def bwd_f(*grad):
-        nonlocal out_cached, detached_args, f
-        grad = list(grad)
-        grad = [g for g in grad if g is not None]
-        assert grad and out_cached, (len(grad), len(out_cached))
-        # out 中的 stop_graident 参数，也会收到 gradient，在这里过滤掉
-        grad, out_cached = zip(*[(g, o) for g, o in zip(grad, out_cached) if not o.stop_gradient])
-
-        assert len(grad) == len(out_cached), (len(grad), len(out_cached), f)
-        # out, grad = zip(*[(o, g) for o, g in zip(out, grad) if g is not None])
-        paddle.autograd.backward(out_cached, grad)
-        return tuple([t.grad for t in detached_args if t is not None])
-
-    return bwd_f, out
-
-
-class MOELayer(nn.Layer):
+class MOEAlltoAllLayer(MOELayerBase):
     """
     Mixture of Experts layer implementation based on GShard paper.
     """
@@ -495,10 +226,6 @@ class MOELayer(nn.Layer):
             assert len(chunks) == len(true_experts), (len(chunks), len(true_experts))
             for chunk, expert in zip(chunks, true_experts):
                 expert_outputs += [expert(chunk)]
-                # logger.info(
-                #     f"moe-fwd-expert: {chunk.shape}"
-                #     f'-> {expert_outputs[-1].shape}: {chunk.astype("float32").norm(axis=-1)}'
-                # )
         else:
             dispatched_input = dispatched_input.transpose([1, 0, 2, 3])
             dispatched_input.contiguous()
@@ -622,7 +349,7 @@ class MOELayer(nn.Layer):
 
         dispatch_mask = paddle.diff(F.pad(dispatch_mask, (1, 0)))
         if self.use_correction_bias:
-            if self.gate.config.multimodel_experts:
+            if self.use_multimodel_experts:
                 for i in range(len(self.moe_statics.expert_usage)):
                     self.moe_statics.expert_usage[i] += dispatch_mask[self.gate.experts_type_mask[i]].detach()
             else:
@@ -878,6 +605,7 @@ class MOELayer(nn.Layer):
         self,
         input: Tensor,
         token_type_ids=None,
+        **kwargs,
     ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """
         Forward pass through MoE layer.
