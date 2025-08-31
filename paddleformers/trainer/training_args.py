@@ -1405,12 +1405,15 @@ class TrainingArguments:
                     else:
                         order = ["dp", "sharding", "pp", "mp"]
                 if self.use_expert_parallel:
-                    if self.moe_sharding_parallel_degree >= 1 and self.expert_parallel_degree > 1:
-                        order.insert(-1, "ep")
-                        sd_idx = order.index("sharding")
-                        # if pp_first, the order = ["dp", "pp", "moe_sharding", "sharding", "sep", "ep", "mp"]
-                        # if sharding_first, the order is ["dp", "moe_sharding", "sharding", "pp", "sep", "ep", "mp"]
-                        order.insert(sd_idx, "moe_sharding")
+                    if not os.getenv("DSV3_FAST_PRETRAIN", "False"):
+                        if self.moe_sharding_parallel_degree >= 1 and self.expert_parallel_degree > 1:
+                            order.insert(-1, "ep")
+                            sd_idx = order.index("sharding")
+                            # if pp_first, the order = ["dp", "pp", "moe_sharding", "sharding", "sep", "ep", "mp"]
+                            # if sharding_first, the order is ["dp", "moe_sharding", "sharding", "pp", "sep", "ep", "mp"]
+                            order.insert(sd_idx, "moe_sharding")
+                    else:
+                        order = order[1:-1] + ["dp", "mp"]
 
                 if is_segment_parallel_supported():
                     hybrid_configs = {
@@ -1563,6 +1566,10 @@ class TrainingArguments:
 
                 fleet.init(is_collective=True, strategy=strategy)
                 logger.info(strategy)
+
+                if os.getenv("DSV3_FAST_PRETRAIN", "False"):
+                    if self.expert_parallel_degree > 1:
+                        self.add_moe_comm_group()
 
         elif self.enable_auto_parallel:
             self.tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
