@@ -25,13 +25,24 @@ from typing import List, Optional, Tuple, Union
 
 import paddle
 
-from ..deepseek_v2.modeling import (
-    DeepseekV2ForSequenceClassification,
-    DeepseekV2LMHead,
-    DeepseekV2Model,
-    DeepseekV2PretrainedModel,
-    DeepseekV2PretrainingCriterion,
-)
+import os
+if not os.getenv("DSV3_FAST_PRETRAIN", "False"):
+    from ..deepseek_v2.modeling import (
+        DeepseekV2ForSequenceClassification,
+        DeepseekV2LMHead,
+        DeepseekV2Model,
+        DeepseekV2PretrainedModel,
+        DeepseekV2PretrainingCriterion,
+    )
+else:
+    from ..deepseek_v2.modeling import (
+        DeepseekV2ForSequenceClassification,
+        DeepseekV2LMHead,
+        DeepseekV2PretrainingCriterion,
+    )
+    from ..deepseek_v2.modeling_fast import DeepseekV2ModelFast as DeepseekV2Model
+    from ..deepseek_v2.modeling_fast import DeepseekV2PretrainedModelFast as DeepseekV2PretrainedModel
+
 from ..model_outputs import CausalLMOutputWithPast
 from ..model_utils import register_base_model
 from .configuration import DeepseekV3Config
