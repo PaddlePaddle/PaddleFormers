@@ -12,7 +12,8 @@ on:
   #   types: [opened, synchronize, reopened]
   #   branches: [develop]
   schedule:
-    - cron: "5 0 * * 0"
+    - cron: "5 0 * * 0"     # every Sunday at 00:05
+  workflow_dispatch:        # allow to manually trigger the workflow
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -30,6 +31,7 @@ env:
 jobs:
   build-ci-docker-images:
     name: build-ci-docker-images
+    if: github.ref == 'refs/heads/develop'
     runs-on: [self-hosted, ernie-8gpu]
     outputs:
       run_build: ${{ steps.set_flags.outputs.run_build }}
@@ -75,7 +77,7 @@ jobs:
             git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
             git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-            git fetch upstream ${BRANCH}
+            git fetch upstream ${BRANCH}:${BRANCH}
             git merge ${BRANCH} --no-edit
             git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
           else
