@@ -47,7 +47,6 @@ custom_name_map = {
     "self_attn.memory_recompute_att.q_up_weight": "self_attn.q_b_proj.weight",
 }
 
-
 def paddle_name_to_hf_names_ds_v2(paddle_name: str) -> List[str]:
     """
     将Paddle模型参数名称转换为Hugging Face格式的名称列表
