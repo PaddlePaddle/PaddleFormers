@@ -264,12 +264,6 @@ class Ernie4_5Attention(nn.Layer):
         key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
         value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
 
-        if attn_mask_start_row_indices is None and attention_mask is None:
-            self.attn_implementation = "eager"
-        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
         # apply rope
@@ -438,7 +432,6 @@ class Ernie4_5PretrainedModel(PretrainedModel):
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):
         """Generate tensor parallel mappings for model conversion."""
-
         from ..conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
@@ -448,54 +441,53 @@ class Ernie4_5PretrainedModel(PretrainedModel):
             num_attention_heads=config.num_attention_heads,
         )
 
-        def get_tensor_parallel_split_mappings(num_hidden_layers):
-            final_actions = {}
+        LAYER_COLWISE = [
+            "self_attn.q_proj.weight",
+            "self_attn.k_proj.weight",
+            "self_attn.v_proj.weight",
+            "mlp.up_proj.weight",
+            "mlp.gate_proj.weight",
+        ]
+        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
 
-            base_actions = {
-                # Column Linear
-                "layers.0.self_attn.q_proj.weight": partial(fn, is_column=True),
-                "layers.0.self_attn.k_proj.weight": partial(fn, is_column=True),
-                "layers.0.self_attn.v_proj.weight": partial(fn, is_column=True),
-                "layers.0.mlp.gate_proj.weight": partial(fn, is_column=True),
-                "layers.0.mlp.up_proj.weight": partial(fn, is_column=True),
+        BIAS_KEYS = [
+            "self_attn.q_proj.bias",
+            "self_attn.k_proj.bias",
+            "self_attn.v_proj.bias",
+            "mlp.gate_proj.bias",
+            "mlp.up_proj.bias",
+            "self_attn.o_proj.bias",
+            "mlp.down_proj.bias",
+            "lm_head.bias",
+        ]
+
+        def make_base_actions():
+            actions = {
                 "lm_head.weight": partial(fn, is_column=not config.tie_word_embeddings),
                 "embed_tokens.weight": partial(fn, is_column=False),
             }
-
-            actions.update(
-                {f"{cls.base_model_prefix}.layers.0.{k}": partial(fn, is_column=True) for k in LAYER_COLWISE}
-            )
-            actions.update(
-                {f"{cls.base_model_prefix}.layers.0.{k}": partial(fn, is_column=False) for k in LAYER_ROWWISE}
-            )
-
-            # bias
-            if config.use_bias:
-                base_actions.update(
+            for layer_idx in range(config.num_hidden_layers):
+                actions.update(
                     {
-                        # Column Linear
-                        "layers.0.self_attn.q_proj.bias": partial(fn, is_column=True),
-                        "layers.0.self_attn.k_proj.bias": partial(fn, is_column=True),
-                        "layers.0.self_attn.v_proj.bias": partial(fn, is_column=True),
-                        "layers.0.mlp.gate_proj.bias": partial(fn, is_column=True),
-                        "layers.0.mlp.up_proj.bias": partial(fn, is_column=True),
-                        "layers.0.self_attn.o_proj.bias": partial(fn, is_column=True),
-                        "layers.0.mlp.down_proj.bias": partial(fn, is_column=True),
-                        "lm_head.bias": partial(fn, is_column=True),
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                        for k in LAYER_COLWISE
                     }
                 )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
+                        for k in LAYER_ROWWISE
+                    }
+                )
+                # bias
+                if config.use_bias:
+                    actions.update(
+                        {f"{cls.base_model_prefix}.layers.0.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
+                    )
 
-            for key, action in base_actions.items():
-                if key.startswith(f"{cls.base_model_prefix}.layers.0."):
-                    for i in range(num_layers):
-                        newkey = key.replace("layers.0.", f"layers.{i}.")
-                        final[newkey] = action
-                else:
-                    final[key] = action
-            return final
+            return actions
 
-        base_actions = make_base_actions()
-        mappings = expand_actions(base_actions, config.num_hidden_layers)
+        mappings = make_base_actions()
         return mappings
 
 

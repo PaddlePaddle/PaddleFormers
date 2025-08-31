@@ -441,7 +441,6 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
             "mlp.gate_proj.weight",
         ]
         LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
-
         MTP_COLWISE = [
             "self_attn.q_proj.weight",
             "self_attn.k_proj.weight",
@@ -452,6 +451,17 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
         MTP_ROWWISE = [
             "mlp.down_proj.weight",
             "self_attn.o_proj.weight",
+        ]
+
+        BIAS_KEYS = [
+            "self_attn.q_proj.bias",
+            "self_attn.k_proj.bias",
+            "self_attn.v_proj.bias",
+            "mlp.gate_proj.bias",
+            "mlp.up_proj.bias",
+            "self_attn.o_proj.bias",
+            "mlp.down_proj.bias",
+            "lm_head.bias",
         ]
 
         def make_base_actions():
@@ -472,13 +482,11 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                         for k in LAYER_ROWWISE
                     }
                 )
-
-            # # MoE shared experts
-            # if config.moe_num_shared_experts > 0:
-            #     actions.update(
-            #         {f"{cls.base_model_prefix}.layers.0.shared_experts.{k}": partial(fn, is_column=v) for k, v in SHARED_EXPERTS.items()}
-            #     )
-
+                # bias
+                if config.use_bias:
+                    actions.update(
+                        {f"{cls.base_model_prefix}.layers.0.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
+                    )
             # MTP block
             if config.num_nextn_predict_layers > 0:
                 for layer_idx in range(config.num_nextn_predict_layers):
@@ -494,22 +502,6 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                             for k in MTP_ROWWISE
                         }
                     )
-
-            # bias
-            if config.use_bias:
-                bias_keys = [
-                    "self_attn.q_proj.bias",
-                    "self_attn.k_proj.bias",
-                    "self_attn.v_proj.bias",
-                    "mlp.gate_proj.bias",
-                    "mlp.up_proj.bias",
-                    "self_attn.o_proj.bias",
-                    "mlp.down_proj.bias",
-                    "lm_head.bias",
-                ]
-                actions.update(
-                    {f"{cls.base_model_prefix}.layers.0.{b}": partial(fn, is_column=True) for b in bias_keys}
-                )
             return actions
 
         def expand_actions(base_actions, num_layers):
@@ -527,7 +519,6 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                     or i > config.moe_layer_end_index
                 ):
                     continue
-                # shared_experts_newkey = extend_key_prefix.replace("layers.0", f"layers.{i}.mlp.shared_experts")
                 experts_newkey = extend_key_prefix.replace("layers.0", f"layers.{i}.mlp.experts")
 
                 if config.moe_num_experts > 0:
@@ -544,97 +535,11 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                             if not moe_in_mp:
                                 extend_action[exp_key] = action
 
-                # if config.moe_num_shared_experts > 0:
-                #     for key,v in SHARED_EXPERTS.items():
-                #         exp_key = f"{shared_experts_newkey}.{key}"
-                #         extend_action[exp_key] = partial(fn, is_column=v)
-
             return extend_action | base_actions
 
         base_actions = make_base_actions()
         mappings = expand_actions(base_actions, config.num_hidden_layers)
         return mappings
-
-        # def get_tensor_parallel_split_mappings(num_hidden_layers):
-        #     final_actions = {}
-
-        #     base_actions = {
-        #         # Column Linear
-        #         "layers.0.self_attn.q_proj.weight": partial(fn, is_column=True),
-        #         "layers.0.self_attn.k_proj.weight": partial(fn, is_column=True),
-        #         "layers.0.self_attn.v_proj.weight": partial(fn, is_column=True),
-        #         "lm_head.weight": partial(fn, is_column=not config.tie_word_embeddings),
-        #         # Row Linear
-        #         "embed_tokens.weight": partial(fn, is_column=False),
-        #         "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
-        #     }
-        #     if config.moe_num_shared_experts > 0:
-        #         base_actions.update(
-        #             {
-        #                 "layers.0.mlp.shared_experts.up_proj.weight": partial(fn, is_column=True),
-        #                 "layers.0.mlp.shared_experts.gate_proj.weight": partial(fn, is_column=True),
-        #                 "layers.0.mlp.shared_experts.down_proj.weight": partial(fn, is_column=False),
-        #             }
-        #         )
-
-        #     if config.num_nextn_predict_layers > 0:
-        #         base_actions.update(
-        #             {
-        #                 # Column Linear
-        #                 "mtp_block.0.self_attn.q_proj.weight": partial(fn, is_column=True),
-        #                 "mtp_block.0.self_attn.k_proj.weight": partial(fn, is_column=True),
-        #                 "mtp_block.0.self_attn.v_proj.weight": partial(fn, is_column=True),
-        #                 "mtp_block.0.mlp.up_proj.weight": partial(fn, is_column=True),
-        #                 "mtp_block.0.mlp.gate_proj.weight": partial(fn, is_column=True),
-        #                 # Row Linear
-        #                 "mtp_block.0.mlp.down_proj.weight": partial(fn, is_column=False),
-        #                 "mtp_block.0.self_attn.o_proj.weight": partial(fn, is_column=False),
-        #             }
-        #         )
-        #     if config.use_bias:
-        #         base_actions.update(
-        #             {
-        #                 # Column Linear
-        #                 "layers.0.self_attn.q_proj.bias": partial(fn, is_column=True),
-        #                 "layers.0.self_attn.k_proj.bias": partial(fn, is_column=True),
-        #                 "layers.0.self_attn.v_proj.bias": partial(fn, is_column=True),
-        #                 "layers.0.mlp.gate_proj.bias": partial(fn, is_column=True),
-        #                 "layers.0.mlp.up_proj.bias": partial(fn, is_column=True),
-        #                 "layers.0.self_attn.o_proj.bias": partial(fn, is_column=True),
-        #                 "layers.0.mlp.down_proj.bias": partial(fn, is_column=True),
-        #                 "lm_head.bias": partial(fn, is_column=True),
-        #             }
-        #         )
-
-        #     moe_group = config.moe_group if isinstance(config.moe_group, str) else config.moe_group_origin
-        #     moe_in_mp = moe_group in {"mp", "model", "tp"}
-        #     for key, action in base_actions.items():
-        #         if "layers.0." in key:
-        #             for i in range(num_hidden_layers):
-        #                 newkey = key.replace("layers.0.", f"layers.{i}.")
-        #                 moe_num_experts = config.moe_num_experts
-
-        #                 # special for moe expert but not include shared experts
-        #                 if "mlp" in key and moe_num_experts and moe_num_experts > 0 and "shared_experts" not in key:
-        #                     for expert_id in range(moe_num_experts):
-        #                         _key = key.replace(
-        #                             "layers.0.mlp",
-        #                             f"layers.{i}.mlp.experts.{expert_id}",
-        #                         )
-        #                         if not moe_in_mp:
-        #                             final_actions[_key] = action
-        #                 else:
-        #                     final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
-        #         elif "mtp_block.0." in key:
-        #             for i in range(config.num_nextn_predict_layers):
-        #                 newkey = key.replace("mtp_block.0.", f"mtp_block.{i}.")
-        #                 final_actions[newkey] = action
-        #         else:
-        #             final_actions[key] = action
-        #     return final_actions
-
-        # mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
-        # return mappings
 
 
 @register_base_model
