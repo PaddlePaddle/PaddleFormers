@@ -1,11 +1,11 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,7 +19,6 @@ import paddle.distributed as dist
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
 from paddle.distributed.communication.group import _get_global_group
-from paddle.distributed.fleet.utils import recompute
 
 from .utils import manual_backward
 
@@ -690,5 +689,5 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
 
 
 # Conditionally select the AlltoAllSmart implementation
-if paddle.is_compiled_with_xpu():
-    AlltoAllSmart = AlltoAllSmartXPU
+# if paddle.is_compiled_with_xpu():
+# AlltoAllSmart = AlltoAllSmartXPU

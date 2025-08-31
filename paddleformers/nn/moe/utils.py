@@ -23,9 +23,11 @@ from paddle import distributed as dist
 from paddle import framework
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
+from paddle.distributed.communication.group import _get_global_group
 from paddle.incubate.tensor.manipulation import create_async_load
 
 from ...utils.log import logger
+
 
 def get_hcg():
     """

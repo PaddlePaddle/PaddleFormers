@@ -18,14 +18,14 @@ moe_layer_all_gather
 """
 
 import inspect
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import paddle
 import paddle.distributed as dist
 from paddle import framework, nn
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
-from paddle.distributed.communication.group import Group, _get_global_group
+from paddle.distributed.communication.group import Group
 from paddle.distributed.fleet.utils import recompute
 from paddle.incubate.nn.functional import (
     build_src_rank_and_local_expert_id,
@@ -37,7 +37,7 @@ from paddle.incubate.tensor.manipulation import async_offload
 from paddleformers.peft.lora.lora_quantization_layers import QuantizationLoRALinear
 from paddleformers.utils.log import logger
 
-from .all_gather import AllGatherAsync, AlltoAllSmart
+from .all_gather import AllGatherAsync, AlltoAllSmart, allgather_async
 from .moe_alltoall_layer import MOEAlltoAllLayer
 from .utils import (
     AllGatherGroupOp,
