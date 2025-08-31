@@ -72,78 +72,145 @@ def get_buffer(group: Group, hidden_bytes: int):
     return _buffer
 
 
+def fused_dispatch_forward_func(
+    x,
+    token_indices,
+    token_probs,
+    num_experts,
+    group,
+    previous_event=None,
+    async_finish=False,
+    allocate_on_comm_stream=False,
+):
+    """Forward pass of fused dispatch."""
+    # Calculate layout before actual dispatch
+    if isinstance(x, tuple):
+        buffer = get_buffer(group, get_hidden_bytes(x[0]))
+    else:
+        buffer = get_buffer(group, get_hidden_bytes(x))
+    (
+        num_tokens_per_rank,
+        num_tokens_per_rdma_rank,
+        num_tokens_per_expert,
+        is_token_in_rank,
+        previous_event_,
+    ) = buffer.get_dispatch_layout(
+        token_indices,
+        num_experts,
+        previous_event=previous_event,
+        async_finish=async_finish,
+        allocate_on_comm_stream=allocate_on_comm_stream,
+    )
+
+    assert token_probs.dtype == paddle.float32
+    # Do MoE dispatch
+    # NOTES: the CPU will wait for GPU's signal to arrive,
+    # so this is not compatible with CUDA graph
+    (recv_x, recv_token_indices, recv_token_probs, num_recv_tokens_per_expert_list, handle, event,) = buffer.dispatch(
+        x,
+        topk_idx=token_indices,
+        topk_weights=token_probs,
+        num_tokens_per_rank=num_tokens_per_rank,
+        num_tokens_per_rdma_rank=num_tokens_per_rdma_rank,
+        is_token_in_rank=is_token_in_rank,
+        num_tokens_per_expert=num_tokens_per_expert,
+        previous_event=previous_event,
+        async_finish=async_finish,
+        allocate_on_comm_stream=allocate_on_comm_stream,
+    )
+
+    states = dict()
+    states["dispatched_indices"] = recv_token_indices
+    states["tokens_per_expert"] = num_recv_tokens_per_expert_list
+    states["handle"] = handle
+
+    return recv_x, recv_token_probs, states, event
+
+
+def fused_dispatch_backward_func(
+    grad_output,
+    grad_token_probs,
+    group,
+    handle,
+    previous_event=None,
+    async_finish=False,
+    allocate_on_comm_stream=False,
+):
+    """Backward pass of fused dispatch."""
+    buffer = get_buffer(group, get_hidden_bytes(grad_output))
+
+    grad_x, grad_token_probs, event = buffer.combine(
+        grad_output.contiguous(),
+        handle,
+        topk_weights=grad_token_probs.cast(paddle.float32),
+        previous_event=previous_event,
+        async_finish=async_finish,
+        allocate_on_comm_stream=allocate_on_comm_stream,
+    )
+    return grad_x, None, grad_token_probs
+
+
+def fused_combine_forward_func(
+    x, group, states, previous_event=None, async_finish=False, allocate_on_comm_stream=False
+):
+    """Forward pass of fused combine."""
+    handle = states["handle"]
+    buffer = get_buffer(group, get_hidden_bytes(x))
+    combined_x, _, event = buffer.combine(
+        x,
+        handle=handle,
+        async_finish=async_finish,
+        previous_event=previous_event,
+        allocate_on_comm_stream=allocate_on_comm_stream,
+    )
+    return combined_x
+
+
+def fused_combine_backward_func(
+    grad_output, group, handle, previous_event=None, async_finish=False, allocate_on_comm_stream=False
+):
+    """Backward pass of fused combine."""
+    if isinstance(grad_output, tuple):
+        buffer = get_buffer(group, get_hidden_bytes(grad_output[0]))
+        grad_x, _, _, _, _, event = buffer.dispatch(
+            (grad_output[0].contiguous(), grad_output[1].contiguous()),
+            handle=handle,
+            previous_event=previous_event,
+            async_finish=async_finish,
+            allocate_on_comm_stream=allocate_on_comm_stream,
+        )
+    else:
+        buffer = get_buffer(group, get_hidden_bytes(grad_output))
+        grad_x, _, _, _, _, event = buffer.dispatch(
+            grad_output.contiguous(),
+            handle=handle,
+            previous_event=previous_event,
+            async_finish=async_finish,
+            allocate_on_comm_stream=allocate_on_comm_stream,
+        )
+    return grad_x
+
+
 class FusedDispatch(PyLayer):
     """Fused dispatch operation for MoE routing combining computation and communication."""
 
     @staticmethod
     def forward(ctx, x, token_indices, token_probs, num_experts, group, previous_event=None):
         """Forward pass of fused dispatch."""
-        # Calculate layout before actual dispatch
-        buffer = get_buffer(group, get_hidden_bytes(x))
-        (
-            num_tokens_per_rank,
-            num_tokens_per_rdma_rank,
-            num_tokens_per_expert,
-            is_token_in_rank,
-            previous_event,
-        ) = buffer.get_dispatch_layout(
-            token_indices,
-            num_experts,
-            previous_event=None,
-            async_finish=False,
-            allocate_on_comm_stream=False,
-        )
-
-        # Do MoE dispatch
-        # NOTES: the CPU will wait for GPU's signal to arrive,
-        # so this is not compatible with CUDA graph
-        (
-            recv_x,
-            recv_token_indices,
-            recv_token_probs,
-            num_recv_tokens_per_expert_list,
-            handle,
-            event,
-        ) = buffer.dispatch(
-            x,
-            topk_idx=token_indices,
-            topk_weights=token_probs.cast(paddle.float32),
-            num_tokens_per_rank=num_tokens_per_rank,
-            num_tokens_per_rdma_rank=num_tokens_per_rdma_rank,
-            is_token_in_rank=is_token_in_rank,
-            num_tokens_per_expert=num_tokens_per_expert,
-            previous_event=None,
-            async_finish=False,
-            allocate_on_comm_stream=False,
+        recv_x, recv_token_probs, states, event = fused_dispatch_forward_func(
+            x, token_indices, token_probs, num_experts, group, previous_event
         )
 
         ctx.group = group
-        ctx.handle = handle
+        ctx.handle = states["handle"]
         ctx.event = event
-        tokens_per_expert = paddle.to_tensor(num_recv_tokens_per_expert_list)
-
-        states = dict()
-        states["dispatched_indices"] = recv_token_indices
-        states["tokens_per_expert"] = tokens_per_expert
-        states["handle"] = handle
 
         return recv_x, recv_token_probs, states
 
     @staticmethod
     def backward(ctx, grad_output, grad_token_probs):
         """Backward pass of fused dispatch."""
-        buffer = get_buffer(ctx.group, get_hidden_bytes(grad_output))
-        handle = ctx.handle
-
-        grad_x, grad_token_probs, event = buffer.combine(
-            grad_output.contiguous(),
-            handle,
-            topk_weights=grad_token_probs.cast(paddle.float32),
-            previous_event=None,
-            async_finish=False,
-            allocate_on_comm_stream=False,
-        )
-        return grad_x, None, grad_token_probs
+        return fused_dispatch_backward_func(grad_output, grad_token_probs, ctx.group, ctx.handle)
 
 
 class FusedCombine(PyLayer):
@@ -152,12 +219,9 @@ class FusedCombine(PyLayer):
     @staticmethod
     def forward(ctx, x, group, states, previous_event=None):
         """Forward pass of fused combine."""
-        handle = states["handle"]
-        buffer = get_buffer(group, get_hidden_bytes(x))
-        combined_x, _, event = buffer.combine(
-            x, handle=handle, async_finish=False, previous_event=None, allocate_on_comm_stream=False
-        )
-        ctx.handle = handle
+        combined_x = fused_combine_forward_func(x, group, states, previous_event)
+
+        ctx.handle = states["handle"]
         ctx.group = group
         ctx.previous_event = previous_event
 
@@ -166,15 +230,7 @@ class FusedCombine(PyLayer):
     @staticmethod
     def backward(ctx, grad_output):
         """Backward pass of fused combine."""
-        buffer = get_buffer(ctx.group, get_hidden_bytes(grad_output))
-        grad_x, _, _, _, _, event = buffer.dispatch(
-            grad_output.contiguous(),
-            handle=ctx.handle,
-            previous_event=ctx.previous_event,
-            async_finish=False,
-            allocate_on_comm_stream=False,
-        )
-        return grad_x
+        return fused_combine_backward_func(grad_output, ctx.group, ctx.handle, ctx.previous_event)
 
 
 if HAVE_DEEP_EP:
@@ -214,3 +270,96 @@ if HAVE_DEEP_EP:
 else:
     fused_dispatch = None
     fused_combine = None
+
+
+class DispatchNode:
+    def __init__(self, name="dispatch"):
+        self.name = name
+
+    def reset_statue(self):
+        self.handle = None
+
+    def forward(
+        self,
+        x,
+        token_indices,
+        token_probs,
+        num_experts,
+        group,
+        previous_event=None,
+        async_finish=False,
+        allocate_on_comm_stream=False,
+    ):
+        """Forward pass of fused dispatch."""
+        recv_x, recv_token_probs, states, event = fused_dispatch_forward_func(
+            x,
+            token_indices,
+            token_probs,
+            num_experts,
+            group,
+            previous_event=previous_event,
+            async_finish=async_finish,
+            allocate_on_comm_stream=allocate_on_comm_stream,
+        )
+
+        self.group = group
+        self.handle = states["handle"]
+        self.event = event
+
+        return recv_x, recv_token_probs, states
+
+    def backward(
+        self, grad_output, grad_token_probs, previous_event=None, async_finish=False, allocate_on_comm_stream=False
+    ):
+        """Backward pass of fused dispatch."""
+        out = fused_dispatch_backward_func(
+            grad_output,
+            grad_token_probs,
+            self.group,
+            self.handle,
+            previous_event=previous_event,
+            async_finish=async_finish,
+            allocate_on_comm_stream=allocate_on_comm_stream,
+        )
+        self.reset_statue()
+        return out
+
+
+class CombineNode:
+    def __init__(self, name="combine"):
+        self.name = name
+
+    def reset_statue(self):
+        self.handle = None
+
+    def forward(self, x, group, handle, previous_event=None, async_finish=False, allocate_on_comm_stream=False):
+        """Forward pass of fused combine."""
+        states = dict()
+        states["handle"] = handle
+        combined_x = fused_combine_forward_func(
+            x,
+            group,
+            states,
+            previous_event=previous_event,
+            async_finish=async_finish,
+            allocate_on_comm_stream=allocate_on_comm_stream,
+        )
+
+        self.handle = handle
+        self.group = group
+        self.previous_event = previous_event
+
+        return combined_x
+
+    def backward(self, grad_output, previous_event=None, async_finish=False, allocate_on_comm_stream=False):
+        """Backward pass of fused combine."""
+        out = fused_combine_backward_func(
+            grad_output,
+            self.group,
+            self.handle,
+            previous_event=previous_event,
+            async_finish=async_finish,
+            allocate_on_comm_stream=allocate_on_comm_stream,
+        )
+        self.reset_statue()
+        return out
