@@ -31,8 +31,7 @@ from typing import TYPE_CHECKING, ContextManager, List, Optional, Type, Union
 from filelock import FileLock
 
 from paddleformers import __version__
-
-from ..utils.downloader import (
+from paddleformers.utils.downloader import (
     COMMUNITY_MODEL_PREFIX,
     download_check,
     get_path_from_url_with_filelock,
@@ -52,12 +51,12 @@ from paddle.common_ops_import import convert_dtype
 from paddle.nn import Layer
 from requests.exceptions import HTTPError
 
+from paddleformers.utils.env import HF_CACHE_HOME, MODEL_HOME
+from paddleformers.utils.import_utils import import_module
+from paddleformers.utils.log import logger
+
 from ..utils.download import resolve_file_path
-from ..utils.env import HF_CACHE_HOME, MODEL_HOME
-from ..utils.import_utils import import_module
-from ..utils.log import logger
 from .aistudio_utils import aistudio_download
-from .download_utils import DownloadSource
 
 HUGGINGFACE_CO_RESOLVE_ENDPOINT = "https://huggingface.co"
 
@@ -173,7 +172,7 @@ def adapt_stale_fwd_patch(self, name, value):
 
         # NOTE(changwenbin & zhoukangkang):
         # When use model = paddle.incubate.jit.inference(model), it reportes errors, we fix it here.
-        # is_inference_mode API is only available in PaddlePaddle develop，so we add a try except.
+        # is_inference_mode API is only avaliable in PaddlePaddle develop，so we add a try except.
         try:
             from paddle.incubate.jit import is_inference_mode
 
@@ -206,10 +205,10 @@ def adapt_stale_fwd_patch(self, name, value):
             if self.__module__.startswith("paddleformers"):
                 warnings.warn(
                     f"The `forward` method of {self.__class__ if isinstance(self, Layer) else self} is patched and the patch "
-                    "might be based on an old version which missing some "
+                    "might be based on an old oversion which missing some "
                     f"arguments compared with the latest, such as {new_args}. "
                     "We automatically add compatibility on the patch for "
-                    "these arguments, and maybe the patch should be updated."
+                    "these arguemnts, and maybe the patch should be updated."
                 )
             else:
                 warnings.warn(
@@ -217,7 +216,7 @@ def adapt_stale_fwd_patch(self, name, value):
                     "is patched and the patch might be conflict with patches made "
                     f"by paddleformers which seems have more arguments such as {new_args}. "
                     "We automatically add compatibility on the patch for "
-                    "these arguments, and maybe the patch should be updated."
+                    "these arguemnts, and maybe the patch should be updated."
                 )
             if isinstance(self, Layer) and inspect.isfunction(value):
 
@@ -254,8 +253,8 @@ class InitTrackerMeta(type(Layer)):
 
     def __init__(cls, name, bases, attrs):
         init_func = cls.__init__
-        # If attrs has `__init__`, wrap it using accessible `_pre_init, _post_init`.
-        # Otherwise, no need to wrap again since the super cls has been wrapped.
+        # If attrs has `__init__`, wrap it using accessable `_pre_init, _post_init`.
+        # Otherwise, no need to wrap again since the super cls has been wraped.
         # TODO: remove reduplicated tracker if using super cls `__init__`
         pre_init_func = getattr(cls, "_pre_init", None) if "__init__" in attrs else None
         post_init_func = getattr(cls, "_post_init", None) if "__init__" in attrs else None
@@ -283,12 +282,12 @@ class InitTrackerMeta(type(Layer)):
 
         @functools.wraps(init_func)
         def __impl__(self, *args, **kwargs):
-            # registered helper by `pre_init_func`
+            # registed helper by `pre_init_func`
             if pre_init_func:
                 pre_init_func(self, init_func, *args, **kwargs)
             # keep full configuration
             init_func(self, *args, **kwargs)
-            # registered helper by `post_init_func`
+            # registed helper by `post_init_func`
             if post_init_func:
                 post_init_func(self, init_func, *args, **kwargs)
             self.init_config = kwargs
@@ -322,20 +321,18 @@ def param_in_func(func, param_field: str) -> bool:
     return param_field in result[0]
 
 
-def resolve_cache_dir(download_hub: DownloadSource = None, cache_dir: Optional[str] = None) -> str:
+def resolve_cache_dir(from_hf_hub: bool, from_aistudio: bool, cache_dir: Optional[str] = None) -> str:
     """resolve cache dir for PretrainedModel and PretrainedConfig
 
     Args:
-        download_hub (DownloadSource): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
+        from_hf_hub (bool): if load from huggingface hub
         cache_dir (str): cache_dir for models
     """
     if cache_dir is not None:
         return cache_dir
-    if download_hub == DownloadSource.MODELSCOPE:
+    if from_aistudio:
         return None
-    if download_hub == DownloadSource.AISTUDIO:
-        return None
-    if download_hub == DownloadSource.HUGGINGFACE:
+    if from_hf_hub:
         return HF_CACHE_HOME
     return MODEL_HOME
 
@@ -453,7 +450,7 @@ def paddleformers_hub_download(
 
     # Download from custom model url
     if is_url(repo_id):
-        # check whether the target file exist in the community bos server
+        # check wether the target file exist in the comunity bos server
         if url_file_exists(repo_id):
             logger.info(f"Downloading {repo_id}")
             weight_file_path = get_path_from_url_with_filelock(repo_id, cache_dir)
@@ -486,7 +483,7 @@ def paddleformers_hub_download(
     community_model_file_path = "/".join(url_list)
     assert is_url(community_model_file_path)
 
-    # check whether the target file exist in the community bos server
+    # check wether the target file exist in the comunity bos server
     if url_file_exists(community_model_file_path):
         logger.info(f"Downloading {community_model_file_path}")
         weight_file_path = get_path_from_url_with_filelock(community_model_file_path, cache_dir)
@@ -506,7 +503,7 @@ def cached_file(
     filename: str,
     cache_dir: Optional[Union[str, os.PathLike]] = None,
     subfolder: str = "",
-    download_hub: DownloadSource = None,
+    from_aistudio: bool = False,
     _raise_exceptions_for_missing_entries: bool = True,
     _raise_exceptions_for_connection_errors: bool = True,
     pretrained_model_name_or_path=None,
@@ -556,7 +553,7 @@ def cached_file(
     if cache_dir is not None and isinstance(cache_dir, Path):
         cache_dir = str(cache_dir)
 
-    if download_hub == DownloadSource.AISTUDIO:
+    if from_aistudio:
         try:
             resolved_file = aistudio_download(
                 repo_id=path_or_repo_id, filename=filename, subfolder=subfolder, cache_dir=cache_dir
@@ -629,7 +626,7 @@ def cached_file_for_hf_hub(
             filename=filename,
             cache_dir=cache_dir,
             subfolder=subfolder,
-            library_name="PaddleNLP",
+            library_name="paddleformers",
             library_version=__version__,
         )
         return resolved_file
@@ -653,7 +650,8 @@ def get_checkpoint_shard_files(
     index_filename,
     cache_dir=None,
     subfolder="",
-    download_hub=None,
+    from_aistudio=False,
+    from_hf_hub=False,
 ):
     """
     For a given model:
@@ -706,7 +704,8 @@ def get_checkpoint_shard_files(
                 [shard_filename],
                 subfolder,
                 cache_dir=cache_dir,
-                download_hub=download_hub,
+                from_aistudio=from_aistudio,
+                from_hf_hub=from_hf_hub,
             )
             assert (
                 cached_filename is not None
@@ -851,8 +850,6 @@ def dtype_byte_size(dtype):
     """
     if dtype == paddle.bool:
         return 1 / 8
-    if dtype == paddle.float8_e4m3fn or dtype == paddle.float8_e5m2:
-        return 1
     bit_search = re.search(r"[^\d](\d+)$", str(dtype))
     if bit_search is None:
         raise ValueError(f"`dtype` is not a valid dtype: {dtype}.")
@@ -1005,3 +1002,10 @@ def caculate_llm_per_token_flops(
     # 2 for mul + add in matmul
     # 1 for forward, 2 for backwards since we caluate gradients for input_x and input_y
     return 2 * (layer_num * (flops_per_transformer * 3 + flops_recompute_transformer) + 3 * flops_loggits) / seq_length
+
+
+def cast_if_needed(x, dtype):
+    """
+    cast_if_needed
+    """
+    return x.cast(dtype) if x.dtype != dtype else x

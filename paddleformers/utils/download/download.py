@@ -44,6 +44,7 @@ class DownloadSource(str, Enum):
     HUGGINGFACE = "huggingface"
     AISTUDIO = "aistudio"
     MODELSCOPE = "modelscope"
+    BOS = "bos"
 
 
 MODEL_MAPPINGS = {}
@@ -64,6 +65,7 @@ def check_repo(model_name_or_path, download_hub):
             DownloadSource.HUGGINGFACE,
             DownloadSource.AISTUDIO,
             DownloadSource.MODELSCOPE,
+            DownloadSource.BOS,
         ], f"download_hub must be one of {DownloadSource.HUGGINGFACE}, {DownloadSource.AISTUDIO}, {DownloadSource.MODELSCOPE}"
         if model_name_or_path not in HF_MODEL_MAPPINGS.keys():
             # repo id set by user
@@ -86,6 +88,70 @@ def strtobool(v):
         raise ArgumentTypeError(
             f"Truthy value expected: got {v} but expected one of yes/no, true/false, t/f, y/n, 1/0 (case insensitive)."
         )
+
+from .aistudio_hub_download import (
+    aistudio_hub_download,
+    aistudio_hub_file_exists,
+    aistudio_hub_try_to_load_from_cache,
+)
+from .bos_download import bos_download, bos_file_exists, bos_try_to_load_from_cache
+
+
+def bos_aistudio_hf_file_exist(
+    repo_id: str,
+    filename: str,
+    *,
+    subfolder: Optional[str] = None,
+    repo_type: Optional[str] = None,
+    revision: Optional[str] = None,
+    token: Optional[str] = None,
+    endpoint: Optional[str] = None,
+    from_bos: bool = True,
+    from_aistudio: bool = False,
+    from_hf_hub: bool = False,
+):
+    assert repo_id is not None, "repo_id cannot be None"
+    assert filename is not None, "filename cannot be None"
+
+    if subfolder is None:
+        subfolder = ""
+    filename = os.path.join(subfolder, filename)
+    out = bos_file_exists(
+        repo_id=repo_id,
+        filename=filename,
+        repo_type=repo_type,
+        revision=revision,
+        token=token,  # donot need token
+        endpoint=endpoint,
+    )
+    return out
+
+def bos_aistudio_hf_try_to_load_from_cache(
+    repo_id: str,
+    filename: str,
+    cache_dir: Union[str, Path, None] = None,
+    subfolder: str = None,
+    revision: Optional[str] = None,
+    repo_type: Optional[str] = None,
+    from_bos: bool = True,
+    from_aistudio: bool = False,
+    from_hf_hub: bool = False,
+):
+    if subfolder is None:
+        subfolder = ""
+    load_kwargs = dict(
+        repo_id=repo_id,
+        filename=os.path.join(subfolder, filename),
+        cache_dir=cache_dir,
+        revision=revision,
+        repo_type=repo_type,
+    )
+    if from_aistudio:
+        return aistudio_hub_try_to_load_from_cache(**load_kwargs)
+    elif from_hf_hub:
+        return hf_hub_try_to_load_from_cache(**load_kwargs)
+    else:
+        return bos_try_to_load_from_cache(**load_kwargs)
 
 
 def resolve_file_path(
@@ -132,7 +198,6 @@ def resolve_file_path(
 
     if isinstance(filenames, str):
         filenames = [filenames]
-
     # check repo id
     if download_hub is None:
         download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
@@ -237,6 +302,31 @@ def resolve_file_path(
                         **download_kwargs,
                     )
                     if cached_file is not None:
+                        return cached_file
+        else:
+            print("="*50+">","BOS")
+            log_endpoint = "BOS"
+            print("="*50+">",filenames)
+            for filename in filenames:
+                download_kwargs["filename"] = filename
+                is_available = bos_aistudio_hf_file_exist(
+                    repo_id,
+                    filename,
+                    subfolder=subfolder,
+                    repo_type=repo_type,
+                    revision=revision,
+                    token=token,
+                    endpoint=endpoint,
+                    from_bos=True,
+                    from_aistudio=False,
+                    from_hf_hub=False,
+                )
+                if is_available:
+                    cached_file = bos_download(
+                        **download_kwargs,
+                    )
+                    if cached_file is not None:
+                        print("="*50+">","cached_file")
                         return cached_file
     except LocalEntryNotFoundError:
         raise EnvironmentError(
