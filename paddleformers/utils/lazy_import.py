@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib
+import importlib.machinery
 import importlib.util
 import os
 from itertools import chain

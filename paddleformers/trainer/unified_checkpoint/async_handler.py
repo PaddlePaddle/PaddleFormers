@@ -21,6 +21,7 @@ from multiprocessing import shared_memory
 import paddle
 import paddle.distributed as dist
 
+from ...transformers.model_utils import prepare_safe_save_state_dict
 from ...transformers.utils import is_safetensors_available
 from ...utils.log import logger
 
@@ -70,16 +71,20 @@ class AsyncCheckpointHandler:
             self._shared_save_optimizer_flag = multiprocessing.Array("i", 1)
 
     def _file_save_async_or_sync(
-        self, state_dict, path, signal_path=None, is_sync=True, state_dict_type="model_weight", ckpt_quant_stage="O0"
+        self,
+        state_dict,
+        path,
+        signal_path=None,
+        is_sync=True,
+        state_dict_type="model_weight",
+        ckpt_quant_stage="O0",
+        save_to_hf=False,
     ):
         if is_sync:
-            for k in list(state_dict.keys()):
-                if isinstance(state_dict[k], paddle.Tensor):
-                    state_dict[k] = state_dict.pop(k).cpu().numpy()
-
+            state_dict, metadata = prepare_safe_save_state_dict(state_dict, save_to_hf=save_to_hf)
             if state_dict_type == "optimizer_weight" and ckpt_quant_stage != "O0":
                 state_dict = quant_unified_optimizer(state_dict, state_dict_type, ckpt_quant_stage)
-            safe_save_file(state_dict, path, metadata={"format": "np"})
+            safe_save_file(state_dict, path, metadata=metadata)
         else:
             if len(state_dict.keys()) == 0:
                 saved_signal_path = os.path.join(signal_path, f".{state_dict_type}.done.{self.global_rank}")
@@ -107,6 +112,8 @@ class AsyncCheckpointHandler:
                             self._lock,
                             state_dict_type,
                             self.global_rank,
+                            ckpt_quant_stage,
+                            save_to_hf,
                         ),
                     )
                     self._process_model_weight.start()
@@ -134,6 +141,8 @@ class AsyncCheckpointHandler:
                             if "skip_save_model_weight" in self.args.unified_checkpoint_config
                             else state_dict_type,
                             self.global_rank,
+                            ckpt_quant_stage,
+                            save_to_hf,
                         ),
                     )
                     self._process_master_weight.start()
@@ -160,6 +169,7 @@ class AsyncCheckpointHandler:
                             state_dict_type,
                             self.global_rank,
                             ckpt_quant_stage,
+                            save_to_hf,
                         ),
                     )
                     self._process_optimizer_weight.start()
@@ -191,6 +201,7 @@ class AsyncCheckpointHandler:
         state_dict_type,
         global_rank,
         ckpt_quant_stage="O0",
+        save_to_hf=False,
     ):
         shm = shared_memory.SharedMemory(name=shm_name)
         while True:
@@ -208,7 +219,8 @@ class AsyncCheckpointHandler:
                     state_dict = quant_unified_optimizer(
                         state_dict, state_dict_type, ckpt_quant_stage, async_save=True
                     )  # ckpt quantization
-                safe_save_file(state_dict, path, {"format": "np"})
+                metadata = {"format": "pt"} if save_to_hf else {"format": "np"}
+                safe_save_file(state_dict, path, metadata=metadata)
                 del state_dict
                 saved_signal_path = os.path.join(signal_path, f".{state_dict_type}.done.{global_rank}")
                 paddle.save(global_rank, saved_signal_path)

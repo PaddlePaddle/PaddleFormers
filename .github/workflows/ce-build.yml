@@ -1,7 +1,10 @@
 name: Build Whl CE
 
-on: [push]
-
+on:
+  push:
+    branches:
+      - develop
+      
 concurrency:
   group: build-${{ github.workflow }}
   cancel-in-progress: true
@@ -31,7 +34,7 @@ jobs:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
-          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CENN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          paddle: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CENN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
@@ -46,7 +49,7 @@ jobs:
             -e ce_scripts \
             -e no_proxy \
             -e CE_name \
-            -e paddle_whl \
+            -e paddle \
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
             -w /workspace --runtime=nvidia $IMAGE_NAME

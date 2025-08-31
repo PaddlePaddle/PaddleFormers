@@ -1,8 +1,7 @@
 parameterized
 sentencepiece
 regex
-torch>=1.5
-transformers
+torch>=2.1
 fast_dataindex
 sacremoses
 pydantic
