@@ -124,8 +124,8 @@ jobs:
         run: |
           docker rm -f $container_name 2>/dev/null || true
 
-  Upload Coverage To Codecov:
-    name: Upload Coverage To Codecov
+  upload-coverage:
+    name: upload-coverage
     needs: [unittest-cpu-ci]
     if: always()
     runs-on: ubuntu-latest
