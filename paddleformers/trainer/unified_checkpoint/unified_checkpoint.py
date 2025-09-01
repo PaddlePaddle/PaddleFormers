@@ -22,6 +22,7 @@ import paddle
 from paddle.distributed import fleet
 
 from ...peft import LoRAModel, PrefixModelForCausalLM
+from ...transformers.conversion_utils import ConversionMixin
 from ...transformers.model_utils import (
     PretrainedModel,
     _add_variant,
@@ -94,7 +95,7 @@ class UnifiedCheckpointHandler:
         self.args = args
         self.async_handler = AsyncCheckpointHandler(args)
 
-    def save_unified_checkpoint(self, model, optimizer, output_dir, signal_dir=None):
+    def save_unified_checkpoint(self, model, optimizer, output_dir, signal_dir=None, save_to_hf=False):
         """save unified checkpoint
 
         Args:
@@ -116,7 +117,7 @@ class UnifiedCheckpointHandler:
 
         # Under non distributed environment.
         if paddle.distributed.get_world_size() <= 1:
-            save_single_card_checkpoint(model_to_save, output_dir)
+            save_single_card_checkpoint(model_to_save, output_dir, save_to_hf=save_to_hf)
             return
 
         skip_save_model_weight = False
@@ -137,7 +138,10 @@ class UnifiedCheckpointHandler:
         # save model weights
         if not skip_save_model_weight:
             state_dict, shard_file, sharded_index = unified_checkpoint_into_shards(
-                self.args, model_to_save, safe_serialization=True
+                self.args,
+                model_to_save,
+                safe_serialization=True,
+                save_to_hf=save_to_hf,
             )
             is_sync_save = True
             if "async_save" in self.args.unified_checkpoint_config:
@@ -148,6 +152,7 @@ class UnifiedCheckpointHandler:
                 signal_path=signal_dir,
                 is_sync=is_sync_save,
                 state_dict_type="model_weight",
+                save_to_hf=save_to_hf,
             )
             if sharded_index is not None:
                 if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
@@ -175,7 +180,7 @@ class UnifiedCheckpointHandler:
             }
             paddle.save(save_info, os.path.join(save_directory, ".saving_info"))
 
-    def load_unified_checkpoint(self, model, resume_from_checkpoint: str):
+    def load_unified_checkpoint(self, model, resume_from_checkpoint: str, convert_from_hf=False):
         """Load potential model checkpoint
 
         Args:
@@ -186,7 +191,7 @@ class UnifiedCheckpointHandler:
             None
         """
         if paddle.distributed.get_world_size() <= 1:
-            load_single_card_checkpoint(model, resume_from_checkpoint)
+            load_single_card_checkpoint(model, resume_from_checkpoint, convert_from_hf=convert_from_hf)
             return
 
         local_resume = check_unified_checkpoint(self.args, model, resume_from_checkpoint, safe_serialization=True)
@@ -197,7 +202,9 @@ class UnifiedCheckpointHandler:
             return
 
         if self.args.dataset_rank == 0 or self.args.use_expert_parallel:
-            load_unified_checkpoint_locally(self.args, model, resume_from_checkpoint, safe_serialization=True)
+            load_unified_checkpoint_locally(
+                self.args, model, resume_from_checkpoint, safe_serialization=True, convert_from_hf=convert_from_hf
+            )
 
     def save_non_merge_optimizer(
         self, model, optim_state_dict, master_weights, output_dir, signal_dir, optim_shard_num=1
@@ -581,6 +588,7 @@ def unified_checkpoint_into_shards(
     args,
     model_to_save,
     safe_serialization=False,
+    save_to_hf=False,
 ):
     """Get state_dict and config to save
 
@@ -614,6 +622,10 @@ def unified_checkpoint_into_shards(
             )
         logger.info("Unified model tensor parallel weights in shards")
         state_dict = merge_tensor_parallel_with_shard(state_dict, tp_actions, all_filter_keys)
+
+    if save_to_hf:
+        transpose_weight_keys = getattr(model_to_save, "transpose_weight_keys", None)
+        state_dict = ConversionMixin.convert_transpose_selected_weights(state_dict, transpose_weight_keys)
 
     # build index json file
     index_weight_file = {}

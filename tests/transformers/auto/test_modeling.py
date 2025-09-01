@@ -75,10 +75,12 @@ class AutoModelTest(unittest.TestCase):
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_name, model_name)))
 
-    @unittest.skip("skipping due to connection error!")
-    # @set_proxy(DownloadSource.HUGGINGFACE)
+    # @unittest.skip("skipping due to connection error!")
+    @set_proxy(DownloadSource.HUGGINGFACE)
     def test_from_hf_hub(self):
-        model = AutoModel.from_pretrained("dfargveazd/tiny-random-llama-paddle", download_hub="huggingface")
+        model = AutoModel.from_pretrained(
+            "dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface", convert_from_hf=False
+        )
         self.assertIsInstance(model, LlamaModel)
 
     # @unittest.skip("skipping due to connection error!")

@@ -18,30 +18,41 @@ import paddle
 import paddle.nn as nn
 from paddle.nn.functional.flash_attention import flashmask_attention
 
+from .sink_impl import sink_attention_forward
+
 
 def flashmask_attention_forward(
     module: nn.Layer,
     query: paddle.Tensor,
     key: paddle.Tensor,
     value: paddle.Tensor,
-    attention_mask: Optional[paddle.Tensor] = None,
-    attn_mask_start_row_indices=None,
+    attn_mask_start_row_indices: paddle.Tensor,
     dropout: float = 0.0,
+    sink: Optional[paddle.Tensor] = None,
     scaling: Optional[float] = None,
     is_causal: Optional[bool] = None,
     **kwargs
 ):
-    if attn_mask_start_row_indices is not None:
-        attn_mask_start_row_indices = attn_mask_start_row_indices.unsqueeze(-1)
-
     # b,l,h,d
-    out = flashmask_attention(
-        query,
-        key,
-        value,
-        startend_row_indices=attn_mask_start_row_indices,
-        causal=True,
-    )
+    if sink is None:
+        out = flashmask_attention(
+            query,
+            key,
+            value,
+            startend_row_indices=attn_mask_start_row_indices,
+            causal=True,
+        )
+    else:
+        out = sink_attention_forward(
+            query,
+            key,
+            value,
+            sink,
+            startend_row_indices=attn_mask_start_row_indices,
+            dropout_p=dropout,
+            softmax_scale=scaling,
+            causal=is_causal,
+        )
     out = paddle.reshape(x=out, shape=[0, 0, out.shape[2] * out.shape[3]])
 
     return out, None

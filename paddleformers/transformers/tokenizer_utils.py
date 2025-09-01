@@ -19,9 +19,12 @@ from __future__ import annotations
 import os
 import re
 from functools import wraps
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 from transformers import BatchEncoding
+from transformers.tokenization_utils import (
+    PreTrainedTokenizer as PreTrainedTokenizer_tf,
+)
 from transformers.tokenization_utils_base import (
     ADDED_TOKENS_FILE,
     CHAT_TEMPLATE_FILE,
@@ -31,14 +34,24 @@ from transformers.tokenization_utils_base import (
 )
 from transformers.utils.generic import ExplicitEnum
 
+from ..utils import is_paddle_available
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.log import logger
-from .legacy.tokenizer_utils import PretrainedTokenizer
+
+if is_paddle_available():
+    from .legacy.tokenizer_utils import PretrainedTokenizer
+else:
+
+    class _MissingPaddleTokenizer:
+        def __init__(self, *args, **kwargs):
+            raise ImportError(
+                "PretrainedTokenizer requires Paddle, but Paddle is not available. "
+                "Please install Paddle to use this feature."
+            )
+
+    PretrainedTokenizer = _MissingPaddleTokenizer
 
 # legacy PretrainedTokenizer, which is different from huggingface PreTrainedTokenizer
-
-
-PreTrainedTokenizer = PretrainedTokenizer
 
 
 class TensorType(ExplicitEnum):
@@ -142,6 +155,61 @@ class PaddleTokenizerMixin:
             return result
 
         setattr(self, method_name, wrapper)
+
+    def apply_chat_template(
+        self,
+        conversation: Union[list[dict[str, str]], list[list[dict[str, str]]], dict[str, Any]],
+        chat_template: Optional[str] = None,
+        **kwargs,
+    ):
+        """Applies chat template to conversation data (supports 3 formats):
+
+        1. Standard chat format:
+        [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi! How can I help?"}
+        ]
+
+        2. Batch Conversation Format:
+        [
+            [{"role": "user", "content": "user messages"}, {"role": "assistant", "content": "assistant messages"}],
+            [{"role": "user", "content": "user messages"}]
+        ]
+
+        3. Enhanced dictionary format (not natively supported by HuggingFace):
+        {
+            "messages": [
+                {"role": "user", "content": "Query"},
+                {"role": "assistant", "content": "Response"}
+            ],
+            "tools": [],    # Function call definitions
+            "documents": [] # RAG context documents
+        }
+        """
+        if isinstance(conversation, dict):
+            messages = conversation.get("messages", None)
+            tools = conversation.get("tools", None)
+            documents = conversation.get("documents", None)
+
+            # Allow kwargs override for empty values
+            if not tools and "tools" in kwargs:
+                tools = kwargs.pop("tools")
+            if not documents and "documents" in kwargs:
+                documents = kwargs.pop("documents")
+
+            return super().apply_chat_template(
+                conversation=messages,
+                chat_template=chat_template,
+                tools=tools,
+                documents=documents,
+                **kwargs,
+            )
+        else:
+            return super().apply_chat_template(
+                conversation=conversation,
+                chat_template=chat_template,
+                **kwargs,
+            )
 
     # Rewrite hf's tokenizer function from_pretrained
     @classmethod
@@ -290,6 +358,7 @@ class PaddleTokenizerMixin:
 
     def _extract_non_learnable_parts(self, origin_msg: List[Dict[str, str]], split_s: List[str]):
         """Split the entire chat by specified words. Extract the non-learnable parts."""
+        # TODO：We will upgrade this feature later
         # distinguish and replace the special words in original string to an uncompiled form: Like | -> \|
         regex_pattern = "|".join(map(re.escape, split_s))
         # splited by replaced specified words
@@ -297,6 +366,7 @@ class PaddleTokenizerMixin:
             r"(?:%s)" % regex_pattern,
             self.apply_chat_template(conversation=origin_msg, add_generation_prompt=False, tokenize=False),
         )
+
         if non_learnable_parts[-1] == "":
             non_learnable_parts.pop()
         return non_learnable_parts
@@ -340,12 +410,7 @@ class PaddleTokenizerMixin:
             )
             ans_roundi = roundi_str[len(roundi_no_ans_str) :]
             ans.append(ans_roundi)
-
         non_learnable_parts = self._extract_non_learnable_parts(origin_msg, ans)
-        # assert len(non_learnable_parts) == len(
-        #     ans
-        # ), f"Get non_learnable_parts len: {len(non_learnable_parts)}, but ans len: {len(ans)}."
-
         conversation_ids = []
         for i in range(len(non_learnable_parts)):
             conversation_ids.append(
@@ -383,5 +448,10 @@ class PaddleTokenizerMixin:
         return query
 
 
-def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer):
+def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer_tf):
     return type(hf_tokenizer_class.__name__, (PaddleTokenizerMixin, hf_tokenizer_class), {})
+
+
+class PreTrainedTokenizer(PaddleTokenizerMixin, PreTrainedTokenizer_tf):
+    def init(self, *args, **kwargs):
+        super().init(*args, **kwargs)

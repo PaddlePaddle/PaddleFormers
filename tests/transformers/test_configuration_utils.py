@@ -25,7 +25,9 @@ from paddleformers.transformers.configuration_utils import (
 )
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils import CONFIG_NAME
+from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import LEGACY_CONFIG_NAME
+from tests.testing_utils import set_proxy
 
 
 class FakeSimplePretrainedModelConfig(PretrainedConfig):
@@ -152,12 +154,11 @@ class StandardConfigMappingTest(unittest.TestCase):
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
 
-    @unittest.skip("skipping due to connection error!")
-    # @set_proxy(DownloadSource.HUGGINGFACE)
+    @set_proxy(DownloadSource.HUGGINGFACE)
     def test_load_from_hf(self):
         """test load config from hf"""
-        config = BertConfig.from_pretrained("hf-internal-testing/tiny-random-BertModel", download_hub="huggingface")
-        self.assertEqual(config.hidden_size, 32)
+        config = BertConfig.from_pretrained("Baicai003/tiny-bert", download_hub="huggingface")
+        self.assertEqual(config.hidden_size, 16)
 
         with tempfile.TemporaryDirectory() as tempdir:
             config.save_pretrained(tempdir)
@@ -165,7 +166,7 @@ class StandardConfigMappingTest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(tempdir, CONFIG_NAME)))
 
             loaded_config = BertConfig.from_pretrained(tempdir)
-            self.assertEqual(loaded_config.hidden_size, 32)
+            self.assertEqual(loaded_config.hidden_size, 16)
 
     def test_config_mapping(self):
         # create new fake-bert class to prevent static-attributed modified by this test
