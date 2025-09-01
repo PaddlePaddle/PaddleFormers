@@ -136,7 +136,7 @@ jobs:
             wget -q --no-proxy  https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-cpu/${PR_ID}/${COMMIT_ID}/logs/coverage.xml --no-check-certificate
 
       - name: Upload Cov-report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
           if-no-files-found: ignore
