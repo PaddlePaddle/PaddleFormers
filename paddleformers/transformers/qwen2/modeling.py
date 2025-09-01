@@ -1592,12 +1592,14 @@ class Qwen2ForCausalLM(Qwen2PretrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
+        loss_mask: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         past_key_values: Optional[List[paddle.Tensor]] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
+        attn_mask_start_row_indices=None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:

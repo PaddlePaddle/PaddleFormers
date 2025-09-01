@@ -320,8 +320,8 @@ class SequenceDataset(IterableDataset):
         # For new data concatenation mode
         self.begin_of_query = self.tokenizer.tokenize("User: ")
         self.begin_of_response = self.tokenizer.tokenize("\nAssistant: ")
-        self.end_of_response = "<|end_of_sentence|>"
-        self.begin_token = "<|begin_of_sentence|>"  # Same effect as sys_start_token
+        self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
+        self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
         self.newline_token = self.tokenizer.tokenize("\n")  # Same effect as sys_end_token
         if isinstance(self.tokenizer, PretrainedTokenizer):
             self.end_of_response_id = self.tokenizer._convert_token_to_id([self.end_of_response])[0]
@@ -532,7 +532,23 @@ class SequenceDataset(IterableDataset):
             Sequence: Processed sequence or None if invalid.
         """
         if not self.tokenizer.chat_template:
-            self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
+            chatml_template = """
+            {% for message in messages %}
+                {% if message['role'] == 'user' %}
+                    {{ '<|im_start|>user\n' + message['content'] + '<|im_end|>\n' }}
+                {% elif message['role'] == 'assistant' %}
+                    {{ '<|im_start|>assistant\n' + message['content'] + '<|im_end|>\n' }}
+                {% elif message['role'] == 'system' %}
+                    {{ '<|im_start|>system\n' + message['content'] + '<|im_end|>\n' }}
+                {% endif %}
+            {% endfor %}
+            {% if add_generation_prompt %}
+                {{ '<|im_start|>assistant\n' }}
+            {% endif %}
+            """
+
+            self.tokenizer.chat_template = chatml_template
+            # self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
         if example.is_function_call:
             encoded_messages = self._postprocess_fc_sequence(example)
         else:
@@ -580,22 +596,28 @@ class SequenceDataset(IterableDataset):
 
             return None
 
-        # Maybe left truncated, so need to add begin_token
-        if tokens[0] != self.begin_token_id:
-            tokens = [self.begin_token_id] + tokens
-            loss_mask = [0] + loss_mask
+        if self.begin_token_id != None and self.end_of_response_id != None:
+            # Maybe left truncated, so need to add begin_token
+            if tokens[0] != self.begin_token_id:
+                tokens = [self.begin_token_id] + tokens
+                loss_mask = [0] + loss_mask
 
-        if len(tokens) > self.max_seq_len:
-            raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+            if len(tokens) > self.max_seq_len:
+                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
-        # Add EOS token at the end
-        del tokens[-1]
-        del loss_mask[-1]
-        labels = tokens[1:] + [self.tokenizer.eos_token_id]
+            # Add EOS token at the end
+            del tokens[-1]
+            del loss_mask[-1]
+            labels = tokens[1:] + [self.tokenizer.eos_token_id]
 
-        # end_of_response is a special token that indicates the end of the turn.
-        # end_token is a special token that indicates the end of the answer.
-        labels = [label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels]
+            # end_of_response is a special token that indicates the end of the turn.
+            # end_token is a special token that indicates the end of the answer.
+            labels = [label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels]
+        else:
+            tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
+            labels = tokens[1:] + [-100]
+            if len(tokens) > self.max_seq_len:
+                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
         pos_ids = list(range(len(tokens)))
 
