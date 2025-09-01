@@ -17,11 +17,12 @@ import shutil
 import unittest
 
 from paddleformers.transformers import Ernie4_5_VLTokenizer
+from paddleformers.utils.download import DownloadSource
+from tests.testing_utils import set_proxy
 
 HUB_FLAG = "aistudio"
 
 
-@unittest.skip("skipping due to connection error!")
 class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
     from_pretrained_id = "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Base-PT"
     tokenizer_class = Ernie4_5_VLTokenizer
@@ -41,12 +42,14 @@ class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
 
+    @set_proxy(DownloadSource.AISTUDIO)
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
             self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
         )
         self.assertTrue(tokenizer is not None)
 
+    @set_proxy(DownloadSource.AISTUDIO)
     def test_slow_tokenizer_save_pretrained(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
             self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
@@ -55,6 +58,7 @@ class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
         tokenizer.save_pretrained("./slow_tokenizer")
         self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
 
+    @set_proxy(DownloadSource.AISTUDIO)
     def test_tokenize(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
             self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
