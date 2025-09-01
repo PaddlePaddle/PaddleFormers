@@ -272,7 +272,9 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         else:
             self.mlp = Ernie4_5MLP(config, hidden_size=config.hidden_size, intermediate_size=config.intermediate_size)
 
-        if config.sequence_parallel:  # Under `mp-moe`, gate is effective in attn and is in the synchronization zone.
+        if config.sequence_parallel and isinstance(
+            self.mlp, Ernie4_5_MoeSparseMoeBlock
+        ):  # Under `mp-moe`, gate is effective in attn and is in the synchronization zone.
             for p in self.mlp.gate.parameters():
                 mark_as_sequence_parallel_parameter(p)
 
@@ -316,7 +318,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         output_attentions: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
-        output_gate_logits=True,  # PP model should not output gate logits,
+        output_gate_logits=False,  # PP model should not output gate logits,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         """Forward pass through the decoder layer.
 
@@ -382,7 +384,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         if output_attentions:
             outputs += (self_attn_weights,)
 
-        if use_cache:
+        if not self.training and use_cache:
             outputs += (present_key_value,)
 
         # Non-empty only if `use_moe`
@@ -753,9 +755,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         if past_key_values[0] is not None:
             cache_length = paddle.shape(past_key_values[0][0])[1]
             seq_length_with_past += cache_length
-        # if paddle.distributed.get_rank()==0:
-        #     import pdb;pdb.set_trace()
-        # paddle.distributed.barrier()
+
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
         inputs_embeds = inputs_embeds.astype(self.embed_tokens.weight.dtype)

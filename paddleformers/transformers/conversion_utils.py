@@ -1278,7 +1278,7 @@ class ConversionMixin:
 
     @classmethod
     def convert_tensor_parallel(
-        cls, weight_file: str, config: PretrainedConfig, state_dict=None, ignore_error=False
+        cls, model, weight_file: str, config: PretrainedConfig, state_dict=None, ignore_error=False
     ) -> None:
         """the entry of converting config and converting model file
 
@@ -1287,7 +1287,7 @@ class ConversionMixin:
             config (PretrainedConfig): the PretrainedConfig instance of model
         """
 
-        name_action_mappings = cls._get_tensor_parallel_mappings(config)
+        name_action_mappings = cls._get_tensor_parallel_mappings(model, config)
         if config.quantization_config.is_weight_quantize():
             name_action_mappings = add_quant_mapping(name_action_mappings, config.quantization_config)
         if state_dict is None:

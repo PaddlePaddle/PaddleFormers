@@ -145,3 +145,57 @@ def sft_loss_forward(
             masked_lm_loss = self.loss_func(logits, labels.unsqueeze(-1))
     loss = sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs)
     return loss
+
+
+def mtp_sft_loss_forward(
+    self: nn.Layer,
+    logits: Union[paddle.Tensor, Tuple[paddle.Tensor]],
+    labels: Union[paddle.Tensor, Tuple[paddle.Tensor]],
+    loss_mask: paddle.Tensor = None,
+    router_loss: paddle.Tensor = None,
+    mtp_logits: paddle.Tensor = None,
+    **kwargs
+):
+    num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
+    multi_token_pred_lambda = self.config.get("multi_token_pred_lambda", 0.3)
+    if num_nextn_predict_layers > 0:
+        labels_ori = labels
+        labels = labels[:, :-num_nextn_predict_layers]
+        if loss_mask is not None:
+            loss_mask = loss_mask[:, :-num_nextn_predict_layers]
+        seq_length = labels.shape[1]
+
+    sft_loss = sft_loss_forward(self, logits, labels, loss_mask, **kwargs)
+
+    if num_nextn_predict_layers > 0:
+        mtp_loss_res = []
+        for depth in range(num_nextn_predict_layers):
+            logtis_cur_depth = mtp_logits[depth]
+            labels_cur_depth = labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
+            res_cur_depth = super().forward(logtis_cur_depth, labels_cur_depth, loss_mask)
+            mtp_loss_res.append(res_cur_depth)
+
+    def add_loss(main_loss, loss):
+        return main_loss + loss - loss.detach()
+
+    if self.return_tuple:
+        loss, loss_sum = sft_loss
+    else:
+        loss, loss_sum = sft_loss, None
+
+    if num_nextn_predict_layers > 0:
+        loss = add_loss(
+            loss,
+            multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
+        )
+
+    if loss_sum is not None:
+        loss_sum = loss_sum + multi_token_pred_lambda * sum([x[1].detach() for x in mtp_loss_res]) / len(mtp_loss_res)
+
+    if router_loss is not None and isinstance(router_loss, paddle.Tensor):
+        loss = loss + router_loss - router_loss.detach()
+
+    if self.return_tuple:
+        return loss, loss_sum
+    else:
+        return loss

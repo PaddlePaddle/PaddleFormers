@@ -426,7 +426,6 @@ class Ernie4_5PretrainedModel(PretrainedModel):
 
     config_class = Ernie4_5Config
     base_model_prefix = "model"
-
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod

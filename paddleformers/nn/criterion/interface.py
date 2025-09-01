@@ -21,12 +21,17 @@ from ...utils.log import logger
 from ..general import GeneralInterface
 from .dpo_loss import dpo_loss_forward
 from .kto_loss import kto_loss_forward
-from .sft_loss import sft_loss_forward
+from .sft_loss import mtp_sft_loss_forward, sft_loss_forward
 
 
 class LossInterface(GeneralInterface):
 
-    _global_mapping = {"sft": sft_loss_forward, "dpo": dpo_loss_forward, "kto": kto_loss_forward}
+    _global_mapping = {
+        "sft": sft_loss_forward,
+        "dpo": dpo_loss_forward,
+        "kto": kto_loss_forward,
+        "mtp_sft": mtp_sft_loss_forward,
+    }
 
 
 ALL_LOSS_FUNCTIONS = LossInterface()

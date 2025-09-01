@@ -59,7 +59,7 @@ import_structure = {
         "detach_and_requires_grad_",
         "FakeClone",
         "manual_backward",
-        "_parse_moe_group"
+        "_parse_moe_group",
     ],
     "activation": ["ACT2FN", "ClassInstantier", "ACT2CLS"],
     "embedding": ["Embedding"],
@@ -68,6 +68,7 @@ import_structure = {
     "lm_head": ["LMHead"],
     "mlp": ["MLP"],
     "norm": ["Norm", "LayerNorm", "RMSNorm"],
+    "pp_model": ["GeneralModelForCausalLMPipe"],
 }
 
 if TYPE_CHECKING:

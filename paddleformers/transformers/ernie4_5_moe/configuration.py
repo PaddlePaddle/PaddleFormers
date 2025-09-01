@@ -53,7 +53,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         fuse_swiglu=False,
         use_bias=False,
         rope_theta=10000,
-        weight_share_add_bias=True,
         max_sequence_length=None,
         ignored_index=-100,
         attention_dropout_prob=0.0,
@@ -123,10 +122,9 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             fuse_swiglu (bool): Whether to fuse SwiGLU operations
             use_bias (bool): Whether to use bias terms in linear layers
             rope_theta (float): The base period of the RoPE embeddings
-            weight_share_add_bias (bool): Whether to share bias weights in certain layers
             max_sequence_length (int): Maximum sequence length for positional embeddings
             ignored_index (int): Target value that is ignored during loss computation
-            attention_probs_dropout_prob (float): Dropout probability for attention weights
+            attention_dropout_prob (float): Dropout probability for attention weights
             hidden_dropout_prob (float): Dropout probability for hidden layers
             compression_ratio (float): Ratio for KV cache compression (1.0 = no compression)
             num_key_value_heads (int): Number of key/value heads (for Grouped Query Attention)
@@ -202,7 +200,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.micro_batch_size = micro_batch_size
         self.max_sequence_length = max_sequence_length
         self.use_bias = use_bias
-        self.weight_share_add_bias = weight_share_add_bias
         self.rope_theta = rope_theta
         self.ignored_index = ignored_index
         self.attention_dropout_prob = attention_dropout_prob
