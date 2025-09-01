@@ -237,6 +237,7 @@ class Qwen2MoeDecoderLayer(nn.Layer):
         use_cache: Optional[bool] = False,
         position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        batch_size: Optional[int] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         """
@@ -271,6 +272,7 @@ class Qwen2MoeDecoderLayer(nn.Layer):
             use_cache,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_embedding=position_embedding,
+            batch_size=batch_size,
         )
 
         hidden_states = residual + hidden_states
@@ -544,6 +546,7 @@ class Qwen2MoeModel(Qwen2MoePretrainedModel):
         use_cache: bool,
         position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
+        batch_size: int = None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -562,6 +565,7 @@ class Qwen2MoeModel(Qwen2MoePretrainedModel):
             use_cache,
             position_embedding,
             attn_mask_startend_row_indices,
+            batch_size,
         )
 
         return hidden_states
@@ -656,6 +660,7 @@ class Qwen2MoeModel(Qwen2MoePretrainedModel):
                     use_cache,
                     position_embedding=position_embedding,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    batch_size=batch_size,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -668,6 +673,7 @@ class Qwen2MoeModel(Qwen2MoePretrainedModel):
                     use_cache,
                     position_embedding=position_embedding,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    batch_size=batch_size,
                 )
 
             if isinstance(layer_outputs, (tuple, list)):

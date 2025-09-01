@@ -185,6 +185,7 @@ class Qwen3DecoderLayer(nn.Layer):
         use_cache: Optional[bool] = False,
         position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        batch_size: Optional[int] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         """
@@ -216,6 +217,7 @@ class Qwen3DecoderLayer(nn.Layer):
             output_attentions=output_attentions,
             use_cache=use_cache,
             position_embedding=position_embedding,
+            batch_size=batch_size,
         )
 
         hidden_states = residual + hidden_states
