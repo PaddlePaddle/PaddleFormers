@@ -348,7 +348,7 @@ class Qwen2PretrainedModel(PretrainedModel):
     config_class = Qwen2Config
     base_model_prefix = "model"
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
-    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
 
     @classmethod
     def _get_name_mappings(cls, config: Qwen2Config) -> list[StateDictNameMapping]:
