@@ -532,23 +532,7 @@ class SequenceDataset(IterableDataset):
             Sequence: Processed sequence or None if invalid.
         """
         if not self.tokenizer.chat_template:
-            chatml_template = """
-            {% for message in messages %}
-                {% if message['role'] == 'user' %}
-                    {{ '<|im_start|>user\n' + message['content'] + '<|im_end|>\n' }}
-                {% elif message['role'] == 'assistant' %}
-                    {{ '<|im_start|>assistant\n' + message['content'] + '<|im_end|>\n' }}
-                {% elif message['role'] == 'system' %}
-                    {{ '<|im_start|>system\n' + message['content'] + '<|im_end|>\n' }}
-                {% endif %}
-            {% endfor %}
-            {% if add_generation_prompt %}
-                {{ '<|im_start|>assistant\n' }}
-            {% endif %}
-            """
-
-            self.tokenizer.chat_template = chatml_template
-            # self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
+            self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
         if example.is_function_call:
             encoded_messages = self._postprocess_fc_sequence(example)
         else:
