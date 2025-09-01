@@ -277,7 +277,11 @@ class MoELayer(nn.Layer):
     def update_flex_token(self):
         from paddleformers.transformers.deepseek_v2 import get_global_step
 
-        if (not self.config.using_flex_token) or (get_global_step() < self.token_drop_steps):
+        if (
+            (not hasattr(self.config, "using_flex_token"))
+            or (not self.config.using_flex_token)
+            or (get_global_step() < self.token_drop_steps)
+        ):
             self.using_flex_token = False
             self.router.using_flex_token = False
         else:

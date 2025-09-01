@@ -210,6 +210,9 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         self.norm_topk_prob = kwargs.pop("norm_topk_prob", False)
         self.routed_scaling_factor = kwargs.pop("routed_scaling_factor", 1.0)
 
+        # for flex token moe layer
+        self.using_flex_token = kwargs.pop("using_flex_token", False)
+
     def _priority(self, topk_idx: paddle.Tensor, capacity: int) -> paddle.Tensor:
         """_summary_
             The priority is the cumulative sum of the expert indices.
