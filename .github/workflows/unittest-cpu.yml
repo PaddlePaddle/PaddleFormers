@@ -115,7 +115,8 @@ jobs:
             wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
             unzip -q ${{ env.home_path }}/allure-2.19.0.zip
           fi
-          python ${{ env.bos_file }} /workspace/PaddleFormers/coverage.xml paddle-github-action/PR/PaddleFormers/unittest-cpu/${PR_ID}/${COMMIT_ID}/logs
+          cd /workspace/PaddleFormers
+          python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-cpu/${PR_ID}/${COMMIT_ID}/logs
           echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-cpu/${PR_ID}/${COMMIT_ID}/logs/coverage.xml"
           '
       
