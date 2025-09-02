@@ -175,7 +175,6 @@ def scaled_dot_product_attention(
     training=True,
     sequence_parallel=False,
     skip_recompute=False,
-    s_aux: Optional[Tensor] = None,
 ):
     bsz, q_len, num_heads, head_dim = query_states.shape
     _, kv_seq_len, _, _ = value_states.shape
@@ -229,27 +228,15 @@ def scaled_dot_product_attention(
 
         attn_weights = attn_weights + attention_mask
 
-        if s_aux is not None:
-            logits_max = paddle.max(attn_weights, axis=-1, keepdim=True)
-            sinks = paddle.exp(s_aux - logits_max)
-            unnormalized_scores = paddle.exp(attn_weights - logits_max)
-            normalizer = unnormalized_scores.sum(dim=-1, keepdim=True) + sinks
-            attn_weights = unnormalized_scores / normalizer
-            skip_softmax = True
+        if not paddle.in_dynamic_mode():
+            attn_weights = F.softmax(attn_weights * pre_divided_factor, axis=-1, dtype="float32").astype(
+                query_states.dtype
+            )
         else:
-            skip_softmax = False
-
-        if not skip_softmax:
-
-            if not paddle.in_dynamic_mode():
-                attn_weights = F.softmax(attn_weights * pre_divided_factor, axis=-1, dtype="float32").astype(
-                    query_states.dtype
-                )
-            else:
-                with paddle.amp.auto_cast(False):
-                    attn_weights = F.softmax(
-                        attn_weights.astype("float32") * pre_divided_factor, axis=-1, dtype="float32"
-                    ).astype(query_states.dtype)
+            with paddle.amp.auto_cast(False):
+                attn_weights = F.softmax(
+                    attn_weights.astype("float32") * pre_divided_factor, axis=-1, dtype="float32"
+                ).astype(query_states.dtype)
 
         attn_weights = F.dropout(attn_weights, p=config.attention_dropout, training=training)
 
