@@ -579,7 +579,6 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.ones([], dtype="float32"), axis=1)
 
         gates_masked = gates * mask
-        # if self.training:
         gates_s = paddle.sum(gates_masked, axis=-1, keepdim=True)
         denom_s = paddle.clip(gates_s, min=paddle.finfo(gates_masked.dtype).eps)
 

@@ -21,6 +21,8 @@ from typing import List, Optional
 
 import paddle
 
+from paddleformers.utils.log import logger
+
 try:
     from safetensors import safe_open
 except:
@@ -50,13 +52,13 @@ custom_name_map = {
 
 def paddle_name_to_hf_names_ds_v2(paddle_name: str) -> List[str]:
     """
-    将Paddle模型参数名称转换为Hugging Face格式的名称列表
+    Convert Paddle model parameter names to Hugging Face format name lists
 
-    参数:
-        paddle_name: Paddle格式的参数名称
+    Args:
+        paddle_name: Parameter name in Paddle format
 
-    返回:
-        Hugging Face格式的参数名称列表(可能拆分多个参数)
+    Returns:
+        List of parameter names in Hugging Face format (may be split into multiple parameters)
     """
     if paddle_name == "_layers.deepseek_v2.embed_tokens.weight":
         return ["model.embed_tokens.weight"]
@@ -69,7 +71,6 @@ def paddle_name_to_hf_names_ds_v2(paddle_name: str) -> List[str]:
 
     m = _LAYER_RE_v2.match(paddle_name)
     if not m:
-        print("not match here !!", paddle_name)
         return []
 
     rest = m.group(2) or ""
@@ -125,13 +126,13 @@ def paddle_name_to_hf_names_ds_v2(paddle_name: str) -> List[str]:
 
 def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
     """
-    将Paddle模型参数名称转换为Hugging Face格式的名称列表
+    Convert Paddle model parameter names to Hugging Face format name lists
 
-    参数:
-        paddle_name: Paddle格式的参数名称
+    Args:
+        paddle_name: Parameter name in Paddle format
 
-    返回:
-        Hugging Face格式的参数名称列表（可能拆分多个参数）
+    Returns:
+        List of parameter names in Hugging Face format (may be split into multiple parameters)
     """
     if paddle_name == "_layers.local_shared_layers.DeepseekV2_shared_weight.embed_tokens.weight":
         return ["model.embed_tokens.weight"]
@@ -142,7 +143,6 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
     m = _LAYER_RE.match(paddle_name)
 
     if not m:
-        print("not match here !!", paddle_name)
         return []
     else:
         rest = m.group(3) or ""
@@ -201,8 +201,8 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
 
 
 def _get_hf_prefix(segment_id: int, id_in_segment: int) -> str:
-    """生成Hugging Face格式的层级前缀"""
-    # 特殊层级映射
+    """Generate hierarchical prefix in Hugging Face format"""
+    # Special layer mappings
     # special_cases = {(0, 0): "model", (60, 2): "model.layers.61", (60, 3): "model"}
     # special_cases = {(0, 0): "model", (28, 2): "model.layers.61", (28, 3): "model"}
     # special_cases = {(0, 0): "model", (28, 2): "model.layers.61", (4, 1): "model"}
@@ -212,7 +212,7 @@ def _get_hf_prefix(segment_id: int, id_in_segment: int) -> str:
     if (segment_id, id_in_segment) in special_cases:
         return special_cases[(segment_id, id_in_segment)]
 
-    # 通用层级计算
+    # General layer calculation
     layer_idx = segment_id + id_in_segment - 1
     return f"model.layers.{layer_idx}"
 
@@ -265,8 +265,9 @@ def prepare_tensor(tensor, dst_shape, *, force_transpose=False):
             axis=-1,
         )
         if t.shape != dst_shape:
-            print("base shape", tensor[0].shape, tensor[1].shape)
-            print("shape not match ", t.shape, dst_shape)
+            logger.warning(
+                f"Prepare_tensor: shape not match. base tensor shape: {tensor[0].shape}, {tensor[1].shape}, t.shape: {t.shape}, dst_shape: {dst_shape}"
+            )
             sys.exit()
         return t
 
@@ -274,30 +275,28 @@ def prepare_tensor(tensor, dst_shape, *, force_transpose=False):
         return tensor.T.contiguous()
 
     if tensor.shape == dst_shape:
-        if len(tensor.shape) != 1:
-            print("attention same shape not transpose !!!!!!!!!!!!!!!!!!!!!!")
         return tensor
     if len(tensor.shape) == 2 and paddle.transpose(tensor, perm=[1, 0]).contiguous().shape == dst_shape:
         return paddle.transpose(tensor, perm=[1, 0]).contiguous()
 
-    print("shape not match here")
+    logger.warning("Prepare_tensor: shape not match.")
     sys.exit()
 
 
 def load_huggingface_ckpt(model, huggingface_ckpt_path):
     ckpt_pre = huggingface_ckpt_path
 
-    # 1. 加载参数-文件映射表
+    # 1. Load parameter file mapping table
     weight_map_path = ckpt_pre + "/model.safetensors.index.json"
     with open(weight_map_path, "r") as f:
         weight_map = json.load(f)["weight_map"]
 
-    # 2. 创建反向索引：文件 -> 参数列表
+    # 2. Create inverse index: file -> parameter list
     file_to_params = defaultdict(list)
     for param_name, filename in weight_map.items():
         file_to_params[filename].append(param_name)
 
-    # 2. 收集模型需要的文件列表
+    # 3. Collect file list that model needs
     required_files = set()
     file_to_pd_param_name = defaultdict(list)
     pd_param_name_to_file = defaultdict(list)
@@ -309,7 +308,7 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
             file_to_pd_param_name[filename].append(pd_name)
             pd_param_name_to_file[pd_name].append(filename)
         else:
-            print(f"Warning: {pd_name} -> {hf_name[0]} not found in weight map")
+            logger.warning(f"Warning: {pd_name} -> {hf_name[0]} not found in weight map")
             import sys
 
             sys.exit()
@@ -322,15 +321,15 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
                 if filename != pd_param_name_to_file[pd_name][0]:
                     pd_param_name_to_file[pd_name].append(filename)
             else:
-                print(f"Warning: {pd_name} -> {hf_name[1]} not found in weight map")
+                logger.warning(f"Warning: {pd_name} -> {hf_name[1]} not found in weight map")
 
-    # 3. 按文件分组加载
+    # 4. Group file and load
     check_list = []
-    print("Start load huggingface ckpt")
+    logger.info("Start load huggingface ckpt")
     for i, filename in enumerate(required_files):
         try:
             with safe_open(ckpt_pre + filename, framework="paddle", device="cpu") as f:
-                # 加载该文件包含的所有参数
+                # Load all parameters in file
                 pd_params = file_to_pd_param_name[filename]
                 for pd_param in pd_params:
                     if pd_param in check_list:
@@ -374,5 +373,5 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
                     check_list.append(pd_param)
 
         except Exception as e:
-            print(f"Error loading {filename}: {str(e)}")
+            logger.warning(f"Error loading {filename}: {str(e)}")
             raise
