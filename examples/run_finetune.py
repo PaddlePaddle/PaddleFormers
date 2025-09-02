@@ -18,8 +18,8 @@ from functools import partial
 
 import paddle
 
-from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
 from paddleformers.datasets.finetuning import collate_fn
+from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import PdArgumentParser, get_last_checkpoint, set_seed
 from paddleformers.transformers import (

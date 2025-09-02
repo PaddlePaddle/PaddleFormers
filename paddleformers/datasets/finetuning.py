@@ -580,7 +580,7 @@ class SequenceDataset(IterableDataset):
 
             return None
 
-        if self.begin_token_id != None and self.end_of_response_id != None:
+        if self.begin_token_id is not None and self.end_of_response_id is not None:
             # Maybe left truncated, so need to add begin_token
             if tokens[0] != self.begin_token_id:
                 tokens = [self.begin_token_id] + tokens
