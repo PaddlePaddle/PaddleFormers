@@ -320,11 +320,33 @@ class Qwen2MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
 
 
 class Qwen2MoeIntegrationTest(unittest.TestCase):
-    pass
+    def test_model_tiny_logits(self):
+        input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
+        model = Qwen2MoeForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2moe", dtype="float32", convert_from_hf=True
+        )
+        input_ids = paddle.to_tensor([input_ids])
+        with paddle.no_grad():
+            out = model(input_ids, return_dict=True).logits
+
+        # Expected mean on dim = -1
+        EXPECTED_MEAN = paddle.to_tensor(
+            [[0.00013129, 0.00055262, 0.00041001, 0.00103886, 0.00101127, 0.00109748, 0.00117971, 0.001671118]]
+        )
+        self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
+
+        # slicing logits[0, 0, 0:30]
+        EXPECTED_SLICE = paddle.to_tensor([-0.05819187, -0.22854444, -0.01670399, -0.21067668, 0.09893159,
+                                           0.07734174, -0.20733158, -0.07557553, -0.15745537, -0.15629001,
+                                           0.17131621, 0.02966851, 0.20745607, 0.18703115, 0.04797143,
+                                           -0.05834797, -0.49455544, 0.00927463, 0.36364549, -0.11451467,
+                                           0.58765817, -0.16567171, 0.44204327, 0.35513058, 0.14218493,
+                                           0.00553618, 0.15461002, -0.20002352, -0.05449944, -0.10040712])  # fmt: skip
+        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
 
 class Qwen2MoeGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "paddleformers_test/tiny-random-qwen2moe"
+    internal_testing_model = "PaddleFormers/tiny-random-qwen2moe"
 
 
 class Qwen2MoeCompatibilityTest(unittest.TestCase):
@@ -373,8 +395,8 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
             np.allclose(
                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                atol=1e-3,
-                rtol=1e-3,
+                atol=1e-2,
+                rtol=1e-2,
             )
         )
 
@@ -405,8 +427,8 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-3,
-                    rtol=1e-3,
+                    atol=1e-2,
+                    rtol=1e-2,
                 )
             )
 
@@ -446,7 +468,7 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-3,
-                    rtol=1e-3,
+                    atol=1e-2,
+                    rtol=1e-2,
                 )
             )

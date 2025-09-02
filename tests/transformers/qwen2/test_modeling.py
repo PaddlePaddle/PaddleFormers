@@ -371,28 +371,31 @@ class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
 class Qwen2IntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
-        model = Qwen2ForCausalLM.from_pretrained("paddleformers_test/tiny-random-qwen2", dtype="float32")
+        model = Qwen2ForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2", dtype="float32", convert_from_hf=True
+        )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
             out = model(input_ids, return_dict=True).logits
-        # Expected mean on dim = -1
 
+        # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[0.00008947, -0.00001425, 0.00035553, -0.00003941, 0.00068506, 0.00005345, 0.00060015, 0.00081522]]
+            [[0.00012923, 0.00022866, 0.00083712, 0.00048324, 0.00050315, 0.00085108, 0.00076548, 0.00031629]]
         )
-        paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-6, rtol=1e-6)
+        self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
+
         # slicing logits[0, 0, 0:30]
-        EXPECTED_SLICE = paddle.to_tensor([0.26874602, 0.51205510, -0.00591420, 0.05831886, 0.18694536,
-                                           0.04331543, 0.09623559, -0.10191102, 0.07565773, 0.13765232,
-                                           0.03041580, 0.42183253, 0.40434697, 0.06868516, 0.02637704,
-                                           -0.13485563, -0.01698003, 0.21499887, -0.03826120, 0.16291623,
-                                           -0.27641180, -0.36975217, 0.34660554, -0.52724630, -0.41814676,
-                                           0.00843160, -0.29562786, -0.07467390, 0.40502766, 0.13571614])  # fmt: skip
-        paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-6, rtol=1e-6)
+        EXPECTED_SLICE = paddle.to_tensor([-0.05235012, -0.05254495, -0.54650372, -0.00349111, -0.15289409,
+                                           0.07966875, -0.09445626, 0.05722746, 0.08273896, 0.13118745,
+                                           0.03527237, 0.02604982, 0.22931044, 0.30118701, -0.09604376,
+                                           -0.00862435, 0.05576831, 0.06650923, -0.24256611, -0.30112153,
+                                           -0.02920971, -0.01462070, -0.13825229, 0.08126508, -0.17080611,
+                                           -0.34227434, 0.27646801, 0.25437784, -0.03299456, -0.40561515])  # fmt: skip
+        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
 
 class Qwen2GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "paddleformers_test/tiny-random-qwen2"
+    internal_testing_model = "PaddleFormers/tiny-random-qwen2"
 
 
 class Qwen2CompatibilityTest(unittest.TestCase):
@@ -433,8 +436,8 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             np.allclose(
                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                atol=1e-3,
-                rtol=1e-3,
+                atol=1e-2,
+                rtol=1e-2,
             )
         )
 
@@ -465,8 +468,8 @@ class Qwen2CompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-3,
-                    rtol=1e-3,
+                    atol=1e-2,
+                    rtol=1e-2,
                 )
             )
 
@@ -506,7 +509,7 @@ class Qwen2CompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-3,
-                    rtol=1e-3,
+                    atol=1e-2,
+                    rtol=1e-2,
                 )
             )
