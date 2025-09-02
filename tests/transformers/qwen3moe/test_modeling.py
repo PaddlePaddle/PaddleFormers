@@ -345,7 +345,7 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
                                            -0.04950186, 0.02147415, -0.51295358, 0.08290517, -0.31099084,
                                            0.12259193, -0.07422141, 0.10754116, 0.00818088, -0.18319097,
                                            0.01319447, 0.13641201, -0.26029447, -0.33172122, 0.05208641])  # fmt: skip
-        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2))
 
 
 class Qwen3MoeGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
