@@ -227,7 +227,9 @@ class PostProcessNode(ScheduleNode):
         if self.send_mtp_embed:
             assert not self.output_mtp_embed_first, "forward_without_residual doesn't support output_mtp_embed_first"
             hidden_states = paddle.concat([hidden_states, inputs_embeds_mtp], axis=-1)
-            self.mtp_embed_shape = inputs_embeds_mtp.shape  # 保存mtp_embed的shape用于反向传播
+            self.mtp_embed_shape = (
+                inputs_embeds_mtp.shape
+            )  # Save the shape of mtp_embed, used for backward propagation
 
         return return_args(hidden_states)
 
@@ -270,7 +272,9 @@ class PostProcessNode(ScheduleNode):
                 hidden_states = paddle.concat([inputs_embeds_mtp, hidden_states], axis=-1)
             else:
                 hidden_states = paddle.concat([hidden_states, inputs_embeds_mtp], axis=-1)
-            self.mtp_embed_shape = inputs_embeds_mtp.shape  # 保存mtp_embed的shape用于反向传播
+            self.mtp_embed_shape = (
+                inputs_embeds_mtp.shape
+            )  # Save the shape of mtp_embed shape, used for backward propagation
 
         return return_args(hidden_states)
 
@@ -279,7 +283,7 @@ class PostProcessNode(ScheduleNode):
         (do3,) = output_grad
 
         if self.send_mtp_embed:
-            # 分割梯度：do3的前部分对应hidden_states，后部分对应inputs_embeds_mtp
+            # Split gradient: first part of do3 corresponds to hidden_states, second part corresponds to inputs_embeds_mtp
             hidden_size = do3.shape[-1] - self.mtp_embed_shape[-1]
             if self.output_mtp_embed_first:
                 hidden_states_grad = do3[..., hidden_size:]
@@ -545,7 +549,6 @@ class OverlapedScheduleChunk:
             self.nodes.append(schedule_node_class(f, b, f"OverlapedNode_{len(self.nodes)}"))
 
     def forward_backward(self, inputs, output_grad, combine_bw_event_to_wait=None, pp_stream=None):
-        # print("  fwd pp stream", pp_stream)
         event_to_wait = combine_bw_event_to_wait
         for i, n in enumerate(self.nodes):
             pp_stream_t = pp_stream
@@ -1146,7 +1149,6 @@ class OverlapedFUsionScheduleNode:
 
         paddle.base.core.nvprof_nvtx_push("combine_backward")
         if combine_bw_event_to_wait is not None:
-            # print(" event", combine_bw_event_to_wait)
             output_grad = self.backward_node.combine_backward(
                 output_grad, previous_event=combine_bw_event_to_wait, async_finish=True, allocate_on_comm_stream=True
             )
@@ -1223,7 +1225,7 @@ class OverlapedFUsionScheduleNode:
 
                 # TODO: check correct
                 # if final_out.shape[-1] != combine_fwd_out.shape[-1]:
-                #     final_out[:, :, : combine_fwd_out.shape[-1]] += combine_fwd_out  # 直接广播并相加
+                #     final_out[:, :, : combine_fwd_out.shape[-1]] += combine_fwd_out  # Directly broadcast and add
                 # else:
                 #     final_out += combine_fwd_out
                 inputs = final_out + combine_fwd_out
@@ -1257,7 +1259,7 @@ class OverlapedFUsionScheduleNode:
 
             final_out = self.forward_node.post_process_node.forward_without_residual(inputs)
             if final_out.shape[-1] != combine_fwd_out.shape[-1]:
-                final_out[:, :, : combine_fwd_out.shape[-1]] += combine_fwd_out  # 直接广播并相加
+                final_out[:, :, : combine_fwd_out.shape[-1]] += combine_fwd_out
             else:
                 final_out += combine_fwd_out
             inputs = final_out
@@ -1813,7 +1815,7 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
                 if DSV3_USE_FP8_GEMM:
                     attn_and_gate_node = ScheduleNode(self.attn_compute_for_fusion, name="attn_and_gate_node")
 
-                    # recompute_fwd_gate_up_ may be 1, 0 or -1, 1 means recompute, 0 means disable recompute, -1 means adaptive recompute.
+                    # recompute_fwd_gate_up_ may be 1, 0 or -1. 1 means recompute, 0 means disable recompute, -1 means adaptive recompute.
                     recompute_fwd_gate_up_ = 1 if self.layer_idx in self.config.recompute_fwd_gate_up_list else 0
                     if recompute_fwd_gate_up_ == 0 and self.config.adaptive_remained_O1_recompute_ratio:
                         recompute_fwd_gate_up_ = -1

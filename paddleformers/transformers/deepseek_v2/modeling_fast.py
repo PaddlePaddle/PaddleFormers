@@ -297,9 +297,7 @@ class MoEGate(PretrainedMoEGate):
 
         # Compute all possible return values
         if self.using_flex_token:
-            scores, routing_map, exp_counts, l_aux, l_zloss = self.topkgating_nodrop(
-                scores
-            )  # (scores, routing_map, exp_counts, l_aux, l_zloss)
+            scores, routing_map, exp_counts, l_aux, l_zloss = self.topkgating_nodrop(scores)
             ret = (scores, routing_map, l_aux, l_zloss)
         else:
             ret = self.topkgating(scores)  # (capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss)
@@ -1183,7 +1181,6 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
             base_actions["layers.0.self_attn.q_b_proj.weight"] = partial(fn, is_column=True)
 
             # if we have enough num_key_value_heads to split, then split it.
-            # ???
             if config.num_key_value_heads % config.tensor_parallel_degree == 0:
                 base_actions["layers.0.self_attn.kv_b_proj.weight"] = partial(fn, is_column=True)
                 if config.use_fp8:

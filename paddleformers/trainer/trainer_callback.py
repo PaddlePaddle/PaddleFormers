@@ -641,12 +641,12 @@ skip_count = 0
 
 class FP8QuantWeightCallback(TrainerCallback):
     """
-    FP8QuantWeightCallback
+    Callback for FP8 weight quantization during training
     """
 
     def on_step_begin(self, args, state, control, **kwargs):
         """
-        每个step开始前把专家参数quant成fp8q
+        Quantize expert weights to FP8 before each training step
         """
         model = kwargs["model"]
         optimizer = kwargs["optimizer"]
@@ -672,6 +672,9 @@ class FP8QuantWeightCallback(TrainerCallback):
         skip_count += 1
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
+        """
+        Reload weights before optimizer step
+        """
         model = kwargs["model"]
         optimizer = kwargs["optimizer"]
         global skip_count

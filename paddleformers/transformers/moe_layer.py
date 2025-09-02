@@ -787,13 +787,13 @@ class FusionMlpNode:
 
     def reset_statue(self):
         """
-        重置所有状态变量。
+        Reset the state of the FusionMlpNode object.
 
         Args:
-            无。
+            None.
 
         Returns:
-            无。
+            None.
 
         """
         self.dispatched_indices = None
@@ -925,16 +925,15 @@ class FusionMlpNode:
     @paddle.no_grad()
     def forward(self, hs_2d_dispatched, dispatched_indices, dispatched_probs):
         """
-        对输入数据进行前向传播计算。
+        Perform forward computation on input data.
 
         Args:
-            hs_fp8_dispatched (Tensor): 表示被分派到各个专家的输入数据。
-            dispatched_indices (Tensor):表示输入数据被分派到的专家索引。
-            dispatched_probs (Tensor): 表示输入数据被分派到各个专家的概率。
+            hs_fp8_dispatched (Tensor): Input data dispatched to experts.
+            dispatched_indices (Tensor): Expert indices assigned to input data.
+            dispatched_probs (Tensor): Probabilities of input data being dispatched to experts.
 
         Returns:
-            Tensor: 经过前向传播计算后的输出数据。
-
+            Tensor: Output data after forward computation.
         """
         self.tokens_per_expert = self.token_dispatcher._comm_manager.tokens_per_expert
         self.dispatched_probs = dispatched_probs
@@ -1064,16 +1063,15 @@ class FusionMlpNode:
     @paddle.no_grad()
     def backward(self, hidden_states_out_grad):
         """
-        反向传播函数。
+        Backward propagation function.
 
         Args:
-            hidden_states_out_grad_fp8 (Tensor): 隐藏状态梯度。
+            hidden_states_out_grad_fp8 (Tensor): Gradient of hidden states.
 
         Returns:
-            Tuple[Tensor, Tensor]: 包含两个元素，分别为hs_fp8_dispatched_grad和dispatched_probs_grad。
-                - hs_fp8_dispatched_grad (Tensor): 解压后的隐藏状态梯度。
-                - dispatched_probs_grad (Tensor): 分发概率梯度。
-
+            Tuple[Tensor, Tensor]: Contains two elements:
+                - hs_fp8_dispatched_grad (Tensor): Gradient of unzipped hidden states.
+                - dispatched_probs_grad (Tensor): Gradient of dispatch probabilities.
         """
         # zip_grad
         unzipped_grad = self.zip_node.backward(
