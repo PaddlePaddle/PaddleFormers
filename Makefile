@@ -46,7 +46,7 @@ unit-test:
 
 .PHONY: install
 install:
-	pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
+	pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-Cpu-LinuxCentos-Gcc82-Py310-Compile/latest/paddlepaddle-0.0.0-cp310-cp310-linux_x86_64.whl
 	pip install -r requirements-dev.txt
 	pip install -r requirements.txt
 	pre-commit install
