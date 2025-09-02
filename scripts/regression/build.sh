@@ -18,8 +18,8 @@ set -e
 export formers_dir=/workspace/PaddleFormers
 mkdir -p /workspace/PaddleFormers/build_logs
 export log_path=/workspace/PaddleFormers/build_logs
-mkdir -p ${PPNLP_HOME}/upload_${AGILE_PIPELINE_BUILD_NUMBER}
-upload_path=${PPNLP_HOME}/upload_${AGILE_PIPELINE_BUILD_NUMBER}
+mkdir -p /workspace/PaddleFormers/upload
+upload_path=/workspace/PaddleFormers/upload
 export Build_list=()
 
 python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -91,19 +91,17 @@ Build_list=($(awk -v RS=' ' '!a[$1]++' <<< ${Build_list[*]}))
 if [[ ${#Build_list[*]} -ne 0 ]];then
     echo -e "\033[31m ---- Build_list length: ${#Build_list[*]}, cases: ${Build_list[*]} \033[0m"
     echo -e "\033[31m ============================= \033[0m"
-    install_paddle
+    # install_paddle
     if [[ $(contain_case paddleformers ${Build_list[@]}; echo $?) -eq 1 ]];then
         paddleformers_build
-    else
-        install_paddleformers
     fi
 
-    if [ -e "${upload_path}" ] && [ "$(ls -A "${upload_path}/")" ]; then
-        cd ${upload_path} && ls -A "${upload_path}"
-        cd ${PPNLP_HOME} && python upload.py ${upload_path} 'paddleformers/wheels'
-        rm -rf ${upload_path}
-        echo -e "\033[32m upload wheels SUCCESS \033[0m"
-    fi
+    # if [ -e "${upload_path}" ] && [ "$(ls -A "${upload_path}/")" ]; then
+    #     cd ${upload_path} && ls -A "${upload_path}"
+    #     python /workspace/../../../bos/BosClient.py ${upload_path} 'paddleformers/wheels'
+    #     rm -rf ${upload_path}
+    #     echo -e "\033[32m upload wheels SUCCESS \033[0m"
+    # fi
 else
     echo -e "\033[32m Don't need build any whl  \033[0m"
 fi
