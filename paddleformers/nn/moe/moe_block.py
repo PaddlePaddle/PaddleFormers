@@ -101,7 +101,7 @@ class MoEStatics(nn.Layer):
         super().__init__()
         self._cast_to_low_precision = False  # 兼容develop分支paddle
         self._cast_to_low_precison = False
-        use_multimodel_experts = config.get("multimodel_experts",False)
+        use_multimodel_experts = config.get("multimodel_experts", False)
 
         num_experts = config.moe_num_experts[0] if use_multimodel_experts else config.moe_num_experts
         if use_multimodel_experts:

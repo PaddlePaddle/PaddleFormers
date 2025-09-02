@@ -184,7 +184,9 @@ class TopKGate(nn.Layer):
         self.num_experts = config.moe_num_experts
         self.use_multimodel_experts = config.get("multimodel_experts", False)
 
-        self.num_experts_tensor = sum(config.moe_num_experts) if self.use_multimodel_experts else config.moe_num_experts
+        self.num_experts_tensor = (
+            sum(config.moe_num_experts) if self.use_multimodel_experts else config.moe_num_experts
+        )
 
         self.cap = config.moe_capacity
         self.group = group
