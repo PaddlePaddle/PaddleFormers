@@ -24,7 +24,7 @@ jobs:
   deadlink-ce:
     name: deadlink-ce
     if: github.ref == 'refs/heads/develop'
-    runs-on: [self-hosted, ernie-8gpu]
+    runs-on: [self-hosted, paddleformers]
     steps:
       - name: Determine Image Name
         run: |
@@ -44,7 +44,6 @@ jobs:
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
             -e BRANCH \
-            -e AGILE_COMPILE_BRANCH \
             -e COMMIT_ID \
             -e work_dir \
             -e ce_scripts \
@@ -86,6 +85,7 @@ jobs:
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
           python -m pip install beautifulsoup4 openpyxl
+          source $work_dir/../../../proxy
           bash run.sh PaddleFormers develop liujie44@baidu.com PaddleFormers死链检测汇总报告
           '
           
@@ -94,7 +94,6 @@ jobs:
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
-          allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
         run: |
           docker exec -t $container_name /bin/bash -c '
           if [ ! -f "${{ env.bos_file }}" ]; then
@@ -103,8 +102,8 @@ jobs:
             tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
           fi
           bos_prefix="schedule/$(date +%Y%m%d)"
-          cd /workspace/PaddleFormers/deadlink_logs
-          for FILE in /workspace/PaddleFormers/deadlink_logs/*; do
+          cd /workspace/PaddleFormers/result
+          for FILE in /workspace/PaddleFormers/result/*; do
             file=$(basename "$FILE")
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/deadlink/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/deadlink/${bos_prefix}/logs/$file"
