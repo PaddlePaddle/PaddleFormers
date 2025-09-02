@@ -1093,6 +1093,13 @@ class TrainingArguments:
         metadata={
             "help": "The AoA configuration of FlexCheckpoint, used to describe the mapping between model weights and the checkpoint content. Default is None."
         },
+    convert_from_hf: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Load model from HuggingFace safetensors."},
+    )
+    save_to_hf: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Save model to HuggingFace safetensors."},
     )
 
     def __post_init__(self):

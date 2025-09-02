@@ -19,7 +19,7 @@ import unittest
 from paddleformers.transformers import QWenTokenizer
 
 
-class Qwen2TokenizationTest(unittest.TestCase):
+class QwenTokenizationTest(unittest.TestCase):
     from_pretrained_id = "PaddleNLP/qwen-7b"
     tokenizer_class = QWenTokenizer
     test_slow_tokenizer = True
@@ -56,4 +56,4 @@ class Qwen2TokenizationTest(unittest.TestCase):
         self.assertEqual(text, decode_text)
 
 
-Qwen2TokenizationTest().test_slow_tokenizer_from_pretrained()
+QwenTokenizationTest().test_slow_tokenizer_from_pretrained()
