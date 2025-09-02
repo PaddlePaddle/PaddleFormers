@@ -85,6 +85,9 @@ class CriterionLayer(nn.Layer):
         else:
             loss_type = "sft"
 
+            if config.get("num_nextn_predict_layers") > 0:
+                loss_type = "mtp_sft"
+
         self.loss_foward_fn = ALL_LOSS_FUNCTIONS.get(loss_type)
         self.loss_type = loss_type
 

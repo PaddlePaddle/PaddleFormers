@@ -208,15 +208,49 @@ class EmbeddingPipe(nn.Layer):
             - Automatically generates position_ids if not provided
             - Supports sequence parallel redistribution of embeddings
         """
-        input_ids, attention_mask, position_ids, nbatch_pack_offset = parse_args(args)
+        num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
+        enable_mtp_magic_send = self.config.get("enable_mtp_magic_send", False)
+
+        input_ids, attention_mask, position_ids, nbatch_pack_offset = parse_args(args, num_nextn_predict_layers > 0)
         input_ids.stop_gradient = True
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
-        if self.sequence_parallel:
-            emb = emb.reshape([-1, emb.shape[-1]])
-            emb = ScatterOp.apply(emb)
+        if num_nextn_predict_layers > 0:
+            if enable_mtp_magic_send:
+                emb = emb[:, :-num_nextn_predict_layers, :]
+                if self.sequence_parallel:
+                    emb = emb.reshape([-1, emb.shape[-1]])
+                    emb = ScatterOp.apply(emb)
+            else:
+                inputs_embeds_extra = emb[:, -num_nextn_predict_layers:, :]  # [B, S, D]
+                inputs_embeds = emb[:, :-num_nextn_predict_layers, :]
+                inputs_embeds_ori = inputs_embeds
 
-        ret = (emb,)
+                if self.sequence_parallel:
+                    inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
+                    inputs_embeds = ScatterOp.apply(inputs_embeds)
+                mtp_emb_res = [inputs_embeds]
+                for depth in range(num_nextn_predict_layers):
+                    inputs_embeds_mtp = paddle.concat(
+                        [
+                            inputs_embeds_ori[:, (depth + 1) :, :],
+                            inputs_embeds_extra[:, : (depth + 1), :],
+                        ],
+                        axis=1,
+                    )
+                    if self.sequence_parallel:
+                        inputs_embeds_mtp = inputs_embeds_mtp.reshape([-1, inputs_embeds_mtp.shape[-1]])
+                        inputs_embeds_mtp = ScatterOp.apply(inputs_embeds_mtp)
+
+                    mtp_emb_res.append(inputs_embeds_mtp)
+                res = paddle.concat(mtp_emb_res)
+                ret = (res,)
+        else:
+            if self.sequence_parallel:
+                emb = emb.reshape([-1, emb.shape[-1]])
+                emb = ScatterOp.apply(emb)
+
+            ret = (emb,)
 
         if attention_mask is not None:
             if attention_mask.dtype != paddle.int32:
@@ -307,6 +341,16 @@ class LMHeadPipe(LMHead):
 
 def make_decoder_layer_pipe(decoder_layer):
     def forward(self, args):
+        num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
+        enable_mtp_magic_send = self.config.get("enable_mtp_magic_send", False)
+        if num_nextn_predict_layers > 0 and not enable_mtp_magic_send:
+            res = args[0]
+            tensor_list = paddle.split(res, num_nextn_predict_layers + 1)
+            inputs_embeds = tensor_list[-num_nextn_predict_layers:]
+            args = tuple(tensor_list[:-num_nextn_predict_layers]) + args[1:]
+        else:
+            res = None
+
         hidden_states, attention_mask, position_ids, nbatch_pack_offset = parse_args(args)
         max_seq_len = hidden_states.shape[1]
         if self.config.sequence_parallel:
@@ -356,6 +400,12 @@ def make_decoder_layer_pipe(decoder_layer):
             ret += (nbatch_pack_offset.clone(),)
         if len(ret) == 1:
             (ret,) = ret
+        if num_nextn_predict_layers > 0:
+            if enable_mtp_magic_send:
+                ret = (ret,)
+            else:
+                ret = (paddle.concat([ret[0], *inputs_embeds]),) + ret[1:]
+
         return ret
 
     return type(

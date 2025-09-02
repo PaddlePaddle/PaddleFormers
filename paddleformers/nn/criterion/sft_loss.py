@@ -61,7 +61,6 @@ def sft_loss_forward(
     logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y = sft_preprocess_inputs(
         self, logits, labels
     )
-
     if self.use_filtered_label_loss:
         if self.tensor_parallel and self.sequence_parallel and logits is None:
             masked_lm_labels, sparse_label_idx = sequence_parallel_sparse_mask_labels(labels, self.ignored_index)
@@ -172,7 +171,7 @@ def mtp_sft_loss_forward(
         for depth in range(num_nextn_predict_layers):
             logtis_cur_depth = mtp_logits[depth]
             labels_cur_depth = labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
-            res_cur_depth = super().forward(logtis_cur_depth, labels_cur_depth, loss_mask)
+            res_cur_depth = sft_loss_forward(logtis_cur_depth, labels_cur_depth, loss_mask)
             mtp_loss_res.append(res_cur_depth)
 
     def add_loss(main_loss, loss):
