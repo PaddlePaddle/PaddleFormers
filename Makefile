@@ -36,6 +36,7 @@ test: unit-test
 
 unit-test:
 	DOWNLOAD_SOURCE=aistudio \
+	WAIT_UNTIL_DONE=True \
 	PYTHONPATH=$(shell pwd) pytest -v -n auto \
 		--retries 1 --retry-delay 1 \
 		--durations 20 \
