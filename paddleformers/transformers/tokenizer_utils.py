@@ -317,7 +317,7 @@ class PaddleTokenizerMixin:
     def _encode_chat_inputs_openai_format(
         self,
         conversations: Dict[str, Any],
-        add_generation_prompt=True,
+        add_generation_prompt=False,
     ):
         conversation_dict = {} if "tools" not in conversations else {"tools": conversations["tools"]}
         conversation_dict["messages"] = (
@@ -376,7 +376,7 @@ class PaddleTokenizerMixin:
         conversations: List[List[str, str]],
         context_data: Dict[str, Any] = {},
         system: str = None,
-        add_generation_prompt=True,
+        add_generation_prompt=False,
     ):
         result = {}
 
@@ -437,7 +437,7 @@ class PaddleTokenizerMixin:
         if not self.chat_template:
             raise ValueError("chat_template is not set, please set chat_template first.")
         else:
-            add_generation_prompt = kwargs.pop("add_generation_prompt", True)
+            add_generation_prompt = kwargs.pop("add_generation_prompt", False)
             if not isinstance(conversations, dict):
                 query = self._encode_chat_inputs(
                     conversations, context_data, add_generation_prompt=add_generation_prompt

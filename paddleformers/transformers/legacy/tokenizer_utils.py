@@ -666,7 +666,7 @@ class ChatTemplateMixin:
             else:
                 raise ValueError("chat template should be a string value")
 
-            add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", True)
+            add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", False)
             query = self._apply_chat_template(
                 conversation, add_generation_prompt=add_generation_prompt, chat_template=chat_template
             )
@@ -674,7 +674,7 @@ class ChatTemplateMixin:
             if not self.chat_template:
                 raise ValueError("chat_template is not set, please set chat_template first.")
             elif isinstance(self.chat_template, Template):
-                add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", True)
+                add_generation_prompt = tokenizer_kwargs.pop("add_generation_prompt", False)
                 query = self._apply_chat_template(conversation, add_generation_prompt=add_generation_prompt)
             elif isinstance(self.chat_template, ChatTemplate):
                 query = self._apply_chat_template_paddle(conversation, context_data)
@@ -707,7 +707,7 @@ class ChatTemplateMixin:
     def _apply_chat_template(
         self,
         conversation: List[List[str, str] | Dict[str, str]] | str,
-        add_generation_prompt=True,
+        add_generation_prompt=False,
         chat_template: Optional[str | Template] = None,
     ) -> str | dict[str, numpy.ndarray | paddle.Tensor]:
         if isinstance(chat_template, str):
@@ -755,7 +755,7 @@ class ChatTemplateMixin:
         if not self.chat_template:
             raise ValueError("chat_template is not set, please set chat_template first.")
         elif isinstance(self.chat_template, Template):
-            add_generation_prompt = kwargs.pop("add_generation_prompt", True)
+            add_generation_prompt = kwargs.pop("add_generation_prompt", False)
             if not isinstance(conversations, dict):
                 query = self._encode_chat_inputs(
                     conversations, context_data, add_generation_prompt=add_generation_prompt
@@ -795,7 +795,6 @@ class ChatTemplateMixin:
     def _encode_chat_inputs_openai_format(
         self,
         conversations: Dict[str, Any],
-        add_generation_prompt=True,
     ):
         conversation_dict = {} if "tools" not in conversations else {"tools": conversations["tools"]}
         conversation_dict["messages"] = (
@@ -839,7 +838,7 @@ class ChatTemplateMixin:
         conversations: List[List[str, str]],
         context_data: Dict[str, Any] = {},
         system: str = None,
-        add_generation_prompt=True,
+        add_generation_prompt=False,
     ):
         result = {}
 
