@@ -372,8 +372,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
                 hack_offload_wait(has_dense_experts_token_task)
             hidden_states, _, router_loss, gate_logits = self.mlp(hidden_states, token_type_ids)
         else:
-            with paddle.amp.auto_cast(dtype=self.config.dtype):
-                hidden_states = self.mlp(hidden_states)
+            hidden_states = self.mlp(hidden_states)
             gate_logits, router_loss = None, None
 
         with model_parallel_dropout(self.config):
@@ -557,9 +556,10 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         if config.moe_group in {"mp", "model", "tp"} and config.tensor_parallel_degree > 1:
             logger.info(f"disable FFN tensor model parallel, moe-group={config.moe_group}")
             config.disable_ffn_model_parallel = True
-
         config.moe_group_origin = config.moe_group
-        config.moe_group = _parse_moe_group(config.moe_group)
+        if isinstance(config.moe_group, str):
+            config.moe_group = _parse_moe_group(config.moe_group)
+
         config.moe_world_size = dist.get_world_size(config.moe_group)
         if config.moe_world_size < 0:
             config.moe_world_size = 1
@@ -748,17 +748,20 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
 
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
+            kv_seq_len = 0
+        else:
+            kv_seq_len = past_key_values[0][0].shape[1]
 
         seq_length -= self.config.num_nextn_predict_layers
-        seq_length_with_past = seq_length
-        cache_length = 0
-        if past_key_values[0] is not None:
-            cache_length = paddle.shape(past_key_values[0][0])[1]
-            seq_length_with_past += cache_length
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
-        inputs_embeds = inputs_embeds.astype(self.embed_tokens.weight.dtype)
+
+        if attention_mask is not None:
+            attention_mask = self._prepare_decoder_attention_mask(
+                attention_mask, inputs_embeds.shape[:2], kv_seq_len, inputs_embeds.dtype
+            )
+
         if self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]
             inputs_embeds = inputs_embeds[:, : -self.config.num_nextn_predict_layers, :]
@@ -1055,9 +1058,6 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if attention_mask is not None and attention_mask.dtype != paddle.bool:
-            attention_mask = paddle.cast(attention_mask, paddle.bool)
-
         outputs = self.model(
             input_ids,
             position_ids=position_ids,
@@ -1122,7 +1122,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         # Pretrain & Eval must have labels
         assert labels is not None
 
-        return self.criterion(logits, labels, loss_mask, router_loss, mtp_logits)
+        return self.criterion(logits, labels, loss_mask, router_loss=router_loss, mtp_logits=mtp_logits)
 
 
 __all__ = [
