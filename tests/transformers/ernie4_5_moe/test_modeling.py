@@ -23,6 +23,7 @@ from paddleformers.transformers import (
     Ernie4_5_MoeForCausalLM,
     Ernie4_5_MoeModel,
 )
+from tests.testing_utils import require_gpu
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -30,6 +31,10 @@ from tests.transformers.test_modeling_common import (
     ids_tensor,
     random_attention_mask,
 )
+
+paddle.device.set_device("cpu")
+
+require_at_least_one_gpu = require_gpu(1)
 
 
 class Ernie4_5_MoeModelTester:
@@ -405,33 +410,96 @@ class Ernie4_5_MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Te
 
         return config, input_ids, attention_mask, max_length
 
+    @require_at_least_one_gpu
     def test_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model(*config_and_inputs)
 
+    @require_at_least_one_gpu
     def test_model_attention_mask(self):
         config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
         self.model_tester.create_and_check_model_attention_mask(config, input_dict["input_ids"])
 
+    @require_at_least_one_gpu
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.check_model_position_ids(*config_and_inputs)
 
+    @require_at_least_one_gpu
     def test_generate_without_input_ids(self):
         # this requires 4-D attention mask logic, which is not supported yet
         pass
 
+    @require_at_least_one_gpu
     def test_model_decoder_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model_as_decoder(*config_and_inputs)
 
+    @require_at_least_one_gpu
     def test_model_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
 
+    @require_at_least_one_gpu
     def test_model_causal_lm(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
+
+    @require_at_least_one_gpu
+    def test_attention_outputs(self):
+        super().test_attention_outputs()
+
+    @require_at_least_one_gpu
+    def test_beam_search_generate(self):
+        super().test_beam_search_generate()
+
+    @require_at_least_one_gpu
+    def test_determinism(self):
+        super().test_determinism()
+
+    @require_at_least_one_gpu
+    def test_greedy_generate(self):
+        super().test_greedy_generate()
+
+    @require_at_least_one_gpu
+    def test_group_beam_search_generate(self):
+        super().test_group_beam_search_generate()
+
+    @require_at_least_one_gpu
+    def test_hidden_states_output(self):
+        super().test_hidden_states_output()
+
+    @require_at_least_one_gpu
+    def test_resize_tokens_embeddings(self):
+        super().test_resize_tokens_embeddings()
+
+    @require_at_least_one_gpu
+    def test_resize_position_vector_embeddings(self):
+        super().test_resize_position_vector_embeddings()
+
+    @require_at_least_one_gpu
+    def test_inputs_embeds(self):
+        super().test_inputs_embeds()
+
+    @require_at_least_one_gpu
+    def test_pretrained_config_save_load(self):
+        super().test_pretrained_config_save_load()
+
+    @require_at_least_one_gpu
+    def test_training(self):
+        super().test_training()
+
+    @require_at_least_one_gpu
+    def test_training_gradient_checkpointing(self):
+        super().test_training_gradient_checkpointing()
+
+    @require_at_least_one_gpu
+    def test_sample_generate(self):
+        super().test_sample_generate()
+
+    @require_at_least_one_gpu
+    def test_save_load(self):
+        super().test_save_load()
 
 
 # class Ernie4_5_MoeCompatibilityTest(unittest.TestCase):

@@ -69,7 +69,7 @@ def sft_loss_forward(
                 hidden_states = paddle.gather(hidden_states, sparse_label_idx, axis=0)
                 hidden_states = AllGatherVarlenOp.apply(hidden_states)
         else:
-            masked_lm_labels = masked_lm_labels.flatten()
+            masked_lm_labels = labels.flatten()
             sparse_label_idx = paddle.nonzero(masked_lm_labels != self.ignored_index).flatten()
             masked_lm_labels = paddle.take_along_axis(masked_lm_labels, sparse_label_idx, axis=0)
             if hidden_states is not None:
@@ -77,13 +77,13 @@ def sft_loss_forward(
                 hidden_states = paddle.take_along_axis(hidden_states, sparse_label_idx.reshape([-1, 1]), axis=0)
             if logits is not None:
                 logits = paddle.gather(logits, sparse_label_idx, axis=1)
+        labels = masked_lm_labels
     else:
         if self.sequence_parallel:
             if hidden_states is not None:
                 hidden_states = AllGatherOp.apply(hidden_states)
 
-        masked_lm_labels = labels
-
+    masked_lm_labels = labels
     # bsz,seq_len,hidden_size or seq_len,hidden_size
     seq_len = masked_lm_labels.shape[1] if masked_lm_labels.ndim == 2 else masked_lm_labels.shape[0]
     if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
