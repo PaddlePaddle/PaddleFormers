@@ -11,4 +11,56 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .modeling import *
+
+
+import sys
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "tokenizer": [
+        "is_tokenizers_available",
+        "resolve_file_path",
+        "get_mapping_tokenizers",
+        "get_configurations",
+        "get_tokenizer_config",
+        "INIT_CONFIG_MAPPING",
+        "AutoTokenizer",
+    ],
+    "configuration_utils": ["PretrainedConfig"],
+    "tokenizer_utils": ["PretrainedTokenizer"],
+    "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
+    "configuration": ["AutoConfig"],
+    "modeling": [
+        "AutoModelForCausalLM",
+        "AutoTokenizer",
+        "AutoBackbone",
+        "AutoModel",
+        "AutoModelForPretraining",
+        "AutoModelForSequenceClassification",
+        "AutoModelForTokenClassification",
+        "AutoModelForQuestionAnswering",
+        "AutoModelForMultipleChoice",
+        "AutoModelForMaskedLM",
+        "AutoModelForCausalLMPipe",
+        "AutoEncoder",
+        "AutoDecoder",
+        "AutoGenerator",
+        "AutoDiscriminator",
+        "AutoModelForConditionalGeneration",
+    ],
+    "factory": [],
+    "image_processing": ["AutoImageProcessor"],
+    "processing": ["AutoProcessor"],
+}
+
+if TYPE_CHECKING:
+    from .modeling import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

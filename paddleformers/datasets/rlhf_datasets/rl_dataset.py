@@ -11,17 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import paddle
 from datasets import load_dataset
 from paddle.io import Dataset
 
-from ...transformers import PretrainedTokenizer
-from ...transformers.tokenizer_utils import PaddingStrategy
+if TYPE_CHECKING:
+    from transformers.tokenization_utils import PreTrainedTokenizer
+
+from transformers.utils import PaddingStrategy
 
 
 def left_padding(sequences, padding_value=0, max_length=None):
@@ -85,7 +88,7 @@ class RLHFDataset(Dataset):
     def __init__(
         self,
         dataset_name_or_path,
-        tokenizer: PretrainedTokenizer,
+        tokenizer: PreTrainedTokenizer,
         max_prompt_len=1024,
         filter_prompts=True,
         prompt_key="src",

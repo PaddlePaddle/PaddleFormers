@@ -50,7 +50,9 @@ from .utils import (
 __all__ = ["load_unified_checkpoint_locally", "load_unified_optimizer_locally"]
 
 
-def load_unified_checkpoint_locally(args, model, resume_from_checkpoint: str, safe_serialization=False):
+def load_unified_checkpoint_locally(
+    args, model, resume_from_checkpoint: str, safe_serialization=False, convert_from_hf=False
+):
     """
     Only dataset_rank == 0 or using expert parallel can enter this function.
     """
@@ -114,8 +116,14 @@ def load_unified_checkpoint_locally(args, model, resume_from_checkpoint: str, sa
             else:
                 tp_actions = model.get_tensor_parallel_convert_actions(model.config, loaded_keys, ignore_error=True)
         # Here we use expected_keys to optimize weights loading for pipeline model. Only works for safetensors
+        transpose_weight_keys = getattr(model, "transpose_weight_keys", None)
         state_dict = load_state_dict(
-            shard_file, tp_actions if pre_tensor_parallel_split else None, expected_keys, device="expected"
+            shard_file,
+            tp_actions if pre_tensor_parallel_split else None,
+            expected_keys,
+            device="expected",
+            convert_from_hf=convert_from_hf,
+            transpose_weight_keys=transpose_weight_keys,
         )
 
         if not pre_tensor_parallel_split:

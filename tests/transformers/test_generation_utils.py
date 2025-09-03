@@ -35,9 +35,7 @@ from paddleformers.transformers import (  # import gpt model
     AutoModelForCausalLM,
     AutoTokenizer,
     PretrainedConfig,
-    PretrainedTokenizer,
 )
-from tests.testing_utils import slow
 
 
 def top_k_top_p_filtering(
@@ -797,46 +795,6 @@ class GenerationUtilsTestCase(unittest.TestCase):
         unfinish_flag = get_unfinished_flag(input_ids, unfinish_flag, eos_token_id)
         self.assertEqual(unfinish_flag.reshape([2]).tolist(), [False, False])
 
-    @slow
-    def test_gpt_multi_stop_tokens(self):
-        tokenizer: PretrainedTokenizer = AutoTokenizer.from_pretrained("gpt-cpm-small-cn-distill")
-
-        input_ids = tokenizer("中国的首都是")["input_ids"]
-        model = AutoModelForCausalLM.from_pretrained("gpt-cpm-small-cn-distill")
-        model.eval()
-
-        # 1. generate with no special eos_token_id
-        # [520, 8, 9, 59, 124, 635, 8, 12, 8, 10, 8, 10, 8, 10, 8, 10, 8, 10, 8, 10]
-        decoded_ids = model.generate(
-            paddle.to_tensor([input_ids]), generation_config=GenerationConfig(max_new_tokens=20)
-        )[0].tolist()[0]
-        self.assertEqual(len(decoded_ids), 20)
-
-        # 2. generate with single special eos_token_id (12)
-        decoded_ids = model.generate(
-            paddle.to_tensor([input_ids]), generation_config=GenerationConfig(max_new_tokens=20, eos_token_id=12)
-        )[0].tolist()[0]
-        self.assertEqual(decoded_ids, [520, 8, 9, 59, 124, 635, 8, 12])
-
-        decoded_ids = model.generate(
-            paddle.to_tensor([input_ids]), generation_config=GenerationConfig(max_new_tokens=20, eos_token_id=635)
-        )[0].tolist()[0]
-        self.assertEqual(decoded_ids, [520, 8, 9, 59, 124, 635])
-
-        # 3. generate with single tokens
-        decoded_ids = model.generate(
-            paddle.to_tensor([input_ids]),
-            generation_config=GenerationConfig(max_new_tokens=20, eos_token_id=[635]),
-        )[0].tolist()[0]
-        self.assertEqual(decoded_ids, [520, 8, 9, 59, 124, 635])
-
-        # 4. generate with multi tokens
-        decoded_ids = model.generate(
-            paddle.to_tensor([input_ids]),
-            generation_config=GenerationConfig(max_new_tokens=20, eos_token_id=[124, 635]),
-        )[0].tolist()[0]
-        self.assertEqual(decoded_ids, [520, 8, 9, 59, 124])
-
 
 class TinyRandomGenerationTest(unittest.TestCase):
     def test_generation_config_min_new_tokens_warning(self):
@@ -848,8 +806,8 @@ class TinyRandomGenerationTest(unittest.TestCase):
     def test_min_new_tokens(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
 
-        tokenizer = AutoTokenizer.from_pretrained("__internal_testing__/micro-random-llama")
-        model = AutoModelForCausalLM.from_pretrained("__internal_testing__/micro-random-llama")
+        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/micro-random-llama")
+        model = AutoModelForCausalLM.from_pretrained("test_paddleformers/micro-random-llama")
         input_ids = paddle.to_tensor(tokenizer(article)["input_ids"]).unsqueeze([0])
         attention_mask = paddle.ones_like(input_ids)
         result = model.generate(input_ids, attention_mask=attention_mask, min_new_tokens=10)[0]

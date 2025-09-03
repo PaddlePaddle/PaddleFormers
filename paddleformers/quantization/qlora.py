@@ -37,7 +37,7 @@ def qlora_weight_quantize(
             return quant_weight, (qweight_scale, double_weight_scale, quant_sacle_offset)
         qweight_scale_name = f"{linear_name}.qweight_scale" if linear_name else "qweight_scale"
         double_weight_scale_name = f"{linear_name}.double_weight_scale" if linear_name else "double_weight_scale"
-        quant_sacle_offset_name = f"{linear_name}.quant_sacle_offset" if linear_name else "quant_sacle_offset"
+        quant_sacle_offset_name = f"{linear_name}.weight_scale_offset" if linear_name else "weight_scale_offset"
         qlora_state_dict = {
             qweight_scale_name: qweight_scale,
             double_weight_scale_name: double_weight_scale,

@@ -13,8 +13,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration import *
-from .modeling import *
-from .modeling_pp import *
-from .tokenizer import *
-from .tokenizer_fast import *
+import sys
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
+    "tokenizer": ["Qwen2Tokenizer"],
+    "tokenizer_fast": ["Qwen2TokenizerFast"],
+    "configuration": ["Qwen2Config"],
+    "modeling": [
+        "Qwen2Model",
+        "Qwen2PretrainedModel",
+        "Qwen2ForCausalLM",
+        "Qwen2PretrainingCriterion",
+        "Qwen2ForSequenceClassification",
+        "Qwen2ForTokenClassification",
+        "Qwen2SentenceEmbedding",
+    ],
+    "modeling_pp": ["Qwen2ForCausalLMPipe"],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
+    from .modeling_pp import *
+    from .tokenizer import *
+    from .tokenizer_fast import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )
