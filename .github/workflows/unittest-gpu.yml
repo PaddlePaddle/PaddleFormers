@@ -117,8 +117,6 @@ jobs:
           else
             docker exec -t $container_name /bin/bash -c '
             ldconfig
-            unlink /usr/bin/python3
-            ln -sf $(which python${python_version}) /usr/bin/python3
             pip config set global.cache-dir "/home/.cache/pip"
             set -e
             rm -rf /root/.cache/aistudio/

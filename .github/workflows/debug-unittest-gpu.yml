@@ -83,8 +83,6 @@ jobs:
           docker exec -t $container_name /bin/bash -c '
           ldconfig
           set -e
-          unlink /usr/bin/python3
-          ln -sf $(which python${python_version}) /usr/bin/python3
           python -c "import sys; print(sys.version_info[:])"
           pip config set global.cache-dir "/home/.cache/pip"
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
