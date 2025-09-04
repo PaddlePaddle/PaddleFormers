@@ -25,7 +25,7 @@ env:
   BRANCH: ${{ github.event.pull_request.base.ref }}
   GITHUB_EVENT_NAME: ${{ github.event_name }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-build-image
-  image_base: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev"
+  image_base: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda118-dev"
 
 jobs:
   build-ci-docker-images:
@@ -138,7 +138,7 @@ jobs:
       - name: Write Dockerfile Inline
         run: |
           cat <<EOF > Dockerfile
-          FROM ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev
+          FROM ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda118-dev
           RUN python -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
           RUN python -m pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
           RUN python -m pip install bce-python-sdk==0.8.74
