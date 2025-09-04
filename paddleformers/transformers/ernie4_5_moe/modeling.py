@@ -39,7 +39,6 @@ from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Ernie4_5MLP
-
 from ...nn.moe.moe_alltoall_layer import MOEAlltoAllLayer
 from ...nn.moe.moe_block import MoEStatics
 from ...nn.moe.topk_gate import TopKGate
@@ -836,7 +835,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         hidden_states = inputs_embeds
-        
+
         if self.config.fuse_rope:
             position_embeddings = None
         else:

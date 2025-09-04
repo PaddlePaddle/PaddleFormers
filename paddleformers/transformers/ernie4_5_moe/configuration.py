@@ -13,7 +13,6 @@
 # limitations under the License.
 
 """ Ernie4_5_Moe model configuration """
-import json
 from typing import Optional, Union
 
 from ...utils.log import logger
