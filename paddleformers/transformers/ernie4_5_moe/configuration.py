@@ -50,14 +50,12 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
-        fuse_swiglu=False,
         use_bias=False,
         rope_theta=10000,
         max_sequence_length=None,
         ignored_index=-100,
         attention_dropout_prob=0.0,
         hidden_dropout_prob=0.0,
-        compression_ratio: float = 1.0,
         num_key_value_heads=None,
         micro_batch_size=-1,
         moe_num_experts: Optional[Union[int, list]] = 16,
@@ -72,7 +70,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         global_aux_loss=False,
         moe_dropout_prob=0.0,
         moe_group="dummy",
-        moe_gate="topk",
         moe_intermediate_size: Union[int, list] = 0,
         moe_num_shared_experts: int = 2,
         moe_layer_start_index=1,
@@ -90,11 +87,11 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         num_acc_steps: int = 1,
         fuse_gate_detach_matmul: bool = False,
         moe_use_hard_gate=False,
-        moe_dense_experts_token_type_id=3,
         num_nextn_predict_layers=1,
         multi_token_pred_lambda=0.1,
         enable_mtp_magic_send=False,
         use_recompute_mtp=False,
+        dpo_config=None,
         **kwargs,
     ):
         """
@@ -119,14 +116,12 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             pad_token_id (int): Token ID used for padding sequences
             bos_token_id (int): Token ID used for beginning-of-sequence
             eos_token_id (int): Token ID used for end-of-sequence
-            fuse_swiglu (bool): Whether to fuse SwiGLU operations
             use_bias (bool): Whether to use bias terms in linear layers
             rope_theta (float): The base period of the RoPE embeddings
             max_sequence_length (int): Maximum sequence length for positional embeddings
             ignored_index (int): Target value that is ignored during loss computation
             attention_dropout_prob (float): Dropout probability for attention weights
             hidden_dropout_prob (float): Dropout probability for hidden layers
-            compression_ratio (float): Ratio for KV cache compression (1.0 = no compression)
             num_key_value_heads (int): Number of key/value heads (for Grouped Query Attention)
             micro_batch_size (int): Size of micro batches (-1 for automatic)
             moe_num_experts: Number of experts in MoE layers
@@ -144,7 +139,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             global_aux_loss: Whether to use global auxiliary loss
             moe_dropout_prob: Dropout probability for MoE layers
             moe_group: Group configuration for MoE experts
-            moe_gate: Type of gating mechanism ('top2', etc.)
             moe_intermediate_size: Intermediate size for MoE layers
             moe_num_shared_experts: Number of shared experts
             moe_reverse_token_drop: Whether to use reverse token dropping
@@ -195,7 +189,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
-        self.fuse_swiglu = fuse_swiglu
         self.use_rmsnorm = use_rmsnorm
         self.micro_batch_size = micro_batch_size
         self.max_sequence_length = max_sequence_length
@@ -204,7 +197,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.ignored_index = ignored_index
         self.attention_dropout_prob = attention_dropout_prob
         self.hidden_dropout_prob = hidden_dropout_prob
-        self.compression_ratio = compression_ratio
         self.num_key_value_heads = num_key_value_heads
         self.moe_num_experts = moe_num_experts
         self.use_recompute_moe = use_recompute_moe
@@ -219,7 +211,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.moe_layer_interval = moe_layer_interval
         self.moe_dropout_prob = moe_dropout_prob
         self.moe_group = moe_group
-        self.moe_gate = moe_gate
         self.moe_intermediate_size = moe_intermediate_size
         self.moe_num_shared_experts = moe_num_shared_experts
         self.moe_layer_start_index = moe_layer_start_index
@@ -239,7 +230,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.moe_use_aux_free = moe_use_aux_free
         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
         self.moe_use_hard_gate = moe_use_hard_gate
-        self.moe_dense_experts_token_type_id = moe_dense_experts_token_type_id
         self.num_nextn_predict_layers = num_nextn_predict_layers
         self.multi_token_pred_lambda = multi_token_pred_lambda
         self.enable_mtp_magic_send = enable_mtp_magic_send
@@ -247,57 +237,44 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
 
         self.register_unsavable_keys(
             [
+                "disable_ffn_model_parallel",
+                "num_acc_steps",
+                "attention_dropout_prob",
+                "dpo_config",
+                "fuse_gate_detach_matmul",
+                "global_aux_loss",
+                "hidden_dropout_prob",
                 "micro_batch_size",
                 "max_sequence_length",
                 "moe_group",
-                "dpo_config",
+                "ignored_index",
                 "use_recompute_moe",
+                "use_rmsnorm",
+                "use_recompute_mtp",
+                "sinkhorn_2gate",
+                "sinkhorn_temp",
                 "enable_delay_scale_loss",
+                "enable_mtp_magic_send",
                 "moe_dropout_prob",
                 "moe_use_aux_free",
+                "moe_aux_loss_lambda",
+                "moe_capacity",
+                "moe_gate_act",
+                "moe_group_experts",
                 "moe_all_to_all_dropout",
-                "num_acc_steps",
-                "disable_ffn_model_parallel",
+                "moe_group_orthogonal_loss",
+                "moe_norm_gate_logits",
+                "moe_norm_min",
+                "moe_orthogonal_loss_lambda",
+                "moe_reverse_token_drop",
+                "moe_use_hard_gate",
+                "moe_z_loss_lambda",
                 "moe_group_origin",
                 "moe_rank",
                 "moe_world_size",
+                "multi_token_pred_lambda",
             ]
         )
-
-    def to_json_string(self, use_diff: bool = True, saving_file=False) -> str:
-        """
-        Serialize the configuration to a JSON string with special handling for non-serializable objects.
-
-        This method overrides the default JSON serialization to handle special objects like
-        paddle.distributed.communication.group.Group that cannot be serialized normally.
-
-        Args:
-            use_diff (bool, optional): If True, only outputs the differences from the default configuration.
-                                    If False, outputs the full configuration. Defaults to True.
-
-        Returns:
-            str: A JSON formatted string representation of the configuration, with proper indentation
-                and handling for non-serializable objects.
-        """
-        if use_diff is True:
-            config_dict = self.to_diff_dict(saving_file=saving_file)
-        else:
-            config_dict = self.to_dict(saving_file=saving_file)
-
-        def _serializer(obj):
-            """
-            Handle non-serializable objects during JSON conversion.
-
-            Args:
-                obj: The object to be serialized
-
-            Returns:
-                The serializable representation of the object
-
-            """
-            return repr(obj)
-
-        return json.dumps(config_dict, indent=2, sort_keys=True, ensure_ascii=False, default=_serializer) + "\n"
 
 
 __all__ = ["Ernie4_5_MoeConfig"]

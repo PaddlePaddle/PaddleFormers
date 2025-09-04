@@ -130,7 +130,7 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         )
         self.enable_reverse_token_drop = enable_reverse_token_drop
         self.use_padding = use_padding
-
+        self.multimodal_experts = isinstance(moe_num_experts, (tuple, list)) and len(moe_num_experts) > 1
         # 全局 gate gather
         self.send_rank = None
         self.local_expert_id = None
@@ -496,7 +496,7 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         def build_weights_and_expert_id(input):
             nonlocal token_type_ids, args
             logits, capacity, router_loss = self.gate(input, *args, transform_weight=False)
-            if self.config.multimodel_experts:
+            if self.multimodal_experts:
                 gate_logits_lm, gate_logits_mm = logits.chunk(2, axis=-1)
             else:
                 gate_logits_lm, gate_logits_mm = logits, None
@@ -574,7 +574,7 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             )
 
         if self.use_correction_bias:
-            if self.gate.config.multimodel_experts:
+            if self.multimodal_experts:
                 # MLLM
                 for i in range(len(self.moe_statics.expert_usage)):
                     self.moe_statics.expert_usage[i] += expert_num_local[self.gate.experts_type_mask[i]].detach()

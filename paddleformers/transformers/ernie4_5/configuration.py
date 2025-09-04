@@ -15,27 +15,6 @@
 """ Ernie4_5 model configuration."""
 from ..configuration_utils import PretrainedConfig
 
-ERNIE_PRETRAINED_INIT_CONFIGURATION = {
-    "ernie/tiny-random-ernie": {
-        "hidden_size": 768,
-        "initializer_range": 0.02,
-        "intermediate_size": 11008,
-        "max_position_embeddings": 2048,
-        "model_type": "ernie",
-        "num_attention_heads": 2,
-        "num_hidden_layers": 2,
-        "rms_norm_eps": 1e-06,
-        "vocab_size": 32000,
-        "bos_token_id": 1,
-        "eos_token_id": 2,
-        "pad_token_id": 0,
-        "use_cache": False,
-        "recompute": False,
-        "use_flash_attention": False,
-        "use_pure_fp16": False,
-    },
-}
-
 
 class Ernie4_5Config(PretrainedConfig):
     """
@@ -46,8 +25,6 @@ class Ernie4_5Config(PretrainedConfig):
     """
 
     model_type = "ernie4_5"
-
-    pretrained_init_configuration = ERNIE_PRETRAINED_INIT_CONFIGURATION
 
     def __init__(
         self,
@@ -66,24 +43,21 @@ class Ernie4_5Config(PretrainedConfig):
         recompute=False,
         recompute_granularity="core_attn",
         recompute_use_reentrant=False,
+        tie_word_embeddings=True,
         use_rmsnorm=True,
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
-        fuse_swiglu=False,
         use_bias=False,
         rope_theta=10000,
         fuse_rope=False,
         fuse_softmax_mask=False,
-        weight_share_add_bias=True,
         fuse_linear=False,
         max_sequence_length=None,
         ignored_index=-100,
-        add_tail_layers=False,
         attention_dropout_prob=0.0,
         hidden_act="silu",
         hidden_dropout_prob=0.0,
-        compression_ratio: float = 1.0,
         num_key_value_heads=None,
         micro_batch_size=-1,
         pp_seg_method="layer:Ernie4_5DecoderLayer|EmptyLayer",
@@ -108,23 +82,22 @@ class Ernie4_5Config(PretrainedConfig):
             recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
             use_rmsnorm (bool): Whether to use RMSNorm instead of LayerNorm
+            tie_word_embeddings (bool):  Whether the input and output word embeddings should be tied
+            Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
+            model has a output word embedding layer.
             pad_token_id (int): Token ID used for padding sequences
             bos_token_id (int): Token ID used for beginning-of-sequence
             eos_token_id (int): Token ID used for end-of-sequence
-            fuse_swiglu (bool): Whether to fuse SwiGLU operations
             use_bias (bool): Whether to use bias terms in linear layers
             rope_theta (float): The base period of the RoPE embeddings
             fuse_rope (bool): Whether to fuse RoPE operations
-            weight_share_add_bias (bool): Whether to share bias weights in certain layers
             fuse_linear (bool): Whether to fuse linear operations
             fuse_up_gate (bool): Whether to fuse up_proj and gate_proj to a single linear layer
             max_sequence_length (int): Maximum sequence length for positional embeddings
             ignored_index (int): Target value that is ignored during loss computation
-            add_tail_layers (int): Whether to add additional layers at the end
             attention_dropout_prob (float): Dropout probability for attention weights
             hidden_act (str): Activation function for MLP layers
             hidden_dropout_prob (float): Dropout probability for hidden layers
-            compression_ratio (float): Ratio for KV cache compression (1.0 = no compression)
             num_key_value_heads (int): Number of key/value heads (for Grouped Query Attention)
             micro_batch_size (int): Size of micro batches (-1 for automatic)
             pp_seg_method (str): Method for pipeline parallel segmentation
@@ -132,10 +105,6 @@ class Ernie4_5Config(PretrainedConfig):
             kto_config (KTOConfig | None): KTO training configuration
             **kwargs: Additional keyword arguments passed to parent class
         """
-
-        # Set default for tied embeddings if not specified.
-        if "tie_word_embeddings" not in kwargs:
-            kwargs["tie_word_embeddings"] = True
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
@@ -160,30 +129,31 @@ class Ernie4_5Config(PretrainedConfig):
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
-        self.fuse_swiglu = fuse_swiglu
         self.use_rmsnorm = use_rmsnorm
         self.micro_batch_size = micro_batch_size
 
         self.max_sequence_length = max_sequence_length
         self.use_bias = use_bias
-        self.weight_share_add_bias = weight_share_add_bias
         self.rope_theta = rope_theta
+        self.tie_word_embeddings = tie_word_embeddings
         self.fuse_rope = fuse_rope
         self.fuse_softmax_mask = fuse_softmax_mask
         self.fuse_linear = fuse_linear
         self.ignored_index = ignored_index
-        self.add_tail_layers = add_tail_layers
         self.attention_dropout_prob = attention_dropout_prob
         self.hidden_act = hidden_act
         self.hidden_dropout_prob = hidden_dropout_prob
-        self.compression_ratio = compression_ratio
         self.num_key_value_heads = num_key_value_heads
         self.pp_seg_method = pp_seg_method
         self.dpo_config = dpo_config
         self.kto_config = kto_config
-
         self.register_unsavable_keys(
             [
+                "attention_dropout_prob",
+                "hidden_dropout_prob",
+                "ignored_index",
+                "scale_qk_coeff",
+                "use_rmsnorm",
                 "recompute",
                 "recompute_use_reentrant",
                 "recompute_granularity",

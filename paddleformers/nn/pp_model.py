@@ -59,11 +59,13 @@ def parse_args(args, mtp_enable=False):
             All returned tensors have stop_gradient=True.
     """
     if isinstance(args, tuple):
-        if not mtp_enable:
-            nbatch_pack_offset = None
+        position_embeddings = None
+        nbatch_pack_offset = None
 
-        if len(args) == 4:
-            hidden_states, attention_mask, position_ids, nbatch_pack_offset = args
+        if len(args) == 5:
+            hidden_states, attention_mask, position_ids, position_embeddings, nbatch_pack_offset = args
+        elif len(args) == 4:
+            hidden_states, attention_mask, position_ids, position_embeddings = args
         elif len(args) == 3:
             if mtp_enable:
                 hidden_states, attention_mask, nbatch_pack_offset = args
@@ -84,10 +86,13 @@ def parse_args(args, mtp_enable=False):
             nbatch_pack_offset = None
     else:
         hidden_states = args
-        attention_mask, position_ids, nbatch_pack_offset = None, None, None
+        attention_mask, position_ids, position_embeddings, nbatch_pack_offset = None, None, None, None
     # need position_ids to compute value for PPO.
     if position_ids is not None:
         position_ids.stop_gradient = True
+
+    if position_embeddings is not None:
+        position_embeddings.stop_gradient = True
 
     if attention_mask is not None:
         attention_mask.stop_gradient = True
@@ -95,7 +100,7 @@ def parse_args(args, mtp_enable=False):
     if nbatch_pack_offset is not None:
         nbatch_pack_offset.stop_gradient = True
 
-    return hidden_states, attention_mask, position_ids, nbatch_pack_offset
+    return hidden_states, attention_mask, position_ids, position_embeddings, nbatch_pack_offset
 
 
 def get_pp_vp_split_layers(config, skip_recompute_num=-1):
@@ -172,6 +177,38 @@ def get_attr(layer, name):
         return get_attr(layer._layer, name)
 
 
+class RotaryEmbedding(nn.Layer):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.head_dim = config.head_dim
+        self.base = config.rope_theta
+
+    def forward(self, x, position_ids):
+        """
+        Compute rotary position embeddings for given sequence length.
+
+        Args:
+            seq_length (int): Maximum sequence length
+            position_ids (Tensor): Position ids of shape [batch_size, seq_length]
+
+        Returns:
+            Tensor: Rotary position embeddings of shape [1, 1, seq_length, head_dim]
+        """
+        indices = paddle.arange(0, self.head_dim, 2, dtype="float32")
+        indices = 1 / self.base ** (indices / self.head_dim)
+
+        sinusoid_inp = position_ids.unsqueeze(-1).astype("float32") * indices.unsqueeze(
+            0
+        )  # [b, s, 1] * [1, d/2] -> [b, s, d/2]
+        emb = paddle.concat((sinusoid_inp, sinusoid_inp), axis=-1)
+        cos = emb.cos()
+        sin = emb.sin()
+
+        # keeping it in full precision
+        return cos, sin
+
+
 class EmbeddingPipe(nn.Layer):
     def __init__(self, config):
         """
@@ -183,6 +220,7 @@ class EmbeddingPipe(nn.Layer):
         self.sequence_parallel = config.sequence_parallel
         self.config = config
         self.embed_tokens = Embedding.create(config)
+        self.rotary_emb = RotaryEmbedding(config)
 
     @property
     def embedding_weight(self):
@@ -211,9 +249,23 @@ class EmbeddingPipe(nn.Layer):
         num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
         enable_mtp_magic_send = self.config.get("enable_mtp_magic_send", False)
 
-        input_ids, attention_mask, position_ids, nbatch_pack_offset = parse_args(args, num_nextn_predict_layers > 0)
+        input_ids, attention_mask, position_ids, _, nbatch_pack_offset = parse_args(args, num_nextn_predict_layers > 0)
         input_ids.stop_gradient = True
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
+        if position_ids is None and not self.config.fuse_rope:
+            position_ids = (
+                paddle.range(
+                    0,
+                    input_ids.shape[1],
+                    dtype="int64",
+                )
+                .unsqueeze(0)
+                .tile(input_ids.shape[0], 1)
+            )
+        if self.config.fuse_rope:
+            position_embeddings = None
+        else:
+            position_embeddings = paddle.stack(self.rotary_emb(emb, position_ids))  # cos and sin
 
         if num_nextn_predict_layers > 0:
             if enable_mtp_magic_send:
@@ -263,11 +315,17 @@ class EmbeddingPipe(nn.Layer):
                     bias=-1.0,
                     bias_after_scale=False,
                 )
+        # logger.info(f"[cheng] erniekit debug input_ids rank{dist.get_rank()},{input_ids},{input_ids._md5sum()},")
+        logger.info(
+            f"[cheng] paddleformers debug input_ids rank{paddle.distributed.get_rank()} :,{input_ids},{input_ids._md5sum()}"
+        )
 
         if attention_mask is not None:
             ret += (attention_mask.clone(),)
         if position_ids is not None:
             ret += (position_ids.clone(),)
+        if position_embeddings is not None:
+            ret += (position_embeddings.clone(),)
         if nbatch_pack_offset is not None:
             ret += (nbatch_pack_offset.clone(),)
         if len(ret) == 1:
@@ -282,7 +340,7 @@ class RMSNormPipe(RMSNorm):
             self.enable_sequence_parallel()
 
     def forward(self, args):
-        hidden_states, _, _, _ = parse_args(args)
+        hidden_states, _, _, _, _ = parse_args(args)
         hidden_states = super().forward(hidden_states)
         return hidden_states
 
@@ -294,7 +352,7 @@ class LayerNormPipe(LayerNorm):
             self.enable_sequence_parallel()
 
     def forward(self, args):
-        hidden_states, _, _, _ = parse_args(args)
+        hidden_states, _, _, _, _ = parse_args(args)
         hidden_states = super().forward(hidden_states)
         return hidden_states
 
@@ -329,7 +387,7 @@ class LMHeadPipe(LMHead):
                 [batch_size, sequence_length, vocab_size]
                 representing unnormalized log probabilities for each token
         """
-        hidden_states, _, _, _ = parse_args(args)
+        hidden_states, _, _, _, _ = parse_args(args)
         logits = super().forward(hidden_states)
         return logits
 
@@ -350,8 +408,7 @@ def make_decoder_layer_pipe(decoder_layer):
             args = tuple(tensor_list[:-num_nextn_predict_layers]) + args[1:]
         else:
             res = None
-
-        hidden_states, attention_mask, position_ids, nbatch_pack_offset = parse_args(args)
+        hidden_states, attention_mask, position_ids, position_embeddings, nbatch_pack_offset = parse_args(args)
         max_seq_len = hidden_states.shape[1]
         if self.config.sequence_parallel:
             max_seq_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
@@ -370,6 +427,12 @@ def make_decoder_layer_pipe(decoder_layer):
         if position_ids is not None:
             position_ids_decoder = position_ids[:, :max_seq_len]
 
+        if position_embeddings is not None:
+            position_embeddings = position_embeddings[..., :max_seq_len, :]
+            tuple_position_embeddings = (position_embeddings[0], position_embeddings[1])
+        else:
+            tuple_position_embeddings = None
+
         has_gradient = not hidden_states.stop_gradient
         if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
             hidden_states = recompute(
@@ -379,6 +442,7 @@ def make_decoder_layer_pipe(decoder_layer):
                 attention_mask=tgt_mask,
                 attn_mask_start_row_indices=attn_mask_start_row_indices,
                 position_ids=position_ids_decoder,
+                position_embeddings=tuple_position_embeddings,
                 use_reentrant=self.config.recompute_use_reentrant,
             )
         else:
@@ -388,6 +452,7 @@ def make_decoder_layer_pipe(decoder_layer):
                 attention_mask=tgt_mask,
                 attn_mask_start_row_indices=attn_mask_start_row_indices,
                 position_ids=position_ids_decoder,
+                position_embeddings=tuple_position_embeddings,
             )
 
         if isinstance(hidden_states, paddle.Tensor):
@@ -396,6 +461,8 @@ def make_decoder_layer_pipe(decoder_layer):
             ret += (attention_mask.clone(),)
         if position_ids is not None:
             ret += (position_ids.clone(),)
+        if position_embeddings is not None:
+            ret += (position_embeddings.clone(),)
         if nbatch_pack_offset is not None:
             ret += (nbatch_pack_offset.clone(),)
         if len(ret) == 1:

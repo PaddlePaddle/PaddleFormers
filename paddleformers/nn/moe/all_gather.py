@@ -290,7 +290,7 @@ class AlltoAllSmart(paddle.autograd.PyLayer):
                     recv_mask.reshape([-1, num_local_experts, capacity]).transpose([1, 0, 2]).reshape([-1])
                 )
                 distributed_input_to_alltoall_out = paddle.maximum(
-                    recv_mask_alltoall_out.cumsum() - 1,
+                    (recv_mask_alltoall_out.cumsum() - 1).astype(recv_mask_alltoall_out.dtype),
                     paddle.zeros([1], dtype=recv_mask_alltoall_out.dtype),
                 )
                 distributed_input_to_alltoall_out = (

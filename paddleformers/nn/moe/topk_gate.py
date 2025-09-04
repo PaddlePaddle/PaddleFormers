@@ -269,7 +269,7 @@ class TopKGate(nn.Layer):
         else:
             self._create_gate_parameter()
         logger.info(
-            f"{config.moe_gate}: w/ capacity: {self.cap} experts:{self.num_experts} "
+            f"moe gate: w/ capacity: {self.cap} experts:{self.num_experts} "
             f"use_token_type_bias:{self.use_token_type_bias} "
             f"gate_act:{config.moe_gate_act} "
             f"norm_gate_logits={self.norm_gate_logits} use_correction_bias={self.use_correction_bias}"

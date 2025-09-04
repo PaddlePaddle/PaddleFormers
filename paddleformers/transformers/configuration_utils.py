@@ -236,6 +236,8 @@ class LlmMetaConfig:
         ("use_fused_dropout_add", bool, False, "GPT3 model, use fused `dropout + residual add` op."),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
         ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
+        ("fuse_rope", bool, False, "Whether to fuse RoPE operation"),
+        ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
     ]
 
     hybrid_parallel_attributes = [
@@ -254,6 +256,7 @@ class LlmMetaConfig:
             1,
             "The interval for the number of layers at which recomputation occurs. A value of 0 indicates no recomputation. Default is 0.",
         ),
+        ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
         ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
         ("context_parallel_degree", int, 1, "context_parallel_degree"),
@@ -504,9 +507,6 @@ class PretrainedConfig:
             If an encoder-decoder model starts decoding with a different token than _bos_, the id of that token.
         sep_token_id (`int`, *optional*): The id of the _separation_ token.
 
-        tie_word_embeddings (`bool`, *optional*, defaults to `True`):
-            Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
-            model has a output word embedding layer.
         dtype (`str`, *optional*):
             The `dtype` of the weights. This attribute can be used to initialize the model to a non-default `dtype`
             (which is normally `float32`) and thus allow for optimal storage allocation. For example, if the saved
@@ -582,9 +582,6 @@ class PretrainedConfig:
         self.quantization_config = kwargs.pop("quantization_config", QuantizationConfig())
 
         self.pruned_heads = kwargs.pop("pruned_heads", {})
-        self.tie_word_embeddings = kwargs.pop(
-            "tie_word_embeddings", True
-        )  # Whether input and output word embeddings should be tied for all MLM, LM and Seq2Seq models.
 
         # parameter for model dtype
         if "torch_dtype" in kwargs:
@@ -1062,6 +1059,9 @@ class PretrainedConfig:
             del output["_auto_class"]
         if "moe_group" in output:
             del output["moe_group"]
+        if "dtype" in output:
+            output["torch_dtype"] = str(output["dtype"])
+            del output["dtype"]
 
         # PaddleFormers version when serializing the model
         output["paddleformers_version"] = __version__

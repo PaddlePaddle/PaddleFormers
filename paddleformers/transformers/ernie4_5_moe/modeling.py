@@ -33,17 +33,17 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     mark_as_sequence_parallel_parameter,
 )
 from paddle.incubate.nn.functional import swiglu as fused_swiglu
-from paddle.incubate.tensor.manipulation import async_offload
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Ernie4_5MLP
+
 from ...nn.moe.moe_alltoall_layer import MOEAlltoAllLayer
 from ...nn.moe.moe_block import MoEStatics
 from ...nn.moe.topk_gate import TopKGate
-from ...nn.moe.utils import _parse_moe_group, get_async_loader, hack_offload_wait
+from ...nn.moe.utils import _parse_moe_group
 from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
 from ..ernie4_5.modeling import Ernie4_5Attention
@@ -84,6 +84,38 @@ def mtp_hidden_states_set_zero(hidden_states, inbatch_pack_offset):
         mask.stop_gradient = True
         hidden_states = hidden_states * mask
     return hidden_states
+
+
+class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.head_dim = config.head_dim
+        self.base = config.rope_theta
+
+    def forward(self, x, position_ids):
+        """
+        Compute rotary position embeddings for given sequence length.
+
+        Args:
+            seq_length (int): Maximum sequence length
+            position_ids (Tensor): Position ids of shape [batch_size, seq_length]
+
+        Returns:
+            Tensor: Rotary position embeddings of shape [1, 1, seq_length, head_dim]
+        """
+        indices = paddle.arange(0, self.head_dim, 2, dtype="float32")
+        indices = 1 / self.base ** (indices / self.head_dim)
+
+        sinusoid_inp = position_ids.unsqueeze(-1).astype("float32") * indices.unsqueeze(
+            0
+        )  # [b, s, 1] * [1, d/2] -> [b, s, d/2]
+        emb = paddle.concat((sinusoid_inp, sinusoid_inp), axis=-1)
+        cos = emb.cos()
+        sin = emb.sin()
+
+        # keeping it in full precision
+        return cos, sin
 
 
 class Ernie4_5_MoeMLP(Ernie4_5MLP):
@@ -217,11 +249,12 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAlltoAllLayer):
         assert (
             len(experts) == moe_num_experts  # including None
         ), f"experts.len={len(experts)} != moe_num_experts={moe_num_experts}"
+
         gate = TopKGate(config, layer_idx, group=config.moe_group)
         # (optional) shared experts for all forwards
         shared_experts = None
         if config.moe_num_shared_experts > 0:
-            config.disable_ffn_model_parallel = True  # split shared epxert
+            config.disable_ffn_model_parallel = False  # split shared epxert
             shared_experts = Ernie4_5_MoeMLP(
                 deepcopy(config), config.hidden_size, config.moe_intermediate_size * config.moe_num_shared_experts
             )
@@ -314,7 +347,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_start_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        token_type_ids: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
         output_attentions: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
@@ -340,13 +373,6 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
                 - With MoE: May include gate logits in output tuple
         """
         residual = hidden_states
-
-        if token_type_ids is not None:
-            has_dense_experts_token = (token_type_ids == self.config.moe_dense_experts_token_type_id).any()
-            async_loader = get_async_loader()
-            _, has_dense_experts_token_task = async_offload(has_dense_experts_token, async_loader)
-        else:
-            has_dense_experts_token_task = None
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
@@ -355,7 +381,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
             past_key_value=past_key_value,
             attention_mask=attention_mask,
             attn_mask_start_row_indices=attn_mask_start_row_indices,
-            position_ids=position_ids,
+            position_embeddings=position_embeddings,
             output_attentions=output_attentions,
             use_cache=use_cache,
         )
@@ -368,9 +394,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         hidden_states = self.post_attention_layernorm(hidden_states)
 
         if isinstance(self.mlp, Ernie4_5_MoeSparseMoeBlock):
-            if has_dense_experts_token_task is not None:
-                hack_offload_wait(has_dense_experts_token_task)
-            hidden_states, _, router_loss, gate_logits = self.mlp(hidden_states, token_type_ids)
+            hidden_states, _, router_loss, gate_logits = self.mlp(hidden_states)
         else:
             hidden_states = self.mlp(hidden_states)
             gate_logits, router_loss = None, None
@@ -418,7 +442,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
 
     config_class = Ernie4_5_MoeConfig
     base_model_prefix = "model"
-    _keep_in_fp32_modules = ["mlp.gate", "e_score_correction_bias"]
+    _keep_in_fp32_modules = ["mlp.gate.weight", "e_score_correction_bias"]
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "gate"]
 
     @classmethod
@@ -464,6 +488,8 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
             "mlp.down_proj.bias",
             "lm_head.bias",
         ]
+        SHARED_EXPERTS_COLWISE_KEYS = ["up_proj.weight", "gate_proj.weight"]
+        SHARED_EXPERTS_ROWWISE_KEYS = ["down_proj.weight"]
 
         def make_base_actions():
             actions = {
@@ -510,7 +536,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
             moe_group = config.moe_group if isinstance(config.moe_group, str) else config.moe_group_origin
             moe_in_mp = moe_group in {"mp", "model", "tp"}
 
-            extend_key_prefix = f"{cls.base_model_prefix}.layers.0."
+            extend_key_prefix = f"{cls.base_model_prefix}.layers.0"
 
             for i in range(num_layers):
                 # skip non-moe layers
@@ -525,18 +551,30 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                 if config.moe_num_experts > 0:
                     for eid in range(config.moe_num_experts):
                         for key in LAYER_COLWISE:
-                            exp_key = f"{experts_newkey}.{key}"
+                            exp_key = f"{experts_newkey}.{eid}.{key}"
                             action = partial(fn, is_column=True)
                             if not moe_in_mp:
                                 extend_action[exp_key] = action
 
                         for key in LAYER_ROWWISE:
-                            exp_key = f"{experts_newkey}.{key}"
+                            exp_key = f"{experts_newkey}.{eid}.{key}"
                             action = partial(fn, is_column=False)
                             if not moe_in_mp:
                                 extend_action[exp_key] = action
 
-            return extend_action | base_actions
+                if config.moe_num_shared_experts > 0:
+                    shared_expert_newkey = extend_key_prefix.replace("layers.0", f"layers.{i}.mlp.shared_experts")
+                    for key in SHARED_EXPERTS_COLWISE_KEYS:
+                        exp_key = f"{shared_expert_newkey}.{key}"
+                        action = partial(fn, is_column=True)
+                        extend_action[exp_key] = action
+
+                    for key in SHARED_EXPERTS_ROWWISE_KEYS:
+                        exp_key = f"{shared_expert_newkey}.{key}"
+                        action = partial(fn, is_column=False)
+                        extend_action[exp_key] = action
+            extend_action.update(base_actions)
+            return extend_action
 
         base_actions = make_base_actions()
         mappings = expand_actions(base_actions, config.num_hidden_layers)
@@ -583,6 +621,8 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             norm_eps=self.config.rms_norm_eps,
         )
 
+        self.rotary_emb = Ernie4_5_MoeRotaryEmbedding(config)
+
         if self.config.num_nextn_predict_layers > 0:
             self.mtp_block = paddle.nn.LayerList(
                 [
@@ -591,13 +631,6 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 ]
             )
 
-            GeneralNorm.create(
-                config=config,
-                norm_type="rms_norm",
-                hidden_size=config.hidden_size,
-                has_bias=config.use_bias,
-                norm_eps=self.config.rms_norm_eps,
-            )
             self.mtp_hidden_norm = paddle.nn.LayerList(
                 [
                     GeneralNorm.create(
@@ -649,7 +682,6 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         attention_mask,
         attn_mask_start_row_indices,
         position_ids,
-        token_type_ids,
         output_attentions,
         past_key_value,
         use_cache,
@@ -682,7 +714,6 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             attention_mask,
             attn_mask_start_row_indices,
             position_ids,
-            token_type_ids,
             output_attentions,
             past_key_value,
             use_cache,
@@ -693,7 +724,6 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         self,
         input_ids=None,
         position_ids=None,
-        token_type_ids=None,
         attention_mask=None,
         attn_mask_start_row_indices=None,
         inputs_embeds=None,
@@ -740,9 +770,9 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
         elif input_ids is not None:
-            _, seq_length = input_ids.shape
+            bsz, seq_length = input_ids.shape
         elif inputs_embeds is not None:
-            _, seq_length, _ = inputs_embeds.shape
+            bsz, seq_length, _ = inputs_embeds.shape
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
@@ -751,6 +781,9 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             kv_seq_len = 0
         else:
             kv_seq_len = past_key_values[0][0].shape[1]
+
+        if position_ids is None:
+            position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))
 
         seq_length -= self.config.num_nextn_predict_layers
 
@@ -803,6 +836,11 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         hidden_states = inputs_embeds
+        
+        if self.config.fuse_rope:
+            position_embeddings = None
+        else:
+            position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -825,7 +863,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     attention_mask,
                     attn_mask_start_row_indices,
                     position_ids,
-                    token_type_ids,
+                    position_embeddings,
                     output_attentions,
                     past_key_value,
                     use_cache,
@@ -836,7 +874,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     attention_mask,
                     attn_mask_start_row_indices,
                     position_ids,
-                    token_type_ids,
+                    position_embeddings,
                     output_attentions,
                     past_key_value,
                     use_cache,
@@ -928,7 +966,6 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     attention_mask,
                     attn_mask_start_row_indices,
                     position_ids,
-                    token_type_ids,
                     output_attentions,
                     past_key_value,
                     use_cache,
@@ -1021,7 +1058,6 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         position_ids=None,
         attention_mask=None,
         attn_mask_start_row_indices=None,
-        token_type_ids=None,  # for moe token-type routing
         inputs_embeds=None,
         labels=None,
         loss_mask=None,
@@ -1062,7 +1098,6 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
             input_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
             attn_mask_start_row_indices=attn_mask_start_row_indices,
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,

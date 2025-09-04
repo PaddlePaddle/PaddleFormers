@@ -79,7 +79,6 @@ class Ernie4_5_MoeModelTester:
         global_aux_loss=False,
         moe_dropout_prob=0.0,
         moe_group="dummy",
-        moe_gate="topk",
         moe_intermediate_size=32,
         moe_num_shared_experts=1,
         moe_layer_start_index=1,
@@ -97,7 +96,6 @@ class Ernie4_5_MoeModelTester:
         num_acc_steps=1,
         fuse_gate_detach_matmul=False,
         moe_use_hard_gate=False,
-        moe_dense_experts_token_type_id=3,
         num_nextn_predict_layers=0,
         multi_token_pred_lambda=0.1,
         enable_mtp_magic_send=False,
@@ -152,7 +150,6 @@ class Ernie4_5_MoeModelTester:
         self.moe_layer_interval = moe_layer_interval
         self.moe_dropout_prob = moe_dropout_prob
         self.moe_group = moe_group
-        self.moe_gate = moe_gate
         self.moe_intermediate_size = moe_intermediate_size
         self.moe_num_shared_experts = moe_num_shared_experts
         self.moe_layer_start_index = moe_layer_start_index
@@ -172,7 +169,6 @@ class Ernie4_5_MoeModelTester:
         self.moe_use_aux_free = moe_use_aux_free
         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
         self.moe_use_hard_gate = moe_use_hard_gate
-        self.moe_dense_experts_token_type_id = moe_dense_experts_token_type_id
         self.num_nextn_predict_layers = num_nextn_predict_layers
         self.multi_token_pred_lambda = multi_token_pred_lambda
         self.enable_mtp_magic_send = enable_mtp_magic_send
@@ -246,7 +242,6 @@ class Ernie4_5_MoeModelTester:
             moe_layer_interval=self.moe_layer_interval,
             moe_dropout_prob=self.moe_dropout_prob,
             moe_group=self.moe_group,
-            moe_gate=self.moe_gate,
             moe_intermediate_size=self.moe_intermediate_size,
             moe_num_shared_experts=self.moe_num_shared_experts,
             moe_layer_start_index=self.moe_layer_start_index,
@@ -265,7 +260,6 @@ class Ernie4_5_MoeModelTester:
             moe_use_aux_free=self.moe_use_aux_free,
             fuse_gate_detach_matmul=self.fuse_gate_detach_matmul,
             moe_use_hard_gate=self.moe_use_hard_gate,
-            moe_dense_experts_token_type_id=self.moe_dense_experts_token_type_id,
             num_nextn_predict_layers=self.num_nextn_predict_layers,
             multi_token_pred_lambda=self.multi_token_pred_lambda,
             enable_mtp_magic_send=self.enable_mtp_magic_send,
