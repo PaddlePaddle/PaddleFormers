@@ -32,7 +32,7 @@ install_requirements() {
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
-    python -m pip install --no-cache-dir ${paddle}
+    python -m pip install -U https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/94c404eaf95cb22e3404b811b50888abf2122141/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --force-reinstall --no-dependencies;
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
 
     python setup.py bdist_wheel > /dev/null
@@ -104,6 +104,9 @@ get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     install_requirements
+    wget https://paddleformers.bj.bcebos.com/wheels/aistudio_sdk-0.3.6b1-py3-none-any.whl
+	python -m pip install aistudio_sdk-0.3.6b1-py3-none-any.whl --force-reinstall
+	python -m pip list |grep aistudio
     cd ${nlp_dir}
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
