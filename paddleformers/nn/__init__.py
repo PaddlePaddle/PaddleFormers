@@ -82,6 +82,7 @@ if TYPE_CHECKING:
     from .mlp import *
     from .moe import *
     from .norm import *
+    from .pp_model import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

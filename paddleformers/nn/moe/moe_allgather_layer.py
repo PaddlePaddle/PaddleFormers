@@ -131,7 +131,6 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         self.enable_reverse_token_drop = enable_reverse_token_drop
         self.use_padding = use_padding
         self.multimodal_experts = isinstance(moe_num_experts, (tuple, list)) and len(moe_num_experts) > 1
-        # 全局 gate gather
         self.send_rank = None
         self.local_expert_id = None
         self.dense_token_type = dense_token_type
@@ -243,10 +242,8 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
 
         else:
             all_expert_num = sum(expert_num_global_list)
-            # 非常慢
             if self.config.moe_group.nranks > 1:
                 recv_rank = paddle.empty([all_expert_num], dtype=recv_rank_local.dtype)
-                # 非常慢
                 recv_rank_task = dist.stream.alltoall_single(
                     recv_rank,
                     recv_rank_local.tile(self.config.moe_world_size),

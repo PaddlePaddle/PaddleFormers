@@ -281,7 +281,7 @@ class MOEAlltoAllLayer(MOELayerBase):
                 else:
                     lm_prob = self.gate.act(lm_partial_gate_logits)
                 prob = paddle.scatter_nd_add(prob, lm_mask_nonzero, lm_prob.flatten())
-            # 处理 mm_prob
+
             is_mm = offload_helper["mm_mask"][1]
             if is_mm:
                 mm_mask = offload_helper["mm_mask"][0]
@@ -291,7 +291,6 @@ class MOEAlltoAllLayer(MOELayerBase):
                 mm_prob = self.gate.act(mm_partial_gate_logits)
                 prob = paddle.scatter_nd_add(prob, mm_mask_nonzero, mm_prob.flatten())
         else:
-            # 处理非硬门和不需要token_type_ids的情况
             if self.group_experts:
                 prob = self.gate.act(gate_logits.reshape([gate_logits.shape[0], k, -1]))
                 max_prob = prob.max(-1, keepdim=True)
@@ -368,7 +367,6 @@ class MOEAlltoAllLayer(MOELayerBase):
                 else:
                     p = max_prob
                 combine_weights_unnorm = (combine_weights_unnorm.unsqueeze(-1) * p).squeeze(-1)
-                # gate_prob 进行还原
                 prob = (prob.reshape([p.shape[0], k, -1]) * p).reshape([p.shape[0], -1])
         if self.gate.norm_gate_logits:
             combine_weights = combine_weights_unnorm / paddle.clip(

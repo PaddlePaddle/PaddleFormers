@@ -315,10 +315,6 @@ class EmbeddingPipe(nn.Layer):
                     bias=-1.0,
                     bias_after_scale=False,
                 )
-        # logger.info(f"[cheng] erniekit debug input_ids rank{dist.get_rank()},{input_ids},{input_ids._md5sum()},")
-        logger.info(
-            f"[cheng] paddleformers debug input_ids rank{paddle.distributed.get_rank()} :,{input_ids},{input_ids._md5sum()}"
-        )
 
         if attention_mask is not None:
             ret += (attention_mask.clone(),)
