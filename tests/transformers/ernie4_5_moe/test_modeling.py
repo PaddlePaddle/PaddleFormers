@@ -32,8 +32,6 @@ from tests.transformers.test_modeling_common import (
     random_attention_mask,
 )
 
-paddle.device.set_device("cpu")
-
 require_at_least_one_gpu = require_gpu(1)
 
 

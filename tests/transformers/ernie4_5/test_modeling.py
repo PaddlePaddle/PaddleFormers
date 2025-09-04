@@ -49,6 +49,7 @@ class Ernie4_5ModelTester:
         head_dim=128,
         num_hidden_layers=2,
         num_attention_heads=8,
+        num_key_value_heads=2,
         masked_softmax_fusion=True,
         layer_norm_epsilon=1e-5,
         initializer_range=0.02,
@@ -81,6 +82,7 @@ class Ernie4_5ModelTester:
         self.head_dim = head_dim
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
         self.masked_softmax_fusion = masked_softmax_fusion
         self.layer_norm_epsilon = layer_norm_epsilon
         self.initializer_range = initializer_range
@@ -134,6 +136,7 @@ class Ernie4_5ModelTester:
             head_dim=self.head_dim,
             num_hidden_layers=self.num_hidden_layers,
             num_attention_heads=self.num_attention_heads,
+            num_key_value_heads=self.num_key_value_heads,
             masked_softmax_fusion=self.masked_softmax_fusion,
             layer_norm_epsilon=self.layer_norm_epsilon,
             initializer_range=self.initializer_range,
@@ -448,7 +451,9 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = Ernie4_5Config(hidden_size=16, num_hidden_layers=1, num_attention_heads=2)
+        config = Ernie4_5Config(
+            hidden_size=16, num_hidden_layers=1, num_attention_heads=2, head_dim=8, num_key_value_heads=1
+        )
         model = Ernie4_5ForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
 
