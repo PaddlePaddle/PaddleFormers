@@ -141,7 +141,6 @@ jobs:
           FROM ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev
           RUN python -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
           RUN python -m pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
-          RUN python -m pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --no-cache-dir --force-reinstall
           RUN python -m pip install bce-python-sdk==0.8.74
           COPY PaddleFormers/ /tmp/paddleformers/
           WORKDIR /tmp/paddleformers
