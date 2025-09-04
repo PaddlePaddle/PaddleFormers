@@ -52,7 +52,7 @@ jobs:
             -e paddle_whl \
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
-            -w /workspace --runtime=nvidia $IMAGE_NAME
+            -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             
       - name: Download Code
         run: |

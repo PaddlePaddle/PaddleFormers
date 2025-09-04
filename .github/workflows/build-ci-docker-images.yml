@@ -54,7 +54,7 @@ jobs:
             -e COMMIT_ID \
             -e work_dir \
             -e no_proxy \
-            -w /workspace --runtime=nvidia ${docker_image}
+            -w /workspace --runtime=nvidia --privileged ${docker_image}
 
       - name: Download Code
         env:
