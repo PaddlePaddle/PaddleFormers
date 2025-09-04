@@ -126,7 +126,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        attn_mask_start_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
@@ -160,7 +160,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             attention_mask,
             output_attentions,
             use_cache,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            attn_mask_start_row_indices=attn_mask_start_row_indices,
             position_embedding=position_embedding,
             batch_size=batch_size,
         )
@@ -415,7 +415,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         past_key_value: Tensor,
         use_cache: bool,
         position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_startend_row_indices=None,
+        attn_mask_start_row_indices=None,
         batch_size: int = None,
     ):
         def create_custom_forward(module):
@@ -434,7 +434,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
             past_key_value,
             use_cache,
             position_embedding,
-            attn_mask_startend_row_indices,
+            attn_mask_start_row_indices,
             batch_size,
         )
 
@@ -452,7 +452,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         output_hidden_states: Optional[bool] = None,
         output_router_logits: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        attn_mask_startend_row_indices=None,
+        attn_mask_start_row_indices=None,
         **kwargs,
     ) -> Union[Tuple, MoEModelOutputWithPast]:
 
@@ -494,7 +494,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        if attn_mask_startend_row_indices is not None:
+        if attn_mask_start_row_indices is not None:
             attention_mask = None
         else:
             attention_mask = self._prepare_decoder_attention_mask(
@@ -529,7 +529,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
                     past_key_value,
                     use_cache,
                     position_embedding=position_embedding,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    attn_mask_start_row_indices=attn_mask_start_row_indices,
                     batch_size=batch_size,
                 )
             else:
@@ -542,7 +542,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
                     past_key_value,
                     use_cache,
                     position_embedding=position_embedding,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    attn_mask_start_row_indices=attn_mask_start_row_indices,
                     batch_size=batch_size,
                 )
 
@@ -684,7 +684,7 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         output_hidden_states: Optional[bool] = None,
         output_router_logits: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        attn_mask_startend_row_indices=None,
+        attn_mask_start_row_indices=None,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -695,10 +695,10 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+        if attn_mask_start_row_indices is not None and attention_mask is not None:
             logger.warning(
-                "You have provided both attn_mask_startend_row_indices and attention_mask. "
-                "The attn_mask_startend_row_indices will be used."
+                "You have provided both attn_mask_start_row_indices and attention_mask. "
+                "The attn_mask_start_row_indices will be used."
             )
             attention_mask = None
 
@@ -714,7 +714,7 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
             output_hidden_states=output_hidden_states,
             output_router_logits=output_router_logits,
             return_dict=return_dict,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            attn_mask_start_row_indices=attn_mask_start_row_indices,
         )
 
         hidden_states = outputs[0]  # [bs, seq_len, dim]

@@ -23,17 +23,12 @@ from paddle.distributed.fleet.meta_parallel import (
     PipelineLayer,
     SharedLayerDesc,
 )
-from paddle.distributed.fleet.recompute.recompute import recompute
 
+from ...nn.criterion.interface import CriterionLayer
+from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.norm import Norm as GeneralNorm
 from ..model_utils import PipelinePretrainedModel
-from .modeling import (
-    Qwen3MoeConfig,
-    Qwen3MoeDecoderLayer,
-    Qwen3MoeLMHead,
-    Qwen3MoePretrainedModel,
-    Qwen3MoePretrainingCriterion,
-    Qwen3MoeRMSNorm,
-)
+from .modeling import Qwen3MoeConfig, Qwen3MoeDecoderLayer, Qwen3MoePretrainedModel
 
 __all__ = [
     "Qwen3MoeForCausalLMPipe",
@@ -55,8 +50,6 @@ class Qwen3MoeDecoderLayerPipe(Qwen3MoeDecoderLayer):
     def forward(self, args):
         hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids = parse_args(args)
 
-        has_gradient = not hidden_states.stop_gradient
-
         if attention_mask is not None and attention_mask.dtype == paddle.int32:
             attention_mask, attn_mask_startend_row_indices, position_ids = (
                 None,
@@ -68,32 +61,12 @@ class Qwen3MoeDecoderLayerPipe(Qwen3MoeDecoderLayer):
         elif attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.dtype == paddle.int64:
             attn_mask_startend_row_indices, position_ids = None, attn_mask_startend_row_indices
 
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
-            if attention_mask is not None or attn_mask_startend_row_indices is not None:
-                hidden_states = recompute(
-                    super().forward,
-                    hidden_states,
-                    position_ids=position_ids,
-                    attention_mask=attention_mask,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    use_reentrant=False,
-                )
-            else:
-                # for pretrain
-                hidden_states = recompute(
-                    super().forward,
-                    hidden_states,
-                    position_ids=position_ids,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    use_reentrant=self.config.recompute_use_reentrant,
-                )
-        else:
-            hidden_states = super().forward(
-                hidden_states,
-                position_ids=position_ids,
-                attention_mask=attention_mask,
-                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            )
+        hidden_states = super().forward(
+            hidden_states,
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+        )
 
         return return_args(hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids)
 
@@ -101,15 +74,19 @@ class Qwen3MoeDecoderLayerPipe(Qwen3MoeDecoderLayer):
 class Qwen3MoeRMSNormPipe(nn.Layer):
     def __init__(self, config):
         super().__init__()
-        self.norm = Qwen3MoeRMSNorm(config)
+        self.norm = GeneralNorm.create(
+            config=config,
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+        )
 
     def forward(self, args):
         hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids = parse_args(args)
         return self.norm(hidden_states)
 
 
-class Qwen3MoeLMHeadPipe(Qwen3MoeLMHead):
-    def __init__(self, config, transpose_y=False):
+class Qwen3MoeLMHeadPipe(GeneralLMHead):
+    def __init__(self, config):
         super(Qwen3MoeLMHeadPipe, self).__init__(config)
 
     @property
@@ -160,14 +137,7 @@ class Qwen3MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     def __init__(self, config: Qwen3MoeConfig):
         self.config = config
 
-        # Note that we will actually perform a recompute only if both enable_recompute and layerwise_recompute are set to True
-        # Enable_recompute defaults to False and is controlled by Trainer
-        self.enable_recompute = False
-        self.recompute_granularity = self.config.recompute_granularity
         self.pp_recompute_interval = self.config.pp_recompute_interval
-        self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
-        if self.recompute_granularity == "full":
-            assert len(self.no_recompute_layers) == 0, "for pp with full recompute, no_recompute_layers is not support"
 
         virtual_pp_degree = getattr(self.config, "virtual_pp_degree", 1)
 
@@ -200,7 +170,7 @@ class Qwen3MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 LayerDesc(
                     Qwen3MoeDecoderLayerPipe,
                     config=config,
-                    layerwise_recompute=i not in self.no_recompute_layers,
+                    layer_idx=i,
                 ),
                 f"model.layers.{i}",
             )
@@ -213,7 +183,6 @@ class Qwen3MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     Qwen3MoeLMHeadPipe,
                     shared_weight_attr="embedding_weight",
                     config=config,
-                    **{"transpose_y": True},
                 ),
                 "lm_head",
             )
@@ -221,11 +190,6 @@ class Qwen3MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self.add_sequential_layer(LayerDesc(Qwen3MoeLMHeadPipe, config=config), "lm_head")
 
         recompute_interval = 0
-        if self.enable_recompute and self.recompute_granularity == "full":
-            assert self.config.pp_recompute_interval <= config.num_hidden_layers // (
-                virtual_pp_degree * get_hcg().topology().get_dim_size("pipe")
-            ), "pp recompute interval should smaller than num layers of each pp chunk"
-            recompute_interval = self.config.pp_recompute_interval
 
         seg_method = "layer:Qwen3MoeDecoderLayer"
         if config.num_hidden_layers % get_hcg().topology().get_dim_size("pipe") != 0:
@@ -251,4 +215,4 @@ class Qwen3MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         # PipelinePretrainedModel.__init__(self.super(), config=config)
 
     def get_loss_fn(self, config):
-        return Qwen3MoePretrainingCriterion(config)
+        return CriterionLayer(config)

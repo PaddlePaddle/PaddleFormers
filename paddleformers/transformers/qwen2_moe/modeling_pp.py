@@ -23,18 +23,18 @@ from paddle.distributed.fleet.meta_parallel import (
     PipelineLayer,
     SharedLayerDesc,
 )
-from paddle.distributed.fleet.recompute.recompute import recompute
 
+from ...nn.criterion.interface import CriterionLayer
+from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.norm import Norm as GeneralNorm
 from ...utils.tools import get_env_device
 from ..model_utils import PipelinePretrainedModel
 from .modeling import (
     Qwen2MoeConfig,
     Qwen2MoeDecoderLayer,
-    Qwen2MoeLMHead,
     Qwen2MoeModel,
     Qwen2MoePretrainedModel,
-    Qwen2MoePretrainingCriterion,
-    Qwen2MoeRMSNorm,
 )
 
 __all__ = [
@@ -96,16 +96,9 @@ class Qwen2MoeEmbeddingPipe(nn.Layer):
     def __init__(self, config: Qwen2MoeConfig):
         super(Qwen2MoeEmbeddingPipe, self).__init__()
         self.config = config
-        self.sequence_parallel = config.sequence_parallel
-        self.hidden_size = config.hidden_size
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            self.embed_tokens = fleet.meta_parallel.VocabParallelEmbedding(
-                config.vocab_size,
-                config.hidden_size,
-                weight_attr=paddle.ParamAttr(initializer=nn.initializer.XavierNormal()),
-            )
-        else:
-            self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
+        self.embed_tokens = GeneralEmbedding.create(
+            config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
+        )
 
     @property
     def embedding_weight(self):
@@ -155,8 +148,6 @@ class Qwen2MoeDecoderLayerPipe(Qwen2MoeDecoderLayer):
     def forward(self, args):
         hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids = parse_args(args)
 
-        has_gradient = not hidden_states.stop_gradient
-
         if attention_mask is not None and attention_mask.dtype == paddle.int32:
             attention_mask, attn_mask_startend_row_indices, position_ids = (
                 None,
@@ -168,32 +159,12 @@ class Qwen2MoeDecoderLayerPipe(Qwen2MoeDecoderLayer):
         elif attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.dtype == paddle.int64:
             attn_mask_startend_row_indices, position_ids = None, attn_mask_startend_row_indices
 
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
-            if attention_mask is not None or attn_mask_startend_row_indices is not None:
-                hidden_states = recompute(
-                    super().forward,
-                    hidden_states,
-                    position_ids=position_ids,
-                    attention_mask=attention_mask,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    use_reentrant=False,
-                )
-            else:
-                # for pretrain
-                hidden_states = recompute(
-                    super().forward,
-                    hidden_states,
-                    position_ids=position_ids,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    use_reentrant=self.config.recompute_use_reentrant,
-                )
-        else:
-            hidden_states = super().forward(
-                hidden_states,
-                position_ids=position_ids,
-                attention_mask=attention_mask,
-                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            )
+        hidden_states = super().forward(
+            hidden_states,
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+        )
 
         return return_args(hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids)
 
@@ -201,15 +172,19 @@ class Qwen2MoeDecoderLayerPipe(Qwen2MoeDecoderLayer):
 class Qwen2MoeRMSNormPipe(nn.Layer):
     def __init__(self, config):
         super().__init__()
-        self.norm = Qwen2MoeRMSNorm(config)
+        self.norm = GeneralNorm.create(
+            config=config,
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+        )
 
     def forward(self, args):
         hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids = parse_args(args)
         return self.norm(hidden_states)
 
 
-class Qwen2MoeLMHeadPipe(Qwen2MoeLMHead):
-    def __init__(self, config, transpose_y=False):
+class Qwen2MoeLMHeadPipe(GeneralLMHead):
+    def __init__(self, config):
         super(Qwen2MoeLMHeadPipe, self).__init__(config)
 
     @property
@@ -260,14 +235,7 @@ class Qwen2MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     def __init__(self, config: Qwen2MoeConfig):
         self.config = config
 
-        # Note that we will actually perform a recompute only if both enable_recompute and layerwise_recompute are set to True
-        # Enable_recompute defaults to False and is controlled by Trainer
-        self.enable_recompute = False
-        self.recompute_granularity = self.config.recompute_granularity
         self.pp_recompute_interval = self.config.pp_recompute_interval
-        self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
-        if self.recompute_granularity == "full":
-            assert len(self.no_recompute_layers) == 0, "for pp with full recompute, no_recompute_layers is not support"
 
         virtual_pp_degree = getattr(self.config, "virtual_pp_degree", 1)
 
@@ -290,21 +258,21 @@ class Qwen2MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     shared_weight_attr="embedding_weight",
                     config=config,
                 ),
-                "qwen2_moe",
+                "model",
             )
         else:
-            self.add_sequential_layer(LayerDesc(Qwen2MoeEmbeddingPipe, config=config), "qwen2_moe")
+            self.add_sequential_layer(LayerDesc(Qwen2MoeEmbeddingPipe, config=config), "model")
 
         for i in range(config.num_hidden_layers):
             self.add_sequential_layer(
                 LayerDesc(
                     Qwen2MoeDecoderLayerPipe,
                     config=config,
-                    layerwise_recompute=i not in self.no_recompute_layers,
+                    layer_idx=i,
                 ),
-                f"qwen2_moe.layers.{i}",
+                f"model.layers.{i}",
             )
-        self.add_sequential_layer(LayerDesc(Qwen2MoeRMSNormPipe, config=config), "qwen2_moe")
+        self.add_sequential_layer(LayerDesc(Qwen2MoeRMSNormPipe, config=config), "model")
 
         if config.tie_word_embeddings:
             self.add_sequential_layer(
@@ -313,7 +281,6 @@ class Qwen2MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     Qwen2MoeLMHeadPipe,
                     shared_weight_attr="embedding_weight",
                     config=config,
-                    **{"transpose_y": True},
                 ),
                 "lm_head",
             )
@@ -321,11 +288,6 @@ class Qwen2MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self.add_sequential_layer(LayerDesc(Qwen2MoeLMHeadPipe, config=config), "lm_head")
 
         recompute_interval = 0
-        if self.enable_recompute and self.recompute_granularity == "full":
-            assert self.config.pp_recompute_interval <= config.num_hidden_layers // (
-                virtual_pp_degree * get_hcg().topology().get_dim_size("pipe")
-            ), "pp recompute interval should smaller than num layers of each pp chunk"
-            recompute_interval = self.config.pp_recompute_interval
 
         seg_method = "layer:Qwen2MoeDecoderLayer"
         if config.num_hidden_layers % get_hcg().topology().get_dim_size("pipe") != 0:
@@ -351,4 +313,4 @@ class Qwen2MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         # PipelinePretrainedModel.__init__(self.super(), config=config)
 
     def get_loss_fn(self, config):
-        return Qwen2MoePretrainingCriterion(config)
+        return CriterionLayer(config)

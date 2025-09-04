@@ -95,7 +95,7 @@ class Qwen3Attention(Qwen2Attention):
         output_attentions: bool = False,
         use_cache: bool = False,
         position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        attn_mask_start_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
@@ -116,7 +116,7 @@ class Qwen3Attention(Qwen2Attention):
         key_states = self.k_norm(key_states.reshape(shape=target_key_value_shape))
         value_states = value_states.reshape(shape=target_key_value_shape)
 
-        if attn_mask_startend_row_indices is None and attention_mask is None:
+        if attn_mask_start_row_indices is None and attention_mask is None:
             self.attn_implementation = "sdpa"
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
@@ -135,7 +135,7 @@ class Qwen3Attention(Qwen2Attention):
             key=key_states,
             value=value_states,
             attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            attn_mask_start_row_indices=attn_mask_start_row_indices,
             dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
             scaling=self.scaling,
         )
@@ -184,7 +184,7 @@ class Qwen3DecoderLayer(nn.Layer):
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        attn_mask_start_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
@@ -212,7 +212,7 @@ class Qwen3DecoderLayer(nn.Layer):
             hidden_states=hidden_states,
             past_key_value=past_key_value,
             attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            attn_mask_start_row_indices=attn_mask_start_row_indices,
             position_ids=position_ids,
             output_attentions=output_attentions,
             use_cache=use_cache,
@@ -442,7 +442,7 @@ class Qwen3Model(Qwen3PretrainedModel):
         past_key_value: Tensor,
         use_cache: bool,
         position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_startend_row_indices=None,
+        attn_mask_start_row_indices=None,
         batch_size: int = None,
     ):
         def create_custom_forward(module):
@@ -460,7 +460,7 @@ class Qwen3Model(Qwen3PretrainedModel):
             past_key_value,
             use_cache,
             position_embedding,
-            attn_mask_startend_row_indices,
+            attn_mask_start_row_indices,
             batch_size,
         )
 
@@ -477,7 +477,7 @@ class Qwen3Model(Qwen3PretrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        attn_mask_startend_row_indices=None,
+        attn_mask_start_row_indices=None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -514,7 +514,7 @@ class Qwen3Model(Qwen3PretrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        if attn_mask_startend_row_indices is not None:
+        if attn_mask_start_row_indices is not None:
             attention_mask = None
         else:
             attention_mask = self._prepare_decoder_attention_mask(
@@ -547,7 +547,7 @@ class Qwen3Model(Qwen3PretrainedModel):
                     past_key_value,
                     use_cache,
                     position_embedding,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    attn_mask_start_row_indices=attn_mask_start_row_indices,
                     batch_size=batch_size,
                 )
             else:
@@ -559,7 +559,7 @@ class Qwen3Model(Qwen3PretrainedModel):
                     past_key_value,
                     use_cache,
                     position_embedding,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    attn_mask_start_row_indices=attn_mask_start_row_indices,
                     batch_size=batch_size,
                 )
 
@@ -678,7 +678,7 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        attn_mask_startend_row_indices=None,
+        attn_mask_start_row_indices=None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -712,10 +712,10 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+        if attn_mask_start_row_indices is not None and attention_mask is not None:
             logger.warning(
-                "You have provided both attn_mask_startend_row_indices and attention_mask. "
-                "The attn_mask_startend_row_indices will be used."
+                "You have provided both attn_mask_start_row_indices and attention_mask. "
+                "The attn_mask_start_row_indices will be used."
             )
             attention_mask = None
 
@@ -730,7 +730,7 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            attn_mask_start_row_indices=attn_mask_start_row_indices,
         )
 
         hidden_states = outputs[0]

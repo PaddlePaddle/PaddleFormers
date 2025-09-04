@@ -23,22 +23,15 @@ from paddle.distributed.fleet.meta_parallel import (
     PipelineLayer,
     SharedLayerDesc,
 )
-from paddle.distributed.fleet.recompute.recompute import recompute
 
+from ...nn.criterion.interface import CriterionLayer
+from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.norm import Norm as GeneralNorm
 from ...utils.tools import get_env_device
 from ..dpo_criterion import DPOCriterion
 from ..model_utils import PipelinePretrainedModel
-from ..refined_recompute import get_skip_recompute_ops
-from ..refined_recompute import recompute as rr_recompute
-from .modeling import (
-    Qwen3Config,
-    Qwen3DecoderLayer,
-    Qwen3LMHead,
-    Qwen3Model,
-    Qwen3PretrainedModel,
-    Qwen3PretrainingCriterion,
-    Qwen3RMSNorm,
-)
+from .modeling import Qwen3Config, Qwen3DecoderLayer, Qwen3Model, Qwen3PretrainedModel
 
 __all__ = [
     "Qwen3ForCausalLMPipe",
@@ -48,16 +41,16 @@ __all__ = [
 def parse_args(args):
     if isinstance(args, tuple):
         if len(args) == 4:
-            hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids = args
+            hidden_states, attention_mask, attn_mask_start_row_indices, position_ids = args
         elif len(args) == 3:
-            hidden_states, attention_mask, attn_mask_startend_row_indices = args
+            hidden_states, attention_mask, attn_mask_start_row_indices = args
             position_ids = None
         elif len(args) == 2:
             hidden_states, attention_mask = args
-            attn_mask_startend_row_indices, position_ids = None, None
+            attn_mask_start_row_indices, position_ids = None, None
     else:
         hidden_states = args
-        attention_mask, attn_mask_startend_row_indices, position_ids = None, None, None
+        attention_mask, attn_mask_start_row_indices, position_ids = None, None, None
 
     if position_ids is not None:
         position_ids.stop_gradient = True
@@ -65,19 +58,19 @@ def parse_args(args):
     if attention_mask is not None:
         attention_mask.stop_gradient = True
 
-    if attn_mask_startend_row_indices is not None:
-        attn_mask_startend_row_indices.stop_gradient = True
+    if attn_mask_start_row_indices is not None:
+        attn_mask_start_row_indices.stop_gradient = True
 
-    return hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids
+    return hidden_states, attention_mask, attn_mask_start_row_indices, position_ids
 
 
-def return_args(hidden_states, attention_mask=None, attn_mask_startend_row_indices=None, position_ids=None):
+def return_args(hidden_states, attention_mask=None, attn_mask_start_row_indices=None, position_ids=None):
     ret = (hidden_states,)
 
     if attention_mask is not None:
         ret += (attention_mask.clone(),)
-    if attn_mask_startend_row_indices is not None:
-        ret += (attn_mask_startend_row_indices.clone(),)
+    if attn_mask_start_row_indices is not None:
+        ret += (attn_mask_start_row_indices.clone(),)
     if position_ids is not None:
         ret += (position_ids.clone(),)
     if len(ret) == 1:
@@ -99,16 +92,9 @@ class Qwen3EmbeddingPipe(nn.Layer):
     def __init__(self, config: Qwen3Config):
         super(Qwen3EmbeddingPipe, self).__init__()
         self.config = config
-        self.sequence_parallel = config.sequence_parallel
-        self.hidden_size = config.hidden_size
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            self.embed_tokens = fleet.meta_parallel.VocabParallelEmbedding(
-                config.vocab_size,
-                config.hidden_size,
-                weight_attr=paddle.ParamAttr(initializer=nn.initializer.XavierNormal()),
-            )
-        else:
-            self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
+        self.embed_tokens = GeneralEmbedding.create(
+            config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
+        )
 
     @property
     def embedding_weight(self):
@@ -123,7 +109,7 @@ class Qwen3EmbeddingPipe(nn.Layer):
         Returns:
             _type_: _description_
         """
-        input_ids, attention_mask, attn_mask_startend_row_indices, position_ids = parse_args(args)
+        input_ids, attention_mask, attn_mask_start_row_indices, position_ids = parse_args(args)
         input_embeds = self.embed_tokens(input_ids)
         if self.config.sequence_parallel:
             from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
@@ -138,8 +124,8 @@ class Qwen3EmbeddingPipe(nn.Layer):
 
         if attention_mask is not None:
             assert (
-                attn_mask_startend_row_indices is None
-            ), "attention_mask and attn_mask_startend_row_indices can not be set at same time"
+                attn_mask_start_row_indices is None
+            ), "attention_mask and attn_mask_start_row_indices can not be set at same time"
 
             attention_mask = Qwen3Model._prepare_decoder_attention_mask(
                 attention_mask, (batch_size, seq_length), 0, input_embeds.dtype
@@ -151,70 +137,51 @@ class Qwen3EmbeddingPipe(nn.Layer):
             attention_mask = paddle.tril(paddle.ones((seq_length, seq_length), dtype="bool"))
             attention_mask.stop_gradient = True
 
-        return return_args(input_embeds, attention_mask, attn_mask_startend_row_indices, position_ids)
+        return return_args(input_embeds, attention_mask, attn_mask_start_row_indices, position_ids)
 
 
 class Qwen3DecoderLayerPipe(Qwen3DecoderLayer):
     def forward(self, args):
-        hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids = parse_args(args)
-
-        has_gradient = not hidden_states.stop_gradient
+        hidden_states, attention_mask, attn_mask_start_row_indices, position_ids = parse_args(args)
 
         if attention_mask is not None and attention_mask.dtype == paddle.int32:
-            attention_mask, attn_mask_startend_row_indices, position_ids = (
+            attention_mask, attn_mask_start_row_indices, position_ids = (
                 None,
                 attention_mask,
-                attn_mask_startend_row_indices,
+                attn_mask_start_row_indices,
             )
         elif attention_mask is not None and attention_mask.dtype == paddle.int64:
-            attention_mask, attn_mask_startend_row_indices, position_ids = None, None, attention_mask
-        elif attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.dtype == paddle.int64:
-            attn_mask_startend_row_indices, position_ids = None, attn_mask_startend_row_indices
+            attention_mask, attn_mask_start_row_indices, position_ids = None, None, attention_mask
+        elif attn_mask_start_row_indices is not None and attn_mask_start_row_indices.dtype == paddle.int64:
+            attn_mask_start_row_indices, position_ids = None, attn_mask_start_row_indices
 
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
-            recompute_fn = rr_recompute if any(self.skip_recompute_ops.values()) else recompute
-            if attention_mask is not None or attn_mask_startend_row_indices is not None:
-                hidden_states = recompute_fn(
-                    super().forward,
-                    hidden_states,
-                    position_ids=position_ids,
-                    attention_mask=attention_mask,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    use_reentrant=False,
-                )
-            else:
-                # for pretrain
-                hidden_states = recompute_fn(
-                    super().forward,
-                    hidden_states,
-                    position_ids=position_ids,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    use_reentrant=self.config.recompute_use_reentrant,
-                )
-        else:
-            hidden_states = super().forward(
-                hidden_states,
-                position_ids=position_ids,
-                attention_mask=attention_mask,
-                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            )
+        hidden_states = super().forward(
+            hidden_states,
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            attn_mask_start_row_indices=attn_mask_start_row_indices,
+        )
 
-        return return_args(hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids)
+        return return_args(hidden_states, attention_mask, attn_mask_start_row_indices, position_ids)
 
 
 class Qwen3RMSNormPipe(nn.Layer):
     def __init__(self, config):
         super().__init__()
-        self.norm = Qwen3RMSNorm(config)
+        self.norm = GeneralNorm.create(
+            config=config,
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+        )
 
     def forward(self, args):
-        hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids = parse_args(args)
+        hidden_states, attention_mask, attn_mask_start_row_indices, position_ids = parse_args(args)
         return self.norm(hidden_states)
 
 
-class Qwen3LMHeadPipe(Qwen3LMHead):
-    def __init__(self, config, transpose_y=False):
-        super(Qwen3LMHeadPipe, self).__init__(config, transpose_y=transpose_y)
+class Qwen3LMHeadPipe(GeneralLMHead):
+    def __init__(self, config):
+        super(Qwen3LMHeadPipe, self).__init__(config)
 
     @property
     def embedding_weight(self):
@@ -233,9 +200,6 @@ class Qwen3ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     _get_tensor_parallel_mappings = Qwen3PretrainedModel._get_tensor_parallel_mappings
     _init_weights = Qwen3PretrainedModel._init_weights
     _keys_to_ignore_on_load_unexpected = Qwen3PretrainedModel._keys_to_ignore_on_load_unexpected
-    _get_model_flops = Qwen3PretrainedModel._get_model_flops
-    _get_hardware_flops = Qwen3PretrainedModel._get_hardware_flops
-
     _tied_weights_keys = ["lm_head.weight"]
 
     # DONOT Add base_model_prefix !!!!
@@ -243,7 +207,7 @@ class Qwen3ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     @classmethod
     def _prepare_pipeline_inputs_func(cls, inputs):
 
-        first_stage_keys = ["input_ids", "attention_mask", "attn_mask_startend_row_indices", "position_ids"]
+        first_stage_keys = ["input_ids", "attention_mask", "attn_mask_start_row_indices", "position_ids"]
         last_stage_keys = ["labels"]
 
         def get_expected_keys(inputs, keys):
@@ -268,14 +232,7 @@ class Qwen3ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     def __init__(self, config: Qwen3Config):
         self.config = config
 
-        # Note that we will actually perform a recompute only if both enable_recompute and layerwise_recompute are set to True
-        # Enable_recompute defaults to False and is controlled by Trainer
-        self.enable_recompute = False
-        self.recompute_granularity = self.config.recompute_granularity
         self.pp_recompute_interval = self.config.pp_recompute_interval
-        self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
-        if self.recompute_granularity == "full":
-            assert len(self.no_recompute_layers) == 0, "for pp with full recompute, no_recompute_layers is not support"
 
         virtual_pp_degree = getattr(self.config, "virtual_pp_degree", 1)
 
@@ -305,8 +262,7 @@ class Qwen3ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 LayerDesc(
                     Qwen3DecoderLayerPipe,
                     config=config,
-                    layerwise_recompute=i not in self.no_recompute_layers,
-                    skip_recompute_ops=get_skip_recompute_ops(config, i),
+                    layer_idx=i,
                 ),
                 f"model.layers.{i}",
             )
@@ -319,7 +275,6 @@ class Qwen3ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     Qwen3LMHeadPipe,
                     shared_weight_attr="embedding_weight",
                     config=config,
-                    **{"transpose_y": True},
                 ),
                 "lm_head",
             )
@@ -327,11 +282,6 @@ class Qwen3ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self.add_sequential_layer(LayerDesc(Qwen3LMHeadPipe, config=config), "lm_head")
 
         recompute_interval = 0
-        if self.enable_recompute and self.recompute_granularity == "full":
-            assert self.config.pp_recompute_interval <= config.num_hidden_layers // (
-                virtual_pp_degree * get_hcg().topology().get_dim_size("pipe")
-            ), "pp recompute interval should smaller than num layers of each pp chunk"
-            recompute_interval = self.config.pp_recompute_interval
 
         seg_method = "layer:Qwen3DecoderLayer"
         if config.num_hidden_layers % get_hcg().topology().get_dim_size("pipe") != 0:
@@ -360,4 +310,4 @@ class Qwen3ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         if config.dpo_config is not None:
             return DPOCriterion(config, use_infohub=True)
         else:
-            return Qwen3PretrainingCriterion(config)
+            return CriterionLayer(config)

@@ -42,6 +42,8 @@ from ..transformers import (  # ChatGLMv2Tokenizer,
     PretrainedConfig,
     Qwen2ForCausalLMPipe,
     Qwen2MoeForCausalLMPipe,
+    Qwen3ForCausalLMPipe,
+    Qwen3MoeForCausalLMPipe,
 )
 from ..utils.log import logger
 
@@ -58,7 +60,7 @@ def compute_metrics(eval_preds):
 
 
 def get_prefix_tuning_params(model):
-    if model.base_model_prefix == "chatglm":
+    if model.config.model_type == "chatglm":
         from ..peft.prefix import chatglm_postprocess_past_key_value
 
         num_attention_heads = model.config.num_attention_heads
@@ -66,7 +68,7 @@ def get_prefix_tuning_params(model):
         hidden_size = model.config.hidden_size
         postprocess_past_key_value = chatglm_postprocess_past_key_value
         multi_query_group_num = None
-    elif model.base_model_prefix == "chatglm_v2":
+    elif model.config.model_type == "chatglm_v2":
         from ..peft.prefix import chatglm_postprocess_past_key_value
 
         num_attention_heads = model.config.num_attention_heads
@@ -74,7 +76,7 @@ def get_prefix_tuning_params(model):
         hidden_size = model.config.hidden_size
         postprocess_past_key_value = chatglm_postprocess_past_key_value
         multi_query_group_num = model.config.multi_query_group_num  # num_key_value_heads
-    elif model.base_model_prefix == "bloom":
+    elif model.config.model_type == "bloom":
         from ..peft.prefix import bloom_postprocess_past_key_value
 
         num_attention_heads = model.config.num_attention_heads
@@ -82,7 +84,7 @@ def get_prefix_tuning_params(model):
         hidden_size = model.config.n_embed
         postprocess_past_key_value = bloom_postprocess_past_key_value
         multi_query_group_num = None
-    elif model.base_model_prefix == "llama":
+    elif model.config.model_type == "llama":
         from ..peft.prefix import llama_postprocess_past_key_value
 
         num_attention_heads = model.config.n_head
@@ -90,7 +92,7 @@ def get_prefix_tuning_params(model):
         hidden_size = model.config.hidden_size
         postprocess_past_key_value = llama_postprocess_past_key_value
         multi_query_group_num = None
-    elif model.base_model_prefix == "mistral":
+    elif model.config.model_type == "mistral":
         from ..peft.prefix import mistral_postprocess_past_key_value
 
         num_attention_heads = model.config.num_attention_heads
@@ -98,7 +100,7 @@ def get_prefix_tuning_params(model):
         hidden_size = model.config.hidden_size
         postprocess_past_key_value = mistral_postprocess_past_key_value
         multi_query_group_num = model.config.num_key_value_heads
-    elif model.base_model_prefix == "qwen":
+    elif model.config.model_type == "qwen":
         from ..peft.prefix import qwen_postprocess_past_key_value
 
         num_attention_heads = model.config.num_attention_heads
@@ -106,7 +108,15 @@ def get_prefix_tuning_params(model):
         hidden_size = model.config.hidden_size
         postprocess_past_key_value = qwen_postprocess_past_key_value
         multi_query_group_num = None
-    elif model.base_model_prefix == "qwen2":
+    elif model.config.model_type == "qwen2":
+        from ..peft.prefix import qwen_postprocess_past_key_value
+
+        num_attention_heads = model.config.num_attention_heads
+        num_hidden_layers = model.config.num_hidden_layers
+        hidden_size = model.config.hidden_size
+        postprocess_past_key_value = qwen_postprocess_past_key_value
+        multi_query_group_num = model.config.num_key_value_heads  # num_key_value_heads
+    elif model.config.model_type == "qwen3":
         from ..peft.prefix import qwen_postprocess_past_key_value
 
         num_attention_heads = model.config.num_attention_heads
@@ -115,7 +125,7 @@ def get_prefix_tuning_params(model):
         postprocess_past_key_value = qwen_postprocess_past_key_value
         multi_query_group_num = model.config.num_key_value_heads  # num_key_value_heads
     else:
-        raise ValueError(f"Unknown base_model_prefix: {model.base_model_prefix}. ")
+        raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}. ")
     return dict(
         num_attention_heads=num_attention_heads,
         num_hidden_layers=num_hidden_layers,
@@ -127,9 +137,9 @@ def get_prefix_tuning_params(model):
 
 def get_lora_target_modules(model):
     # Not yet support RowParallelLinear
-    if model.base_model_prefix == "chatglm":
+    if model.config.model_type == "chatglm":
         target_modules = [".*query_key_value.*", ".*dense.*", ".*dense_h_to_4h.*", ".*dense_4h_to_h.*"]
-    elif model.base_model_prefix == "chatglm_v2":
+    elif model.config.model_type == "chatglm_v2":
         target_modules = [
             ".*query.*",
             ".*key.*",
@@ -138,7 +148,7 @@ def get_lora_target_modules(model):
             ".*dense_h_to_4h.*",
             ".*dense_4h_to_h.*",
         ]
-    elif model.base_model_prefix == "gpt":
+    elif model.config.model_type == "gpt":
         target_modules = [
             ".*qkv_proj.*",
             ".*q_proj.*",
@@ -148,9 +158,9 @@ def get_lora_target_modules(model):
             ".*linear2.*",
             ".*out_proj.*",
         ]
-    elif model.base_model_prefix == "bloom":
+    elif model.config.model_type == "bloom":
         target_modules = [".*query_key_value.*", ".*dense.*", ".*dense_h_to_4h.*", ".*dense_4h_to_h.*"]
-    elif model.base_model_prefix in ["llama", "jamba"] or isinstance(model, LlamaForCausalLMPipe):
+    elif model.config.model_type in ["llama", "jamba"] or isinstance(model, LlamaForCausalLMPipe):
         target_modules = [
             ".*q_proj.*",
             ".*v_proj.*",
@@ -162,7 +172,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*gate_up_fused_proj.*",
         ]
-    elif model.base_model_prefix == "opt":
+    elif model.config.model_type == "opt":
         target_modules = [
             ".*project_in.*",
             ".*project_out.*",
@@ -174,7 +184,7 @@ def get_lora_target_modules(model):
             ".*linear1.*",
             ".*linear2.*",
         ]
-    elif model.base_model_prefix == "qwen":
+    elif model.config.model_type == "qwen":
         target_modules = [
             ".*attn.c_attn.*",
             ".*attn.c_proj.*",
@@ -182,7 +192,7 @@ def get_lora_target_modules(model):
             ".*mlp.w2.*",
             ".*mlp.c_proj.*",
         ]
-    elif model.base_model_prefix == "qwen2" or isinstance(model, Qwen2ForCausalLMPipe):
+    elif model.config.model_type == "qwen2" or isinstance(model, Qwen2ForCausalLMPipe):
         target_modules = [
             ".*q_proj.*",
             ".*k_proj.*",
@@ -192,7 +202,17 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
             ".*up_proj.*",
         ]
-    elif model.base_model_prefix == "mixtral":
+    elif model.config.model_type == "qwen3" or isinstance(model, Qwen3ForCausalLMPipe):
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*down_proj.*",
+            ".*up_proj.*",
+        ]
+    elif model.config.model_type == "mixtral":
         target_modules = [
             ".*q_proj.*",
             ".*k_proj.*",
@@ -203,7 +223,7 @@ def get_lora_target_modules(model):
             ".*w2.*",
             ".*w3.*",
         ]
-    elif model.base_model_prefix == "mistral":
+    elif model.config.model_type == "mistral":
         target_modules = [
             ".*q_proj.*",
             ".*k_proj.*",
@@ -214,7 +234,7 @@ def get_lora_target_modules(model):
             ".*w2.*",
             ".*w3.*",
         ]
-    elif model.base_model_prefix == "qwen2_moe" or isinstance(model, Qwen2MoeForCausalLMPipe):
+    elif model.config.model_type == "qwen2_moe" or isinstance(model, Qwen2MoeForCausalLMPipe):
         target_modules = [
             ".*q_proj.*",
             ".*k_proj.*",
@@ -225,7 +245,17 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
-    elif model.base_model_prefix in ["deepseek_v2", "deepseek_v3"] or isinstance(
+    elif model.config.model_type == "qwen3_moe" or isinstance(model, Qwen3MoeForCausalLMPipe):
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
+    elif model.config.model_type in ["deepseek_v2", "deepseek_v3"] or isinstance(
         model, (DeepseekV2ForCausalLMPipe, DeepseekV3ForCausalLMPipe)
     ):
         target_modules = [
@@ -240,7 +270,7 @@ def get_lora_target_modules(model):
             ".*mlp.up_proj.*",
             ".*mlp.down_proj.*",
         ]
-    elif model.base_model_prefix == "yuan":
+    elif model.config.model_type == "yuan":
         target_modules = [
             ".*q_proj.*",
             ".*k_proj.*",
@@ -251,7 +281,7 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
         ]
     else:
-        raise ValueError(f"Unknown base_model_prefix: {model.base_model_prefix}.")
+        raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")
     return target_modules
 
 
