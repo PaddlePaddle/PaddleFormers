@@ -124,8 +124,8 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: 
     input_keys = ["input_ids", "labels", "loss_mask"]
     if model_args.num_nextn_predict_layers > 0:
         input_keys.append("nbatch_pack_offset")
-    if model_args.use_attn_mask_start_row_indices:
-        input_keys.append("attn_mask_start_row_indices")
+    if model_args.use_attn_mask_startend_row_indices:
+        input_keys.append("attn_mask_startend_row_indices")
     else:
         input_keys.append("attention_mask")
     return_list = []
@@ -158,8 +158,8 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: 
             padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
             return_list[-1].append(padded_nbatch_pack_offset)
 
-        if model_args.use_attn_mask_start_row_indices:
-            return_list[-1].append(gen_attn_mask_start_row_indices(original_token_ids, max_seq_len))
+        if model_args.use_attn_mask_startend_row_indices:
+            return_list[-1].append(gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len))
         else:
             return_list[-1].append(gen_self_attn_mask(original_token_ids, max_seq_len))
 
@@ -679,7 +679,7 @@ def gen_self_attn_mask(batch_token_ids: List[List[int]], max_seq_len: int):
     return input_mask_data
 
 
-def gen_attn_mask_start_row_indices(batch_token_ids: List[List[int]], max_seq_len: int):
+def gen_attn_mask_startend_row_indices(batch_token_ids: List[List[int]], max_seq_len: int):
     """Generate row indices for flash attention masks.
 
     Args:
@@ -690,12 +690,12 @@ def gen_attn_mask_start_row_indices(batch_token_ids: List[List[int]], max_seq_le
         ndarray: Row indices array with dtype int32.
     """
     offset = 0
-    attn_mask_start_row_indices = []
+    attn_mask_startend_row_indices = []
     for token_ids in batch_token_ids:
         cur_len = len(token_ids)
-        attn_mask_start_row_indices.extend([offset + cur_len] * cur_len)
+        attn_mask_startend_row_indices.extend([offset + cur_len] * cur_len)
         offset += cur_len
     if offset < max_seq_len:
-        attn_mask_start_row_indices.extend(list(range(offset, max_seq_len)))
-    # NOTE(hehuang): The dtype of attn_mask_start_row_indices must be np.int32
-    return np.array(attn_mask_start_row_indices, dtype=np.int32)[None, None]
+        attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
+    # NOTE(hehuang): The dtype of attn_mask_startend_row_indices must be np.int32
+    return np.array(attn_mask_startend_row_indices, dtype=np.int32)[None, None]

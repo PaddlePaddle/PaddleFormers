@@ -49,7 +49,7 @@ class Sequence:
     input_ids: Optional[List[int]]
     position_ids: Optional[List[int]]
     attention_mask: Optional[List[List[int]]]
-    attn_mask_start_row_indices: Optional[List[int]]
+    attn_mask_startend_row_indices: Optional[List[int]]
     chosen_labels: List[int]
     rejected_labels: List[int]
     response_index: List[int]
@@ -72,7 +72,7 @@ def create_dataset(**dataset_config):
             - random_seed (int): Reproduction seed for shuffling
             - greedy_intokens (bool): Greedy intokens strategy
             - buffer_size (int): Preloading buffer capacity
-            - use_attn_mask_start_row_indices (bool): Sparse attention mode
+            - use_attn_mask_startend_row_indices (bool): Sparse attention mode
             - mask_out_eos_token (bool): EOS loss masking
 
     Returns:
@@ -112,7 +112,7 @@ def create_dataset(**dataset_config):
         random_shuffle=dataset_config["random_shuffle"],
         greedy_intokens=dataset_config["greedy_intokens"],
         buffer_size=dataset_config["buffer_size"],
-        use_attn_mask_start_row_indices=dataset_config.pop("use_attn_mask_start_row_indices", True),
+        use_attn_mask_startend_row_indices=dataset_config.pop("use_attn_mask_startend_row_indices", True),
         mask_out_eos_token=dataset_config["mask_out_eos_token"],
         packing=dataset_config["packing"],
         mix_strategy=dataset_config["mix_strategy"],
@@ -149,7 +149,7 @@ def collate_fn(
             - rejected_labels (int32): Unpreferred response labels [batch_size, max_seq_len]
             - response_indexs (int32): Response span indices [batch_size, 4]
             - attention_mask (float32, optional): Attention mask matrix [batch_size, 1, max_seq_len, max_seq_len]
-            - attn_mask_start_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
+            - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
     """
     if max_seq_len is None:
         raise ValueError("max_seq_len is None.")
@@ -165,14 +165,14 @@ def collate_fn(
         input_dict["score_deltas"] = []
 
     sequence = batch[0][0]
-    if sequence.attn_mask_start_row_indices is not None:
-        input_dict["attn_mask_start_row_indices"] = []
-        use_attn_mask_start_row_indices = True
+    if sequence.attn_mask_startend_row_indices is not None:
+        input_dict["attn_mask_startend_row_indices"] = []
+        use_attn_mask_startend_row_indices = True
     elif sequence.attention_mask is not None:
         input_dict["attention_mask"] = []
-        use_attn_mask_start_row_indices = False
+        use_attn_mask_startend_row_indices = False
     else:
-        raise ValueError("attention_mask and attn_mask_start_row_indices are both None.")
+        raise ValueError("attention_mask and attn_mask_startend_row_indices are both None.")
     sequence_sum_flatten = 0
     for i, sequences in enumerate(batch):
         difference = max_seq_len - sum([len(sequence.input_ids) for sequence in sequences])
@@ -187,13 +187,13 @@ def collate_fn(
         input_dict["rejected_labels"].append(
             sum([sequence.rejected_labels for sequence in sequences], []) + [0] * difference
         )
-        if use_attn_mask_start_row_indices:
+        if use_attn_mask_startend_row_indices:
             start_row_indices = []
             sequence_sum = 0
             for sequence in sequences:
-                start_row_indices += [indice + sequence_sum for indice in sequence.attn_mask_start_row_indices]
+                start_row_indices += [indice + sequence_sum for indice in sequence.attn_mask_startend_row_indices]
                 sequence_sum += len(sequence.input_ids)
-            input_dict["attn_mask_start_row_indices"].append(
+            input_dict["attn_mask_startend_row_indices"].append(
                 [start_row_indices + list(range(start_row_indices[-1], max_seq_len))]
             )
         else:
@@ -245,7 +245,7 @@ def collate_fn(
     for key in input_dict:
         if key == "attention_mask":
             input_dict[key] = np.array(input_dict[key], dtype=np.float32)
-        elif key == "attn_mask_start_row_indices":
+        elif key == "attn_mask_startend_row_indices":
             input_dict[key] = np.array(input_dict[key], dtype=np.int32)
         else:
             input_dict[key] = np.array(input_dict[key])
@@ -369,7 +369,7 @@ class SequenceDataset(IterableDataset):
         random_shuffle (bool, optional): Enable random shuffling. Defaults to True
         greedy_intokens (bool, optional): Greedy intokens  strategy. Defaults to False
         buffer_size (int, optional): Preload buffer size for optimization. Defaults to 500
-        use_attn_mask_start_row_indices (bool, optional): Use sparse attention indexing. Defaults to True
+        use_attn_mask_startend_row_indices (bool, optional): Use sparse attention indexing. Defaults to True
         mask_out_eos_token (bool, optional): Exclude EOS from loss calculation. Defaults to True
     """
 
@@ -385,7 +385,7 @@ class SequenceDataset(IterableDataset):
         random_shuffle: bool = True,
         greedy_intokens: bool = False,
         buffer_size: int = 500,
-        use_attn_mask_start_row_indices: bool = True,
+        use_attn_mask_startend_row_indices: bool = True,
         mask_out_eos_token: bool = True,
         packing: bool = False,
         mix_strategy: str = "random",
@@ -411,7 +411,7 @@ class SequenceDataset(IterableDataset):
         self.greedy_intokens = greedy_intokens
         self.buffer_size = buffer_size
         self.origin_dataset_num = 0
-        self.use_attn_mask_start_row_indices = use_attn_mask_start_row_indices
+        self.use_attn_mask_startend_row_indices = use_attn_mask_startend_row_indices
         self.mask_out_eos_token = mask_out_eos_token
         self.packing = packing
         self.mix_strategy = mix_strategy
@@ -695,7 +695,7 @@ class SequenceDataset(IterableDataset):
                 - response_index (List[int]): Span indices [start, chosen_end, total_end]
                 - attention controls (mask or indices):
                     * attention_mask (np.ndarray): Causal mask matrix if enabled
-                    * attn_mask_start_row_indices (List[int]): Sparse attention indices
+                    * attn_mask_startend_row_indices (List[int]): Sparse attention indices
                 - score_delta (float): Score delta between chosen and rejected responses
         """
         # sequence: system + knowledge_tokens + prompt + chosen + reject
@@ -736,8 +736,8 @@ class SequenceDataset(IterableDataset):
         response_index = [0, response_len_list[0], sum(response_len_list)]
 
         # 1.5 attention mask
-        if self.use_attn_mask_start_row_indices:
-            attn_mask_start_row_indices = (
+        if self.use_attn_mask_startend_row_indices:
+            attn_mask_startend_row_indices = (
                 [cur_len] * (prompt_len) + [prompt_len + chosen_len] * chosen_len + [cur_len] * rejected_len
             )
             attention_mask = None
@@ -747,13 +747,13 @@ class SequenceDataset(IterableDataset):
                 (prompt_len + chosen_len) :,
                 prompt_len : (prompt_len + chosen_len),
             ] = False
-            attn_mask_start_row_indices = None
+            attn_mask_startend_row_indices = None
         # 2. return sequence
         return Sequence(
             input_ids=input_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,
-            attn_mask_start_row_indices=attn_mask_start_row_indices,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             chosen_labels=chosen_labels,
             rejected_labels=rejected_labels,
             response_index=response_index,

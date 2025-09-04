@@ -194,10 +194,10 @@ def main():
 
     # Load tokenizer & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, download_hub=model_args.download_hub)
-    tokenizer.chat_template = None
+    # tokenizer.chat_template = None
 
     # init chat_template for tokenizer
-    init_chat_template(tokenizer, model_args.model_name_or_path, data_args.chat_template)
+    # init_chat_template(tokenizer, model_args.model_name_or_path, data_args.chat_template)
 
     # if using chat_template, data_args.eval_with_do_generation must be false
     if tokenizer.chat_template is not None:
@@ -215,7 +215,7 @@ def main():
         "num_samples_each_epoch": 6000000,
         "random_shuffle": True,
         "greedy_intokens": True,
-        "packing": False,
+        "packing": True,
         "mix_strategy": "concat",
     }
 
