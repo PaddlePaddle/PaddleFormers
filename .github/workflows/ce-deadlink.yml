@@ -28,7 +28,7 @@ jobs:
     steps:
       - name: Determine Image Name
         run: |
-          echo "IMAGE_NAME=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
 
       - name: Run Container
         env:
@@ -102,8 +102,8 @@ jobs:
             tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
           fi
           bos_prefix="schedule/$(date +%Y%m%d)"
-          cd /workspace/PaddleFormers/result
-          for FILE in /workspace/PaddleFormers/result/*; do
+          cd /workspace/result
+          for FILE in /workspace/result/*; do
             file=$(basename "$FILE")
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/deadlink/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/deadlink/${bos_prefix}/logs/$file"
