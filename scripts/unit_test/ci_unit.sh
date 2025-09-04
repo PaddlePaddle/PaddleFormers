@@ -82,14 +82,14 @@ print_info() {
 get_diff_TO_case(){
 export FLAGS_enable_CI=false
 if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
-    # 定时任务回归测试
+    # Scheduled Regression Test
     FLAGS_enable_CI=true
 else
     for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
         ext="${file_name##*.}"
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
         
-        if [ ! -f ${file_name} ];then # 针对pr删掉文件
+        if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
             continue
         elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
             continue

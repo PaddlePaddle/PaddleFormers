@@ -44,7 +44,7 @@ jobs:
           if [[ -n "${IMAGE_NAME}" ]]; then
             echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
           else
-            echo "IMAGE_NAME=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest" >> "$GITHUB_ENV"
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
           fi
       
       - name: Run Container
@@ -74,7 +74,9 @@ jobs:
               -e paddle_whl \
               -e FLAGS_dynamic_static_unified_comm \
               -e python_version \
-              -w /workspace --runtime=nvidia $IMAGE_NAME
+              -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
+              -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
+              -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
           fi
             
       - name: Download Code
@@ -115,8 +117,6 @@ jobs:
           else
             docker exec -t $container_name /bin/bash -c '
             ldconfig
-            unlink /usr/bin/python3
-            ln -sf $(which python${python_version}) /usr/bin/python3
             pip config set global.cache-dir "/home/.cache/pip"
             set -e
             rm -rf /root/.cache/aistudio/
