@@ -109,6 +109,7 @@ register_model_group(
         },
         "Qwen2.5-7B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-7B",
+            DownloadSource.AISTUDIO: "PaddleNLP/Qwen2.5-7B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-7B",
         },
         "Qwen2.5-14B": {
@@ -125,6 +126,7 @@ register_model_group(
         },
         "Qwen2.5-0.5B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-0.5B-Instruct",
+            DownloadSource.AISTUDIO: "PaddleNLP/Qwen2.5-0.5B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-0.5B-Instruct",
         },
         "Qwen2.5-1.5B-Instruct": {
@@ -137,6 +139,7 @@ register_model_group(
         },
         "Qwen2.5-7B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-7B-Instruct",
+            DownloadSource.AISTUDIO: "PaddleNLP/Qwen2.5-7B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-7B-Instruct",
         },
         "Qwen2.5-14B-Instruct": {
