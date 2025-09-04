@@ -51,8 +51,8 @@ install:
 	pip install -r requirements-dev.txt
 	pip install -r requirements.txt
 	pre-commit install
-	wget https://paddleformers.bj.bcebos.com/wheels/aistudio_sdk-0.3.6b1-py3-none-any.whl
-	python -m pip install aistudio_sdk-0.3.6b1-py3-none-any.whl --force-reinstall
+	wget https://paddleformers.bj.bcebos.com/wheels/aistudio_sdk-0.3.6b2-py3-none-any.whl
+	python -m pip install aistudio_sdk-0.3.6b2-py3-none-any.whl --force-reinstall
 	python -m pip list |grep aistudio
 
 

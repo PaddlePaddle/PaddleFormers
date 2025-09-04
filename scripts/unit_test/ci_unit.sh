@@ -104,8 +104,8 @@ get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     install_requirements
-    wget https://paddleformers.bj.bcebos.com/wheels/aistudio_sdk-0.3.6b1-py3-none-any.whl
-	python -m pip install aistudio_sdk-0.3.6b1-py3-none-any.whl --force-reinstall
+    wget https://paddleformers.bj.bcebos.com/wheels/aistudio_sdk-0.3.6b2-py3-none-any.whl
+	python -m pip install aistudio_sdk-0.3.6b2-py3-none-any.whl --force-reinstall
 	python -m pip list |grep aistudio
     cd ${nlp_dir}
     echo ' Testing all unittest cases '
