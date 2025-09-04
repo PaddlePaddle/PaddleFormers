@@ -2,16 +2,16 @@ name: Unittest GPU CE
 
 on:
   schedule:
-    - cron: "0 6 * * 6"
+    - cron: "0 2 * * 6"     # every Saturday at 10:00
   workflow_dispatch:        # allow to manually trigger the workflow
     inputs:
       paddle_whl:
-        description: "paddle链接"
+        description: "paddle_whl"
         required: false
         default: "https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl"
         type: string
       repo_branch:
-        description: "套件分支"
+        description: "repo_branch"
         required: false
         type: string
 

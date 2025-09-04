@@ -94,13 +94,10 @@ jobs:
         env:
           work_dir: ${{ github.workspace }}
         run: |
-          echo "容器已启动，请登录机器进行调试"
-          echo "登录机器后，进入容器："
           echo "docker exec -it $container_name bash"
-          echo "物理机本地工作目录为：$work_dir/PaddleFormers"
-          echo "容器内工作目录为：/workspace/PaddleFormers"
-          echo "unittest-gpu任务整体复现命令"
+          echo "work_path: $work_dir/PaddleFormers"
+          echo "work_path in docker: /workspace/PaddleFormers"
+          echo "cmd: "
           echo "bash scripts/unit_test/ci_unit.sh ${paddle_whl}"
-          echo "也可直接在$work_dir下执行python -m pytest 失败case"
-          echo "请调试完成后手动执行清理命令"
+          echo "or python -m pytest fail_case_name"
           echo "docker rm -f $container_name"

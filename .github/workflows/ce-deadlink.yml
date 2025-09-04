@@ -2,7 +2,7 @@ name: Deadlink CE
 
 on:
   schedule:
-    - cron: "0 8 * * 6"     # every Saturday at 6:00 AM
+    - cron: "0 8 * * 6"     # every Saturday at 16:00
   workflow_dispatch:        # allow to manually trigger the workflow
 
 concurrency:
@@ -86,7 +86,7 @@ jobs:
           set -e
           python -m pip install beautifulsoup4 openpyxl
           source $work_dir/../../../proxy
-          bash run.sh PaddleFormers develop liujie44@baidu.com PaddleFormers死链检测汇总报告
+          bash run.sh PaddleFormers develop liujie44@baidu.com "PaddleFormers Broken Link Check Summary Report"
           '
           
       - name: Upload Logs

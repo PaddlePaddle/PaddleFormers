@@ -12,7 +12,7 @@ on:
   #   types: [opened, synchronize, reopened]
   #   branches: [develop]
   schedule:
-    - cron: "0 16 * * 5"   # UTC 16:00 = 北京时间 周六 00:00
+    - cron: "0 16 * * 5"   # UTC 16:00 = Beijing Time, Saturday at 00:00
   workflow_dispatch:        # allow to manually trigger the workflow
 
 concurrency:
@@ -201,5 +201,5 @@ jobs:
                 echo "$CONTAINERS"
             fi
           fi
-          # 安全删除悬空镜像（无悬空镜像时跳过）
+          # Safely remove dangling images (skip if no dangling images exist)
           docker images -f "dangling=true" -q | xargs -r docker rmi -f
