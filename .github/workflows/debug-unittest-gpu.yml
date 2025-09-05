@@ -28,11 +28,11 @@ jobs:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
-          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
-          image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
+          image_name=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest
           echo "image_name=${image_name}" >> "$GITHUB_ENV"
           docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
@@ -48,7 +48,7 @@ jobs:
             -e paddle_whl \
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
-            -w /workspace --runtime=nvidia $image_name
+            -w /workspace --runtime=nvidia --privileged $image_name
        
       - name: Download Code
         run: |
@@ -83,8 +83,6 @@ jobs:
           docker exec -t $container_name /bin/bash -c '
           ldconfig
           set -e
-          unlink /usr/bin/python3
-          ln -sf $(which python${python_version}) /usr/bin/python3
           python -c "import sys; print(sys.version_info[:])"
           pip config set global.cache-dir "/home/.cache/pip"
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
@@ -94,13 +92,10 @@ jobs:
         env:
           work_dir: ${{ github.workspace }}
         run: |
-          echo "容器已启动，请登录机器进行调试"
-          echo "登录机器后，进入容器："
           echo "docker exec -it $container_name bash"
-          echo "物理机本地工作目录为：$work_dir/PaddleFormers"
-          echo "容器内工作目录为：/workspace/PaddleFormers"
-          echo "unittest-gpu任务整体复现命令"
+          echo "work_path: $work_dir/PaddleFormers"
+          echo "work_path in docker: /workspace/PaddleFormers"
+          echo "cmd: "
           echo "bash scripts/unit_test/ci_unit.sh ${paddle_whl}"
-          echo "也可直接在$work_dir下执行python -m pytest 失败case"
-          echo "请调试完成后手动执行清理命令"
+          echo "or python -m pytest fail_case_name"
           echo "docker rm -f $container_name"

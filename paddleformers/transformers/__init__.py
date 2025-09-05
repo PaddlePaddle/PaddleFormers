@@ -18,6 +18,7 @@ from contextlib import suppress
 from typing import TYPE_CHECKING
 from ..utils.lazy_import import _LazyModule
 
+
 # from .auto.modeling import AutoModelForCausalLM
 import_structure = {
     "kto_criterion": [
@@ -35,10 +36,10 @@ import_structure = {
         "BPETokenizer",
         "tokenize_chinese_chars",
         "is_chinese_char",
-        "AddedToken",
         "normalize_chars",
         "tokenize_special_chars",
         "convert_to_unicode",
+        "AddedToken",
     ],
     "attention_utils": ["create_bigbird_rand_mask_idx_list"],
     "tensor_parallel_utils": [],
@@ -334,6 +335,8 @@ import_structure = {
     "qwen2_moe": [],
     "qwen3_moe": [],
     "auto": ["AutoModelForCausalLM"],
+    "legacy.tokenizer_utils_base": ["EncodingFast"],
+    "legacy": [],
 }
 
 if TYPE_CHECKING:
