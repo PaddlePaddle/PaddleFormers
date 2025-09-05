@@ -170,6 +170,9 @@ import_structure = {
     "ernie4_5.configuration": ["Ernie4_5Config"],
     "ernie4_5.modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"],
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
+    "gpt_oss.configuration": ["GptOssConfig"],
+    "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM"],
+    "gpt_oss.tokenizer": ["GptOssTokenizer"],
     "export": ["export_model"],
     "llama.configuration": [
         "LLAMA_PRETRAINED_INIT_CONFIGURATION",
