@@ -1457,14 +1457,14 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         default_embedding = getattr(self, name, None)
         if default_embedding is not None:
             return default_embedding
+        base_model = getattr(self, self.base_model_prefix, None)
 
-        if hasattr(self, "model") and hasattr(self.model, "embed_tokens"):
-            return self.model.embed_tokens
-        elif hasattr(self.model, "embed_tokens"):
+        if hasattr(self, self.base_model_prefix) and hasattr(base_model, "embed_tokens"):
+            return base_model.embed_tokens
+        elif hasattr(self, "embed_tokens"):
             return self.embed_tokens
         else:
-            base_model = getattr(self, self.base_model_prefix, self)
-            if base_model is not self:
+            if base_model is not None:
                 return base_model.get_input_embeddings()
 
             raise NotImplementedError(
@@ -1481,14 +1481,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         Raises:
             NotImplementedError: Model has not implement `set_input_embeddings` method
         """
+        base_model = getattr(self, self.base_model_prefix, None)
+
         name = getattr(self, "_input_embed_layer", "embed_tokens")
-        if hasattr(self, "model") and hasattr(self.model, name):
-            setattr(self.model, name, value)
+        if base_model is not None and hasattr(base_model, name):
+            setattr(base_model, name, value)
         # 2) as well as vanilla decoder‑only architectures
         elif hasattr(self, name):
             setattr(self, name, value)
-        elif getattr(self, self.base_model_prefix, self) is not self:
-            base_model = getattr(self, self.base_model_prefix, self)
+        elif base_model is not None:
             base_model.set_input_embeddings(value)
         else:
             raise NotImplementedError(
@@ -2436,7 +2437,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         if pre_tensor_parallel_split:
                             if k[-1] in tp_actions:
                                 fuse_actions.pop(k[-1], None)
-
                     state_dict = load_state_dict(
                         shard_file,
                         tp_actions if pre_tensor_parallel_split else None,

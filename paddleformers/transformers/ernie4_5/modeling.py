@@ -25,6 +25,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     ScatterOp,
     mark_as_sequence_parallel_parameter,
 )
+from paddle.incubate.nn.functional import fused_rotary_position_embedding as fused_rope
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -43,99 +44,95 @@ from ..tensor_parallel_utils import model_parallel_dropout
 from .configuration import Ernie4_5Config
 
 
-class RopeEmbedding(nn.Layer):
-    """
-    Rotary Position Embedding (RoPE) implementation for transformer models.
+def rotate_half(x):
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., 0::2]
+    x2 = x[..., 1::2]
+    return paddle.stack((-x2, x1), axis=-1).flatten(-2)
 
-    RoPE encodes absolute positional information with rotation matrices and
-    naturally incorporates relative position information in self-attention.
+
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
+    """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
-        head_dim (int): Dimension size of each attention head
-        compression_ratio (float, optional): Sequence length compression ratio. Defaults to 1.0.
-        base (int, optional): Base value for frequency calculation. Defaults to 10000.
-
-    Attributes:
-        head_dim (int): Dimension size of each attention head
-        compression_ratio (float): Sequence length compression factor
-        base (int): Base value for frequency calculation
+        q (`paddle.Tensor`): The query tensor.
+        k (`paddle.Tensor`): The key tensor.
+        cos (`paddle.Tensor`): The cosine part of the rotary embedding.
+        sin (`paddle.Tensor`): The sine part of the rotary embedding.
+        position_ids (`paddle.Tensor`, *optional*):
+            Deprecated and unused.
+        unsqueeze_dim (`int`, *optional*, defaults to 1):
+            The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
+            sin[position_ids] so that they can be properly broadcasted to the dimensions of q and k. For example, note
+            that cos[position_ids] and sin[position_ids] have the shape [batch_size, seq_len, head_dim]. Then, if q and
+            k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
+            cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
+            the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
+    Returns:
+        `tuple(paddle.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
+    # glm rope style (with full dim) and full precision
+    original_dtype = q.dtype
 
-    def __init__(self, head_dim, compression_ratio=1.0, base=10000, freq_allocation=0):
-        """
-        Initialize RoPE embedding layer.
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
 
-        Args:
-            head_dim: Dimension of each attention head
-            compression_ratio: Scaling factor for position indices
-            base: Base value for frequency calculation
-        """
+    # Interleave them instead of usual shape
+    cos = cos[..., : cos.shape[-1] // 2].repeat_interleave(2, axis=-1)
+    sin = sin[..., : sin.shape[-1] // 2].repeat_interleave(2, axis=-1)
+
+    q_embed = (q.float() * cos) + (rotate_half(q).float() * sin)
+    k_embed = (k.float() * cos) + (rotate_half(k).float() * sin)
+
+    return q_embed.astype(original_dtype), k_embed.astype(original_dtype)
+
+
+def apply_fused_rope(query_states, key_states, rope_theta):
+    _, _, num_heads, _ = query_states.shape
+    _, kv_seq_len, num_key_value_heads, _ = key_states.shape
+    if num_heads != num_key_value_heads:
+        query_states, _, _ = fused_rope(query_states, None, None, rotary_emb_base=rope_theta)
+        key_states, _, _ = fused_rope(key_states, None, None, rotary_emb_base=rope_theta)
+    else:
+        query_states, key_states, _ = fused_rope(
+            query_states,
+            key_states,
+            None,
+            rotary_emb_base=rope_theta,
+        )
+    return query_states, key_states
+
+
+class Ernie4_5RotaryEmbedding(nn.Layer):
+    def __init__(self, config):
         super().__init__()
-        self.head_dim = head_dim
-        self.compression_ratio = compression_ratio
-        self.base = base
+        self.config = config
+        self.head_dim = config.head_dim
+        self.base = config.rope_theta
 
-        # num of freq allocated to time
-        self.freq_allocation = freq_allocation
-
-    def forward(self, seq_length, position_ids=None):
+    def forward(self, x, position_ids):
         """
         Compute rotary position embeddings for given sequence length.
 
         Args:
             seq_length (int): Maximum sequence length
-            position_ids (Tensor, optional): Custom position indices. Defaults to None.
+            position_ids (Tensor): Position ids of shape [batch_size, seq_length]
 
         Returns:
             Tensor: Rotary position embeddings of shape [1, 1, seq_length, head_dim]
         """
         indices = paddle.arange(0, self.head_dim, 2, dtype="float32")
         indices = 1 / self.base ** (indices / self.head_dim)
-        if position_ids is None:
-            position_ids = paddle.arange(0, seq_length, 1, dtype="float32").unsqueeze(1)
-            position_ids = position_ids / self.compression_ratio
-            sinusoid_inp = position_ids * indices.unsqueeze(0)
-        else:
-            position_ids = position_ids / self.compression_ratio
-            seq_length = position_ids.shape[-1]
-            sinusoid_inp = position_ids.unsqueeze(-1).astype("float32") * indices.unsqueeze(
-                0
-            )  # [b, s, 1] * [1, d/2] -> [b, s, d/2]
-        pos_emb = paddle.concat([paddle.sin(sinusoid_inp), paddle.cos(sinusoid_inp)], axis=-1)
-        pos_emb = paddle.reshape(pos_emb, (-1, 1, seq_length, self.head_dim))
-        pos_emb.stop_gradient = True
-        return pos_emb
 
-    def apply_rotary(self, rp, q, k):
-        """
-        Apply rotary position embeddings to queries and keys.
+        sinusoid_inp = position_ids.unsqueeze(-1).astype("float32") * indices.unsqueeze(
+            0
+        )  # [b, s, 1] * [1, d/2] -> [b, s, d/2]
+        emb = paddle.concat((sinusoid_inp, sinusoid_inp), axis=-1)
+        cos = emb.cos()
+        sin = emb.sin()
 
-        Args:
-            rp (Tensor): Rotary position embeddings
-            q (Tensor): Query tensor [batch, heads, seq_len, dim]
-            k (Tensor): Key tensor [batch, heads, seq_len, dim]
-
-        Returns:
-            Tuple[Tensor, Tensor]: Rotated queries and keys
-        """
-        # sin [sequence_length, embed_size_per_head//2]
-        # cos [sequence_length, embed_size_per_head//2]
-        sin, cos = paddle.chunk(rp, 2, axis=-1)
-        # sin [θ0,θ1,θ2......θd/2-1] -> sin_pos [θ0,θ0,θ1,θ1,θ2,θ2......θd/2-1,θd/2-1]
-        sin_pos = paddle.reshape(paddle.stack([sin, sin], axis=-1), rp.shape)
-        # cos [θ0,θ1,θ2......θd/2-1] -> cos_pos [θ0,θ0,θ1,θ1,θ2,θ2......θd/2-1,θd/2-1]
-        cos_pos = paddle.reshape(paddle.stack([cos, cos], axis=-1), rp.shape)
-        # rotate_half_query_layer [-q1,q0,-q3,q2......,-qd-1,qd-2]
-        rotate_half_q = paddle.reshape(paddle.stack([-q[:, :, :, 1::2], q[:, :, :, 0::2]], axis=-1), paddle.shape(q))
-        query = paddle.add(
-            paddle.multiply(q.astype("float32"), cos_pos), paddle.multiply(rotate_half_q.astype("float32"), sin_pos)
-        )
-        # rotate_half_key_layer [-k1,k0,-k3,k2......,-kd-1,kd-2]
-        rotate_half_k = paddle.reshape(paddle.stack([-k[:, :, :, 1::2], k[:, :, :, 0::2]], axis=-1), paddle.shape(k))
-        key = paddle.add(
-            paddle.multiply(k.astype("float32"), cos_pos), paddle.multiply(rotate_half_k.astype("float32"), sin_pos)
-        )
-        return query.astype(q.dtype), key.astype(k.dtype)
+        # keeping it in full precision
+        return cos, sin
 
 
 class Ernie4_5Attention(nn.Layer):
@@ -154,31 +151,25 @@ class Ernie4_5Attention(nn.Layer):
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.head_dim = config.head_dim
-
-        self.is_gqa = config.num_key_value_heads is not None and config.num_key_value_heads != self.num_heads
-        self.freq_allocation = getattr(config, "freq_allocation", 0)
-        if self.is_gqa:
-            self.num_key_value_groups = self.num_heads // self.num_key_value_heads
+        self.num_key_value_groups = self.num_heads // self.num_key_value_heads
 
         if config.tensor_parallel_degree > 1:
             assert (
                 self.num_heads % config.tensor_parallel_degree == 0
             ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
             self.num_heads = self.num_heads // config.tensor_parallel_degree
-            if self.is_gqa:
-                assert (
-                    self.num_key_value_heads % config.tensor_parallel_degree == 0
-                ), f"num_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-                self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
-        if self.is_gqa:
-            logger.info(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
+
             assert (
-                self.num_heads % self.num_key_value_heads == 0
-            ), f"num_heads: {self.num_heads}, num_key_value_heads: {self.num_key_value_heads}"
-            kv_hidden_size = self.head_dim * config.num_key_value_heads
-            q_hidden_size = self.head_dim * config.num_attention_heads
-        else:
-            q_hidden_size = kv_hidden_size = self.head_dim * config.num_attention_heads
+                self.num_key_value_heads % config.tensor_parallel_degree == 0
+            ), f"num_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+
+        logger.warning_once(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
+        assert (
+            self.num_heads % self.num_key_value_heads == 0
+        ), f"num_heads: {self.num_heads}, num_key_value_heads: {self.num_key_value_heads}"
+        kv_hidden_size = self.head_dim * config.num_key_value_heads
+        q_hidden_size = self.head_dim * config.num_attention_heads
 
         self.q_proj = GeneralLinear.create(
             self.hidden_size,
@@ -214,12 +205,6 @@ class Ernie4_5Attention(nn.Layer):
             tp_plan="rowwise",
         )
 
-        self.rotary_emb = RopeEmbedding(
-            self.head_dim,
-            compression_ratio=config.compression_ratio,
-            base=config.rope_theta,
-            freq_allocation=self.freq_allocation,
-        )
         self.config = config
         self.scaling = self.head_dim**-0.5
         self.attn_implementation = config._attn_implementation
@@ -230,7 +215,7 @@ class Ernie4_5Attention(nn.Layer):
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_start_row_indices: Optional[paddle.Tensor] = None,
-        position_ids: Optional[Tuple[paddle.Tensor]] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
@@ -261,24 +246,13 @@ class Ernie4_5Attention(nn.Layer):
         query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
         key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
         value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-
-        if attn_mask_start_row_indices is None and attention_mask is None:
-            self.attn_implementation = "eager"
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
-        # apply rope
-        kv_seq_len = key_states.shape[-3]
-        offset = 0
-        if past_key_value is not None:
-            offset = past_key_value[0].shape[-3]
-            kv_seq_len += offset
-
-        cos_sin = self.rotary_emb(kv_seq_len, position_ids).transpose([0, 2, 1, 3])  # [b,h,s,d]->[b,s,h,d]
-        if offset > 0 and position_ids is None:
-            # position_ids has been sliced in prepare_inputs_for_generation
-            cos_sin = cos_sin[:, offset:]
-
-        query_states, key_states = self.rotary_emb.apply_rotary(cos_sin, query_states, key_states)
+        if self.config.fuse_rope:
+            query_states, key_states = apply_fused_rope(query_states, key_states, self.config.rope_theta)
+        else:
+            cos, sin = position_embeddings
+            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         if past_key_value is not None:
             # reuse k, v, self_attention
@@ -360,6 +334,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_start_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
@@ -371,6 +346,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
             attention_mask (Optional[paddle.Tensor]): Attention mask tensor
             attn_mask_start_row_indices (Optional[paddle.Tensor]): Indices for variable length attention
             position_ids (Optional[paddle.Tensor]): Position indices for rotary embeddings
+            position_embeddings (Optional[paddle.Tensor]): Position embeddings tensor
             output_attentions (Optional[bool]): Whether to return attention weights
             past_key_value (Optional[Tuple[paddle.Tensor]]): Cached key/value states
             use_cache (Optional[bool]): Whether to cache key/value states
@@ -391,7 +367,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
             past_key_value=past_key_value,
             attention_mask=attention_mask,
             attn_mask_start_row_indices=attn_mask_start_row_indices,
-            position_ids=position_ids,
+            position_embeddings=position_embeddings,
             output_attentions=output_attentions,
             use_cache=use_cache,
         )
@@ -426,23 +402,11 @@ class Ernie4_5PretrainedModel(PretrainedModel):
 
     config_class = Ernie4_5Config
     base_model_prefix = "model"
-
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):
-        """Generate tensor parallel mappings for model conversion.
-
-        Args:
-            config (Ernie4_5Config): Model configuration.
-            is_split (bool): Whether to generate split mappings (True)
-                            or merge mappings (False). Defaults to True.
-
-        Returns:
-            Dict[str, Callable[[Any], Any]]: Dictionary mapping parameter names
-                to their corresponding split/merge functions for tensor parallelism.
-        """
-
+        """Generate tensor parallel mappings for model conversion."""
         from ..conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
@@ -452,47 +416,54 @@ class Ernie4_5PretrainedModel(PretrainedModel):
             num_attention_heads=config.num_attention_heads,
         )
 
-        def get_tensor_parallel_split_mappings(num_hidden_layers):
-            final_actions = {}
+        LAYER_COLWISE = [
+            "self_attn.q_proj.weight",
+            "self_attn.k_proj.weight",
+            "self_attn.v_proj.weight",
+            "mlp.up_proj.weight",
+            "mlp.gate_proj.weight",
+        ]
 
-            base_actions = {
-                # Column Linear
-                "layers.0.self_attn.q_proj.weight": partial(fn, is_column=True),
-                "layers.0.self_attn.k_proj.weight": partial(fn, is_column=True),
-                "layers.0.self_attn.v_proj.weight": partial(fn, is_column=True),
-                "layers.0.mlp.gate_proj.weight": partial(fn, is_column=True),
-                "layers.0.mlp.up_proj.weight": partial(fn, is_column=True),
+        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
+
+        BIAS_KEYS = [
+            "self_attn.q_proj.bias",
+            "self_attn.k_proj.bias",
+            "self_attn.v_proj.bias",
+            "mlp.gate_proj.bias",
+            "mlp.up_proj.bias",
+            "self_attn.o_proj.bias",
+            "mlp.down_proj.bias",
+            "lm_head.bias",
+        ]
+
+        def make_base_actions():
+            actions = {
                 "lm_head.weight": partial(fn, is_column=not config.tie_word_embeddings),
-                # Row Linear
                 "embed_tokens.weight": partial(fn, is_column=False),
-                "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
-                "layers.0.mlp.down_proj.weight": partial(fn, is_column=False),
             }
-
-            if config.use_bias:
-                base_actions.update(
+            for layer_idx in range(config.num_hidden_layers):
+                actions.update(
                     {
-                        # Column Linear
-                        "layers.0.self_attn.q_proj.bias": partial(fn, is_column=True),
-                        "layers.0.self_attn.k_proj.bias": partial(fn, is_column=True),
-                        "layers.0.self_attn.v_proj.bias": partial(fn, is_column=True),
-                        "layers.0.mlp.gate_proj.bias": partial(fn, is_column=True),
-                        "layers.0.mlp.up_proj.bias": partial(fn, is_column=True),
-                        "layers.0.self_attn.o_proj.bias": partial(fn, is_column=True),
-                        "layers.0.mlp.down_proj.bias": partial(fn, is_column=True),
-                        "lm_head.bias": partial(fn, is_column=True),
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                        for k in LAYER_COLWISE
                     }
                 )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
+                        for k in LAYER_ROWWISE
+                    }
+                )
+                # bias
+                if config.use_bias:
+                    actions.update(
+                        {f"{cls.base_model_prefix}.layers.0.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
+                    )
 
-            for key, action in base_actions.items():
-                if "layers.0." in key:
-                    for i in range(num_hidden_layers):
-                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
-                else:
-                    final_actions[key] = action
-            return final_actions
+            return actions
 
-        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
+        mappings = make_base_actions()
         return mappings
 
 
@@ -523,21 +494,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             norm_eps=self.config.rms_norm_eps,
         )
 
-    def get_input_embeddings(self):
-        """Get the input embedding layer.
-
-        Returns:
-            nn.Embedding: The embedding layer for input tokens
-        """
-        return self.embed_tokens
-
-    def set_input_embeddings(self, value):
-        """Set new input embeddings.
-
-        Args:
-            value (nn.Embedding): New embedding layer to use
-        """
-        self.embed_tokens = value
+        self.rotary_emb = Ernie4_5RotaryEmbedding(config)
 
     @paddle.jit.not_to_static
     def recompute_training(
@@ -547,6 +504,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         attention_mask,
         attn_mask_start_row_indices,
         position_ids,
+        position_embeddings,
         output_attentions,
         past_key_value,
         use_cache,
@@ -559,6 +517,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             attention_mask (paddle.Tensor): Attention mask
             attn_mask_start_row_indices (paddle.Tensor): Variable length indices
             position_ids (paddle.Tensor): Position indices
+            position_embeddings (paddle.Tensor): Position embeddings
             output_attentions (bool): Whether to output attention weights
             past_key_value (Optional[Tuple[paddle.Tensor]]): Cached key/value states
             use_cache (bool): Whether to cache key/value states
@@ -579,6 +538,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             attention_mask,
             attn_mask_start_row_indices,
             position_ids,
+            position_embeddings,
             output_attentions,
             past_key_value,
             use_cache,
@@ -632,9 +592,9 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
         elif input_ids is not None:
-            _, seq_length = input_ids.shape
+            bsz, seq_length = input_ids.shape
         elif inputs_embeds is not None:
-            _, seq_length, _ = inputs_embeds.shape
+            bsz, seq_length, _ = inputs_embeds.shape
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
@@ -660,6 +620,14 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         else:
             causal_attention_mask = None
 
+        if position_ids is None:
+            position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))
+
+        if not self.config.fuse_rope:
+            position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin
+        else:
+            position_embeddings = None
+
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
@@ -678,6 +646,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
                     causal_attention_mask,
                     attn_mask_start_row_indices,
                     position_ids,
+                    position_embeddings,
                     output_attentions,
                     past_key_value,
                     use_cache,
@@ -688,6 +657,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
                     causal_attention_mask,
                     attn_mask_start_row_indices,
                     position_ids,
+                    position_embeddings,
                     output_attentions,
                     past_key_value,
                     use_cache,
@@ -758,149 +728,11 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         self.criterion = CriterionLayer(config)
         self.tie_weights()
 
-    @paddle.no_grad()
-    def set_state_dict(self, state_dict, *args, **kwargs):
-        """
-        Loads the model state dictionary.
-
-        Args:
-            state_dict (dict): Model state dictionary.
-        """
-        ret = super().set_state_dict(state_dict)
-        return ret
-
-    def get_input_embeddings(self):
-        """Returns the input embeddings layer."""
-        return self.model.embed_tokens
-
-    def set_input_embeddings(self, value):
-        """Sets the input embeddings layer."""
-        self.model.embed_tokens = value
-
-    def get_output_embeddings(self):
-        """Returns the output embeddings (LM head)."""
-        return self.lm_head
-
-    def set_output_embeddings(self, new_embeddings):
-        """Sets the output embeddings layer."""
-        self.lm_head = new_embeddings
-
-    def set_decoder(self, decoder):
-        """Sets the ERNIE decoder model."""
-        self.model = decoder
-
-    def get_decoder(self):
-        """Get the transformer decoder.
-
-        Returns:
-            nn.Layer: The decoder module
-        """
-        return self.model
-
     def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
         """Avoid using attention_mask with flash_attn on generation."""
         if self.config.use_flash_attention:
             return None
         return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
-
-    def prepare_inputs_for_generation(
-        self,
-        input_ids,
-        use_cache=False,
-        past_key_values=None,
-        inputs_embeds=None,
-        **kwargs,
-    ):
-        """Prepares model inputs for generation in PaddlePaddle models.
-
-        Args:
-            input_ids (paddle.Tensor):
-                The input token IDs with shape [batch_size, sequence_length].
-            use_cache (bool, optional):
-                Whether to use cached key-value states for faster generation.
-                Defaults to False.
-            past_key_values (Optional[Tuple[paddle.Tensor]]):
-                Cached past key-value states from previous generation steps.
-                If provided, the input_ids will be truncated to only keep the last token.
-            inputs_embeds (Optional[paddle.Tensor]):
-                Precomputed embeddings instead of token IDs.
-                Only used in the first generation step when past_key_values is None.
-            **kwargs:
-                Additional keyword arguments including:
-                - attention_mask (paddle.Tensor): Attention mask tensor
-
-        Returns:
-            Dict[str, Union[paddle.Tensor, bool, Dict]]:
-            A dictionary containing:
-                - "input_ids" or "inputs_embeds": The main input tensors
-                - "past_key_values": The cached key-value states
-                - "use_cache": Flag indicating whether to use caching
-                - "attention_mask": The attention mask tensor (if provided)
-                - "return_dict": Always set to True for consistent output format
-
-        """
-        if past_key_values:
-            input_ids = input_ids[:, -1:]
-
-        attention_mask = kwargs.get("attention_mask", None)
-
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-
-        model_inputs.update(
-            {
-                "past_key_values": past_key_values,
-                "use_cache": True,  # use_cache,
-                "attention_mask": attention_mask,
-                "return_dict": True,
-            }
-        )
-
-        return model_inputs
-
-    @staticmethod
-    def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
-        """
-        Updates model kwargs for generation.
-
-        Args:
-            outputs (Any): Model outputs.
-            model_kwargs (dict): Current model kwargs.
-            is_encoder_decoder (bool): Whether using encoder-decoder architecture.
-
-        Returns:
-            dict: Updated model kwargs.
-        """
-        # update cache
-        if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
-            model_kwargs["past_key_values"] = outputs[1]
-
-        if isinstance(outputs, CausalLMOutputWithCrossAttentions) and "past_key_values" in outputs:
-            model_kwargs["past_key_values"] = outputs.past_key_values
-
-        # update token_type_ids with last value
-        if "token_type_ids" in model_kwargs and model_kwargs["token_type_ids"] is not None:
-            token_type_ids = model_kwargs["token_type_ids"]
-            model_kwargs["token_type_ids"] = paddle.concat([token_type_ids, token_type_ids[:, -1:]], axis=-1)
-        if not is_encoder_decoder and model_kwargs.get("attention_mask", None) is not None:
-            # update attention mask
-            attention_mask = model_kwargs["attention_mask"]
-            model_kwargs["attention_mask"] = paddle.concat(
-                [
-                    attention_mask,
-                    paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype),
-                ],
-                axis=-1,
-            )
-        # update role_ids
-        if "role_ids" in model_kwargs and model_kwargs["role_ids"] is not None:
-            role_ids = model_kwargs["role_ids"]
-            model_kwargs["role_ids"] = paddle.concat([role_ids, role_ids[:, -1:]], axis=-1)
-
-        return model_kwargs
 
     def forward(
         self,

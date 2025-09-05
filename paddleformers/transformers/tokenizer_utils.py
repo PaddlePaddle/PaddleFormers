@@ -21,6 +21,7 @@ import re
 from functools import wraps
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from tokenizers import AddedToken  # noqa: F401
 from transformers import BatchEncoding
 from transformers.tokenization_utils import (
     PreTrainedTokenizer as PreTrainedTokenizer_tf,

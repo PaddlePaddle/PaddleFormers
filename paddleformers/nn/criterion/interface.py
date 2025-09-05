@@ -21,12 +21,17 @@ from ...utils.log import logger
 from ..general import GeneralInterface
 from .dpo_loss import dpo_loss_forward
 from .kto_loss import kto_loss_forward
-from .sft_loss import sft_loss_forward
+from .sft_loss import mtp_sft_loss_forward, sft_loss_forward
 
 
 class LossInterface(GeneralInterface):
 
-    _global_mapping = {"sft": sft_loss_forward, "dpo": dpo_loss_forward, "kto": kto_loss_forward}
+    _global_mapping = {
+        "sft": sft_loss_forward,
+        "dpo": dpo_loss_forward,
+        "kto": kto_loss_forward,
+        "mtp_sft": mtp_sft_loss_forward,
+    }
 
 
 ALL_LOSS_FUNCTIONS = LossInterface()
@@ -40,16 +45,12 @@ class CriterionLayer(nn.Layer):
         self.kto_config = copy.deepcopy(config.get("kto_config", None))
         self.ignored_index = getattr(config, "ignored_index", -100)
         self.use_filtered_label_loss = config.get("use_filtered_label_loss", False)
-        self.loss_subbatch_seqlen = config.get(
-            "loss_subbatch_seqlen", -1
-        )  # 切分由loss_subbatch_seqlen决定是否开启，loss_subbatch_seqlen > 0 才启动
+        self.loss_subbatch_seqlen = config.get("loss_subbatch_seqlen", -1)
         self.use_subbatch = self.loss_subbatch_seqlen > 0
         self.sequence_parallel = config.get("sequence_parallel", False)
         self.tensor_parallel = config.tensor_parallel_degree > 1
         self.use_fused_head_and_loss_fn = config.get("use_fused_head_and_loss_fn", False)
-        self.enable_parallel_cross_entropy = (
-            config.tensor_parallel_degree > 1 and config.tensor_parallel_output
-        )  # loss并行计算时，use_fused_head_and_loss_fn = False
+        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
         logger.info(
             f"loss_subbatch_seqlen: {self.loss_subbatch_seqlen} , use_fused_head_and_loss_fn: {self.use_fused_head_and_loss_fn}, use_filtered_label_loss: {self.use_filtered_label_loss}"
         )
@@ -79,6 +80,9 @@ class CriterionLayer(nn.Layer):
             loss_type = "kto"
         else:
             loss_type = "sft"
+
+            if config.get("num_nextn_predict_layers", 0) > 0:
+                loss_type = "mtp_sft"
 
         self.loss_foward_fn = ALL_LOSS_FUNCTIONS.get(loss_type)
         self.loss_type = loss_type

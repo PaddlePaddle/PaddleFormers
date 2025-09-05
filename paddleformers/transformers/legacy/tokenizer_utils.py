@@ -752,6 +752,8 @@ class ChatTemplateMixin:
         Returns:
             List[list[int], list[int]]: the pair of input_ids and target_ids
         """
+        if isinstance(self.chat_template, str):
+            self.init_chat_template(self.chat_template)
         if not self.chat_template:
             raise ValueError("chat_template is not set, please set chat_template first.")
         elif isinstance(self.chat_template, Template):

@@ -11,25 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Package"""
-import sys
-from typing import TYPE_CHECKING
-
-from ...utils.lazy_import import _LazyModule
-
-import_structure = {
-    "tokenizer": ["Ernie4_5Tokenizer"],
-    "configuration": ["Ernie4_5Config"],
-    "modeling": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5ForCausalLM"],
-}
-
-if TYPE_CHECKING:
-    from .configuration import *
-    from .modeling import *
-else:
-    sys.modules[__name__] = _LazyModule(
-        __name__,
-        globals()["__file__"],
-        import_structure,
-        module_spec=__spec__,
-    )
