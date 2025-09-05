@@ -42,11 +42,7 @@ from paddleformers.transformers import (
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DataConfig, ModelConfig, SFTConfig, SFTTrainer
-from paddleformers.trl.llm_utils import (
-    compute_metrics,
-    get_lora_target_modules,
-    init_chat_template,
-)
+from paddleformers.trl.llm_utils import compute_metrics, get_lora_target_modules
 from paddleformers.utils.log import logger
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.

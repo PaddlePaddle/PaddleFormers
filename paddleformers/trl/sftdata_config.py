@@ -42,9 +42,7 @@ class DataConfig:
         Multi-source dataset is supported, e.g., 0.8,0.2."
         },
     )
-    eval_dataset_type: str = field(
-        default="erniekit", metadata={"help": "type of eval datasets."}
-    )
+    eval_dataset_type: str = field(default="erniekit", metadata={"help": "type of eval datasets."})
     eval_dataset_path: str = field(
         default="examples/data/sft-eval.jsonl",
         metadata={"help": "path of eval datasets."},
@@ -69,9 +67,7 @@ class DataConfig:
     )
     random_shuffle: bool = field(
         default=True,
-        metadata={
-            "help": "Whether to enable authorize code for privatization. Defaults to False."
-        },
+        metadata={"help": "Whether to enable authorize code for privatization. Defaults to False."},
     )
     task_name: str = field(default=None, metadata={"help": "Additional name to select a more specific task."})
     zero_padding: bool = field(default=False, metadata={"help": "Whether to use Zero Padding data stream"})
