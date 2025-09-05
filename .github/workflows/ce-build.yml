@@ -22,14 +22,14 @@ jobs:
     steps:
       - name: Determine Image Name
         run: |
-          echo "IMAGE_NAME=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
 
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
-          paddle: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          paddle: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
@@ -46,7 +46,7 @@ jobs:
             -e paddle \
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
-            -w /workspace --runtime=nvidia $IMAGE_NAME
+            -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             
       - name: Download Code
         run: |
@@ -70,8 +70,6 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
-          unlink /usr/bin/python3
-          ln -sf $(which python${python_version}) /usr/bin/python3
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD

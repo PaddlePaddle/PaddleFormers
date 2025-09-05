@@ -61,7 +61,6 @@ def sft_loss_forward(
     logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y = sft_preprocess_inputs(
         self, logits, labels
     )
-
     if self.use_filtered_label_loss:
         if self.tensor_parallel and self.sequence_parallel and logits is None:
             masked_lm_labels, sparse_label_idx = sequence_parallel_sparse_mask_labels(labels, self.ignored_index)
@@ -70,7 +69,7 @@ def sft_loss_forward(
                 hidden_states = paddle.gather(hidden_states, sparse_label_idx, axis=0)
                 hidden_states = AllGatherVarlenOp.apply(hidden_states)
         else:
-            masked_lm_labels = masked_lm_labels.flatten()
+            masked_lm_labels = labels.flatten()
             sparse_label_idx = paddle.nonzero(masked_lm_labels != self.ignored_index).flatten()
             masked_lm_labels = paddle.take_along_axis(masked_lm_labels, sparse_label_idx, axis=0)
             if hidden_states is not None:
@@ -78,13 +77,13 @@ def sft_loss_forward(
                 hidden_states = paddle.take_along_axis(hidden_states, sparse_label_idx.reshape([-1, 1]), axis=0)
             if logits is not None:
                 logits = paddle.gather(logits, sparse_label_idx, axis=1)
+        labels = masked_lm_labels
     else:
         if self.sequence_parallel:
             if hidden_states is not None:
                 hidden_states = AllGatherOp.apply(hidden_states)
 
-        masked_lm_labels = labels
-
+    masked_lm_labels = labels
     # bsz,seq_len,hidden_size or seq_len,hidden_size
     seq_len = masked_lm_labels.shape[1] if masked_lm_labels.ndim == 2 else masked_lm_labels.shape[0]
     if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
@@ -145,3 +144,57 @@ def sft_loss_forward(
             masked_lm_loss = self.loss_func(logits, labels.unsqueeze(-1))
     loss = sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs)
     return loss
+
+
+def mtp_sft_loss_forward(
+    self: nn.Layer,
+    logits: Union[paddle.Tensor, Tuple[paddle.Tensor]],
+    labels: Union[paddle.Tensor, Tuple[paddle.Tensor]],
+    loss_mask: paddle.Tensor = None,
+    router_loss: paddle.Tensor = None,
+    mtp_logits: paddle.Tensor = None,
+    **kwargs
+):
+    num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
+    multi_token_pred_lambda = self.config.get("multi_token_pred_lambda", 0.3)
+    if num_nextn_predict_layers > 0:
+        labels_ori = labels
+        labels = labels[:, :-num_nextn_predict_layers]
+        if loss_mask is not None:
+            loss_mask = loss_mask[:, :-num_nextn_predict_layers]
+        seq_length = labels.shape[1]
+
+    sft_loss = sft_loss_forward(self, logits, labels, loss_mask, **kwargs)
+
+    if num_nextn_predict_layers > 0:
+        mtp_loss_res = []
+        for depth in range(num_nextn_predict_layers):
+            logtis_cur_depth = mtp_logits[depth]
+            labels_cur_depth = labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
+            res_cur_depth = sft_loss_forward(logtis_cur_depth, labels_cur_depth, loss_mask)
+            mtp_loss_res.append(res_cur_depth)
+
+    def add_loss(main_loss, loss):
+        return main_loss + loss - loss.detach()
+
+    if self.return_tuple:
+        loss, loss_sum = sft_loss
+    else:
+        loss, loss_sum = sft_loss, None
+
+    if num_nextn_predict_layers > 0:
+        loss = add_loss(
+            loss,
+            multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
+        )
+
+    if loss_sum is not None:
+        loss_sum = loss_sum + multi_token_pred_lambda * sum([x[1].detach() for x in mtp_loss_res]) / len(mtp_loss_res)
+
+    if router_loss is not None and isinstance(router_loss, paddle.Tensor):
+        loss = loss + router_loss - router_loss.detach()
+
+    if self.return_tuple:
+        return loss, loss_sum
+    else:
+        return loss

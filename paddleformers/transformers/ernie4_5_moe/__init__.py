@@ -18,35 +18,13 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "tokenizer_utils": [
-        "PretrainedTokenizer",
-        "BPETokenizer",
-        "tokenize_chinese_chars",
-        "is_chinese_char",
-        "normalize_chars",
-        "tokenize_special_chars",
-        "convert_to_unicode",
-    ],
-    "tokenizer_utils_base": [
-        "import_protobuf_decode_error",
-        "ExplicitEnum",
-        "PaddingStrategy",
-        "TensorType",
-        "to_py_obj",
-        "_is_numpy",
-        "TruncationStrategy",
-        "CharSpan",
-        "TokenSpan",
-        "BatchEncoding",
-        "SpecialTokensMixin",
-        "PretrainedTokenizerBase",
-        "EncodingFast",
-    ],
+    "configuration": ["Ernie4_5_MoeConfig"],
+    "modeling": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
 }
 
 if TYPE_CHECKING:
-    from .tokenizer_utils import *
-    from .tokenizer_utils_base import *
+    from .configuration import *
+    from .modeling import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

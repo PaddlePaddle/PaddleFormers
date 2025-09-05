@@ -235,6 +235,9 @@ class LlmMetaConfig:
         ("use_fused_linear", bool, False, "GPT3 model, use fused linear layer"),
         ("use_fused_dropout_add", bool, False, "GPT3 model, use fused `dropout + residual add` op."),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
+        ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
+        ("fuse_rope", bool, False, "Whether to fuse RoPE operation"),
+        ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
     ]
 
     hybrid_parallel_attributes = [
@@ -253,12 +256,14 @@ class LlmMetaConfig:
             1,
             "The interval for the number of layers at which recomputation occurs. A value of 0 indicates no recomputation. Default is 0.",
         ),
+        ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
         ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
         ("context_parallel_degree", int, 1, "context_parallel_degree"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
     ]
+
     recompute_attributes = [
         ("recompute", bool, False, "recompute"),
         (
@@ -278,6 +283,17 @@ class LlmMetaConfig:
         ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
     ]
 
+    loss_attributes = [
+        ("use_fused_head_loss_fn", bool, False, "Whether to use fused head and loss function."),
+        ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
+        (
+            "loss_subbatch_seqlen",
+            int,
+            -1,
+            "Sequence length larger than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch).",
+        ),
+    ]
+
     @classmethod
     def _get_defaults(cls):
         ret = {}
@@ -285,6 +301,7 @@ class LlmMetaConfig:
             cls.op_fusion_attributes,
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
+            cls.loss_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -298,6 +315,7 @@ class LlmMetaConfig:
             cls.op_fusion_attributes,
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
+            cls.loss_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -311,6 +329,7 @@ class LlmMetaConfig:
             cls.op_fusion_attributes,
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
+            cls.loss_attributes,
         ]:
             for attr in attrs:
                 ret.add(attr[0])
@@ -473,9 +492,6 @@ class PretrainedConfig:
         > Parameters for general components
 
         _attn_implementation (`str`, defaults to `eager`)
-        use_fused_head_loss_fn (`bool`, defaults to `False`): Whether to use fused head and loss function
-        use_filtered_label_loss (`bool`, defaults to `False`): Whether to use filtered label loss
-        loss_subbatch_seqlen (`int`, defaults to `-1`): Sequence length large than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch)
 
         > Parameters linked to the tokenizer
 
@@ -491,9 +507,6 @@ class PretrainedConfig:
             If an encoder-decoder model starts decoding with a different token than _bos_, the id of that token.
         sep_token_id (`int`, *optional*): The id of the _separation_ token.
 
-        tie_word_embeddings (`bool`, *optional*, defaults to `True`):
-            Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
-            model has a output word embedding layer.
         dtype (`str`, *optional*):
             The `dtype` of the weights. This attribute can be used to initialize the model to a non-default `dtype`
             (which is normally `float32`) and thus allow for optimal storage allocation. For example, if the saved
@@ -563,18 +576,12 @@ class PretrainedConfig:
 
         # for general components
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
-        self.use_fused_head_and_loss_fn = kwargs.pop("use_fused_head_and_loss_fn", False)
-        self.use_filtered_label_loss = kwargs.pop("use_filtered_label_loss", False)
-        self.loss_subbatch_seqlen = kwargs.pop("loss_subbatch_seqlen", -1)
 
         if "quantization_config" in kwargs and isinstance(kwargs["quantization_config"], Dict):
             kwargs["quantization_config"] = QuantizationConfig.from_dict(kwargs["quantization_config"])
         self.quantization_config = kwargs.pop("quantization_config", QuantizationConfig())
 
         self.pruned_heads = kwargs.pop("pruned_heads", {})
-        self.tie_word_embeddings = kwargs.pop(
-            "tie_word_embeddings", True
-        )  # Whether input and output word embeddings should be tied for all MLM, LM and Seq2Seq models.
 
         # parameter for model dtype
         if "torch_dtype" in kwargs:
@@ -1052,6 +1059,9 @@ class PretrainedConfig:
             del output["_auto_class"]
         if "moe_group" in output:
             del output["moe_group"]
+        if "dtype" in output:
+            output["torch_dtype"] = str(output["dtype"])
+            del output["dtype"]
 
         # PaddleFormers version when serializing the model
         output["paddleformers_version"] = __version__

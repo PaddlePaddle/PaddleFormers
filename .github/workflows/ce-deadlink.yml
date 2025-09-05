@@ -2,7 +2,7 @@ name: Deadlink CE
 
 on:
   schedule:
-    - cron: "0 8 * * 6"     # every Saturday at 6:00 AM
+    - cron: "0 8 * * 6"     # every Saturday at 16:00
   workflow_dispatch:        # allow to manually trigger the workflow
 
 concurrency:
@@ -28,14 +28,14 @@ jobs:
     steps:
       - name: Determine Image Name
         run: |
-          echo "IMAGE_NAME=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
 
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
-          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CENN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
@@ -52,7 +52,7 @@ jobs:
             -e paddle_whl \
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
-            -w /workspace --runtime=nvidia $IMAGE_NAME
+            -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             
       - name: Download Code
         run: |
@@ -80,13 +80,11 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
-          unlink /usr/bin/python3
-          ln -sf $(which python${python_version}) /usr/bin/python3
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
           python -m pip install beautifulsoup4 openpyxl
           source $work_dir/../../../proxy
-          bash run.sh PaddleFormers develop liujie44@baidu.com PaddleFormers死链检测汇总报告
+          bash run.sh PaddleFormers develop liujie44@baidu.com "PaddleFormers Broken Link Check Summary Report"
           '
           
       - name: Upload Logs
@@ -102,8 +100,8 @@ jobs:
             tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
           fi
           bos_prefix="schedule/$(date +%Y%m%d)"
-          cd /workspace/PaddleFormers/result
-          for FILE in /workspace/PaddleFormers/result/*; do
+          cd /workspace/result
+          for FILE in /workspace/result/*; do
             file=$(basename "$FILE")
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/deadlink/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/deadlink/${bos_prefix}/logs/$file"

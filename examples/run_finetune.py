@@ -17,18 +17,11 @@ import sys
 from functools import partial
 
 import paddle
-from utils.data import get_convert_example
 
-from paddleformers.data import DataCollatorForSeq2Seq
-from paddleformers.datasets import (
-    ZeroPaddingIterableDataset,
-    ZeroPaddingMapDataset,
-    load_dataset,
-)
+from paddleformers.datasets.finetuning import collate_fn
+from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
 from paddleformers.peft import LoRAConfig, LoRAModel
-from paddleformers.peft.reft import ReftDataCollator
 from paddleformers.trainer import PdArgumentParser, get_last_checkpoint, set_seed
-from paddleformers.trainer.trainer_callback import TrainerState
 from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -49,12 +42,7 @@ from paddleformers.transformers import (
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DataConfig, ModelConfig, SFTConfig, SFTTrainer
-from paddleformers.trl.llm_utils import (
-    ZeroPaddingIterDatasetCallback,
-    compute_metrics,
-    get_lora_target_modules,
-    init_chat_template,
-)
+from paddleformers.trl.llm_utils import compute_metrics, get_lora_target_modules
 from paddleformers.utils.log import logger
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
@@ -152,6 +140,7 @@ def main():
         model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     model_config.seq_length = data_args.max_length
+    model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     logger.info(f"Final model config: {model_config}")
 
     logger.info("Creating model")
@@ -201,10 +190,10 @@ def main():
 
     # Load tokenizer & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, download_hub=model_args.download_hub)
-    tokenizer.chat_template = None
+    # tokenizer.chat_template = None
 
     # init chat_template for tokenizer
-    init_chat_template(tokenizer, model_args.model_name_or_path, data_args.chat_template)
+    # init_chat_template(tokenizer, model_args.model_name_or_path, data_args.chat_template)
 
     # if using chat_template, data_args.eval_with_do_generation must be false
     if tokenizer.chat_template is not None:
@@ -213,106 +202,57 @@ def main():
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    train_ds, dev_ds, test_ds = create_dataset(data_args, training_args)
+    dataset_config = {
+        "tokenizer": tokenizer,
+        "max_seq_len": training_args.max_seq_length,
+        "random_seed": training_args.seed,
+        "num_replicas": 1,
+        "rank": 0,
+        "num_samples_each_epoch": 6000000,
+        "random_shuffle": data_args.random_shuffle,
+        "greedy_intokens": data_args.greedy_intokens,
+        "packing": data_args.packing,
+        "mix_strategy": data_args.mix_strategy,
+    }
 
-    if training_args.resume_from_checkpoint is not None and data_args.lazy:
-        logger.info(
-            f"Loading from '{training_args.resume_from_checkpoint}' with `lazy=True`, manually skipping dataset and setting `ignore_data_skip` to True."
-        )
-        training_args.ignore_data_skip = True
-        state = TrainerState.load_from_json(os.path.join(training_args.resume_from_checkpoint, "trainer_state.json"))
-        if state.trial_params is not None and "zero_padding_global_step" in state.trial_params:
-            consumed_samples = state.trial_params["zero_padding_global_step"]
-        else:
-            consumed_samples = (
-                state.global_step
-                * training_args.per_device_train_batch_size
-                * training_args.gradient_accumulation_steps
-                * training_args.dataset_world_size
-            )
-        logger.info(
-            f"Skipping the first {consumed_samples} samples to warmup the dataset from checkpoint '{training_args.resume_from_checkpoint}'."
-        )
-        train_ds = train_ds.skip(consumed_samples)
-
-    if training_args.pipeline_parallel_degree > 1:
-        from utils.data import convert_example_common
-
-        trans_func = partial(convert_example_common, tokenizer=tokenizer, data_args=data_args)
-    else:
-        trans_func = partial(get_convert_example(model), tokenizer=tokenizer, data_args=data_args)
-
-    eval_zero_padding = data_args.zero_padding
-    if data_args.zero_padding and data_args.eval_with_do_generation:
-        logger.warning(
-            "`zero_padding` conflicts with `eval_with_do_generation`. Setting zero_padding to False for the eval_dataset."
-        )
-        eval_zero_padding = False
-
-    logger.info("Trans the dataset text into token ids, please wait for a moment.")
-    train_ds, dev_ds, test_ds = trans_dataset_to_ids(
-        train_ds, dev_ds, test_ds, model_args, data_args, trans_func, eval_zero_padding
+    train_dataset = create_dataset_sft(
+        task_group=data_args.train_dataset_path,
+        task_group_prob=data_args.train_dataset_prob,
+        sub_dataset_type=data_args.train_dataset_type,
+        **dataset_config,
     )
-
-    if data_args.zero_padding:
-        if data_args.lazy:
-            intoken_dataset = ZeroPaddingIterableDataset
-        else:
-            intoken_dataset = ZeroPaddingMapDataset
-        logger.info("Creating Zero Padding Data Stream. This may take a few minutes.")
-        if train_ds is not None:
-            train_ds = intoken_dataset(
-                train_ds,
-                tokenizer=tokenizer,
-                max_length=data_args.max_length,
-                greedy_zero_padding=data_args.greedy_zero_padding,
-            )
-        if eval_zero_padding and dev_ds is not None:
-            dev_ds = intoken_dataset(dev_ds, tokenizer=tokenizer, max_length=data_args.max_length)
-        if eval_zero_padding and test_ds is not None:
-            test_ds = intoken_dataset(test_ds, tokenizer=tokenizer, max_length=data_args.max_length)
+    eval_dataset = create_dataset_sft(
+        task_group=data_args.eval_dataset_path,
+        task_group_prob=data_args.eval_dataset_prob,
+        sub_dataset_type=data_args.eval_dataset_type,
+        is_valid=True,
+        **dataset_config,
+    )
 
     model = create_peft_model(model_args, training_args, dtype, model)
 
     # Create trainer
-
-    if (
-        training_args.pipeline_parallel_degree > 1
-        or training_args.sequence_parallel
-        or training_args.autotuner_benchmark
-        or data_args.zero_padding
-        or data_args.pad_to_max_length
-    ):
-        max_length = data_args.max_length
-        padding = "max_length"
-    else:
-        max_length = None
-        padding = True
 
     if training_args.pipeline_parallel_degree > 1:
         metrics = None
     else:
         metrics = compute_metrics
 
-    data_collator_fn = DataCollatorForSeq2Seq(
+    data_collator = partial(
+        collate_fn,
         tokenizer=tokenizer,
-        max_length=max_length,
-        padding=padding,
-        max_label_length=max_length,
-        return_tensors="np",
-        return_attention_mask=not model_args.flash_mask,
-        pad_to_multiple_of=data_args.pad_to_multiple_of,
+        model_args=model_args,
+        max_seq_len=training_args.max_seq_length + model_config.num_nextn_predict_layers,
     )
     trainer = SFTTrainer(
         model=model,
         args=training_args,
-        train_dataset=train_ds,
-        eval_dataset=dev_ds,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         compute_metrics=metrics,
-        data_collator=data_collator_fn if not model_args.reft else ReftDataCollator(data_collator=data_collator_fn),
+        data_collator=data_collator,
         do_generation=data_args.eval_with_do_generation,
-        callbacks=[ZeroPaddingIterDatasetCallback()] if isinstance(train_ds, ZeroPaddingIterableDataset) else None,
         data_args=data_args,
     )
     trainable_parameters = [
@@ -343,16 +283,6 @@ def main():
                 trainer.log_metrics("train", train_result.metrics)
                 trainer.save_metrics("train", train_result.metrics)
                 trainer.save_state()
-
-    # Evaluation test set
-    if training_args.do_predict:
-        eval_result = trainer.predict(test_ds).metrics
-        trainer.log_metrics("test", eval_result)
-    # Evaluation dev set
-    if training_args.do_eval:
-        logger.info("*** Evaluate result after train ***")
-        eval_result = trainer.evaluate(dev_ds)
-        trainer.log_metrics("eval", eval_result)
 
 
 def create_peft_model(model_args, training_args, dtype, model):
@@ -385,99 +315,6 @@ def create_peft_model(model_args, training_args, dtype, model):
         model.print_trainable_parameters()
 
     return model
-
-
-def trans_dataset_to_ids(train_ds, dev_ds, test_ds, model_args, data_args, trans_func, eval_zero_padding):
-    if train_ds is not None:
-        train_ds = train_ds.map(
-            partial(
-                trans_func,
-                is_test=False,
-                zero_padding=data_args.zero_padding,
-                flash_mask=model_args.flash_mask,
-            )
-        )
-    if dev_ds is not None:
-        dev_ds = dev_ds.map(
-            partial(
-                trans_func,
-                is_test=data_args.eval_with_do_generation,
-                zero_padding=eval_zero_padding,
-                flash_mask=model_args.flash_mask,
-            )
-        )
-    if test_ds is not None:
-        test_ds = test_ds.map(partial(trans_func, is_test=data_args.eval_with_do_generation))
-
-    return train_ds, dev_ds, test_ds
-
-
-def create_dataset(data_args, training_args):
-    if data_args.dataset_name_or_path is None:
-        raise ValueError(f"Please specific dataset name or path (got {data_args.dataset_name_or_path})")
-
-    train_ds = None
-    dev_ds = None
-    test_ds = None
-    if os.path.exists(os.path.join(data_args.dataset_name_or_path, "train.json")) or os.path.exists(
-        os.path.join(data_args.dataset_name_or_path, "dev.json")
-    ):
-        logger.info("load train")
-        if training_args.do_train:
-            train_ds = load_dataset(
-                "json",
-                data_files=os.path.join(data_args.dataset_name_or_path, "train.json"),
-                lazy=data_args.lazy,
-            )[0]
-        logger.info("load eval")
-        if training_args.do_eval:
-            dev_ds = load_dataset(
-                "json",
-                data_files=os.path.join(data_args.dataset_name_or_path, "dev.json"),
-                lazy=data_args.lazy,
-            )[0]
-        logger.info("load test")
-        if training_args.do_predict:
-            test_ds = load_dataset(
-                "json",
-                data_files=os.path.join(data_args.dataset_name_or_path, "test.json"),
-                lazy=data_args.lazy,
-            )[0]
-
-    elif os.path.exists(os.path.join(data_args.dataset_name_or_path, "train")) or os.path.exists(
-        os.path.join(data_args.dataset_name_or_path, "dev")
-    ):
-        import glob
-
-        if training_args.do_train:
-            train_ds = load_dataset(
-                "json",
-                data_files=glob.glob(os.path.join(data_args.dataset_name_or_path, "train", "*.json")),
-                lazy=data_args.lazy,
-            )[0]
-        if training_args.do_eval:
-            dev_ds = load_dataset(
-                "json",
-                data_files=glob.glob(os.path.join(data_args.dataset_name_or_path, "dev", "*.json")),
-                lazy=data_args.lazy,
-            )[0]
-        if training_args.do_predict:
-            test_ds = load_dataset(
-                "json",
-                data_files=glob.glob(os.path.join(data_args.dataset_name_or_path, "test", "*.json")),
-                lazy=data_args.lazy,
-            )[0]
-    else:
-        if training_args.do_train:
-            train_ds = load_dataset(data_args.dataset_name_or_path, splits=["train"])[0]
-
-        if training_args.do_eval:
-            dev_ds = load_dataset(data_args.dataset_name_or_path, splits=["dev"])[0]
-
-        if training_args.do_predict:
-            test_ds = load_dataset(data_args.dataset_name_or_path, splits=["test"])[0]
-
-    return train_ds, dev_ds, test_ds
 
 
 if __name__ == "__main__":

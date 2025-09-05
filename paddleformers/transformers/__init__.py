@@ -18,6 +18,7 @@ from contextlib import suppress
 from typing import TYPE_CHECKING
 from ..utils.lazy_import import _LazyModule
 
+
 # from .auto.modeling import AutoModelForCausalLM
 import_structure = {
     "kto_criterion": [
@@ -35,10 +36,10 @@ import_structure = {
         "BPETokenizer",
         "tokenize_chinese_chars",
         "is_chinese_char",
-        "AddedToken",
         "normalize_chars",
         "tokenize_special_chars",
         "convert_to_unicode",
+        "AddedToken",
     ],
     "attention_utils": ["create_bigbird_rand_mask_idx_list"],
     "tensor_parallel_utils": [],
@@ -170,6 +171,8 @@ import_structure = {
     "ernie4_5.configuration": ["Ernie4_5Config"],
     "ernie4_5.modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"],
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
+    "ernie4_5_moe.configuration": ["Ernie4_5_MoeConfig"],
+    "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM"],
     "gpt_oss.tokenizer": ["GptOssTokenizer"],
@@ -333,10 +336,13 @@ import_structure = {
     "qwen": [],
     "deepseek_v2": [],
     "deepseek_v3": [],
-    "ernie4_5": [],
+    "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
+    "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "qwen2_moe": [],
     "qwen3_moe": [],
     "auto": ["AutoModelForCausalLM"],
+    "legacy.tokenizer_utils_base": ["EncodingFast"],
+    "legacy": [],
 }
 
 if TYPE_CHECKING:
@@ -389,6 +395,7 @@ if TYPE_CHECKING:
     from .deepseek_v2 import *
     from .deepseek_v3 import *
     from .ernie4_5 import *
+    from .ernie4_5_moe import *
     from .llama import *
     from .optimization import *
     from .qwen import *
