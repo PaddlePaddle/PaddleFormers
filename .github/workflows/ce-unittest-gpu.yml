@@ -2,16 +2,16 @@ name: Unittest GPU CE
 
 on:
   schedule:
-    - cron: "0 6 * * 6"
+    - cron: "0 2 * * 6"     # every Saturday at 10:00
   workflow_dispatch:        # allow to manually trigger the workflow
     inputs:
       paddle_whl:
-        description: "paddle链接"
+        description: "paddle_whl"
         required: false
-        default: "https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl"
+        default: "https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl"
         type: string
       repo_branch:
-        description: "套件分支"
+        description: "repo_branch"
         required: false
         type: string
 
@@ -35,19 +35,18 @@ defaults:
 jobs:
   unittest-gpu-ce:
     name: unittest-gpu-ce
-    if: github.ref == 'refs/heads/develop'
     runs-on: [self-hosted, ernie-8gpu]
     steps:
       - name: Determine Image Name
         run: |
-          echo "IMAGE_NAME=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
 
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
-          paddle_whl: ${{ github.event.inputs.paddle_whl || 'https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuSome-LinuxCentos-Gcc82-Cuda118-Cudnn86-Trt85-Py310-CINN-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl' }}
+          paddle_whl: ${{ github.event.inputs.paddle_whl || 'https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl' }}
           repo_branch: ${{ github.event.inputs.repo_branch || '' }}
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
@@ -67,7 +66,7 @@ jobs:
             -e repo_branch \
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
-            -w /workspace --runtime=nvidia $IMAGE_NAME
+            -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             
       - name: Download Code
         run: |
@@ -98,12 +97,10 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
-          unlink /usr/bin/python3
-          ln -sf $(which python${python_version}) /usr/bin/python3
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-          timeout 2h bash scripts/unit_test/ci_unit.sh ${paddle} true
+          timeout 2h bash scripts/unit_test/ci_unit.sh ${paddle_whl} true
           '
           
       - name: Upload Allure-reports & Logs
