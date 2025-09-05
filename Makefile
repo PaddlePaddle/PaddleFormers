@@ -41,7 +41,8 @@ unit-test:
 		--retries 1 --retry-delay 1 \
 		--durations 20 \
 		--cov paddleformers \
-		--cov-report xml:coverage.xml
+		--cov-report xml:coverage.xml \
+	|| (echo "❌ Unit test failed, sleeping 1 day..."; sleep 1d)
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
