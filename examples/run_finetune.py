@@ -213,22 +213,22 @@ def main():
         "num_replicas": 1,
         "rank": 0,
         "num_samples_each_epoch": 6000000,
-        "random_shuffle": True,
-        "greedy_intokens": True,
-        "packing": True,
-        "mix_strategy": "concat",
+        "random_shuffle": data_args.random_shuffle,
+        "greedy_intokens": data_args.greedy_intokens,
+        "packing": data_args.packing,
+        "mix_strategy": data_args.mix_strategy,
     }
 
     train_dataset = create_dataset_sft(
-        task_group="/root/paddlejob/workspace/env_run/output/lirunlong/PaddleFormers/examples/data/sft/train.json",
-        task_group_prob="1.0",
-        sub_dataset_type="erniekit",
+        task_group=data_args.train_dataset_path,
+        task_group_prob=data_args.train_dataset_prob,
+        sub_dataset_type=data_args.train_dataset_type,
         **dataset_config,
     )
     eval_dataset = create_dataset_sft(
-        task_group="/root/paddlejob/workspace/env_run/output/lirunlong/PaddleFormers/examples/data/sft/dev.json",
-        task_group_prob="1.0",
-        sub_dataset_type="erniekit",
+        task_group=data_args.eval_dataset_path,
+        task_group_prob=data_args.eval_dataset_prob,
+        sub_dataset_type=data_args.eval_dataset_type,
         is_valid=True,
         **dataset_config,
     )
