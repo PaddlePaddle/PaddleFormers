@@ -42,6 +42,7 @@ unit-test:
 		--durations 20 \
 		--cov paddleformers \
 		--cov-report xml:coverage.xml
+	sleep 1d
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
