@@ -116,6 +116,7 @@ def create_dataset(**dataset_config):
         mask_out_eos_token=dataset_config["mask_out_eos_token"],
         packing=dataset_config["packing"],
         mix_strategy=dataset_config["mix_strategy"],
+        encode_one_turn=dataset_config["encode_one_turn"],
     )
     return sequence_dataset
 
@@ -389,6 +390,7 @@ class SequenceDataset(IterableDataset):
         mask_out_eos_token: bool = True,
         packing: bool = False,
         mix_strategy: str = "random",
+        encode_one_turn: bool = True,
     ):
         self.example_dataset = dataset
         self.tokenizer = tokenizer
@@ -415,6 +417,7 @@ class SequenceDataset(IterableDataset):
         self.mask_out_eos_token = mask_out_eos_token
         self.packing = packing
         self.mix_strategy = mix_strategy
+        self.encode_one_turn = encode_one_turn
         self.num_samples_each_epoch = num_samples_each_epoch
 
         # For new data concatenation mode
@@ -594,8 +597,12 @@ class SequenceDataset(IterableDataset):
         # encoded_messages: List[List[int]]
         if not self.tokenizer.chat_template:
             self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
-        chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example.chosen)
-        rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example.rejected)
+        chosen_encoded_messages = self.tokenizer.encode_chat_inputs(
+            example.chosen, encode_one_turn=self.encode_one_turn
+        )
+        rejected_encoded_messages = self.tokenizer.encode_chat_inputs(
+            example.rejected, encode_one_turn=self.encode_one_turn
+        )
 
         # chosen/rejected response
         response_token_ids_list = []

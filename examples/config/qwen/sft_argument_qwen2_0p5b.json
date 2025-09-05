@@ -1,5 +1,5 @@
 {
-    "model_name_or_path": "/root/.cache/aistudio/hub/models/PaddleNLP/Qwen2-0.5B-Instruct",
+    "model_name_or_path": "PaddleNLP/Qwen2-0.5B-Instruct",
     "train_dataset_path": "./data/sft/train.json",
     "train_dataset_prob": "1.0",
     "train_dataset_type": "erniekit",
@@ -39,5 +39,6 @@
     "zero_padding": true,
     "flash_mask": true,
     "unified_checkpoint": true,
-    "use_flash_attention": true
+    "use_flash_attention": true,
+    "encode_one_turn": true
   }
