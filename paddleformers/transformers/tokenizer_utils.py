@@ -185,7 +185,25 @@ class PaddleTokenizerMixin:
             "tools": [],    # Function call definitions
             "documents": [] # RAG context documents
         }
+
+        Note: The legacy PaddleFormers `add_generation_prompt` default was True.
+        For backward compatibility, we changed the default behavior of the HuggingFace
+        `apply_chat_template` function from False to True.
+
+        In future usage, explicitly pass the `add_generation_prompt` parameter
+        to clearly specify the intended behavior.
         """
+        if "add_generation_prompt" not in kwargs:
+            logger.warning_once(
+                "Warning: apply_chat_template() called without explicit `add_generation_prompt` "
+                "parameter. Current default=True differs from Hugging Face's default=False. "
+                "Always specify this parameter to ensure consistent behavior across versions."
+            )
+
+        # Changed the default behavior:
+        # Original HF default was False, but we set it to True for compatibility
+        add_generation_prompt = kwargs.pop("add_generation_prompt", True)
+
         if isinstance(conversation, dict):
             messages = conversation.get("messages", None)
             tools = conversation.get("tools", None)
@@ -202,12 +220,14 @@ class PaddleTokenizerMixin:
                 chat_template=chat_template,
                 tools=tools,
                 documents=documents,
+                add_generation_prompt=add_generation_prompt,
                 **kwargs,
             )
         else:
             return super().apply_chat_template(
                 conversation=conversation,
                 chat_template=chat_template,
+                add_generation_prompt=add_generation_prompt,
                 **kwargs,
             )
 
