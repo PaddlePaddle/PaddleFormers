@@ -21,25 +21,22 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
-from paddleformers.transformers import (
-    GptOssConfig,
-    GptOssForCausalLM,
-    GptOssModel,
-)
-
+# from paddleformers.transformers import GptOssConfig, GptOssForCausalLM,
+from paddleformers.transformers import GptOssModel
 from tests.testing_utils import require_package, slow
 
-# from tests.testing_utils import slow
-from tests.transformers.test_configuration_common import ConfigTester
-from tests.transformers.test_generation_utils import GenerationTesterMixin
-from tests.transformers.test_modeling_common import (
-    GenerationD2STestMixin,
-    ModelTesterMixin,
-    ModelTesterPretrainedMixin,
-    ids_tensor,
-    random_attention_mask,
-)
-'''
+# from tests.transformers.test_configuration_common import ConfigTester
+# from tests.transformers.test_generation_utils import GenerationTesterMixin
+# from tests.transformers.test_modeling_common import (
+#     GenerationD2STestMixin,
+#     ModelTesterMixin,
+#     ModelTesterPretrainedMixin,
+#     ids_tensor,
+#     random_attention_mask,
+# )
+from tests.transformers.test_modeling_common import ModelTesterPretrainedMixin
+
+"""
 class GptOssModelTester:
     def __init__(
         self,
@@ -384,7 +381,9 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
     def test_hidden_states_output(self):
         pass
 
-'''
+"""
+
+
 class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = GptOssModel
 
@@ -400,9 +399,13 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         self.assertEqual(output.shape, expected_shape)
 
         expected_slice = paddle.to_tensor(
-            [[[ 3.12500000,  1.63281250,  1.25000000],
-            [-2.64062500,  5.50000000, -0.64062500],
-            [ 0.21972656, -2.59375000,  0.49609375]]]
+            [
+                [
+                    [3.12500000, 1.63281250, 1.25000000],
+                    [-2.64062500, 5.50000000, -0.64062500],
+                    [0.21972656, -2.59375000, 0.49609375],
+                ]
+            ]
         )
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
@@ -417,9 +420,13 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         expected_shape = [1, 11, 2880]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
-            [[[ 3.12500000,  1.63281250,  1.25000000],
-            [-2.64062500,  5.50000000, -0.64062500],
-            [ 0.21972656, -2.59375000,  0.49609375]]]
+            [
+                [
+                    [3.12500000, 1.63281250, 1.25000000],
+                    [-2.64062500, 5.50000000, -0.64062500],
+                    [0.21972656, -2.59375000, 0.49609375],
+                ]
+            ]
         )
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
