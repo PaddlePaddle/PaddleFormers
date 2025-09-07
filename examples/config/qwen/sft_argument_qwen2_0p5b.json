@@ -1,9 +1,9 @@
 {
-    "model_name_or_path": "/root/.cache/aistudio/hub/models/PaddleNLP/Qwen2-0.5B-Instruct",
-    "train_dataset_path": "./data/sft/train.json",
+    "model_name_or_path": "PaddleNLP/Qwen2-0.5B-Instruct",
+    "train_dataset_path": "./data/train.json",
     "train_dataset_prob": "1.0",
     "train_dataset_type": "erniekit",
-    "eval_dataset_path": "./data/sft/dev.json",
+    "eval_dataset_path": "./data/dev.json",
     "eval_dataset_prob": "1.0",
     "eval_dataset_type": "erniekit",
     "packing": true,
@@ -23,7 +23,7 @@
     "save_strategy": "epoch",
     "src_length": 1024,
     "max_length": 2048,
-    "fp16": true,
+    "bf16": true,
     "fp16_opt_level": "O2",
     "do_train": true,
     "do_eval": true,
@@ -39,5 +39,7 @@
     "zero_padding": true,
     "flash_mask": true,
     "unified_checkpoint": true,
-    "use_flash_attention": true
+    "use_flash_attention": true,
+    "report_to": "none",
+    "convert_from_hf": false
   }

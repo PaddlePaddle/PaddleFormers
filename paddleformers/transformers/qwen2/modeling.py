@@ -36,6 +36,7 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Qwen2MLP
 from ...nn.norm import Norm as GeneralNorm
+from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..contrastive_loss import SimpleContrastiveLoss
 from ..embedding_utils import dist_gather_tensor_with_gradient
@@ -52,6 +53,7 @@ __all__ = [
     "Qwen2Model",
     "Qwen2PretrainedModel",
     "Qwen2ForCausalLM",
+    "Qwen2ForCausalLMPipe",
     "Qwen2ForSequenceClassification",
     "Qwen2ForTokenClassification",
     "Qwen2SentenceEmbedding",
@@ -237,7 +239,7 @@ class Qwen2Attention(nn.Layer):
             key=key_states,
             value=value_states,
             attention_mask=attention_mask,
-            attn_mask_start_row_indices=attn_mask_startend_row_indices,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
             scaling=self.scaling,
         )
@@ -1003,3 +1005,13 @@ class Qwen2SentenceEmbedding(Qwen2PretrainedModel):
             hidden_states = outputs[0]
         last_hidden_states = hidden_states.gather_nd(embedding_indices)
         return last_hidden_states
+
+
+class Qwen2ForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = Qwen2Config
+    _decoder_layer_cls = Qwen2DecoderLayer
+    _get_tensor_parallel_mappings = Qwen2Model._get_tensor_parallel_mappings
+    _init_weights = Qwen2Model._init_weights
+    _keep_in_fp32_modules = Qwen2Model._keep_in_fp32_modules
+    _tied_weights_keys = ["lm_head.weight"]
+    transpose_weight_keys = Qwen2Model.transpose_weight_keys

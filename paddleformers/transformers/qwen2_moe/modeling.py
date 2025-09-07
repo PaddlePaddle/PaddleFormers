@@ -31,6 +31,7 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Qwen2MLP
 from ...nn.norm import Norm as GeneralNorm
+from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -43,6 +44,7 @@ __all__ = [
     "Qwen2MoeModel",
     "Qwen2MoePretrainedModel",
     "Qwen2MoeForCausalLM",
+    "Qwen2MoeForCausalLMPipe",
 ]
 
 
@@ -881,3 +883,13 @@ class Qwen2MoeForCausalLM(Qwen2MoePretrainedModel):
             attentions=outputs.attentions,
             router_logits=outputs.router_logits,
         )
+
+
+class Qwen2MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = Qwen2MoeConfig
+    _decoder_layer_cls = Qwen2MoeDecoderLayer
+    _get_tensor_parallel_mappings = Qwen2MoeModel._get_tensor_parallel_mappings
+    _init_weights = Qwen2MoeModel._init_weights
+    _keep_in_fp32_modules = Qwen2MoeModel._keep_in_fp32_modules
+    _tied_weights_keys = ["lm_head.weight"]
+    transpose_weight_keys = Qwen2MoeModel.transpose_weight_keys

@@ -18,18 +18,6 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "modeling_pp": [
-        "recompute",
-        "get_env_device",
-        "parse_args",
-        "return_args",
-        "get_attr",
-        "Qwen2MoeEmbeddingPipe",
-        "Qwen2MoeDecoderLayerPipe",
-        "Qwen2MoeRMSNormPipe",
-        "Qwen2MoeLMHeadPipe",
-        "Qwen2MoeForCausalLMPipe",
-    ],
     "configuration": ["Qwen2MoeConfig"],
     "modeling": [
         "Qwen2MoeGate",
@@ -37,6 +25,7 @@ import_structure = {
         "Qwen2MoeModel",
         "Qwen2MoePretrainedModel",
         "Qwen2MoeForCausalLM",
+        "Qwen2MoeForCausalLMPipe",
     ],
 }
 
@@ -44,7 +33,6 @@ if TYPE_CHECKING:
     from ..qwen2.tokenizer import *
     from .configuration import *
     from .modeling import *
-    from .modeling_pp import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
