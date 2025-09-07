@@ -39,6 +39,10 @@ from paddleformers.transformers import (
     Qwen2ForCausalLMPipe,
     Qwen2MoeForCausalLM,
     Qwen2MoeForCausalLMPipe,
+    Qwen3ForCausalLM,
+    Qwen3ForCausalLMPipe,
+    Qwen3MoeForCausalLM,
+    Qwen3MoeForCausalLMPipe,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DataConfig, ModelConfig, SFTConfig, SFTTrainer
@@ -59,6 +63,10 @@ flash_mask_support_list = [
     Qwen2ForCausalLMPipe,
     Qwen2MoeForCausalLM,
     Qwen2MoeForCausalLMPipe,
+    Qwen3ForCausalLM,
+    Qwen3ForCausalLMPipe,
+    Qwen3MoeForCausalLM,
+    Qwen3MoeForCausalLMPipe,
 ]
 
 
@@ -162,10 +170,12 @@ def main():
     else:
         model = model_class.from_config(model_config, dtype=dtype)
 
-    if model_args.flash_mask and (not data_args.zero_padding or not model.config.use_flash_attention):
+    if model_args.flash_mask and (not data_args.zero_padding or model_args.attn_implementation != "flashmask"):
         logger.warning("`flash_mask` must use with zero padding and flash attention.")
         data_args.zero_padding = True
-        model.config.use_flash_attention = True
+        model.config._attn_implementation = "flashmask"
+    else:
+        model.config._attn_implementation = model_args.attn_implementation
 
     if model_args.flash_mask and not any(isinstance(model, cls) for cls in flash_mask_support_list):
         raise NotImplementedError(f"{model.__class__} not support flash mask.")

@@ -157,7 +157,7 @@ class Qwen3Config(PretrainedConfig):
         use_rmsnorm=True,
         rms_norm_eps=1e-6,
         use_cache=True,
-        tie_word_embeddings=False,
+        tie_word_embeddings=True,
         rope_theta=10000.0,
         rope_scaling=None,
         bos_token_id=151643,
@@ -221,11 +221,16 @@ class Qwen3Config(PretrainedConfig):
 
         self.register_unsavable_keys(
             [
+                "ignored_index",
+                "pad_token_id",
+                "use_rmsnorm",
+                "use_swiglu",
                 "recompute",
                 "recompute_use_reentrant",
                 "recompute_granularity",
                 "pp_seg_method",
                 "dpo_config",
                 "kto_config",
+                "max_sequence_length",
             ]
         )

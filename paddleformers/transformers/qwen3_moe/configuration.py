@@ -246,6 +246,11 @@ class Qwen3MoeConfig(PretrainedConfig):
 
         self.register_unsavable_keys(
             [
+                "ignored_index",
+                "pad_token_id",
+                "rope_scaling",
+                "use_rmsnorm",
+                "use_swiglu",
                 "recompute",
                 "recompute_use_reentrant",
                 "recompute_granularity",

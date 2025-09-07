@@ -112,6 +112,7 @@ class ModelConfig:
     neftune: bool = field(default=False, metadata={"help": "Whether to apply NEFT"})
     neftune_noise_alpha: float = field(default=5.0, metadata={"help": "NEFT noise alpha"})
     flash_mask: bool = field(default=False, metadata={"help": "Whether to use flash_mask in flash attention."})
+    attn_implementation: str = field(default="eager", metadata={"help": "Attention implementation"})
 
     # long sequence strategy
     use_long_sequence_strategies: bool = field(

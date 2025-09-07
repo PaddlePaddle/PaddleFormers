@@ -158,7 +158,6 @@ class Qwen2Config(PretrainedConfig):
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
 
-        self.use_cache = use_cache
         self.rope_scaling_factor = rope_scaling_factor
         self.rope_scaling_type = rope_scaling_type
 
@@ -178,6 +177,13 @@ class Qwen2Config(PretrainedConfig):
 
         self.register_unsavable_keys(
             [
+                "attention_bias",
+                "ignored_index",
+                "pad_token_id",
+                "rope_scaling_factor",
+                "rope_scaling_type",
+                "use_rmsnorm",
+                "use_swiglu",
                 "recompute",
                 "recompute_use_reentrant",
                 "recompute_granularity",

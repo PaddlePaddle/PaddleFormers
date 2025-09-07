@@ -38,7 +38,6 @@ from ...nn.mlp import MLP as Qwen3MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
 from ..contrastive_loss import SimpleContrastiveLoss
-from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..embedding_utils import dist_gather_tensor_with_gradient
 from ..model_outputs import (
     BaseModelOutputWithPast,
@@ -85,6 +84,9 @@ class Qwen3Attention(Qwen2Attention):
             and self.layer_idx >= self.config.max_window_layers
         ):
             self.sliding_window = None
+        if config.sequence_parallel:
+            self.q_norm.enable_sequence_parallel()
+            self.k_norm.enable_sequence_parallel()
 
     def forward(
         self,
@@ -94,8 +96,8 @@ class Qwen3Attention(Qwen2Attention):
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_start_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
@@ -106,21 +108,21 @@ class Qwen3Attention(Qwen2Attention):
         value_states = self.v_proj(hidden_states)
 
         if self.sequence_parallel:
-            target_query_shape = [batch_size, -1, self.num_heads, self.head_dim]
-            target_key_value_shape = [batch_size, -1, self.num_key_value_heads, self.head_dim]
+            max_sequence_length = self.config.max_sequence_length
+            bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+            q_len = max_sequence_length
         else:
-            target_query_shape = [0, 0, self.num_heads, self.head_dim]
-            target_key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
+            bsz, q_len, _ = hidden_states.shape
         # Add qk norm for Qwen3 model.
-        query_states = self.q_norm(query_states.reshape(shape=target_query_shape))
-        key_states = self.k_norm(key_states.reshape(shape=target_key_value_shape))
-        value_states = value_states.reshape(shape=target_key_value_shape)
+        query_states = self.q_norm(query_states.reshape([bsz, q_len, -1, self.head_dim]))
+        key_states = self.k_norm(key_states.reshape([bsz, q_len, -1, self.head_dim]))
+        value_states = value_states.reshape([bsz, q_len, -1, self.head_dim])
 
-        if attn_mask_start_row_indices is None and attention_mask is None:
-            self.attn_implementation = "sdpa"
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
+        if attn_mask_startend_row_indices is None and attention_mask is None:
+            self.config._attn_implementation = "sdpa"
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        cos, sin = position_embedding
+        cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
         # [bs, seq_len, num_head, head_dim]
@@ -135,7 +137,7 @@ class Qwen3Attention(Qwen2Attention):
             key=key_states,
             value=value_states,
             attention_mask=attention_mask,
-            attn_mask_start_row_indices=attn_mask_start_row_indices,
+            attn_mask_start_row_indices=attn_mask_startend_row_indices,
             dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
             scaling=self.scaling,
         )
@@ -154,7 +156,6 @@ class Qwen3Attention(Qwen2Attention):
 class Qwen3DecoderLayer(nn.Layer):
     def __init__(self, config: Qwen3Config, layer_idx: int):
         super().__init__()
-        self.layer_idx = layer_idx
         self.config = config
         self.hidden_size = config.hidden_size
         self.self_attn = Qwen3Attention(config, layer_idx)
@@ -183,8 +184,8 @@ class Qwen3DecoderLayer(nn.Layer):
         output_attentions: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_start_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
@@ -201,7 +202,6 @@ class Qwen3DecoderLayer(nn.Layer):
                 (see `past_key_values`).
             past_key_value (`Tuple(paddle.Tensor)`, *optional*): cached past key and value projection states
         """
-
         # [bs * seq_len, embed_dim] -> [seq_len * bs / n, embed_dim] (sequence_parallel)
         residual = hidden_states
 
@@ -212,11 +212,11 @@ class Qwen3DecoderLayer(nn.Layer):
             hidden_states=hidden_states,
             past_key_value=past_key_value,
             attention_mask=attention_mask,
-            attn_mask_start_row_indices=attn_mask_start_row_indices,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_ids=position_ids,
             output_attentions=output_attentions,
             use_cache=use_cache,
-            position_embedding=position_embedding,
+            position_embeddings=position_embeddings,
             batch_size=batch_size,
         )
 
@@ -250,43 +250,8 @@ class Qwen3PretrainedModel(PretrainedModel):
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
 
     @classmethod
-    def _get_name_mappings(cls, config: Qwen3Config) -> list[StateDictNameMapping]:
-        mappings: list[StateDictNameMapping] = []
-        model_mappings = [
-            ["embed_tokens.weight"],
-            ["norm.weight"],
-        ]
-        for layer_index in range(config.num_hidden_layers):
-            layer_mappings = [
-                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.k_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.v_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.up_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.gate_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.down_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.input_layernorm.weight"],
-                [f"layers.{layer_index}.post_attention_layernorm.weight"],
-                [f"layers.{layer_index}.self_attn.q_norm.weight"],
-                [f"layers.{layer_index}.self_attn.k_norm.weight"],
-            ]
-            model_mappings.extend(layer_mappings)
-
-        init_name_mappings(mappings=model_mappings)
-        # base-model prefix "Qwen3MoEModel"
-        if "Qwen3Model" not in config.architectures:
-            for mapping in model_mappings:
-                mapping[0] = "model." + mapping[0]
-                mapping[1] = "model." + mapping[1]
-            if not config.tie_word_embeddings:
-                model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
-
-        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
-        return mappings
-
-    @classmethod
     def _get_tensor_parallel_mappings(cls, config: Qwen3Config, is_split=True):
-
+        """Generate tensor parallel mappings for model conversion."""
         from ..conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
@@ -296,106 +261,53 @@ class Qwen3PretrainedModel(PretrainedModel):
             num_attention_heads=config.num_attention_heads,
         )
 
-        def get_tensor_parallel_split_mappings(num_layers):
-            final_actions = {}
-
-            base_actions = {
-                # Row Linear
-                "embed_tokens.weight": partial(fn, is_column=False),
-                "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
-                "layers.0.mlp.down_proj.weight": partial(fn, is_column=False),
-            }
-
-            if config.tie_word_embeddings:
-                base_actions["lm_head.weight"] = partial(fn, is_column=False)
-            else:
-                base_actions["lm_head.weight"] = partial(fn, is_column=True)
-
-            if not config.vocab_size % config.tensor_parallel_degree == 0:
-                base_actions.pop("lm_head.weight")
-                base_actions.pop("embed_tokens.weight")
-            # Column Linear
-            if config.fuse_attention_qkv:
-                base_actions["layers.0.self_attn.qkv_proj.weight"] = partial(fn, is_column=True)
-            else:
-                base_actions["layers.0.self_attn.q_proj.weight"] = partial(fn, is_column=True)
-                # if we have enough num_key_value_heads to split, then split it.
-                if config.num_key_value_heads % config.tensor_parallel_degree == 0:
-                    base_actions["layers.0.self_attn.k_proj.weight"] = partial(fn, is_column=True)
-                    base_actions["layers.0.self_attn.v_proj.weight"] = partial(fn, is_column=True)
-
-            if config.fuse_attention_ffn:
-                base_actions["layers.0.mlp.gate_up_fused_proj.weight"] = partial(
-                    fn, is_column=True, is_naive_2fuse=True
-                )
-            else:
-                base_actions["layers.0.mlp.gate_proj.weight"] = partial(fn, is_column=True)
-                base_actions["layers.0.mlp.up_proj.weight"] = partial(fn, is_column=True)
-
-            for key, action in base_actions.items():
-                if "layers.0." in key:
-                    for i in range(num_layers):
-                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
-                final_actions[key] = action
-
-            return final_actions
-
-        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
-        return mappings
-
-    @classmethod
-    def _get_fuse_or_split_param_mappings(cls, config: Qwen3Config, is_fuse=False):
-        # return parameter fuse utils
-        from ..conversion_utils import split_or_fuse_func
-
-        fn = split_or_fuse_func(is_fuse=is_fuse)
-
-        # last key is fused key, other keys are to be fused.
-        fuse_qkv_keys = [
-            (
-                "layers.0.self_attn.q_proj.weight",
-                "layers.0.self_attn.k_proj.weight",
-                "layers.0.self_attn.v_proj.weight",
-                "layers.0.self_attn.qkv_proj.weight",
-            )
+        LAYER_COLWISE = [
+            "self_attn.q_proj.weight",
+            "self_attn.k_proj.weight",
+            "self_attn.v_proj.weight",
+            "mlp.up_proj.weight",
+            "mlp.gate_proj.weight",
         ]
 
-        fuse_gate_up_keys = (
-            "layers.0.mlp.gate_proj.weight",
-            "layers.0.mlp.up_proj.weight",
-            "layers.0.mlp.gate_up_fused_proj.weight",
-        )
-        num_heads = config.num_attention_heads
-        num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
-        fuse_attention_qkv = getattr(config, "fuse_attention_qkv", False)
-        fuse_attention_ffn = getattr(config, "fuse_attention_ffn", False)
+        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
 
-        final_actions = {}
-        if is_fuse:
-            if fuse_attention_qkv:
-                for i in range(config.num_hidden_layers):
-                    for fuse_keys in fuse_qkv_keys:
-                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
-                        final_actions[keys] = partial(
-                            fn, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
-                        )
-            if fuse_attention_ffn:
-                for i in range(config.num_hidden_layers):
-                    keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_gate_up_keys])
-                    final_actions[keys] = fn
-        else:
-            if not fuse_attention_qkv:
-                for i in range(config.num_hidden_layers):
-                    for fuse_keys in fuse_qkv_keys:
-                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
-                        final_actions[keys] = partial(
-                            fn, split_nums=3, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
-                        )
-            if not fuse_attention_ffn:
-                for i in range(config.num_hidden_layers):
-                    keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_gate_up_keys])
-                    final_actions[keys] = partial(fn, split_nums=2)
-        return final_actions
+        BIAS_KEYS = [
+            "self_attn.q_proj.bias",
+            "self_attn.k_proj.bias",
+            "self_attn.v_proj.bias",
+        ]
+
+        def make_base_actions():
+            actions = {
+                "lm_head.weight": partial(fn, is_column=not config.tie_word_embeddings),
+                "embed_tokens.weight": partial(fn, is_column=False),
+            }
+            for layer_idx in range(config.num_hidden_layers):
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                        for k in LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
+                        for k in LAYER_ROWWISE
+                    }
+                )
+                # bias
+                if config.attention_bias:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                            for b in BIAS_KEYS
+                        }
+                    )
+
+            return actions
+
+        mappings = make_base_actions()
+        return mappings
 
 
 @register_base_model
@@ -428,8 +340,6 @@ class Qwen3Model(Qwen3PretrainedModel):
             max_position_embeddings=config.max_position_embeddings,
             base=config.rope_theta,
         )
-        if config.sequence_parallel:
-            self.norm.enable_sequence_parallel()
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -441,8 +351,8 @@ class Qwen3Model(Qwen3PretrainedModel):
         output_attentions: bool,
         past_key_value: Tensor,
         use_cache: bool,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_start_row_indices=None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        attn_mask_startend_row_indices=None,
         batch_size: int = None,
     ):
         def create_custom_forward(module):
@@ -459,8 +369,8 @@ class Qwen3Model(Qwen3PretrainedModel):
             output_attentions,
             past_key_value,
             use_cache,
-            position_embedding,
-            attn_mask_start_row_indices,
+            position_embeddings,
+            attn_mask_startend_row_indices,
             batch_size,
         )
 
@@ -477,7 +387,7 @@ class Qwen3Model(Qwen3PretrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        attn_mask_start_row_indices=None,
+        attn_mask_startend_row_indices=None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -514,7 +424,7 @@ class Qwen3Model(Qwen3PretrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        if attn_mask_start_row_indices is not None:
+        if attn_mask_startend_row_indices is not None:
             attention_mask = None
         else:
             attention_mask = self._prepare_decoder_attention_mask(
@@ -524,7 +434,7 @@ class Qwen3Model(Qwen3PretrainedModel):
         hidden_states = inputs_embeds
 
         # create position embeddings to be shared across the decoder layers
-        position_embedding = self.rotary_emb(hidden_states, seq_length_with_past)
+        position_embeddings = self.rotary_emb(hidden_states, seq_length_with_past)
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -546,8 +456,8 @@ class Qwen3Model(Qwen3PretrainedModel):
                     output_attentions,
                     past_key_value,
                     use_cache,
-                    position_embedding,
-                    attn_mask_start_row_indices=attn_mask_start_row_indices,
+                    position_embeddings,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     batch_size=batch_size,
                 )
             else:
@@ -558,8 +468,8 @@ class Qwen3Model(Qwen3PretrainedModel):
                     output_attentions,
                     past_key_value,
                     use_cache,
-                    position_embedding,
-                    attn_mask_start_row_indices=attn_mask_start_row_indices,
+                    position_embeddings,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     batch_size=batch_size,
                 )
 
@@ -601,8 +511,8 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
         self.model = Qwen3Model(config)
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
-        self.tie_weights()
         self.vocab_size = config.vocab_size
+        self.tie_weights()
 
     def prepare_inputs_for_generation(
         self, input_ids, use_cache=False, past_key_values=None, attention_mask=None, inputs_embeds=None, **kwargs
@@ -673,12 +583,13 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
+        loss_mask: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         past_key_values: Optional[List[paddle.Tensor]] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        attn_mask_start_row_indices=None,
+        attn_mask_startend_row_indices=None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -712,10 +623,10 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if attn_mask_start_row_indices is not None and attention_mask is not None:
+        if attn_mask_startend_row_indices is not None and attention_mask is not None:
             logger.warning(
-                "You have provided both attn_mask_start_row_indices and attention_mask. "
-                "The attn_mask_start_row_indices will be used."
+                "You have provided both attn_mask_startend_row_indices and attention_mask. "
+                "The attn_mask_startend_row_indices will be used."
             )
             attention_mask = None
 
@@ -730,7 +641,7 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
-            attn_mask_start_row_indices=attn_mask_start_row_indices,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
 
         hidden_states = outputs[0]

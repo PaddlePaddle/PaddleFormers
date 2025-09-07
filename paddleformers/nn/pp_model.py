@@ -181,7 +181,7 @@ class RotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.head_dim = config.head_dim
+        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.base = config.rope_theta
 
     def forward(self, x, position_ids):
@@ -254,7 +254,7 @@ class EmbeddingPipe(nn.Layer):
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         if position_ids is None and not self.config.fuse_rope:
             position_ids = (
-                paddle.range(
+                paddle.arange(
                     0,
                     input_ids.shape[1],
                     dtype="int64",
@@ -633,7 +633,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     def _prepare_pipeline_inputs_func(cls, inputs):
         first_stage_keys = [
             "input_ids",
-            "attn_mask_start_row_indices",
+            "attn_mask_startend_row_indices",
             "position_ids",
             "nbatch_pack_offset",
         ]

@@ -207,6 +207,14 @@ class Qwen2MoeConfig(PretrainedConfig):
 
         self.register_unsavable_keys(
             [
+                "attention_bias",
+                "ignored_index",
+                "mlp_only_layers",
+                "pad_token_id",
+                "rope_scaling",
+                "seq_length",
+                "use_rmsnorm",
+                "use_swiglu",
                 "recompute",
                 "recompute_use_reentrant",
                 "recompute_granularity",
