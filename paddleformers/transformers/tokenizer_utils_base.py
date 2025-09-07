@@ -3503,8 +3503,6 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
             else:
                 return "", prefix_offset, len(all_input_ids)
         else:
-            if len(all_input_ids[prefix_offset:]) > 3:
-                return new_text, len(all_input_ids), len(all_input_ids)
             return "", prefix_offset, read_offset
 
     def batch_decode(
