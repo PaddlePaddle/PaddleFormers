@@ -487,15 +487,20 @@ class PaddleTokenizerMixin:
             all_input_ids[prefix_offset:], skip_special_tokens=skip_special_tokens, clean_up_tokenization_spaces=False
         )
 
-        if len(new_text) > len(prefix_text) and not prefix_text.endswith("�") and not new_text.endswith("�"):
+        if len(new_text) > len(prefix_text) and "�" not in prefix_text and "�" not in new_text:
             # utf-8 char at the end means it's a potential unfinished byte sequence
             # from byte fallback tokenization.
             # If it's in the middle, it's probably a real invalid id generated
             # by the model
-            prefix_index = new_text.index(prefix_text)
-            new_text = new_text[prefix_index + len(prefix_text) :]
-            return new_text, read_offset, len(all_input_ids)
+            if new_text.startswith(prefix_text):
+                prefix_index = new_text.index(prefix_text)
+                new_text = new_text[prefix_index + len(prefix_text) :]
+                return new_text, read_offset, len(all_input_ids)
+            else:
+                return "", prefix_offset, len(all_input_ids)
         else:
+            if len(all_input_ids[prefix_offset:]) > 3:
+                return new_text, len(all_input_ids), len(all_input_ids)
             return "", prefix_offset, read_offset
 
 
