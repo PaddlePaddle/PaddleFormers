@@ -27,7 +27,7 @@ def sdpa_attention_forward(
     key: paddle.Tensor,
     value: paddle.Tensor,
     attention_mask: Optional[paddle.Tensor] = None,
-    attn_mask_start_row_indices=None,
+    attn_mask_startend_row_indices=None,
     dropout: float = 0.0,
     sink: Optional[paddle.Tensor] = None,
     scaling: Optional[float] = None,
@@ -35,11 +35,11 @@ def sdpa_attention_forward(
     **kwargs,
 ):
     # query: b l h d
-    if is_causal is None and attn_mask_start_row_indices is None:
+    if is_causal is None and attn_mask_startend_row_indices is None:
         is_causal = query.shape[1] > 1 and attention_mask is None and getattr(module, "is_causal", True)
-    elif attn_mask_start_row_indices is not None:
+    elif attn_mask_startend_row_indices is not None:
         is_causal = False
-        attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_start_row_indices, query.dtype)
+        attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_startend_row_indices, query.dtype)
 
     if sink is None:
         attn_output = nn.functional.scaled_dot_product_attention(
