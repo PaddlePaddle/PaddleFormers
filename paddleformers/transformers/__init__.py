@@ -169,10 +169,10 @@ import_structure = {
     ],
     "deepseek_v3.modeling_pp": ["DeepseekV3ForCausalLMPipe"],
     "ernie4_5.configuration": ["Ernie4_5Config"],
-    "ernie4_5.modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"],
+    "ernie4_5.modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM", "Ernie4_5ForCausalLMPipe"],
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
     "ernie4_5_moe.configuration": ["Ernie4_5_MoeConfig"],
-    "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
+    "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"],
     "export": ["export_model"],
     "llama.configuration": [
         "LLAMA_PRETRAINED_INIT_CONFIGURATION",

@@ -698,4 +698,4 @@ def gen_attn_mask_startend_row_indices(batch_token_ids: List[List[int]], max_seq
     if offset < max_seq_len:
         attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
     # NOTE(hehuang): The dtype of attn_mask_startend_row_indices must be np.int32
-    return np.array(attn_mask_startend_row_indices, dtype=np.int32)[None, None]
+    return np.array(attn_mask_startend_row_indices, dtype=np.int32)[None, None, ..., None]  # add dimension modify
