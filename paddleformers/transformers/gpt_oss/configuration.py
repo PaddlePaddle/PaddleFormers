@@ -25,24 +25,6 @@ class GptOssConfig(PretrainedConfig):
     """
 
     model_type = "gpt_oss"
-    base_model_pp_plan = {
-        "embed_tokens": (["input_ids"], ["inputs_embeds"]),
-        "layers": (["hidden_states", "attention_mask"], ["hidden_states"]),
-        "norm": (["hidden_states"], ["hidden_states"]),
-    }
-    base_model_tp_plan = {
-        "layers.*.self_attn.q_proj": "colwise",
-        "layers.*.self_attn.k_proj": "colwise",
-        "layers.*.self_attn.v_proj": "colwise",
-        "layers.*.self_attn.o_proj": "rowwise",
-        "layers.*.self_attn.sinks": "local_rowwise",
-        "layers.*.mlp.experts": "gather",
-        "layers.*.mlp.router": "ep_router",
-        "layers.*.mlp.experts.gate_up_proj": "grouped_gemm",
-        "layers.*.mlp.experts.gate_up_proj_bias": "grouped_gemm",
-        "layers.*.mlp.experts.down_proj": "grouped_gemm",
-        "layers.*.mlp.experts.down_proj_bias": "grouped_gemm",
-    }
 
     def __init__(
         self,
@@ -108,11 +90,8 @@ class GptOssConfig(PretrainedConfig):
         self.router_aux_loss_coef = router_aux_loss_coef
         self.output_router_logits = output_router_logits
         self.use_cache = use_cache
-        self.fuse_rope = False
-        self.fuse_linear = False
         self.use_bias = False
-        self.compression_ratio = 1
-        self.cachekv_quant = False
+
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,

@@ -176,7 +176,6 @@ import_structure = {
     "export": ["export_model"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM"],
-    "gpt_oss.tokenizer": ["GptOssTokenizer"],
     "llama.configuration": [
         "LLAMA_PRETRAINED_INIT_CONFIGURATION",
         "LlamaConfig",

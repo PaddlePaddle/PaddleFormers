@@ -30,34 +30,11 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
 from ...utils.tools import get_env_device
-from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..llama.modeling import get_use_casual_mask
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..qwen2.modeling import _expand_2d_mask, _make_causal_mask, is_casual_mask
 from .configuration import GptOssConfig
-
-
-class GptOssRMSNorm(nn.Layer):
-    def __init__(self, hidden_size, eps=1e-6):
-        """
-        GptOssRMSNorm is equivalent to T5LayerNorm
-        """
-        super().__init__()
-        self.weight = self.create_parameter(
-            shape=[hidden_size], default_initializer=paddle.nn.initializer.Constant(1.0)
-        )
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states):
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.to(paddle.float32)
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
-        return (self.weight * hidden_states).to(input_dtype)  # main diff with Llama
-
-    def extra_repr(self):
-        return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
 
 
 class GptOssExperts(nn.Layer):
@@ -213,7 +190,7 @@ def _compute_yarn_parameters(config, device: paddle.device, seq_len: Optional[in
     mscale = config.rope_scaling.get("mscale")
     mscale_all_dim = config.rope_scaling.get("mscale_all_dim")
 
-    # 处理原始最大位置嵌入的情况
+    # Handling the situation of embedding the original maximum position
     if "original_max_position_embeddings" in config.rope_scaling:
         original_max_position_embeddings = config.rope_scaling["original_max_position_embeddings"]
         factor = config.max_position_embeddings / original_max_position_embeddings
@@ -225,24 +202,24 @@ def _compute_yarn_parameters(config, device: paddle.device, seq_len: Optional[in
             return 1.0
         return 0.1 * mscale * math.log(scale) + 1.0
 
-    # 设置注意力因子
+    # Set attention factor
     if attention_factor is None:
         if mscale and mscale_all_dim:
             attention_factor = float(get_mscale(factor, mscale) / get_mscale(factor, mscale_all_dim))
         else:
             attention_factor = get_mscale(factor)
 
-    # 可选配置参数
+    # Optional configuration parameters
     beta_fast = config.rope_scaling.get("beta_fast") or 32
     beta_slow = config.rope_scaling.get("beta_slow") or 1
 
-    # 计算逆频率的辅助函数
+    # Auxiliary function for calculating inverse frequency
     def find_correction_dim(num_rotations, dim, base, max_position_embeddings):
-        """基于旋转次数计算维度的逆维度公式"""
+        """Inverse dimension formula based on the number of rotations to calculate dimensions"""
         return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
 
     def find_correction_range(low_rot, high_rot, dim, base, max_position_embeddings, truncate):
-        """基于旋转找到维度范围边界"""
+        """Find the boundary of dimension range based on rotation"""
         low = find_correction_dim(low_rot, dim, base, max_position_embeddings)
         high = find_correction_dim(high_rot, dim, base, max_position_embeddings)
         if truncate:
@@ -254,13 +231,13 @@ def _compute_yarn_parameters(config, device: paddle.device, seq_len: Optional[in
         if min_val == max_val:
             max_val += 0.001  # 防止奇点
 
-        # 使用arange创建线性函数
+        # Create a linear function using arange
         linear_func = (paddle.arange(dim, dtype=paddle.float32) - min_val) / (max_val - min_val)
         ramp_func = paddle.clip(linear_func, 0, 1)
         return ramp_func
 
-    # 计算位置频率
-    # 在Paddle中指定设备和数据类型
+    # Calculate position frequency
+    # Specify device and data type in Paddle
     pos_freqs = base ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim)
     inv_freq_extrapolation = 1.0 / pos_freqs
     inv_freq_interpolation = 1.0 / (factor * pos_freqs)
@@ -268,7 +245,7 @@ def _compute_yarn_parameters(config, device: paddle.device, seq_len: Optional[in
     truncate = config.rope_scaling.get("truncate", True)
     low, high = find_correction_range(beta_fast, beta_slow, dim, base, original_max_position_embeddings, truncate)
 
-    # 获取用于外推的n维旋转缩放校正
+    # Obtain n-dimensional rotation scaling correction for extrapolation
     inv_freq_extrapolation_factor = 1 - linear_ramp_factor(low, high, dim // 2).to(device=device, dtype=paddle.float32)
     inv_freq = (
         inv_freq_interpolation * (1 - inv_freq_extrapolation_factor)
@@ -640,52 +617,6 @@ class GptOssPreTrainedModel(PretrainedModel):
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
 
     @classmethod
-    def _get_name_mappings(cls, config: GptOssConfig) -> list[StateDictNameMapping]:
-        mappings: list[StateDictNameMapping] = []
-        model_mappings = [
-            ["embed_tokens.weight"],
-            ["norm.weight"],
-        ]
-        for layer_index in range(config.num_hidden_layers):
-            layer_mappings = [
-                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.k_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.v_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.q_proj.bias", None],
-                [f"layers.{layer_index}.self_attn.k_proj.bias", None],
-                [f"layers.{layer_index}.self_attn.v_proj.bias", None],
-                [f"layers.{layer_index}.self_attn.o_proj.bias", None],
-                [f"layers.{layer_index}.self_attn.rotary_emb.inv_freq"],
-                [f"layers.{layer_index}.input_layernorm.weight"],
-                [f"layers.{layer_index}.post_attention_layernorm.weight"],
-                [f"layers.{layer_index}.self_attn.q_norm.weight"],
-                [f"layers.{layer_index}.self_attn.k_norm.weight"],
-                [f"layers.{layer_index}.self_attn.sinks"],
-            ]
-            model_mappings.extend(layer_mappings)
-
-            for expert_idx in range(config.num_experts):
-                expert_mappings = [
-                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.gate_proj.weight", None, "transpose"],
-                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.down_proj.weight", None, "transpose"],
-                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.up_proj.weight", None, "transpose"],
-                ]
-                model_mappings.extend(expert_mappings)
-            model_mappings.append([f"layers.{layer_index}.mlp.gate.weight", None, "transpose"])
-
-        init_name_mappings(mappings=model_mappings)
-        # base-model prefix "GPTOssModel"
-        if "GptOssModel" not in config.architectures:
-            for mapping in model_mappings:
-                mapping[0] = "model." + mapping[0]
-                mapping[1] = "model." + mapping[1]
-            model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
-
-        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
-        return mappings
-
-    @classmethod
     def _get_tensor_parallel_mappings(cls, config: GptOssConfig, is_split=True):
         from ..conversion_utils import split_or_merge_func
 
@@ -732,60 +663,6 @@ class GptOssPreTrainedModel(PretrainedModel):
         mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers, config.num_experts)
 
         return mappings
-
-    @classmethod
-    def _get_fuse_or_split_param_mappings(cls, config: GptOssConfig, is_fuse=False):
-        # return parameter fuse utils
-        from ..conversion_utils import split_or_fuse_func
-
-        fn = split_or_fuse_func(is_fuse=is_fuse)
-
-        # last key is fused key, other keys are to be fused.
-        fuse_qkv_keys = [
-            (
-                "layers.0.self_attn.q_proj.weight",
-                "layers.0.self_attn.k_proj.weight",
-                "layers.0.self_attn.v_proj.weight",
-                "layers.0.self_attn.qkv_proj.weight",
-            ),
-        ]
-
-        fuse_gate_up_keys = (
-            "layers.0.mlp.gate_proj.weight",
-            "layers.0.mlp.up_proj.weight",
-            "layers.0.mlp.gate_up_fused_proj.weight",
-        )
-        num_heads = config.num_attention_heads
-        num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
-        fuse_attention_qkv = getattr(config, "fuse_attention_qkv", False)
-        fuse_attention_ffn = getattr(config, "fuse_attention_ffn", False)
-
-        final_actions = {}
-        if is_fuse:
-            if fuse_attention_qkv:
-                for i in range(config.num_hidden_layers):
-                    for fuse_keys in fuse_qkv_keys:
-                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
-                        final_actions[keys] = partial(
-                            fn, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
-                        )
-            if fuse_attention_ffn:
-                for i in range(config.num_hidden_layers):
-                    keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_gate_up_keys])
-                    final_actions[keys] = fn
-        else:
-            if not fuse_attention_qkv:
-                for i in range(config.num_hidden_layers):
-                    for fuse_keys in fuse_qkv_keys:
-                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
-                        final_actions[keys] = partial(
-                            fn, split_nums=3, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
-                        )
-            if not fuse_attention_ffn:
-                for i in range(config.num_hidden_layers):
-                    keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_gate_up_keys])
-                    final_actions[keys] = partial(fn, split_nums=2)
-        return final_actions
 
 
 def _make_sliding_window_mask(input_shape, past_key_values_length=0, window_size=5):
