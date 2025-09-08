@@ -392,7 +392,6 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             output = model(input_ids, attention_mask=attention_mask)[0]
         expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
-        print(output[:, 1:4, 1:4])
         expected_slice = paddle.to_tensor(
             [
                 [
@@ -414,7 +413,6 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
         expected_shape = [1, 11, 16]
-        print(output[:, 1:4, 1:4])
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
             [
