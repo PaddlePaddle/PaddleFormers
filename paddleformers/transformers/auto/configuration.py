@@ -37,6 +37,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("deepseek_v2", "DeepseekV2Config"),
         ("deepseek_v3", "DeepseekV3Config"),
         ("ernie4_5", "Ernie4_5Config"),
+        ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("llama", "LlamaConfig"),
         ("qwen", "QWenConfig"),
         ("qwen2", "Qwen2Config"),

@@ -21,6 +21,54 @@ __all__ = ["DataConfig"]
 class DataConfig:
 
     dataset_name_or_path: str = field(default=None, metadata={"help": "Name or path for dataset"})
+    train_dataset_type: str = field(
+        default=None,
+        metadata={
+            "help": "type of training datasets. \
+        Multi-source dataset is supported, e.g., erniekit,erniekit."
+        },
+    )
+    train_dataset_path: str = field(
+        default=None,
+        metadata={
+            "help": "path of training datasets. \
+        Multi-source dataset is supported, e.g., ./sft-1.jsonl,./sft-2.jsonl."
+        },
+    )
+    train_dataset_prob: str = field(
+        default=None,
+        metadata={
+            "help": "probabilities of training datasets. \
+        Multi-source dataset is supported, e.g., 0.8,0.2."
+        },
+    )
+    eval_dataset_type: str = field(default="erniekit", metadata={"help": "type of eval datasets."})
+    eval_dataset_path: str = field(
+        default="examples/data/sft-eval.jsonl",
+        metadata={"help": "path of eval datasets."},
+    )
+    eval_dataset_prob: str = field(
+        default="1.0",
+        metadata={"help": "probabilities of eval datasets."},
+    )
+    mix_strategy: str = field(
+        default="random",
+        metadata={
+            "help": "Strategy to use in dataset mixing (random/concat/interleave) (undersampling/oversampling)."
+        },
+    )
+    packing: bool = field(
+        default=True,
+        metadata={"help": "Enable sequences packing in training."},
+    )
+    greedy_intokens: bool = field(
+        default=True,
+        metadata={"help": "Whether to use greedy_intokens packing method."},
+    )
+    random_shuffle: bool = field(
+        default=True,
+        metadata={"help": "Whether to enable authorize code for privatization. Defaults to False."},
+    )
     task_name: str = field(default=None, metadata={"help": "Additional name to select a more specific task."})
     zero_padding: bool = field(default=False, metadata={"help": "Whether to use Zero Padding data stream"})
     greedy_zero_padding: bool = field(
