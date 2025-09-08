@@ -52,13 +52,13 @@ class DataConfig:
         metadata={"help": "probabilities of eval datasets."},
     )
     mix_strategy: str = field(
-        default="random",
+        default="concat",
         metadata={
             "help": "Strategy to use in dataset mixing (random/concat/interleave) (undersampling/oversampling)."
         },
     )
     packing: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Enable sequences packing in training."},
     )
     greedy_intokens: bool = field(
