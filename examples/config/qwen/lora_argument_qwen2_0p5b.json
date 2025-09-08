@@ -41,7 +41,6 @@
     "flash_mask": true,
     "unified_checkpoint": true,
     "use_flash_attention": true,
-    "report_to": "none",
     "convert_from_hf": false,
     "pissa": false,
     "use_mora": false
