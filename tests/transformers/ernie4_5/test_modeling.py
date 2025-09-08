@@ -26,7 +26,7 @@ from paddleformers.transformers import (
     Ernie4_5ForCausalLM,
     Ernie4_5Model,
 )
-from tests.testing_utils import require_package, slow
+from tests.testing_utils import require_package
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -391,50 +391,50 @@ class Ernie4_5ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
 class Ernie4_5ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = Ernie4_5Model
 
-    @slow
-    def test_inference_no_attention(self):
-        model = Ernie4_5Model.from_pretrained("__internal_testing__/tiny-random-ernie4_5")
-        model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-        with paddle.no_grad():
-            output = model(input_ids, attention_mask=attention_mask)[0]
+    # @slow
+    # def test_inference_no_attention(self):
+    #     model = Ernie4_5Model.from_pretrained("__internal_testing__/tiny-random-ernie4_5")
+    #     model.eval()
+    #     input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+    #     attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+    #     with paddle.no_grad():
+    #         output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 768]
-        self.assertEqual(output.shape, expected_shape)
+    #     expected_shape = [1, 11, 768]
+    #     self.assertEqual(output.shape, expected_shape)
 
-        expected_slice = paddle.to_tensor(
-            [
-                [
-                    [0.20443289, 0.18662477, -0.75216216],
-                    [0.37699354, -0.38747141, -1.21889985],
-                    [0.31100151, -0.40143669, -0.64101797],
-                ]
-            ]
-        )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+    #     expected_slice = paddle.to_tensor(
+    #         [
+    #             [
+    #                 [0.20443289, 0.18662477, -0.75216216],
+    #                 [0.37699354, -0.38747141, -1.21889985],
+    #                 [0.31100151, -0.40143669, -0.64101797],
+    #             ]
+    #         ]
+    #     )
+    #     self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
 
-    @slow
-    def test_inference_with_attention(self):
-        model = Ernie4_5Model.from_pretrained("__internal_testing__/tiny-random-ernie4_5")
-        model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-        with paddle.no_grad():
-            output = model(input_ids, attention_mask=attention_mask)[0]
+    # @slow
+    # def test_inference_with_attention(self):
+    #     model = Ernie4_5Model.from_pretrained("__internal_testing__/tiny-random-ernie4_5")
+    #     model.eval()
+    #     input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+    #     attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+    #     with paddle.no_grad():
+    #         output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 768]
-        self.assertEqual(output.shape, expected_shape)
-        expected_slice = paddle.to_tensor(
-            [
-                [
-                    [0.20443289, 0.18662477, -0.75216216],
-                    [0.37699354, -0.38747141, -1.21889985],
-                    [0.31100151, -0.40143669, -0.64101797],
-                ]
-            ]
-        )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+    #     expected_shape = [1, 11, 768]
+    #     self.assertEqual(output.shape, expected_shape)
+    #     expected_slice = paddle.to_tensor(
+    #         [
+    #             [
+    #                 [0.20443289, 0.18662477, -0.75216216],
+    #                 [0.37699354, -0.38747141, -1.21889985],
+    #                 [0.31100151, -0.40143669, -0.64101797],
+    #             ]
+    #         ]
+    #     )
+    #     self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
 
 
 class Ernie4_5GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):

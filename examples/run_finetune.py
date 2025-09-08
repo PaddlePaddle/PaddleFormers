@@ -31,6 +31,10 @@ from paddleformers.transformers import (
     DeepseekV2ForCausalLMPipe,
     DeepseekV3ForCausalLM,
     DeepseekV3ForCausalLMPipe,
+    Ernie4_5_MoeForCausalLM,
+    Ernie4_5_MoeForCausalLMPipe,
+    Ernie4_5ForCausalLM,
+    Ernie4_5ForCausalLMPipe,
     Llama3Tokenizer,
     LlamaForCausalLM,
     LlamaForCausalLMPipe,
@@ -53,6 +57,10 @@ flash_mask_support_list = [
     DeepseekV2ForCausalLMPipe,
     DeepseekV3ForCausalLM,
     DeepseekV3ForCausalLMPipe,
+    Ernie4_5ForCausalLM,
+    Ernie4_5ForCausalLMPipe,
+    Ernie4_5_MoeForCausalLM,
+    Ernie4_5_MoeForCausalLMPipe,
     LlamaForCausalLM,
     LlamaForCausalLMPipe,
     Qwen2ForCausalLM,
@@ -138,11 +146,11 @@ def main():
         model_config.fuse_attention_qkv = model_args.fuse_attention_qkv
     if model_args.fuse_attention_ffn is not None:
         model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
-
+    model_config.pp_seg_method = training_args.pp_seg_method
     model_config.seq_length = data_args.max_length
+    model_config.max_sequence_length = training_args.max_seq_length
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     logger.info(f"Final model config: {model_config}")
-
     logger.info("Creating model")
 
     model_class = AutoModelForCausalLM
@@ -157,7 +165,7 @@ def main():
             model_args.model_name_or_path,
             config=model_config,
             download_hub=model_args.download_hub,
-            convert_from_hf=False,  # run paddle weights
+            convert_from_hf=training_args.convert_from_hf,  # run paddle weights
         )
     else:
         model = model_class.from_config(model_config, dtype=dtype)
@@ -166,6 +174,7 @@ def main():
         logger.warning("`flash_mask` must use with zero padding and flash attention.")
         data_args.zero_padding = True
         model.config.use_flash_attention = True
+        model.config._attn_implementation = "flashmask"
 
     if model_args.flash_mask and not any(isinstance(model, cls) for cls in flash_mask_support_list):
         raise NotImplementedError(f"{model.__class__} not support flash mask.")
