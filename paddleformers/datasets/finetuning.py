@@ -82,6 +82,7 @@ def create_dataset(**dataset_config):
         greedy_intokens=dataset_config["greedy_intokens"],
         packing=dataset_config["packing"],
         mix_strategy=dataset_config["mix_strategy"],
+        encode_one_turn=dataset_config["encode_one_turn"],
     )
     return sequence_dataset
 
@@ -285,6 +286,7 @@ class SequenceDataset(IterableDataset):
         greedy_intokens: bool = False,
         packing: bool = False,
         mix_strategy: str = "random",
+        encode_one_turn: bool = True,
     ):
         """Initialize SequenceDataset.
 
@@ -314,6 +316,7 @@ class SequenceDataset(IterableDataset):
         self.greedy_intokens = greedy_intokens
         self.packing = packing
         self.mix_strategy = mix_strategy
+        self.encode_one_turn = encode_one_turn
         self.num_samples_each_epoch = num_samples_each_epoch
         self.reverse = True
 
@@ -536,7 +539,7 @@ class SequenceDataset(IterableDataset):
         if example.is_function_call:
             encoded_messages = self._postprocess_fc_sequence(example)
         else:
-            encoded_messages = self.tokenizer.encode_chat_inputs(example.request)
+            encoded_messages = self.tokenizer.encode_chat_inputs(example.request, encode_one_turn=self.encode_one_turn)
 
         num_reserved_tokens_for_each_dialog = 1  # only break_turn_token or end_token
         num_reserved_tokens_for_each_turn = 8

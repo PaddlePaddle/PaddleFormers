@@ -229,6 +229,7 @@ def main():
         "greedy_intokens": data_args.greedy_intokens,
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
+        "encode_one_turn": data_args.encode_one_turn,
     }
 
     train_dataset = create_dataset_sft(
