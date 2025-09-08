@@ -14,8 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
-
 import numpy as np
 import paddle
 
@@ -25,7 +23,6 @@ except ImportError:
     TDU = None
 
 from paddleformers.transformers.fp8_utils import FP8LinearFunctionBase
-from paddleformers.transformers.moe_utils import permute, unpermute
 
 if not hasattr(paddle.Tensor, "_clear_to_zero_allocation"):
 
@@ -437,34 +434,3 @@ def get_env_device():
     elif paddle.is_compiled_with_xpu():
         return "xpu"
     return "cpu"
-
-
-def to_device(tensor, place=None):
-    if place is None:
-        place = get_env_device()
-
-    if isinstance(place, str):
-        place = paddle.device._convert_to_place(place)
-
-    if not tensor.place._equals(place):
-        new_t = tensor._copy_to(place, True)
-        dst_tensor = tensor.value().get_tensor()
-        src_tensor = new_t.value().get_tensor()
-        dst_tensor._share_data_with(src_tensor)
-
-    return tensor
-
-
-def offload(tensor):
-    if paddle.is_compiled_with_cuda():
-        place = paddle.CUDAPinnedPlace()
-    else:
-        place = paddle.CPUPlace()
-
-    new_tensor = to_device(tensor, place)
-    assert new_tensor is tensor, "to_device must be inplace operation"
-
-
-def reload(tensor):
-    new_tensor = to_device(tensor)
-    assert new_tensor is tensor, "to_device must be inplace operation"

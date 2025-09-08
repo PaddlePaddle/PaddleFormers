@@ -18,6 +18,24 @@ from typing import Optional
 
 import paddle
 
+from ..utils.tools import get_env_device
+
+
+def to_device(tensor, place=None):
+    if place is None:
+        place = get_env_device()
+
+    if isinstance(place, str):
+        place = paddle.device._convert_to_place(place)
+
+    if not tensor.place._equals(place):
+        new_t = tensor._copy_to(place, True)
+        dst_tensor = tensor.value().get_tensor()
+        src_tensor = new_t.value().get_tensor()
+        dst_tensor._share_data_with(src_tensor)
+
+    return tensor
+
 
 def permute(
     tokens,
@@ -99,3 +117,18 @@ def unpermute(
         include_self=True,
     )
     return output_tokens
+
+
+def offload(tensor):
+    if paddle.is_compiled_with_cuda():
+        place = paddle.CUDAPinnedPlace()
+    else:
+        place = paddle.CPUPlace()
+
+    new_tensor = to_device(tensor, place)
+    assert new_tensor is tensor, "to_device must be inplace operation"
+
+
+def reload(tensor):
+    new_tensor = to_device(tensor)
+    assert new_tensor is tensor, "to_device must be inplace operation"

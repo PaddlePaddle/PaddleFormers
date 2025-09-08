@@ -16,9 +16,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import os
-from typing import Any, List, Tuple
-
 import numpy as np
 import paddle
 import paddle.distributed as dist
@@ -27,16 +24,13 @@ from moe_utils import (
     UnZipNode,
     ZipNode,
     merge_subbatch_cast,
-    offload,
-    reload,
     tokens_zip_unique_add_with_subbatch,
 )
-from paddle import Tensor, nn
-from paddle.distributed.communication.group import Group
+from paddle import nn
 from token_dispatcher import MoEFlexTokenDispatcherFast as MoEFlexTokenDispatcher
 from token_dispatcher import PreDispatchNode
 
-from paddleformers.transformers import _AllToAll, combining, dispatching
+from paddleformers.transformers import _AllToAll
 from paddleformers.transformers.fp8_utils import (
     FP8GroupGemmMlpFunctionNode,
     extract_first_if_tuple,
@@ -47,6 +41,7 @@ from paddleformers.transformers.fused_a2a import (
     get_buffer,
     get_hidden_bytes,
 )
+from paddleformers.transformers.moe_utils import offload, reload
 from paddleformers.utils.log import logger
 
 try:

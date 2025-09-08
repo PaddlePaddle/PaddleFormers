@@ -57,6 +57,7 @@ except:
 from config.configuration import DeepseekV2FastConfig
 from moe_gate import PretrainedMoEGate
 from moe_layer import MoELayer
+from moe_utils import get_env_device
 
 from paddleformers.transformers.activations import ACT2FN
 from paddleformers.transformers.conversion_utils import (
@@ -81,7 +82,6 @@ from paddleformers.transformers.model_utils import (
 )
 from paddleformers.utils.initializer import kaiming_uniform_
 from paddleformers.utils.log import logger
-from paddleformers.utils.tools import get_env_device
 
 try:
     from paddle.incubate.nn.functional import swiglu

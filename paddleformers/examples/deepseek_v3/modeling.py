@@ -51,6 +51,7 @@ except:
     flash_attention = None
 
 from config.configuration import DeepseekV2FastConfig
+from moe_utils import get_env_device
 from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import WeightGradStore
 
 from paddleformers.transformers.deepseek_v2 import (
@@ -65,7 +66,6 @@ from paddleformers.transformers.fp8_utils import (
     set_parameter_color,
 )
 from paddleformers.transformers.utils import device_guard
-from paddleformers.utils.tools import get_env_device
 
 try:
     import fused_ln

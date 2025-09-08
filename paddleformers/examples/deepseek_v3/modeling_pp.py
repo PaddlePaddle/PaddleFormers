@@ -44,13 +44,13 @@ from modeling_fast import DeepseekV2DecoderLayer
 from modeling_fast import DeepseekV2ModelFast as DeepseekV2Model
 from modeling_fast import DeepseekV2MoE, DeepseekV2MTPLayer
 from modeling_fast import DeepseekV2PretrainedModelFast as DeepseekV2PretrainedModel
+from moe_utils import get_env_device
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from paddleformers.transformers.deepseek_v2 import DeepseekV2PretrainingCriterion
 from paddleformers.transformers.model_utils import PipelinePretrainedModel
 from paddleformers.utils.log import logger
-from paddleformers.utils.tools import get_env_device
 
 try:
     import paddle.distributed.communication.deep_ep as deep_ep

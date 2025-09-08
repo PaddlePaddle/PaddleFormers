@@ -23,6 +23,7 @@ import paddle
 from config.configuration import DeepseekV2FastConfig
 from load_hf_ckpt import load_huggingface_ckpt
 from modeling_pp import DeepseekV2ForCausalLMPipe
+from moe_utils import get_env_device
 
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
@@ -48,7 +49,6 @@ from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmet
 from paddleformers.transformers.deepseek_v2 import DeepseekV2ForCausalLM
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
-from paddleformers.utils.tools import get_env_device
 
 # Pretaining Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "True"
