@@ -1,0 +1,387 @@
+{
+    "llamafactory/alpaca_en": {
+        "hf_hub_url": "llamafactory/alpaca_en",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "alpaca_data_en_52k.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "llamafactory/alpaca_zh": {
+        "hf_hub_url": "llamafactory/alpaca_zh",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "alpaca_data_zh_51k.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "llamafactory/alpaca_gpt4_en": {
+        "hf_hub_url": "llamafactory/alpaca_gpt4_en",
+        "train_type": "sft",
+        "formatting": "alpaca",
+        "doc_formatting": "json",
+        "file_name": "alpaca_gpt4_data_en.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "llamafactory/alpaca_gpt4_zh": {
+        "hf_hub_url": "llamafactory/alpaca_gpt4_zh",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "alpaca_gpt4_data_zh.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "BelleGroup/train_2M_CN": {
+        "hf_hub_url": "BelleGroup/train_2M_CN",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "train_2M_CN.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "BelleGroup/train_1M_CN": {
+        "hf_hub_url": "BelleGroup/train_1M_CN",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "Belle_open_source_1M.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "BelleGroup/train_0.5M_CN": {
+        "hf_hub_url": "BelleGroup/train_0.5M_CN",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "Belle_open_source_0.5M.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "BelleGroup/generated_chat_0.4M": {
+        "hf_hub_url": "BelleGroup/generated_chat_0.4M",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "generated_chat_0.4M.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "BelleGroup/school_math_0.25M": {
+        "hf_hub_url": "BelleGroup/school_math_0.25M",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "school_math_0.25M.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "sahil2801/CodeAlpaca-20k": {
+        "hf_hub_url": "sahil2801/CodeAlpaca-20k",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "code_alpaca_20k.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "TIGER-Lab/MathInstruct": {
+        "hf_hub_url": "TIGER-Lab/MathInstruct",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "MathInstruct.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "YeungNLP/firefly-train-1.1M": {
+        "hf_hub_url": "YeungNLP/firefly-train-1.1M",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "firefly-train-1.1M.jsonl",
+        "columns": {
+            "prompt": "input",
+            "response": "target"
+        }
+    },
+    "suolyer/webqa": {
+        "hf_hub_url": "suolyer/webqa",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "train.json",
+        "columns": {
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "zxbsmk/webnovel_cn": {
+        "hf_hub_url": "zxbsmk/webnovel_cn",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "novel_cn_token512_50k.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "AstraMindAI/SFT-Nectar": {
+        "hf_hub_url": "AstraMindAI/SFT-Nectar",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "sft_data_structured.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "hfl/stem_zh_instruction": {
+        "hf_hub_url": "hfl/stem_zh_instruction",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "bio_50282.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "llamafactory/OpenO1-SFT": {
+        "hf_hub_url": "llamafactory/OpenO1-SFT",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "OpenO1-SFT-Pro.jsonl",
+        "columns": {
+            "prompt": "prompt",
+            "response": "response"
+        }
+    },
+    "Congliu/Chinese-DeepSeek-R1-Distill-data-110k-SFT": {
+        "hf_hub_url": "Congliu/Chinese-DeepSeek-R1-Distill-data-110k-SFT",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "distill_r1_110k_sft.jsonl",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "mayflowergmbh/oasst_de": {
+        "hf_hub_url": "mayflowergmbh/oasst_de",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "oasst_de.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output",
+            "history": "history"
+        }
+    },
+    "mayflowergmbh/dolly-15k_de": {
+        "hf_hub_url": "mayflowergmbh/dolly-15k_de",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "dolly_de.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "mayflowergmbh/alpaca-gpt4_de": {
+        "hf_hub_url": "mayflowergmbh/alpaca-gpt4_de",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "alpaca_gpt4_data_de.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "mayflowergmbh/openschnabeltier_de": {
+        "hf_hub_url": "mayflowergmbh/openschnabeltier_de",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "openschnabeltier.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "mayflowergmbh/evol-instruct_de": {
+        "hf_hub_url": "mayflowergmbh/evol-instruct_de",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "evol_instruct_de.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output",
+            "history": "history"
+        }
+    },
+    "mayflowergmbh/dolphin_de": {
+        "hf_hub_url": "mayflowergmbh/dolphin_de",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "dolphin.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "mayflowergmbh/booksum_de": {
+        "hf_hub_url": "mayflowergmbh/booksum_de",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "booksum.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "mayflowergmbh/airoboros-3.0_de": {
+        "hf_hub_url": "mayflowergmbh/airoboros-3.0_de",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "airoboros_3.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "mayflowergmbh/ultra-chat_de": {
+        "hf_hub_url": "mayflowergmbh/ultra-chat_de",
+        "formatting": "alpaca",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "ultra_chat_german.json",
+        "columns": {
+            "prompt": "instruction",
+            "query": "input",
+            "response": "output"
+        }
+    },
+    "Intel/orca_dpo_pairs": {
+        "hf_hub_url": "Intel/orca_dpo_pairs",
+        "formatting": "alpaca",
+        "train_type": "dpo",
+        "doc_formatting": "jsonl",
+        "file_name": "orca_rlhf.jsonl",
+        "columns": {
+            "query": "question",
+            "chosen": "chosen",
+            "rejected": "rejected",
+            "system": "system"
+        }
+    },
+    "shibing624/sharegpt_gpt4": {
+        "hf_hub_url": "shibing624/sharegpt_gpt4",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "sharegpt_gpt4.jsonl"
+    },
+    "llamafactory/lima": {
+        "hf_hub_url": "llamafactory/lima",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "lima.json"
+    },
+    "Open-Orca/SlimOrca": {
+        "hf_hub_url": "Open-Orca/SlimOrca",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "jsonl",
+        "file_name": "oo-labeled_correct.gpt4.sharegpt.jsonl"
+    },
+    "totally-not-an-llm/sharegpt-hyperfiltered-3k": {
+        "hf_hub_url": "totally-not-an-llm/sharegpt-hyperfiltered-3k",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "sharegptclean_final.json"
+    },
+    "m-a-p/neo_sft_phase2": {
+        "hf_hub_url": "m-a-p/neo_sft_phase2",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "neo_sft_phase2.json"
+    },
+    "llamafactory/DPO-En-Zh-20k": {
+        "hf_hub_url": "llamafactory/DPO-En-Zh-20k",
+        "formatting": "sharegpt",
+        "train_type": "sft",
+        "doc_formatting": "json",
+        "file_name": "dpo_zh.json"
+    },
+    "avemio/German-RAG-DPO-ShareGPT-HESSIAN-AI": {
+        "hf_hub_url": "avemio/German-RAG-DPO-ShareGPT-HESSIAN-AI",
+        "formatting": "sharegpt",
+        "train_type": "dpo",
+        "doc_formatting": "jsonl",
+        "file_name": "qa-with-multiple-references/DPO_equally-distributed-wikipedia-trainingdata-qa-with-multiple-references_id-over-800k-under-1000k_sharegpt.jsonl"
+    }
+}

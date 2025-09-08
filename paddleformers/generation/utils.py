@@ -20,13 +20,11 @@ from typing import Optional, Union
 
 import paddle
 import paddle.distributed as dist
-import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle import Tensor
-from paddle.common_ops_import import convert_dtype
 from paddle.utils import map_structure
 
-from ..transformers.model_outputs import ModelOutput
+from ..transformers.model_outputs import CausalLMOutputWithPast, ModelOutput
 from ..transformers.utils import get_scale_by_dtype
 from ..utils.log import logger
 from ..utils.masking_utils import _expand_2d_mask, _make_causal_mask
@@ -493,61 +491,38 @@ class GenerationMixin(object):
 
     @staticmethod
     def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
-        # Update the model inputs during generation.
-        # Note that If `token_type_ids` and `attention_mask` in `model_kwargs`
-        # and they contain pad value, the result vectors updated by this method
-        # may be different from expected. In this case, you need to rewrite the
-        # method.
+        """
+        Updates model kwargs for generation.
 
+        Args:
+            outputs (Any): Model outputs.
+            model_kwargs (dict): Current model kwargs.
+            is_encoder_decoder (bool): Whether using encoder-decoder architecture.
+
+        Returns:
+            dict: Updated model kwargs.
+        """
         # update cache
         if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
-            model_kwargs["cache"] = outputs[1]
             model_kwargs["past_key_values"] = outputs[1]
 
-        if isinstance(outputs, ModelOutput) and "past_key_values" in outputs:
-            model_kwargs["cache"] = outputs.past_key_values
+        if isinstance(outputs, CausalLMOutputWithPast) and "past_key_values" in outputs:
             model_kwargs["past_key_values"] = outputs.past_key_values
 
         # update token_type_ids with last value
         if "token_type_ids" in model_kwargs and model_kwargs["token_type_ids"] is not None:
             token_type_ids = model_kwargs["token_type_ids"]
             model_kwargs["token_type_ids"] = paddle.concat([token_type_ids, token_type_ids[:, -1:]], axis=-1)
-
-        # update position_ids
-        if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
-            position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
-
-        # update attention_mask
-        if not is_encoder_decoder and "attention_mask" in model_kwargs:
+        if not is_encoder_decoder and model_kwargs.get("attention_mask", None) is not None:
+            # update attention mask
             attention_mask = model_kwargs["attention_mask"]
-            # nn.Pad2D don't support the data type `bool`
-            if convert_dtype(attention_mask.dtype) == "bool":
-                attention_mask = paddle.cast(attention_mask, "int64")
-            if len(attention_mask.shape) == 4:
-                cur_device = paddle.get_device()
-                if cur_device.split(":")[0] == "npu":
-                    attention_mask = nn.Pad2D([0, 0, 0, 1], mode="constant")(attention_mask)
-                    attention_mask = nn.Pad2D([0, 1, 0, 0], value=0)(attention_mask)
-                else:
-                    attention_mask = nn.Pad2D([0, 0, 0, 1], mode="replicate")(attention_mask)
-                    attention_mask = nn.Pad2D([0, 1, 0, 0], value=get_scale_by_dtype(return_positive=False))(
-                        attention_mask
-                    )
-
-                dtype = convert_dtype(attention_mask.dtype)
-                if "int" in dtype:
-                    attention_mask[:, :, -1, -1] = 1
-                elif "float" in dtype:
-                    attention_mask[:, :, -1, -1] = 0.0
-                else:
-                    raise ValueError("The data type of input `attention_mask` must " "be bool, int or float")
-            else:
-                attention_mask = paddle.concat(
-                    [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype="int64")], axis=-1
-                )
-            model_kwargs["attention_mask"] = attention_mask
-
+            model_kwargs["attention_mask"] = paddle.concat(
+                [
+                    attention_mask,
+                    paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype),
+                ],
+                axis=-1,
+            )
         # update role_ids
         if "role_ids" in model_kwargs and model_kwargs["role_ids"] is not None:
             role_ids = model_kwargs["role_ids"]
@@ -611,11 +586,63 @@ class GenerationMixin(object):
             "`decoder_start_token_id` or `bos_token_id` has to be defined for encoder-decoder generation."
         )
 
-    def prepare_inputs_for_generation(self, input_ids, **kwargs):
-        # Implement in subclasses for custom behavior to prepare inputs in the
-        # generate method.
+    def prepare_inputs_for_generation(
+        self,
+        input_ids,
+        use_cache=True,
+        past_key_values=None,
+        inputs_embeds=None,
+        **kwargs,
+    ):
+        """Prepares model inputs for generation in PaddlePaddle models.
 
-        return {"input_ids": input_ids}
+        Args:
+            input_ids (paddle.Tensor):
+                The input token IDs with shape [batch_size, sequence_length].
+            use_cache (bool, optional):
+                Whether to use cached key-value states for faster generation.
+                Defaults to False.
+            past_key_values (Optional[Tuple[paddle.Tensor]]):
+                Cached past key-value states from previous generation steps.
+                If provided, the input_ids will be truncated to only keep the last token.
+            inputs_embeds (Optional[paddle.Tensor]):
+                Precomputed embeddings instead of token IDs.
+                Only used in the first generation step when past_key_values is None.
+            **kwargs:
+                Additional keyword arguments including:
+                - attention_mask (paddle.Tensor): Attention mask tensor
+
+        Returns:
+            Dict[str, Union[paddle.Tensor, bool, Dict]]:
+            A dictionary containing:
+                - "input_ids" or "inputs_embeds": The main input tensors
+                - "past_key_values": The cached key-value states
+                - "use_cache": Flag indicating whether to use caching
+                - "attention_mask": The attention mask tensor (if provided)
+                - "return_dict": Always set to True for consistent output format
+
+        """
+        if past_key_values:
+            input_ids = input_ids[:, -1:]
+
+        attention_mask = kwargs.get("attention_mask", None)
+
+        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
+        if inputs_embeds is not None and past_key_values is None:
+            model_inputs = {"inputs_embeds": inputs_embeds}
+        else:
+            model_inputs = {"input_ids": input_ids}
+
+        model_inputs.update(
+            {
+                "past_key_values": past_key_values,
+                "use_cache": use_cache,
+                "attention_mask": attention_mask,
+                "return_dict": True,
+            }
+        )
+
+        return model_inputs
 
     def adjust_logits_during_generation(self, logits):
         # Implement in subclasses for custom behavior to adjust the logits in

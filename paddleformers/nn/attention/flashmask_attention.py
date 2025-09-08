@@ -26,7 +26,7 @@ def flashmask_attention_forward(
     query: paddle.Tensor,
     key: paddle.Tensor,
     value: paddle.Tensor,
-    attn_mask_start_row_indices: paddle.Tensor,
+    attn_mask_startend_row_indices: paddle.Tensor,
     dropout: float = 0.0,
     sink: Optional[paddle.Tensor] = None,
     scaling: Optional[float] = None,
@@ -39,7 +39,7 @@ def flashmask_attention_forward(
             query,
             key,
             value,
-            startend_row_indices=attn_mask_start_row_indices,
+            startend_row_indices=attn_mask_startend_row_indices,
             causal=True,
         )
     else:
@@ -48,7 +48,7 @@ def flashmask_attention_forward(
             key,
             value,
             sink,
-            startend_row_indices=attn_mask_start_row_indices,
+            startend_row_indices=attn_mask_startend_row_indices,
             dropout_p=dropout,
             softmax_scale=scaling,
             causal=is_causal,

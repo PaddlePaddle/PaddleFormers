@@ -1096,6 +1096,7 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Use fast pretrain version of DeepSeekV3."},
     )
+    pp_seg_method: Optional[str] = field(default=None, metadata={"help": "PP Segmentation Method"})
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
