@@ -21,22 +21,18 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
-# from paddleformers.transformers import GptOssConfig, GptOssForCausalLM,
-from paddleformers.transformers import GptOssModel
-from tests.testing_utils import require_package, slow
+from paddleformers.transformers import GptOssConfig, GptOssForCausalLM, GptOssModel
+from tests.testing_utils import require_package
+from tests.transformers.test_configuration_common import ConfigTester
+from tests.transformers.test_generation_utils import GenerationTesterMixin
+from tests.transformers.test_modeling_common import (
+    ModelTesterMixin,
+    ModelTesterPretrainedMixin,
+    ids_tensor,
+    random_attention_mask,
+)
 
-# from tests.transformers.test_configuration_common import ConfigTester
-# from tests.transformers.test_generation_utils import GenerationTesterMixin
-# from tests.transformers.test_modeling_common import (
-#     GenerationD2STestMixin,
-#     ModelTesterMixin,
-#     ModelTesterPretrainedMixin,
-#     ids_tensor,
-#     random_attention_mask,
-# )
-from tests.transformers.test_modeling_common import ModelTesterPretrainedMixin
 
-"""
 class GptOssModelTester:
     def __init__(
         self,
@@ -323,17 +319,17 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
         return config, input_ids, attention_mask, max_length
 
     def test_model(self):
-        #pass
+        # pass
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model(*config_and_inputs)
 
     def test_model_attention_mask(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
-        #pass
+        # pass
 
     def test_model_position_ids(self):
-        #pass
+        # pass
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.check_model_position_ids(*config_and_inputs)
 
@@ -342,12 +338,12 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
         pass
 
     def test_GptOss_lm_head_model(self):
-        #pass
+        # pass
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
 
     def test_GptOss_gqa_model(self):
-        #pass
+        # pass
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_gqa_model(*config_and_inputs)
 
@@ -381,50 +377,46 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
     def test_hidden_states_output(self):
         pass
 
-"""
-
 
 class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = GptOssModel
 
-    @slow
     def test_inference_no_attention(self):
-        model = GptOssModel.from_pretrained("../gpt-oss-model-bf16")
+        model = GptOssModel.from_pretrained("PaddleFormers/tiny-random-gptoss")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
-        expected_shape = [1, 11, 2880]
+        expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
 
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [3.12500000, 1.63281250, 1.25000000],
-                    [-2.64062500, 5.50000000, -0.64062500],
-                    [0.21972656, -2.59375000, 0.49609375],
+                    [-1.29509008, -2.16305614, 1.12412810],
+                    [-0.15404500, 0.49270508, 0.03523792],
+                    [-0.96943408, -0.94169110, 0.72819775],
                 ]
             ]
         )
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
-    @slow
     def test_inference_with_attention(self):
-        model = GptOssModel.from_pretrained("../gpt-oss-model-bf16", convert_from_hf=True)
+        model = GptOssModel.from_pretrained("PaddleFormers/tiny-random-gptoss", convert_from_hf=True)
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
-        expected_shape = [1, 11, 2880]
+        expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [3.12500000, 1.63281250, 1.25000000],
-                    [-2.64062500, 5.50000000, -0.64062500],
-                    [0.21972656, -2.59375000, 0.49609375],
+                    [-1.29509008, -2.16305614, 1.12412810],
+                    [-0.15404500, 0.49270508, 0.03523792],
+                    [-0.96943408, -0.94169110, 0.72819775],
                 ]
             ]
         )
@@ -432,8 +424,6 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
 
 class GptOssCompatibilityTest(unittest.TestCase):
-    test_model_id = "hf-internal-testing/tiny-random-GptOssModel"
-
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

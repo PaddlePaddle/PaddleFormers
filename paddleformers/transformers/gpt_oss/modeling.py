@@ -68,22 +68,22 @@ class GptOssExperts(nn.Layer):
         self.expert_dim = self.intermediate_size
         self.gate_up_proj = paddle.create_parameter(
             shape=[self.num_experts, self.hidden_size, 2 * self.expert_dim],
-            dtype="bfloat16",
+            dtype=paddle.get_default_dtype(),
             default_initializer=paddle.nn.initializer.Uniform(),
         )
         self.gate_up_proj_bias = paddle.create_parameter(
             shape=[self.num_experts, 2 * self.expert_dim],
-            dtype="bfloat16",
+            dtype=paddle.get_default_dtype(),
             default_initializer=paddle.nn.initializer.Uniform(),
         )
         self.down_proj = paddle.create_parameter(
             shape=[self.num_experts, self.expert_dim, self.hidden_size],
-            dtype="bfloat16",
+            dtype=paddle.get_default_dtype(),
             default_initializer=paddle.nn.initializer.Uniform(),
         )
         self.down_proj_bias = paddle.create_parameter(
             shape=[self.num_experts, self.hidden_size],
-            dtype="bfloat16",
+            dtype=paddle.get_default_dtype(),
             default_initializer=paddle.nn.initializer.Uniform(),
         )
         self.alpha = 1.702
@@ -159,11 +159,13 @@ class GptOssTopKRouter(nn.Layer):
         self.hidden_dim = config.hidden_size
         self.weight = paddle.create_parameter(
             shape=[self.num_experts, self.hidden_dim],
-            dtype="bfloat16",
+            dtype=paddle.get_default_dtype(),
             default_initializer=paddle.nn.initializer.Uniform(),
         )
         self.bias = paddle.create_parameter(
-            shape=[self.num_experts], dtype="bfloat16", default_initializer=paddle.nn.initializer.Uniform()
+            shape=[self.num_experts],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=paddle.nn.initializer.Uniform(),
         )
 
     def forward(self, hidden_states):
@@ -457,7 +459,9 @@ class GptOssAttention(nn.Layer):
         )
 
         self.sinks = paddle.create_parameter(
-            shape=[self.num_heads], dtype="bfloat16", default_initializer=paddle.nn.initializer.Uniform()
+            shape=[self.num_heads],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=paddle.nn.initializer.Uniform(),
         )
 
     def forward(
