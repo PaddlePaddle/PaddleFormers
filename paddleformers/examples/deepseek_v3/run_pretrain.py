@@ -20,6 +20,9 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import paddle
+from config.configuration import DeepseekV2FastConfig
+from modeling import DeepseekV2ForCausalLM
+from modeling_pp import DeepseekV2ForCausalLMPipe
 
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
@@ -357,6 +360,14 @@ def main():
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+    print("==========================")
+    print("model_args: ", model_args)
+    print("==========================")
+    print("data_args: ", data_args)
+    print("==========================")
+    print("training_args: ", training_args)
+    print("==========================")
+
     if training_args.no_recompute_layers is not None:
         training_args.no_recompute_layers.sort()
 
@@ -403,7 +414,8 @@ def main():
             )
 
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path, **{"download_hub": "bos"})
-    config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+    # config = AutoConfig.from_pretrained("./")
+    config = DeepseekV2FastConfig.from_pretrained("./config/config.json")
 
     # set all llm config
     LlmMetaConfig.set_llm_config(config, training_args)
@@ -476,9 +488,9 @@ def main():
         if training_args.bf16:
             dtype = "bfloat16"
 
-    model_class = AutoModelForCausalLM
+    model_class = DeepseekV2ForCausalLM
     if training_args.pipeline_parallel_degree > 1:
-        model_class = AutoModelForCausalLMPipe
+        model_class = DeepseekV2ForCausalLMPipe
         if "LLama" in str(config.architectures):
             try:
                 from utils.register_reshard import register_pp_reshard_information

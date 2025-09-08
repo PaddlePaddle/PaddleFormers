@@ -55,36 +55,34 @@ try:
     from paddle.nn.functional.flash_attention import flash_attention
 except:
     flash_attention = None
-from paddleformers.transformers.model_utils import dtype_guard
+from config.configuration import DeepseekV2FastConfig
+from moe_gate import PretrainedMoEGate
+from moe_layer import MoELayer
 
-from ...utils.initializer import kaiming_uniform_
-from ...utils.log import logger
-from ...utils.tools import get_env_device
-from ..activations import ACT2FN
-from ..conversion_utils import StateDictNameMapping, init_name_mappings
-from ..llama.modeling import get_use_casual_mask
-from ..model_outputs import BaseModelOutputWithPastAndMTP
-from ..model_utils import PretrainedModel, register_base_model
-from ..moe_gate import PretrainedMoEGate
-from ..moe_layer import MoELayer
-from . import fp8_linear as linear_utils
-from .configuration import DeepseekV2Config
-
-FA_VERSION = int(os.getenv("FA_VERSION", 2))
-
-from ..fp8_utils import (
+from paddleformers.transformers.activations import ACT2FN
+from paddleformers.transformers.conversion_utils import (
+    StateDictNameMapping,
+    init_name_mappings,
+)
+from paddleformers.transformers.deepseek_v2 import fp8_linear as linear_utils
+from paddleformers.transformers.deepseek_v2.fp8_linear import Linear
+from paddleformers.transformers.fp8_utils import (
     FP8KeepXLinear,
     FP8Linear,
     FP8LinearFunction,
     FP8Mlp,
     set_parameter_color,
 )
-from .fp8_linear import Linear
-
-DSV3_USE_FP8_GEMM = os.getenv("DSV3_USE_FP8_GEMM", "False").lower() == "true"
-DSV3_USE_ATTEN_RECOMPUTE = os.getenv("DSV3_USE_ATTEN_RECOMPUTE", "False").lower() == "true"
-
-Linear = FP8Linear if DSV3_USE_FP8_GEMM else Linear
+from paddleformers.transformers.llama.modeling import get_use_casual_mask
+from paddleformers.transformers.model_outputs import BaseModelOutputWithPastAndMTP
+from paddleformers.transformers.model_utils import (
+    PretrainedModel,
+    dtype_guard,
+    register_base_model,
+)
+from paddleformers.utils.initializer import kaiming_uniform_
+from paddleformers.utils.log import logger
+from paddleformers.utils.tools import get_env_device
 
 try:
     from paddle.incubate.nn.functional import swiglu
@@ -100,11 +98,8 @@ try:
     from paddle.incubate.nn.functional import fused_partial_rope
 except ImportError:
     fused_partial_rope = None
-
-from .modeling import (
+from modeling import (
     AddAuxiliaryLoss,
-    DeepseekV2DynamicNTKScalingRotaryEmbedding,
-    DeepseekV2LinearScalingRotaryEmbedding,
     DeepseekV2PretrainingCriterion,
     DeepseekV2RMSNorm,
     DeepseekV2RotaryEmbedding,
@@ -115,12 +110,17 @@ from .modeling import (
     FusedRMSLinear,
     LMHeadFunction,
     MemroyRecomputeAttn,
+    apply_rotary_pos_emb,
+    set_global_step,
+)
+
+from paddleformers.transformers.deepseek_v2 import (
+    DeepseekV2DynamicNTKScalingRotaryEmbedding,
+    DeepseekV2LinearScalingRotaryEmbedding,
     _expand_2d_mask,
     _make_causal_mask,
-    apply_rotary_pos_emb,
     is_casual_mask,
     scaled_dot_product_attention,
-    set_global_step,
     yarn_get_mscale,
 )
 
@@ -162,12 +162,13 @@ def parallel_matmul(x: Tensor, y: Tensor, transpose_y=False, tensor_parallel_out
 
 
 class DeepseekV2MLP(nn.Layer):
-    def __init__(self, config: DeepseekV2Config, hidden_size=None, intermediate_size=None, is_moe=False):
+    def __init__(self, config: DeepseekV2FastConfig, hidden_size=None, intermediate_size=None, is_moe=False):
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
         self.fuse_attention_ffn = config.fuse_attention_ffn
+        Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear
 
         def linear_dtype_gaurd():
             if config.use_fp8:
@@ -314,7 +315,7 @@ class DeepseekV2MoE(MoELayer):
     A mixed expert module containing shared experts.
     """
 
-    def __init__(self, config: DeepseekV2Config, norm_weight=None, norm_eps=None):
+    def __init__(self, config: DeepseekV2FastConfig, norm_weight=None, norm_eps=None):
         assert config.tensor_parallel_degree <= 1, "tensor_parallel_degree should be 1"
 
         self.using_post_norm_recompute = config.using_post_norm_recompute
@@ -336,7 +337,7 @@ class DeepseekV2MoE(MoELayer):
             norm_weight=norm_weight,
             norm_eps=norm_eps,
         )
-        DeepseekV2MLPClass = FP8Mlp if DSV3_USE_FP8_GEMM else DeepseekV2MLP
+        DeepseekV2MLPClass = FP8Mlp if config.dsv3_use_fp8_gemm else DeepseekV2MLP
 
         super().__init__(
             config=config,
@@ -485,7 +486,7 @@ class DeepseekV2MoE(MoELayer):
 class DeepseekV2Attention(nn.Layer):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
-    def __init__(self, config: DeepseekV2Config, layerwise_recompute: bool = False, recompute_fa3: bool = False):
+    def __init__(self, config: DeepseekV2FastConfig, layerwise_recompute: bool = False, recompute_fa3: bool = False):
         super().__init__()
         self.config = config
         self.attention_dropout = config.attention_dropout
@@ -533,6 +534,7 @@ class DeepseekV2Attention(nn.Layer):
 
         self._init_rope()
         self.softmax_scale = self.q_head_dim ** (-0.5)
+        Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear
 
         # fmt: off
         if self.config.tensor_parallel_degree > 1:
@@ -560,7 +562,7 @@ class DeepseekV2Attention(nn.Layer):
             self.kv_a_layernorm = DeepseekV2RMSNorm(config=config, hidden_size=config.kv_lora_rank, use_sequence_parallel=False)
         else:
             # for without tensor parallel
-            if DSV3_USE_ATTEN_RECOMPUTE:
+            if self.config.dsv3_use_atten_recompute:
                 self.fused_rms_norm_linear = FusedRMSLinear(self.hidden_size, config.q_lora_rank, config.kv_lora_rank + config.qk_rope_head_dim, 1e-6)
                 kv_up_dim = self.num_heads * (self.q_head_dim - self.qk_rope_head_dim + self.v_head_dim)
                 self.memory_recompute_att = MemroyRecomputeAttn(config.q_lora_rank, config.kv_lora_rank, config.q_lora_rank, self.num_heads * self.q_head_dim, config.kv_lora_rank, kv_up_dim, self.rotary_emb, self.num_heads, self.q_head_dim, self.qk_nope_head_dim, self.v_head_dim, self.qk_rope_head_dim, 1e-6, self.kv_lora_rank, self.softmax_scale, recompute_fa3=self.recompute_fa3)
@@ -595,7 +597,7 @@ class DeepseekV2Attention(nn.Layer):
 
     def fp8_quant_weight(self, quant_transpose=None):
 
-        if DSV3_USE_ATTEN_RECOMPUTE:
+        if self.config.dsv3_use_atten_recompute:
             self.o_proj.fp8_quant_weight(quant_transpose=quant_transpose)
             self.memory_recompute_att.fp8_quant_weight(quant_transpose=quant_transpose)
             self.fused_rms_norm_linear.fp8_quant_weight(quant_transpose=quant_transpose)
@@ -668,7 +670,7 @@ class DeepseekV2Attention(nn.Layer):
 
         # DeepSeekV2 q_lora_rank=1536
         # DeepSeekV2-lite q_lora_rank=None
-        if DSV3_USE_ATTEN_RECOMPUTE:
+        if self.config.dsv3_use_atten_recompute:
 
             q_t1, compressed_kv = self.fused_rms_norm_linear(hidden_states)
 
@@ -789,7 +791,11 @@ class DeepseekV2Attention(nn.Layer):
 
 class DeepseekV2DecoderLayer(nn.Layer):
     def __init__(
-        self, config: DeepseekV2Config, layer_idx: int, layerwise_recompute: bool = False, recompute_fa3: bool = False
+        self,
+        config: DeepseekV2FastConfig,
+        layer_idx: int,
+        layerwise_recompute: bool = False,
+        recompute_fa3: bool = False,
     ):
         super().__init__()
         self.config = config
@@ -805,7 +811,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
             config=config, layerwise_recompute=layerwise_recompute, recompute_fa3=recompute_fa3
         )
 
-        DeepseekV2MLPClass = FP8Mlp if DSV3_USE_FP8_GEMM else DeepseekV2MLP
+        DeepseekV2MLPClass = FP8Mlp if self.config.dsv3_use_fp8_gemm else DeepseekV2MLP
 
         self.input_layernorm = DeepseekV2RMSNorm(config)
         self.post_attention_layernorm = DeepseekV2RMSNorm(config)
@@ -1016,7 +1022,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
 class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
     def __init__(
         self,
-        config: DeepseekV2Config,
+        config: DeepseekV2FastConfig,
         layer_idx: int,
         layerwise_recompute: bool = False,
     ):
@@ -1064,12 +1070,18 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
 
 
 class DeepseekV2PretrainedModelFast(PretrainedModel):
-    config_class = DeepseekV2Config
+    config_class = DeepseekV2FastConfig
     base_model_prefix = "deepseek_v2"
     _no_split_modules = ["DeepseekV2DecoderLayer"]
 
     def _get_model_flops(self, batch_size=1, seq_length=None, **kwargs):
-        from .mfu_utils import DeepSeekProjection
+        from paddleformers.transformers.deepseek_v2.mfu_utils import DeepSeekProjection
+
+        print("*******************************************")
+        print("*******************************************")
+        print("You are initing DeepseekV2ModelFast......")
+        print("*******************************************")
+        print("*******************************************")
 
         # self._
         mfu_cal_proj = DeepSeekProjection(self.config)
@@ -1085,7 +1097,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
         return self._get_model_flops(*args, **kwargs)
 
     @classmethod
-    def _get_name_mappings(cls, config: DeepseekV2Config) -> list[StateDictNameMapping]:
+    def _get_name_mappings(cls, config: DeepseekV2FastConfig) -> list[StateDictNameMapping]:
         mappings: list[StateDictNameMapping] = []
         model_mappings = [
             ["embed_tokens.weight"],
@@ -1145,7 +1157,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
         return mappings
 
     @classmethod
-    def _get_tensor_parallel_mappings(cls, config: DeepseekV2Config, is_split=True):
+    def _get_tensor_parallel_mappings(cls, config: DeepseekV2FastConfig, is_split=True):
         from paddleformers.transformers.conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
@@ -1248,6 +1260,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
     def _init_weights(self, layer):
         if self.config.tensor_parallel_degree > 1:
             rng_tracker = get_rng_state_tracker().rng_state
+        Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear
 
         if isinstance(
             layer,
@@ -1315,10 +1328,10 @@ class DeepseekV2ModelFast(DeepseekV2PretrainedModelFast):
     Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`DeepseekV2DecoderLayer`]
 
     Args:
-        config: DeepseekV2Config
+        config: DeepseekV2FastConfig
     """
 
-    def __init__(self, config: DeepseekV2Config):
+    def __init__(self, config: DeepseekV2FastConfig):
         super().__init__(config)
 
         self.config = config
@@ -1637,7 +1650,7 @@ class DeepseekV2PretrainingCriterionFast(nn.Layer):
     It calculates the final loss.
     """
 
-    def __init__(self, config: DeepseekV2Config):
+    def __init__(self, config: DeepseekV2FastConfig):
         super(DeepseekV2PretrainingCriterion, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config

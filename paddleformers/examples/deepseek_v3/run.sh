@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# llama 模型数据下载
+# Download llama model data
 # mkdir -p data
 # wget https://bj.bcebos.com/paddlenlp/models/transformers/llama/data/llama_openwebtext_100k.bin
 # wget https://bj.bcebos.com/paddlenlp/models/transformers/llama/data/llama_openwebtext_100k.idx
 
 # mpirun sh script/kill_process.sh 
 # mpirun rm -rf output
-nohup bash script/train_gpu.sh config/pretrain_argument.json  > run.log 2>&1 &
+nohup bash script/train_gpu.sh ./config/pretrain_argument.json  > run.log 2>&1 &
 

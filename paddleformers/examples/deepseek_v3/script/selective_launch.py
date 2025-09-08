@@ -29,7 +29,7 @@ def parse_ranks(ranks_strs):
     # and script/kill_process.sh together
 
     # Example 1: Use contiguous nodes [8, 16)
-    return range(6, 7)
+    return range(0, 1)
 
     # Example 2: Use non-contiguous nodes [4, 8) + {10} + [30, 32), i.e., [4, 5, 6, 7, 10, 30, 31]
     # return list(range(0, 16)) + list(range(24, 40))

@@ -13,14 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ DeepSeekV2 model configuration"""
-from ..configuration_utils import PretrainedConfig
+from paddleformers.transformers.configuration_utils import PretrainedConfig
 
 __all__ = [
-    "DeepseekV2Config",
+    "DeepseekV2FastConfig",
 ]
 
 
-class DeepseekV2Config(PretrainedConfig):
+class DeepseekV2FastConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`DeepseekV2Model`]. It is used to instantiate an DeepSeek
     model according to the specified arguments, defining the model architecture. Instantiating a configuration with the
@@ -120,16 +120,16 @@ class DeepseekV2Config(PretrainedConfig):
             The model type for speculate. Support ['eagle', 'mtp'] Now.
 
     ```python
-    >>> from paddleformers.transformers import DeepseekV2Model, DeepseekV2Config
+    >>> from paddleformers.transformers import DeepseekV2Model, DeepseekV2FastConfig
 
     >>> # Initializing a Deepseek-V2 style configuration
-    >>> configuration = DeepseekV2Config()
+    >>> configuration = DeepseekV2FastConfig()
 
     >>> # Accessing the model configuration
     >>> configuration = model.config
     ```"""
 
-    model_type = "deepseek_v2"
+    model_type = "deepseek_v2_fast"
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
@@ -179,6 +179,24 @@ class DeepseekV2Config(PretrainedConfig):
         attention_dropout=0.0,
         speculate_model_type=False,
         using_flex_token=False,
+        use_dualpipev=False,
+        send_mtp_embed=False,
+        using_post_norm_recompute=False,
+        stepped_recompute_fwd_gate_up=False,
+        recompute_fwd_gate_up=0,
+        recompute_fa3=0,
+        is_split_group_gemm=False,
+        fakse_gate_restrict_balance=False,
+        adaptive_remained_O1_recompute_ratio=0,
+        offline_quant_expert_weight=True,
+        clear_origin_weight_when_offline_quant=True,
+        mlp_bwd_subbatch_rows=0,
+        mlp_fwd_subbatch_rows=0,
+        output_subbatch_rows=0,
+        dsv3_use_fp8_gemm=True,
+        dsv3_use_atten_recompute=True,
+        use_ds_gemm=False,
+        dsv3_use_fp8_dispatch=True,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -227,6 +245,24 @@ class DeepseekV2Config(PretrainedConfig):
         self.speculate_model_type = speculate_model_type
         self.use_fp8 = False
         self.using_flex_token = using_flex_token
+        self.use_dualpipev = use_dualpipev
+        self.send_mtp_embed = send_mtp_embed
+        self.using_post_norm_recompute = using_post_norm_recompute
+        self.recompute_fwd_gate_up = recompute_fwd_gate_up
+        self.recompute_fa3 = recompute_fa3
+        self.stepped_recompute_fwd_gate_up = stepped_recompute_fwd_gate_up
+        self.is_split_group_gemm = is_split_group_gemm
+        self.fakse_gate_restrict_balance = fakse_gate_restrict_balance
+        self.adaptive_remained_O1_recompute_ratio = adaptive_remained_O1_recompute_ratio
+        self.offline_quant_expert_weight = offline_quant_expert_weight
+        self.clear_origin_weight_when_offline_quant = clear_origin_weight_when_offline_quant
+        self.mlp_bwd_subbatch_rows = mlp_bwd_subbatch_rows
+        self.mlp_fwd_subbatch_rows = mlp_fwd_subbatch_rows
+        self.output_subbatch_rows = output_subbatch_rows
+        self.dsv3_use_fp8_gemm = dsv3_use_fp8_gemm
+        self.dsv3_use_atten_recompute = dsv3_use_atten_recompute
+        self.use_ds_gemm = use_ds_gemm
+        self.dsv3_use_fp8_dispatch = dsv3_use_fp8_dispatch
 
         super().__init__(
             pad_token_id=pad_token_id,

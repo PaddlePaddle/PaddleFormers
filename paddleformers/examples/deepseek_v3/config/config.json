@@ -1,13 +1,13 @@
 {
     "architectures": [
-      "DeepseekV3ForCausalLM"
+      "DeepseekV2ForCausalLM"
     ],
     "attention_bias": false,
     "attention_dropout": 0.0,
     "auto_map": {
-      "AutoConfig": "configuration_deepseek.DeepseekV3Config",
-      "AutoModel": "modeling_deepseek.DeepseekV3Model",
-      "AutoModelForCausalLM": "modeling_deepseek.DeepseekV3ForCausalLM"
+      "AutoConfig": "DeepseekV2FastConfig",
+      "AutoModel": "DeepseekV2ModelFast",
+      "AutoModelForCausalLM": "DeepseekV2ForCausalLM"
     },
     "aux_loss_alpha": 0.001,
     "bos_token_id": 0,
@@ -20,7 +20,7 @@
     "intermediate_size": 18432,
     "kv_lora_rank": 512,
     "max_position_embeddings": 163840,
-    "model_type": "deepseek_v3",
+    "model_type": "deepseek_v2_fast",
     "moe_intermediate_size": 2048,
     "moe_layer_freq": 1,
     "n_group": 8,
@@ -71,5 +71,10 @@
     "use_dualpipev": true,
     "send_mtp_embed": true,
     "offline_quant_expert_weight": false,
-    "clear_origin_weight_when_offline_quant": false
+    "clear_origin_weight_when_offline_quant": false,
+    "dsv3_use_fp8_gemm": true,
+    "dsv3_use_atten_recompute": true,
+    "use_ds_gemm": false,
+    "dsv3_use_fp8_dispatch": true,
+    "fa_version": 3
   }
