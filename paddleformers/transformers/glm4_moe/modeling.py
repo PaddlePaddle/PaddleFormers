@@ -27,6 +27,7 @@ from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Glm4MoeMLP
+from ...utils.log import logger
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..llama.modeling import get_use_casual_mask
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
@@ -58,10 +59,11 @@ def eager_attention_forward(
         causal_mask = attention_mask[:, :, :, : key.shape[-2]]
         attn_weights = attn_weights + causal_mask
 
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=paddle.float32).to(query.dtype)
+    attn_weights = nn.functional.softmax(attn_weights, axis=-1, dtype=paddle.float32).to(query.dtype)
     attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
     attn_output = paddle.matmul(attn_weights, value)
-    attn_output = attn_output.transpose(1, 2)
+    attn_output = paddle.transpose(attn_output, perm=[0, 2, 1, 3])
+    # attn_output = attn_output.transpose(perm=(1, 2))
     attn_output = paddle.reshape(x=attn_output, shape=[0, 0, attn_output.shape[2] * attn_output.shape[3]])
 
     return attn_output, attn_weights
@@ -211,6 +213,7 @@ class Glm4MoeAttention(nn.Layer):
         if past_key_value is not None:
             key_states = paddle.concat([past_key_value[0], key_states], axis=1)
             value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+        past_key_value = (key_states, value_states) if use_cache else None
 
         attention_interface = eager_attention_forward
         # if self.config._attn_implementation != "eager":
@@ -232,8 +235,6 @@ class Glm4MoeAttention(nn.Layer):
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
 
-        # print(self.o_proj)
-        # print("attn_output: ", attn_output)
         attn_output = self.o_proj(attn_output)
 
         if not output_attentions:
@@ -287,7 +288,7 @@ class Glm4MoeTopkRouter(nn.Layer):
         topk_indices = self.get_topk_indices(scores)
         topk_weights = paddle.take_along_axis(scores, topk_indices, axis=1, broadcast=False)
         if self.norm_topk_prob:
-            denominator = topk_weights.sum(dim=-1, keepdim=True) + 1e-20
+            denominator = topk_weights.sum(axis=-1, keepdim=True) + 1e-20
             topk_weights /= denominator
         topk_weights = topk_weights * self.routed_scaling_factor
         return topk_indices, topk_weights
@@ -421,7 +422,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states, _ = self.mlp(hidden_states)
+        hidden_states = self.mlp(hidden_states)
         if isinstance(hidden_states, tuple):
             hidden_states, _ = hidden_states
         # else:
@@ -505,99 +506,104 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             num_attention_heads=config.num_attention_heads,
         )
 
-        def get_tensor_parallel_split_mappings(num_layers, num_experts):
-            final_actions = {}
-
-            base_actions = {
-                "lm_head.weight": partial(fn, is_column=True),
-                # Row Linear
-                "embed_tokens.weight": partial(fn, is_column=False),
-                "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
-            }
-
-            if not config.vocab_size % config.tensor_parallel_degree == 0:
-                base_actions.pop("lm_head.weight")
-                base_actions.pop("embed_tokens.weight")
-            # Column Linear
-            base_actions["layers.0.self_attn.q_proj.weight"] = partial(fn, is_column=True)
-
-            # if we have enough num_key_value_heads to split, then split it.
-            if config.num_key_value_heads % config.tensor_parallel_degree == 0:
-                base_actions["layers.0.self_attn.k_proj.weight"] = partial(fn, is_column=True)
-                base_actions["layers.0.self_attn.v_proj.weight"] = partial(fn, is_column=True)
-
-            for key, action in base_actions.items():
-                if "layers.0." in key:
-                    for i in range(num_layers):
-                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
-                final_actions[key] = action
-
-            return final_actions
-
-        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers, config.num_experts)
-
-        return mappings
-
-    @classmethod
-    def _get_fuse_or_split_param_mappings(cls, config: Glm4MoeConfig, is_fuse=False):
-        # return parameter fuse utils
-        from ..conversion_utils import split_or_fuse_func
-
-        fn = split_or_fuse_func(is_fuse=is_fuse)
-
-        # last key is fused key, other keys are to be fused.
-        fuse_qkv_keys = [
-            (
-                "layers.0.self_attn.q_proj.weight",
-                "layers.0.self_attn.k_proj.weight",
-                "layers.0.self_attn.v_proj.weight",
-                "layers.0.self_attn.qkv_proj.weight",
-            ),
+        LAYER_COLWISE = [
+            "self_attn.q_proj.weight",
+            "self_attn.k_proj.weight",
+            "self_attn.v_proj.weight",
         ]
 
-        fuse_gate_up_keys = (
-            "layers.0.mlp.gate_proj.weight",
-            "layers.0.mlp.up_proj.weight",
-            "layers.0.mlp.gate_up_fused_proj.weight",
-        )
-        num_heads = config.num_attention_heads
-        num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
-        fuse_attention_qkv = getattr(config, "fuse_attention_qkv", False)
-        fuse_attention_ffn = getattr(config, "fuse_attention_ffn", False)
+        LAYER_ROWWISE = ["self_attn.o_proj.weight"]
 
-        final_actions = {}
-        if is_fuse:
-            if fuse_attention_qkv:
-                for i in range(config.num_hidden_layers):
-                    for fuse_keys in fuse_qkv_keys:
-                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
-                        final_actions[keys] = partial(
-                            fn, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
+        EXPERT_LAYER_COLWISE = [
+            "up_proj.weight",
+            "gate_proj.weight",
+        ]
+        EXPERT_LAYER_ROWWISE = ["down_proj.weight"]
+
+        BIAS_KEYS = [
+            "self_attn.q_proj.bias",
+            "self_attn.k_proj.bias",
+            "self_attn.v_proj.bias",
+        ]
+
+        def make_base_actions():
+            actions = {
+                "lm_head.weight": partial(fn, is_column=not config.tie_word_embeddings),
+                "embed_tokens.weight": partial(fn, is_column=False),
+            }
+            for layer_idx in range(config.num_hidden_layers):
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                        for k in LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
+                        for k in LAYER_ROWWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=True)
+                        for e in range(config.n_routed_experts)
+                        for k in EXPERT_LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=False)
+                        for e in range(config.n_routed_experts)
+                        for k in EXPERT_LAYER_ROWWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=True)
+                        for k in EXPERT_LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=False)
+                        for k in EXPERT_LAYER_ROWWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
+                            fn, is_column=True
                         )
-            if fuse_attention_ffn:
-                for i in range(config.num_hidden_layers):
-                    keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_gate_up_keys])
-                    final_actions[keys] = fn
-        else:
-            if not fuse_attention_qkv:
-                for i in range(config.num_hidden_layers):
-                    for fuse_keys in fuse_qkv_keys:
-                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
-                        final_actions[keys] = partial(
-                            fn, split_nums=3, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
+                        for k in EXPERT_LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
+                            fn, is_column=False
                         )
-            if not fuse_attention_ffn:
-                for i in range(config.num_hidden_layers):
-                    keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_gate_up_keys])
-                    final_actions[keys] = partial(fn, split_nums=2)
-        return final_actions
+                        for k in EXPERT_LAYER_ROWWISE
+                    }
+                )
+                # bias
+                if config.attention_bias:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                            for b in BIAS_KEYS
+                        }
+                    )
+            return actions
+
+        mappings = make_base_actions()
+        return mappings
 
 
 class Glm4MoeRotaryEmbedding(nn.Layer):
     def __init__(self, config: Glm4MoeConfig, device=None):
         super().__init__()
         self.config = config
-        # self.rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
         base = config.rope_theta
         partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
         head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
@@ -610,8 +616,17 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
 
     @paddle.no_grad()
     def forward(self, x, position_ids):
-        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.place)
-        position_ids_expanded = position_ids[:, None, :].float()
+        # fleetY version
+        inv_freq_expanded = (
+            self.inv_freq.unsqueeze(0)
+            .unsqueeze(-1)
+            .cast(paddle.float32)
+            .expand([position_ids.shape[0], -1, 1])
+            .to(x.place)
+        )
+        # paddle3.2 version
+        # inv_freq_expanded = self.inv_freq[None, :, None].cast(paddle.float32).expand((position_ids.shape[0], -1, 1)).to(x.place)
+        position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
 
         freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
         emb = paddle.concat((freqs, freqs), axis=-1)
@@ -841,13 +856,11 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             all_hidden_states += (hidden_states,)
 
         next_cache = next_decoder_cache if use_cache else None
-
         if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
-
+            return tuple(v for v in [hidden_states, next_cache] if v is not None)
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
-            past_key_values=past_key_values,
+            past_key_values=next_cache,
         )
 
 
@@ -959,20 +972,20 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
-        logits_to_keep: Union[int, paddle.Tensor] = 0,
+        loss_mask: Optional[paddle.Tensor] = None,
     ):
 
-        # output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        # if attn_mask_startend_row_indices is not None and attention_mask is not None:
-        #     logger.warning(
-        #         "You have provided both attn_mask_startend_row_indices and attention_mask. "
-        #         "The attn_mask_startend_row_indices will be used."
-        #     )
-        #     attention_mask = None
+        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+            logger.warning(
+                "You have provided both attn_mask_startend_row_indices and attention_mask. "
+                "The attn_mask_startend_row_indices will be used."
+            )
+            attention_mask = None
 
         outputs = self.model(
             input_ids=input_ids,  # [bs, seq_len]
@@ -987,53 +1000,15 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         )
 
         hidden_states = outputs[0]  # [bs, seq_len, dim]
-        # if labels is None，means we need full output, instead of tensor_parallel_output
-        # tensor_parallel_output is together with ParallelCrossEntropy
-        tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1
-        if labels is not None and self.config.use_fused_linear_cross_entropy:
-            from paddlenlp_kernel.triton.cut_cross_entropy import linear_cross_entropy
+        logits = self.lm_head(hidden_states)
 
-            assert (
-                self.config.tensor_parallel_degree <= 1
-            ), "The argument `use_fused_linear_cross_entropy` is imcompatiable with tensor parallel "
-            # todo :hidden_states[:, slice_indices, :]
-            masked_lm_loss = linear_cross_entropy(hidden_states, self.lm_head.weight, targets=labels)
-            binary_sequence = paddle.where(
-                masked_lm_loss > 0, paddle.ones_like(masked_lm_loss), paddle.zeros_like(masked_lm_loss)
-            )
-            count = paddle.sum(binary_sequence)
-            if count == 0:
-                loss = paddle.sum(masked_lm_loss * binary_sequence)
-            else:
-                loss = paddle.sum(masked_lm_loss * binary_sequence) / count
-            logits = None
-        else:
-            slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-            logits = self.lm_head(hidden_states[:, slice_indices, :], tensor_parallel_output=tensor_parallel_output)
-            loss = None
-            if labels is not None:
-                loss, _ = self.criterion(logits, labels)
-        # aux_loss = None
-        # if output_router_logits:
-        #     aux_loss = load_balancing_loss_func(
-        #         outputs.router_logits if return_dict else outputs[-1],
-        #         self.num_experts,
-        #         self.num_experts_per_tok,
-        #         attention_mask,
-        #     )
-        #     if labels is not None:
-        #         loss += self.router_aux_loss_coef * aux_loss
+        loss = None
+        if labels is not None:
+            loss, _ = self.criterion(logits, labels)
+
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
-
-        # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-        logits = self.lm_head(hidden_states[:, slice_indices, :])
-
-        # loss = None
-        # if labels is not None:
-        #     loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
 
         return CausalLMOutputWithPast(
             loss=loss,
