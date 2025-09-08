@@ -164,6 +164,41 @@ class Qwen2MoeGate(PretrainedMoEGate):
         return capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss
 
 
+class ExpertParallelQwen2MoeSparseMoeBlock(MoELayer):
+    def __init__(self, config: Qwen2MoeConfig):
+        gate = Qwen2MoeGate(
+            config,
+            config.num_experts,
+            config.hidden_size,
+            top_k=config.num_experts_per_tok,
+            drop_tokens=False,
+        )
+
+        super().__init__(
+            config,
+            moe_num_experts=config.num_experts,
+            expert_class=Qwen2MoeMLP,
+            expert_kwargs={"config": config, "intermediate_size": config.moe_intermediate_size},
+            gate=gate,
+            capacity=2.0,
+        )
+
+        self.top_k = config.num_experts_per_tok
+        self.norm_topk_prob = config.norm_topk_prob
+
+        self.shared_expert = Qwen2MoeMLP(config, intermediate_size=config.shared_expert_intermediate_size)
+        self.shared_expert_gate = GeneralLinear.create(config.hidden_size, 1, has_bias=False, linear_type="default")
+
+    def forward(self, hidden_states):
+        final_hidden_states, l_aux, _ = super().forward(hidden_states)
+
+        shared_expert_output = self.shared_expert(hidden_states)
+        shared_expert_output = F.sigmoid(self.shared_expert_gate(hidden_states)) * shared_expert_output
+        final_hidden_states = final_hidden_states + shared_expert_output
+
+        return final_hidden_states, l_aux
+
+
 class Qwen2MoeSparseMoeBlock(nn.Layer):
     def __init__(self, config):
         super().__init__()
@@ -216,22 +251,12 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
             # the current expert. We need to make sure to multiply the output hidden
             # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
             if tokens_per_expert[expert_idx] <= 0.1:
-                if self.training:
-                    idx_ = paddle.zeros(1).to(paddle.int32)
-                    fake_state = hidden_states[idx_, None].reshape([-1, hidden_dim]).contiguous()
-                    fake_state.stop_gradient = False
-                    fake_hidden_states = expert_layer(fake_state * 0.0)
-                    final_hidden_states.index_add_(
-                        index=idx_.reshape([-1]), axis=0, value=fake_hidden_states.to(hidden_states.dtype)
-                    )
-                else:
-                    continue
-            else:
-                current_state = hidden_states[idx, None].reshape([-1, hidden_dim])
-                current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
-                final_hidden_states.index_add_(
-                    index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
-                )
+                continue
+            current_state = hidden_states[idx, None].reshape([-1, hidden_dim])
+            current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
+            final_hidden_states.index_add_(
+                index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
+            )
 
         shared_expert_output = self.shared_expert(hidden_states)
         shared_expert_output = F.sigmoid(self.shared_expert_gate(hidden_states)) * shared_expert_output
@@ -240,41 +265,6 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
 
         final_hidden_states = final_hidden_states.reshape([batch_size, sequence_length, hidden_dim])
         return final_hidden_states, router_logits
-
-
-class ExpertParallelQwen2MoeSparseMoeBlock(MoELayer):
-    def __init__(self, config: Qwen2MoeConfig):
-        gate = Qwen2MoeGate(
-            config,
-            config.num_experts,
-            config.hidden_size,
-            top_k=config.num_experts_per_tok,
-            drop_tokens=False,
-        )
-
-        super().__init__(
-            config,
-            moe_num_experts=config.num_experts,
-            expert_class=Qwen2MoeMLP,
-            expert_kwargs={"config": config, "intermediate_size": config.moe_intermediate_size},
-            gate=gate,
-            capacity=2.0,
-        )
-
-        self.top_k = config.num_experts_per_tok
-        self.norm_topk_prob = config.norm_topk_prob
-
-        self.shared_expert = Qwen2MoeMLP(config, intermediate_size=config.shared_expert_intermediate_size)
-        self.shared_expert_gate = GeneralLinear.create(config.hidden_size, 1, has_bias=False, linear_type="default")
-
-    def forward(self, hidden_states):
-        final_hidden_states, l_aux, _ = super().forward(hidden_states)
-
-        shared_expert_output = self.shared_expert(hidden_states)
-        shared_expert_output = F.sigmoid(self.shared_expert_gate(hidden_states)) * shared_expert_output
-        final_hidden_states = final_hidden_states + shared_expert_output
-
-        return final_hidden_states, l_aux
 
 
 class Qwen2MoeDecoderLayer(nn.Layer):

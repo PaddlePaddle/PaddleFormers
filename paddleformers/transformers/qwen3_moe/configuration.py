@@ -174,14 +174,10 @@ class Qwen3MoeConfig(PretrainedConfig):
         tie_word_embeddings=False,
         rope_theta=10000.0,
         rope_scaling=None,
-        bos_token_id=151643,
-        eos_token_id=151645,
         attention_bias=False,
         use_swiglu=False,
         use_sliding_window=False,
         sliding_window=4096,
-        ignored_index=-100,
-        max_window_layers=28,
         attention_dropout=0.0,
         decoder_sparse_step=1,
         moe_intermediate_size=768,
@@ -202,8 +198,6 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.num_attention_heads = num_attention_heads
         self.use_sliding_window = use_sliding_window
         self.sliding_window = sliding_window if use_sliding_window else None
-        self.max_window_layers = max_window_layers
-        self.ignored_index = ignored_index
 
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
@@ -212,9 +206,6 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.use_rmsnorm = use_rmsnorm
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-
-        self.bos_token_id = bos_token_id
-        self.eos_token_id = eos_token_id
 
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
@@ -238,16 +229,12 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.pp_seg_method = pp_seg_method
 
         super().__init__(
-            bos_token_id=bos_token_id,
-            eos_token_id=eos_token_id,
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
 
         self.register_unsavable_keys(
             [
-                "ignored_index",
-                "pad_token_id",
                 "rope_scaling",
                 "use_rmsnorm",
                 "use_swiglu",

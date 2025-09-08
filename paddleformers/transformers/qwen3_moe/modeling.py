@@ -142,22 +142,12 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
             # the current expert. We need to make sure to multiply the output hidden
             # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
             if tokens_per_expert[expert_idx] <= 0.1:
-                if self.training:
-                    idx_ = paddle.zeros(1).to(paddle.int32)
-                    fake_state = hidden_states[idx_, None].reshape([-1, hidden_dim]).contiguous()
-                    fake_state.stop_gradient = False
-                    fake_hidden_states = expert_layer(fake_state * 0.0)
-                    final_hidden_states.index_add_(
-                        index=idx_.reshape([-1]), axis=0, value=fake_hidden_states.to(hidden_states.dtype)
-                    )
-                else:
-                    continue
-            else:
-                current_state = hidden_states[idx, None].reshape([-1, hidden_dim])
-                current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
-                final_hidden_states.index_add_(
-                    index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
-                )
+                continue
+            current_state = hidden_states[idx, None].reshape([-1, hidden_dim])
+            current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
+            final_hidden_states.index_add_(
+                index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
+            )
 
         final_hidden_states = final_hidden_states.reshape([batch_size, sequence_length, hidden_dim])
         return final_hidden_states, router_logits

@@ -120,8 +120,6 @@ class Qwen3Attention(Qwen2Attention):
         key_states = self.k_norm(key_states.reshape([bsz, q_len, -1, self.head_dim]))
         value_states = value_states.reshape([bsz, q_len, -1, self.head_dim])
 
-        if attn_mask_startend_row_indices is None and attention_mask is None:
-            self.config._attn_implementation = "sdpa"
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         cos, sin = position_embeddings
