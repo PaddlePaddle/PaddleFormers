@@ -12,31 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
-from typing import TYPE_CHECKING
-
-from ..utils.lazy_import import _LazyModule
-
-import_structure = {
-    "dataset": [
-        "load_from_ppnlp",
-        "DatasetTuple",
-        "import_main_class",
-        "load_from_hf",
-        "load_dataset",
-        "MapDataset",
-        "IterDataset",
-        "DatasetBuilder",
-        "SimpleBuilder",
-    ],
-}
-
-if TYPE_CHECKING:
-    from .dataset import *
-else:
-    sys.modules[__name__] = _LazyModule(
-        __name__,
-        globals()["__file__"],
-        import_structure,
-        module_spec=__spec__,
-    )
+from .configuration import *
+from .modeling import *

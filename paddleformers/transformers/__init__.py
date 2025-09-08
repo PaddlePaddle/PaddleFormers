@@ -174,6 +174,8 @@ import_structure = {
     "ernie4_5_moe.configuration": ["Ernie4_5_MoeConfig"],
     "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"],
     "export": ["export_model"],
+    "gpt_oss.configuration": ["GptOssConfig"],
+    "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM"],
     "llama.configuration": [
         "LLAMA_PRETRAINED_INIT_CONFIGURATION",
         "LlamaConfig",
@@ -400,6 +402,7 @@ if TYPE_CHECKING:
     from .qwen2_moe import *
     from .qwen3 import *
     from .qwen3_moe import *
+    from .gpt_oss import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

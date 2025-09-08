@@ -57,6 +57,10 @@ class DataConfig:
             "help": "Strategy to use in dataset mixing (random/concat/interleave) (undersampling/oversampling)."
         },
     )
+    encode_one_turn: bool = field(
+        default=True,
+        metadata={"help": "Whether encode each round independently in a multi-round dialogue."},
+    )
     packing: bool = field(
         default=True,
         metadata={"help": "Enable sequences packing in training."},
@@ -68,6 +72,10 @@ class DataConfig:
     random_shuffle: bool = field(
         default=True,
         metadata={"help": "Whether to enable authorize code for privatization. Defaults to False."},
+    )
+    num_samples_each_epoch: int = field(
+        default=6000000,
+        metadata={"help": "Number of samples per epoch. Used for SFT."},
     )
     task_name: str = field(default=None, metadata={"help": "Additional name to select a more specific task."})
     zero_padding: bool = field(default=False, metadata={"help": "Whether to use Zero Padding data stream"})
