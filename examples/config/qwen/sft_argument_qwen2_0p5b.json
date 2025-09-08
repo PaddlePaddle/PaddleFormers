@@ -23,7 +23,7 @@
     "save_strategy": "epoch",
     "src_length": 1024,
     "max_length": 2048,
-    "fp16": true,
+    "bf16": true,
     "fp16_opt_level": "O2",
     "do_train": true,
     "do_eval": true,
@@ -40,5 +40,7 @@
     "flash_mask": true,
     "unified_checkpoint": true,
     "use_flash_attention": true,
+    "convert_from_hf": false,
+    "save_to_hf": false,
     "encode_one_turn": true
   }

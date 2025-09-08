@@ -1457,7 +1457,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         default_embedding = getattr(self, name, None)
         if default_embedding is not None:
             return default_embedding
-
         base_model = getattr(self, self.base_model_prefix, None)
 
         if hasattr(self, self.base_model_prefix) and hasattr(base_model, "embed_tokens"):

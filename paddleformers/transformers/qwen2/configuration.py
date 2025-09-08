@@ -57,6 +57,8 @@ class Qwen2Config(PretrainedConfig):
             The maximum sequence length that this model might ever be used with.
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
+        use_rmsnorm (`bool`, *optional*, defaults to `True`):
+            Whether to use RMSNorm instead of LayerNorm.
         rms_norm_eps (`float`, *optional*, defaults to 1e-06):
             The epsilon used by the rms normalization layers.
         use_cache (`bool`, *optional*, defaults to `True`):
@@ -66,14 +68,22 @@ class Qwen2Config(PretrainedConfig):
             Whether the model's input and output word embeddings should be tied.
         rope_theta (`float`, *optional*, defaults to 10000.0):
             The base period of the RoPE embeddings.
+        use_swiglu (`bool`, *optional*, defaults to `False`):
+            Whether to use SwiGLU activation function.
         use_sliding_window (`bool`, *optional*, defaults to `False`):
             Whether to use sliding window attention.
         sliding_window (`int`, *optional*, defaults to 4096):
             Sliding window attention (SWA) window size. If not specified, will default to `4096`.
         max_window_layers (`int`, *optional*, defaults to 28):
             The number of layers that use SWA (Sliding Window Attention). The bottom layers use SWA while the top use full attention.
+        ignored_index (`int`, *optional*, defaults to -100):
+            Target value that is ignored during loss computation.
         attention_dropout (`float`, *optional*, defaults to 0.0):
             The dropout ratio for the attention probabilities.
+        attention_bias (`bool`, *optional*, defaults to `True`):
+            Whether to use a bias in the query, key, value and output projection layers during self-attention.
+        pp_seg_method (`str`, *optional*, defaults to `"layer:Qwen2DecoderLayer"`):
+            Method for pipeline parallel segmentation.
 
     ```python
     >>> from transformers import Qwen2Model, Qwen2Config
@@ -101,8 +111,8 @@ class Qwen2Config(PretrainedConfig):
         num_key_value_heads=32,
         hidden_act="silu",
         max_position_embeddings=32768,
-        # seq_length=32768,
         initializer_range=0.02,
+        use_rmsnorm=True,
         rms_norm_eps=1e-6,
         use_cache=True,
         tie_word_embeddings=False,
@@ -110,20 +120,20 @@ class Qwen2Config(PretrainedConfig):
         pad_token_id=151643,
         bos_token_id=151643,
         eos_token_id=151643,
+        use_swiglu=False,
         use_sliding_window=False,
         sliding_window=4096,
         max_window_layers=28,
+        ignored_index=-100,
         attention_bias=True,
         attention_dropout=0.0,
         rope_scaling_factor=1.0,
         rope_scaling_type=None,
-        dpo_config=None,
-        use_fused_head_and_loss_fn=False,
+        pp_seg_method="layer:Qwen2DecoderLayer",
         **kwargs,
     ):
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
-        # self.seq_length = seq_length
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
@@ -131,6 +141,7 @@ class Qwen2Config(PretrainedConfig):
         self.use_sliding_window = use_sliding_window
         self.sliding_window = sliding_window
         self.max_window_layers = max_window_layers
+        self.ignored_index = ignored_index
 
         # for backward compatibility
         if num_key_value_heads is None:
@@ -139,21 +150,22 @@ class Qwen2Config(PretrainedConfig):
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
+        self.use_swiglu = use_swiglu
+        self.use_rmsnorm = use_rmsnorm
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
         self.rope_theta = rope_theta
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
 
-        self.use_cache = use_cache
         self.rope_scaling_factor = rope_scaling_factor
         self.rope_scaling_type = rope_scaling_type
 
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
-        self.dpo_config = dpo_config
-        self.use_fused_head_and_loss_fn = use_fused_head_and_loss_fn
+
+        self.pp_seg_method = pp_seg_method
 
         super().__init__(
             pad_token_id=pad_token_id,
@@ -161,4 +173,22 @@ class Qwen2Config(PretrainedConfig):
             eos_token_id=eos_token_id,
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
+        )
+
+        self.register_unsavable_keys(
+            [
+                "attention_bias",
+                "ignored_index",
+                "pad_token_id",
+                "rope_scaling_factor",
+                "rope_scaling_type",
+                "use_rmsnorm",
+                "use_swiglu",
+                "recompute",
+                "recompute_use_reentrant",
+                "recompute_granularity",
+                "pp_seg_method",
+                "dpo_config",
+                "kto_config",
+            ]
         )

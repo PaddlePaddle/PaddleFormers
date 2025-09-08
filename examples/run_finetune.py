@@ -50,6 +50,10 @@ from paddleformers.transformers import (
     Qwen2ForCausalLMPipe,
     Qwen2MoeForCausalLM,
     Qwen2MoeForCausalLMPipe,
+    Qwen3ForCausalLM,
+    Qwen3ForCausalLMPipe,
+    Qwen3MoeForCausalLM,
+    Qwen3MoeForCausalLMPipe,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DataConfig, ModelConfig, SFTConfig, SFTTrainer
@@ -74,6 +78,10 @@ flash_mask_support_list = [
     Qwen2ForCausalLMPipe,
     Qwen2MoeForCausalLM,
     Qwen2MoeForCausalLMPipe,
+    Qwen3ForCausalLM,
+    Qwen3ForCausalLMPipe,
+    Qwen3MoeForCausalLM,
+    Qwen3MoeForCausalLMPipe,
 ]
 
 
