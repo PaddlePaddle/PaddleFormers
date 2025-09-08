@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import os
 import sys
 from functools import partial
 
 import paddle
-import gc
 
 from paddleformers.datasets.data_utils import estimate_training
 from paddleformers.datasets.finetuning import collate_fn
@@ -269,9 +269,7 @@ def main():
                 "Random mixing requires a fixed number of training steps to properly sample data."
             )
         if paddle.distributed.get_rank() == 0:
-            training_args.max_steps = estimate_training(
-                train_dataset, data_args, training_args, model_args
-            )
+            training_args.max_steps = estimate_training(train_dataset, data_args, training_args, model_args)
             del train_dataset
             gc.collect()
             train_dataset = create_dataset_sft(
@@ -287,32 +285,22 @@ def main():
             paddle.distributed.broadcast(max_steps, src=0)
             training_args.max_steps = int(max_steps.item())
         if training_args.max_steps <= 0:
-            raise ValueError(
-                f"Invalid max_steps: {training_args.max_steps}. Please check your dataset"
-            )
+            raise ValueError(f"Invalid max_steps: {training_args.max_steps}. Please check your dataset")
 
-        logger.info(
-            f"Re-setting training_args.max_steps to {training_args.max_steps}."
-        )
+        logger.info(f"Re-setting training_args.max_steps to {training_args.max_steps}.")
     # Create the learning_rate sheduler and optimizer
     if training_args.decay_steps is None:
         training_args.decay_steps = training_args.max_steps
 
     if training_args.save_strategy == IntervalStrategy.EPOCH:
         training_args.save_strategy = IntervalStrategy.STEPS
-        training_args.save_steps = int(
-            training_args.max_steps / training_args.num_train_epochs
-        )
+        training_args.save_steps = int(training_args.max_steps / training_args.num_train_epochs)
     if training_args.evaluation_strategy == IntervalStrategy.EPOCH:
         training_args.evaluation_strategy = IntervalStrategy.STEPS
-        training_args.eval_steps = int(
-            training_args.max_steps / training_args.num_train_epochs
-        )
+        training_args.eval_steps = int(training_args.max_steps / training_args.num_train_epochs)
     if training_args.logging_strategy == IntervalStrategy.EPOCH:
         training_args.logging_strategy = IntervalStrategy.STEPS
-        training_args.logging_steps = int(
-            training_args.max_steps / training_args.num_train_epochs
-        )
+        training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
 
     trainer = SFTTrainer(
         model=model,

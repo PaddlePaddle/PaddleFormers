@@ -13,11 +13,11 @@
 # limitations under the License.
 """Useful data utility."""
 
+import json
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 import numpy as np
-import json
 
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 
@@ -193,6 +193,7 @@ def convert_to_input_ids(
         num_input_tokens += len(input_ids[-1])
     return input_ids, num_input_tokens
 
+
 def estimate_training(train_dataset, data_args, training_args, model_args):
     """
     Estimate required training steps based on dataset.
@@ -209,7 +210,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
     train_dataset.estimate = True
     logger.info("Start to estimate max training steps...")
 
-    train_dataset_path_list = [path for path in str(data_args.train_dataset_path).replace(" ", "").split(',')]
+    train_dataset_path_list = [path for path in str(data_args.train_dataset_path).replace(" ", "").split(",")]
     if len(train_dataset_path_list) > 1:
         logger.warning("Suggest to use max_steps instead of num_train_epochs for multi source dataset.")
         logger.info(
