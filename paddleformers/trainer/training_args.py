@@ -1575,7 +1575,6 @@ class TrainingArguments:
                 fleet.init(is_collective=True, strategy=strategy)
                 logger.info(strategy)
 
-                # if os.getenv("DSV3_FAST_PRETRAIN", "False"):
                 if self.dsv3_fast_pretrain:
                     if self.expert_parallel_degree > 1:
                         self.add_moe_comm_group()

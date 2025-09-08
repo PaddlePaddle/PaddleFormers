@@ -25,11 +25,10 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 import numpy as np
+from moe_utils import offload, reload
 from tqdm.auto import tqdm
 
-from paddleformers.transformers.moe_utils import offload, reload
-from paddleformers.utils.log import logger
-
+from ..utils.log import logger
 from .trainer_utils import IntervalStrategy, has_length
 from .training_args import TrainingArguments
 

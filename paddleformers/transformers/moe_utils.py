@@ -99,18 +99,3 @@ def unpermute(
         include_self=True,
     )
     return output_tokens
-
-
-def offload(tensor):
-    if paddle.is_compiled_with_cuda():
-        place = paddle.CUDAPinnedPlace()
-    else:
-        place = paddle.CPUPlace()
-
-    new_tensor = to_device(tensor, place)
-    assert new_tensor is tensor, "to_device must be inplace operation"
-
-
-def reload(tensor):
-    new_tensor = to_device(tensor)
-    assert new_tensor is tensor, "to_device must be inplace operation"
