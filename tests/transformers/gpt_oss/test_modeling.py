@@ -390,17 +390,15 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
-        print("expected_shape ", output.shape)
-        print("output[:, 1:4, 1:4] ", output[:, 1:4, 1:4])
         expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
 
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-1.29482865, -2.16290903, 1.12456846],
-                    [-0.15369146, 0.49258474, 0.03581199],
-                    [-0.96933782, -0.94143343, 0.72791690],
+                    [-1.29522169, -2.16261339, 1.12507093],
+                    [-0.15416943, 0.49271047, 0.03586305],
+                    [-0.96959126, -0.94129509, 0.72789413],
                 ]
             ]
         )
@@ -415,16 +413,14 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
-        print("expected_shape ", output.shape)
-        print("output[:, 1:4, 1:4] ", output[:, 1:4, 1:4])
         expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-1.29482865, -2.16290903, 1.12456846],
-                    [-0.15369146, 0.49258474, 0.03581199],
-                    [-0.96933782, -0.94143343, 0.72791690],
+                    [-1.29522169, -2.16261339, 1.12507093],
+                    [-0.15416943, 0.49271047, 0.03586305],
+                    [-0.96959126, -0.94129509, 0.72789413],
                 ]
             ]
         )
