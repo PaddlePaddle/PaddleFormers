@@ -197,6 +197,7 @@ class DeepseekV2FastConfig(PretrainedConfig):
         dsv3_use_atten_recompute=True,
         use_ds_gemm=False,
         dsv3_use_fp8_dispatch=True,
+        fa_version=3,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -263,6 +264,7 @@ class DeepseekV2FastConfig(PretrainedConfig):
         self.dsv3_use_atten_recompute = dsv3_use_atten_recompute
         self.use_ds_gemm = use_ds_gemm
         self.dsv3_use_fp8_dispatch = dsv3_use_fp8_dispatch
+        self.fa_version = fa_version
 
         super().__init__(
             pad_token_id=pad_token_id,

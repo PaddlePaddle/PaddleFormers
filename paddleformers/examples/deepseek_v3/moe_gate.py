@@ -1,4 +1,4 @@
-# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright (c) Microsoft Corporation.
 # Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 # Copyright (C) 2024 THL A29 Limited, a Tencent company.  All rights reserved.
@@ -24,7 +24,6 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 
 from paddleformers.transformers import MoEGateMixin
-from paddleformers.utils.log import logger
 
 
 class PretrainedMoEGate(nn.Layer, MoEGateMixin):

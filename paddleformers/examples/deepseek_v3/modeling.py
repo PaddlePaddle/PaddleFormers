@@ -1,4 +1,4 @@
-# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright (c) 2023 DeepSeek. All rights reserved.
 #
 # This code is based on EleutherAI's GPT-NeoX library and the GPT-NeoX
@@ -891,7 +891,7 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
             assert False, f"invalid {fa_version=}"
 
         if fa_version == 2:
-            assert not recompute_fa3
+            assert "recompute_fa3" not in locals()
             assert attn_out is not None and softmax_lse is not None
         if fa_version == 3 and not recompute_fa3:
             assert attn_out is not None and softmax_lse is not None

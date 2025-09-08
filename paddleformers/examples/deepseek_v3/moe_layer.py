@@ -1,4 +1,4 @@
-# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright (c) Microsoft Corporation.
 # Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 # Copyright (C) 2024 THL A29 Limited, a Tencent company.  All rights reserved.

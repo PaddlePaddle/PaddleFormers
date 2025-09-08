@@ -76,5 +76,5 @@
     "dsv3_use_atten_recompute": true,
     "use_ds_gemm": false,
     "dsv3_use_fp8_dispatch": true,
-    "fa_version": 3
+    "fa_version": 2
   }

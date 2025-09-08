@@ -358,14 +358,6 @@ def main():
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    print("==========================")
-    print("model_args: ", model_args)
-    print("==========================")
-    print("data_args: ", data_args)
-    print("==========================")
-    print("training_args: ", training_args)
-    print("==========================")
-
     if training_args.no_recompute_layers is not None:
         training_args.no_recompute_layers.sort()
 

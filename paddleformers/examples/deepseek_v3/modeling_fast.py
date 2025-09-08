@@ -511,6 +511,7 @@ class DeepseekV2Attention(nn.Layer):
         self.sequence_parallel = config.sequence_parallel
 
         self.recompute_fa3 = recompute_fa3
+        self.fa_version = config.fa_version
 
         self.input_layernorm = DeepseekV2RMSNorm(config)
 
@@ -564,7 +565,7 @@ class DeepseekV2Attention(nn.Layer):
             if self.config.dsv3_use_atten_recompute:
                 self.fused_rms_norm_linear = FusedRMSLinear(self.hidden_size, config.q_lora_rank, config.kv_lora_rank + config.qk_rope_head_dim, 1e-6)
                 kv_up_dim = self.num_heads * (self.q_head_dim - self.qk_rope_head_dim + self.v_head_dim)
-                self.memory_recompute_att = MemroyRecomputeAttn(config.q_lora_rank, config.kv_lora_rank, config.q_lora_rank, self.num_heads * self.q_head_dim, config.kv_lora_rank, kv_up_dim, self.rotary_emb, self.num_heads, self.q_head_dim, self.qk_nope_head_dim, self.v_head_dim, self.qk_rope_head_dim, 1e-6, self.kv_lora_rank, self.softmax_scale, recompute_fa3=self.recompute_fa3)
+                self.memory_recompute_att = MemroyRecomputeAttn(config.q_lora_rank, config.kv_lora_rank, config.q_lora_rank, self.num_heads * self.q_head_dim, config.kv_lora_rank, kv_up_dim, self.rotary_emb, self.num_heads, self.q_head_dim, self.qk_nope_head_dim, self.v_head_dim, self.qk_rope_head_dim, 1e-6, self.kv_lora_rank, self.softmax_scale, recompute_fa3=self.recompute_fa3, fa_version=self.fa_version)
                 self.o_proj = FP8KeepXLinear(self.num_heads * self.v_head_dim, self.hidden_size, bias_attr=config.attention_bias)
             else:
 
@@ -1075,12 +1076,6 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
 
     def _get_model_flops(self, batch_size=1, seq_length=None, **kwargs):
         from paddleformers.transformers.deepseek_v2.mfu_utils import DeepSeekProjection
-
-        print("*******************************************")
-        print("*******************************************")
-        print("You are initing DeepseekV2ModelFast......")
-        print("*******************************************")
-        print("*******************************************")
 
         # self._
         mfu_cal_proj = DeepSeekProjection(self.config)
