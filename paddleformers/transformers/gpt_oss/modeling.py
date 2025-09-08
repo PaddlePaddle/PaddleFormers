@@ -27,6 +27,7 @@ from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
 from ...utils.tools import get_env_device
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
@@ -545,8 +546,20 @@ class GptOssDecoderLayer(nn.Layer):
         self.hidden_size = config.hidden_size
         self.self_attn = GptOssAttention(config, layer_idx)
         self.mlp = GptOssMLP(config)
-        self.input_layernorm = GptOssRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = GptOssRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=config.use_bias,
+            norm_eps=self.config.rms_norm_eps,
+        )
+        self.post_attention_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=config.use_bias,
+            norm_eps=self.config.rms_norm_eps,
+        )
 
         if config.sequence_parallel:
             self.post_attention_layernorm.enable_sequence_parallel()
@@ -900,7 +913,13 @@ class GptOssModel(GptOssPreTrainedModel):
                 for layer_idx in range(config.num_hidden_layers)
             ]
         )
-        self.norm = GptOssRMSNorm(config.hidden_size)
+        self.norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=config.use_bias,
+            norm_eps=self.config.rms_norm_eps,
+        )
         self.rotary_emb = GptOssRotaryEmbedding(config=config)
         if config.sequence_parallel:
             self.norm.enable_sequence_parallel()
