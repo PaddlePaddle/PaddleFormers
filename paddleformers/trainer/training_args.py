@@ -1088,6 +1088,7 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
+    pp_seg_method: Optional[str] = field(default=None, metadata={"help": "PP Segmentation Method"})
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()

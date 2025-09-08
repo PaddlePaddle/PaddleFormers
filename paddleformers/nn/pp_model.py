@@ -254,7 +254,7 @@ class EmbeddingPipe(nn.Layer):
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         if position_ids is None and not self.config.fuse_rope:
             position_ids = (
-                paddle.range(
+                paddle.arange(
                     0,
                     input_ids.shape[1],
                     dtype="int64",
@@ -410,13 +410,13 @@ def make_decoder_layer_pipe(decoder_layer):
             max_seq_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
         if attention_mask is None:
             tgt_mask = None
-            attn_mask_start_row_indices = None
+            attn_mask_startend_row_indices = None
         elif attention_mask.dtype == paddle.int32:
             tgt_mask = None
-            attn_mask_start_row_indices = attention_mask[:, :, :max_seq_len]
+            attn_mask_startend_row_indices = attention_mask[:, :, :max_seq_len]
         else:
             tgt_mask = attention_mask[:, :, :max_seq_len, :max_seq_len]
-            attn_mask_start_row_indices = None
+            attn_mask_startend_row_indices = None
             assert len(tgt_mask.shape) == 4, f"Attention mask should be 4D tensor, but got {tgt_mask.shape}."
 
         position_ids_decoder = None
@@ -436,7 +436,7 @@ def make_decoder_layer_pipe(decoder_layer):
                 self,
                 hidden_states,
                 attention_mask=tgt_mask,
-                attn_mask_start_row_indices=attn_mask_start_row_indices,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 position_ids=position_ids_decoder,
                 position_embeddings=tuple_position_embeddings,
                 use_reentrant=self.config.recompute_use_reentrant,
@@ -446,7 +446,7 @@ def make_decoder_layer_pipe(decoder_layer):
                 self,
                 hidden_states=hidden_states,
                 attention_mask=tgt_mask,
-                attn_mask_start_row_indices=attn_mask_start_row_indices,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 position_ids=position_ids_decoder,
                 position_embeddings=tuple_position_embeddings,
             )
@@ -492,36 +492,44 @@ class CriterionLayerPipe(CriterionLayer):
 
 
 class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
+    _decoder_layer_cls = None
+    _get_tensor_parallel_mappings = None
+    _init_weights = None
+    _keep_in_fp32_modules = None
     _tied_weights_keys = ["lm_head.weight"]
+    config_class = PretrainedConfig
+    transpose_weight_keys = None
 
-    def __init__(self, config: PretrainedConfig, decoder_layer, **kwargs):
+    def __init__(self, config: PretrainedConfig, **kwargs):
         # dynamic inherit DecoderLayer
-        DecoderLayerPipe = make_decoder_layer_pipe(decoder_layer)
+        if self._decoder_layer_cls is None:
+            raise ValueError("_decoder_layer_cls must be set before init.")
+        DecoderLayerPipe = make_decoder_layer_pipe(self._decoder_layer_cls)
+
         new_initializer_range = math.sqrt(0.3333 / config.hidden_size)
         logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")
         config.initializer_range = new_initializer_range
 
-        if config.get("moe_group", "") == "mp":
+        moe_group = config.get("moe_group", "dummy")
+        if moe_group == "mp":
             assert config.sequence_parallel
 
-        if config.moe_group in {"mp", "model", "tp", "mpdp"}:
+        if moe_group in {"mp", "model", "tp", "mpdp"}:
             assert config.sequence_parallel
-            logger.info(f"disable FFN tensor model parallel, moe-group={config.moe_group}")
+            logger.info(f"disable FFN tensor model parallel, moe-group={moe_group}")
             config.disable_ffn_model_parallel = True
 
-        config.moe_group_origin = config.moe_group
-        config.moe_group = _parse_moe_group(config.moe_group)
+        config.moe_group_origin = moe_group
+        config.moe_group = _parse_moe_group(moe_group)
         config.moe_world_size = dist.get_world_size(config.moe_group)
         if config.moe_world_size < 0:
             config.moe_world_size = 1
         config.moe_rank = dist.get_rank(config.moe_group)
 
         self.config = config
-
         hcg = get_hcg()
         tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
-
         config.tensor_parallel_degree = tensor_parallel_degree
         config.tensor_parallel_rank = tensor_parallel_rank
 
@@ -607,7 +615,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         )
 
     def get_loss_fn(self, config):
-        if config.dpo_config is not None:
+        if config.get("dpo_config", None) is not None:
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         else:
             loss_fn = CriterionLayerPipe(config)
@@ -633,7 +641,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     def _prepare_pipeline_inputs_func(cls, inputs):
         first_stage_keys = [
             "input_ids",
-            "attn_mask_start_row_indices",
+            "attn_mask_startend_row_indices",
             "position_ids",
             "nbatch_pack_offset",
         ]

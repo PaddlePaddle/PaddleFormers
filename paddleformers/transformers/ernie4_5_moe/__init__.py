@@ -19,7 +19,12 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "configuration": ["Ernie4_5_MoeConfig"],
-    "modeling": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
+    "modeling": [
+        "Ernie4_5_MoeDecoderLayer",
+        "Ernie4_5_MoeModel",
+        "Ernie4_5_MoeForCausalLM",
+        "Ernie4_5_MoeForCausalLMPipe",
+    ],
 }
 
 if TYPE_CHECKING:
