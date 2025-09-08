@@ -30,10 +30,7 @@ from sklearn.metrics import accuracy_score
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..datasets import ZeroPaddingIterableDataset
 from ..generation import GenerationConfig
-from ..trainer import TrainerCallback
-from ..trainer.trainer_utils import IterableDatasetShard
 from ..transformers import (  # ChatGLMv2Tokenizer,
     AutoTokenizer,
     DeepseekV2ForCausalLMPipe,
@@ -253,29 +250,6 @@ def get_lora_target_modules(model):
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.base_model_prefix}.")
     return target_modules
-
-
-class ZeroPaddingIterDatasetCallback(TrainerCallback):
-    """
-    A [`TrainerCallback`] that handles early stopping.
-
-    """
-
-    def on_step_end(self, args, state, control, **kwargs):
-        train_dataloader = kwargs["train_dataloader"]
-        if isinstance(train_dataloader.dataset, ZeroPaddingIterableDataset):
-            dataset = train_dataloader.dataset
-        elif isinstance(train_dataloader.dataset, IterableDatasetShard) and isinstance(
-            train_dataloader.dataset.dataset, ZeroPaddingIterableDataset
-        ):
-            dataset = train_dataloader.dataset.dataset
-        else:
-            raise ValueError(
-                "Unexpected dataset format: ZeroPaddingIterDatasetCallback expects `..datasets.ZeroPaddingIterableDataset`"
-            )
-        if state.trial_params is None:
-            state.trial_params = {}
-        state.trial_params["zero_padding_global_step"] = dataset.zero_padding_global_step
 
 
 def get_infer_model_path(input_dir, model_prefix):
