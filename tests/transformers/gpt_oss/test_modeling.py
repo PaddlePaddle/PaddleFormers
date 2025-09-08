@@ -54,7 +54,7 @@ class GptOssModelTester:
         attention_dropout=0.0,
         attention_softmax_in_fp32=False,
         pretraining_tp=1,  # TP rank used when training with megatron
-        dtype="bfloat16",
+        dtype="float32",
         slow_but_exact=False,
         batch_size: int = 2,
         seq_length: int = 10,
@@ -382,7 +382,9 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = GptOssModel
 
     def test_inference_no_attention(self):
-        model = GptOssModel.from_pretrained("PaddleFormers/tiny-random-gptoss")
+        model = GptOssModel.from_pretrained(
+            "PaddleFormers/tiny-random-gptoss", download_hub="aistudio", convert_from_hf=True
+        )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -394,16 +396,18 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-1.29509008, -2.16305614, 1.12412810],
-                    [-0.15404500, 0.49270508, 0.03523792],
-                    [-0.96943408, -0.94169110, 0.72819775],
+                    [-1.29482865, -2.16290903, 1.12456846],
+                    [-0.15369146, 0.49258474, 0.03581199],
+                    [-0.96933782, -0.94143343, 0.72791690],
                 ]
             ]
         )
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
     def test_inference_with_attention(self):
-        model = GptOssModel.from_pretrained("PaddleFormers/tiny-random-gptoss", convert_from_hf=True)
+        model = GptOssModel.from_pretrained(
+            "PaddleFormers/tiny-random-gptoss", download_hub="aistudio", convert_from_hf=True
+        )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -414,9 +418,9 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-1.29509008, -2.16305614, 1.12412810],
-                    [-0.15404500, 0.49270508, 0.03523792],
-                    [-0.96943408, -0.94169110, 0.72819775],
+                    [-1.29482865, -2.16290903, 1.12456846],
+                    [-0.15369146, 0.49258474, 0.03581199],
+                    [-0.96933782, -0.94143343, 0.72791690],
                 ]
             ]
         )
@@ -443,7 +447,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
         # 2. forward the paddle model
         from paddleformers.transformers import GptOssModel
 
-        paddle_model = GptOssModel.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="bfloat16")
+        paddle_model = GptOssModel.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -451,7 +455,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
         import torch
         from transformers import GptOssModel
 
-        torch_model = GptOssModel.from_pretrained(self.torch_model_path, torch_dtype=torch.bfloat16)
+        torch_model = GptOssModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -474,7 +478,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
             import torch
             from transformers import GptOssModel
 
-            torch_model = GptOssModel.from_pretrained(self.torch_model_path, torch_dtype=torch.bfloat16)
+            torch_model = GptOssModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
@@ -482,7 +486,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
             # 2. forward the paddle model
             from paddleformers.transformers import GptOssModel
 
-            paddle_model = GptOssModel.from_pretrained(tempdir, convert_from_hf=True, dtype="bfloat16")
+            paddle_model = GptOssModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -508,7 +512,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
             import transformers
 
             torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.bfloat16)
+            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
 
             torch_model.save_pretrained(tempdir)
@@ -518,7 +522,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="bfloat16")
+            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
             paddle_model.eval()
 
             if class_name == "GptOssModel":
