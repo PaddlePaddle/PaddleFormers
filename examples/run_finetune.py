@@ -148,7 +148,7 @@ def main():
         model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
     model_config.pp_seg_method = training_args.pp_seg_method
     model_config.seq_length = data_args.max_length
-    model_config.max_sequence_length = training_args.max_seq_length
+    model_config.max_sequence_length = training_args.max_seq_len
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
@@ -213,11 +213,11 @@ def main():
 
     dataset_config = {
         "tokenizer": tokenizer,
-        "max_seq_len": training_args.max_seq_length,
+        "max_seq_len": training_args.max_seq_len,
         "random_seed": training_args.seed,
-        "num_replicas": 1,
-        "rank": 0,
-        "num_samples_each_epoch": 6000000,
+        "num_replicas": training_args.dataset_world_size,
+        "rank": training_args.dataset_rank,
+        "num_samples_each_epoch": data_args.num_samples_each_epoch,
         "random_shuffle": data_args.random_shuffle,
         "greedy_intokens": data_args.greedy_intokens,
         "packing": data_args.packing,
@@ -251,7 +251,7 @@ def main():
         collate_fn,
         tokenizer=tokenizer,
         model_args=model_args,
-        max_seq_len=training_args.max_seq_length + model_config.num_nextn_predict_layers,
+        max_seq_len=training_args.max_seq_len + model_config.num_nextn_predict_layers,
     )
     trainer = SFTTrainer(
         model=model,

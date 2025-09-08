@@ -69,6 +69,10 @@ class DataConfig:
         default=True,
         metadata={"help": "Whether to enable authorize code for privatization. Defaults to False."},
     )
+    num_samples_each_epoch: int = field(
+        default=6000000,
+        metadata={"help": "Number of samples per epoch. Used for SFT."},
+    )
     task_name: str = field(default=None, metadata={"help": "Additional name to select a more specific task."})
     zero_padding: bool = field(default=False, metadata={"help": "Whether to use Zero Padding data stream"})
     greedy_zero_padding: bool = field(

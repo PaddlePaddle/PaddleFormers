@@ -117,12 +117,12 @@ class SFTAutoTrainer(SFTTrainer):
         trainable_parameters = [p for p in model.parameters() if not p.stop_gradient]
         self.set_optimizer_grouped_parameters(trainable_parameters)
 
-        assert kwargs["args"].max_seq_length is not None, "max_seq_length must be specified in auto_parallel"
+        assert kwargs["args"].max_seq_len is not None, "max_seq_len must be specified in auto_parallel"
 
         if kwargs.get("data_collator", None) is None:
             data_collator = DataCollatorForSeq2Seq(
-                max_length=kwargs["args"].max_seq_length,
-                max_label_length=kwargs["args"].max_seq_length,
+                max_length=kwargs["args"].max_seq_len,
+                max_label_length=kwargs["args"].max_seq_len,
                 padding="max_length",
             )
             kwargs["data_collator"] = data_collator
