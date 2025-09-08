@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-import os
 from typing import OrderedDict, Tuple, Union
 
 import paddle
@@ -37,7 +36,6 @@ except ImportError:
 from config.configuration import DeepseekV2FastConfig
 from modeling import (
     DeepseekV2LMHead,
-    DeepseekV2PretrainingCriterion,
     DeepseekV2RMSNorm,
     TemporaryVarContext,
     set_global_step,
@@ -49,7 +47,7 @@ from modeling_fast import DeepseekV2PretrainedModelFast as DeepseekV2PretrainedM
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
-from paddleformers.transformers.deepseek_v2 import DeepseekV2RotaryEmbedding
+from paddleformers.transformers.deepseek_v2 import DeepseekV2PretrainingCriterion
 from paddleformers.transformers.model_utils import PipelinePretrainedModel
 from paddleformers.utils.log import logger
 from paddleformers.utils.tools import get_env_device

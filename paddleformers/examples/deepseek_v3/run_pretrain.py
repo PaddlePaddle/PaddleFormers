@@ -21,7 +21,7 @@ from typing import Optional
 
 import paddle
 from config.configuration import DeepseekV2FastConfig
-from modeling import DeepseekV2ForCausalLM
+from load_hf_ckpt import load_huggingface_ckpt
 from modeling_pp import DeepseekV2ForCausalLMPipe
 
 from paddleformers.data.causal_dataset import (
@@ -40,14 +40,12 @@ from paddleformers.trainer import (
     speed_metrics,
 )
 from paddleformers.transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-    AutoModelForCausalLMPipe,
     AutoTokenizer,
     CosineAnnealingWithWarmupDecay,
     LinearAnnealingWithWarmupDecay,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
+from paddleformers.transformers.deepseek_v2 import DeepseekV2ForCausalLM
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
 from paddleformers.utils.tools import get_env_device
@@ -413,8 +411,7 @@ def main():
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path, **{"download_hub": "bos"})
-    # config = AutoConfig.from_pretrained("./")
+    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path, download_hub="huggingface")
     config = DeepseekV2FastConfig.from_pretrained("./config/config.json")
 
     # set all llm config
@@ -583,6 +580,12 @@ def main():
 
     callbacks = [StepFlexToken(), FP8QuantWeightCallback()]
 
+    def resume_from_custom_func(model):
+        if training_args.resume_from_huggingface_ckpt:
+            load_huggingface_ckpt(model, training_args.resume_from_huggingface_ckpt)
+        else:
+            logger.info("No resume from checkpoint since training args 'resume_from_huggingface_ckpt' is None.")
+
     trainer = PretrainingTrainer(
         model=model,
         args=training_args,
@@ -592,6 +595,7 @@ def main():
         optimizers=(None, lr_scheduler),
         tokenizer=tokenizer,
         callbacks=callbacks,
+        resume_from_custom_func=resume_from_custom_func,
     )
 
     checkpoint = None

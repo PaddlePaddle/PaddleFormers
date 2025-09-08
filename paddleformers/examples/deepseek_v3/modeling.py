@@ -21,23 +21,13 @@
 
 from __future__ import annotations
 
-import contextlib
-import math
-import os
-import warnings
 from functools import partial
-from typing import List, Optional, Tuple, Union
 
 import paddle
-import paddle.distributed as dist
-import paddle.distributed.fleet.meta_parallel as mpu
 import paddle.nn.functional as F
 from paddle import Tensor, nn
 from paddle.distributed import fleet
-from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
-from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.jit import to_static
-from paddle.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from paddle.utils import try_import
 
 try:
@@ -48,7 +38,6 @@ except ImportError:
 try:
     from paddle.distributed.fleet.utils.sequence_parallel_utils import (
         GatherOp,
-        ScatterOp,
         mark_as_sequence_parallel_parameter,
     )
 except:
@@ -62,43 +51,20 @@ except:
     flash_attention = None
 
 from config.configuration import DeepseekV2FastConfig
-from moe_gate import PretrainedMoEGate
-from moe_layer import MoEFlexTokenLayer, MoELayer
 from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import WeightGradStore
 
-from paddleformers.transformers.activations import ACT2FN
-from paddleformers.transformers.conversion_utils import (
-    StateDictNameMapping,
-    init_name_mappings,
-)
-from paddleformers.transformers.deepseek_v2 import DeepseekV2RotaryEmbedding, Linear
-from paddleformers.transformers.deepseek_v2 import fp8_linear as linear_utils
 from paddleformers.transformers.deepseek_v2 import (
+    DeepseekV2RotaryEmbedding,
     yarn_find_correction_range,
     yarn_get_mscale,
     yarn_linear_ramp_mask,
 )
 from paddleformers.transformers.fp8_utils import (
-    FP8Linear,
     FP8LinearFunctionBase,
     cache_fp8_weight,
     set_parameter_color,
 )
-from paddleformers.transformers.llama import fusion_ops
-from paddleformers.transformers.llama.modeling import get_use_casual_mask
-from paddleformers.transformers.model_outputs import (
-    BaseModelOutputWithPastAndMTP,
-    CausalLMOutputWithPast,
-    SequenceClassifierOutputWithPast,
-)
-from paddleformers.transformers.model_utils import (
-    PretrainedModel,
-    dtype_guard,
-    register_base_model,
-)
-from paddleformers.transformers.utils import cast_if_needed, device_guard
-from paddleformers.utils.initializer import kaiming_uniform_
-from paddleformers.utils.log import logger
+from paddleformers.transformers.utils import device_guard
 from paddleformers.utils.tools import get_env_device
 
 try:
@@ -117,13 +83,7 @@ try:
 except ImportError:
     fused_partial_rope = None
 
-from paddleformers.transformers.deepseek_v2 import (
-    DeepseekV2ForCausalLM,
-    DeepseekV2ForSequenceClassification,
-    DeepseekV2Model,
-    DeepseekV2PretrainedModel,
-    DeepseekV2PretrainingCriterion,
-)
+from paddleformers.transformers.deepseek_v2 import rotate_half
 
 __all__ = [
     "DeepseekV2LMHead",
@@ -151,6 +111,13 @@ def rms_norm_fused(x_in, w, eps, use_fast_ln=False):
     else:
         fused_ln = try_import("fused_ln")
         return fused_ln.fused_rms_norm(x_in, w, eps)[0]
+
+
+def cast_if_needed(x, dtype):
+    """
+    cast_if_needed
+    """
+    return x.cast(dtype) if x.dtype != dtype else x
 
 
 def fusion_rms_norm(hidden_states, weight, variance_epsilon, use_fast_ln=False):

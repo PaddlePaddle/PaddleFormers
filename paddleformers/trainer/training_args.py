@@ -1092,6 +1092,10 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
+    dsv3_fast_pretrain: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Use fast pretrain version of DeepSeekV3."},
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1409,7 +1413,7 @@ class TrainingArguments:
                     else:
                         order = ["dp", "sharding", "pp", "mp"]
                 if self.use_expert_parallel:
-                    if not os.getenv("DSV3_FAST_PRETRAIN", "False"):
+                    if not self.dsv3_fast_pretrain:
                         if self.moe_sharding_parallel_degree >= 1 and self.expert_parallel_degree > 1:
                             order.insert(-1, "ep")
                             sd_idx = order.index("sharding")
@@ -1571,7 +1575,8 @@ class TrainingArguments:
                 fleet.init(is_collective=True, strategy=strategy)
                 logger.info(strategy)
 
-                if os.getenv("DSV3_FAST_PRETRAIN", "False"):
+                # if os.getenv("DSV3_FAST_PRETRAIN", "False"):
+                if self.dsv3_fast_pretrain:
                     if self.expert_parallel_degree > 1:
                         self.add_moe_comm_group()
 

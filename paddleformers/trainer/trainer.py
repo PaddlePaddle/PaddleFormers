@@ -86,15 +86,12 @@ from ..data import (
 )
 from ..peft import LoKrModel, LoRAModel, PrefixModelForCausalLM, ReFTModel, VeRAModel
 from ..peft.lora import QuantizationLoRABaseLinear
+from ..quantization.quantization_linear import (
+    ColumnParallelQuantizationLinear,
+    QuantizationLinear,
+    RowParallelQuantizationLinear,
+)
 
-try:
-    from ..quantization.quantization_linear import (
-        ColumnParallelQuantizationLinear,
-        QuantizationLinear,
-        RowParallelQuantizationLinear,
-    )
-except:
-    QuantizationLinear = None
 try:
     from paddle.distributed.fleet.utils.sequence_parallel_utils import (
         register_sequence_parallel_allreduce_hooks,
@@ -199,7 +196,6 @@ from .utils.helper import (  # nested_truncate,
     nested_numpify,
     nested_truncate,
 )
-from .utils.load_hf_ckpt import load_huggingface_ckpt
 from .utils.sharding_io import ShardingIO
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
@@ -307,6 +303,7 @@ class Trainer:
         optimizers: Tuple[paddle.optimizer.Optimizer, paddle.optimizer.lr.LRScheduler] = (None, None),
         preprocess_logits_for_metrics: Callable[[paddle.Tensor, paddle.Tensor], paddle.Tensor] = None,
         processing_class: Optional[ImageProcessingMixin] = None,
+        resume_from_custom_func: Optional[Callable] = None,
     ):
 
         if args is None:
@@ -361,6 +358,7 @@ class Trainer:
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
+        self.resume_from_custom_func = resume_from_custom_func
         if not args.skip_profile_timer:
             set_timers()
         self.timers = get_timers()
@@ -1138,8 +1136,8 @@ class Trainer:
         if self.args.ignore_data_skip:
             self.timers and self.timers("read-data").start()
 
-        if self.args.resume_from_huggingface_ckpt is not None:
-            load_huggingface_ckpt(model, self.args.resume_from_huggingface_ckpt)
+        if self.resume_from_custom_func is not None:
+            self.resume_from_custom_func(self.model)
 
         for epoch in range(epochs_trained, num_train_epochs):
             if isinstance(train_dataloader, paddle.io.DataLoader) and isinstance(

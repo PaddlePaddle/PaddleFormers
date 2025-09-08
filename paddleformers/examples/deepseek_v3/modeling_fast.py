@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import contextlib
 import math
-import os
 import warnings
 from functools import partial
 from typing import List, Optional, Tuple, Union
@@ -65,7 +64,7 @@ from paddleformers.transformers.conversion_utils import (
     init_name_mappings,
 )
 from paddleformers.transformers.deepseek_v2 import fp8_linear as linear_utils
-from paddleformers.transformers.deepseek_v2.fp8_linear import Linear
+from paddleformers.transformers.deepseek_v2.fp8_linear import Linear as Linear_
 from paddleformers.transformers.fp8_utils import (
     FP8KeepXLinear,
     FP8Linear,
@@ -100,7 +99,6 @@ except ImportError:
     fused_partial_rope = None
 from modeling import (
     AddAuxiliaryLoss,
-    DeepseekV2PretrainingCriterion,
     DeepseekV2RMSNorm,
     DeepseekV2RotaryEmbedding,
     DeepseekV2YarnRotaryEmbedding,
@@ -117,6 +115,7 @@ from modeling import (
 from paddleformers.transformers.deepseek_v2 import (
     DeepseekV2DynamicNTKScalingRotaryEmbedding,
     DeepseekV2LinearScalingRotaryEmbedding,
+    DeepseekV2PretrainingCriterion,
     _expand_2d_mask,
     _make_causal_mask,
     is_casual_mask,
@@ -168,7 +167,7 @@ class DeepseekV2MLP(nn.Layer):
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
         self.fuse_attention_ffn = config.fuse_attention_ffn
-        Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear
+        Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
         def linear_dtype_gaurd():
             if config.use_fp8:
@@ -534,7 +533,7 @@ class DeepseekV2Attention(nn.Layer):
 
         self._init_rope()
         self.softmax_scale = self.q_head_dim ** (-0.5)
-        Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear
+        Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
         # fmt: off
         if self.config.tensor_parallel_degree > 1:
@@ -1260,7 +1259,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
     def _init_weights(self, layer):
         if self.config.tensor_parallel_degree > 1:
             rng_tracker = get_rng_state_tracker().rng_state
-        Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear
+        Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
         if isinstance(
             layer,
