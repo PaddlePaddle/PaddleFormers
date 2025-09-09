@@ -250,6 +250,22 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type == "glm4_moe":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+            ".*mlp.gate_proj.*",
+            ".*mlp.up_proj.*",
+            ".*mlp.down_proj.*",
+            ".*mlp.gate_proj.*",
+            ".*mlp.up_proj.*",
+            ".*mlp.down_proj.*",
+        ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.base_model_prefix}.")
     return target_modules
