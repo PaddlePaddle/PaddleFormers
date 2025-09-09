@@ -156,3 +156,4 @@ class ModelConfig:
         default=True,
         metadata={"help": "Whether to use attn_mask_start_row_indices in flash attention."},
     )
+    pp_seg_method: Optional[str] = field(default=None, metadata={"help": "PP Segmentation Method"})
