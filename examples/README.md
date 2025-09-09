@@ -25,21 +25,19 @@ tar -xvf alpaca_demo.gz
 
 单卡
 ```bash
-# 需要12G显存左右
-python -u run_finetune.py ./config/qwen/sft_argument_qwen2_0p5b.json
+python -u run_finetune.py ./config/sft_full.json
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/qwen/sft_argument_qwen2_0p5b.json
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/sft_full.json
 ```
 
 ### 1.3 LoRA SFT
 
 LoRA SFT 启动命令参考
 ```bash
-# 需要9G左右显存
-python -u run_finetune.py ./config/qwen/lora_argument_qwen2_0p5b.json
+python -u run_finetune.py ./config/sft_lora.json
 ```
 
 
@@ -81,17 +79,17 @@ tar -zxvf ultrafeedback_binarized.tar.gz
 
 单卡
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/qwen/dpo_argument_qwen2_0p5b.json
+python -u ./alignment/dpo/run_dpo.py ./config/dpo_full.json
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/qwen/dpo_argument_qwen2_0p5b.json
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/dpo_full.json
 ```
 
 ### 2.3 LoRA DPO
 
 LoRA DPO 启动命令参考
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/qwen/dpo_lora_argument_qwen2_0p5b.json
+python -u ./alignment/dpo/run_dpo.py ./config/dpo_lora.json
 ```
