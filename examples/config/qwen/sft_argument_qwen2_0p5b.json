@@ -21,8 +21,6 @@
     "max_steps": -1,
     "evaluation_strategy": "epoch",
     "save_strategy": "epoch",
-    "src_length": 1024,
-    "max_length": 2048,
     "bf16": true,
     "fp16_opt_level": "O2",
     "do_train": true,
