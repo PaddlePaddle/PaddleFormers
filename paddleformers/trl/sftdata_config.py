@@ -52,13 +52,17 @@ class DataConfig:
         metadata={"help": "probabilities of eval datasets."},
     )
     mix_strategy: str = field(
-        default="random",
+        default="concat",
         metadata={
             "help": "Strategy to use in dataset mixing (random/concat/interleave) (undersampling/oversampling)."
         },
     )
-    packing: bool = field(
+    encode_one_turn: bool = field(
         default=True,
+        metadata={"help": "Whether encode each round independently in a multi-round dialogue."},
+    )
+    packing: bool = field(
+        default=False,
         metadata={"help": "Enable sequences packing in training."},
     )
     greedy_intokens: bool = field(
@@ -69,23 +73,13 @@ class DataConfig:
         default=True,
         metadata={"help": "Whether to enable authorize code for privatization. Defaults to False."},
     )
-    task_name: str = field(default=None, metadata={"help": "Additional name to select a more specific task."})
-    zero_padding: bool = field(default=False, metadata={"help": "Whether to use Zero Padding data stream"})
-    greedy_zero_padding: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to use Greedy Zero Padding data stream, should be used together with `zero_padding=True`."
-        },
+    num_samples_each_epoch: int = field(
+        default=6000000,
+        metadata={"help": "Number of samples per epoch. Used for SFT."},
     )
+    task_name: str = field(default=None, metadata={"help": "Additional name to select a more specific task."})
     pad_to_multiple_of: int = field(
         default=None, metadata={"help": "If set will pad the sequence to a multiple of the provided value."}
-    )
-    src_length: int = field(default=1024, metadata={"help": "The maximum length of source(context) tokens."})
-    max_length: int = field(
-        default=2048,
-        metadata={
-            "help": "The maximum length that model input tokens can have. When Zero Padding is set to True, it's also the maximum length for Zero Padding data stream"
-        },
     )
     eval_with_do_generation: bool = field(default=False, metadata={"help": "Whether to do generation for evaluation"})
     save_generation_output: bool = field(

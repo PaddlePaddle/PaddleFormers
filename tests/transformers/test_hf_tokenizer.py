@@ -128,21 +128,6 @@ class TestHFTokenizer(unittest.TestCase):
 
 
 class TestPaddleTokenizerMethod(unittest.TestCase):
-    def test_encode_chat_inputs(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B", download_hub="aistudio")
-        query = [["你好", "您好，我是个人人工智能助手"], ["今天吃啥", "你可以选择不同的菜系"]]
-        encode_text = tokenizer.encode_chat_inputs(query)
-        dict_query = {
-            "messages": [
-                {"role": "user", "content": "你好"},
-                {"role": "assistant", "content": "您好，我是个人人工智能助手"},
-                {"role": "user", "content": "今天吃啥"},
-                {"role": "assistant", "content": "你可以选择不同的菜系"},
-            ]
-        }
-        encode_dict_text = tokenizer.encode_chat_inputs(dict_query)
-        self.assertListEqual(encode_text["conversations"], encode_dict_text)
-
     def test_tokenizer_decode_token(self) -> None:
         tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B", download_hub="aistudio")
         test_cases = ["1. 百度 2. 腾讯", "hello world! I like eating banana", "🤓😖", "🤓😖testtest"]

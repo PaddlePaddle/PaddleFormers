@@ -174,6 +174,8 @@ import_structure = {
     "ernie4_5_moe.configuration": ["Ernie4_5_MoeConfig"],
     "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"],
     "export": ["export_model"],
+    "gpt_oss.configuration": ["GptOssConfig"],
+    "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM"],
     "llama.configuration": [
         "LLAMA_PRETRAINED_INIT_CONFIGURATION",
         "LlamaConfig",
@@ -289,12 +291,12 @@ import_structure = {
         "Qwen2Model",
         "Qwen2PretrainedModel",
         "Qwen2ForCausalLM",
+        "Qwen2ForCausalLMPipe",
         "Qwen2PretrainingCriterion",
         "Qwen2ForSequenceClassification",
         "Qwen2ForTokenClassification",
         "Qwen2SentenceEmbedding",
     ],
-    "qwen2.modeling_pp": ["Qwen2ForCausalLMPipe"],
     "qwen2.tokenizer": ["Qwen2Tokenizer"],
     "qwen2.tokenizer_fast": ["Qwen2TokenizerFast"],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
@@ -302,28 +304,28 @@ import_structure = {
         "Qwen2MoeModel",
         "Qwen2MoePretrainedModel",
         "Qwen2MoeForCausalLM",
+        "Qwen2MoeForCausalLMPipe",
         "Qwen2MoePretrainingCriterion",
     ],
-    "qwen2_moe.modeling_pp": ["Qwen2MoeForCausalLMPipe"],
     "qwen3.configuration": ["Qwen3Config"],
     "qwen3.modeling": [
         "Qwen3Model",
         "Qwen3PretrainedModel",
         "Qwen3ForCausalLM",
+        "Qwen3ForCausalLMPipe",
         "Qwen3PretrainingCriterion",
         "Qwen3ForSequenceClassification",
         "Qwen3ForTokenClassification",
         "Qwen3SentenceEmbedding",
     ],
-    "qwen3.modeling_pp": ["Qwen3ForCausalLMPipe"],
     "qwen3_moe.configuration": ["Qwen3MoeConfig"],
     "qwen3_moe.modeling": [
         "Qwen3MoeModel",
         "Qwen3MoePretrainedModel",
         "Qwen3MoeForCausalLM",
+        "Qwen3MoeForCausalLMPipe",
         "Qwen3MoePretrainingCriterion",
     ],
-    "qwen3_moe.modeling_pp": ["Qwen3MoeForCausalLMPipe"],
     "ernie4_5vl.tokenizer": ["Ernie4_5_VLTokenizer"],
     "ernie4_5vl": [],
     "bert": [],
@@ -400,6 +402,7 @@ if TYPE_CHECKING:
     from .qwen2_moe import *
     from .qwen3 import *
     from .qwen3_moe import *
+    from .gpt_oss import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

@@ -181,7 +181,7 @@ class RotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.head_dim = config.head_dim
+        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.base = config.rope_theta
 
     def forward(self, x, position_ids):

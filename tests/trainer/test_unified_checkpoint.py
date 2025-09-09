@@ -68,7 +68,7 @@ pretrain_arguments = {
     "sequence_parallel": 0,
     "use_flash_attention": "false",
     "use_fused_rms_norm": "false",
-    "max_seq_length": 1024,
+    "max_seq_len": 1024,
     "learning_rate": 3e-04,
     "min_learning_rate": 1e-05,
     "warmup_steps": 100,

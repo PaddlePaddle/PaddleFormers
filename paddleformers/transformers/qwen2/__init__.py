@@ -27,18 +27,16 @@ import_structure = {
         "Qwen2Model",
         "Qwen2PretrainedModel",
         "Qwen2ForCausalLM",
-        "Qwen2PretrainingCriterion",
+        "Qwen2ForCausalLMPipe",
         "Qwen2ForSequenceClassification",
         "Qwen2ForTokenClassification",
         "Qwen2SentenceEmbedding",
     ],
-    "modeling_pp": ["Qwen2ForCausalLMPipe"],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
     from .modeling import *
-    from .modeling_pp import *
     from .tokenizer import *
     from .tokenizer_fast import *
 else:

@@ -493,8 +493,6 @@ class GenerationTesterMixin:
     def test_beam_search_generate(self):
         for model_class in self.all_generative_model_classes.keys():
             config, input_ids, attention_mask, max_length = self._get_input_ids_and_config()
-            print(input_ids)
-            print(attention_mask)
             paddle.seed(128)
             model = self._make_model_instance(config, model_class)
             model.eval()
@@ -511,9 +509,6 @@ class GenerationTesterMixin:
             beam_kwargs, beam_scorer = self._get_beam_scorer_and_kwargs(
                 input_ids.shape[0], max_length + 1 if self.is_encoder_decoder else max_length + input_ids.shape[-1]
             )
-
-            print(input_ids)
-            print(attention_mask)
 
             # check `generate()` and `beam_search()` are equal
             output_generate, output_beam_search = self._beam_search_generate(

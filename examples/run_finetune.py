@@ -12,16 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import os
 import sys
 from functools import partial
 
 import paddle
 
+from paddleformers.datasets.data_utils import estimate_training
 from paddleformers.datasets.finetuning import collate_fn
 from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
+from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
-from paddleformers.trainer import PdArgumentParser, get_last_checkpoint, set_seed
+from paddleformers.trainer import (
+    IntervalStrategy,
+    PdArgumentParser,
+    get_last_checkpoint,
+    set_seed,
+)
 from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -43,6 +51,10 @@ from paddleformers.transformers import (
     Qwen2ForCausalLMPipe,
     Qwen2MoeForCausalLM,
     Qwen2MoeForCausalLMPipe,
+    Qwen3ForCausalLM,
+    Qwen3ForCausalLMPipe,
+    Qwen3MoeForCausalLM,
+    Qwen3MoeForCausalLMPipe,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DataConfig, ModelConfig, SFTConfig, SFTTrainer
@@ -67,6 +79,10 @@ flash_mask_support_list = [
     Qwen2ForCausalLMPipe,
     Qwen2MoeForCausalLM,
     Qwen2MoeForCausalLMPipe,
+    Qwen3ForCausalLM,
+    Qwen3ForCausalLMPipe,
+    Qwen3MoeForCausalLM,
+    Qwen3MoeForCausalLMPipe,
 ]
 
 
@@ -146,9 +162,14 @@ def main():
         model_config.fuse_attention_qkv = model_args.fuse_attention_qkv
     if model_args.fuse_attention_ffn is not None:
         model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
-    model_config.pp_seg_method = training_args.pp_seg_method
-    model_config.seq_length = data_args.max_length
-    model_config.max_sequence_length = training_args.max_seq_length
+
+    avaible_attn_impl = AttentionInterface._global_mapping.keys()
+    if model_args.attn_impl not in avaible_attn_impl:
+        raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
+
+    model_config.pp_seg_method = model_args.pp_seg_method
+    model_config.seq_length = training_args.max_seq_len
+    model_config.max_sequence_length = training_args.max_seq_len
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
@@ -170,13 +191,7 @@ def main():
     else:
         model = model_class.from_config(model_config, dtype=dtype)
 
-    if model_args.flash_mask and (not data_args.zero_padding or not model.config.use_flash_attention):
-        logger.warning("`flash_mask` must use with zero padding and flash attention.")
-        data_args.zero_padding = True
-        model.config.use_flash_attention = True
-        model.config._attn_implementation = "flashmask"
-
-    if model_args.flash_mask and not any(isinstance(model, cls) for cls in flash_mask_support_list):
+    if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
         raise NotImplementedError(f"{model.__class__} not support flash mask.")
 
     if training_args.do_train and model_args.neftune:
@@ -213,15 +228,16 @@ def main():
 
     dataset_config = {
         "tokenizer": tokenizer,
-        "max_seq_len": training_args.max_seq_length,
+        "max_seq_len": training_args.max_seq_len,
         "random_seed": training_args.seed,
-        "num_replicas": 1,
-        "rank": 0,
-        "num_samples_each_epoch": 6000000,
+        "num_replicas": training_args.dataset_world_size,
+        "rank": training_args.dataset_rank,
+        "num_samples_each_epoch": data_args.num_samples_each_epoch,
         "random_shuffle": data_args.random_shuffle,
         "greedy_intokens": data_args.greedy_intokens,
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
+        "encode_one_turn": data_args.encode_one_turn,
     }
 
     train_dataset = create_dataset_sft(
@@ -251,8 +267,49 @@ def main():
         collate_fn,
         tokenizer=tokenizer,
         model_args=model_args,
-        max_seq_len=training_args.max_seq_length + model_config.num_nextn_predict_layers,
+        max_seq_len=training_args.max_seq_len + model_config.num_nextn_predict_layers,
     )
+
+    if training_args.max_steps == -1:
+        if data_args.mix_strategy == "random":
+            raise ValueError(
+                "When using 'random' mix_strategy, max_steps must be explicitly set (cannot be -1). "
+                "Random mixing requires a fixed number of training steps to properly sample data."
+            )
+        if paddle.distributed.get_rank() == 0:
+            training_args.max_steps = estimate_training(train_dataset, data_args, training_args, model_args)
+            del train_dataset
+            gc.collect()
+            train_dataset = create_dataset_sft(
+                task_group=data_args.train_dataset_path,
+                task_group_prob=data_args.train_dataset_prob,
+                sub_dataset_type=data_args.train_dataset_type,
+                **dataset_config,
+            )
+
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
+            max_steps = paddle.to_tensor([training_args.max_steps])
+            paddle.distributed.broadcast(max_steps, src=0)
+            training_args.max_steps = int(max_steps.item())
+        if training_args.max_steps <= 0:
+            raise ValueError(f"Invalid max_steps: {training_args.max_steps}. Please check your dataset")
+
+        logger.info(f"Re-setting training_args.max_steps to {training_args.max_steps}.")
+    # Create the learning_rate sheduler and optimizer
+    if training_args.decay_steps is None:
+        training_args.decay_steps = training_args.max_steps
+
+    if training_args.save_strategy == IntervalStrategy.EPOCH:
+        training_args.save_strategy = IntervalStrategy.STEPS
+        training_args.save_steps = int(training_args.max_steps / training_args.num_train_epochs)
+    if training_args.evaluation_strategy == IntervalStrategy.EPOCH:
+        training_args.evaluation_strategy = IntervalStrategy.STEPS
+        training_args.eval_steps = int(training_args.max_steps / training_args.num_train_epochs)
+    if training_args.logging_strategy == IntervalStrategy.EPOCH:
+        training_args.logging_strategy = IntervalStrategy.STEPS
+        training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
+
     trainer = SFTTrainer(
         model=model,
         args=training_args,

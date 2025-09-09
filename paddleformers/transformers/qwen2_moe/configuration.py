@@ -57,6 +57,8 @@ class Qwen2MoeConfig(PretrainedConfig):
             The maximum sequence length that this model might ever be used with.
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
+        use_rmsnorm (`bool`, *optional*, defaults to `True`):
+            Whether to use RMSNorm instead of LayerNorm.
         rms_norm_eps (`float`, *optional*, defaults to 1e-06):
             The epsilon used by the rms normalization layers.
         use_cache (`bool`, *optional*, defaults to `True`):
@@ -66,14 +68,20 @@ class Qwen2MoeConfig(PretrainedConfig):
             Whether the model's input and output word embeddings should be tied.
         rope_theta (`float`, *optional*, defaults to 10000.0):
             The base period of the RoPE embeddings.
+        use_swiglu (`bool`, *optional*, defaults to `False`):
+            Whether to use SwiGLU activation function.
         use_sliding_window (`bool`, *optional*, defaults to `False`):
             Whether to use sliding window attention.
         sliding_window (`int`, *optional*, defaults to 4096):
             Sliding window attention (SWA) window size. If not specified, will default to `4096`.
         max_window_layers (`int`, *optional*, defaults to 28):
             The number of layers that use SWA (Sliding Window Attention). The bottom layers use SWA while the top use full attention.
+        ignored_index (`int`, *optional*, defaults to -100):
+            Target value that is ignored during loss computation.
         attention_dropout (`float`, *optional*, defaults to 0.0):
             The dropout ratio for the attention probabilities.
+        attention_bias (`bool`, *optional*, defaults to `True`):
+            Whether to use a bias in the query, key, value and output projection layers during self-attention.
         decoder_sparse_step (`int`, *optional*, defaults to 1):
             The frequency of the MoE layer.
         moe_intermediate_size (`int`, *optional*, defaults to 1408):
@@ -91,6 +99,8 @@ class Qwen2MoeConfig(PretrainedConfig):
             allow the model to output the auxiliary loss, including load balancing loss and router z-loss.
         router_aux_loss_coef (`float`, *optional*, defaults to 0.001):
             The aux loss factor for the total loss.
+        pp_seg_method (`str`, *optional*, defaults to `"layer:Qwen2MoeDecoderLayer"`):
+            Method for pipeline parallel segmentation.
 
     ```python
     >>> from paddleformers.transformers import Qwen2MoeModel, Qwen2MoeConfig
@@ -120,17 +130,21 @@ class Qwen2MoeConfig(PretrainedConfig):
         max_position_embeddings=8192,
         seq_length=2048,
         initializer_range=0.02,
+        use_rmsnorm=True,
         rms_norm_eps=1e-6,
         use_cache=True,
         attention_dropout=0.0,
+        attention_bias=True,
         rope_theta=1000000.0,
         pad_token_id=0,
         bos_token_id=151643,
         eos_token_id=151643,
         tie_word_embeddings=False,
+        use_swiglu=False,
         use_sliding_window=False,
         sliding_window=32768,
         max_window_layers=28,
+        ignored_index=-100,
         decoder_sparse_step=1,
         moe_intermediate_size=1408,
         shared_expert_intermediate_size=5632,
@@ -139,6 +153,7 @@ class Qwen2MoeConfig(PretrainedConfig):
         norm_topk_prob=False,
         output_router_logits=False,
         router_aux_loss_coef=0.001,
+        pp_seg_method="layer:Qwen2MoeDecoderLayer",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -151,13 +166,15 @@ class Qwen2MoeConfig(PretrainedConfig):
         self.use_sliding_window = use_sliding_window
         self.sliding_window = sliding_window
         self.max_window_layers = max_window_layers
+        self.ignored_index = ignored_index
 
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
 
         self.initializer_range = initializer_range
+        self.use_swiglu = use_swiglu
+        self.use_rmsnorm = use_rmsnorm
         self.rms_norm_eps = rms_norm_eps
-
         self.use_cache = use_cache
 
         self.pad_token_id = pad_token_id
@@ -166,6 +183,7 @@ class Qwen2MoeConfig(PretrainedConfig):
 
         self.rope_theta = rope_theta
         self.attention_dropout = attention_dropout
+        self.attention_bias = attention_bias
 
         # MoE arguments
         self.decoder_sparse_step = decoder_sparse_step
@@ -177,10 +195,31 @@ class Qwen2MoeConfig(PretrainedConfig):
         self.output_router_logits = output_router_logits
         self.router_aux_loss_coef = router_aux_loss_coef
 
+        self.pp_seg_method = pp_seg_method
+
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id,
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
+        )
+
+        self.register_unsavable_keys(
+            [
+                "attention_bias",
+                "ignored_index",
+                "mlp_only_layers",
+                "pad_token_id",
+                "rope_scaling",
+                "seq_length",
+                "use_rmsnorm",
+                "use_swiglu",
+                "recompute",
+                "recompute_use_reentrant",
+                "recompute_granularity",
+                "pp_seg_method",
+                "dpo_config",
+                "kto_config",
+            ]
         )
