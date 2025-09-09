@@ -32,8 +32,7 @@
     "load_best_model_at_end": true,
     "tensor_parallel_degree": 1,
     "sharding": "stage1",
-    "use_flash_attention": false,
-    "flash_mask": false,
+    "attn_impl": "flashmask",
     "recompute": true,
     "recompute_granularity": "full",
     "benchmark": false,
@@ -41,6 +40,5 @@
     "autotuner_benchmark":false,
     "beta": 0.1,
     "loss_type": "sigmoid",
-    "greedy_zero_padding": false,
     "label_smoothing": 0.0
   }

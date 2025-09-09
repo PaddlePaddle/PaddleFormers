@@ -60,7 +60,6 @@ moe_arguments = {
     "pipeline_parallel_degree": 1,
     "sharding": "",
     "lora": "false",
-    "zero_padding": "false",
     "use_flash_attention": "false",
     "unified_checkpoint": 1,
     "continue_training": 0,
