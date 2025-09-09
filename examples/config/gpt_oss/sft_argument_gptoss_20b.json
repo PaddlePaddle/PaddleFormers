@@ -38,6 +38,7 @@
     "zero_padding": false,
     "unified_checkpoint": true,
     "use_flash_attention": false,
+    "use_attn_mask_startend_row_indices": false,
     "attn_impl": "eager",
     "convert_from_hf": true,
     "lora": true,
