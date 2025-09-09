@@ -428,7 +428,6 @@ class GptOssAttention(nn.Layer):
         self.fuse_attention_qkv = config.fuse_attention_qkv
 
         self.scaling = self.head_dim**-0.5
-        self.attn_implementation = config._attn_implementation
 
         self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
 
@@ -538,7 +537,7 @@ class GptOssAttention(nn.Layer):
             value=value_states,
             attention_mask=attention_mask,
             attn_mask_start_row_indices=attn_mask_start_row_indices,
-            sink=self.sink,
+            sink=self.sinks,
             dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
             scaling=self.scaling,
         )
