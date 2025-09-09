@@ -34,16 +34,11 @@ except ImportError:
     EventStore = None
 
 from config.configuration import DeepseekV2FastConfig
-from modeling import (
-    DeepseekV2LMHead,
-    DeepseekV2RMSNorm,
-    TemporaryVarContext,
-    set_global_step,
-)
-from modeling_fast import DeepseekV2DecoderLayer
-from modeling_fast import DeepseekV2ModelFast as DeepseekV2Model
-from modeling_fast import DeepseekV2MoE, DeepseekV2MTPLayer
-from modeling_fast import DeepseekV2PretrainedModelFast as DeepseekV2PretrainedModel
+from modeling import DeepseekV2DecoderLayer, DeepseekV2LMHead
+from modeling import DeepseekV2ModelFast as DeepseekV2Model
+from modeling import DeepseekV2MoE, DeepseekV2MTPLayer
+from modeling import DeepseekV2PretrainedModelFast as DeepseekV2PretrainedModel
+from modeling import DeepseekV2RMSNorm, TemporaryVarContext, set_global_step
 from moe_utils import get_env_device
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp

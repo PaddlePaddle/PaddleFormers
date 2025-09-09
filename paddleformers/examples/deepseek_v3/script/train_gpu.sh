@@ -59,10 +59,7 @@ export FLAGS_large_pool_auto_growth_chunk_size_in_mb=500
 export FLAGS_small_pool_auto_growth_chunk_size_in_mb=20
 export FLAGS_small_pool_size_in_mb=10
 export FLAGS_samll_pool_pre_alloc_in_mb=500
-export FLAGS_large_pool_pre_alloc_in_mb=61440
-export FLAGS_deep_ep_comm_prealloc_in_mb=1000
 
-export DSV3_FAST_PRETRAIN=true
 bash script/kill_process.sh 
 
 source /root/paddlejob/workspace/env_run/chenxi/chenxi_py3.10/bin/activate

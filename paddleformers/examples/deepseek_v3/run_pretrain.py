@@ -404,7 +404,7 @@ def main():
             )
 
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path, download_hub="huggingface")
-    config = DeepseekV2FastConfig.from_pretrained("./config/config.json")
+    config = DeepseekV2FastConfig.from_pretrained(model_args.model_name_or_path)
 
     # set all llm config
     LlmMetaConfig.set_llm_config(config, training_args)

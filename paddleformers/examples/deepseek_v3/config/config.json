@@ -20,7 +20,7 @@
     "intermediate_size": 18432,
     "kv_lora_rank": 512,
     "max_position_embeddings": 163840,
-    "model_type": "deepseek_v2_fast",
+    "model_type": "deepseek_v3",
     "moe_intermediate_size": 2048,
     "moe_layer_freq": 1,
     "n_group": 8,
@@ -76,5 +76,5 @@
     "dsv3_use_atten_recompute": true,
     "use_ds_gemm": false,
     "dsv3_use_fp8_dispatch": true,
-    "fa_version": 2
+    "fa_version": 3
   }
