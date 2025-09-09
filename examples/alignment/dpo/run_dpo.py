@@ -63,19 +63,6 @@ def main():
     if model_args.attn_impl not in avaible_attn_impl:
         raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
 
-    if "flashmask" in model_args.attn_impl:
-        model_args.use_flash_attention = True
-        model_args.flash_mask = True
-        model_args.use_attn_mask_startend_row_indices = True
-    elif "sdpa" in model_args.attn_impl:
-        model_args.use_flash_attention = True
-        model_args.flash_mask = False
-        model_args.use_attn_mask_startend_row_indices = False
-    else:
-        model_args.use_flash_attention = False
-        model_args.flash_mask = False
-        model_args.use_attn_mask_startend_row_indices = False
-
     if dpo_config.loss_type == "orpo":
         dpo_config.reference_free = True
         dpo_config.sft_loss_ratio = 1.0
@@ -172,11 +159,8 @@ def main():
             ref_model = None
     if training_args.pipeline_parallel_degree > 1:
         model.config.dpo_config = None
-    if model_args.flash_mask and not model.config.use_flash_attention:
-        logger.warning("`flash_mask` must use with zero padding and flash attention.")
-        model.config.use_flash_attention = True
 
-    if model_args.flash_mask and not any(isinstance(model, cls) for cls in flash_mask_support_list):
+    if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
         raise NotImplementedError(f"{model.__class__} not support flash mask.")
 
     if model_args.tokenizer_name_or_path is not None:

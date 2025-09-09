@@ -167,19 +167,6 @@ def main():
     if model_args.attn_impl not in avaible_attn_impl:
         raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
 
-    if "flashmask" in model_args.attn_impl:
-        model_args.use_flash_attention = True
-        model_args.flash_mask = True
-        model_args.use_attn_mask_startend_row_indices = True
-    elif "sdpa" in model_args.attn_impl:
-        model_args.use_flash_attention = True
-        model_args.flash_mask = False
-        model_args.use_attn_mask_startend_row_indices = False
-    else:
-        model_args.use_flash_attention = False
-        model_args.flash_mask = False
-        model_args.use_attn_mask_startend_row_indices = False
-
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.seq_length = training_args.max_seq_len
     model_config.max_sequence_length = training_args.max_seq_len
@@ -204,12 +191,7 @@ def main():
     else:
         model = model_class.from_config(model_config, dtype=dtype)
 
-    if model_args.flash_mask and (not data_args.zero_padding or not model.config.use_flash_attention):
-        logger.warning("`flash_mask` must use with zero padding and flash attention.")
-        data_args.zero_padding = True
-        model.config.use_flash_attention = True
-
-    if model_args.flash_mask and not any(isinstance(model, cls) for cls in flash_mask_support_list):
+    if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
         raise NotImplementedError(f"{model.__class__} not support flash mask.")
 
     if training_args.do_train and model_args.neftune:
