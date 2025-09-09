@@ -29,6 +29,10 @@ from paddleformers.trl import DataConfig
 class DPOTrainingArguments(TrainingArguments):
     """DPOTrainingArguments"""
 
+    num_of_gpus: int = field(
+        default=-1,
+        metadata={"help": "Number of gpus used in dpo estimate training."},
+    )
     unified_checkpoint: bool = field(
         default=True,
         metadata={"help": "Enable fused linear grad add strategy."},
