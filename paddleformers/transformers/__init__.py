@@ -175,7 +175,7 @@ import_structure = {
     "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"],
     "export": ["export_model"],
     "gpt_oss.configuration": ["GptOssConfig"],
-    "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM"],
+    "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
     "llama.configuration": [
         "LLAMA_PRETRAINED_INIT_CONFIGURATION",
         "LlamaConfig",

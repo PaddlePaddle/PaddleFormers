@@ -22,12 +22,14 @@ from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 from paddle.nn import functional as F
 
+from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.attention.utils import repeat_kv
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
+from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ...utils.tools import get_env_device
 from ..llama.modeling import get_use_casual_mask
@@ -521,7 +523,7 @@ class GptOssAttention(nn.Layer):
         key_states = key_states.reshape(target_key_value_shape)
         value_states = value_states.reshape(target_key_value_shape)
 
-        attention_interface = eager_attention_forward
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
         cos, sin = position_embedding
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
         if past_key_value is not None:
@@ -536,6 +538,7 @@ class GptOssAttention(nn.Layer):
             value=value_states,
             attention_mask=attention_mask,
             attn_mask_start_row_indices=attn_mask_start_row_indices,
+            sink=self.sink,
             dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
             scaling=self.scaling,
         )
@@ -1321,4 +1324,14 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
         )
 
 
-__all__ = ["GptOssForCausalLM", "GptOssModel", "GptOssPreTrainedModel"]
+class GptOssForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = GptOssConfig
+    _decoder_layer_cls = GptOssDecoderLayer
+    _get_tensor_parallel_mappings = GptOssModel._get_tensor_parallel_mappings
+    _init_weights = GptOssModel._init_weights
+    _keep_in_fp32_modules = GptOssModel._keep_in_fp32_modules
+    _tied_weights_keys = ["lm_head.weight"]
+    transpose_weight_keys = GptOssModel.transpose_weight_keys
+
+
+__all__ = ["GptOssForCausalLM", "GptOssModel", "GptOssPreTrainedModel", "GptOssForCausalLMPipe"]
