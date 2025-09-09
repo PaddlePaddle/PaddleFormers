@@ -19,6 +19,7 @@ import os
 
 import numpy as np
 import paddle
+
 from paddleformers.utils.log import logger
 
 # isort: off
@@ -41,7 +42,7 @@ def calculate_acc_steps(num_samples, train_batch, dataset_world_size, per_device
             - Global batch size target
             - Full dataset coverage
     """
-    samples_per_batch =  per_device_train_batch_size * dataset_world_size * num_samples / train_batch
+    samples_per_batch = per_device_train_batch_size * dataset_world_size * num_samples / train_batch
     if num_samples < 100:
         recommend_bs = 8
     elif num_samples < 1000:
@@ -88,13 +89,13 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
             "packing": data_args.packing,
             "mix_strategy": data_args.mix_strategy,
             "encode_one_turn": data_args.encode_one_turn,
-            }
+        }
         train_dataset = create_dataset(
-                task_group=data_args.train_dataset_path,
-                task_group_prob=data_args.train_dataset_prob,
-                sub_dataset_type=data_args.train_dataset_type,
-                **dataset_config
-            )
+            task_group=data_args.train_dataset_path,
+            task_group_prob=data_args.train_dataset_prob,
+            sub_dataset_type=data_args.train_dataset_type,
+            **dataset_config
+        )
     max_samples = len(train_dataset.mix_datasets)
     if max_samples > 0 :
         if training_args.num_of_gpus > 0:
@@ -120,7 +121,7 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
         if training_args.gradient_accumulation_steps < 0:
             training_args.gradient_accumulation_steps = calculate_acc_steps(
                 num_samples, train_batch, dataset_world_size, training_args.per_device_train_batch_size)
-        max_samples  *= training_args.num_train_epochs
+        max_samples *= training_args.num_train_epochs
         train_tokens *= training_args.num_train_epochs
         train_batch *= training_args.num_train_epochs
         global_batch_size = (
@@ -171,7 +172,6 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
             "max_prompt_len": int(data_args.max_prompt_len),
             "valid": False,
         }
-
 
     logger.info(f"training argument: {res}")
     # NOTE(gongenlei): if not int, broadcast will overflow
