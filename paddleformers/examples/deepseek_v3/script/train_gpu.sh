@@ -49,10 +49,6 @@ export PYTHONPATH=../../../:$PYTHONPATH
 
 export CUDA_PATH=/usr/local/cuda-12.9
 
-# Flags for best performance
-export FLAGS_share_tensor_for_grad_tensor_holder=1
-export FLAGS_use_default_stream=false
-export =false
 
 # Flags for allocator
 export FLAGS_large_pool_auto_growth_chunk_size_in_mb=500
