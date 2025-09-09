@@ -12,16 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import os
 import sys
 from functools import partial
 
 import paddle
 
+from paddleformers.datasets.data_utils import estimate_training
 from paddleformers.datasets.finetuning import collate_fn
 from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
 from paddleformers.peft import LoRAConfig, LoRAModel
-from paddleformers.trainer import PdArgumentParser, get_last_checkpoint, set_seed
+from paddleformers.trainer import (
+    IntervalStrategy,
+    PdArgumentParser,
+    get_last_checkpoint,
+    set_seed,
+)
 from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -155,7 +162,7 @@ def main():
     if model_args.fuse_attention_ffn is not None:
         model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
     model_config.pp_seg_method = training_args.pp_seg_method
-    model_config.seq_length = data_args.max_length
+    model_config.seq_length = training_args.max_seq_len
     model_config.max_sequence_length = training_args.max_seq_len
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     logger.info(f"Final model config: {model_config}")
@@ -262,6 +269,47 @@ def main():
         model_args=model_args,
         max_seq_len=training_args.max_seq_len + model_config.num_nextn_predict_layers,
     )
+
+    if training_args.max_steps == -1:
+        if data_args.mix_strategy == "random":
+            raise ValueError(
+                "When using 'random' mix_strategy, max_steps must be explicitly set (cannot be -1). "
+                "Random mixing requires a fixed number of training steps to properly sample data."
+            )
+        if paddle.distributed.get_rank() == 0:
+            training_args.max_steps = estimate_training(train_dataset, data_args, training_args, model_args)
+            del train_dataset
+            gc.collect()
+            train_dataset = create_dataset_sft(
+                task_group=data_args.train_dataset_path,
+                task_group_prob=data_args.train_dataset_prob,
+                sub_dataset_type=data_args.train_dataset_type,
+                **dataset_config,
+            )
+
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
+            max_steps = paddle.to_tensor([training_args.max_steps])
+            paddle.distributed.broadcast(max_steps, src=0)
+            training_args.max_steps = int(max_steps.item())
+        if training_args.max_steps <= 0:
+            raise ValueError(f"Invalid max_steps: {training_args.max_steps}. Please check your dataset")
+
+        logger.info(f"Re-setting training_args.max_steps to {training_args.max_steps}.")
+    # Create the learning_rate sheduler and optimizer
+    if training_args.decay_steps is None:
+        training_args.decay_steps = training_args.max_steps
+
+    if training_args.save_strategy == IntervalStrategy.EPOCH:
+        training_args.save_strategy = IntervalStrategy.STEPS
+        training_args.save_steps = int(training_args.max_steps / training_args.num_train_epochs)
+    if training_args.evaluation_strategy == IntervalStrategy.EPOCH:
+        training_args.evaluation_strategy = IntervalStrategy.STEPS
+        training_args.eval_steps = int(training_args.max_steps / training_args.num_train_epochs)
+    if training_args.logging_strategy == IntervalStrategy.EPOCH:
+        training_args.logging_strategy = IntervalStrategy.STEPS
+        training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
+
     trainer = SFTTrainer(
         model=model,
         args=training_args,

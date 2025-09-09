@@ -13,6 +13,7 @@
 # limitations under the License.
 """Useful data utility."""
 
+import json
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
@@ -191,3 +192,123 @@ def convert_to_input_ids(
             raise ValueError(f"Unsupported data format: {data_format}")
         num_input_tokens += len(input_ids[-1])
     return input_ids, num_input_tokens
+
+
+def estimate_training(train_dataset, data_args, training_args, model_args):
+    """
+    Estimate required training steps based on dataset.
+
+    Args:
+        train_dataset: Dataset used for training estimation.
+        data_args: Configuration object containing data parameters.
+        training_args: Configuration object containing training parameters.
+        model_args: Configuration object containing model parameters.
+
+    Returns:
+        dict: Contains estimated training steps and related parameters.
+    """
+    train_dataset.estimate = True
+    logger.info("Start to estimate max training steps...")
+
+    train_dataset_path_list = [path for path in str(data_args.train_dataset_path).replace(" ", "").split(",")]
+    if len(train_dataset_path_list) > 1:
+        logger.warning("Suggest to use max_steps instead of num_train_epochs for multi source dataset.")
+        logger.info(
+            "Multi source dataset detected, number of samples will be estimated by following rule. "
+            "num_samples = (source1_num_samples * prob1 + source2_num_samples * prob2 + ...) * epochs"
+        )
+
+    max_samples = train_dataset.max_estimate_samples
+
+    if training_args.max_estimate_samples != -1:
+        # Set estimate samples to max_estimate_samples
+        logger.warning("The results between sampling and non-sampling methods may differ.")
+        train_dataset.max_estimate_samples = min(
+            training_args.max_estimate_samples, train_dataset.max_estimate_samples
+        )
+
+    if train_dataset.max_estimate_samples > 0:
+        train_batches = 0
+        train_tokens = 0
+        for sequences in train_dataset:
+            if not train_dataset.estimate:
+                break
+            train_batches += 1
+            for sequence in sequences:
+                train_tokens += len(sequence.token_ids)
+
+        train_tokens *= training_args.num_train_epochs
+        train_batches *= training_args.num_train_epochs
+        global_batch_size = (
+            training_args.per_device_train_batch_size
+            * training_args.gradient_accumulation_steps
+            * max(training_args.data_parallel_degree, 1)
+            * max(training_args.sharding_parallel_degree, 1)
+        )
+        max_steps = train_batches / global_batch_size
+
+        if max_samples != train_dataset.max_estimate_samples:
+            max_steps *= max_samples / train_dataset.max_estimate_samples
+            train_tokens *= max_samples / train_dataset.max_estimate_samples
+            train_dataset.used_samples *= max_samples / train_dataset.max_estimate_samples
+            train_dataset.unused_samples *= max_samples / train_dataset.max_estimate_samples
+
+        max_steps = int(np.ceil(max_steps))
+
+        res = {
+            "num_train_epochs": int(training_args.num_train_epochs),
+            "max_steps": max_steps,
+            "train_tokens": int(train_tokens),
+            "global_batch_size": int(global_batch_size),
+            "gradient_accumulation_steps": training_args.gradient_accumulation_steps,
+            "warmup_steps": int(np.ceil(0.1 * max_steps)),
+            "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
+            "tensor_parallel_degree": int(training_args.tensor_parallel_degree),
+            "pipeline_parallel_degree": int(training_args.pipeline_parallel_degree),
+            "sharding_parallel_degree": int(training_args.sharding_parallel_degree),
+            "seed": training_args.seed,
+            "num_samples_each_epoch": data_args.num_samples_each_epoch,
+            "max_seq_len": int(training_args.max_seq_len),
+            "valid": True,
+            "train_samples": int(max_samples * training_args.num_train_epochs),
+            "estimate_samples": int(train_dataset.max_estimate_samples),
+            "actual_train_samples": int(train_dataset.used_samples * training_args.num_train_epochs),
+            "skip_samples": int(train_dataset.unused_samples * training_args.num_train_epochs),
+        }
+        if hasattr(training_args, "num_of_gpus"):
+            res["num_of_gpus"] = training_args.num_of_gpus
+
+        if train_batches / training_args.num_train_epochs / global_batch_size < 1:
+            logger.warning("This dataset is too small, you'd better enlarge your dataset.")
+            res["valid"] = False
+
+        if getattr(training_args, "estimation_output_file", None):
+            with open(training_args.estimation_output_file, "w", encoding="utf-8") as f:
+                json.dump(res, f)
+
+        return max_steps
+    else:
+        res = {
+            "num_train_epochs": int(training_args.num_train_epochs),
+            "max_steps": 0,
+            "gradient_accumulation_steps": training_args.gradient_accumulation_steps,
+            "train_tokens": 0,
+            "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
+            "tensor_parallel_degree": int(training_args.tensor_parallel_degree),
+            "pipeline_parallel_degree": int(training_args.pipeline_parallel_degree),
+            "sharding_parallel_degree": int(training_args.sharding_parallel_degree),
+            "num_samples_each_epoch": data_args.num_samples_each_epoch,
+            "max_seq_len": int(data_args.max_seq_len),
+            "seed": data_args.seed,
+            "valid": False,
+            "train_samples": 0,
+        }
+        if hasattr(training_args, "num_of_gpus"):
+            res["num_of_gpus"] = training_args.num_of_gpus
+
+        if getattr(training_args, "estimation_output_file", None):
+            with open(training_args.estimation_output_file, "w", encoding="utf-8") as f:
+                json.dump(res, f)
+
+        logger.error("No valid data found, please check your dataset format.")
+        return 0
