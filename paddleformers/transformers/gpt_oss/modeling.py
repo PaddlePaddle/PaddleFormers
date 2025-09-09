@@ -1093,6 +1093,7 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
+        loss_mask: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         past_key_values: Optional[List[paddle.Tensor]] = None,
         output_attentions: Optional[bool] = None,
