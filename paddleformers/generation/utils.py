@@ -81,7 +81,7 @@ def _make_sliding_window_mask(input_shape, past_key_values_length=0, window_size
         # Window start position: max(0, current position - window size + 1)
         start = max(0, current_pos - window_size + 1)
         # Window end position: current position (causal mask restriction, cannot exceed self)
-        end = current_pos + 1  # 切片是左闭右开，所以+1
+        end = current_pos + 1  # Slice is left closed and right open, so+1
         # Mark window range as True (allow attention)
         mask[i, start:end] = True
 
@@ -384,7 +384,7 @@ class GenerationMixin(object):
 
     @staticmethod
     def _prepare_decoder_attention_mask(
-        attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None  # 新增：滑动窗口大小，None表示不启用
+        attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None
     ):
         # Step 1: Process input mask to generate basic expanded mask
         if attention_mask is not None:
