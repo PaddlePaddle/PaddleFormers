@@ -42,6 +42,7 @@ class GptOssConfig(PretrainedConfig):
         hidden_act: str = "silu",
         initializer_range: float = 0.02,
         max_position_embeddings=131072,
+        attn_impl="eager",
         rms_norm_eps: float = 1e-5,
         rope_scaling={"rope_type": "yarn", "factor": 32.0, "beta_fast": 32.0, "beta_slow": 1.0, "truncate": False},
         attention_dropout: float = 0.0,
@@ -87,6 +88,7 @@ class GptOssConfig(PretrainedConfig):
 
         self.attention_bias = True
         self.max_position_embeddings = max_position_embeddings
+        self._attn_implementation = attn_impl
         self.router_aux_loss_coef = router_aux_loss_coef
         self.output_router_logits = output_router_logits
         self.use_cache = use_cache
