@@ -22,6 +22,7 @@ import paddle
 from paddleformers.datasets.data_utils import estimate_training
 from paddleformers.datasets.finetuning import collate_fn
 from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
+from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
     IntervalStrategy,
@@ -161,6 +162,24 @@ def main():
         model_config.fuse_attention_qkv = model_args.fuse_attention_qkv
     if model_args.fuse_attention_ffn is not None:
         model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
+
+    avaible_attn_impl = AttentionInterface._global_mapping.keys()
+    if model_args.attn_impl not in avaible_attn_impl:
+        raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
+
+    if "flashmask" in model_args.attn_impl:
+        model_args.use_flash_attention = True
+        model_args.flash_mask = True
+        model_args.use_attn_mask_startend_row_indices = True
+    elif "sdpa" in model_args.attn_impl:
+        model_args.use_flash_attention = True
+        model_args.flash_mask = False
+        model_args.use_attn_mask_startend_row_indices = False
+    else:
+        model_args.use_flash_attention = False
+        model_args.flash_mask = False
+        model_args.use_attn_mask_startend_row_indices = False
+
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.seq_length = training_args.max_seq_len
     model_config.max_sequence_length = training_args.max_seq_len
@@ -189,7 +208,6 @@ def main():
         logger.warning("`flash_mask` must use with zero padding and flash attention.")
         data_args.zero_padding = True
         model.config.use_flash_attention = True
-        model.config._attn_implementation = "flashmask"
 
     if model_args.flash_mask and not any(isinstance(model, cls) for cls in flash_mask_support_list):
         raise NotImplementedError(f"{model.__class__} not support flash mask.")

@@ -27,6 +27,7 @@ from dpo_argument import (
 )
 
 from paddleformers.datasets.dpo import collate_fn, create_dataset
+from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import PdArgumentParser, get_last_checkpoint, set_seed
 from paddleformers.transformers import (
@@ -57,6 +58,24 @@ def main():
 
     paddle.set_device(training_args.device)
     set_seed(training_args.seed)
+
+    avaible_attn_impl = AttentionInterface._global_mapping.keys()
+    if model_args.attn_impl not in avaible_attn_impl:
+        raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
+
+    if "flashmask" in model_args.attn_impl:
+        model_args.use_flash_attention = True
+        model_args.flash_mask = True
+        model_args.use_attn_mask_startend_row_indices = True
+    elif "sdpa" in model_args.attn_impl:
+        model_args.use_flash_attention = True
+        model_args.flash_mask = False
+        model_args.use_attn_mask_startend_row_indices = False
+    else:
+        model_args.use_flash_attention = False
+        model_args.flash_mask = False
+        model_args.use_attn_mask_startend_row_indices = False
+
     if dpo_config.loss_type == "orpo":
         dpo_config.reference_free = True
         dpo_config.sft_loss_ratio = 1.0
@@ -113,6 +132,8 @@ def main():
         dtype=dtype,
         download_hub=model_args.download_hub,
     )
+    model_config._attn_implementation = model_args.attn_impl
+
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
     if not dpo_config.reference_free and not dpo_config.lora:
@@ -219,6 +240,7 @@ def main():
         "greedy_intokens": data_args.greedy_intokens,
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
+        "encode_one_turn": data_args.encode_one_turn,
     }
     if training_args.do_train and training_args.should_load_dataset:
         train_dataset = create_dataset(
