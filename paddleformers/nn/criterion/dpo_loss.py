@@ -83,7 +83,7 @@ def dpo_logps(
     #   bsz,seq_len,hidden_size or seq_len,hidden_size
     seq_len = labels.shape[1] if labels.ndim == 2 else labels.shape[0]
 
-    if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
+    if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
         per_token_logps = -fused_head_and_loss_fn(
             hidden_states,
             weight,
@@ -95,7 +95,7 @@ def dpo_logps(
             self.config.tensor_parallel_degree,
             self.config.tensor_parallel_output,
             False,  # fused_linear
-            self.loss_subbatch_seqlen,
+            self.loss_subbatch_sequence_length,
             return_token_loss=True,
             ignore_index=0,
         )
@@ -120,12 +120,12 @@ def dpo_logps(
             logits = logits.unsqueeze(0)
         elif logits.dim() == 3 and labels.dim() == 1:
             labels = labels.unsqueeze(0)
-        if self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
+        if self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
             sb_loss_func = subbatch(
                 self.loss_func,
                 [0, 1],
                 [1, 1],
-                self.loss_subbatch_seqlen,
+                self.loss_subbatch_sequence_length,
                 1,
             )
 
