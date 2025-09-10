@@ -262,11 +262,12 @@ def main():
     else:
         metrics = compute_metrics
 
+    max_seq_len = training_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
     data_collator = partial(
         collate_fn,
         tokenizer=tokenizer,
         model_args=model_args,
-        max_seq_len=training_args.max_seq_len + model_config.num_nextn_predict_layers,
+        max_seq_len=max_seq_len,
     )
 
     if training_args.max_steps == -1:
