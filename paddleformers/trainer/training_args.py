@@ -1081,11 +1081,11 @@ class TrainingArguments:
         metadata={"help": "是否开启单路sharding时global norm通信拆分全局通信组为pp通信和mp通信分别做"},
     )
     convert_from_hf: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={"help": "Load model from HuggingFace safetensors."},
     )
     save_to_hf: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
 
