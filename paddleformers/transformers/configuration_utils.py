@@ -278,6 +278,17 @@ class LlmMetaConfig:
         ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
     ]
 
+    loss_attributes = [
+        ("use_fused_head_loss_fn", bool, False, "Whether to use fused head and loss function."),
+        ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
+        (
+            "loss_subbatch_sequence_length",
+            int,
+            -1,
+            "Sequence length larger than loss_subbatch_sequence_length will be divided into multiple subbatches during loss computation (-1 means disable subbatch).",
+        ),
+    ]
+
     @classmethod
     def _get_defaults(cls):
         ret = {}
@@ -475,7 +486,6 @@ class PretrainedConfig:
         _attn_implementation (`str`, defaults to `sdpa`)
         use_fused_head_loss_fn (`bool`, defaults to `False`): Whether to use fused head and loss function
         use_filtered_label_loss (`bool`, defaults to `False`): Whether to use filtered label loss
-        loss_subbatch_seqlen (`int`, defaults to `-1`): Sequence length large than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch)
 
         > Parameters linked to the tokenizer
 
@@ -565,7 +575,6 @@ class PretrainedConfig:
         self._attn_implementation = kwargs.pop("_attn_implementation", "sdpa")
         self.use_fused_head_and_loss_fn = kwargs.pop("use_fused_head_and_loss_fn", False)
         self.use_filtered_label_loss = kwargs.pop("use_filtered_label_loss", False)
-        self.loss_subbatch_seqlen = kwargs.pop("loss_subbatch_seqlen", -1)
 
         if "quantization_config" in kwargs and isinstance(kwargs["quantization_config"], Dict):
             kwargs["quantization_config"] = QuantizationConfig.from_dict(kwargs["quantization_config"])
