@@ -667,6 +667,8 @@ class PretrainedConfig:
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
             )
+        self._save_to_hf = kwargs.pop("save_to_hf", False)
+        self._unsavable_keys.add("_save_to_hf")
 
         # Additional attributes without default values
         for key, value in kwargs.items():
@@ -758,6 +760,8 @@ class PretrainedConfig:
             raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
 
         os.makedirs(save_directory, exist_ok=True)
+
+        self._save_to_hf = kwargs.pop("save_to_hf", False)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be
         # loaded from the Hub.
@@ -1068,7 +1072,7 @@ class PretrainedConfig:
             del output["_auto_class"]
         if "moe_group" in output:
             del output["moe_group"]
-        if "dtype" in output:
+        if self._save_to_hf and "dtype" in output:
             output["torch_dtype"] = str(output["dtype"])
             del output["dtype"]
 
