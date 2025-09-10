@@ -22,7 +22,7 @@ __all__ = [
 
 class DeepseekV2FastConfig(PretrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`DeepseekV2Model`]. It is used to instantiate an DeepSeek
+    This is the configuration class to store the configuration of a [`DeepseekV2ModelFast`]. It is used to instantiate an DeepSeek
     model according to the specified arguments, defining the model architecture. Instantiating a configuration with the
     defaults will yield a similar configuration to that of the DeepSeek-V2.
 
@@ -33,7 +33,7 @@ class DeepseekV2FastConfig(PretrainedConfig):
     Args:
         vocab_size (`int`, *optional*, defaults to 102400):
             Vocabulary size of the Deep model. Defines the number of different tokens that can be represented by the
-            `inputs_ids` passed when calling [`DeepseekV2Model`]
+            `inputs_ids` passed when calling [`DeepseekV2ModelFast`]
         hidden_size (`int`, *optional*, defaults to 4096):
             Dimension of the hidden representations.
         intermediate_size (`int`, *optional*, defaults to 11008):
@@ -120,7 +120,7 @@ class DeepseekV2FastConfig(PretrainedConfig):
             The model type for speculate. Support ['eagle', 'mtp'] Now.
 
     ```python
-    >>> from paddleformers.transformers import DeepseekV2Model, DeepseekV2FastConfig
+    >>> from paddleformers.transformers import DeepseekV2ModelFast, DeepseekV2FastConfig
 
     >>> # Initializing a Deepseek-V2 style configuration
     >>> configuration = DeepseekV2FastConfig()

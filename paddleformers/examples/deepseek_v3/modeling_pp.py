@@ -38,12 +38,16 @@ from modeling import DeepseekV2DecoderLayer, DeepseekV2LMHead
 from modeling import DeepseekV2ModelFast as DeepseekV2Model
 from modeling import DeepseekV2MoE, DeepseekV2MTPLayer
 from modeling import DeepseekV2PretrainedModelFast as DeepseekV2PretrainedModel
-from modeling import DeepseekV2RMSNorm, TemporaryVarContext, set_global_step
+from modeling import (
+    DeepseekV2PretrainingCriterionFast,
+    DeepseekV2RMSNorm,
+    TemporaryVarContext,
+    set_global_step,
+)
 from moe_utils import get_env_device
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
-from paddleformers.transformers.deepseek_v2 import DeepseekV2PretrainingCriterion
 from paddleformers.transformers.model_utils import PipelinePretrainedModel
 from paddleformers.utils.log import logger
 
@@ -2027,7 +2031,7 @@ class DeepseekV2LMHeadPipe(DeepseekV2LMHead):
         return ScheduleNode(self.forward, name="DeepseekV2LMHeadPipe")
 
 
-class DeepseekV2PretrainingCriterionPipe(DeepseekV2PretrainingCriterion):
+class DeepseekV2PretrainingCriterionPipe(DeepseekV2PretrainingCriterionFast):
     def forward(self, logits, labels):
         if self.config.num_nextn_predict_layers > 0:
             mtp_logits = logits[1:]

@@ -73,7 +73,6 @@ from paddleformers.transformers.conversion_utils import (
 from paddleformers.transformers.deepseek_v2 import (
     DeepseekV2DynamicNTKScalingRotaryEmbedding,
     DeepseekV2LinearScalingRotaryEmbedding,
-    DeepseekV2PretrainingCriterion,
     DeepseekV2RotaryEmbedding,
     _expand_2d_mask,
     _make_causal_mask,
@@ -1740,7 +1739,7 @@ class DeepseekV2PretrainingCriterionFast(nn.Layer):
     """
 
     def __init__(self, config: DeepseekV2FastConfig):
-        super(DeepseekV2PretrainingCriterion, self).__init__()
+        super(DeepseekV2PretrainingCriterionFast, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
         self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
@@ -1771,6 +1770,32 @@ class DeepseekV2PretrainingCriterionFast(nn.Layer):
                     paddle.sum(masked_lm_loss * binary_sequence) / count,
                 )
                 return loss
+
+        def add_loss(main_loss, loss):
+            return main_loss + loss - loss.detach()
+
+        if mtp_logits is not None and self.config.num_nextn_predict_layers > 0:
+            assert len(mtp_logits) == self.config.num_nextn_predict_layers
+            masked_lm_labels_ori = masked_lm_labels
+            masked_lm_labels = masked_lm_labels[:, : -self.config.num_nextn_predict_layers]
+            seq_length = masked_lm_labels.shape[1]
+            loss = compute_loss(prediction_scores, masked_lm_labels)
+
+            mtp_loss_res = []
+            for depth in range(self.config.num_nextn_predict_layers):
+                prediction_scores_cur_depth = mtp_logits[depth]
+                masked_lm_labels_cur_depth = masked_lm_labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
+                res_cur_depth = compute_loss(prediction_scores_cur_depth, masked_lm_labels_cur_depth)
+                mtp_loss_res.append(res_cur_depth)
+            loss = add_loss(loss, self.config.num_nextn_predict_lambda * sum([x for x in mtp_loss_res]) / len(mtp_loss_res))  # fmt: skip
+
+        else:
+            loss = compute_loss(prediction_scores, masked_lm_labels)
+
+        if router_loss is not None and isinstance(router_loss, paddle.Tensor):
+            loss = add_loss(loss, router_loss)
+
+        return loss
 
 
 class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
