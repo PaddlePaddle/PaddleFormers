@@ -243,6 +243,9 @@ def main():
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
     }
+    # not support data padding for diff attention in gptoss
+    if model.model_type == "gpt_oss":
+        dataset_config.packing = False
 
     train_dataset = create_dataset_sft(
         task_group=data_args.train_dataset_path,
