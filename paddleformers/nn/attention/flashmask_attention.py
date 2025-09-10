@@ -34,6 +34,9 @@ def flashmask_attention_forward(
     **kwargs
 ):
     # b,l,h,d
+    if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.ndim == 3:
+        attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
+
     if sink is None:
         out = flashmask_attention(
             query,

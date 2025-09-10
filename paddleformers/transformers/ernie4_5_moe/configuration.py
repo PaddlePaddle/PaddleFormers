@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """ Ernie4_5_Moe model configuration """
+import json
 from typing import Optional, Union
 
 from ...utils.log import logger
@@ -233,7 +234,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.multi_token_pred_lambda = multi_token_pred_lambda
         self.enable_mtp_magic_send = enable_mtp_magic_send
         self.use_recompute_mtp = use_recompute_mtp
-
+        self.dpo_config = dpo_config
         self.register_unsavable_keys(
             [
                 "disable_ffn_model_parallel",
@@ -273,6 +274,50 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
                 "moe_world_size",
                 "multi_token_pred_lambda",
             ]
+        )
+
+    def to_json_string(self, use_diff: bool = True, saving_file=False) -> str:
+        """
+        Serialize the configuration to a JSON string with special handling for non-serializable objects.
+
+        This method overrides the default JSON serialization to handle special objects like
+        paddle.distributed.communication.group.Group that cannot be serialized normally.
+
+        Args:
+            use_diff (bool, optional): If True, only outputs the differences from the default configuration.
+                                    If False, outputs the full configuration. Defaults to True.
+
+        Returns:
+            str: A JSON formatted string representation of the configuration, with proper indentation
+                and handling for non-serializable objects.
+        """
+        if use_diff is True:
+            config_dict = self.to_diff_dict(saving_file=saving_file)
+        else:
+            config_dict = self.to_dict(saving_file=saving_file)
+
+        def _serializer(obj):
+            """
+            Handle non-serializable objects during JSON conversion.
+
+            Args:
+                obj: The object to be serialized
+
+            Returns:
+                The serializable representation of the object
+
+            """
+            return repr(obj)
+
+        return (
+            json.dumps(
+                config_dict,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+                default=_serializer,
+            )
+            + "\n"
         )
 
 

@@ -36,7 +36,7 @@ def sft_preprocess_inputs(self, logits, labels):
 
 
 def sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs):
-    if loss_mask is None:
+    if self.use_filtered_label_loss or loss_mask is None:
         loss_mask = labels != self.ignored_index
     loss_mask = loss_mask.reshape([-1]).cast(paddle.float32)
     # 逐位对齐, 全精度聚合

@@ -443,7 +443,17 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
     config_class = Ernie4_5_MoeConfig
     base_model_prefix = "model"
     _keep_in_fp32_modules = ["mlp.gate.weight", "e_score_correction_bias"]
-    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "gate"]
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "gate",
+        "mtp_linear_proj.0",
+    ]
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):
@@ -659,16 +669,18 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             self.mtp_linear_proj = paddle.nn.LayerList(
                 [
                     GeneralLinear.create(
-                        self.config.hidden_size * 2,
-                        self.config.hidden_size,
+                        config.hidden_size * 2,
+                        config.hidden_size,
                         has_bias=config.use_bias,
                         config=config,
                         fuse_matmul_bias=config.fuse_linear,
+                        linear_type="default",
                     )
-                    for _ in range(self.config.num_nextn_predict_layers)
+                    for _ in range(config.num_nextn_predict_layers)
                 ]
             )
             if config.sequence_parallel:
+                logger.info("enable sequence parallel for mtp_linear")
                 for mtp_linear in self.mtp_linear_proj:
                     mark_as_sequence_parallel_parameter(mtp_linear.weight)
                     if config.use_bias:
@@ -795,7 +807,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 attention_mask, inputs_embeds.shape[:2], kv_seq_len, inputs_embeds.dtype
             )
 
-        if self.config.num_nextn_predict_layers > 0:
+        if self.training and self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]
             inputs_embeds = inputs_embeds[:, : -self.config.num_nextn_predict_layers, :]
             inputs_embeds_ori = inputs_embeds
@@ -896,7 +908,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 all_gate_logits = all_gate_logits + (gate_logits,)
 
         # Multi Token Prediction
-        if self.config.num_nextn_predict_layers > 0:
+        if self.training and self.config.num_nextn_predict_layers > 0:
             mtp_outputs.append(hidden_states)
 
             for depth in range(self.config.num_nextn_predict_layers):
@@ -1088,6 +1100,9 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         Returns:
             Union[tuple, MoECausalLMOutputWithPast]: Model outputs.
         """
+        if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
+            attn_mask_startend_row_indices = kwargs["attn_mask_start_row_indices"]
+
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
