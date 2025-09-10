@@ -282,6 +282,7 @@ def main():
         eval_dataset = None
     logger.info("Creating dataset successfully ...")
 
+    max_seq_len = data_args.max_seq_len if data_args.packing else None
     trainer = DPOTrainer(
         model=model,
         ref_model=ref_model,
@@ -293,7 +294,7 @@ def main():
         data_collator=partial(
             collate_fn,
             tokenizer=tokenizer,
-            max_seq_len=data_args.max_seq_len,
+            max_seq_len=max_seq_len,
             use_sparse_head_and_loss_fn=model_args.use_sparse_head_and_loss_fn,
             use_fused_head_and_loss_fn=model_args.use_fused_head_and_loss_fn,
         ),
