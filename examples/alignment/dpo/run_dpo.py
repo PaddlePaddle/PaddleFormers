@@ -25,11 +25,17 @@ from dpo_argument import (
     DPOModelArgument,
     DPOTrainingArguments,
 )
+from dpo_estimate_training import dpo_estimate_training
 
 from paddleformers.datasets.dpo import collate_fn, create_dataset
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
-from paddleformers.trainer import PdArgumentParser, get_last_checkpoint, set_seed
+from paddleformers.trainer import (
+    IntervalStrategy,
+    PdArgumentParser,
+    get_last_checkpoint,
+    set_seed,
+)
 from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -226,6 +232,34 @@ def main():
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
     }
+    if training_args.max_steps == -1:
+        if data_args.mix_strategy == "random":
+            raise ValueError(
+                "When using 'random' mix_strategy, max_steps must be explicitly set (cannot be -1). "
+                "Random mixing requires a fixed number of training steps to properly sample data."
+            )
+        if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
+            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, config=model.config)
+
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
+            pd_max_steps = paddle.to_tensor([training_args.max_steps])
+            paddle.distributed.broadcast(pd_max_steps, src=0)
+            training_args.max_steps = int(pd_max_steps.item())
+        logger.info(
+            f"Re-setting training_args.max_steps to {training_args.max_steps} ({training_args.num_train_epochs})"
+        )
+        if training_args.max_steps <= 0:
+            raise ValueError(f"Invalid max_steps: {training_args.max_steps}. Please check your dataset")
+    if training_args.save_strategy == IntervalStrategy.EPOCH:
+        training_args.save_strategy = IntervalStrategy.STEPS
+        training_args.save_steps = int(training_args.max_steps / training_args.num_train_epochs)
+    if training_args.evaluation_strategy == IntervalStrategy.EPOCH:
+        training_args.evaluation_strategy = IntervalStrategy.STEPS
+        training_args.eval_steps = int(training_args.max_steps / training_args.num_train_epochs)
+    if training_args.logging_strategy == IntervalStrategy.EPOCH:
+        training_args.logging_strategy = IntervalStrategy.STEPS
+        training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
     if training_args.do_train and training_args.should_load_dataset:
         train_dataset = create_dataset(
             task_group=data_args.train_dataset_path,
