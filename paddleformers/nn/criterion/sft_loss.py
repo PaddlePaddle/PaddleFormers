@@ -87,7 +87,7 @@ def sft_loss_forward(
 
     # bsz,seq_len,hidden_size or seq_len,hidden_size
     seq_len = masked_lm_labels.shape[1] if masked_lm_labels.ndim == 2 else masked_lm_labels.shape[0]
-    if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
+    if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
         masked_lm_loss = fused_head_and_loss_fn(
             hidden_states,
             lm_head_weight,
@@ -99,7 +99,7 @@ def sft_loss_forward(
             self.config.tensor_parallel_degree,
             self.config.tensor_parallel_output,
             False,
-            self.loss_subbatch_seqlen,
+            self.loss_subbatch_sequence_length,
             return_token_loss=True,
             ignore_index=self.ignored_index,
         )
@@ -132,12 +132,12 @@ def sft_loss_forward(
 
         # logits: bsz seq_len
         # labels: bsz seq_len vocab_size
-        if self.use_subbatch and seq_len > self.loss_subbatch_seqlen:
+        if self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
             sb_loss_func = subbatch(
                 self.loss_func,
                 [0, 1],
                 [1, 1],
-                self.loss_subbatch_seqlen,
+                self.loss_subbatch_sequence_length,
                 1,
             )
             masked_lm_loss = sb_loss_func(logits, labels.unsqueeze(-1))
