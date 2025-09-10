@@ -14,9 +14,12 @@
 
 export PYTHONPATH=$(dirname "$0")/..:$PYTHONPATH
 
-python -m paddle.distributed.launch \
-    --gpus 0,1,2,3,4,5,6,7 \
+# 多卡
+# python -m paddle.distributed.launch \
+    # --gpus 0,1,2,3,4,5,6,7 \
+# 单卡
+python \
     mergekit.py \
     --lora_model_path "../checkpoints/qwen2_hf_lora_ckpts" \
     --model_name_or_path "/root/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots/c540970f9e29518b1d8f06ab8b24cba66ad77b6d" \
-    --output_path "../checkpoints/merge_qwen2_hf_lora_model_multi_gpus" \
+    --output_path "../checkpoints/merge_qwen2_hf_lora_model_single_gpu" \
