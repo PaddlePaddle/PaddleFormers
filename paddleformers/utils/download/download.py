@@ -107,6 +107,8 @@ def resolve_file_path(
     local_files_only: bool = False,
     endpoint: Optional[str] = None,
     download_hub: Optional[DownloadSource] = None,
+    from_hf_hub: bool = None,
+    from_aistudio: bool = None,
 ) -> str:
     """
     This is a general download function, mainly called by the from_pretrained function.
