@@ -29,6 +29,10 @@ from paddleformers.trl import DataConfig
 class DPOTrainingArguments(TrainingArguments):
     """DPOTrainingArguments"""
 
+    num_of_gpus: int = field(
+        default=-1,
+        metadata={"help": "Number of gpus used in dpo estimate training."},
+    )
     unified_checkpoint: bool = field(
         default=True,
         metadata={"help": "Enable fused linear grad add strategy."},
@@ -161,3 +165,6 @@ class DPOModelArgument:
     lora_alpha: int = field(default=-1, metadata={"help": "lora_alpha"})
     rslora_plus: bool = field(default=False, metadata={"help": "Strengthen lora performance"})
     use_quick_lora: bool = field(default=True, metadata={"help": "quick lora"})
+
+    # Attention
+    attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})

@@ -25,10 +25,17 @@ from dpo_argument import (
     DPOModelArgument,
     DPOTrainingArguments,
 )
+from dpo_estimate_training import dpo_estimate_training
 
 from paddleformers.datasets.dpo import collate_fn, create_dataset
+from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
-from paddleformers.trainer import PdArgumentParser, get_last_checkpoint, set_seed
+from paddleformers.trainer import (
+    IntervalStrategy,
+    PdArgumentParser,
+    get_last_checkpoint,
+    set_seed,
+)
 from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -57,6 +64,11 @@ def main():
 
     paddle.set_device(training_args.device)
     set_seed(training_args.seed)
+
+    avaible_attn_impl = AttentionInterface._global_mapping.keys()
+    if model_args.attn_impl not in avaible_attn_impl:
+        raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
+
     if dpo_config.loss_type == "orpo":
         dpo_config.reference_free = True
         dpo_config.sft_loss_ratio = 1.0
@@ -113,6 +125,8 @@ def main():
         dtype=dtype,
         download_hub=model_args.download_hub,
     )
+    model_config._attn_implementation = model_args.attn_impl
+
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
     if not dpo_config.reference_free and not dpo_config.lora:
@@ -151,11 +165,8 @@ def main():
             ref_model = None
     if training_args.pipeline_parallel_degree > 1:
         model.config.dpo_config = None
-    if model_args.flash_mask and not model.config.use_flash_attention:
-        logger.warning("`flash_mask` must use with zero padding and flash attention.")
-        model.config.use_flash_attention = True
 
-    if model_args.flash_mask and not any(isinstance(model, cls) for cls in flash_mask_support_list):
+    if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
         raise NotImplementedError(f"{model.__class__} not support flash mask.")
 
     if model_args.tokenizer_name_or_path is not None:
@@ -219,7 +230,36 @@ def main():
         "greedy_intokens": data_args.greedy_intokens,
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
+        "encode_one_turn": data_args.encode_one_turn,
     }
+    if training_args.max_steps == -1:
+        if data_args.mix_strategy == "random":
+            raise ValueError(
+                "When using 'random' mix_strategy, max_steps must be explicitly set (cannot be -1). "
+                "Random mixing requires a fixed number of training steps to properly sample data."
+            )
+        if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
+            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, config=model.config)
+
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
+            pd_max_steps = paddle.to_tensor([training_args.max_steps])
+            paddle.distributed.broadcast(pd_max_steps, src=0)
+            training_args.max_steps = int(pd_max_steps.item())
+        logger.info(
+            f"Re-setting training_args.max_steps to {training_args.max_steps} ({training_args.num_train_epochs})"
+        )
+        if training_args.max_steps <= 0:
+            raise ValueError(f"Invalid max_steps: {training_args.max_steps}. Please check your dataset")
+    if training_args.save_strategy == IntervalStrategy.EPOCH:
+        training_args.save_strategy = IntervalStrategy.STEPS
+        training_args.save_steps = int(training_args.max_steps / training_args.num_train_epochs)
+    if training_args.evaluation_strategy == IntervalStrategy.EPOCH:
+        training_args.evaluation_strategy = IntervalStrategy.STEPS
+        training_args.eval_steps = int(training_args.max_steps / training_args.num_train_epochs)
+    if training_args.logging_strategy == IntervalStrategy.EPOCH:
+        training_args.logging_strategy = IntervalStrategy.STEPS
+        training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
     if training_args.do_train and training_args.should_load_dataset:
         train_dataset = create_dataset(
             task_group=data_args.train_dataset_path,

@@ -287,10 +287,10 @@ class LlmMetaConfig:
         ("use_fused_head_loss_fn", bool, False, "Whether to use fused head and loss function."),
         ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
         (
-            "loss_subbatch_seqlen",
+            "loss_subbatch_sequence_length",
             int,
             -1,
-            "Sequence length larger than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch).",
+            "Sequence length larger than loss_subbatch_sequence_length will be divided into multiple subbatches during loss computation (-1 means disable subbatch).",
         ),
     ]
 

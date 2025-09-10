@@ -37,7 +37,7 @@ class TestCriterionLayer(unittest.TestCase):
 
     def test_forward_non_fuse_subbatch_sft(self):
         config = copy.deepcopy(self.config)
-        config.loss_subbatch_seqlen = 2
+        config.loss_subbatch_sequence_length = 2
         config.use_fused_head_and_loss_fn = False
         layer = CriterionLayer(config=config)
         layer(self.logits, self.labels)

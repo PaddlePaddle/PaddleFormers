@@ -770,6 +770,9 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         Returns:
             Union[tuple, CausalLMOutputWithCrossAttentions]: Model outputs.
         """
+        if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
+            attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
+
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
