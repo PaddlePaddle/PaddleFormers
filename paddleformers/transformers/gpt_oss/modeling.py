@@ -443,7 +443,7 @@ class GptOssAttention(nn.Layer):
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         batch_size: Optional[int] = None,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         """Compute attention outputs.
@@ -478,7 +478,7 @@ class GptOssAttention(nn.Layer):
         value_states = value_states.reshape(target_key_value_shape)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-        cos, sin = position_embedding
+        cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
         if past_key_value is not None:
             key_states = paddle.concat([past_key_value[0], key_states], axis=1)
@@ -546,7 +546,7 @@ class GptOssDecoderLayer(nn.Layer):
         output_router_logits: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
@@ -576,7 +576,7 @@ class GptOssDecoderLayer(nn.Layer):
             position_ids=position_ids,
             output_attentions=output_attentions,
             use_cache=use_cache,
-            position_embedding=position_embedding,
+            position_embeddings=position_embeddings,
         )
         hidden_states = residual + hidden_states
 
@@ -712,7 +712,7 @@ class GptOssModel(GptOssPreTrainedModel):
         output_router_logits: bool,
         past_key_value: Tensor,
         use_cache: bool,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
     ):
         def create_custom_forward(module):
@@ -730,7 +730,7 @@ class GptOssModel(GptOssPreTrainedModel):
             # output_router_logits,
             past_key_value,
             use_cache,
-            position_embedding,
+            position_embeddings,
             attn_mask_startend_row_indices,
             # use_reentrant=self.config.recompute_use_reentrant,
         )
@@ -832,7 +832,7 @@ class GptOssModel(GptOssPreTrainedModel):
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
 
         hidden_states = inputs_embeds
-        position_embedding = self.rotary_emb(hidden_states, position_ids)
+        position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -857,7 +857,7 @@ class GptOssModel(GptOssPreTrainedModel):
                     output_router_logits=output_router_logits,
                     past_key_value=past_key_value,
                     use_cache=use_cache,
-                    position_embedding=position_embedding,
+                    position_embeddings=position_embeddings,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -869,7 +869,7 @@ class GptOssModel(GptOssPreTrainedModel):
                     output_router_logits=output_router_logits,
                     past_key_value=past_key_value,
                     use_cache=use_cache,
-                    position_embedding=position_embedding,
+                    position_embeddings=position_embeddings,
                 )
 
             # # NOTE: clear outdate cache after it has been used for memory saving
