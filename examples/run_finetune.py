@@ -137,7 +137,6 @@ def main():
         dtype=dtype,
         download_hub=model_args.download_hub,
     )
-    model_config._attn_implementation = model_args.attn_impl
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
         any(architecture in str(model_config.architectures) for architecture in architectures_to_check)
@@ -165,10 +164,11 @@ def main():
         model_config.fuse_attention_qkv = model_args.fuse_attention_qkv
     if model_args.fuse_attention_ffn is not None:
         model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
-    model_config.pp_seg_method = training_args.pp_seg_method
+    model_config.pp_seg_method = model_args.pp_seg_method
     model_config.seq_length = training_args.max_seq_len
     model_config.max_sequence_length = training_args.max_seq_len
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
+    model_config._attn_implementation = model_args.attn_impl
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
