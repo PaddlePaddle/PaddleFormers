@@ -137,7 +137,7 @@ def main():
         dtype=dtype,
         download_hub=model_args.download_hub,
     )
-
+    model_config._attn_implementation = model_args.attn_impl
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
         any(architecture in str(model_config.architectures) for architecture in architectures_to_check)

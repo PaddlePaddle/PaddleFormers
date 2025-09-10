@@ -27,6 +27,7 @@ def eager_attention_forward(
     value: paddle.Tensor,
     attention_mask: Optional[paddle.Tensor] = None,
     dropout: float = 0.0,
+    sink: Optional[paddle.Tensor] = None,
     scaling: Optional[float] = None,
     is_causal: Optional[bool] = None,
     **kwargs,
@@ -46,7 +47,7 @@ def eager_attention_forward(
         causal_mask = attention_mask[:, :, :, : key.shape[-2]]
         attn_weights = attn_weights + causal_mask
 
-    if hasattr(module, "sinks"):
+    if sink is not None:
         sinks = module.sinks.reshape([1, -1, 1, 1]).expand([query.shape[0], -1, query.shape[-2], -1])
         combined_logits = paddle.concat([attn_weights, sinks], axis=-1)
         probs = nn.functional.softmax(combined_logits, axis=-1, dtype=combined_logits.dtype)

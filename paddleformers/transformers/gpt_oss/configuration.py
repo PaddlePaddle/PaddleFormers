@@ -88,7 +88,6 @@ class GptOssConfig(PretrainedConfig):
 
         self.attention_bias = True
         self.max_position_embeddings = max_position_embeddings
-        self._attn_implementation = attn_impl
         self.router_aux_loss_coef = router_aux_loss_coef
         self.output_router_logits = output_router_logits
         self.use_cache = use_cache
