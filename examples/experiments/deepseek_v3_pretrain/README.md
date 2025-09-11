@@ -52,7 +52,6 @@ wget https://bj.bcebos.com/paddlenlp/models/transformers/llama/data/llama_openwe
 wget https://bj.bcebos.com/paddlenlp/models/transformers/llama/data/llama_openwebtext_100k.idx
 ```
 
-
 单机8卡训练:
 
 ```shell
