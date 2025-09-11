@@ -49,8 +49,7 @@ export FLAGS_samll_pool_pre_alloc_in_mb=500
 python3.10 -m paddle.distributed.launch \
     --log_dir output/paddle_distributed_logs \
     --master <master_ip>:<port> \
-    --nnodes 256 \
+    --nnodes 8 \
     --run_mode=collective \
-    --reorder_pipeline_priority=True \
     ${script:-run_pretrain.py}  \
     $@

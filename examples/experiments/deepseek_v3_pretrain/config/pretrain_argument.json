@@ -49,5 +49,6 @@
     "load_sharded_model": false,
     "use_expert_parallel": true,
     "unified_checkpoint_config": "skip_save_model_weight",
-    "offload_optim": true
+    "offload_optim": true,
+    "reorder_pipeline_priority": true
   }
