@@ -46,7 +46,7 @@ def flashmask_attention_forward(
             causal=True,
         )
     else:
-        out = sink_attention_forward(
+        out, _ = sink_attention_forward(
             query,
             key,
             value,

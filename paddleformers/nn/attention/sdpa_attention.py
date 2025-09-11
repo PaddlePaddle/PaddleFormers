@@ -48,7 +48,7 @@ def sdpa_attention_forward(
             query, key, value, attention_mask, dropout, is_causal=is_causal, training=module.training
         )
     else:
-        attn_output = sink_attention_forward(
+        attn_output, _ = sink_attention_forward(
             query,
             key,
             value,
