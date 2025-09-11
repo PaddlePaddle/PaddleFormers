@@ -20,9 +20,6 @@ unset DISTRIBUTED_TRAINER_ENDPOINTS
 unset FLAGS_START_PORT
 unset PADDLE_ELASTIC_TIMEOUT
 
-nnodes=$PADDLE_TRAINERS_NUM
-rank=$PADDLE_TRAINER_ID
-
 for name in `env | grep -E 'PADDLE|ENDPOINT' | awk -F'=' '{print $1}'`; do
   unset ${name}
 done
@@ -39,16 +36,9 @@ export NVSHMEM_BOOTSTRAP=UID
 unset NVSHMEM_HCA_LIST 
 unset NVSHMEM_ENABLE_NIC_PE_MAPPING
 
-LAUNCH_CMD=`python script/selective_launch.py 36677`
-if [[ -z "$LAUNCH_CMD" ]]; then
-    exit 0
-fi
-
 export PYTHONPATH=../../../:$PYTHONPATH
-# export PYTHONPATH=../../PaddleFormers/:$PYTHONPATH
 
 export CUDA_PATH=/usr/local/cuda-12.9
-
 
 # Flags for allocator
 export FLAGS_large_pool_auto_growth_chunk_size_in_mb=500
@@ -56,12 +46,11 @@ export FLAGS_small_pool_auto_growth_chunk_size_in_mb=20
 export FLAGS_small_pool_size_in_mb=10
 export FLAGS_samll_pool_pre_alloc_in_mb=500
 
-bash script/kill_process.sh 
-
-source /root/paddlejob/workspace/env_run/chenxi/chenxi_py3.10/bin/activate
 python3.10 -m paddle.distributed.launch \
     --log_dir output/paddle_distributed_logs \
-    $LAUNCH_CMD \
+    --master <master_ip>:<port> \
+    --nnodes 256 \
     --run_mode=collective \
+    --reorder_pipeline_priority=True \
     ${script:-run_pretrain.py}  \
     $@
