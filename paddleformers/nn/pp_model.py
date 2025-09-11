@@ -210,7 +210,7 @@ class RotaryEmbedding(nn.Layer):
 
 
 class EmbeddingPipe(nn.Layer):
-    def __init__(self, config):
+    def __init__(self, config, embed_cls=None, rotary_emb_cls=None):
         """
         Initializes the embedding layer with model configuration.
         Args:
@@ -219,8 +219,14 @@ class EmbeddingPipe(nn.Layer):
         super(EmbeddingPipe, self).__init__()
         self.sequence_parallel = config.sequence_parallel
         self.config = config
-        self.embed_tokens = Embedding.create(config)
-        self.rotary_emb = RotaryEmbedding(config)
+        if rotary_emb_cls is None:
+            self.rotary_emb = RotaryEmbedding(config)
+        else:
+            self.rotary_emb = rotary_emb_cls(config)
+        if embed_cls is None:
+            self.embed_tokens = Embedding.create(config)
+        else:
+            self.embed_tokens = embed_cls(config)
 
     @property
     def embedding_weight(self):
@@ -499,6 +505,8 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     _tied_weights_keys = ["lm_head.weight"]
     config_class = PretrainedConfig
     transpose_weight_keys = None
+    _embed_cls = None
+    _rotary_emb_cls = None
 
     def __init__(self, config: PretrainedConfig, **kwargs):
         # dynamic inherit DecoderLayer
@@ -547,7 +555,12 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 "model",
             )
         else:
-            self.add_sequential_layer(LayerDesc(EmbeddingPipe, config=config), "model")
+            self.add_sequential_layer(
+                LayerDesc(
+                    EmbeddingPipe, config=config, embed_cls=self._embed_cls, rotary_emb_cls=self._rotary_emb_cls
+                ),
+                "model",
+            )
 
         for i in range(config.num_hidden_layers):
             self.add_sequential_layer(

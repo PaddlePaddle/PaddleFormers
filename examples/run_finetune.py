@@ -22,27 +22,13 @@ from paddleformers.datasets.finetuning import collate_fn
 from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import PdArgumentParser, get_last_checkpoint, set_seed
-from paddleformers.transformers import (
+from paddleformers.transformers import (  # DeepseekV2ForCausalLM,; DeepseekV2ForCausalLMPipe,; DeepseekV3ForCausalLM,; DeepseekV3ForCausalLMPipe,; Ernie4_5_MoeForCausalLM,; Ernie4_5_MoeForCausalLMPipe,; Ernie4_5ForCausalLM,; Ernie4_5ForCausalLMPipe,; LlamaForCausalLM,; LlamaForCausalLMPipe,; Qwen2ForCausalLM,; Qwen2ForCausalLMPipe,; Qwen2MoeForCausalLM,; Qwen2MoeForCausalLMPipe,; Glm4MoeForCausalLM,; Glm4MoeForCausalLMPipe,
     AutoConfig,
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
     AutoTokenizer,
-    DeepseekV2ForCausalLM,
-    DeepseekV2ForCausalLMPipe,
-    DeepseekV3ForCausalLM,
-    DeepseekV3ForCausalLMPipe,
-    Ernie4_5_MoeForCausalLM,
-    Ernie4_5_MoeForCausalLMPipe,
-    Ernie4_5ForCausalLM,
-    Ernie4_5ForCausalLMPipe,
     Llama3Tokenizer,
-    LlamaForCausalLM,
-    LlamaForCausalLMPipe,
     LlamaTokenizer,
-    Qwen2ForCausalLM,
-    Qwen2ForCausalLMPipe,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeForCausalLMPipe,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DataConfig, ModelConfig, SFTConfig, SFTTrainer
@@ -53,20 +39,20 @@ from paddleformers.utils.log import logger
 os.environ["USE_CASUAL_MASK"] = "False"
 
 flash_mask_support_list = [
-    DeepseekV2ForCausalLM,
-    DeepseekV2ForCausalLMPipe,
-    DeepseekV3ForCausalLM,
-    DeepseekV3ForCausalLMPipe,
-    Ernie4_5ForCausalLM,
-    Ernie4_5ForCausalLMPipe,
-    Ernie4_5_MoeForCausalLM,
-    Ernie4_5_MoeForCausalLMPipe,
-    LlamaForCausalLM,
-    LlamaForCausalLMPipe,
-    Qwen2ForCausalLM,
-    Qwen2ForCausalLMPipe,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeForCausalLMPipe,
+    # DeepseekV2ForCausalLM,
+    # DeepseekV2ForCausalLMPipe,
+    # DeepseekV3ForCausalLM,
+    # DeepseekV3ForCausalLMPipe,
+    # Ernie4_5ForCausalLM,
+    # Ernie4_5ForCausalLMPipe,
+    # Ernie4_5_MoeForCausalLM,
+    # Ernie4_5_MoeForCausalLMPipe,
+    # LlamaForCausalLM,
+    # LlamaForCausalLMPipe,
+    # Qwen2ForCausalLM,
+    # Qwen2ForCausalLMPipe,
+    # Qwen2MoeForCausalLM,
+    # Qwen2MoeForCausalLMPipe,
 ]
 
 
