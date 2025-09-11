@@ -45,13 +45,30 @@ from paddleformers.transformers import (
     LlamaForCausalLMPipe,
     Qwen2ForCausalLM,
     Qwen2ForCausalLMPipe,
+    Qwen2MoeForCausalLM,
+    Qwen2MoeForCausalLMPipe,
+    Qwen3ForCausalLM,
+    Qwen3ForCausalLMPipe,
+    Qwen3MoeForCausalLM,
+    Qwen3MoeForCausalLMPipe,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DPOTrainer
 from paddleformers.trl.llm_utils import get_lora_target_modules
 from paddleformers.utils.log import logger
 
-flash_mask_support_list = [Qwen2ForCausalLM, Qwen2ForCausalLMPipe, LlamaForCausalLM, LlamaForCausalLMPipe]
+flash_mask_support_list = [
+    LlamaForCausalLM,
+    LlamaForCausalLMPipe,
+    Qwen2ForCausalLM,
+    Qwen2ForCausalLMPipe,
+    Qwen2MoeForCausalLM,
+    Qwen2MoeForCausalLMPipe,
+    Qwen3ForCausalLM,
+    Qwen3ForCausalLMPipe,
+    Qwen3MoeForCausalLM,
+    Qwen3MoeForCausalLMPipe,
+]
 
 
 def main():
@@ -123,7 +140,6 @@ def main():
     model_config = AutoConfig.from_pretrained(
         model_args.model_name_or_path,
         dtype=dtype,
-        download_hub=model_args.download_hub,
     )
     model_config._attn_implementation = model_args.attn_impl
 
@@ -133,7 +149,6 @@ def main():
         ref_model_config = AutoConfig.from_pretrained(
             model_args.model_name_or_path,
             dtype=dtype,
-            download_hub=model_args.download_hub,
         )
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
 
@@ -148,7 +163,6 @@ def main():
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
             config=model_config,
-            download_hub=model_args.download_hub,
             convert_from_hf=training_args.convert_from_hf,
         )
         # for DPO save
@@ -170,11 +184,9 @@ def main():
         raise NotImplementedError(f"{model.__class__} not support flash mask.")
 
     if model_args.tokenizer_name_or_path is not None:
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_args.tokenizer_name_or_path, download_hub=model_args.download_hub
-        )
+        tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
     else:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, download_hub=model_args.download_hub)
+        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
 
     logger.info("Loading model & tokenizer successfully !")
 

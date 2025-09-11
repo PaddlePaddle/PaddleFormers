@@ -653,11 +653,26 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     "position_ids",
                     "nbatch_pack_offset",
                 ]
+            # (NOTE) attn_mask_start_row_indices is special for erniekit
+            elif "attn_mask_start_row_indices" in inputs:
+                first_stage_keys = [
+                    "input_ids",
+                    "attn_mask_start_row_indices",
+                    "position_ids",
+                    "nbatch_pack_offset",
+                ]
         else:  # inputs is list
             if "attention_mask" in inputs[0]:
                 first_stage_keys = [
                     "input_ids",
                     "attention_mask",
+                    "position_ids",
+                    "nbatch_pack_offset",
+                ]
+            elif "attn_mask_start_row_indices" in inputs[0]:
+                first_stage_keys = [
+                    "input_ids",
+                    "attn_mask_start_row_indices",
                     "position_ids",
                     "nbatch_pack_offset",
                 ]
