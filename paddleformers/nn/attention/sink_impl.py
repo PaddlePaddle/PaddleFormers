@@ -15,7 +15,6 @@
 from typing import Optional
 
 import paddle
-import paddle.nn as nn
 from paddle.autograd.py_layer import PyLayer
 
 from .utils import repeat_kv
@@ -374,7 +373,7 @@ class FlashMaskSinkPyLayer(PyLayer):
         ctx.name = name
         ctx.num_key_value_groups = num_key_value_groups
 
-        return final_out, None  # attn_weight
+        return final_out
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -521,17 +520,15 @@ class FlashMaskSinkPyLayer(PyLayer):
 
 
 def sink_attention_forward(
-    module: nn.Layer,
-    query: paddle.Tensor,
-    key: paddle.Tensor,
-    value: paddle.Tensor,
+    q,
+    k,
+    v,
+    sink: paddle.Tensor,
     attention_mask: Optional[paddle.Tensor] = None,
-    attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-    dropout: float = 0.0,
-    sink: Optional[paddle.Tensor] = None,
-    scaling: Optional[float] = None,
-    is_causal: Optional[bool] = False,
-    **kwargs,
+    startend_row_indices: Optional[paddle.Tensor] = None,
+    dropout_p=0.0,
+    softmax_scale=None,
+    causal=False,
 ):
     """
     A unified, high-performance attention implementation with Sink mechanism support.
@@ -549,17 +546,16 @@ def sink_attention_forward(
     is smaller than the number of query heads.
 
     Args:
-        module: model
-        query: Query tensor with shape [batch_size, seq_len, num_q_heads, head_dim]
-        key: Key tensor with shape [batch_size, seq_len, num_kv_heads, head_dim]
-        value: Value tensor with shape [batch_size, seq_len, num_kv_heads, head_dim]
+        q: Query tensor with shape [batch_size, seq_len, num_q_heads, head_dim]
+        k: Key tensor with shape [batch_size, seq_len, num_kv_heads, head_dim]
+        v: Value tensor with shape [batch_size, seq_len, num_kv_heads, head_dim]
+        sink: Sink parameter tensor with shape [num_q_heads]
         attention_mask: Dense mask, only supported for FA2
         startend_row_indices: Optional tensor for FlashMask attention to handle variable length sequences
-        sink: Sink parameter tensor with shape [num_q_heads]
-        dropout: Dropout probability (default: 0.0)
-        scaling: Custom softmax scaling factor (default: 1/sqrt(head_dim))
+        dropout_p: Dropout probability (default: 0.0)
+        softmax_scale: Custom softmax scaling factor (default: 1/sqrt(head_dim))
                       Note: Only FlashMask v1 doesn't support custom softmax_scale
-        is_causal: Whether to apply causal masking (default: False)
+        causal: Whether to apply causal masking (default: False)
 
     Returns:
         Attention output tensor with shape [batch_size, seq_len, num_q_heads, head_dim]
@@ -577,14 +573,14 @@ def sink_attention_forward(
         ValueError: If unsupported FlashAttention version is detected
     """
     return FlashMaskSinkPyLayer.apply(
-        query,
-        key,
-        value,
+        q,
+        k,
+        v,
         sink,
-        startend_row_indices=attn_mask_startend_row_indices,
+        startend_row_indices,
         attention_mask=attention_mask,
-        dropout=dropout,
-        causal=is_causal,
+        dropout=dropout_p,
+        causal=causal,
         return_softmax=False,
-        softmax_scale=scaling,
+        softmax_scale=softmax_scale,
     )

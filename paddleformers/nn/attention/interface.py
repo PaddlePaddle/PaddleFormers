@@ -15,7 +15,6 @@ from ..general import GeneralInterface
 from .eager_attention import eager_attention_forward
 from .flashmask_attention import flashmask_attention_forward
 from .sdpa_attention import sdpa_attention_forward
-from .sink_impl import sink_attention_forward
 
 __all__ = ["AttentionInterface"]
 
@@ -25,7 +24,6 @@ class AttentionInterface(GeneralInterface):
         "eager": eager_attention_forward,
         "sdpa": sdpa_attention_forward,
         "flashmask": flashmask_attention_forward,
-        "sink": sink_attention_forward,
     }
 
 

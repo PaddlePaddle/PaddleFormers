@@ -46,16 +46,15 @@ def flashmask_attention_forward(
             causal=True,
         )
     else:
-        out, _ = sink_attention_forward(
-            module,
+        out = sink_attention_forward(
             query,
             key,
             value,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            dropout=dropout,
-            sink=sink,
-            scaling=scaling,
-            is_causal=is_causal,
+            sink,
+            startend_row_indices=attn_mask_startend_row_indices,
+            dropout_p=dropout,
+            softmax_scale=scaling,
+            causal=is_causal,
         )
     out = paddle.reshape(x=out, shape=[0, 0, out.shape[2] * out.shape[3]])
 
