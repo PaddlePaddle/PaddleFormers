@@ -36,7 +36,8 @@ test: unit-test
 
 unit-test:
 	DOWNLOAD_SOURCE=aistudio \
-	PYTHONPATH=$(shell pwd) pytest -v \
+	WAIT_UNTIL_DONE=True \
+	PYTHONPATH=$(shell pwd) pytest -v -n auto \
 		--retries 1 --retry-delay 1 \
 		--durations 20 \
 		--cov=./paddleformers \
@@ -50,6 +51,7 @@ install:
 	pip install -r requirements-dev.txt
 	pip install -r requirements.txt
 	pre-commit install
+	pip list | grep aistudio
 
 
 .PHONY: deploy-ppdiffusers
