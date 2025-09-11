@@ -47,5 +47,6 @@
     "pissa": false,
     "use_quick_lora": false,
     "lora_use_mixer": false,
-    "use_mora": false
+    "use_mora": false,
+    "pp_seg_method": "layer:DecoderLayer|EmptyLayer"
   }

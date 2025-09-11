@@ -1191,6 +1191,7 @@ class GptOssForCausalLMPipe(GeneralModelForCausalLMPipe):
     _decoder_layer_cls = GptOssDecoderLayer
     _get_tensor_parallel_mappings = GptOssModel._get_tensor_parallel_mappings
     _init_weights = GptOssModel._init_weights
+    _rotary_emb_cls = GptOssRotaryEmbedding
     _keep_in_fp32_modules = GptOssModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = GptOssModel.transpose_weight_keys
