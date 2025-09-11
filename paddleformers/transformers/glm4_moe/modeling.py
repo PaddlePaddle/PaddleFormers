@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from copy import deepcopy
 from functools import partial
 from typing import List, Optional, Tuple, Union
 
@@ -198,7 +197,7 @@ class Glm4MoeAttention(nn.Layer):
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         batch_size: Optional[int] = None,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         query_states = self.q_proj(hidden_states)
@@ -219,7 +218,7 @@ class Glm4MoeAttention(nn.Layer):
             query_states = self.q_norm(query_states)
             key_states = self.k_norm(key_states)
 
-        cos, sin = position_embedding
+        cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         if past_key_value is not None:
@@ -310,9 +309,9 @@ class Glm4MoeMoE(nn.Layer):
     """
 
     def __init__(self, config):
-        if getattr(config, "disable_ffn_model_parallel", False):
-            config = deepcopy(config)
-            config.tensor_parallel_degree = 1
+        # if getattr(config, "disable_ffn_model_parallel", False):
+        #     config = deepcopy(config)
+        #     config.tensor_parallel_degree = 1
         super().__init__()
         self.config = config
         self.experts = nn.LayerList(
@@ -366,6 +365,7 @@ class Glm4MoeMoE(nn.Layer):
 class Glm4MoeDecoderLayer(nn.Layer):
     def __init__(self, config: Glm4MoeConfig, layer_idx: int):
         super().__init__()
+        self.config = config
         self.hidden_size = config.hidden_size
 
         self.self_attn = Glm4MoeAttention(config=config, layer_idx=layer_idx)
@@ -389,8 +389,8 @@ class Glm4MoeDecoderLayer(nn.Layer):
         )
         if config.sequence_parallel:
             self.post_attention_layernorm.enable_sequence_parallel()
-            if not hasattr(config, "disable_ffn_model_parallel"):
-                self.input_layernorm.enable_sequence_parallel()
+            # if not hasattr(config, "disable_ffn_model_parallel"):
+            #     self.input_layernorm.enable_sequence_parallel()
 
     def forward(
         self,
@@ -400,7 +400,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         output_attentions: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> paddle.Tensor:
@@ -415,7 +415,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
             position_ids=position_ids,
             output_attentions=output_attentions,
             use_cache=use_cache,
-            position_embedding=position_embedding,
+            position_embeddings=position_embeddings,
         )
         hidden_states = residual + hidden_states
 
@@ -478,7 +478,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         def make_base_actions():
             actions = {
                 "lm_head.weight": partial(fn, is_column=not config.tie_word_embeddings),
-                "embed_tokens.weight": partial(fn, is_column=False),
+                "model.embed_tokens.weight": partial(fn, is_column=False),
             }
             for layer_idx in range(config.num_hidden_layers):
                 actions.update(
@@ -494,7 +494,8 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     }
                 )
                 # if disable_ffn_model_parallel is True, disable expert layer tp plan
-                if not config.disable_ffn_model_parallel:
+                # if not config.disable_ffn_model_parallel:
+                if True:
                     actions.update(
                         {
                             f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
@@ -603,7 +604,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         self.recompute_granularity = config.recompute_granularity
         self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
 
-        print("config: ", config)
         self.embed_tokens = GeneralEmbedding.create(
             config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
         )
@@ -632,7 +632,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         output_attentions: bool,
         past_key_value: Tensor,
         use_cache: bool,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
     ):
         def create_custom_forward(module):
@@ -649,7 +649,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             output_attentions,
             past_key_value,
             use_cache,
-            position_embedding,
+            position_embeddings,
             attn_mask_startend_row_indices,
         )
 
@@ -727,7 +727,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
 
         hidden_states = inputs_embeds
-        position_embedding = self.rotary_emb(hidden_states, position_ids)
+        position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -750,7 +750,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
                     output_attentions=output_attentions,
                     past_key_value=past_key_value,
                     use_cache=use_cache,
-                    position_embedding=position_embedding,
+                    position_embeddings=position_embeddings,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -761,7 +761,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
                     output_attentions=output_attentions,
                     past_key_value=past_key_value,
                     use_cache=use_cache,
-                    position_embedding=position_embedding,
+                    position_embeddings=position_embeddings,
                 )
 
             # # NOTE: clear outdate cache after it has been used for memory saving
@@ -954,6 +954,9 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Glm4MoeModel.transpose_weight_keys
     _rotary_emb_cls = Glm4MoeRotaryEmbedding
+
+    # def __init__(self, config):
+    #     super().__init__(config, )
 
 
 __all__ = ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"]
