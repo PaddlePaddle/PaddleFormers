@@ -1092,9 +1092,9 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
-    dsv3_fast_pretrain: Optional[bool] = field(
+    reorder_pipeline_priority: Optional[bool] = field(
         default=False,
-        metadata={"help": "Use fast pretrain version of DeepSeekV3."},
+        metadata={"help": "Controls the parallel execution order. False (pp first), True (sharding first)."},
     )
 
     def __post_init__(self):
@@ -1413,7 +1413,7 @@ class TrainingArguments:
                     else:
                         order = ["dp", "sharding", "pp", "mp"]
                 if self.use_expert_parallel:
-                    if not self.dsv3_fast_pretrain:
+                    if not self.reorder_pipeline_priority:
                         if self.moe_sharding_parallel_degree >= 1 and self.expert_parallel_degree > 1:
                             order.insert(-1, "ep")
                             sd_idx = order.index("sharding")
@@ -1575,7 +1575,7 @@ class TrainingArguments:
                 fleet.init(is_collective=True, strategy=strategy)
                 logger.info(strategy)
 
-                if self.dsv3_fast_pretrain:
+                if self.reorder_pipeline_priority:
                     if self.expert_parallel_degree > 1:
                         self.add_moe_comm_group()
 

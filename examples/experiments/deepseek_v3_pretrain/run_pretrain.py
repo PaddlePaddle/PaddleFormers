@@ -21,15 +21,15 @@ from typing import Optional
 
 import paddle
 from config.configuration import DeepseekV2FastConfig
-from data.causal_dataset import (
-    build_train_valid_test_datasets,
-    check_data_split,
-    print_rank_0,
-)
 from load_hf_ckpt import load_huggingface_ckpt
 from modeling_pp import DeepseekV2ForCausalLMPipe
 from moe_utils import get_env_device
 
+from paddleformers.data.causal_dataset import (
+    build_train_valid_test_datasets,
+    check_data_split,
+    print_rank_0,
+)
 from paddleformers.trainer import (
     FP8QuantWeightCallback,
     PdArgumentParser,

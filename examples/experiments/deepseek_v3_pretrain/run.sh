@@ -19,5 +19,5 @@
 
 # mpirun sh script/kill_process.sh 
 # mpirun rm -rf output
-nohup bash script/train_gpu.sh ./config/pretrain_argument.json --dsv3_fast_pretrain=True > run.log 2>&1 &
+nohup bash script/train_gpu.sh ./config/pretrain_argument.json --reorder_pipeline_priority=True > run.log 2>&1 &
 
