@@ -224,7 +224,7 @@ class EmbeddingPipe(nn.Layer):
         else:
             self.rotary_emb = rotary_emb_cls(config)
         if embed_cls is None:
-            self.embed_tokens = Embedding(config)
+            self.embed_tokens = Embedding.create(config)
         else:
             self.embed_tokens = embed_cls(config)
 
