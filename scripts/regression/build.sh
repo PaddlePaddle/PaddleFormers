@@ -65,12 +65,12 @@ paddleformers_build (){
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
 
     cp $formers_dir/dist/p****.whl ${upload_path}/
-    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-latest-py3-none-any.whl
+    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-0.0.0-py3-none-any.whl
 }
 
 install_paddleformers(){
     echo "install_formers_develop"
-    python -m pip install --user https://paddleformers.bj.bcebos.com/wheels/paddleformers-latest-py3-none-any.whl --no-cache-dir
+    python -m pip install --user https://paddleformers.bj.bcebos.com/wheels/paddleformers-0.0.0-py3-none-any.whl --no-cache-dir
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
 }
 

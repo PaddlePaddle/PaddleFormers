@@ -18,13 +18,6 @@ from typing import TYPE_CHECKING
 from ..utils.lazy_import import _LazyModule
 
 import_structure = {
-    "zero_padding_dataset": [
-        "block_diag",
-        "generate_greedy_packs",
-        "ZeroPadding",
-        "ZeroPaddingMapDataset",
-        "ZeroPaddingIterableDataset",
-    ],
     "dataset": [
         "load_from_ppnlp",
         "DatasetTuple",
@@ -36,20 +29,10 @@ import_structure = {
         "DatasetBuilder",
         "SimpleBuilder",
     ],
-    "embedding_dataset": [
-        "Example",
-        "Sequence",
-        "Pair",
-        "EmbeddingDatasetMixin",
-        "EmbeddingDataset",
-        "EmbeddingIterableDataset",
-    ],
 }
 
 if TYPE_CHECKING:
     from .dataset import *
-    from .embedding_dataset import *
-    from .zero_padding_dataset import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

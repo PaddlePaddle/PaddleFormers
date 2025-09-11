@@ -131,12 +131,28 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Wget Cov-report
-        run: |
-            wget -q --no-proxy  https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-cpu/${PR_ID}/${COMMIT_ID}/logs/coverage.xml --no-check-certificate
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Upload Cov-report
+      - name: Download coverage.xml
+        run: |
+          wget -q --no-proxy \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-cpu/${PR_ID}/${COMMIT_ID}/logs/coverage.xml \
+            --no-check-certificate -O coverage.xml
+
+      - name: Debug coverage paths
+        run: |
+          echo "=== coverage.xml (first 30 lines) ==="
+          head -n 30 coverage.xml
+          echo "=== Check if source files exist ==="
+          grep -o 'filename="[^"]*"' coverage.xml | head -n 10
+          find paddleformers -type f | head -n 10
+
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-          if-no-files-found: ignore

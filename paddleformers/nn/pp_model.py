@@ -181,7 +181,7 @@ class RotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.head_dim = config.head_dim
+        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.base = config.rope_theta
 
     def forward(self, x, position_ids):
@@ -666,11 +666,26 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     "position_ids",
                     "nbatch_pack_offset",
                 ]
+            # (NOTE) attn_mask_start_row_indices is special for erniekit
+            elif "attn_mask_start_row_indices" in inputs:
+                first_stage_keys = [
+                    "input_ids",
+                    "attn_mask_start_row_indices",
+                    "position_ids",
+                    "nbatch_pack_offset",
+                ]
         else:  # inputs is list
             if "attention_mask" in inputs[0]:
                 first_stage_keys = [
                     "input_ids",
                     "attention_mask",
+                    "position_ids",
+                    "nbatch_pack_offset",
+                ]
+            elif "attn_mask_start_row_indices" in inputs[0]:
+                first_stage_keys = [
+                    "input_ids",
+                    "attn_mask_start_row_indices",
                     "position_ids",
                     "nbatch_pack_offset",
                 ]

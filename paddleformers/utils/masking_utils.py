@@ -31,9 +31,9 @@ def _gen_from_sparse_attn_mask_indices(attn_mask_start_row_indices, dtype):
     Returns:
         paddle.Tensor: The dense attention mask recovered from attn_mask_start_row_indices.
     """
-    batch_size, _, max_seq_len = attn_mask_start_row_indices.shape
+    batch_size, _, max_seq_len, _ = attn_mask_start_row_indices.shape
     base = paddle.arange(max_seq_len, dtype="int32").unsqueeze(1).expand([batch_size, -1, max_seq_len]).unsqueeze(1)
-    mask_indices = attn_mask_start_row_indices.unsqueeze(1)
+    mask_indices = attn_mask_start_row_indices
 
     tril = paddle.tril(
         paddle.ones([max_seq_len, max_seq_len], dtype="bool").expand([batch_size, 1, max_seq_len, max_seq_len])

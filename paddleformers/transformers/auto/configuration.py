@@ -45,6 +45,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3", "Qwen3Config"),
         ("qwen3_moe", "Qwen3MoeConfig"),
         ("glm4_moe", "Glm4MoeConfig"),
+        ("gpt_oss", "GptOssConfig"),
     ]
 )
 
@@ -55,6 +56,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("bert", "Bert"),
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
+        ("ernie4_5", "Ernie4_5"),
+        ("ernie4_5_moe", "Ernie4_5_Moe"),
         ("llama", "Llama"),
         ("qwen", "QWen"),
         ("qwen2", "Qwen2"),

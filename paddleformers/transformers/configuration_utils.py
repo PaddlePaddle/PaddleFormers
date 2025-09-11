@@ -287,10 +287,10 @@ class LlmMetaConfig:
         ("use_fused_head_loss_fn", bool, False, "Whether to use fused head and loss function."),
         ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
         (
-            "loss_subbatch_seqlen",
+            "loss_subbatch_sequence_length",
             int,
             -1,
-            "Sequence length larger than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch).",
+            "Sequence length larger than loss_subbatch_sequence_length will be divided into multiple subbatches during loss computation (-1 means disable subbatch).",
         ),
     ]
 
@@ -507,6 +507,10 @@ class PretrainedConfig:
             If an encoder-decoder model starts decoding with a different token than _bos_, the id of that token.
         sep_token_id (`int`, *optional*): The id of the _separation_ token.
 
+        tie_word_embeddings (`bool`, *optional*, defaults to `True`):
+            Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
+            model has a output word embedding layer.
+
         dtype (`str`, *optional*):
             The `dtype` of the weights. This attribute can be used to initialize the model to a non-default `dtype`
             (which is normally `float32`) and thus allow for optimal storage allocation. For example, if the saved
@@ -569,8 +573,10 @@ class PretrainedConfig:
         self.output_hidden_states = kwargs.pop("output_hidden_states", False)
         self.output_attentions = kwargs.pop("output_attentions", False)
         self.use_cache = kwargs.pop("use_cache", False)
+        self.tie_word_embeddings = kwargs.pop("tie_word_embeddings", True)
 
         # for transformers fuse
+        self.fuse_linear = kwargs.pop("fuse_linear", False)
         self.fuse_attention_qkv = kwargs.pop("fuse_attention_qkv", False)
         self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
 
@@ -623,6 +629,9 @@ class PretrainedConfig:
 
         self.classifier_dropout = kwargs.pop("classifier_dropout", None)
 
+        self.dpo_config = kwargs.pop("dpo_config", None)
+        self.kto_config = kwargs.pop("kto_config", None)
+
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config
         self.tokenizer_class = kwargs.pop("tokenizer_class", None)
         self.prefix = kwargs.pop("prefix", None)
@@ -658,6 +667,8 @@ class PretrainedConfig:
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
             )
+        self._save_to_hf = kwargs.pop("save_to_hf", False)
+        self._unsavable_keys.add("_save_to_hf")
 
         # Additional attributes without default values
         for key, value in kwargs.items():
@@ -749,6 +760,8 @@ class PretrainedConfig:
             raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
 
         os.makedirs(save_directory, exist_ok=True)
+
+        self._save_to_hf = kwargs.pop("save_to_hf", False)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be
         # loaded from the Hub.
@@ -1059,7 +1072,7 @@ class PretrainedConfig:
             del output["_auto_class"]
         if "moe_group" in output:
             del output["moe_group"]
-        if "dtype" in output:
+        if self._save_to_hf and "dtype" in output:
             output["torch_dtype"] = str(output["dtype"])
             del output["dtype"]
 

@@ -26,7 +26,6 @@ import_structure = {
         "compute_metrics",
         "get_prefix_tuning_params",
         "get_lora_target_modules",
-        "ZeroPaddingIterDatasetCallback",
         "pad_batch_data",
         "dybatch_preprocess",
         "load_real_time_tokens",

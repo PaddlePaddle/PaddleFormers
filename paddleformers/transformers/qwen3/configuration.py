@@ -12,9 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Qwen2 model configuration"""
+"""Qwen3 model configuration"""
 
 from ..configuration_utils import PretrainedConfig
+
+__all__ = [
+    "Qwen3Config",
+]
 
 
 class Qwen3Config(PretrainedConfig):
@@ -55,6 +59,8 @@ class Qwen3Config(PretrainedConfig):
             The maximum sequence length that this model might ever be used with.
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
+        use_rmsnorm (`bool`, *optional*, defaults to `True`):
+            Whether to use RMSNorm instead of LayerNorm.
         rms_norm_eps (`float`, *optional*, defaults to 1e-06):
             The epsilon used by the rms normalization layers.
         use_cache (`bool`, *optional*, defaults to `True`):
@@ -103,14 +109,22 @@ class Qwen3Config(PretrainedConfig):
                     Only used with 'llama3'. Scaling factor applied to high frequency components of the RoPE
         attention_bias (`bool`, defaults to `False`, *optional*, defaults to `False`):
             Whether to use a bias in the query, key, value and output projection layers during self-attention.
+        use_swiglu (`bool`, *optional*, defaults to `False`):
+            Whether to use SwiGLU activation function.
         use_sliding_window (`bool`, *optional*, defaults to `False`):
             Whether to use sliding window attention.
         sliding_window (`int`, *optional*, defaults to 4096):
             Sliding window attention (SWA) window size. If not specified, will default to `4096`.
         max_window_layers (`int`, *optional*, defaults to 28):
             The number of layers that use SWA (Sliding Window Attention). The bottom layers use SWA while the top use full attention.
+        ignored_index (`int`, *optional*, defaults to -100):
+            Target value that is ignored during loss computation.
         attention_dropout (`float`, *optional*, defaults to 0.0):
             The dropout ratio for the attention probabilities.
+        attention_bias (`bool`, *optional*, defaults to `True`):
+            Whether to use a bias in the query, key, value and output projection layers during self-attention.
+        pp_seg_method (`str`, *optional*, defaults to `"layer:Qwen3DecoderLayer"`):
+            Method for pipeline parallel segmentation.
 
     ```python
     >>> from transformers import Qwen3Model, Qwen3Config
@@ -140,18 +154,19 @@ class Qwen3Config(PretrainedConfig):
         hidden_act="silu",
         max_position_embeddings=32768,
         initializer_range=0.02,
+        use_rmsnorm=True,
         rms_norm_eps=1e-6,
         use_cache=True,
         tie_word_embeddings=False,
         rope_theta=10000.0,
         rope_scaling=None,
         attention_bias=False,
+        use_swiglu=False,
         use_sliding_window=False,
         sliding_window=4096,
         max_window_layers=28,
         attention_dropout=0.0,
-        dpo_config=None,
-        use_fused_head_and_loss_fn=False,
+        pp_seg_method="layer:Qwen3DecoderLayer",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -172,24 +187,41 @@ class Qwen3Config(PretrainedConfig):
         self.head_dim = head_dim
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
+        self.use_swiglu = use_swiglu
+        self.use_rmsnorm = use_rmsnorm
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
+
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
+
         # Validate the correctness of rotary position embeddings parameters
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
         # rope_config_validation(self)
-        self.dpo_config = dpo_config
-        self.use_fused_head_and_loss_fn = use_fused_head_and_loss_fn
+
+        self.pp_seg_method = pp_seg_method
 
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
 
-
-__all__ = ["Qwen3Config"]
+        self.register_unsavable_keys(
+            [
+                "ignored_index",
+                "pad_token_id",
+                "use_rmsnorm",
+                "use_swiglu",
+                "recompute",
+                "recompute_use_reentrant",
+                "recompute_granularity",
+                "pp_seg_method",
+                "dpo_config",
+                "kto_config",
+                "max_sequence_length",
+            ]
+        )
