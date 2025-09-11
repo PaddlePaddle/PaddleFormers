@@ -51,8 +51,6 @@ class Glm4MoeConfig(PretrainedConfig):
         use_cache (`bool`, *optional*, defaults to `True`):
             Whether or not the model should return the last key/values attentions (not used by all models). Only
             relevant if `config.is_decoder=True`.
-        tie_word_embeddings (`bool`, *optional*, defaults to `False`):
-            Whether the model's input and output word embeddings should be tied.
         rope_theta (`float`, *optional*, defaults to 10000.0):
             The base period of the RoPE embeddings.
         rope_scaling (`Dict`, *optional*):
@@ -117,29 +115,12 @@ class Glm4MoeConfig(PretrainedConfig):
             Whether to normalize the topk probabilities.
         use_qk_norm (`bool`, *optional*, defaults to `False`):
             Whether to use query-key normalization in the attention
+        disable_ffn_model_parallel (`bool`, *optional*, defaults to `False`):
+            Whether to use tp in the moe
     """
 
     model_type = "glm4_moe"
     keys_to_ignore_at_inference = ["past_key_values"]
-
-    # Default tensor parallel plan for base model `Glm4Moe`
-    base_model_tp_plan = {
-        "layers.*.self_attn.q_proj": "colwise",
-        "layers.*.self_attn.k_proj": "colwise",
-        "layers.*.self_attn.v_proj": "colwise",
-        "layers.*.self_attn.o_proj": "rowwise",
-        "layers.*.mlp.experts.*.gate_proj": "colwise",
-        "layers.*.mlp.experts.*.up_proj": "colwise",
-        "layers.*.mlp.experts.*.down_proj": "rowwise",
-        "layers.*.mlp.gate_proj": "colwise",
-        "layers.*.mlp.up_proj": "colwise",
-        "layers.*.mlp.down_proj": "rowwise",
-    }
-    base_model_pp_plan = {
-        "embed_tokens": (["input_ids"], ["inputs_embeds"]),
-        "layers": (["hidden_states", "attention_mask"], ["hidden_states"]),
-        "norm": (["hidden_states"], ["hidden_states"]),
-    }
 
     def __init__(
         self,
@@ -152,10 +133,11 @@ class Glm4MoeConfig(PretrainedConfig):
         num_key_value_heads=8,
         hidden_act="silu",
         max_position_embeddings=131072,
+        attn_impl="eager",
+        use_rmsnorm=True,
         initializer_range=0.02,
         rms_norm_eps=1e-5,
         use_cache=True,
-        tie_word_embeddings=False,
         rope_theta=10000.0,
         rope_scaling=None,
         attention_bias=False,
@@ -170,10 +152,14 @@ class Glm4MoeConfig(PretrainedConfig):
         first_k_dense_replace=1,
         norm_topk_prob=True,
         use_qk_norm=False,
+        pp_seg_method="layer:Glm4MoeDecoderLayer",
+        disable_ffn_model_parallel=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
+        self.attn_impl = attn_impl
+        self.use_rmsnorm = use_rmsnorm
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
@@ -205,10 +191,11 @@ class Glm4MoeConfig(PretrainedConfig):
         self.first_k_dense_replace = first_k_dense_replace
         self.norm_topk_prob = norm_topk_prob
         self.use_qk_norm = use_qk_norm
-        self.fuse_linear = False
+
+        self.pp_seg_method = pp_seg_method
+        self.disable_ffn_model_parallel = disable_ffn_model_parallel
 
         super().__init__(
-            tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
 
