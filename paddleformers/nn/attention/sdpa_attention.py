@@ -49,15 +49,16 @@ def sdpa_attention_forward(
         )
     else:
         attn_output, _ = sink_attention_forward(
+            module,
             query,
             key,
             value,
-            sink,
             attention_mask=attention_mask,
-            startend_row_indices=None,
-            dropout_p=dropout,
-            softmax_scale=scaling,
-            causal=is_causal,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            dropout=dropout,
+            sink=sink,
+            scaling=scaling,
+            is_causal=is_causal,
         )
     attn_output = paddle.reshape(x=attn_output, shape=[0, 0, attn_output.shape[2] * attn_output.shape[3]])
     return attn_output, None
