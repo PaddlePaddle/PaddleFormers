@@ -26,6 +26,8 @@ from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
     IntervalStrategy,
+    MoECorrectionBiasAdjustCallback,
+    MoeExpertsGradScaleCallback,
     PdArgumentParser,
     get_last_checkpoint,
     set_seed,
@@ -310,6 +312,14 @@ def main():
         training_args.logging_strategy = IntervalStrategy.STEPS
         training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
 
+    callbacks = []
+    if getattr(model_config, "topk_method", None) == "noaux_tc":
+        callbacks += [MoECorrectionBiasAdjustCallback(lr=0)]
+
+    if training_args.use_expert_parallel:
+        callbacks += [MoeExpertsGradScaleCallback(training_args)]
+
+    print("callbacks:", callbacks, flush=True)
     trainer = SFTTrainer(
         model=model,
         args=training_args,

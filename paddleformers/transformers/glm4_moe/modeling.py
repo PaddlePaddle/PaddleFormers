@@ -17,7 +17,9 @@ from functools import partial
 from typing import List, Optional, Tuple, Union
 
 import paddle
+import paddle.distributed as dist
 from paddle import Tensor, nn
+from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 from paddle.nn import functional as F
@@ -32,9 +34,12 @@ from ...nn.mlp import MLP as Glm4MoeMLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
+from ..deepseek_v2 import DeepseekV2MLP
 from ..llama.modeling import get_use_casual_mask
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
+from ..moe_gate import PretrainedMoEGate
+from ..moe_layer import MoEFlexTokenLayer
 from .configuration import Glm4MoeConfig
 
 
@@ -251,6 +256,40 @@ class Glm4MoeAttention(nn.Layer):
         return attn_output, attn_weights, past_key_value
 
 
+class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
+    def __init__(self, config, num_experts, expert_hidden_size, **kwargs):
+        super().__init__(config, num_experts, expert_hidden_size, **kwargs)
+        self.config = config
+
+        self.weight = paddle.create_parameter(
+            shape=[num_experts, expert_hidden_size],
+            dtype="bfloat16",
+            default_initializer=paddle.nn.initializer.Uniform(),
+        )
+
+        self.register_buffer("e_score_correction_bias", paddle.zeros((num_experts,), dtype=paddle.float32))
+
+    def forward(self, hidden_states):
+        """
+        Args:
+            hidden_states (_type_): [batch_size * seq_len, hidden_size]
+        """
+
+        _, _, h_dim = hidden_states.shape
+
+        # compute gating score
+        with paddle.amp.auto_cast(False):
+            hidden_states = hidden_states.cast(self.weight.dtype)
+
+            logits = F.linear(hidden_states.cast("float32"), self.weight.cast("float32").t())
+
+            scores = self.gate_score_func(logits=logits)
+            scores = scores.cast(paddle.float32)
+
+        scores, routing_map, exp_counts, l_aux, l_zloss = self.topkgating_nodrop(scores)
+        return scores, routing_map, l_aux, l_zloss
+
+
 class Glm4MoeTopkRouter(nn.Layer):
     def __init__(self, config: Glm4MoeConfig):
         super().__init__()
@@ -362,6 +401,58 @@ class Glm4MoeMoE(nn.Layer):
         return hidden_states
 
 
+class Glm4MoeFlexMoE(MoEFlexTokenLayer):
+    """
+    A mixed expert module containing shared experts for expert_parallel_degree > 1 with deepep mode
+    """
+
+    def __init__(self, config):
+        self.config = config
+        gate = Glm4MoeTopkFlexRouter(
+            config=config,
+            num_experts=config.n_routed_experts,
+            expert_hidden_size=config.hidden_size,
+            top_k=config.num_experts_per_tok,
+            topk_method="noaux_tc",
+            n_group=config.n_group,
+            topk_group=config.topk_group,
+            norm_topk_prob=config.norm_topk_prob,
+            routed_scaling_factor=config.routed_scaling_factor,
+            drop_tokens=False,
+        )
+
+        hcg = fleet.get_hybrid_communicate_group()
+        moe_grad_group = None
+        try:
+            moe_group = hcg.get_expert_parallel_group()
+        except:
+            moe_group = None
+        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+        if hasattr(dist, "fleet") and dist.is_initialized() and expert_parallel_degree > 1:
+            moe_group = hcg.get_expert_parallel_group()
+            moe_grad_group = hcg.get_moe_sharding_parallel_group()
+        super().__init__(
+            config=config,
+            moe_num_experts=config.n_routed_experts,
+            expert_class=DeepseekV2MLP,
+            expert_kwargs={"config": config, "intermediate_size": config.moe_intermediate_size, "is_moe": True},
+            gate=gate,
+            moe_group=moe_group,
+        )
+        if hasattr(dist, "fleet") and dist.is_initialized() and expert_parallel_degree > 1:
+            for p in self.experts.parameters():
+                setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
+
+        self.shared_experts = Glm4MoeMLP(
+            config=config, intermediate_size=config.moe_intermediate_size * config.n_shared_experts
+        )
+
+    def forward(self, hidden_states):
+        final_hidden_states, _, _ = super().forward(hidden_states)
+        final_hidden_states = final_hidden_states + self.shared_experts(hidden_states)
+        return final_hidden_states
+
+
 class Glm4MoeDecoderLayer(nn.Layer):
     def __init__(self, config: Glm4MoeConfig, layer_idx: int):
         super().__init__()
@@ -370,8 +461,13 @@ class Glm4MoeDecoderLayer(nn.Layer):
 
         self.self_attn = Glm4MoeAttention(config=config, layer_idx=layer_idx)
 
+        try:
+            moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+        except:
+            moe_group = None
+        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
         if layer_idx >= config.first_k_dense_replace:
-            self.mlp = Glm4MoeMoE(config)
+            self.mlp = Glm4MoeMoE(config) if expert_parallel_degree <= 1 else Glm4MoeFlexMoE(config)
         else:
             self.mlp = Glm4MoeMLP(config)
 
@@ -493,8 +589,15 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                         for k in LAYER_ROWWISE
                     }
                 )
-                # if disable_ffn_model_parallel is True, disable expert layer tp plan
-                if not config.disable_ffn_model_parallel:
+                try:
+                    moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+                except:
+                    moe_group = None
+                expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+                # TODO: merge disable_ffn_model_parallel and expert_parallel_degree
+                if expert_parallel_degree <= 1:
+                    # # if disable_ffn_model_parallel is True, disable expert layer tp plan
+                    # if not config.disable_ffn_model_parallel:
                     actions.update(
                         {
                             f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
@@ -513,34 +616,34 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                             for k in EXPERT_LAYER_ROWWISE
                         }
                     )
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=True)
-                            for k in EXPERT_LAYER_COLWISE
-                        }
-                    )
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=False)
-                            for k in EXPERT_LAYER_ROWWISE
-                        }
-                    )
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
-                                fn, is_column=True
-                            )
-                            for k in EXPERT_LAYER_COLWISE
-                        }
-                    )
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
-                                fn, is_column=False
-                            )
-                            for k in EXPERT_LAYER_ROWWISE
-                        }
-                    )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=True)
+                        for k in EXPERT_LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=False)
+                        for k in EXPERT_LAYER_ROWWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
+                            fn, is_column=True
+                        )
+                        for k in EXPERT_LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
+                            fn, is_column=False
+                        )
+                        for k in EXPERT_LAYER_ROWWISE
+                    }
+                )
                 # bias
                 if config.attention_bias:
                     actions.update(
