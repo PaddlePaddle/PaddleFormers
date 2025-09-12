@@ -685,7 +685,7 @@ class GptOssModel(GptOssPreTrainedModel):
             [
                 GptOssDecoderLayer(
                     config=config,
-                    layer_idx=layer_idx not in self.no_recompute_layers,
+                    layer_idx=layer_idx,
                 )
                 for layer_idx in range(config.num_hidden_layers)
             ]
@@ -796,6 +796,12 @@ class GptOssModel(GptOssPreTrainedModel):
         # embed positions
         if attn_mask_startend_row_indices is not None or get_use_casual_mask():
             attention_mask = None
+            causal_mask_mapping = {}
+            attn_mask_startend_row_indices_mapping = {}
+            causal_mask_mapping["full_attention"] - None
+            causal_mask_mapping["sliding_attention"] = None
+            attn_mask_startend_row_indices_mapping["full_attention"] = attn_mask_startend_row_indices
+            attn_mask_startend_row_indices_mapping["sliding_attention"] = attn_mask_startend_row_indices
         else:
             # [bs, seq_len]
             attention_mask = (
@@ -804,6 +810,9 @@ class GptOssModel(GptOssPreTrainedModel):
                 else attention_mask
             )
             causal_mask_mapping = {}
+            attn_mask_startend_row_indices_mapping = {}
+            attn_mask_startend_row_indices_mapping["full_attention"] = None
+            attn_mask_startend_row_indices_mapping["sliding_attention"] = None
 
             # full_attention
             causal_mask = self._prepare_decoder_attention_mask(
@@ -812,8 +821,6 @@ class GptOssModel(GptOssPreTrainedModel):
                 past_key_values_length=cache_length,
                 dtype=inputs_embeds.dtype,
             )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                causal_mask = None if is_casual_mask(causal_mask) else causal_mask
             causal_mask_mapping["full_attention"] = causal_mask
 
             # sliding_attention
@@ -824,8 +831,6 @@ class GptOssModel(GptOssPreTrainedModel):
                 dtype=inputs_embeds.dtype,
                 sliding_window_size=self.config.sliding_window,
             )
-            if self.config.use_flash_attention:
-                causal_mask = None if is_casual_mask(causal_mask) else causal_mask
             causal_mask_mapping["sliding_attention"] = causal_mask
 
         if position_ids is None:
@@ -851,7 +856,9 @@ class GptOssModel(GptOssPreTrainedModel):
                     layer_module=decoder_layer,
                     hidden_states=hidden_states,
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
+                        decoder_layer.attention_type
+                    ],
                     position_ids=position_ids,
                     output_attentions=output_attentions,
                     output_router_logits=output_router_logits,
@@ -863,7 +870,9 @@ class GptOssModel(GptOssPreTrainedModel):
                 layer_outputs = decoder_layer(
                     hidden_states=hidden_states,
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
+                        decoder_layer.attention_type
+                    ],
                     position_ids=position_ids,
                     output_attentions=output_attentions,
                     output_router_logits=output_router_logits,
