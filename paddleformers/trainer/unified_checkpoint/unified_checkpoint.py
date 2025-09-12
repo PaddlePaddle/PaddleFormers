@@ -232,10 +232,21 @@ class UnifiedCheckpointHandler:
             for key in list(master_weights.keys()):
                 master_weights[static2struct_name_mappings[key]] = master_weights.pop(key)
 
-        if self.args.use_expert_parallel:
-            model_state_dict = get_expected_state_dict(model)
-            filter_sync_parameters(model_state_dict, optim_state_dict, is_model_weight=False)
-            filter_sync_parameters(model_state_dict, master_weights, is_model_weight=False)
+        model_state_dict = get_expected_state_dict(model)
+        filter_sync_parameters(
+            model_state_dict,
+            optim_state_dict,
+            is_model_weight=False,
+            use_expert_parallel=self.args.use_expert_parallel,
+            expert_parallel_degree=self.args.expert_parallel_degree,
+        )
+        filter_sync_parameters(
+            model_state_dict,
+            master_weights,
+            is_model_weight=False,
+            use_expert_parallel=self.args.use_expert_parallel,
+            expert_parallel_degree=self.args.expert_parallel_degree,
+        )
 
         optimizer_name = _add_variant(SAFE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
         master_weights_name = _add_variant(SAFE_MASTER_WEIGHTS_NAME, self.args.optimizer_name_suffix)
@@ -607,9 +618,12 @@ def unified_checkpoint_into_shards(
 
     config_to_save = copy.deepcopy(model_to_save.config)
 
-    if args.use_expert_parallel:
-        # ignore saving `no_sync=False` tensors when using expert_parallel under dp_rank > 0.
-        filter_sync_parameters(state_dict, is_model_weight=True)
+    filter_sync_parameters(
+        state_dict,
+        is_model_weight=True,
+        use_expert_parallel=args.use_expert_parallel,
+        expert_parallel_degree=args.expert_parallel_degree,
+    )
 
     if config_to_save.tensor_parallel_degree > 1:
         if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
@@ -639,7 +653,7 @@ def unified_checkpoint_into_shards(
 
     shard_file = get_sharded_file_name(args, weights_name)
     # renumerize shard_file name for expert_parallel.
-    if args.use_expert_parallel:
+    if args.use_expert_parallel and args.expert_parallel_degree <= 1:
         shard_file = rename_shard_file(args, shard_file, weights_name)
 
     for key, weight in state_dict.items():
@@ -647,12 +661,16 @@ def unified_checkpoint_into_shards(
         total_size += weight.numel().item() * dtype_byte_size(weight.dtype)
 
     index_file_list, total_size_list = gather_sharded_object(
-        index_weight_file, total_size, use_expert_parallel=args.use_expert_parallel
+        index_weight_file,
+        total_size,
+        use_expert_parallel=args.use_expert_parallel,
+        expert_parallel_degree=args.expert_parallel_degree,
     )
     sharded_index = get_sharded_index(
         index_file_list,
         total_size_list,
     )
+
     if sharded_index is not None:
         if isinstance(model_to_save, LoRAModel):
             sharded_index["type"] = "lora"
@@ -724,8 +742,13 @@ def unified_optimizer_into_shards(
     tp_group = fleet.get_hybrid_communicate_group().get_model_parallel_group()
     tp_size = tp_group.nranks
 
-    if args.use_expert_parallel:
-        filter_sync_parameters(model_state_dict, state_dict, is_model_weight=False)
+    filter_sync_parameters(
+        model_state_dict,
+        state_dict,
+        is_model_weight=False,
+        use_expert_parallel=args.use_expert_parallel,
+        expert_parallel_degree=args.expert_parallel_degree,
+    )
 
     if tp_size > 1:
         # get tp_actions
