@@ -201,13 +201,24 @@ jobs:
           wget -q --no-proxy \
             https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml \
             --no-check-certificate -O coverage.xml
-      - name: Debug coverage paths
+
+      - name: Fix coverage.xml paths
         run: |
-          echo "=== coverage.xml (first 30 lines) ==="
-          head -n 30 coverage.xml
-          echo "=== Check if source files exist ==="
-          grep -o 'filename="[^"]*"' coverage.xml | head -n 10
-          find paddleformers -type f | head -n 10
+          echo "Before fix:"
+          head -n 10 coverage.xml || true
+
+          old_source=$(grep -oPm1 '(?<=<source>).*?(?=</source>)' coverage.xml || true)
+          if [ -n "$old_source" ]; then
+            echo "Replacing source '$old_source' with 'paddleformers'"
+            sed -i "s|<source>$old_source</source>|<source>paddleformers</source>|g" coverage.xml
+          else
+            echo "No <source> found, injecting <source>paddleformers</source>"
+            sed -i 's|<sources>|<sources>\n        <source>paddleformers</source>|' coverage.xml
+          fi
+
+          echo "After fix:"
+          head -n 10 coverage.xml || true
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
