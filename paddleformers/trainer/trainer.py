@@ -86,12 +86,14 @@ from ..data import (
 )
 from ..peft import LoKrModel, LoRAModel, PrefixModelForCausalLM, ReFTModel, VeRAModel
 from ..peft.lora import QuantizationLoRABaseLinear
-from ..quantization.quantization_linear import (
-    ColumnParallelQuantizationLinear,
-    QuantizationLinear,
-    RowParallelQuantizationLinear,
-)
 
+try:
+    from ..quantization.quantization_linear import (
+        ColumnParallelQuantizationLinear,
+        QuantizationLinear,
+        RowParallelQuantizationLinear,)
+except:
+    QuantizationLinear = None
 try:
     from paddle.distributed.fleet.utils.sequence_parallel_utils import (
         register_sequence_parallel_allreduce_hooks,
@@ -196,10 +198,20 @@ from .utils.helper import (  # nested_truncate,
     nested_numpify,
     nested_truncate,
 )
+from .utils.load_hf_ckpt import load_huggingface_ckpt
 from .utils.sharding_io import ShardingIO
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
+
+# Name of the files used for checkpointing
+TRAINING_ARGS_NAME = "training_args.bin"
+TRAINER_STATE_NAME = "trainer_state.json"
+
+OPTIMIZER_NAME = "optimizer.pdopt"
+SCHEDULER_NAME = "scheduler.pdparams"
+SCALER_NAME = "scaler.pdparams"
+
 
 if is_datasets_available():
     import datasets
