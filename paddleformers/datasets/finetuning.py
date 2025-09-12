@@ -130,6 +130,8 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: 
     else:
         input_keys.append("attention_mask")
     return_list = []
+    if max_seq_len is None:
+        max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
         original_token_ids = [seq.token_ids for seq in batch_sequence]
         token_ids = [sum(original_token_ids, [])]

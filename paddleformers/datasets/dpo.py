@@ -153,7 +153,7 @@ def collate_fn(
             - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
     """
     if max_seq_len is None:
-        raise ValueError("max_seq_len is None.")
+        max_seq_len = max(len(item.input_ids) for sequence in batch for item in sequence)
 
     input_dict = {
         "input_ids": [],

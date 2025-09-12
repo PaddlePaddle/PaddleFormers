@@ -136,7 +136,6 @@ def main():
     model_config = AutoConfig.from_pretrained(
         model_args.model_name_or_path,
         dtype=dtype,
-        download_hub=model_args.download_hub,
     )
 
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
@@ -190,8 +189,7 @@ def main():
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
             config=model_config,
-            download_hub=model_args.download_hub,
-            convert_from_hf=training_args.convert_from_hf,  # run paddle weights
+            convert_from_hf=training_args.convert_from_hf,
         )
     else:
         model = model_class.from_config(model_config, dtype=dtype)
@@ -218,7 +216,7 @@ def main():
             raise NotImplementedError("Only support neftune for model with get_input_embeddings")
 
     # Load tokenizer & dataset
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, download_hub=model_args.download_hub)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     # tokenizer.chat_template = None
 
     # init chat_template for tokenizer
@@ -271,11 +269,12 @@ def main():
     else:
         metrics = compute_metrics
 
+    max_seq_len = training_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
     data_collator = partial(
         collate_fn,
         tokenizer=tokenizer,
         model_args=model_args,
-        max_seq_len=training_args.max_seq_len + model_config.num_nextn_predict_layers,
+        max_seq_len=max_seq_len,
     )
 
     if training_args.max_steps == -1:
