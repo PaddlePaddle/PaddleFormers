@@ -44,6 +44,7 @@ class DownloadSource(str, Enum):
     HUGGINGFACE = "huggingface"
     AISTUDIO = "aistudio"
     MODELSCOPE = "modelscope"
+    BOS = "bos"
 
 
 MODEL_MAPPINGS = {}
@@ -64,6 +65,7 @@ def check_repo(model_name_or_path, download_hub):
             DownloadSource.HUGGINGFACE,
             DownloadSource.AISTUDIO,
             DownloadSource.MODELSCOPE,
+            DownloadSource.BOS,
         ], f"download_hub must be one of {DownloadSource.HUGGINGFACE}, {DownloadSource.AISTUDIO}, {DownloadSource.MODELSCOPE}"
         if model_name_or_path not in HF_MODEL_MAPPINGS.keys():
             # repo id set by user
@@ -86,6 +88,39 @@ def strtobool(v):
         raise ArgumentTypeError(
             f"Truthy value expected: got {v} but expected one of yes/no, true/false, t/f, y/n, 1/0 (case insensitive)."
         )
+
+
+from .bos_download import bos_download, bos_file_exists
+
+
+def bos_hf_file_exist(
+    repo_id: str,
+    filename: str,
+    *,
+    subfolder: Optional[str] = None,
+    repo_type: Optional[str] = None,
+    revision: Optional[str] = None,
+    token: Optional[str] = None,
+    endpoint: Optional[str] = None,
+    from_bos: bool = True,
+    from_aistudio: bool = False,
+    from_hf_hub: bool = False,
+):
+    assert repo_id is not None, "repo_id cannot be None"
+    assert filename is not None, "filename cannot be None"
+
+    if subfolder is None:
+        subfolder = ""
+    filename = os.path.join(subfolder, filename)
+    out = bos_file_exists(
+        repo_id=repo_id,
+        filename=filename,
+        repo_type=repo_type,
+        revision=revision,
+        token=token,  # donot need token
+        endpoint=endpoint,
+    )
+    return out
 
 
 def resolve_file_path(
@@ -234,6 +269,28 @@ def resolve_file_path(
                 )
                 if is_available:
                     cached_file = hf_hub_download(
+                        **download_kwargs,
+                    )
+                    if cached_file is not None:
+                        return cached_file
+        else:
+            log_endpoint = "BOS"
+            for filename in filenames:
+                download_kwargs["filename"] = filename
+                is_available = bos_hf_file_exist(
+                    repo_id,
+                    filename,
+                    subfolder=subfolder,
+                    repo_type=repo_type,
+                    revision=revision,
+                    token=token,
+                    endpoint=endpoint,
+                    from_bos=True,
+                    from_aistudio=False,
+                    from_hf_hub=False,
+                )
+                if is_available:
+                    cached_file = bos_download(
                         **download_kwargs,
                     )
                     if cached_file is not None:

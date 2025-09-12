@@ -86,12 +86,15 @@ from ..data import (
 )
 from ..peft import LoKrModel, LoRAModel, PrefixModelForCausalLM, ReFTModel, VeRAModel
 from ..peft.lora import QuantizationLoRABaseLinear
-from ..quantization.quantization_linear import (
-    ColumnParallelQuantizationLinear,
-    QuantizationLinear,
-    RowParallelQuantizationLinear,
-)
 
+try:
+    from ..quantization.quantization_linear import (
+        ColumnParallelQuantizationLinear,
+        QuantizationLinear,
+        RowParallelQuantizationLinear,
+    )
+except:
+    QuantizationLinear = None
 try:
     from paddle.distributed.fleet.utils.sequence_parallel_utils import (
         register_sequence_parallel_allreduce_hooks,
@@ -196,10 +199,12 @@ from .utils.helper import (  # nested_truncate,
     nested_numpify,
     nested_truncate,
 )
+from .utils.load_hf_ckpt import load_huggingface_ckpt
 from .utils.sharding_io import ShardingIO
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
+
 
 if is_datasets_available():
     import datasets
@@ -1132,6 +1137,9 @@ class Trainer:
 
         if self.args.ignore_data_skip:
             self.timers and self.timers("read-data").start()
+
+        if self.args.resume_from_huggingface_ckpt is not None:
+            load_huggingface_ckpt(model, self.args.resume_from_huggingface_ckpt)
 
         for epoch in range(epochs_trained, num_train_epochs):
             if isinstance(train_dataloader, paddle.io.DataLoader) and isinstance(

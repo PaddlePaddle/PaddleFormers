@@ -31,8 +31,7 @@ from typing import TYPE_CHECKING, ContextManager, List, Optional, Type, Union
 from filelock import FileLock
 
 from paddleformers import __version__
-
-from ..utils.downloader import (
+from paddleformers.utils.downloader import (
     COMMUNITY_MODEL_PREFIX,
     download_check,
     get_path_from_url_with_filelock,
@@ -629,7 +628,7 @@ def cached_file_for_hf_hub(
             filename=filename,
             cache_dir=cache_dir,
             subfolder=subfolder,
-            library_name="PaddleNLP",
+            library_name="PaddleFormers",
             library_version=__version__,
         )
         return resolved_file
@@ -1005,3 +1004,10 @@ def caculate_llm_per_token_flops(
     # 2 for mul + add in matmul
     # 1 for forward, 2 for backwards since we caluate gradients for input_x and input_y
     return 2 * (layer_num * (flops_per_transformer * 3 + flops_recompute_transformer) + 3 * flops_loggits) / seq_length
+
+
+def cast_if_needed(x, dtype):
+    """
+    cast_if_needed
+    """
+    return x.cast(dtype) if x.dtype != dtype else x

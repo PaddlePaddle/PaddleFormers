@@ -56,6 +56,8 @@ import_structure = {
         "yarn_find_correction_range",
         "get_triangle_upper_mask",
         "DeepseekV2LinearScalingRotaryEmbedding",
+        "set_global_step",
+        "get_global_step",
     ],
     "modeling_auto": [
         "DeepseekV2LMHeadAuto",
