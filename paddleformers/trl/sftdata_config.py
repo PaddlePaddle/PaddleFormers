@@ -78,13 +78,6 @@ class DataConfig:
         metadata={"help": "Number of samples per epoch. Used for SFT."},
     )
     task_name: str = field(default=None, metadata={"help": "Additional name to select a more specific task."})
-    zero_padding: bool = field(default=False, metadata={"help": "Whether to use Zero Padding data stream"})
-    greedy_zero_padding: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to use Greedy Zero Padding data stream, should be used together with `zero_padding=True`."
-        },
-    )
     pad_to_multiple_of: int = field(
         default=None, metadata={"help": "If set will pad the sequence to a multiple of the provided value."}
     )

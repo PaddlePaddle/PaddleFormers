@@ -2609,6 +2609,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 # Load from local directory path
                 model = BertForSequenceClassification.from_pretrained('./my_bert/')
         """
+        kwargs.pop("from_hf_hub", None)
+        kwargs.pop("from_aistudio", None)
+        kwargs.pop("convert_from_torch", None)
         config = kwargs.pop("config", None)
         state_dict = kwargs.pop("state_dict", None)
         cache_dir = kwargs.pop("cache_dir", None)

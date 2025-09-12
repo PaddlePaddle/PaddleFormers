@@ -32,7 +32,7 @@
     "load_best_model_at_end": true,
     "tensor_parallel_degree": 1,
     "sharding": "stage1",
-    "use_flash_attention": true,
+    "attn_impl": "flashmask",
     "recompute": false,
     "recompute_granularity": "full",
     "beta": 0.1,

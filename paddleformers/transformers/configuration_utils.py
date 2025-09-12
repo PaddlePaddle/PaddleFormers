@@ -287,10 +287,10 @@ class LlmMetaConfig:
         ("use_fused_head_loss_fn", bool, False, "Whether to use fused head and loss function."),
         ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
         (
-            "loss_subbatch_seqlen",
+            "loss_subbatch_sequence_length",
             int,
             -1,
-            "Sequence length larger than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch).",
+            "Sequence length larger than loss_subbatch_sequence_length will be divided into multiple subbatches during loss computation (-1 means disable subbatch).",
         ),
     ]
 
@@ -667,6 +667,8 @@ class PretrainedConfig:
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
             )
+        self._save_to_hf = kwargs.pop("save_to_hf", False)
+        self._unsavable_keys.add("_save_to_hf")
 
         # Additional attributes without default values
         for key, value in kwargs.items():
@@ -758,6 +760,8 @@ class PretrainedConfig:
             raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
 
         os.makedirs(save_directory, exist_ok=True)
+
+        self._save_to_hf = kwargs.pop("save_to_hf", False)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be
         # loaded from the Hub.
@@ -1068,7 +1072,7 @@ class PretrainedConfig:
             del output["_auto_class"]
         if "moe_group" in output:
             del output["moe_group"]
-        if "dtype" in output:
+        if self._save_to_hf and "dtype" in output:
             output["torch_dtype"] = str(output["dtype"])
             del output["dtype"]
 

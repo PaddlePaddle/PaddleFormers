@@ -22,6 +22,7 @@ import paddle
 from paddleformers.datasets.data_utils import estimate_training
 from paddleformers.datasets.finetuning import collate_fn
 from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
+from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
     IntervalStrategy,
@@ -131,7 +132,6 @@ def main():
     model_config = AutoConfig.from_pretrained(
         model_args.model_name_or_path,
         dtype=dtype,
-        download_hub=model_args.download_hub,
     )
 
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
@@ -161,10 +161,16 @@ def main():
         model_config.fuse_attention_qkv = model_args.fuse_attention_qkv
     if model_args.fuse_attention_ffn is not None:
         model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
-    model_config.pp_seg_method = training_args.pp_seg_method
+
+    avaible_attn_impl = AttentionInterface._global_mapping.keys()
+    if model_args.attn_impl not in avaible_attn_impl:
+        raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
+
+    model_config.pp_seg_method = model_args.pp_seg_method
     model_config.seq_length = training_args.max_seq_len
     model_config.max_sequence_length = training_args.max_seq_len
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
+    model_config._attn_implementation = model_args.attn_impl
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
@@ -179,19 +185,12 @@ def main():
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
             config=model_config,
-            download_hub=model_args.download_hub,
-            convert_from_hf=training_args.convert_from_hf,  # run paddle weights
+            convert_from_hf=training_args.convert_from_hf,
         )
     else:
         model = model_class.from_config(model_config, dtype=dtype)
 
-    if model_args.flash_mask and (not data_args.zero_padding or not model.config.use_flash_attention):
-        logger.warning("`flash_mask` must use with zero padding and flash attention.")
-        data_args.zero_padding = True
-        model.config.use_flash_attention = True
-        model.config._attn_implementation = "flashmask"
-
-    if model_args.flash_mask and not any(isinstance(model, cls) for cls in flash_mask_support_list):
+    if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
         raise NotImplementedError(f"{model.__class__} not support flash mask.")
 
     if training_args.do_train and model_args.neftune:
@@ -213,7 +212,7 @@ def main():
             raise NotImplementedError("Only support neftune for model with get_input_embeddings")
 
     # Load tokenizer & dataset
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, download_hub=model_args.download_hub)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     # tokenizer.chat_template = None
 
     # init chat_template for tokenizer
@@ -263,11 +262,12 @@ def main():
     else:
         metrics = compute_metrics
 
+    max_seq_len = training_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
     data_collator = partial(
         collate_fn,
         tokenizer=tokenizer,
         model_args=model_args,
-        max_seq_len=training_args.max_seq_len + model_config.num_nextn_predict_layers,
+        max_seq_len=max_seq_len,
     )
 
     if training_args.max_steps == -1:

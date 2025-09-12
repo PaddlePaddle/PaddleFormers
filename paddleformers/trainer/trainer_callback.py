@@ -20,12 +20,14 @@ Callbacks to use with the Trainer class and customize the training loop.
 """
 import dataclasses
 import json
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 import numpy as np
 from tqdm.auto import tqdm
 
+from ..transformers.moe_utils import offload, reload
 from ..utils.log import logger
 from .trainer_utils import IntervalStrategy, has_length
 from .training_args import TrainingArguments
@@ -39,6 +41,8 @@ __all__ = [
     "ProgressCallback",
     "PrinterCallback",
     "EarlyStoppingCallback",
+    "StepFlexToken",
+    "FP8QuantWeightCallback",
 ]
 
 
@@ -608,3 +612,72 @@ class EarlyStoppingCallback(TrainerCallback):
         self.check_metric_value(args, state, control, metric_value)
         if self.early_stopping_patience_counter >= self.early_stopping_patience:
             control.should_training_stop = True
+
+
+class StepFlexToken(TrainerCallback):
+    def on_step_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        model = kwargs.pop("model")
+        if hasattr(model, "step_flex_token"):
+            model.step_flex_token(state.global_step)
+
+
+g_shard_bypass_dygraph_optimizer = int(os.environ.get("FLAGS_shard_bypass_dygraph_optimizer", 0))
+
+
+def enable_in_dict_config(config, key):
+    """enable_in_dict_config"""
+    return key in config and config[key]
+
+
+skip_count = 0
+
+
+class FP8QuantWeightCallback(TrainerCallback):
+    """
+    Callback for FP8 weight quantization during training
+    """
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        """
+        Quantize expert weights to FP8 before each training step
+        """
+        model = kwargs["model"]
+        optimizer = kwargs["optimizer"]
+        global skip_count
+
+        if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
+            model.fp8_quant_weight(True, quant_transpose=True)
+            optimizer.clear_param_storage("moe_expert")
+            optimizer.clear_param_storage("rms_linear")
+            optimizer.clear_param_storage("memory_attn")
+            optimizer.clear_param_storage("attn_out_project")
+            optimizer.clear_param_storage("shared_expert")
+
+            self.moe_weights_name = []
+            for param in optimizer._inner_opt._parameter_list:
+                color = getattr(param, "color", -1)
+                if isinstance(color, dict) and color["color"] == "moe_expert":
+                    self.moe_weights_name.append(param.name)
+
+            for name in self.moe_weights_name:
+                offload(optimizer._master_weights[name])
+
+        skip_count += 1
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        """
+        Reload weights before optimizer step
+        """
+        model = kwargs["model"]
+        optimizer = kwargs["optimizer"]
+        global skip_count
+
+        if (not g_shard_bypass_dygraph_optimizer) and hasattr(model, "fp8_quant_weight"):
+            for name in self.moe_weights_name:
+                reload(optimizer._master_weights[name])

@@ -39,8 +39,8 @@ unit-test:
 	PYTHONPATH=$(shell pwd) pytest -v \
 		--retries 1 --retry-delay 1 \
 		--durations 20 \
-		--cov paddleformers \
-		--cov-report xml:coverage.xml
+		--cov=./paddleformers \
+		--cov-report=xml:coverage.xml
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 

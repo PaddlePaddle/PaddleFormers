@@ -98,12 +98,6 @@ class ModelConfig:
     # reft related parameter
     reft: bool = field(default=False, metadata={"help": "Whether using reft method"})
 
-    download_hub: str = field(
-        default="aistudio",
-        metadata={
-            "help": "The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`"
-        },
-    )
     save_to_aistudio: bool = field(default=False, metadata={"help": "Whether to save model to aistudio"})
     aistudio_repo_id: str = field(default=None, metadata={"help": "The id of aistudio repo"})
     aistudio_repo_private: bool = field(default=True, metadata={"help": "Whether to create a private repo"})
@@ -112,7 +106,7 @@ class ModelConfig:
     neftune: bool = field(default=False, metadata={"help": "Whether to apply NEFT"})
     neftune_noise_alpha: float = field(default=5.0, metadata={"help": "NEFT noise alpha"})
     flash_mask: bool = field(default=False, metadata={"help": "Whether to use flash_mask in flash attention."})
-    attn_implementation: str = field(default="eager", metadata={"help": "Attention implementation"})
+    attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
 
     # long sequence strategy
     use_long_sequence_strategies: bool = field(
@@ -155,4 +149,7 @@ class ModelConfig:
     use_attn_mask_startend_row_indices: bool = field(
         default=True,
         metadata={"help": "Whether to use attn_mask_start_row_indices in flash attention."},
+    )
+    pp_seg_method: Optional[str] = field(
+        default="layer:DecoderLayer|EmptyLayer", metadata={"help": "PP Segmentation Method"}
     )

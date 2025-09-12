@@ -153,7 +153,7 @@ def collate_fn(
             - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
     """
     if max_seq_len is None:
-        raise ValueError("max_seq_len is None.")
+        max_seq_len = max(len(item.input_ids) for sequence in batch for item in sequence)
 
     input_dict = {
         "input_ids": [],
@@ -247,7 +247,7 @@ def collate_fn(
         if key == "attention_mask":
             input_dict[key] = np.array(input_dict[key], dtype=np.float32)
         elif key == "attn_mask_startend_row_indices":
-            input_dict[key] = np.array(input_dict[key], dtype=np.int32)
+            input_dict[key] = np.array(input_dict[key], dtype=np.int32)[..., None]
         else:
             input_dict[key] = np.array(input_dict[key])
     return input_dict

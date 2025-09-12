@@ -49,7 +49,7 @@ import_structure = {
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["ImageProcessingMixin"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
-    "token_dispatcher": [],
+    "token_dispatcher": ["_DispatchManager"],
     "moe_layer": ["combining", "_AllToAll", "MoELayer", "dispatching", "MoEFlexTokenLayer"],
     "bert.modeling": [
         "BertForSequenceClassification",
