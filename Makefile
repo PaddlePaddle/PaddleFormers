@@ -46,7 +46,7 @@ unit-test:
 
 .PHONY: install
 install:
-	pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
+	python -m pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/e22e2f9af7eeced7e3c9582ddb69a617887d3eb9/paddlepaddle_gpu-3.2.0.dev20250904-cp310-cp310-linux_x86_64.whl
 	pip install -r requirements-dev.txt
 	pip install -r requirements.txt
 	pre-commit install
