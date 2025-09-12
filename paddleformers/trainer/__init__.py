@@ -75,6 +75,8 @@ import_structure = {
         "TrainerState",
         "DEFAULT_PROGRESS_CALLBACK",
         "TrainerCallback",
+        "StepFlexToken",
+        "FP8QuantWeightCallback",
     ],
     "trainer_utils": [
         "get_last_checkpoint",
