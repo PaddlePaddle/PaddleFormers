@@ -42,7 +42,6 @@ class GptOssConfig(PretrainedConfig):
         hidden_act: str = "silu",
         initializer_range: float = 0.02,
         max_position_embeddings=131072,
-        attn_impl="eager",
         use_rmsnorm=True,
         rms_norm_eps: float = 1e-5,
         rope_scaling={"rope_type": "yarn", "factor": 32.0, "beta_fast": 32.0, "beta_slow": 1.0, "truncate": False},

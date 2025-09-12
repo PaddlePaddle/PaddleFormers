@@ -9,7 +9,6 @@
     "packing": false,
     "mix_strategy": "concat",
     "output_dir": "./checkpoints/gptoss_paddle_sft_ckpts",
-    "max_seq_len": 1024,
     "overwrite_output_dir": false,
     "per_device_train_batch_size": 1,
     "gradient_accumulation_steps": 4,

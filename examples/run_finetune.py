@@ -65,7 +65,7 @@ from paddleformers.utils.log import logger
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "False"
-
+PACKING_UNSUPPORT_LIST = ["gpt_oss"]
 flash_mask_support_list = [
     DeepseekV2ForCausalLM,
     DeepseekV2ForCausalLMPipe,
@@ -243,7 +243,7 @@ def main():
         "encode_one_turn": data_args.encode_one_turn,
     }
     # not support data padding for diff attention in gptoss
-    if model_config.model_type == "gpt_oss":
+    if model_config.model_type in PACKING_UNSUPPORT_LIST:
         dataset_config["packing"] = False
 
     train_dataset = create_dataset_sft(

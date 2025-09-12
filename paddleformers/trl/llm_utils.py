@@ -35,7 +35,6 @@ from ..transformers import (  # ChatGLMv2Tokenizer,
     AutoTokenizer,
     DeepseekV2ForCausalLMPipe,
     DeepseekV3ForCausalLMPipe,
-    GptOssForCausalLMPipe,
     LlamaForCausalLMPipe,
     PretrainedConfig,
     Qwen2ForCausalLMPipe,
@@ -202,7 +201,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
-    elif model.config.model_type == "gpt_oss" or isinstance(model, GptOssForCausalLMPipe):
+    elif model.config.model_type == "gpt_oss":
         target_modules = [
             ".*q_proj.*",
             ".*k_proj.*",
