@@ -130,6 +130,7 @@ python -u ./alignment/dpo/run_dpo.py ./config/dpo_lora.json
 使用 LoRA 方式训练模型后，为了方便推理，我们提供将 LoRA 参数合并到模型主权重中的脚本`tools/mergekit.py`。
 
 运行示例（默认加载和保存 **HuggingFace** 权重参数）：
+
 单卡
 ```bash
 python -u ./tools/mergekit.py \
@@ -149,6 +150,7 @@ python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./tools/merge
 ### Paddle 权重使用说明
 
 如需使用 **Paddle** 格式权重，需要在启动脚本中添加 `--convert_from_hf False` 和 `--save_to_hf False` 参数。
+
 单卡
 ```bash
 python -u ./tools/mergekit.py \
