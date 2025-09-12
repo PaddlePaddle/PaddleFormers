@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import importlib
 import json
 import math
 import os
@@ -26,7 +27,8 @@ from safetensors.numpy import save_file
 from tqdm.auto import tqdm
 
 from ..peft import LoRAConfig
-from ..transformers import AutoConfig, AutoModelForCausalLM
+from ..transformers import PretrainedConfig
+from ..transformers.auto.modeling import get_name_mapping
 from ..transformers.conversion_utils import ConversionMixin
 from ..utils import device_guard
 from ..utils.env import (
@@ -619,9 +621,15 @@ class MergeModel:
 
         # get transpose_weight_keys
         if self.merge_config.convert_from_hf:
-            model_config = AutoConfig.from_pretrained(self.merge_config.base_model_path)
-            model = AutoModelForCausalLM.from_config(model_config)
-            self.transpose_weight_keys = model.transpose_weight_keys
+            config_dict = PretrainedConfig.get_config_dict(self.merge_config.base_model_path)[0]
+            name_mapping = get_name_mapping()
+            model_class_name = None
+            for key, value in name_mapping.items():
+                if value == config_dict["model_type"]:
+                    model_class_name = key
+                    break
+            import_class = importlib.import_module(f"paddleformers.transformers.{config_dict['model_type']}.modeling")
+            self.transpose_weight_keys = getattr(import_class, model_class_name).transpose_weight_keys
 
         # Initialize new index
         index = {}
