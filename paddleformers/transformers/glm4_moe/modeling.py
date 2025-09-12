@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from copy import deepcopy
 from functools import partial
 from typing import List, Optional, Tuple, Union
 
@@ -64,7 +65,6 @@ def eager_attention_forward(
     attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
     attn_output = paddle.matmul(attn_weights, value)
     attn_output = paddle.transpose(attn_output, perm=[0, 2, 1, 3])
-    # attn_output = attn_output.transpose(perm=(1, 2))
     attn_output = paddle.reshape(x=attn_output, shape=[0, 0, attn_output.shape[2] * attn_output.shape[3]])
 
     return attn_output, attn_weights
@@ -309,9 +309,9 @@ class Glm4MoeMoE(nn.Layer):
     """
 
     def __init__(self, config):
-        # if getattr(config, "disable_ffn_model_parallel", False):
-        #     config = deepcopy(config)
-        #     config.tensor_parallel_degree = 1
+        if getattr(config, "disable_ffn_model_parallel", False):
+            config = deepcopy(config)
+            config.tensor_parallel_degree = 1
         super().__init__()
         self.config = config
         self.experts = nn.LayerList(
@@ -389,8 +389,8 @@ class Glm4MoeDecoderLayer(nn.Layer):
         )
         if config.sequence_parallel:
             self.post_attention_layernorm.enable_sequence_parallel()
-            # if not hasattr(config, "disable_ffn_model_parallel"):
-            #     self.input_layernorm.enable_sequence_parallel()
+            if not hasattr(config, "disable_ffn_model_parallel"):
+                self.input_layernorm.enable_sequence_parallel()
 
     def forward(
         self,
@@ -494,8 +494,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     }
                 )
                 # if disable_ffn_model_parallel is True, disable expert layer tp plan
-                # if not config.disable_ffn_model_parallel:
-                if True:
+                if not config.disable_ffn_model_parallel:
                     actions.update(
                         {
                             f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
@@ -572,7 +571,6 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
 
     @paddle.no_grad()
     def forward(self, x, position_ids):
-        # fleetY version
         inv_freq_expanded = (
             self.inv_freq.unsqueeze(0)
             .unsqueeze(-1)
@@ -580,8 +578,6 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
             .expand([position_ids.shape[0], -1, 1])
             .to(x.place)
         )
-        # paddle3.2 version
-        # inv_freq_expanded = self.inv_freq[None, :, None].cast(paddle.float32).expand((position_ids.shape[0], -1, 1)).to(x.place)
         position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
 
         freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
@@ -805,24 +801,6 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
 
-    def get_input_embeddings(self):
-        return self.model.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.model.embed_tokens = value
-
-    def get_output_embeddings(self):
-        return self.lm_head
-
-    def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
-
-    def set_decoder(self, decoder):
-        self.model = decoder
-
-    def get_decoder(self):
-        return self.model
-
     def prepare_inputs_for_generation(
         self,
         input_ids,
@@ -851,13 +829,6 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
             }
         )
         return model_inputs
-
-    def _get_model_inputs_spec(self, dtype: str):
-        return {
-            "input_ids": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
-            "attention_mask": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
-            "position_ids": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
-        }
 
     @staticmethod
     def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
@@ -954,9 +925,6 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Glm4MoeModel.transpose_weight_keys
     _rotary_emb_cls = Glm4MoeRotaryEmbedding
-
-    # def __init__(self, config):
-    #     super().__init__(config, )
 
 
 __all__ = ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"]
