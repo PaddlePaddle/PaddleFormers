@@ -77,6 +77,8 @@ import_structure = {
         "TrainerCallback",
         "StepFlexToken",
         "FP8QuantWeightCallback",
+        "MoECorrectionBiasAdjustCallback",
+        "MoeExpertsGradScaleCallback",
     ],
     "trainer_utils": [
         "get_last_checkpoint",

@@ -154,6 +154,11 @@ class Glm4MoeConfig(PretrainedConfig):
         use_qk_norm=False,
         pp_seg_method="layer:Glm4MoeDecoderLayer",
         disable_ffn_model_parallel=False,
+        scoring_func="sigmoid",
+        aux_loss_alpha=0.0001,
+        seq_aux=True,
+        topk_method="noaux_tc",
+        using_flex_token=True,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -191,6 +196,12 @@ class Glm4MoeConfig(PretrainedConfig):
         self.first_k_dense_replace = first_k_dense_replace
         self.norm_topk_prob = norm_topk_prob
         self.use_qk_norm = use_qk_norm
+        self.scoring_func = scoring_func
+        self.aux_loss_alpha = aux_loss_alpha
+        self.seq_aux = seq_aux
+        self.topk_method = topk_method
+        self.using_flex_token = using_flex_token
+        self.use_fp8 = False
 
         self.pp_seg_method = pp_seg_method
         self.disable_ffn_model_parallel = disable_ffn_model_parallel
