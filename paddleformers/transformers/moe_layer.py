@@ -362,7 +362,7 @@ class MoEFlexTokenLayer(nn.Layer):
                 self.experts.append(expert_class(**expert_kwargs))
             else:
                 self.experts.append(None)
-        self.router = gate
+        self.gate = gate
 
     def expert_forward(self, dispatched_input, tokens_per_expert):
         outputs = []
@@ -382,7 +382,7 @@ class MoEFlexTokenLayer(nn.Layer):
     def forward(self, hidden_states: paddle.Tensor):
         _, _, d_model = hidden_states.shape
         # reshaped_input = hidden_states.reshape([-1, d_model])
-        probs, routing_map, l_aux, l_zloss = self.router(hidden_states)
+        probs, routing_map, l_aux, l_zloss = self.gate(hidden_states)
         (dispatched_input, tokens_per_expert) = self.token_dispatcher.token_permutation(
             hidden_states, probs, routing_map
         )

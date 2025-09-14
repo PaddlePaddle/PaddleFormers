@@ -34,7 +34,6 @@ from ...nn.mlp import MLP as Glm4MoeMLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..deepseek_v2 import DeepseekV2MLP
 from ..llama.modeling import get_use_casual_mask
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -268,6 +267,11 @@ class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
         )
 
         self.register_buffer("e_score_correction_bias", paddle.zeros((num_experts,), dtype=paddle.float32))
+        self.expert_usage = paddle.zeros(
+            shape=[num_experts],
+            dtype=paddle.int64,
+        )
+        self.expert_usage.stop_gradient = True
 
     def forward(self, hidden_states):
         """
@@ -287,6 +291,8 @@ class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
             scores = scores.cast(paddle.float32)
 
         scores, routing_map, exp_counts, l_aux, l_zloss = self.topkgating_nodrop(scores)
+        with paddle.no_grad():
+            self.expert_usage += exp_counts
         return scores, routing_map, l_aux, l_zloss
 
 
@@ -431,11 +437,14 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
         if hasattr(dist, "fleet") and dist.is_initialized() and expert_parallel_degree > 1:
             moe_group = hcg.get_expert_parallel_group()
             moe_grad_group = hcg.get_moe_sharding_parallel_group()
+        if expert_parallel_degree > 1 and config.tensor_parallel_degree >= 1:
+            mlp_config = deepcopy(config)
+            mlp_config.tensor_parallel_degree = 1
         super().__init__(
             config=config,
             moe_num_experts=config.n_routed_experts,
-            expert_class=DeepseekV2MLP,
-            expert_kwargs={"config": config, "intermediate_size": config.moe_intermediate_size, "is_moe": True},
+            expert_class=Glm4MoeMLP,
+            expert_kwargs={"config": mlp_config, "intermediate_size": mlp_config.moe_intermediate_size},
             gate=gate,
             moe_group=moe_group,
         )

@@ -18,6 +18,11 @@ from typing import Optional
 
 import paddle
 
+try:
+    from paddle import scatter_add_
+except ImportError:
+    scatter_add_ = None
+
 from ..utils.tools import get_env_device
 
 
@@ -109,13 +114,15 @@ def unpermute(
     # Create an output tensor filled with zeros
     output_tokens = paddle.zeros(restore_shape, dtype=permuted_tokens.dtype)
     # Scatter add the permuted_input back to the original positions
-    output_tokens.put_along_axis_(
-        axis=0,
-        indices=sorted_indices.unsqueeze(1).expand([-1, hidden]),
-        values=permuted_tokens,
-        reduce="add",
-        include_self=True,
-    )
+    # if scatter_add_ is not None:
+    #     # NOTE: this expand will cause a big memory usage, so disable this method
+    #     sorted_indices = sorted_indices.unsqueeze(1).expand(-1, hidden)
+    #     output_tokens.scatter_add_(0, sorted_indices, permuted_tokens)
+    # else:
+    # NOTE: Calling multiple times of scatter_ will not accumulate,
+    # Instead, it reset to zero and then accumulated again.
+    # so can't do subbatch here.
+    output_tokens.scatter_(index=sorted_indices, updates=permuted_tokens, overwrite=False)
     return output_tokens
 
 

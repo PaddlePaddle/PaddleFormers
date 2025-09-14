@@ -176,6 +176,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         super(PretrainedMoEGate, self).__init__()
 
         self.config = config
+        self.scoring_func = config.scoring_func if hasattr(config, "scoring_func") else None
 
         self.num_experts = num_experts
         self.expert_hidden_size = expert_hidden_size
@@ -301,7 +302,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         assert n_experts % n_group == 0, "n_experts must be divisible by n_groups"
 
         assert self.e_score_correction_bias is not None, "e_score_correction_bias is None"
-        scores_for_choice = scores.reshape([bsz_seq_len, -1]) + self.e_score_correction_bias.unsqueeze(0)
+        scores_for_choice = scores.reshape([bsz_seq_len, -1]) + self.e_score_correction_bias.detach().unsqueeze(0)
         group_scores = (
             scores_for_choice.reshape([bsz_seq_len, self.n_group, -1]).topk(2, axis=-1)[0].sum(axis=-1)
         )  # fmt:skip [n, n_group]
@@ -578,11 +579,17 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         # get topk mask
         mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0), axis=1)
 
+        # The gate applied during dispatch and to weight the FFN output is computed from the original affinity score s_{i,t} (without the bias).
+        gates_masked = gates * mask
+        gates_s = paddle.sum(gates_masked, axis=-1, keepdim=True)
+        denom_s = paddle.clip(gates_s, min=paddle.finfo(gates_masked.dtype).eps)
+
+        if self.norm_topk_prob:
+            gates_masked = gates_masked / denom_s
+        gates_masked *= self.routed_scaling_factor
         if hasattr(self.config, "seq_aux") and self.config.seq_aux:
             l_aux = self._cal_seq_aux_loss(gates_ori, self.top_k, top_idx)
         else:
             l_aux = self._cal_aux_loss(gates, mask)
-
         exp_counts = paddle.sum(mask.cast(paddle.int64), axis=0)
-        topk_masked_gates = paddle.zeros_like(gates).put_along_axis(top_idx, top_gate, axis=1)
-        return topk_masked_gates, mask, exp_counts, l_aux, l_zloss
+        return gates_masked, mask, exp_counts, l_aux, l_zloss
