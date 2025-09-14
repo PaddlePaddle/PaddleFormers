@@ -366,7 +366,9 @@ class MoEFlexTokenLayer(nn.Layer):
 
     def expert_forward(self, dispatched_input, tokens_per_expert):
         outputs = []
-        tokens_per_expert = tokens_per_expert.tolist()
+        tokens_per_expert = (
+            tokens_per_expert.tolist() if not isinstance(tokens_per_expert, list) else tokens_per_expert
+        )
         # print(f"all tokens: {sum(tokens_per_expert)}, detail: {tokens_per_expert}")
         chunks = paddle.split(dispatched_input, num_or_sections=tokens_per_expert, axis=0)
         for i, chunk in enumerate(chunks):
