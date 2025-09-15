@@ -132,6 +132,8 @@ class Glm4MoeAttention(nn.Layer):
         self.sequence_parallel = config.sequence_parallel
         self.attention_bias = config.attention_bias
         self.attn_implementation = config._attn_implementation
+        self.fuse_attention_qkv = config.fuse_attention_qkv
+        self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         if config.tensor_parallel_degree > 1:
             assert (
@@ -146,27 +148,36 @@ class Glm4MoeAttention(nn.Layer):
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.num_attention_heads * self.head_dim
 
-        self.q_proj = GeneralLinear.create(
-            self.hidden_size,
-            q_hidden_size,
-            has_bias=self.attention_bias,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.k_proj = GeneralLinear.create(
-            self.hidden_size,
-            kv_hidden_size,
-            has_bias=self.attention_bias,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.v_proj = GeneralLinear.create(
-            self.hidden_size,
-            kv_hidden_size,
-            has_bias=self.attention_bias,
-            config=config,
-            tp_plan="colwise",
-        )
+        if not self.fuse_attention_qkv:
+            self.q_proj = GeneralLinear.create(
+                self.hidden_size,
+                q_hidden_size,
+                has_bias=self.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.k_proj = GeneralLinear.create(
+                self.hidden_size,
+                kv_hidden_size,
+                has_bias=self.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.v_proj = GeneralLinear.create(
+                self.hidden_size,
+                kv_hidden_size,
+                has_bias=self.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+        else:
+            self.qkv_proj = GeneralLinear.create(
+                self.hidden_size,
+                q_hidden_size + 2 * kv_hidden_size,
+                has_bias=self.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
             self.hidden_size,
@@ -204,19 +215,40 @@ class Glm4MoeAttention(nn.Layer):
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         batch_size: Optional[int] = None,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
 
-        if self.sequence_parallel:
-            target_query_shape = [batch_size, -1, self.num_heads, self.head_dim]
-            target_key_value_shape = [batch_size, -1, self.num_key_value_heads, self.head_dim]
+        if not self.fuse_attention_qkv:
+            query_states = self.q_proj(hidden_states)
+            key_states = self.k_proj(hidden_states)
+            value_states = self.v_proj(hidden_states)
+
+            if self.sequence_parallel:
+                target_query_shape = [batch_size, -1, self.num_heads, self.head_dim]
+                target_key_value_shape = [batch_size, -1, self.num_key_value_heads, self.head_dim]
+            else:
+                target_query_shape = [0, 0, self.num_heads, self.head_dim]
+                target_key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
+            query_states = query_states.reshape(target_query_shape)
+            key_states = key_states.reshape(target_key_value_shape)
+            value_states = value_states.reshape(target_key_value_shape)
         else:
-            target_query_shape = [0, 0, self.num_heads, self.head_dim]
-            target_key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
-        query_states = query_states.reshape(target_query_shape)
-        key_states = key_states.reshape(target_key_value_shape)
-        value_states = value_states.reshape(target_key_value_shape)
+            mix_layer = self.qkv_proj(hidden_states)
+            if self.sequence_parallel:
+                target_shape = [
+                    batch_size,
+                    -1,
+                    self.num_key_value_heads,
+                    (self.num_key_value_groups + 2) * self.head_dim,
+                ]
+            else:
+                target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
+            mix_layer = paddle.reshape_(mix_layer, target_shape)
+            query_states, key_states, value_states = paddle.split(
+                mix_layer,
+                num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
+                axis=-1,
+            )
+            if self.gqa_or_mqa:
+                query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
 
         if self.use_qk_norm:  # main diff from Llama
             query_states = self.q_norm(query_states)
@@ -361,13 +393,17 @@ class Glm4MoeMoE(nn.Layer):
         self.config = config
         self.experts = nn.LayerList(
             [
-                Glm4MoeMLP(config, intermediate_size=config.moe_intermediate_size)
+                Glm4MoeMLP(
+                    config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=config.fuse_attention_ffn
+                )
                 for _ in range(config.n_routed_experts)
             ]
         )
         self.gate = Glm4MoeTopkRouter(config)
         self.shared_experts = Glm4MoeMLP(
-            config=config, intermediate_size=config.moe_intermediate_size * config.n_shared_experts
+            config=config,
+            intermediate_size=config.moe_intermediate_size * config.n_shared_experts,
+            fuse_up_gate=config.fuse_attention_ffn,
         )
 
     def moe(self, hidden_states: paddle.Tensor, topk_indices: paddle.Tensor, topk_weights: paddle.Tensor):
@@ -444,7 +480,11 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
             config=config,
             moe_num_experts=config.n_routed_experts,
             expert_class=Glm4MoeMLP,
-            expert_kwargs={"config": mlp_config, "intermediate_size": mlp_config.moe_intermediate_size},
+            expert_kwargs={
+                "config": mlp_config,
+                "intermediate_size": mlp_config.moe_intermediate_size,
+                "fuse_up_gate": config.fuse_attention_ffn,
+            },
             gate=gate,
             moe_group=moe_group,
         )
@@ -453,7 +493,9 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
                 setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
 
         self.shared_experts = Glm4MoeMLP(
-            config=config, intermediate_size=config.moe_intermediate_size * config.n_shared_experts
+            config=config,
+            intermediate_size=config.moe_intermediate_size * config.n_shared_experts,
+            fuse_up_gate=config.fuse_attention_ffn,
         )
 
     def forward(self, hidden_states):
@@ -478,7 +520,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         if layer_idx >= config.first_k_dense_replace:
             self.mlp = Glm4MoeMoE(config) if expert_parallel_degree <= 1 else Glm4MoeFlexMoE(config)
         else:
-            self.mlp = Glm4MoeMLP(config)
+            self.mlp = Glm4MoeMLP(config, fuse_up_gate=config.fuse_attention_ffn)
 
         self.input_layernorm = GeneralNorm.create(
             config=config,
@@ -565,6 +607,9 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             "self_attn.k_proj.weight",
             "self_attn.v_proj.weight",
         ]
+        FUSE_LAYER_COLWISE = [
+            "self_attn.qkv_proj.weight",
+        ]
 
         LAYER_ROWWISE = ["self_attn.o_proj.weight"]
 
@@ -572,12 +617,19 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             "up_proj.weight",
             "gate_proj.weight",
         ]
+        FUSE_EXPERT_LAYER_COLWISE = [
+            "up_gate_proj.weight",
+        ]
+
         EXPERT_LAYER_ROWWISE = ["down_proj.weight"]
 
         BIAS_KEYS = [
             "self_attn.q_proj.bias",
             "self_attn.k_proj.bias",
             "self_attn.v_proj.bias",
+        ]
+        FUSE_BIAS_KEYS = [
+            "self_attn.qkv_proj.bias",
         ]
 
         def make_base_actions():
@@ -586,12 +638,21 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 "model.embed_tokens.weight": partial(fn, is_column=False),
             }
             for layer_idx in range(config.num_hidden_layers):
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                        for k in LAYER_COLWISE
-                    }
-                )
+                if not config.fuse_attention_qkv:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                            for k in LAYER_COLWISE
+                        }
+                    )
+                else:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                            for k in FUSE_LAYER_COLWISE
+                        }
+                    )
+
                 actions.update(
                     {
                         f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
@@ -607,15 +668,26 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 if expert_parallel_degree <= 1:
                     # # if disable_ffn_model_parallel is True, disable expert layer tp plan
                     # if not config.disable_ffn_model_parallel:
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
-                                fn, is_column=True
-                            )
-                            for e in range(config.n_routed_experts)
-                            for k in EXPERT_LAYER_COLWISE
-                        }
-                    )
+                    if not config.fuse_attention_ffn:
+                        actions.update(
+                            {
+                                f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
+                                    fn, is_column=True
+                                )
+                                for e in range(config.n_routed_experts)
+                                for k in EXPERT_LAYER_COLWISE
+                            }
+                        )
+                    else:
+                        actions.update(
+                            {
+                                f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
+                                    fn, is_column=True, is_naive_2fuse=True
+                                )
+                                for e in range(config.n_routed_experts)
+                                for k in FUSE_EXPERT_LAYER_COLWISE
+                            }
+                        )
                     actions.update(
                         {
                             f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
@@ -627,24 +699,45 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     )
                 actions.update(
                     {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=True)
-                        for k in EXPERT_LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
                         f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=False)
                         for k in EXPERT_LAYER_ROWWISE
                     }
                 )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
-                            fn, is_column=True
-                        )
-                        for k in EXPERT_LAYER_COLWISE
-                    }
-                )
+                if not config.fuse_attention_ffn:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=True)
+                            for k in EXPERT_LAYER_COLWISE
+                        }
+                    )
+                else:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(
+                                fn, is_column=True, is_naive_2fuse=True
+                            )
+                            for k in FUSE_EXPERT_LAYER_COLWISE
+                        }
+                    )
+
+                if not config.fuse_attention_ffn:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
+                                fn, is_column=True
+                            )
+                            for k in EXPERT_LAYER_COLWISE
+                        }
+                    )
+                else:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
+                                fn, is_column=True, is_naive_2fuse=True
+                            )
+                            for k in FUSE_EXPERT_LAYER_COLWISE
+                        }
+                    )
                 actions.update(
                     {
                         f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
@@ -655,16 +748,116 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 )
                 # bias
                 if config.attention_bias:
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
-                            for b in BIAS_KEYS
-                        }
-                    )
+                    if not config.fuse_attention_qkv:
+                        actions.update(
+                            {
+                                f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                                for b in BIAS_KEYS
+                            }
+                        )
+                    else:
+                        actions.update(
+                            {
+                                f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                                for b in FUSE_BIAS_KEYS
+                            }
+                        )
             return actions
 
         mappings = make_base_actions()
         return mappings
+
+    @classmethod
+    def _get_fuse_or_split_param_mappings(cls, config: Glm4MoeConfig, is_fuse=False):
+        # return parameter fuse utils
+        from ..conversion_utils import split_or_fuse_func
+
+        fn = split_or_fuse_func(is_fuse=is_fuse)
+
+        # last key is fused key, other keys are to be fused.
+        fuse_qkv_keys = [
+            (
+                "layers.0.self_attn.q_proj.weight",
+                "layers.0.self_attn.k_proj.weight",
+                "layers.0.self_attn.v_proj.weight",
+                "layers.0.self_attn.qkv_proj.weight",
+            ),
+            (
+                "layers.0.self_attn.q_proj.bias",
+                "layers.0.self_attn.k_proj.bias",
+                "layers.0.self_attn.v_proj.bias",
+                "layers.0.self_attn.qkv_proj.bias",
+            ),
+        ]
+        fuse_gate_up_keys = [
+            (
+                "layers.0.mlp.gate_proj.weight",
+                "layers.0.mlp.up_proj.weight",
+                "layers.0.mlp.up_gate_proj.weight",
+            ),
+            (
+                "layers.0.mlp.experts.0.gate_proj.weight",
+                "layers.0.mlp.experts.0.up_proj.weight",
+                "layers.0.mlp.experts.0.up_gate_proj.weight",
+            ),
+            (
+                "layers.0.mlp.shared_experts.gate_proj.weight",
+                "layers.0.mlp.shared_experts.up_proj.weight",
+                "layers.0.mlp.shared_experts.up_gate_proj.weight",
+            ),
+        ]
+        num_heads = config.num_attention_heads
+        num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
+        fuse_attention_qkv = getattr(config, "fuse_attention_qkv", False)
+        fuse_attention_ffn = getattr(config, "fuse_attention_ffn", False)
+        num_experts = getattr(config, "n_routed_experts", 128)
+
+        final_actions = {}
+        if is_fuse:
+            if fuse_attention_qkv:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_qkv_keys:
+                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
+                        final_actions[keys] = partial(
+                            fn, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
+                        )
+
+            if fuse_attention_ffn:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_gate_up_keys:
+                        keys = [key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys]
+                        if "experts.0." in keys[0]:
+                            for j in range(num_experts):
+                                experts_keys = tuple([key.replace("experts.0.", f"experts.{j}.") for key in keys])
+                                final_actions[experts_keys] = fn
+                        else:
+                            experts_keys = tuple(keys)
+                            final_actions[experts_keys] = fn
+
+        else:
+            if not fuse_attention_qkv:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_qkv_keys:
+                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
+                        final_actions[keys] = partial(
+                            fn,
+                            split_nums=3,
+                            is_qkv=True,
+                            num_heads=num_heads,
+                            num_key_value_heads=num_key_value_heads,
+                        )
+            if not fuse_attention_ffn:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_gate_up_keys:
+                        keys = [key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys]
+                        if "experts.0." in keys[0]:
+                            for j in range(num_experts):
+                                experts_keys = tuple([key.replace("experts.0.", f"experts.{j}.") for key in keys])
+                                final_actions[experts_keys] = partial(fn, split_nums=2)
+                        else:
+                            experts_keys = tuple(keys)
+                            final_actions[experts_keys] = partial(fn, split_nums=2)
+        return final_actions
 
 
 class Glm4MoeRotaryEmbedding(nn.Layer):
