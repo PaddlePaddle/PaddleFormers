@@ -1604,7 +1604,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         """
         return cls.config_class is not None and issubclass(cls.config_class, PretrainedConfig)
 
-    def save_model_config(self, save_dir: str):
+    def save_model_config(self, save_dir: str, **kwargs):
         """
         Deprecated, please use `.config.save_pretrained()` instead.
         Saves model configuration to a file named "config.json" under `save_dir`.
@@ -1613,7 +1613,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             save_dir (str): Directory to save model_config file into.
         """
         logger.warning("The `save_model_config` is deprecated! Please use `.config.save_pretrained()` instead.")
-        self.config.save_pretrained(save_dir)
+        self.config.save_pretrained(save_dir, **kwargs)
 
     def save_to_hf_hub(
         self,
