@@ -302,6 +302,7 @@ class Trainer:
         optimizers: Tuple[paddle.optimizer.Optimizer, paddle.optimizer.lr.LRScheduler] = (None, None),
         preprocess_logits_for_metrics: Callable[[paddle.Tensor, paddle.Tensor], paddle.Tensor] = None,
         processing_class: Optional[ImageProcessingMixin] = None,
+        resume_from_custom_func: Optional[Callable] = None,
     ):
 
         if args is None:
@@ -356,6 +357,7 @@ class Trainer:
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
+        self.resume_from_custom_func = resume_from_custom_func
         if not args.skip_profile_timer:
             set_timers()
         self.timers = get_timers()
@@ -1132,6 +1134,9 @@ class Trainer:
 
         if self.args.ignore_data_skip:
             self.timers and self.timers("read-data").start()
+
+        if self.resume_from_custom_func is not None:
+            self.resume_from_custom_func(self.model)
 
         for epoch in range(epochs_trained, num_train_epochs):
             if isinstance(train_dataloader, paddle.io.DataLoader) and isinstance(

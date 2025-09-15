@@ -35,6 +35,7 @@ from ..transformers import (  # ChatGLMv2Tokenizer,
     AutoTokenizer,
     DeepseekV2ForCausalLMPipe,
     DeepseekV3ForCausalLMPipe,
+    Glm4MoeForCausalLMPipe,
     GptOssForCausalLMPipe,
     LlamaForCausalLMPipe,
     PretrainedConfig,
@@ -211,6 +212,22 @@ def get_lora_target_modules(model):
             ".*gate_proj.*",
             ".*up_proj.*",
             ".*down_proj.*",
+        ]
+    elif model.config.model_type == "glm4_moe" or isinstance(model, Glm4MoeForCausalLMPipe):
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+            ".*mlp.gate_proj.*",
+            ".*mlp.up_proj.*",
+            ".*mlp.down_proj.*",
+            ".*mlp.gate_proj.*",
+            ".*mlp.up_proj.*",
+            ".*mlp.down_proj.*",
         ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")

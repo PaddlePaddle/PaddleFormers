@@ -798,7 +798,7 @@ class GptOssModel(GptOssPreTrainedModel):
             attention_mask = None
             causal_mask_mapping = {}
             attn_mask_startend_row_indices_mapping = {}
-            causal_mask_mapping["full_attention"] - None
+            causal_mask_mapping["full_attention"] = None
             causal_mask_mapping["sliding_attention"] = None
             attn_mask_startend_row_indices_mapping["full_attention"] = attn_mask_startend_row_indices
             attn_mask_startend_row_indices_mapping["sliding_attention"] = attn_mask_startend_row_indices

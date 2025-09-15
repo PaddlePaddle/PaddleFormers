@@ -49,7 +49,7 @@ import_structure = {
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["ImageProcessingMixin"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
-    "token_dispatcher": [],
+    "token_dispatcher": ["_DispatchManager"],
     "moe_layer": ["combining", "_AllToAll", "MoELayer", "dispatching", "MoEFlexTokenLayer"],
     "bert.modeling": [
         "BertForSequenceClassification",
@@ -339,6 +339,7 @@ import_structure = {
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "qwen2_moe": [],
     "qwen3_moe": [],
+    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"],
     "auto": ["AutoModelForCausalLM"],
     "legacy.tokenizer_utils_base": ["EncodingFast"],
     "legacy": [],
@@ -402,6 +403,7 @@ if TYPE_CHECKING:
     from .qwen2_moe import *
     from .qwen3 import *
     from .qwen3_moe import *
+    from .glm4_moe import *
     from .gpt_oss import *
 else:
     sys.modules[__name__] = _LazyModule(

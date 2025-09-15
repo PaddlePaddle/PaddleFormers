@@ -1,3 +1,32 @@
+## 0. 环境变量
+
+在运行前，可以通过设置环境变量 `DOWNLOAD_SOURCE` 来指定模型的下载源，默认使用 **huggingface**。
+
+目前支持的下载源包括：
+- [huggingface](https://huggingface.co)
+- [modelscope](https://modelscope.cn/home)
+- [aistudio](https://aistudio.baidu.com/overview)
+
+
+示例：
+```bash
+# 使用 modelscope
+export DOWNLOAD_SOURCE=modelscope
+
+# 使用 aistudio
+export DOWNLOAD_SOURCE=aistudio
+```
+
+### Paddle 权重使用说明
+
+使用 **Paddle** 格式权重，需要在配置文件（如 `sft_full.json`、`sft_lora.json`等）中手动添加以下参数，以避免与 **HuggingFace** 格式冲突：
+
+```json
+"model_name_or_path": "your_model_name",
+"convert_from_hf": false,
+"save_to_hf": false,
+```
+
 ## 1. 精调
 
 ### 1.1 数据准备
@@ -25,21 +54,19 @@ tar -xvf alpaca_demo.gz
 
 单卡
 ```bash
-# 需要12G显存左右
-python -u run_finetune.py ./config/qwen/sft_argument_qwen2_0p5b.json
+python -u run_finetune.py ./config/sft_full.json
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/qwen/sft_argument_qwen2_0p5b.json
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/sft_full.json
 ```
 
 ### 1.3 LoRA SFT
 
 LoRA SFT 启动命令参考
 ```bash
-# 需要9G左右显存
-python -u run_finetune.py ./config/qwen/lora_argument_qwen2_0p5b.json
+python -u run_finetune.py ./config/sft_lora.json
 ```
 
 
@@ -81,17 +108,17 @@ tar -zxvf ultrafeedback_binarized.tar.gz
 
 单卡
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/qwen/dpo_argument_qwen2_0p5b.json
+python -u ./alignment/dpo/run_dpo.py ./config/dpo_full.json
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/qwen/dpo_argument_qwen2_0p5b.json
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/dpo_full.json
 ```
 
 ### 2.3 LoRA DPO
 
 LoRA DPO 启动命令参考
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/qwen/dpo_lora_argument_qwen2_0p5b.json
+python -u ./alignment/dpo/run_dpo.py ./config/dpo_lora.json
 ```
