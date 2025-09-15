@@ -125,13 +125,19 @@ class GptOssExperts(nn.Layer):
                 expert_mask = expert_mask.transpose(perm=[2, 1, 0])
                 # we sum on the top_k and on the sequence lenght to get which experts
                 # are hit this time around
-                expert_hitted = paddle.nonzero(
-                    paddle.greater_than(expert_mask.sum(axis=(-1, -2)), paddle.to_tensor(0, dtype=expert_mask.dtype))
-                )
-            for expert_idx in expert_hitted[:]:
+                # expert_hitted = paddle.nonzero(
+                #     paddle.greater_than(expert_mask.sum(axis=(-1, -2)), paddle.to_tensor(0, dtype=expert_mask.dtype))
+                # )
+            for expert_idx in range(self.num_experts):
                 with paddle.no_grad():
                     _, token_idx = paddle.where(expert_mask[expert_idx[0]])
-                current_state = hidden_states[token_idx]
+                if token_idx.shape[0] == 0:
+                    tokenr_idx_ = paddle.zeros(1, dtype=paddle.int32)
+                    top_x_list = tokenr_idx_.tolist()
+                    current_state = hidden_states[None, top_x_list].reshape(-1, self.hidden_size) * 0
+                else:
+                    current_state = hidden_states[token_idx]
+
                 gate_up = current_state @ self.gate_up_proj[expert_idx] + self.gate_up_proj_bias[expert_idx]
                 gate, up = gate_up[..., ::2], gate_up[..., 1::2]
                 gate = paddle.clip(gate, min=None, max=self.limit)
@@ -139,7 +145,10 @@ class GptOssExperts(nn.Layer):
                 glu = gate * F.sigmoid(gate * self.alpha)
                 gated_output = (up + 1) * glu
                 out = gated_output @ self.down_proj[expert_idx] + self.down_proj_bias[expert_idx]
-                weighted_output = out[0] * routing_weights[token_idx, expert_idx, None]
+                if token_idx.shape[0] != 0:
+                    weighted_output = out[0] * routing_weights[token_idx, expert_idx, None]
+                else:
+                    weighted_output = out[0]
                 next_states = paddle.index_add(
                     next_states,
                     token_idx,
