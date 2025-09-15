@@ -3,18 +3,18 @@ name: Unittest GPU CI
 on:
   pull_request:
   schedule:
-    - cron: "3 0 * * *"
+    - cron: "0 18 * * *"
   workflow_call:
     inputs:
       runner:
-        required: true
+        required: false
         type: string
       image_name:
         required: true
         type: string
 
 concurrency:
-  group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:
