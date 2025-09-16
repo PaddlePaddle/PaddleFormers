@@ -166,7 +166,7 @@ class UnifiedCheckpointHandler:
                         json.dump(sharded_index, f, indent=4)
 
         if self.args.should_save:
-            save_model_config(model_to_save, save_directory)
+            save_model_config(model_to_save, save_directory, save_to_hf)
 
         empty_device_cache()
 
