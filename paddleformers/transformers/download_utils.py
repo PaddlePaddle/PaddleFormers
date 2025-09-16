@@ -19,7 +19,7 @@ register_model_group(
     models={
         "Qwen2-0.5B": {
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-0.5B",
-            DownloadSource.AISTUDIO: "ModelHub/Qwen2-0.5B",           
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-0.5B",
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-0.5B",
         },
         "Qwen2-1.5B": {
@@ -283,7 +283,7 @@ register_model_group(
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-PRM-7B",
             DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-PRM-7B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Math-PRM-7B",
-        },     
+        },
         "Qwen2.5-Math-PRM-72B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-PRM-72B",
             DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-PRM-72B",
