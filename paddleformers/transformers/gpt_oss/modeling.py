@@ -658,6 +658,19 @@ class GptOssPreTrainedModel(PretrainedModel):
         return mappings
 
 
+def prepare_sliding_window_startend_row_indices(startend_row_indices, window_size=5):
+    if startend_row_indices is None:
+        return None
+    batch_size, num_head, seq_length, bound_num = startend_row_indices.shape
+    assert bound_num <= 2, f"bound_num should be less than or equal to 2 when use sling window, but got {bound_num}"
+    for bi in range(batch_size):
+        for hi in range(num_head):
+            for j in range(seq_length):
+                downstart = startend_row_indices[bi, hi, j, 0]
+                startend_row_indices[bi, hi, j, 0] = max(downstart, j - window_size + 1)
+    return startend_row_indices
+
+
 @register_base_model
 class GptOssModel(GptOssPreTrainedModel):
     """
@@ -801,7 +814,9 @@ class GptOssModel(GptOssPreTrainedModel):
             causal_mask_mapping["full_attention"] = None
             causal_mask_mapping["sliding_attention"] = None
             attn_mask_startend_row_indices_mapping["full_attention"] = attn_mask_startend_row_indices
-            attn_mask_startend_row_indices_mapping["sliding_attention"] = attn_mask_startend_row_indices
+            attn_mask_startend_row_indices_mapping["sliding_attention"] = prepare_sliding_window_startend_row_indices(
+                attn_mask_startend_row_indices, window_size=self.config.sliding_window
+            )
         else:
             # [bs, seq_len]
             attention_mask = (
@@ -1008,10 +1023,6 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
         self.router_aux_loss_coef = config.router_aux_loss_coef
         self.num_experts = config.num_experts
         self.num_experts_per_tok = config.num_experts_per_tok
-        # Initialize weights and apply final processing
-        if config.sliding_window:
-            self.config.sliding_window = False
-            logger.warning("We do not support sliding window attention for now.")
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
