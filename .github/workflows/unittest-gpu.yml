@@ -2,6 +2,7 @@ name: Unittest GPU CI
 
 on:
   pull_request:
+  push:
   schedule:
     - cron: "3 0 * * *"
   workflow_call:
@@ -122,6 +123,7 @@ jobs:
             rm -rf /root/.cache/aistudio/
             cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
             source $work_dir/../../../proxy
+            source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
             timeout 100m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
             '
           fi
@@ -165,11 +167,11 @@ jobs:
               echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
             done
             # allure
-            cd /workspace/PaddleFormers/
-            ${{ env.allure_file }} generate result -o report
-            tar -czf report.tar.gz report
-            python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-            echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
+            # cd /workspace/PaddleFormers/
+            # ${{ env.allure_file }} generate result -o report
+            # tar -czf report.tar.gz report
+            # python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+            # echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
             '
           fi
 
