@@ -19,59 +19,78 @@ register_model_group(
     models={
         "Qwen2-0.5B": {
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-0.5B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-0.5B",
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-0.5B",
         },
         "Qwen2-1.5B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-1.5B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-1.5B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-1.5B",
         },
         "Qwen2-7B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-7B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-7B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-7B",
         },
         "Qwen2-72B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-72B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-72B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-72B",
         },
         "Qwen2-0.5B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-0.5B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-0.5B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-0.5B-Instruct",
         },
         "Qwen2-1.5B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-1.5B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-1.5B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-1.5B-Instruct",
         },
         "Qwen2-7B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-7B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-7B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-7B-Instruct",
         },
         "Qwen2-72B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-72B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-72B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-72B-Instruct",
         },
         "Qwen2-Math-1.5B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-Math-1.5B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-Math-1.5B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-Math-1.5B",
         },
         "Qwen2-Math-7B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-Math-7B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-Math-7B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-Math-7B",
         },
         "Qwen2-Math-72B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-Math-72B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-Math-72B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-Math-72B",
         },
         "Qwen2-Math-1.5B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-Math-1.5B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-Math-1.5B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-Math-1.5B-Instruct",
         },
         "Qwen2-Math-7B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-Math-7B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-Math-7B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-Math-7B-Instruct",
         },
         "Qwen2-Math-72B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-Math-72B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-Math-72B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-Math-72B-Instruct",
+        },
+        "Qwen2-Math-RM-72B": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2-Math-RM-72B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-Math-RM-72B",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2-Math-RM-72B",
         },
     }
 )
@@ -82,10 +101,12 @@ register_model_group(
     models={
         "Qwen2-MoE-57B-A14B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-57B-A14B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-57B-A14B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-57B-A14B",
         },
         "Qwen2-MoE-57B-A14B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2-57B-A14B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2-57B-A14B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2-57B-A14B-Instruct",
         },
     }
@@ -97,69 +118,82 @@ register_model_group(
     models={
         "Qwen2.5-0.5B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-0.5B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-0.5B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-0.5B",
         },
         "Qwen2.5-1.5B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-1.5B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-1.5B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-1.5B",
         },
         "Qwen2.5-3B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-3B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-3B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-3B",
         },
         "Qwen2.5-7B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-7B",
-            DownloadSource.AISTUDIO: "PaddleNLP/Qwen2.5-7B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-7B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-7B",
         },
         "Qwen2.5-14B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-14B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-14B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-14B",
         },
         "Qwen2.5-32B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-32B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-32B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-32B",
         },
         "Qwen2.5-72B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-72B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-72B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-72B",
         },
         "Qwen2.5-0.5B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-0.5B-Instruct",
-            DownloadSource.AISTUDIO: "PaddleNLP/Qwen2.5-0.5B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-0.5B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-0.5B-Instruct",
         },
         "Qwen2.5-1.5B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-1.5B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-1.5B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-1.5B-Instruct",
         },
         "Qwen2.5-3B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-3B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-3B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-3B-Instruct",
         },
         "Qwen2.5-7B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-7B-Instruct",
-            DownloadSource.AISTUDIO: "PaddleNLP/Qwen2.5-7B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-7B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-7B-Instruct",
         },
         "Qwen2.5-14B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-14B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-14B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-14B-Instruct",
         },
         "Qwen2.5-32B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-32B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-32B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-32B-Instruct",
         },
         "Qwen2.5-72B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-72B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-72B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
         },
         "Qwen2.5-7B-Instruct-1M": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-7B-Instruct-1M",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-7B-Instruct-1M",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-7B-Instruct-1M",
         },
         "Qwen2.5-14B-Instruct-1M": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-14B-Instruct-1M",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-14B-Instruct-1M",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-14B-Instruct-1M",
         },
         "Qwen2.5-Coder-0.5B": {
@@ -212,27 +246,48 @@ register_model_group(
         },
         "Qwen2.5-Math-1.5B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-1.5B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-1.5B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Math-1.5B",
         },
         "Qwen2.5-Math-7B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-7B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-7B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Math-7B",
         },
         "Qwen2.5-Math-72B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-72B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-72B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Math-72B",
         },
         "Qwen2.5-Math-1.5B-Instruct": {
-            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Coder-1.5B-Instruct",
-            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-1.5B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-1.5B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Math-1.5B-Instruct",
         },
         "Qwen2.5-Math-7B-Instruct": {
-            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Coder-7B-Instruct",
-            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Coder-7B-Instruct",
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-7B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-7B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Math-7B-Instruct",
         },
         "Qwen2.5-Math-72B-Instruct": {
-            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Coder-72B-Instruct",
-            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Coder-72B-Instruct",
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-72B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-72B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Math-72B-Instruct",
+        },
+        "Qwen2.5-Math-RM-72B": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-RM-72B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-RM-72B",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Math-RM-72B",
+        },
+        "Qwen2.5-Math-PRM-7B": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-PRM-7B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-PRM-7B",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Math-PRM-7B",
+        },
+        "Qwen2.5-Math-PRM-72B": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Math-PRM-72B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-Math-PRM-72B",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-Math-PRM-72B",
         },
         "QwQ-32B-Preview-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/QwQ-32B-Preview",
@@ -251,47 +306,88 @@ register_model_group(
     models={
         "Qwen3-0.6B-Base": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-0.6B-Base",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-0.6B-Base",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-0.6B-Base",
         },
         "Qwen3-1.7B-Base": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-1.7B-Base",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-1.7B-Base",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-1.7B-Base",
         },
         "Qwen3-4B-Base": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B-Base",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-4B-Base",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-4B-Base",
         },
         "Qwen3-8B-Base": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-8B-Base",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-8B-Base",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-8B-Base",
         },
         "Qwen3-14B-Base": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-14B-Base",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-14B-Base",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-14B-Base",
         },
-        "Qwen3-0.6B-Instruct": {
+        "Qwen3-0.6B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-0.6B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-0.6B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-0.6B",
         },
-        "Qwen3-1.7B-Instruct": {
+        "Qwen3-1.7B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-1.7B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-1.7B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-1.7B",
         },
-        "Qwen3-4B-Instruct": {
+        "Qwen3-4B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-4B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-4B",
         },
-        "Qwen3-8B-Instruct": {
+        "Qwen3-8B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-8B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-8B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-8B",
         },
-        "Qwen3-14B-Instruct": {
+        "Qwen3-14B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-14B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-14B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-14B",
         },
-        "Qwen3-32B-Instruct": {
+        "Qwen3-32B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-32B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-32B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-32B",
+        },
+        "Qwen3-0.6B-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-0.6B-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-0.6B-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-0.6B-FP8",
+        },
+        "Qwen3-1.7B-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-1.7B-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-1.7B-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-1.7B-FP8",
+        },
+        "Qwen3-4B-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-4B-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-4B-FP8",
+        },
+        "Qwen3-8B-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-8B-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-8B-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-8B-FP8",
+        },
+        "Qwen3-14B-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-14B-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-14B-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-14B-FP8",
+        },
+        "Qwen3-32B-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-32B-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-32B-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-32B-FP8",
         },
     }
 )
@@ -302,15 +398,88 @@ register_model_group(
     models={
         "Qwen3-30B-A3B-Base": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-30B-A3B-Base",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-30B-A3B-Base",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-30B-A3B-Base",
         },
-        "Qwen3-30B-A3B-Instruct": {
+        "Qwen3-30B-A3B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-30B-A3B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-30B-A3B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-30B-A3B",
         },
-        "Qwen3-235B-A22B-Instruct": {
+        "Qwen3-235B-A22B": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-235B-A22B",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-235B-A22B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-235B-A22B",
+        },
+        "Qwen3-30B-A3B-Instruct-2507": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-30B-A3B-Instruct-2507",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        },
+        "Qwen3-235B-A22B-Instruct-2507": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-235B-A22B-Instruct-2507",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-235B-A22B-Instruct-2507",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        },
+        "Qwen3-30B-A3B-Thinking-2507": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-30B-A3B-Thinking-2507",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-30B-A3B-Thinking-2507",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-30B-A3B-Thinking-2507",
+        },
+        "Qwen3-235B-A22B-Thinking-2507": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-235B-A22B-Thinking-2507",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-235B-A22B-Thinking-2507",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-235B-A22B-Thinking-2507",
+        },
+        "Qwen3-30B-A3B-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-30B-A3B-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-30B-A3B-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-30B-A3B-FP8",
+        },
+        "Qwen3-235B-A22B-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-235B-A22B-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-235B-A22B-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-235B-A22B-FP8",
+        },
+        "Qwen3-30B-A3B-Instruct-2507-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-30B-A3B-Instruct-2507-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
+        },
+        "Qwen3-235B-A22B-Instruct-2507-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-235B-A22B-Instruct-2507-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8",
+        },
+        "Qwen3-30B-A3B-Thinking-2507-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-30B-A3B-Thinking-2507-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-30B-A3B-Thinking-2507-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-30B-A3B-Thinking-2507-FP8",
+        },
+        "Qwen3-235B-A22B-Thinking-2507-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-235B-A22B-Thinking-2507-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-235B-A22B-Thinking-2507-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-235B-A22B-Thinking-2507-FP8",
+        },
+        "Qwen3-Coder-30B-A3B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-Coder-30B-A3B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        },
+        "Qwen3-Coder-480-A35B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-Coder-480B-A35B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+        },
+        "Qwen3-Coder-30B-A3B-Instruct-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-Coder-30B-A3B-Instruct-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8",
+        },
+        "Qwen3-Coder-480-A35B-Instruct-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-Coder-480B-A35B-Instruct-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
         },
     }
 )
