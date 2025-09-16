@@ -28,7 +28,6 @@ jobs:
     if: ${{ needs.build-ci-images-test.outputs.flag_downstream == 'true' }}
     uses: ./.github/workflows/unittest-gpu.yml
     with:
-      run_downstream: ${{ needs.build-ci-docker-images.outputs.run_downstream }}
       runner: ernie-8gpu-2
       image_name: ${{ needs.build-ci-images-test.outputs.image_name }}
 
@@ -42,6 +41,7 @@ jobs:
         run: |
           # Safely remove dangling images (skip if no dangling images exist)
           docker images -f "dangling=true" -q | xargs -r docker rmi -f
+
   update-ci-images-1:
     name: update-ci-images-1
     needs: [build-ci-images-test, test-ci-docker-images]
