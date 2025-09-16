@@ -642,6 +642,8 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         if pretrained_model_class is not None:
             if hasattr(pretrained_model_class, "_get_tensor_parallel_mappings"):
                 cls._get_tensor_parallel_mappings = pretrained_model_class._get_tensor_parallel_mappings
+            if hasattr(pretrained_model_class, "_get_fuse_or_split_param_mappings"):
+                cls._get_fuse_or_split_param_mappings = pretrained_model_class._get_fuse_or_split_param_mappings
             if hasattr(pretrained_model_class, "_init_weights"):
                 cls._init_weights = pretrained_model_class._init_weights
             if hasattr(pretrained_model_class, "_keep_in_fp32_modules"):
