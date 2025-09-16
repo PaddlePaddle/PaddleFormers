@@ -1,7 +1,7 @@
 name: Unittest GPU CI
 
 on:
-  pull_request:
+  pull_request: 
   push:
   schedule:
     - cron: "3 0 * * *"
