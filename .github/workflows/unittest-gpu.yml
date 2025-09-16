@@ -2,6 +2,7 @@ name: Unittest GPU CI
 
 on:
   pull_request:
+  push:
   schedule:
     - cron: "3 0 * * *"
   workflow_call:
@@ -122,11 +123,12 @@ jobs:
             rm -rf /root/.cache/aistudio/
             cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
             source $work_dir/../../../proxy
+            source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
             timeout 100m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
             '
           fi
           
-      - name: Upload Allure-reports & Logs
+      - name: Upload Products
         if: always()
         env:
           home_path: ${{ github.workspace }}/../../..
@@ -153,17 +155,23 @@ jobs:
             else
               bos_prefix="schedule/$(date +%Y%m%d)"
             fi
+            # coverage.xml
+            cd /workspace/PaddleFormers
+            python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+            echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
+            # logs
             cd /workspace/PaddleFormers/unittest_logs
             for FILE in /workspace/PaddleFormers/unittest_logs/*; do
               file=$(basename "$FILE")
               python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
               echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
             done
-            cd /workspace/PaddleFormers/
-            ${{ env.allure_file }} generate result -o report
-            tar -czf products.tar.gz report unittest_logs
-            python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-            echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz"
+            # allure
+            # cd /workspace/PaddleFormers/
+            # ${{ env.allure_file }} generate result -o report
+            # tar -czf report.tar.gz report
+            # python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+            # echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
             '
           fi
 
@@ -171,6 +179,54 @@ jobs:
         if: always()
         run: |
           docker rm -f $container_name 2>/dev/null || true
+        
+  upload-coverage:
+    name: upload-coverage
+    needs: [unittest-gpu-ci]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage.xml
+        run: |
+          if [[ "${{ env.RUN_DOWNSTREAM }}" == "" && -n "${PR_ID}" ]]; then
+            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          elif [[ "${{ env.RUN_DOWNSTREAM }}" == "true" && -n "${PR_ID}" ]]; then
+            bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
+          else
+            bos_prefix="schedule/$(date +%Y%m%d)"
+          fi
+          wget -q --no-proxy \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml \
+            --no-check-certificate -O coverage.xml
+
+      - name: Fix coverage.xml paths
+        run: |
+          echo "Before fix:"
+          head -n 10 coverage.xml || true
+
+          old_source=$(grep -oPm1 '(?<=<source>).*?(?=</source>)' coverage.xml || true)
+          if [ -n "$old_source" ]; then
+            echo "Replacing source '$old_source' with 'paddleformers'"
+            sed -i "s|<source>$old_source</source>|<source>paddleformers</source>|g" coverage.xml
+          else
+            echo "No <source> found, injecting <source>paddleformers</source>"
+            sed -i 's|<sources>|<sources>\n        <source>paddleformers</source>|' coverage.xml
+          fi
+
+          echo "After fix:"
+          head -n 10 coverage.xml || true
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   # upload-products:
   #   name: upload-products

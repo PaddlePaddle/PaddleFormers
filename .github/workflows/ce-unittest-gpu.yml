@@ -66,6 +66,8 @@ jobs:
             -e repo_branch \
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
+            -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
+            -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
             -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             
       - name: Download Code
