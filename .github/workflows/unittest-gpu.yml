@@ -122,6 +122,7 @@ jobs:
             rm -rf /root/.cache/aistudio/
             cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
             source $work_dir/../../../proxy
+            source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
             timeout 100m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
             '
           fi
