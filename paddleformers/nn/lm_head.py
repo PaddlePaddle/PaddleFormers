@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import paddle
 import paddle.nn as nn
 
 from ..generation.configuration_utils import PretrainedConfig
 from ..utils.log import logger
 from .criterion.loss_utils import calc_lm_head_logits
-from .linear import Linear
 
 __all__ = ["LMHead"]
 
@@ -41,22 +41,27 @@ class LMHead(nn.Layer):
                     vocab_size,
                     config.tensor_parallel_degree,
                 )
-        self.lm_head = Linear.create(
-            in_features=vocab_size,
-            out_features=config.hidden_size,
-            weight_attr=nn.initializer.XavierNormal(1.0),
-            has_bias=self.use_bias,
-            linear_type="default",
-        )
 
-        self.weight = self.lm_head.weight
-        self.bias = self.lm_head.bias
+        self.weight = self.create_parameter(
+            shape=[vocab_size, config.hidden_size],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=nn.initializer.XavierNormal(1.0),
+        )
 
         # setting distributed attr for tensor parallel
         self._set_distributed_attr(self.weight)
+
         if self.use_bias:
+            self.bias = self.create_parameter(
+                shape=[vocab_size],
+                dtype=paddle.get_default_dtype(),
+                default_initializer=nn.initializer.Constant(0.0),
+            )
+
             # setting distributed attr for tensor parallel
             self._set_distributed_attr(self.bias)
+        else:
+            self.bias = None
 
     def _set_distributed_attr(self, param):
         param.is_distributed = self.vocab_parallel
