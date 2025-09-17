@@ -55,7 +55,7 @@ class LMHead(nn.Layer):
             self.bias = self.create_parameter(
                 shape=[vocab_size],
                 dtype=paddle.get_default_dtype(),
-                default_initializer=nn.initializer.Constant(0.0),
+                attr=paddle.ParamAttr(initializer=paddle.nn.initializer.constant.Constant(0.0)),
             )
 
             # setting distributed attr for tensor parallel
