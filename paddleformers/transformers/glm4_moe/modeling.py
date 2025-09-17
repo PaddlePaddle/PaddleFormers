@@ -220,6 +220,7 @@ class Glm4MoeAttention(nn.Layer):
             query_states = self.q_proj(hidden_states)
             key_states = self.k_proj(hidden_states)
             value_states = self.v_proj(hidden_states)
+
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
                 bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
@@ -230,7 +231,7 @@ class Glm4MoeAttention(nn.Layer):
             query_states = query_states.reshape([bsz, q_len, -1, self.head_dim])
             key_states = key_states.reshape([bsz, q_len, -1, self.head_dim])
             value_states = value_states.reshape([bsz, q_len, -1, self.head_dim])
-        else:  # todo: apply sp in fuse_attention_qkv
+        else:
             mix_layer = self.qkv_proj(hidden_states)
             if self.sequence_parallel:
                 target_shape = [
@@ -316,9 +317,7 @@ class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
         # compute gating score
         with paddle.amp.auto_cast(False):
             hidden_states = hidden_states.cast(self.weight.dtype)
-
             logits = F.linear(hidden_states.cast("float32"), self.weight.cast("float32").t())
-
             scores = self.gate_score_func(logits=logits)
             scores = scores.cast(paddle.float32)
 
@@ -493,7 +492,7 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
                 setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
 
         self.shared_experts = Glm4MoeMLP(
-            config=mlp_config,
+            config=config,
             intermediate_size=config.moe_intermediate_size * config.n_shared_experts,
             fuse_up_gate=config.fuse_attention_ffn,
         )
@@ -652,6 +651,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                             for k in FUSE_LAYER_COLWISE
                         }
                     )
+
                 actions.update(
                     {
                         f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
@@ -664,7 +664,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     moe_group = None
                 expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
                 # TODO: merge disable_ffn_model_parallel and expert_parallel_degree
-                if expert_parallel_degree <= 1 and not config.disable_ffn_model_parallel:
+                if expert_parallel_degree <= 1:
                     # # if disable_ffn_model_parallel is True, disable expert layer tp plan
                     # if not config.disable_ffn_model_parallel:
                     if not config.fuse_attention_ffn:
@@ -719,35 +719,32 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                         }
                     )
 
-                if expert_parallel_degree <= 1 and not config.disable_ffn_model_parallel:
-                    if not config.fuse_attention_ffn:
-                        actions.update(
-                            {
-                                f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
-                                    fn, is_column=True
-                                )
-                                for k in EXPERT_LAYER_COLWISE
-                            }
-                        )
-                    else:
-                        actions.update(
-                            {
-                                f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
-                                    fn, is_column=True, is_naive_2fuse=True
-                                )
-                                for k in FUSE_EXPERT_LAYER_COLWISE
-                            }
-                        )
-
+                if not config.fuse_attention_ffn:
                     actions.update(
                         {
                             f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
-                                fn, is_column=False
+                                fn, is_column=True
                             )
-                            for k in EXPERT_LAYER_ROWWISE
+                            for k in EXPERT_LAYER_COLWISE
                         }
                     )
-
+                else:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
+                                fn, is_column=True, is_naive_2fuse=True
+                            )
+                            for k in FUSE_EXPERT_LAYER_COLWISE
+                        }
+                    )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
+                            fn, is_column=False
+                        )
+                        for k in EXPERT_LAYER_ROWWISE
+                    }
+                )
                 # bias
                 if config.attention_bias:
                     if not config.fuse_attention_qkv:
@@ -823,6 +820,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                         final_actions[keys] = partial(
                             fn, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
                         )
+
             if fuse_attention_ffn:
                 for i in range(config.num_hidden_layers):
                     for fuse_keys in fuse_gate_up_keys:
@@ -1065,8 +1063,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
                     use_cache=use_cache,
                     position_embeddings=position_embeddings,
                 )
-            print(f"finished {idx} decoder_layer")
-
             # # NOTE: clear outdate cache after it has been used for memory saving
             # past_key_value = past_key_values[idx] = None
             if isinstance(layer_outputs, (tuple, list)):
