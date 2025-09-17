@@ -666,8 +666,7 @@ def prepare_sliding_window_startend_row_indices(startend_row_indices, window_siz
     for bi in range(batch_size):
         for hi in range(num_head):
             for j in range(seq_length):
-                downstart = startend_row_indices[bi, hi, j, 0]
-                startend_row_indices[bi, hi, j, 0] = max(downstart, j - window_size + 1)
+                startend_row_indices[bi, hi, j, 1] = min(startend_row_indices[bi, hi, j, 1], window_size + j)
     return startend_row_indices
 
 
