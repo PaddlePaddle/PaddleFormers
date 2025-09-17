@@ -149,11 +149,11 @@ jobs:
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
           done
           # allure
-          # cd /workspace/PaddleFormers/
-          # ${{ env.allure_file }} generate result -o report
-          # tar -czf report.tar.gz report
-          # python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-          # echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
+          cd /workspace/PaddleFormers/
+          ${{ env.allure_file }} generate result -o report
+          tar -czf report.tar.gz report
+          python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+          echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
           '
 
       - name: Terminate And Delete the Container
@@ -207,33 +207,31 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  # upload-products:
-  #   name: upload-products
-  #   needs: [unittest-gpu-ci]
-  #   if: always()
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Wget Files
-  #       run: |
-  #         if [ -n "${PR_ID}" ]; then
-  #           bos_prefix="${PR_ID}/${COMMIT_ID}"
-  #         else
-  #           bos_prefix="schedule/$(date +%Y%m%d)"
-  #         fi
-  #         wget -q --no-proxy  https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz --no-check-certificate
-  #         tar -xzf products.tar.gz
+  upload-allure:
+    name: upload-allure
+    needs: [unittest-gpu-ci]
+    if: success() || failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-  #     - name: Upload Allure Report
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: allure-report
-  #         path: report
-  #         if-no-files-found: ignore
+      - name: Download report.tar.gz
+        run: |
+          if [ -n "${PR_ID}" ]; then
+            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          else
+            bos_prefix="schedule/$(date +%Y%m%d)"
+          fi
+          wget -q --no-proxy \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz \
+            --no-check-certificate -O report.tar.gz
+          tar -xzf report.tar.gz
 
-  #     - name: Upload Logs
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: unittest-gpu-ci-log
-  #         path: |
-  #           unittest_logs
-  #         if-no-files-found: ignore
+      - name: Deploy allure report to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./report
