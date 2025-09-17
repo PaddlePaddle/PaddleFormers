@@ -650,7 +650,7 @@ class GptOssPreTrainedModel(PretrainedModel):
     config_class = GptOssConfig
     base_model_prefix = "model"
     keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
-    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: GptOssConfig, is_split=True):
@@ -667,7 +667,7 @@ class GptOssPreTrainedModel(PretrainedModel):
             final_actions = {}
 
             base_actions = {
-                "lm_head.weight": partial(fn, is_column=True),
+                "lm_head.weight": partial(fn, is_column=False),
                 # Row Linear
                 "embed_tokens.weight": partial(fn, is_column=False),
                 "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
