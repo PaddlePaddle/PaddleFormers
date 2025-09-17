@@ -273,7 +273,6 @@ class Qwen3MoePretrainedModel(PretrainedModel):
         "up_proj",
         "down_proj",
         "gate",
-        "lm_head",
     ]
 
     @classmethod
@@ -311,7 +310,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
         def make_base_actions():
             actions = {
-                "lm_head.weight": partial(fn, is_column=not config.tie_word_embeddings),
+                "lm_head.weight": partial(fn, is_column=False),
                 "embed_tokens.weight": partial(fn, is_column=False),
             }
             for layer_idx in range(config.num_hidden_layers):
