@@ -131,7 +131,6 @@ class Glm4MoeAttention(nn.Layer):
 
         self.sequence_parallel = config.sequence_parallel
         self.attention_bias = config.attention_bias
-        self.attn_implementation = config._attn_implementation
         self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
@@ -262,7 +261,7 @@ class Glm4MoeAttention(nn.Layer):
             value_states = paddle.concat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config.attn_impl]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, attn_weights = attention_interface(
             self,
