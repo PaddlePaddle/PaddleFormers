@@ -112,7 +112,7 @@ def show():
 
 
 # only use this file to contral the version
-__version__ = "0.2.4.post"
+__version__ = "0.2.5.post"
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
 else:
