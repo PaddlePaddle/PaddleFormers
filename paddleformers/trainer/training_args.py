@@ -1089,7 +1089,7 @@ class TrainingArguments:
         metadata={"help": "Load model from HuggingFace safetensors."},
     )
     save_to_hf: Optional[bool] = field(
-        default=True,
+        default=False,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
     reorder_pipeline_priority: Optional[bool] = field(
