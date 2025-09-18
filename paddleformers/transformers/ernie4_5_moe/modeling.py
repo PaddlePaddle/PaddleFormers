@@ -39,7 +39,7 @@ from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Ernie4_5MLP
-from ...nn.moe.moe_alltoall_layer import MOEAlltoAllLayer
+from ...nn.moe.moe_allgather_layer import MOEAllGatherLayerV2
 from ...nn.moe.moe_block import MoEStatics
 from ...nn.moe.topk_gate import TopKGate
 from ...nn.moe.utils import _parse_moe_group
@@ -214,7 +214,7 @@ class FakeMoERouterLoss(PyLayer):
         return out_grad, paddle.full(ctx.loss_shape, router_loss_grad_value, dtype=ctx.loss_dtype)
 
 
-class Ernie4_5_MoeSparseMoeBlock(MOEAlltoAllLayer):
+class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
     def __init__(self, config, layer_idx):
         # correction bias (yes it seems to be a typo with statics <> statistics)
         moe_num_experts = config.moe_num_experts
@@ -258,7 +258,8 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAlltoAllLayer):
             shared_experts = Ernie4_5_MoeMLP(
                 deepcopy(config), config.hidden_size, config.moe_intermediate_size * config.moe_num_shared_experts
             )
-
+        use_expert_out_alltoall = use_expert_out_alltoall = "alltoall" in config.moe_multimodal_dispatch_use_allgather
+        use_padding = "unpad" not in config.moe_multimodal_dispatch_use_allgather
         super().__init__(
             gate=gate,
             experts=experts,
@@ -271,6 +272,9 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAlltoAllLayer):
             group_experts=config.moe_group_experts,
             moe_statics=moe_statics,
             moe_num_experts=config.moe_num_experts,
+            use_expert_out_alltoall=use_expert_out_alltoall,
+            use_padding=use_padding,
+            dense_token_type=3,
         )
         self.norm_min = config.moe_norm_min
         self.num_experts = config.moe_num_experts
