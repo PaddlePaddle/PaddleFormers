@@ -130,7 +130,7 @@ class GptOssExperts(nn.Layer):
                 # )
             for expert_idx in range(self.num_experts):
                 with paddle.no_grad():
-                    _, token_idx = paddle.where(expert_mask[expert_idx[0]])
+                    _, token_idx = paddle.where(expert_mask[expert_idx])
                 if token_idx.shape[0] == 0:
                     tokenr_idx_ = paddle.zeros(1, dtype=paddle.int32)
                     top_x_list = tokenr_idx_.tolist()
@@ -148,7 +148,7 @@ class GptOssExperts(nn.Layer):
                 if token_idx.shape[0] != 0:
                     weighted_output = out[0] * routing_weights[token_idx, expert_idx, None]
                 else:
-                    weighted_output = out[0]
+                    weighted_output = out
                 next_states = paddle.index_add(
                     next_states,
                     token_idx,
