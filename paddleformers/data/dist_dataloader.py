@@ -94,22 +94,22 @@ class DistDataLoader(paddle.io.DataLoader):
 
         if self._need_data:
             self._dataloader = paddle.io.DataLoader(
-                dataset,
-                feed_list,
-                places,
-                return_list,
-                batch_sampler,
-                batch_size,
-                shuffle,
-                drop_last,
-                collate_fn,
-                num_workers,
-                use_buffer_reader,
-                prefetch_factor,
-                use_shared_memory,
-                timeout,
-                worker_init_fn,
-                persistent_workers,
+                dataset=dataset,
+                feed_list=feed_list,
+                places=places,
+                return_list=return_list,
+                batch_sampler=batch_sampler,
+                batch_size=batch_size,
+                shuffle=shuffle,
+                drop_last=drop_last,
+                collate_fn=collate_fn,
+                num_workers=num_workers,
+                use_buffer_reader=use_buffer_reader,
+                prefetch_factor=prefetch_factor,
+                use_shared_memory=use_shared_memory,
+                timeout=timeout,
+                worker_init_fn=worker_init_fn,
+                persistent_workers=persistent_workers,
             )
 
             self._lazy_dataloader_iter = None
