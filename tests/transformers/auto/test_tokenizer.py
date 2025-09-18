@@ -32,14 +32,14 @@ class TestTokenizer(unittest.TestCase):
                 shutil.rmtree(test_dir)
 
     def test_slow_tokenizer_from_pretrained(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B", use_fast=False)
+        tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2-7B", use_fast=False)
         if hasattr(tokenizer, "is_fast"):
             self.assertFalse(tokenizer.is_fast)
         else:
             self.assertNotIn("Fast", tokenizer.__class__.__name__)
 
     def test_slow_tokenizer_save_pretrained(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B", use_fast=False)
+        tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2-7B", use_fast=False)
         special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
         tokenizer.add_special_tokens(special_tokens_dict)
         tokenizer.add_tokens(["new_word", "another_word"])
@@ -48,14 +48,14 @@ class TestTokenizer(unittest.TestCase):
         self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
 
     def test_fast_tokenizer_from_pretrained(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B")
+        tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2-7B")
         if hasattr(tokenizer, "is_fast"):
             self.assertTrue(tokenizer.is_fast)
         else:
             self.assertIn("Fast", tokenizer.__class__.__name__)
 
     def test_fast_tokenizer_save_pretrained(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2-7B")
+        tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2-7B")
         special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
         tokenizer.add_special_tokens(special_tokens_dict)
         tokenizer.add_tokens(["new_word", "another_word"])

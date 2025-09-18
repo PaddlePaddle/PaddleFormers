@@ -247,7 +247,7 @@ class Qwen3PretrainedModel(PretrainedModel):
     config_class = Qwen3Config
     base_model_prefix = "model"
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
-    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: Qwen3Config, is_split=True):
@@ -279,7 +279,7 @@ class Qwen3PretrainedModel(PretrainedModel):
 
         def make_base_actions():
             actions = {
-                "lm_head.weight": partial(fn, is_column=not config.tie_word_embeddings),
+                "lm_head.weight": partial(fn, is_column=False),
                 "embed_tokens.weight": partial(fn, is_column=False),
             }
             for layer_idx in range(config.num_hidden_layers):

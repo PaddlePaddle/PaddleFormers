@@ -101,7 +101,7 @@ def save_single_card_checkpoint(model_to_save, output_dir, save_to_hf=False):
     logger.warning("Asynchronous saving is not supported for single card environment currently.")
     save_file_sync(state_dict, path=os.path.join(output_dir, weight_filename), save_to_hf=save_to_hf)
 
-    save_model_config(model_to_save, output_dir)
+    save_model_config(model_to_save, output_dir, save_to_hf)
 
 
 def save_single_card_optimizer(model, optimizer, output_dir):

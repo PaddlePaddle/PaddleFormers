@@ -108,13 +108,17 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
     set +e
-    DOWNLOAD_SOURCE=aistudio PYTHONPATH=$(pwd) \
+    DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
+    PYTHONPATH=$(pwd) \
+    COVERAGE_SOURCE=paddleformers \
     timeout ${running_time} \
-    python -m pytest -v \
-    --dist loadgroup \
-    --retries 3 --retry-delay 1 \
-    --timeout 200 --durations 20 --alluredir=result \
-    --cov paddleformers --cov-report xml:coverage.xml > ${log_path}/unittest.log 2>&1
+    python -m pytest -v -n 8 \
+        --dist loadgroup \
+        --retries 3 --retry-delay 1 \
+        --timeout 200 --durations 20 \
+        --alluredir=result \
+        --cov=paddleformers \
+        --cov-report=xml:coverage.xml > ${log_path}/unittest.log 2>&1
     exit_code=$?
     print_info $exit_code unittest
 
