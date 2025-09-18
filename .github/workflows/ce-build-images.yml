@@ -1,0 +1,123 @@
+name: Build CI Images For Test
+
+on:
+  workflow_call:
+    inputs:
+      flag_build:       # test||update
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      image_base:
+        required: true
+        type: string
+
+env:
+  TASK: PaddleFormers-build-CI-image
+
+jobs:
+  build-images:
+    name: build-images
+    runs-on: ${{ inputs.runner }}
+    outputs:
+      flag_downstream: ${{ steps.build_image_flags.outputs.flag_downstream }}
+      image_name: ${{ steps.build_image_flags.outputs.image_name }}
+
+    steps:
+      - name: Run Container
+        env:
+          work_dir: ${{ github.workspace }}
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker_image="${image_base}"
+          docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+            -v $work_dir/../../..:$work_dir/../../.. \
+            -v $work_dir:/workspace \
+            -v /home/.cache/pip:/home/.cache/pip \
+            -e work_dir \
+            -e no_proxy \
+            -w /workspace --runtime=nvidia --privileged ${docker_image}
+      - name: Download Code
+        env:
+          work_dir: ${{ github.workspace }}
+        run: |
+          docker exec -t ${container_name} /bin/bash -c '
+          rm -rf * .[^.]*
+          echo "Downloading PaddleFormers.tar.gz"
+          wget -q --no-proxy  https://paddleformers.bj.bcebos.com/wheels/PaddleFormers.tar.gz --no-check-certificate
+          echo "Extracting PaddleFormers.tar.gz"
+          tar xf PaddleFormers.tar.gz && rm -rf PaddleFormers.tar.gz
+          source $work_dir/../../../proxy
+          cd PaddleFormers
+          git config --global user.name "PaddleCI"
+          git config --global user.email "paddle_ci@example.com"
+          git pull
+          git submodule update --init --recursive --force
+          git log --pretty=oneline -10
+          unset http_proxy && unset https_proxy
+          '
+      - name: Write Dockerfile Inline
+        run: |
+          cat <<EOF > Dockerfile
+          FROM ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev
+          RUN python -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          RUN python -m pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
+          COPY PaddleFormers/ /tmp/paddleformers/
+          WORKDIR /tmp/paddleformers
+          RUN python -m pip install -r requirements.txt --progress-bar off
+          RUN python -m pip install -r requirements-dev.txt --progress-bar off
+          RUN python -m pip install -r tests/requirements.txt --progress-bar off
+          RUN python setup.py bdist_wheel
+          RUN python -m pip install dist/*.whl --progress-bar off
+          WORKDIR /
+          RUN rm -rf /tmp/paddleformers
+          RUN python -m pip install opt_einsum --progress-bar off  # for paddle
+          EOF
+      - name: Build Docker Image
+        id: build_image_flags
+        env:
+          work_dir: ${{ github.workspace }}
+          flag_build: ${{ inputs.flag_build }}
+          image_base: ${{ inputs.image_base }}
+        run: |
+          flag_downstream=false
+          if [[ "${flag_build}" == "test" ]]; then
+            flag_downstream=true
+            image_name="${image_base}-test-$(date +%Y%m%d-%H%M%S)"
+            docker build --network host -t ${image_name} .
+          elif [[ "${flag_build}" == "update" ]]; then
+            flag_downstream=false
+            image_name="${image_base}-latest"
+            # remove old bak 
+            docker images --format '{{.Repository}}:{{.Tag}}' | grep 'bak' || true | while read img; do
+              echo "Removing image $img ..."
+              docker rmi "$img" || true
+            done
+            # mv old latest to bak
+            docker images --format '{{.Repository}}:{{.Tag}}' | grep 'latest' || true | while read img; do
+              echo "Tagging $img as ${image_base}-bak ..."
+              docker tag "$img" "${image_base}-bak"
+              docker rmi "$img" || true
+            done
+            # mv test image to latest or new build latest
+            if docker images --format '{{.Repository}}:{{.Tag}}' | grep 'test-$(date +%Y%m%d)'; then
+              echo "mv test image to latest, no need to build"
+              docker tag "$img" "${image_name}"
+              docker rmi "$img" || true
+            else
+              docker build --network host -t ${image_name} .
+            fi
+          else
+            echo "Invalid flag_build: ${flag_build}"
+            exit 1
+          fi
+          echo "flag_downstream=${flag_downstream}" >> "$GITHUB_OUTPUT"
+          echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
+          
+      
+      - name: Terminate And Delete the Container
+        if: always()
+        run: |
+          docker rm -f ${container_name} 2>/dev/null || true

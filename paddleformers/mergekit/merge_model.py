@@ -11,12 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import importlib
 import json
 import math
 import os
 import shutil
 from multiprocessing import Process
 
+import ml_dtypes
 import numpy as np
 import paddle
 import paddle.distributed as dist
@@ -25,6 +27,9 @@ from safetensors.numpy import save_file
 from tqdm.auto import tqdm
 
 from ..peft import LoRAConfig
+from ..transformers import PretrainedConfig
+from ..transformers.auto.modeling import get_name_mapping
+from ..transformers.conversion_utils import ConversionMixin
 from ..utils import device_guard
 from ..utils.env import (
     LORA_WEIGHTS_NAME,
@@ -58,6 +63,7 @@ class MergeModel:
         self.reset_merge_model(merge_config=merge_config)
         self.numpy_dtype_map = {"float32": 4, "float16": 2, "uint16": 2, "bfloat16": 2}
         self.is_peft = False
+        self.transpose_weight_keys = None
 
     def reset_merge_model(self, merge_config=None, merge_param_dict=None):
         self.is_cpu = "cpu" in paddle.device.get_device()
@@ -260,12 +266,16 @@ class MergeModel:
                     with fast_safe_open(os.path.join(model_path, file), framework="np") as f:
                         for k in file_map[file]:
                             state_dict[k] = f.get_tensor(k)
+            if self.transpose_weight_keys is not None:
+                state_dict = ConversionMixin.convert_transpose_selected_weights(state_dict, self.transpose_weight_keys)
         elif file_type == "safetensors_without_index":
             state_dict = {}
             with fast_safe_open(os.path.join(model_path, self.safe_weight_name()), framework="numpy") as f:
                 tgt_key_list = f.keys() if key_list is None else key_list
                 for k in tgt_key_list:
                     state_dict[k] = f.get_tensor(k)
+            if self.transpose_weight_keys is not None:
+                state_dict = ConversionMixin.convert_transpose_selected_weights(state_dict, self.transpose_weight_keys)
         elif file_type == "pdparams":
             state_dict = np.load(os.path.join(model_path, self.weight_name()), allow_pickle=True)
             if "StructuredToParameterName@@" in state_dict.keys():
@@ -580,23 +590,27 @@ class MergeModel:
                     tensor = paddle.Tensor.__call__(tensor, zero_copy=True)
                     lora_A_tensor = paddle.Tensor.__call__(lora_A_tensor, zero_copy=True)
                     lora_B_tensor = paddle.Tensor.__call__(lora_B_tensor, zero_copy=True)
-                    if self.is_cpu and is_bf16:
+                    if self.is_cpu and is_bf16 or self.merge_config.save_to_hf:
                         tensor = tensor.astype("float32")
                         lora_A_tensor = lora_A_tensor.astype("float32")
                         lora_B_tensor = lora_B_tensor.astype("float32")
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
-                        tensor = tensor.astype("bfloat16").numpy()
+                        tensor = tensor.numpy().astype(ml_dtypes.bfloat16)
                     else:
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
                         tensor = tensor.numpy()
             merge_state_dict[k] = tensor
+        if self.merge_config.save_to_hf and self.transpose_weight_keys is not None:
+            merge_state_dict = ConversionMixin.convert_transpose_selected_weights(
+                merge_state_dict, self.transpose_weight_keys
+            )
 
         logger.info("Merge tensors successfully.")
         save_file_name = os.path.join(self.merge_config.output_path, shard_file)
         save_file(
             merge_state_dict,
             save_file_name,
-            metadata={"format": "np"},
+            metadata={"format": "pt"} if self.merge_config.save_to_hf else {"format": "np"},
         )
         logger.info(f"Model weights saved in {save_file_name}.")
 
@@ -604,6 +618,18 @@ class MergeModel:
         # Load index
         base_index = self.get_safetensor_index(self.merge_config.base_model_path, file_type_list[-1])
         lora_config = LoRAConfig.from_pretrained(self.merge_config.lora_model_path)
+
+        # get transpose_weight_keys
+        if self.merge_config.convert_from_hf:
+            config_dict = PretrainedConfig.get_config_dict(self.merge_config.base_model_path)[0]
+            name_mapping = get_name_mapping()
+            model_class_name = None
+            for key, value in name_mapping.items():
+                if value == config_dict["model_type"]:
+                    model_class_name = key
+                    break
+            import_class = importlib.import_module(f"paddleformers.transformers.{config_dict['model_type']}.modeling")
+            self.transpose_weight_keys = getattr(import_class, model_class_name).transpose_weight_keys
 
         # Initialize new index
         index = {}

@@ -51,13 +51,3 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.event.repository.name }}
           JOB_NAME: 'Codestyle Check / Lint'
-
-      - name: Rerun Build CI-Docker
-        if: ${{ contains(github.event.comment.body, 'Build CI-Docker Images') }}
-        uses: ./.github/actions/rerun-workflow
-        with:
-          PR_ID: ${{ github.event.issue.number }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
-          JOB_NAME: 'Build CI-Docker / build-ci-docker-images'

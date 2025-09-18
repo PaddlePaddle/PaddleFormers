@@ -30,9 +30,9 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
 
     @set_proxy(DownloadSource.AISTUDIO)
     def test_ai_studio(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B-Instruct", download_hub="aistudio")
+        tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio")
         self.encode(tokenizer)
-        tokenizer = Qwen2Tokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B-Instruct", download_hub="aistudio")
+        tokenizer = Qwen2Tokenizer.from_pretrained("ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio")
         self.encode(tokenizer)
 
     @set_proxy(DownloadSource.MODELSCOPE)

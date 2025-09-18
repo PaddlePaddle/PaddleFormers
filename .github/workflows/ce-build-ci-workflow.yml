@@ -1,0 +1,61 @@
+name: Build CI Images
+
+on:
+  schedule:
+    - cron: "0 18 * * 5"   # UTC 18:00 = Beijing 周六 02:00
+  workflow_dispatch:        # allow to manually trigger the workflow
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  image_base: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev"
+
+jobs:
+  build-ci-images-test:
+    name: build-ci-images-test
+    if: github.ref == 'refs/heads/develop'
+    uses: ./.github/workflows/ce-build-images.yaml
+    with:
+      flag_build: test
+      runner: ernie-8gpu-2
+      image_base: ${image_base}
+
+  test-ci-images:
+    name: test-ci-images
+    needs: build-ci-images-test
+    if: ${{ needs.build-ci-images-test.outputs.flag_downstream == 'true' }}
+    uses: ./.github/workflows/unittest-gpu.yml
+    with:
+      runner: ernie-8gpu-2
+      image_name: ${{ needs.build-ci-images-test.outputs.image_name }}
+
+  clean-ci-image:
+    name: clean-ci-image
+    needs: [build-ci-images-test, test-ci-docker-images]
+    if: always()
+    runs-on: [self-hosted, ernie-8gpu-2]
+    steps:
+      - name: Remove Dangling Image
+        run: |
+          # Safely remove dangling images (skip if no dangling images exist)
+          docker images -f "dangling=true" -q | xargs -r docker rmi -f
+
+  update-ci-images-1:
+    name: update-ci-images-1
+    needs: [build-ci-images-test, test-ci-docker-images]
+    uses: ./.github/workflows/ce-build-images.yaml
+    with:
+      flag_build: update
+      runner: ernie-8gpu-1
+      image_base: ${image_base}
+
+  update-ci-images-2:
+    name: update-ci-images-2
+    needs: [build-ci-images-test, test-ci-docker-images]
+    uses: ./.github/workflows/ce-build-images.yaml
+    with:
+      flag_build: update
+      runner: ernie-8gpu-2
+      image_base: ${image_base}

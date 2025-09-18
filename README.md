@@ -59,8 +59,8 @@ This example shows how to load Qwen model for text generation with PaddleFormers
 
 ```python
 from paddleformers.transformers import AutoTokenizer, AutoModelForCausalLM
-tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B")
-model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2-0.5B", dtype="bfloat16")
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B-Base")
+model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B-Base", dtype="bfloat16", convert_from_hf=True)
 input_features = tokenizer("Give me a short introduction to large language model.", return_tensors="pd")
 outputs = model.generate(**input_features, max_new_tokens=128)
 print(tokenizer.batch_decode(outputs[0], skip_special_tokens=True))
@@ -75,10 +75,10 @@ from paddleformers.trl import SFTConfig, SFTTrainer
 from datasets import load_dataset
 dataset = load_dataset("ZHUI/alpaca_demo", split="train")
 
-training_args = SFTConfig(output_dir="Qwen/Qwen2.5-0.5B-SFT", device="gpu")
+training_args = SFTConfig(output_dir="Qwen/Qwen3-0.6B-SFT", device="gpu", model_init_kwargs={"convert_from_hf": True})
 trainer = SFTTrainer(
     args=training_args,
-    model="Qwen/Qwen2.5-0.5B-Instruct",
+    model="Qwen/Qwen3-0.6B-Base",
     train_dataset=dataset,
 )
 trainer.train()

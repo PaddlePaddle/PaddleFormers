@@ -47,11 +47,6 @@ install_paddle(){
 }
 
 paddleformers_build (){
-    echo -e "\033[32m ---- make PaddleFormers.tar.gz  \033[0m"
-    cd /workspace
-    tar -zcf PaddleFormers.tar.gz PaddleFormers/
-    mv PaddleFormers.tar.gz ${upload_path}/
-
     echo -e "\033[35m ---- build latest paddleformers  \033[0m"
     cd $formers_dir
     rm -rf build/
@@ -95,13 +90,23 @@ if [[ ${#Build_list[*]} -ne 0 ]];then
     if [[ $(contain_case paddleformers ${Build_list[@]}; echo $?) -eq 1 ]];then
         paddleformers_build
     fi
-
-    # if [ -e "${upload_path}" ] && [ "$(ls -A "${upload_path}/")" ]; then
-    #     cd ${upload_path} && ls -A "${upload_path}"
-    #     python /workspace/../../../bos/BosClient.py ${upload_path} 'paddleformers/wheels'
-    #     rm -rf ${upload_path}
-    #     echo -e "\033[32m upload wheels SUCCESS \033[0m"
-    # fi
 else
     echo -e "\033[32m Don't need build any whl  \033[0m"
 fi
+
+
+echo -e "\033[32m ---- make PaddleFormers.tar.gz  \033[0m"
+cd ${formers_dir}
+git checkout develop
+cd /workspace
+tar -zcf PaddleFormers.tar.gz PaddleFormers/
+mv PaddleFormers.tar.gz ${upload_path}/
+
+
+# upload in .github/workflows/ce-build-whl.yml
+# if [ -e "${upload_path}" ] && [ "$(ls -A "${upload_path}/")" ]; then
+#     cd ${upload_path} && ls -A "${upload_path}"
+#     python /workspace/../../../bos/BosClient.py ${upload_path} 'paddleformers/wheels'
+#     rm -rf ${upload_path}
+#     echo -e "\033[32m upload wheels SUCCESS \033[0m"
+# fi
