@@ -385,7 +385,7 @@ def merge_tensor_parallel_with_shard(state_dict, tp_actions, all_filter_keys):
                     if get_env_device() == "xpu":
                         ret = distributed_allgather(tensor, group=tp_group, offload=False)
                     else:
-                        ret = distributed_gather(tensor, dst=j, group=tp_group, offload=False)
+                        ret = distributed_gather(tensor.contiguous(), dst=j, group=tp_group, offload=False)
                     action = tp_actions.pop(key)
                     tensor = action(ret) if is_dst else None
             else:
@@ -800,11 +800,12 @@ def filter_sync_parameters(
 
     hcg = fleet.get_hybrid_communicate_group()
     dp_group = hcg.get_data_parallel_group()
-    ep_group = hcg.get_expert_parallel_group()
     sharding_group = hcg.get_sharding_parallel_group()
     dp_rank = dp_group.rank if dp_group.nranks > 1 else 0
-    ep_rank = ep_group.rank if ep_group.nranks > 1 else 0
     sharding_rank = sharding_group.rank if sharding_group.nranks > 1 else 0
+    if expert_parallel_degree > 1:
+        ep_group = hcg.get_expert_parallel_group()
+        ep_rank = ep_group.rank if ep_group.nranks > 1 else 0
     logger.info("Filter sync parameters under expert parallel mode.")
 
     if is_model_weight:

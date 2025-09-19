@@ -39,6 +39,7 @@ jobs:
             -e work_dir \
             -e no_proxy \
             -w /workspace --runtime=nvidia --privileged ${docker_image}
+
       - name: Download Code
         env:
           work_dir: ${{ github.workspace }}
@@ -58,10 +59,16 @@ jobs:
           git log --pretty=oneline -10
           unset http_proxy && unset https_proxy
           '
+
       - name: Write Dockerfile Inline
         run: |
           cat <<EOF > Dockerfile
           FROM ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev
+          # RUN apt-get update && \
+          #     apt-get install -y openjdk-11-jdk && \
+          #     rm -rf /var/lib/apt/lists/*
+          # ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+          # ENV PATH="$JAVA_HOME/bin:${PATH}"
           RUN python -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
           RUN python -m pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
           COPY PaddleFormers/ /tmp/paddleformers/
@@ -75,6 +82,7 @@ jobs:
           RUN rm -rf /tmp/paddleformers
           RUN python -m pip install opt_einsum --progress-bar off  # for paddle
           EOF
+
       - name: Build Docker Image
         id: build_image_flags
         env:

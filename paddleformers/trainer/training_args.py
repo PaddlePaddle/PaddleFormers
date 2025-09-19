@@ -2235,7 +2235,10 @@ class TrainingArguments:
     def moe_sharding_parallel_rank(self):
         if self.use_hybrid_parallel:
             hcg = fleet.get_hybrid_communicate_group()
-            return max(hcg.get_moe_sharding_parallel_group().rank, 0)
+            if hasattr(hcg, "get_moe_sharding_parallel_group"):
+                return max(hcg.get_moe_sharding_parallel_group().rank, 0)
+            else:
+                return 0
         else:
             return 0
 
