@@ -1224,6 +1224,7 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
     _get_tensor_parallel_mappings = Glm4MoeModel._get_tensor_parallel_mappings
+    _get_fuse_or_split_param_mappings = Glm4MoeModel._get_fuse_or_split_param_mappings
     _init_weights = Glm4MoeModel._init_weights
     _keep_in_fp32_modules = Glm4MoeModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]

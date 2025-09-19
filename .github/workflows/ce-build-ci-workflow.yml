@@ -33,7 +33,7 @@ jobs:
 
   clean-ci-image:
     name: clean-ci-image
-    needs: [build-ci-images-test, test-ci-docker-images]
+    needs: [build-ci-images-test, test-ci-images]
     if: always()
     runs-on: [self-hosted, ernie-8gpu-2]
     steps:
@@ -44,7 +44,7 @@ jobs:
 
   update-ci-images-1:
     name: update-ci-images-1
-    needs: [build-ci-images-test, test-ci-docker-images]
+    needs: [build-ci-images-test, test-ci-images]
     uses: ./.github/workflows/ce-build-images.yaml
     with:
       flag_build: update
@@ -53,7 +53,7 @@ jobs:
 
   update-ci-images-2:
     name: update-ci-images-2
-    needs: [build-ci-images-test, test-ci-docker-images]
+    needs: [build-ci-images-test, test-ci-images]
     uses: ./.github/workflows/ce-build-images.yaml
     with:
       flag_build: update
