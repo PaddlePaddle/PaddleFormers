@@ -25,6 +25,7 @@ import_structure = {
         "Qwen3NextModel",
         "Qwen3NextPreTrainedModel",
         "Qwen3NextForCausalLM",
+        "Qwen3NextForCausalLMPipe",
     ],
 }
 if TYPE_CHECKING:

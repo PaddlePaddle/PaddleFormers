@@ -11,27 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""PyTorch Qwen3-Next model."""
+"""Paddle Qwen3-Next model."""
 
 from typing import Any, Callable, Optional, Union
 
-import torch
-import torch.nn.functional as F
-from torch import nn
+import paddle
+import paddle.nn.functional as F
+from paddle import Tensor, nn
+from paddle.distributed.fleet.utils import recompute
+from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ...activations import ACT2FN
-from ...cache_utils import Cache
 from ...masking_utils import create_causal_mask
 from ...modeling_flash_attention_utils import FlashAttentionKwargs
 from ...modeling_outputs import MoeCausalLMOutputWithPast, MoeModelOutputWithPast
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from ...processing_utils import Unpack
-from ...utils import TransformersKwargs, auto_docstring, logging
-from ...utils.generic import OutputRecorder, check_model_inputs
-from ...utils.import_utils import (
-    is_causal_conv1d_available,
-    is_flash_linear_attention_available,
-)
+from ...utils import TransformersKwargs, logging
+from ...utils.generic import OutputRecorder
+
 from ..bamba.modeling_bamba import apply_mask_to_padding_states, apply_rotary_pos_emb
 from ..gemma3.modeling_gemma3 import Gemma3RMSNorm
 from ..llama.modeling_llama import (
@@ -48,21 +46,18 @@ from ..qwen3_moe.modeling_qwen3_moe import (
     Qwen3MoeRotaryEmbedding,
     eager_attention_forward,
 )
-from .configuration_qwen3_next import Qwen3NextConfig
+from .configuration import Qwen3NextConfig
 
+causal_conv1d_update, causal_conv1d_fn = None, None
+chunk_gated_delta_rule, fused_recurrent_gated_delta_rule = None, None
+FusedRMSNormGated = None
 
-if is_causal_conv1d_available():
-    from causal_conv1d import causal_conv1d_fn, causal_conv1d_update
-else:
-    causal_conv1d_update, causal_conv1d_fn = None, None
-
-if is_flash_linear_attention_available():
-    from fla.modules import FusedRMSNormGated
-    from fla.ops.gated_delta_rule import chunk_gated_delta_rule, fused_recurrent_gated_delta_rule
-else:
-    chunk_gated_delta_rule, fused_recurrent_gated_delta_rule = None, None
-    FusedRMSNormGated = None
-
+__all__ = [
+    "Qwen3NextPreTrainedModel",
+    "Qwen3NextModel",
+    "Qwen3NextForCausalLM",
+    "Qwen3NextForCausalLMPipe",
+]
 
 is_fast_path_available = all(
     (causal_conv1d_fn, causal_conv1d_update, chunk_gated_delta_rule, fused_recurrent_gated_delta_rule)
@@ -122,16 +117,16 @@ class Qwen3NextDynamicCache:
     def __len__(self):
         return len(self.layer_types)
 
-    def __getitem__(self, layer_idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, layer_idx: int) -> tuple[paddle.Tensor, paddle.Tensor]:
         return self.key_cache[layer_idx], self.value_cache[layer_idx]
 
     def update(
         self,
-        key_states: torch.Tensor,
-        value_states: torch.Tensor,
+        key_states: paddle.Tensor,
+        value_states: paddle.Tensor,
         layer_idx: int,
         cache_kwargs: Optional[dict[str, Any]] = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
         if self.key_cache[layer_idx] is None:
             self.key_cache[layer_idx] = key_states
             self.value_cache[layer_idx] = value_states
@@ -141,7 +136,7 @@ class Qwen3NextDynamicCache:
 
         return self.key_cache[layer_idx], self.value_cache[layer_idx]
 
-    def reorder_cache(self, beam_idx: torch.LongTensor):
+    def reorder_cache(self, beam_idx: paddle.Tensor):
         """Reorders the cache for beam search, given the selected beam indices."""
         for layer_idx in range(len(self.key_cache)):
             if self.key_cache[layer_idx] is not None:
@@ -164,7 +159,7 @@ class Qwen3NextDynamicCache:
             return 0
         return self.key_cache[layer_idx].shape[-2]
 
-    def get_mask_sizes(self, cache_position: torch.Tensor, layer_idx: int) -> tuple[int, int]:
+    def get_mask_sizes(self, cache_position: paddle.Tensor, layer_idx: int) -> tuple[int, int]:
         """
         Return a tuple (kv_length, kv_offset) corresponding to the length and offset that will be returned for
         the given layer at `layer_idx`.
@@ -182,14 +177,6 @@ class Qwen3NextDynamicCache:
         return self.conv_states[self.last_linear_layer] is not None
 
 
-class Qwen3NextRotaryEmbedding(Qwen3MoeRotaryEmbedding):
-    pass
-
-
-class Qwen3NextRMSNorm(Gemma3RMSNorm):
-    pass
-
-
 class Qwen3NextAttention(Qwen3MoeAttention):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
@@ -200,13 +187,13 @@ class Qwen3NextAttention(Qwen3MoeAttention):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        position_embeddings: tuple[torch.Tensor, torch.Tensor],
-        attention_mask: Optional[torch.Tensor],
-        past_key_values: Optional[Cache] = None,
-        cache_position: Optional[torch.LongTensor] = None,
+        hidden_states: paddle.Tensor,
+        position_embeddings: tuple[paddle.Tensor, paddle.Tensor],
+        attention_mask: Optional[paddle.Tensor],
+        past_key_values: Optional[paddle.Tensor] = None,
+        cache_position: Optional[paddle.Tensor] = None,
         **kwargs: Unpack[FlashAttentionKwargs],
-    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+    ) -> tuple[paddle.Tensor, Optional[paddle.Tensor]]:
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
 
@@ -267,7 +254,7 @@ def torch_causal_conv1d_update(
     return out
 
 
-def l2norm(x: torch.FloatTensor, dim: int = -1, eps: float = 1e-6):
+def l2norm(x: paddle.Tensor, dim: int = -1, eps: float = 1e-6):
     """This function is intended to align with the l2norm implementation in the FLA library."""
     inv_norm = torch.rsqrt((x * x).sum(dim=dim, keepdim=True) + eps)
     return x * inv_norm
@@ -493,10 +480,10 @@ class Qwen3NextGatedDeltaNet(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
+        hidden_states: paddle.Tensor,
         cache_params: Optional[Qwen3NextDynamicCache] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        cache_position: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
     ):
         hidden_states = apply_mask_to_padding_states(hidden_states, attention_mask)
 
@@ -609,14 +596,6 @@ class Qwen3NextGatedDeltaNet(nn.Module):
         return output
 
 
-class Qwen3NextMLP(Qwen3MoeMLP):
-    pass
-
-
-class Qwen3NextSparseMoeBlock(Qwen2MoeSparseMoeBlock):
-    pass
-
-
 class Qwen3NextDecoderLayer(Qwen3MoeDecoderLayer):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         nn.Module.__init__(self)
@@ -632,23 +611,23 @@ class Qwen3NextDecoderLayer(Qwen3MoeDecoderLayer):
         if (layer_idx not in config.mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
         ):
-            self.mlp = Qwen3NextSparseMoeBlock(config)
+            self.mlp = Qwen2MoeSparseMoeBlock(config)
         else:
-            self.mlp = Qwen3NextMLP(config, intermediate_size=config.intermediate_size)
+            self.mlp = Qwen3MoeMLP(config, intermediate_size=config.intermediate_size)
 
-        self.input_layernorm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = Gemma3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = Gemma3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        position_embeddings: tuple[torch.Tensor, torch.Tensor],
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        cache_position: Optional[torch.LongTensor] = None,
+        hidden_states: paddle.Tensor,
+        position_embeddings: tuple[paddle.Tensor, paddle.Tensor],
+        attention_mask: Optional[paddle.Tensor] = None,
+        position_ids: Optional[paddle.Tensor] = None,
+        past_key_values: Optional[paddle.Tensor] = None,
+        cache_position: Optional[paddle.Tensor] = None,
         **kwargs: Unpack[FlashAttentionKwargs],
-    ) -> torch.FloatTensor:
+    ) -> paddle.Tensor:
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -697,7 +676,7 @@ class Qwen3NextPreTrainedModel(PreTrainedModel):
     _supports_sdpa = True
     _keys_to_ignore_on_load_unexpected = [r"^mtp.*"]
     _can_record_outputs = {
-        "router_logits": OutputRecorder(Qwen3NextSparseMoeBlock, index=1),
+        "router_logits": OutputRecorder(Qwen2MoeSparseMoeBlock, index=1),
         "hidden_states": Qwen3NextDecoderLayer,
         "attentions": Qwen3NextAttention,
     }
@@ -717,23 +696,21 @@ class Qwen3NextModel(Qwen3NextPreTrainedModel):
         self.layers = nn.ModuleList(
             [Qwen3NextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.rotary_emb = Qwen3NextRotaryEmbedding(config=config)
+        self.norm = Gemma3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.rotary_emb = Qwen3MoeRotaryEmbedding(config=config)
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
         self.post_init()
 
-    @check_model_inputs
-    @auto_docstring
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
+        input_ids: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        position_ids: Optional[paddle.Tensor] = None,
+        past_key_values: Optional[paddle.Tensor] = None,
+        inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
+        cache_position: Optional[paddle.Tensor] = None,
         **kwargs: Unpack[TransformersKwargs],
     ) -> MoeModelOutputWithPast:
         if (input_ids is None) ^ (inputs_embeds is not None):
@@ -809,20 +786,20 @@ class Qwen3NextForCausalLM(MixtralForCausalLM):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
+        input_ids: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        position_ids: Optional[paddle.Tensor] = None,
         past_key_values: Optional[Qwen3NextDynamicCache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[paddle.Tensor] = None,
+        labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         output_router_logits: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        logits_to_keep: Union[int, torch.Tensor] = 0,
+        cache_position: Optional[paddle.Tensor] = None,
+        logits_to_keep: Union[int, paddle.Tensor] = 0,
         **kwargs: Unpack[TransformersKwargs],
     ) -> MoeCausalLMOutputWithPast:
         r"""
-        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+        labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
             config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
             (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
@@ -856,25 +833,3 @@ class Qwen3NextForCausalLM(MixtralForCausalLM):
             logits_to_keep=logits_to_keep,
             **kwargs,
         )
-
-
-class Qwen3NextForSequenceClassification(LlamaForSequenceClassification):
-    pass
-
-
-class Qwen3NextForTokenClassification(LlamaForTokenClassification):
-    pass
-
-
-class Qwen3NextForQuestionAnswering(LlamaForQuestionAnswering):
-    pass
-
-
-__all__ = [
-    "Qwen3NextForCausalLM",
-    "Qwen3NextForQuestionAnswering",
-    "Qwen3NextModel",
-    "Qwen3NextPreTrainedModel",
-    "Qwen3NextForSequenceClassification",
-    "Qwen3NextForTokenClassification",
-]
