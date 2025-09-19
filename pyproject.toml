@@ -14,7 +14,7 @@ addopts = "-ra -q "
 pythonpath = ["."]
 testpaths = [
     "tests/data",
-    "tests/dataset",
+    "tests/datasets",
     "tests/generation",
     "tests/mergekit",
     "tests/nn",
