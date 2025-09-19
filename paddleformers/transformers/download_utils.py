@@ -359,6 +359,16 @@ register_model_group(
             DownloadSource.AISTUDIO: "ModelHub/Qwen3-32B",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-32B",
         },
+        "Qwen3-4B-Instruct-2507": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B-Instruct-2507",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-4B-Instruct-2507",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-4B-Instruct-2507",
+        },
+        "Qwen3-4B-Thinking-2507": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B-Thinking-2507",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-4B-Thinking-2507",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-4B-Thinking-2507",
+        },
         "Qwen3-0.6B-FP8": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-0.6B-FP8",
             DownloadSource.AISTUDIO: "ModelHub/Qwen3-0.6B-FP8",
@@ -388,6 +398,16 @@ register_model_group(
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-32B-FP8",
             DownloadSource.AISTUDIO: "ModelHub/Qwen3-32B-FP8",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-32B-FP8",
+        },
+        "Qwen3-4B-Instruct-2507-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B-Instruct-2507-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-4B-Instruct-2507-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-4B-Instruct-2507-FP8",
+        },
+        "Qwen3-4B-Thinking-2507-FP8": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B-Thinking-2507-FP8",
+            DownloadSource.AISTUDIO: "ModelHub/Qwen3-4B-Thinking-2507-FP8",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-4B-Thinking-2507-FP8",
         },
     }
 )
@@ -466,7 +486,7 @@ register_model_group(
             DownloadSource.AISTUDIO: "ModelHub/Qwen3-Coder-30B-A3B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-Coder-30B-A3B-Instruct",
         },
-        "Qwen3-Coder-480-A35B-Instruct": {
+        "Qwen3-Coder-480B-A35B-Instruct": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-Coder-480B-A35B-Instruct",
             DownloadSource.AISTUDIO: "ModelHub/Qwen3-Coder-480B-A35B-Instruct",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-Coder-480B-A35B-Instruct",
@@ -476,7 +496,7 @@ register_model_group(
             DownloadSource.AISTUDIO: "ModelHub/Qwen3-Coder-30B-A3B-Instruct-FP8",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8",
         },
-        "Qwen3-Coder-480-A35B-Instruct-FP8": {
+        "Qwen3-Coder-480B-A35B-Instruct-FP8": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
             DownloadSource.AISTUDIO: "ModelHub/Qwen3-Coder-480B-A35B-Instruct-FP8",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
