@@ -29,7 +29,6 @@ from ...nn.attention.eager_attention import eager_attention_forward
 from ..model_utils import PretrainedModel, register_base_model
 from ...utils.log import logger
 
-# from ..bamba.modeling_bamba import apply_mask_to_padding_states, apply_rotary_pos_emb
 from ..qwen2_moe.modeling import Qwen2MoeSparseMoeBlock
 from ..qwen3_moe.modeling import (
     Qwen3MoeAttention,
@@ -385,6 +384,57 @@ def torch_recurrent_gated_delta_rule(
         last_recurrent_state = None
     core_attn_out = core_attn_out.transpose(1, 2).contiguous().to(initial_dtype)
     return core_attn_out, last_recurrent_state
+
+
+def apply_mask_to_padding_states(hidden_states, attention_mask):
+    """
+    Tunes out the hidden states for padding tokens, see https://github.com/state-spaces/mamba/issues/66
+    """
+    if attention_mask is not None and attention_mask.shape[1] > 1 and attention_mask.shape[0] > 1:
+        dtype = hidden_states.dtype
+        hidden_states = (hidden_states * attention_mask[:, :, None]).to(dtype)
+
+    return hidden_states
+
+
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+    """Applies Rotary Position Embedding to the query and key tensors.
+
+    Removes the interleaving of cos and sin from GLM
+
+    Args:
+        q (`paddle.Tensor`): The query tensor.
+        k (`paddle.Tensor`): The key tensor.
+        cos (`paddle.Tensor`): The cosine part of the rotary embedding.
+        sin (`paddle.Tensor`): The sine part of the rotary embedding.
+        position_ids (`paddle.Tensor`, *optional*):
+            Deprecated and unused.
+        unsqueeze_dim (`int`, *optional*, defaults to 1):
+            The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
+            sin[position_ids] so that they can be properly broadcasted to the dimensions of q and k. For example, note
+            that cos[position_ids] and sin[position_ids] have the shape [batch_size, seq_len, head_dim]. Then, if q and
+            k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
+            cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
+            the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
+    Returns:
+        `tuple(paddle.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+    """
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+
+    # Keep half or full tensor for later concatenation
+    rotary_dim = cos.shape[-1]
+    q_rot, q_pass = q[..., :rotary_dim], q[..., rotary_dim:]
+    k_rot, k_pass = k[..., :rotary_dim], k[..., rotary_dim:]
+
+    # Apply rotary embeddings on the first half or full tensor
+    q_embed = (q_rot * cos) + (rotate_half(q_rot) * sin)
+    k_embed = (k_rot * cos) + (rotate_half(k_rot) * sin)
+
+    # Concatenate back to full shape
+    q_embed = paddle.cat([q_embed, q_pass], dim=-1)
+    k_embed = paddle.cat([k_embed, k_pass], dim=-1)
+    return q_embed, k_embed
 
 
 class Qwen3NextGatedDeltaNet(nn.Layer):
