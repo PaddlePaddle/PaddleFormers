@@ -37,26 +37,8 @@ from paddleformers.transformers import (
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
     AutoTokenizer,
-    DeepseekV2ForCausalLM,
-    DeepseekV2ForCausalLMPipe,
-    DeepseekV3ForCausalLM,
-    DeepseekV3ForCausalLMPipe,
-    Ernie4_5_MoeForCausalLM,
-    Ernie4_5_MoeForCausalLMPipe,
-    Ernie4_5ForCausalLM,
-    Ernie4_5ForCausalLMPipe,
     Llama3Tokenizer,
-    LlamaForCausalLM,
-    LlamaForCausalLMPipe,
     LlamaTokenizer,
-    Qwen2ForCausalLM,
-    Qwen2ForCausalLMPipe,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeForCausalLMPipe,
-    Qwen3ForCausalLM,
-    Qwen3ForCausalLMPipe,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeForCausalLMPipe,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DataConfig, ModelConfig, SFTConfig, SFTTrainer
@@ -65,27 +47,6 @@ from paddleformers.utils.log import logger
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "False"
-
-flash_mask_support_list = [
-    DeepseekV2ForCausalLM,
-    DeepseekV2ForCausalLMPipe,
-    DeepseekV3ForCausalLM,
-    DeepseekV3ForCausalLMPipe,
-    Ernie4_5ForCausalLM,
-    Ernie4_5ForCausalLMPipe,
-    Ernie4_5_MoeForCausalLM,
-    Ernie4_5_MoeForCausalLMPipe,
-    LlamaForCausalLM,
-    LlamaForCausalLMPipe,
-    Qwen2ForCausalLM,
-    Qwen2ForCausalLMPipe,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeForCausalLMPipe,
-    Qwen3ForCausalLM,
-    Qwen3ForCausalLMPipe,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeForCausalLMPipe,
-]
 
 
 def main():
@@ -191,9 +152,6 @@ def main():
         )
     else:
         model = model_class.from_config(model_config, dtype=dtype)
-
-    if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
-        raise NotImplementedError(f"{model.__class__} not support flash mask.")
 
     if training_args.do_train and model_args.neftune:
         # Inspired by https://github.com/neelsjain/NEFTune

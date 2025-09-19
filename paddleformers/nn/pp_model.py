@@ -551,6 +551,8 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     EmbeddingPipe,
                     shared_weight_attr="embedding_weight",
                     config=config,
+                    embed_cls=self._embed_cls,
+                    rotary_emb_cls=self._rotary_emb_cls,
                 ),
                 "model",
             )

@@ -42,6 +42,7 @@ class GptOssConfig(PretrainedConfig):
         hidden_act: str = "silu",
         initializer_range: float = 0.02,
         max_position_embeddings=131072,
+        use_rmsnorm=True,
         rms_norm_eps: float = 1e-5,
         rope_scaling={"rope_type": "yarn", "factor": 32.0, "beta_fast": 32.0, "beta_slow": 1.0, "truncate": False},
         attention_dropout: float = 0.0,
@@ -50,6 +51,7 @@ class GptOssConfig(PretrainedConfig):
         output_router_logits=False,
         use_cache=True,
         layer_types=None,
+        pp_seg_method="layer:GptOssDecoderLayer",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -67,6 +69,7 @@ class GptOssConfig(PretrainedConfig):
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
+        self.use_rmsnorm = use_rmsnorm
         self.rms_norm_eps = rms_norm_eps
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
@@ -91,6 +94,7 @@ class GptOssConfig(PretrainedConfig):
         self.output_router_logits = output_router_logits
         self.use_cache = use_cache
         self.use_bias = False
+        self.pp_seg_method = pp_seg_method
 
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,
