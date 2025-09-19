@@ -304,6 +304,9 @@ class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
         )
         self.expert_usage.stop_gradient = True
 
+        # weight and e_score_correction_bias do not need to be cast to low precision
+        self._cast_to_low_precision = False
+
     def forward(self, hidden_states):
         """
         Args:
@@ -340,11 +343,14 @@ class Glm4MoeTopkRouter(nn.Layer):
 
         self.weight = paddle.create_parameter(
             shape=[self.n_routed_experts, config.hidden_size],
-            dtype="bfloat16",
+            dtype="float32",
             default_initializer=paddle.nn.initializer.Uniform(),
         )
 
         self.register_buffer("e_score_correction_bias", paddle.zeros((self.n_routed_experts,), dtype=paddle.float32))
+
+        # weight and e_score_correction_bias do not need to be cast to low precision
+        self._cast_to_low_precision = False
 
     @paddle.no_grad()
     def get_topk_indices(self, scores):
@@ -588,6 +594,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     config: Glm4MoeConfig
     config_class = Glm4MoeConfig
     base_model_prefix = "model"
+    _keep_in_fp32_modules = ["mlp.gate.weight", "e_score_correction_bias"]
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod

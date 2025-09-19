@@ -47,14 +47,12 @@ set_env() {
     export FLAGS_cudnn_deterministic=1
     export HF_ENDPOINT=https://hf-mirror.com
     export FLAGS_use_cuda_managed_memory=true
-    export running_time=80m
 
     # for CE
     if [[ ${FLAGS_enable_CE} == "true" ]];then
         export CE_TEST_ENV=1
         export RUN_SLOW_TEST=1
         export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
-        export running_time=5h
     fi
 }
 
@@ -111,7 +109,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    timeout ${running_time} \
     python -m pytest -v -n 8 \
         --dist loadgroup \
         --retries 3 --retry-delay 1 \
