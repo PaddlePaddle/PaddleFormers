@@ -8,7 +8,7 @@
     "eval_dataset_type": "erniekit",
     "packing": false,
     "mix_strategy": "concat",
-    "output_dir": "./checkpoints/qwen3_paddle_lora_ckpts",
+    "output_dir": "./checkpoints/qwen3_hf_0p6b_lora_ckpts",
     "max_seq_len": 8192,
     "per_device_train_batch_size": 1,
     "gradient_accumulation_steps": 4,
