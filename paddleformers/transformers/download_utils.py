@@ -363,12 +363,12 @@ register_model_group(
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B-Instruct-2507",
             DownloadSource.AISTUDIO: "ModelHub/Qwen3-4B-Instruct-2507",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-4B-Instruct-2507",
-        },  
+        },
         "Qwen3-4B-Thinking-2507": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-4B-Thinking-2507",
             DownloadSource.AISTUDIO: "ModelHub/Qwen3-4B-Thinking-2507",
             DownloadSource.HUGGINGFACE: "Qwen/Qwen3-4B-Thinking-2507",
-        },  
+        },
         "Qwen3-0.6B-FP8": {
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-0.6B-FP8",
             DownloadSource.AISTUDIO: "ModelHub/Qwen3-0.6B-FP8",
