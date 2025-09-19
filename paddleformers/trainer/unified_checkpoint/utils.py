@@ -327,10 +327,15 @@ def merge_large_tensor_parallel(tensor, tp_group, tp_action, dst_rank, is_dst):
     split_tensors = []
     for i in range(num_splits):
         if get_env_device() == "xpu":
-            ret = distributed_allgather(tensor[split_parts[i] : split_parts[i + 1], :], group=tp_group, offload=False)
+            ret = distributed_allgather(
+                tensor[split_parts[i] : split_parts[i + 1], :].contiguous(), group=tp_group, offload=False
+            )
         else:
             ret = distributed_gather(
-                tensor[split_parts[i] : split_parts[i + 1], :], dst=dst_rank, group=tp_group, offload=False
+                tensor[split_parts[i] : split_parts[i + 1], :].contiguous(),
+                dst=dst_rank,
+                group=tp_group,
+                offload=False,
             )
         # Copy to CPUPlace temporarily, may lower speed.
         if ret is not None:
@@ -383,9 +388,9 @@ def merge_tensor_parallel_with_shard(state_dict, tp_actions, all_filter_keys):
                     tensor = merge_large_tensor_parallel(tensor, tp_group, tp_actions[key], j, is_dst)
                 else:
                     if get_env_device() == "xpu":
-                        ret = distributed_allgather(tensor, group=tp_group, offload=False)
+                        ret = distributed_allgather(tensor.contiguous(), group=tp_group, offload=False)
                     else:
-                        ret = distributed_gather(tensor, dst=j, group=tp_group, offload=False)
+                        ret = distributed_gather(tensor.contiguous(), dst=j, group=tp_group, offload=False)
                     action = tp_actions.pop(key)
                     tensor = action(ret) if is_dst else None
             else:
@@ -439,9 +444,9 @@ def merge_tensor_parallel_for_optimizer(state_dict, model_state_dict, tp_actions
                         tensor = merge_large_tensor_parallel(tensor, tp_group, tp_actions[model_key], j, is_dst)
                     else:
                         if get_env_device() == "xpu":
-                            ret = distributed_allgather(tensor, group=tp_group, offload=False)
+                            ret = distributed_allgather(tensor.contiguous(), group=tp_group, offload=False)
                         else:
-                            ret = distributed_gather(tensor, dst=j, group=tp_group, offload=False)
+                            ret = distributed_gather(tensor.contiguous(), dst=j, group=tp_group, offload=False)
                         action = tp_actions[model_key]
                         tensor = action(ret) if is_dst else None
             else:
