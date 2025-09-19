@@ -232,7 +232,7 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
             f"using moe-world-size: {config.moe_world_size} expert-per-device:{moe_num_experts_per_device}, moe_group={config.moe_group}"
         )
 
-        moe_statics = MoEStatics(config, layer_idx)
+        moe_statics = MoEStatics(config, layer_idx) if config.moe_use_aux_free else None
         experts = nn.LayerList([])
         moe_rank = paddle.distributed.get_rank(config.moe_group)
 
@@ -456,7 +456,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
         "up_proj",
         "down_proj",
         "gate",
-        "mtp_linear_proj.0",
+        "mtp_linear_proj\.\d+",
     ]
 
     @classmethod
@@ -526,7 +526,10 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                 # bias
                 if config.use_bias:
                     actions.update(
-                        {f"{cls.base_model_prefix}.layers.0.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                            for b in BIAS_KEYS
+                        }
                     )
             # MTP block
             if config.num_nextn_predict_layers > 0:

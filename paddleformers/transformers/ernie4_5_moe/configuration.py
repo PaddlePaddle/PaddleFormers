@@ -260,7 +260,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
                 "moe_dropout_prob",
                 "moe_use_aux_free",
                 "moe_aux_loss_lambda",
-                "moe_capacity",
                 "moe_gate_act",
                 "moe_group_experts",
                 "moe_all_to_all_dropout",
