@@ -30,7 +30,6 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..llama.modeling import get_use_casual_mask
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import GptOssConfig
@@ -125,19 +124,13 @@ class GptOssExperts(nn.Layer):
                 expert_mask = expert_mask.transpose(perm=[2, 1, 0])
                 # we sum on the top_k and on the sequence lenght to get which experts
                 # are hit this time around
-                # expert_hitted = paddle.nonzero(
-                #     paddle.greater_than(expert_mask.sum(axis=(-1, -2)), paddle.to_tensor(0, dtype=expert_mask.dtype))
-                # )
-            for expert_idx in range(self.num_experts):
+                expert_hitted = paddle.nonzero(
+                    paddle.greater_than(expert_mask.sum(axis=(-1, -2)), paddle.to_tensor(0, dtype=expert_mask.dtype))
+                )
+            for expert_idx in expert_hitted[:]:
                 with paddle.no_grad():
-                    _, token_idx = paddle.where(expert_mask[expert_idx])
-                if token_idx.shape[0] == 0:
-                    tokenr_idx_ = paddle.zeros(1, dtype=paddle.int32)
-                    top_x_list = tokenr_idx_.tolist()
-                    current_state = hidden_states[None, top_x_list].reshape(-1, self.hidden_size) * 0
-                else:
-                    current_state = hidden_states[token_idx]
-
+                    _, token_idx = paddle.where(expert_mask[expert_idx[0]])
+                current_state = hidden_states[token_idx]
                 gate_up = current_state @ self.gate_up_proj[expert_idx] + self.gate_up_proj_bias[expert_idx]
                 gate, up = gate_up[..., ::2], gate_up[..., 1::2]
                 gate = paddle.clip(gate, min=None, max=self.limit)
@@ -145,10 +138,7 @@ class GptOssExperts(nn.Layer):
                 glu = gate * F.sigmoid(gate * self.alpha)
                 gated_output = (up + 1) * glu
                 out = gated_output @ self.down_proj[expert_idx] + self.down_proj_bias[expert_idx]
-                if token_idx.shape[0] != 0:
-                    weighted_output = out[0] * routing_weights[token_idx, expert_idx, None]
-                else:
-                    weighted_output = out
+                weighted_output = out[0] * routing_weights[token_idx, expert_idx, None]
                 next_states = paddle.index_add(
                     next_states,
                     token_idx,
@@ -672,11 +662,14 @@ def prepare_sliding_window_startend_row_indices(startend_row_indices, window_siz
         return None
     batch_size, num_head, seq_length, bound_num = startend_row_indices.shape
     assert bound_num <= 2, f"bound_num should be less than or equal to 2 when use sling window, but got {bound_num}"
+    sliding_window_startend_row_indices = startend_row_indices.clone()
     for bi in range(batch_size):
         for hi in range(num_head):
             for j in range(seq_length):
-                startend_row_indices[bi, hi, j, 0] = min(startend_row_indices[bi, hi, j, 0], window_size + j)
-    return startend_row_indices
+                sliding_window_startend_row_indices[bi, hi, j, 0] = min(
+                    startend_row_indices[bi, hi, j, 0], window_size + j
+                )
+    return sliding_window_startend_row_indices
 
 
 @register_base_model
@@ -815,7 +808,7 @@ class GptOssModel(GptOssPreTrainedModel):
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         # embed positions
-        if attn_mask_startend_row_indices is not None or get_use_casual_mask():
+        if attn_mask_startend_row_indices is not None:
             attention_mask = None
             causal_mask_mapping = {}
             attn_mask_startend_row_indices_mapping = {}
