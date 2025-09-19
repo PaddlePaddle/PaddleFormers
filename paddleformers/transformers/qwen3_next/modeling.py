@@ -21,29 +21,21 @@ from paddle import Tensor, nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
-from ...activations import ACT2FN
-from ...masking_utils import create_causal_mask
-from ...modeling_flash_attention_utils import FlashAttentionKwargs
-from ...modeling_outputs import MoeCausalLMOutputWithPast, MoeModelOutputWithPast
-from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
-from ...processing_utils import Unpack
-from ...utils import TransformersKwargs, logging
-from ...utils.generic import OutputRecorder
+from ...nn.activation import ACT2FN
+# from ...utils.masking_utils import create_causal_mask
+from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
+from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.attention.eager_attention import eager_attention_forward
+from ..model_utils import PretrainedModel, register_base_model
+from ...utils.log import logger
 
-from ..bamba.modeling_bamba import apply_mask_to_padding_states, apply_rotary_pos_emb
-from ..gemma3.modeling_gemma3 import Gemma3RMSNorm
-from ..llama.modeling_llama import (
-    LlamaForQuestionAnswering,
-    LlamaForSequenceClassification,
-    LlamaForTokenClassification,
-)
-from ..qwen2_moe.modeling_qwen2_moe import Qwen2MoeSparseMoeBlock
-from ..qwen3_moe.modeling_qwen3_moe import (
+# from ..bamba.modeling_bamba import apply_mask_to_padding_states, apply_rotary_pos_emb
+from ..qwen2_moe.modeling import Qwen2MoeSparseMoeBlock
+from ..qwen3_moe.modeling import (
     Qwen3MoeAttention,
     Qwen3MoeDecoderLayer,
     Qwen3MoeMLP,
     Qwen3MoeRotaryEmbedding,
-    eager_attention_forward,
 )
 from .configuration import Qwen3NextConfig
 
@@ -52,7 +44,7 @@ chunk_gated_delta_rule, fused_recurrent_gated_delta_rule = None, None
 FusedRMSNormGated = None
 
 __all__ = [
-    "Qwen3NextPreTrainedModel",
+    "Qwen3NextPretrainedModel",
     "Qwen3NextModel",
     "Qwen3NextForCausalLM",
     "Qwen3NextForCausalLMPipe",
@@ -61,8 +53,6 @@ __all__ = [
 is_fast_path_available = all(
     (causal_conv1d_fn, causal_conv1d_update, chunk_gated_delta_rule, fused_recurrent_gated_delta_rule)
 )
-
-logger = logging.get_logger(__name__)
 
 
 class Qwen3NextRMSNormGated(nn.Module):
@@ -176,6 +166,26 @@ class Qwen3NextDynamicCache:
         return self.conv_states[self.last_linear_layer] is not None
 
 
+class Qwen3NextRMSNorm(nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(paddle.zeros(dim))
+
+    def _norm(self, x):
+        return x * paddle.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        output = self._norm(x.float())
+        # Llama does x.to(float16) * w whilst Gemma2 is (x * w).to(float16)
+        # See https://github.com/huggingface/transformers/pull/29402
+        output = output * (1.0 + self.weight.float())
+        return output.type_as(x)
+
+    def extra_repr(self):
+        return f"{tuple(self.weight.shape)}, eps={self.eps}"
+
+
 class Qwen3NextAttention(Qwen3MoeAttention):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
@@ -191,7 +201,7 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         attention_mask: Optional[paddle.Tensor],
         past_key_values: Optional[paddle.Tensor] = None,
         cache_position: Optional[paddle.Tensor] = None,
-        **kwargs: Unpack[FlashAttentionKwargs],
+        **kwargs,
     ) -> tuple[paddle.Tensor, Optional[paddle.Tensor]]:
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
@@ -625,7 +635,7 @@ class Qwen3NextDecoderLayer(Qwen3MoeDecoderLayer):
         position_ids: Optional[paddle.Tensor] = None,
         past_key_values: Optional[paddle.Tensor] = None,
         cache_position: Optional[paddle.Tensor] = None,
-        **kwargs: Unpack[FlashAttentionKwargs],
+        **kwargs,
     ) -> paddle.Tensor:
         residual = hidden_states
 
@@ -665,8 +675,8 @@ class Qwen3NextDecoderLayer(Qwen3MoeDecoderLayer):
         return hidden_states
 
 
-class Qwen3NextPreTrainedModel(PreTrainedModel):
-    config: Qwen3NextConfig
+class Qwen3NextPretrainedModel(PretrainedModel):
+    config_class = Qwen3MoeConfig
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
     _no_split_modules = ["Qwen3NextDecoderLayer"]
@@ -674,11 +684,6 @@ class Qwen3NextPreTrainedModel(PreTrainedModel):
     _supports_flash_attn_2 = True
     _supports_sdpa = True
     _keys_to_ignore_on_load_unexpected = [r"^mtp.*"]
-    _can_record_outputs = {
-        "router_logits": OutputRecorder(Qwen2MoeSparseMoeBlock, index=1),
-        "hidden_states": Qwen3NextDecoderLayer,
-        "attentions": Qwen3NextAttention,
-    }
     _is_stateful = True
 
     def _init_weights(self, module):
@@ -688,7 +693,7 @@ class Qwen3NextPreTrainedModel(PreTrainedModel):
             module.A_log.data.uniform_(0, 16).log_()
 
 
-class Qwen3NextModel(Qwen3NextPreTrainedModel):
+class Qwen3NextModel(Qwen3NextPretrainedModel):
     def __init__(self, config: Qwen3NextConfig):
         super().__init__(config)
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, config.pad_token_id)
@@ -710,7 +715,7 @@ class Qwen3NextModel(Qwen3NextPreTrainedModel):
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         cache_position: Optional[paddle.Tensor] = None,
-        **kwargs: Unpack[TransformersKwargs],
+        **kwargs,
     ) -> MoeModelOutputWithPast:
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
@@ -778,7 +783,7 @@ class Qwen3NextModel(Qwen3NextPreTrainedModel):
         return linear_attn_mask
 
 
-class Qwen3NextForCausalLM(Qwen3NextPreTrainedModel):
+class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_experts = config.num_experts
@@ -795,7 +800,7 @@ class Qwen3NextForCausalLM(Qwen3NextPreTrainedModel):
         output_router_logits: Optional[bool] = None,
         cache_position: Optional[paddle.Tensor] = None,
         logits_to_keep: Union[int, paddle.Tensor] = 0,
-        **kwargs: Unpack[TransformersKwargs],
+        **kwargs,
     ) -> MoeCausalLMOutputWithPast:
         r"""
         labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
