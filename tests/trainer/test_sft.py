@@ -13,7 +13,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
@@ -22,6 +21,7 @@ import tempfile
 import unittest
 
 import paddle
+import yaml
 
 TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config"
@@ -35,16 +35,17 @@ os.environ["FLAGS_cudnn_deterministic"] = "1"
 
 
 class SFTTrainTester(unittest.TestCase):
-    def update_training_args(self, json_path, tmp_dir, updates) -> str:
-        with open(json_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
+    def update_training_args(self, yaml_path, tmp_dir, updates) -> str:
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
         config.update(updates)
 
         os.makedirs(tmp_dir, exist_ok=True)
-        updated_json_path = os.path.join(tmp_dir, f"updated_{os.path.basename(json_path)}")
-        with open(updated_json_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=4, ensure_ascii=False)
-        return updated_json_path
+        updated_yaml_path = os.path.join(tmp_dir, f"updated_{os.path.basename(yaml_path)}")
+        with open(updated_yaml_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(config, f, indent=4, allow_unicode=True, sort_keys=False)
+
+        return updated_yaml_path
 
     def assert_loss(self, output, base_loss):
         """
@@ -100,7 +101,8 @@ class SFTTrainTest(unittest.TestCase):
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
             "output_dir": output_dir,
             "packing": True,
-            "max_seq_len": 2048,
+            "max_seq_len": 1024,
+            "warmup_steps": -1,
             "max_steps": 5,
             "save_steps": 3,
             "tensor_parallel_degree": 2,
@@ -108,16 +110,18 @@ class SFTTrainTest(unittest.TestCase):
             "sequence_parallel": True,
             "sharding": "stage1",
         }
-        json_path = os.path.join(CONFIG_PATH, "sft_full.json")
-        updated_json_path = self.sfttrain_tester.update_training_args(json_path, output_dir, update_args)
+        config_path = os.path.join(CONFIG_PATH, "sft_full.yaml")
+        updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
         cmd = [
             "python",
             "-u",
             "-m",
             "paddle.distributed.launch",
+            "--devices",
+            "0,1,2,3",
             train_path,
-            updated_json_path,
+            updated_config_path,
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -125,8 +129,15 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.953192
+        EXCEPTED_LOSS = 11.945683
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+
+        # test model resume
+        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+
+        EXCEPTED_LOSS = 9.550503
+        self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
@@ -140,7 +151,7 @@ class SFTTrainTest(unittest.TestCase):
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
             "output_dir": output_dir,
             "packing": True,
-            "max_seq_len": 2048,
+            "max_seq_len": 1024,
             "max_steps": 5,
             "save_steps": 3,
             "tensor_parallel_degree": 2,
@@ -148,16 +159,18 @@ class SFTTrainTest(unittest.TestCase):
             "sequence_parallel": True,
             "sharding": "stage1",
         }
-        json_path = os.path.join(CONFIG_PATH, "sft_lora.json")
-        updated_json_path = self.sfttrain_tester.update_training_args(json_path, output_dir, update_args)
+        config_path = os.path.join(CONFIG_PATH, "sft_lora.yaml")
+        updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
         cmd = [
             "python",
             "-u",
             "-m",
             "paddle.distributed.launch",
+            "--devices",
+            "0,1,2,3",
             train_path,
-            updated_json_path,
+            updated_config_path,
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -165,7 +178,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.95418
+        EXCEPTED_LOSS = 11.956834
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test lora merge
@@ -177,6 +190,8 @@ class SFTTrainTest(unittest.TestCase):
             "-u",
             "-m",
             "paddle.distributed.launch",
+            "--devices",
+            "0,1,2,3",
             lora_merge_path,
             "--lora_model_path",
             output_dir,
