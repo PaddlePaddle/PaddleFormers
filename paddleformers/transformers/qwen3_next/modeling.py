@@ -37,7 +37,6 @@ from ..llama.modeling_llama import (
     LlamaForSequenceClassification,
     LlamaForTokenClassification,
 )
-from ..mixtral.modeling_mixtral import MixtralForCausalLM
 from ..qwen2_moe.modeling_qwen2_moe import Qwen2MoeSparseMoeBlock
 from ..qwen3_moe.modeling_qwen3_moe import (
     Qwen3MoeAttention,
@@ -69,17 +68,17 @@ logger = logging.get_logger(__name__)
 class Qwen3NextRMSNormGated(nn.Module):
     def __init__(self, hidden_size, eps=1e-6, **kwargs):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.weight = nn.Parameter(paddle.ones(hidden_size))
         self.variance_epsilon = eps
 
     def forward(self, hidden_states, gate=None):
         input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.to(torch.float32)
+        hidden_states = hidden_states.to(paddle.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         # Norm before gate
-        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+        hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
         hidden_states = self.weight * hidden_states.to(input_dtype)
-        hidden_states = hidden_states * F.silu(gate.to(torch.float32))
+        hidden_states = hidden_states * F.silu(gate.to(paddle.float32))
 
         return hidden_states.to(input_dtype)
 
@@ -131,8 +130,8 @@ class Qwen3NextDynamicCache:
             self.key_cache[layer_idx] = key_states
             self.value_cache[layer_idx] = value_states
         else:
-            self.key_cache[layer_idx] = torch.cat([self.key_cache[layer_idx], key_states], dim=2)
-            self.value_cache[layer_idx] = torch.cat([self.value_cache[layer_idx], value_states], dim=2)
+            self.key_cache[layer_idx] = paddle.cat([self.key_cache[layer_idx], key_states], dim=2)
+            self.value_cache[layer_idx] = paddle.cat([self.value_cache[layer_idx], value_states], dim=2)
 
         return self.key_cache[layer_idx], self.value_cache[layer_idx]
 
@@ -197,7 +196,7 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
 
-        query_states, gate = torch.chunk(
+        query_states, gate = paddle.chunk(
             self.q_proj(hidden_states).view(*input_shape, -1, self.head_dim * 2), 2, dim=-1
         )
         gate = gate.reshape(*input_shape, -1)
@@ -230,7 +229,7 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         )
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-        attn_output = attn_output * torch.sigmoid(gate)
+        attn_output = attn_output * paddle.sigmoid(gate)
 
         attn_output = self.o_proj(attn_output)
         return attn_output, attn_weights
@@ -246,7 +245,7 @@ def torch_causal_conv1d_update(
     _, hidden_size, seq_len = hidden_states.shape
     state_len = conv_state.shape[-1]
 
-    hidden_states_new = torch.cat([conv_state, hidden_states], dim=-1).to(weight.dtype)
+    hidden_states_new = paddle.cat([conv_state, hidden_states], dim=-1).to(weight.dtype)
     conv_state.copy_(hidden_states_new[:, :, -state_len:])
     out = F.conv1d(hidden_states_new, weight.unsqueeze(1), bias, padding=0, groups=hidden_size)
     out = F.silu(out[:, :, -seq_len:])
@@ -256,7 +255,7 @@ def torch_causal_conv1d_update(
 
 def l2norm(x: paddle.Tensor, dim: int = -1, eps: float = 1e-6):
     """This function is intended to align with the l2norm implementation in the FLA library."""
-    inv_norm = torch.rsqrt((x * x).sum(dim=dim, keepdim=True) + eps)
+    inv_norm = paddle.rsqrt((x * x).sum(dim=dim, keepdim=True) + eps)
     return x * inv_norm
 
 
@@ -276,7 +275,7 @@ def torch_chunk_gated_delta_rule(
         query = l2norm(query, dim=-1, eps=1e-6)
         key = l2norm(key, dim=-1, eps=1e-6)
     query, key, value, beta, g = [
-        x.transpose(1, 2).contiguous().to(torch.float32) for x in (query, key, value, beta, g)
+        x.transpose(1, 2).contiguous().to(paddle.float32) for x in (query, key, value, beta, g)
     ]
 
     batch_size, sequence_length, num_heads, k_head_dim = key.shape
@@ -298,7 +297,7 @@ def torch_chunk_gated_delta_rule(
         x.reshape(x.shape[0], x.shape[1], -1, chunk_size, x.shape[-1]) for x in (query, key, value, k_beta, v_beta)
     ]
     g = g.reshape(g.shape[0], g.shape[1], -1, chunk_size)
-    mask = torch.triu(torch.ones(chunk_size, chunk_size, dtype=torch.bool, device=query.device), diagonal=0)
+    mask = paddle.triu(paddle.ones(chunk_size, chunk_size, dtype=paddle.bool, device=query.device), diagonal=0)
 
     # chunk decay
     g = g.cumsum(dim=-1)
@@ -308,16 +307,16 @@ def torch_chunk_gated_delta_rule(
         row = attn[..., i, :i].clone()
         sub = attn[..., :i, :i].clone()
         attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
-    attn = attn + torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
+    attn = attn + paddle.eye(chunk_size, dtype=attn.dtype, device=attn.device)
     value = attn @ v_beta
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
     last_recurrent_state = (
-        torch.zeros(batch_size, sequence_length, k_head_dim, v_head_dim).to(value)
+        paddle.zeros(batch_size, sequence_length, k_head_dim, v_head_dim).to(value)
         if initial_state is None
         else initial_state.to(value)
     )
-    core_attn_out = torch.zeros_like(value)
-    mask = torch.triu(torch.ones(chunk_size, chunk_size, dtype=torch.bool, device=query.device), diagonal=1)
+    core_attn_out = paddle.zeros_like(value)
+    mask = paddle.triu(paddle.ones(chunk_size, chunk_size, dtype=paddle.bool, device=query.device), diagonal=1)
 
     # for each chunk
     for i in range(0, tot_heads // chunk_size):
@@ -348,7 +347,7 @@ def torch_recurrent_gated_delta_rule(
         query = l2norm(query, dim=-1, eps=1e-6)
         key = l2norm(key, dim=-1, eps=1e-6)
     query, key, value, beta, g = [
-        x.transpose(1, 2).contiguous().to(torch.float32) for x in (query, key, value, beta, g)
+        x.transpose(1, 2).contiguous().to(paddle.float32) for x in (query, key, value, beta, g)
     ]
 
     batch_size, sequence_length, num_heads, k_head_dim = key.shape
@@ -356,9 +355,9 @@ def torch_recurrent_gated_delta_rule(
     scale = 1 / (query.shape[-1] ** 0.5)
     query = query * scale
 
-    core_attn_out = torch.zeros(batch_size, sequence_length, num_heads, v_head_dim).to(value)
+    core_attn_out = paddle.zeros(batch_size, sequence_length, num_heads, v_head_dim).to(value)
     last_recurrent_state = (
-        torch.zeros(batch_size, sequence_length, k_head_dim, v_head_dim).to(value)
+        paddle.zeros(batch_size, sequence_length, k_head_dim, v_head_dim).to(value)
         if initial_state is None
         else initial_state.to(value)
     )
@@ -418,10 +417,10 @@ class Qwen3NextGatedDeltaNet(nn.Module):
 
         # time step projection (discretization)
         # instantiate once and copy inv_dt in init_weights of PretrainedModel
-        self.dt_bias = nn.Parameter(torch.ones(self.num_v_heads))
+        self.dt_bias = nn.Parameter(paddle.ones(self.num_v_heads))
 
-        A = torch.empty(self.num_v_heads).uniform_(0, 16)
-        self.A_log = nn.Parameter(torch.log(A))
+        A = paddle.empty(self.num_v_heads).uniform_(0, 16)
+        self.A_log = nn.Parameter(paddle.log(A))
 
         self.norm = (
             Qwen3NextRMSNormGated(self.head_v_dim, eps=self.layer_norm_epsilon)
@@ -430,8 +429,8 @@ class Qwen3NextGatedDeltaNet(nn.Module):
                 self.head_v_dim,
                 eps=self.layer_norm_epsilon,
                 activation=self.activation,
-                device=torch.cuda.current_device(),
-                dtype=config.dtype if config.dtype is not None else torch.get_current_dtype(),
+                device=paddle.device.get_device(),
+                dtype=config.dtype if config.dtype is not None else paddle.get_default_dtype(),
             )
         )
 
@@ -469,8 +468,8 @@ class Qwen3NextGatedDeltaNet(nn.Module):
             (self.num_v_heads // self.num_k_heads * self.head_v_dim),
         ]
         split_arg_list_ba = [self.num_v_heads // self.num_k_heads, self.num_v_heads // self.num_k_heads]
-        query, key, value, z = torch.split(mixed_qkvz, split_arg_list_qkvz, dim=3)
-        b, a = torch.split(mixed_ba, split_arg_list_ba, dim=3)
+        query, key, value, z = paddle.split(mixed_qkvz, split_arg_list_qkvz, dim=3)
+        b, a = paddle.split(mixed_ba, split_arg_list_ba, dim=3)
         # [b, sq, ng, np/ng * hn] -> [b, sq, np, hn]
         value = value.reshape(value.size(0), value.size(1), -1, self.head_v_dim)
         z = z.reshape(z.size(0), z.size(1), -1, self.head_v_dim)
@@ -507,7 +506,7 @@ class Qwen3NextGatedDeltaNet(nn.Module):
         query, key, value, z, b, a = self.fix_query_key_value_ordering(projected_states_qkvz, projected_states_ba)
         query, key, value = (x.reshape(x.shape[0], x.shape[1], -1) for x in (query, key, value))
 
-        mixed_qkv = torch.cat((query, key, value), dim=-1)
+        mixed_qkv = paddle.cat((query, key, value), dim=-1)
         mixed_qkv = mixed_qkv.transpose(1, 2)
 
         if use_precomputed_states:
@@ -536,7 +535,7 @@ class Qwen3NextGatedDeltaNet(nn.Module):
                 mixed_qkv = F.silu(self.conv1d(mixed_qkv)[:, :, :seq_len])
 
         mixed_qkv = mixed_qkv.transpose(1, 2)
-        query, key, value = torch.split(
+        query, key, value = paddle.split(
             mixed_qkv,
             [
                 self.key_dim,
@@ -724,7 +723,7 @@ class Qwen3NextModel(Qwen3NextPreTrainedModel):
 
         if cache_position is None:
             past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-            cache_position = torch.arange(
+            cache_position = paddle.arange(
                 past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
             )
         if position_ids is None:
@@ -774,12 +773,12 @@ class Qwen3NextModel(Qwen3NextPreTrainedModel):
             2. Attending to all inputs
         """
         linear_attn_mask = attention_mask
-        if cache_position[0] > 0 or (attention_mask is not None and torch.all(attention_mask == 1)):
+        if cache_position[0] > 0 or (attention_mask is not None and paddle.all(attention_mask == 1)):
             linear_attn_mask = None
         return linear_attn_mask
 
 
-class Qwen3NextForCausalLM(MixtralForCausalLM):
+class Qwen3NextForCausalLM(Qwen3NextPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_experts = config.num_experts
