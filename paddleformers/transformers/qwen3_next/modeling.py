@@ -33,15 +33,10 @@ from ...utils.log import logger
 from ..qwen2_moe.modeling import Qwen2MoeSparseMoeBlock
 from ..qwen3_moe.modeling import (
     Qwen3MoeAttention,
-    Qwen3MoeDecoderLayer,
     Qwen3MoeMLP,
     Qwen3MoeRotaryEmbedding,
 )
 from .configuration import Qwen3NextConfig
-
-causal_conv1d_update, causal_conv1d_fn = None, None
-chunk_gated_delta_rule, fused_recurrent_gated_delta_rule = None, None
-FusedRMSNormGated = None
 
 __all__ = [
     "Qwen3NextPretrainedModel",
@@ -50,12 +45,13 @@ __all__ = [
     "Qwen3NextForCausalLMPipe",
 ]
 
-is_fast_path_available = all(
-    (causal_conv1d_fn, causal_conv1d_update, chunk_gated_delta_rule, fused_recurrent_gated_delta_rule)
-)
+causal_conv1d_update, causal_conv1d_fn = None, None
+chunk_gated_delta_rule, fused_recurrent_gated_delta_rule = None, None
+FusedRMSNormGated = None
+is_fast_path_available = False
 
 
-class Qwen3NextRMSNormGated(nn.Module):
+class Qwen3NextRMSNormGated(nn.Layer):
     def __init__(self, hidden_size, eps=1e-6, **kwargs):
         super().__init__()
         self.weight = nn.Parameter(paddle.ones(hidden_size))
@@ -106,16 +102,16 @@ class Qwen3NextDynamicCache:
     def __len__(self):
         return len(self.layer_types)
 
-    def __getitem__(self, layer_idx: int) -> tuple[paddle.Tensor, paddle.Tensor]:
+    def __getitem__(self, layer_idx: int) -> tuple[Tensor, Tensor]:
         return self.key_cache[layer_idx], self.value_cache[layer_idx]
 
     def update(
         self,
-        key_states: paddle.Tensor,
-        value_states: paddle.Tensor,
+        key_states: Tensor,
+        value_states: Tensor,
         layer_idx: int,
         cache_kwargs: Optional[dict[str, Any]] = None,
-    ) -> tuple[paddle.Tensor, paddle.Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         if self.key_cache[layer_idx] is None:
             self.key_cache[layer_idx] = key_states
             self.value_cache[layer_idx] = value_states
@@ -125,7 +121,7 @@ class Qwen3NextDynamicCache:
 
         return self.key_cache[layer_idx], self.value_cache[layer_idx]
 
-    def reorder_cache(self, beam_idx: paddle.Tensor):
+    def reorder_cache(self, beam_idx: Tensor):
         """Reorders the cache for beam search, given the selected beam indices."""
         for layer_idx in range(len(self.key_cache)):
             if self.key_cache[layer_idx] is not None:
@@ -148,7 +144,7 @@ class Qwen3NextDynamicCache:
             return 0
         return self.key_cache[layer_idx].shape[-2]
 
-    def get_mask_sizes(self, cache_position: paddle.Tensor, layer_idx: int) -> tuple[int, int]:
+    def get_mask_sizes(self, cache_position: Tensor, layer_idx: int) -> tuple[int, int]:
         """
         Return a tuple (kv_length, kv_offset) corresponding to the length and offset that will be returned for
         the given layer at `layer_idx`.
@@ -166,7 +162,7 @@ class Qwen3NextDynamicCache:
         return self.conv_states[self.last_linear_layer] is not None
 
 
-class Qwen3NextRMSNorm(nn.Module):
+class Qwen3NextRMSNorm(nn.Layer):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
         self.eps = eps
@@ -196,13 +192,13 @@ class Qwen3NextAttention(Qwen3MoeAttention):
 
     def forward(
         self,
-        hidden_states: paddle.Tensor,
-        position_embeddings: tuple[paddle.Tensor, paddle.Tensor],
-        attention_mask: Optional[paddle.Tensor],
-        past_key_values: Optional[paddle.Tensor] = None,
-        cache_position: Optional[paddle.Tensor] = None,
+        hidden_states: Tensor,
+        position_embeddings: tuple[Tensor, Tensor],
+        attention_mask: Optional[Tensor],
+        past_key_values: Optional[Tensor] = None,
+        cache_position: Optional[Tensor] = None,
         **kwargs,
-    ) -> tuple[paddle.Tensor, Optional[paddle.Tensor]]:
+    ) -> tuple[Tensor, Optional[Tensor]]:
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
 
@@ -263,7 +259,7 @@ def torch_causal_conv1d_update(
     return out
 
 
-def l2norm(x: paddle.Tensor, dim: int = -1, eps: float = 1e-6):
+def l2norm(x: Tensor, dim: int = -1, eps: float = 1e-6):
     """This function is intended to align with the l2norm implementation in the FLA library."""
     inv_norm = paddle.rsqrt((x * x).sum(dim=dim, keepdim=True) + eps)
     return x * inv_norm
@@ -391,7 +387,7 @@ def torch_recurrent_gated_delta_rule(
     return core_attn_out, last_recurrent_state
 
 
-class Qwen3NextGatedDeltaNet(nn.Module):
+class Qwen3NextGatedDeltaNet(nn.Layer):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -489,10 +485,10 @@ class Qwen3NextGatedDeltaNet(nn.Module):
 
     def forward(
         self,
-        hidden_states: paddle.Tensor,
+        hidden_states: Tensor,
         cache_params: Optional[Qwen3NextDynamicCache] = None,
-        cache_position: Optional[paddle.Tensor] = None,
-        attention_mask: Optional[paddle.Tensor] = None,
+        cache_position: Optional[Tensor] = None,
+        attention_mask: Optional[Tensor] = None,
     ):
         hidden_states = apply_mask_to_padding_states(hidden_states, attention_mask)
 
@@ -605,9 +601,9 @@ class Qwen3NextGatedDeltaNet(nn.Module):
         return output
 
 
-class Qwen3NextDecoderLayer(Qwen3MoeDecoderLayer):
+class Qwen3NextDecoderLayer(nn.Layer):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
-        nn.Module.__init__(self)
+        super().__init__()
         self.hidden_size = config.hidden_size
 
         # token mixer
@@ -629,14 +625,14 @@ class Qwen3NextDecoderLayer(Qwen3MoeDecoderLayer):
 
     def forward(
         self,
-        hidden_states: paddle.Tensor,
-        position_embeddings: tuple[paddle.Tensor, paddle.Tensor],
-        attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[paddle.Tensor] = None,
-        cache_position: Optional[paddle.Tensor] = None,
+        hidden_states: Tensor,
+        position_embeddings: tuple[Tensor, Tensor],
+        attention_mask: Optional[Tensor] = None,
+        position_ids: Optional[Tensor] = None,
+        past_key_values: Optional[Tensor] = None,
+        cache_position: Optional[Tensor] = None,
         **kwargs,
-    ) -> paddle.Tensor:
+    ) -> Tensor:
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -676,7 +672,7 @@ class Qwen3NextDecoderLayer(Qwen3MoeDecoderLayer):
 
 
 class Qwen3NextPretrainedModel(PretrainedModel):
-    config_class = Qwen3MoeConfig
+    config_class = Qwen3NextConfig
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
     _no_split_modules = ["Qwen3NextDecoderLayer"]
@@ -697,7 +693,7 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
     def __init__(self, config: Qwen3NextConfig):
         super().__init__(config)
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, config.pad_token_id)
-        self.layers = nn.ModuleList(
+        self.layers = nn.LayerList(
             [Qwen3NextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         self.norm = Gemma3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -708,15 +704,15 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
 
     def forward(
         self,
-        input_ids: Optional[paddle.Tensor] = None,
-        attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[paddle.Tensor] = None,
-        inputs_embeds: Optional[paddle.Tensor] = None,
+        input_ids: Optional[Tensor] = None,
+        attention_mask: Optional[Tensor] = None,
+        position_ids: Optional[Tensor] = None,
+        past_key_values: Optional[Tensor] = None,
+        inputs_embeds: Optional[Tensor] = None,
         use_cache: Optional[bool] = None,
-        cache_position: Optional[paddle.Tensor] = None,
+        cache_position: Optional[Tensor] = None,
         **kwargs,
-    ) -> MoeModelOutputWithPast:
+    ) -> MoEModelOutputWithPast:
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
 
@@ -790,18 +786,18 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
 
     def forward(
         self,
-        input_ids: Optional[paddle.Tensor] = None,
-        attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
+        input_ids: Optional[Tensor] = None,
+        attention_mask: Optional[Tensor] = None,
+        position_ids: Optional[Tensor] = None,
         past_key_values: Optional[Qwen3NextDynamicCache] = None,
-        inputs_embeds: Optional[paddle.Tensor] = None,
-        labels: Optional[paddle.Tensor] = None,
+        inputs_embeds: Optional[Tensor] = None,
+        labels: Optional[Tensor] = None,
         use_cache: Optional[bool] = None,
         output_router_logits: Optional[bool] = None,
-        cache_position: Optional[paddle.Tensor] = None,
-        logits_to_keep: Union[int, paddle.Tensor] = 0,
+        cache_position: Optional[Tensor] = None,
+        logits_to_keep: Union[int, Tensor] = 0,
         **kwargs,
-    ) -> MoeCausalLMOutputWithPast:
+    ) -> MoECausalLMOutputWithPast:
         r"""
         labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
