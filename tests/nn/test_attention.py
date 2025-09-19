@@ -219,7 +219,7 @@ class TestAttentionInterface(unittest.TestCase):
             self.key,
             self.value,
             scaling=self.scaling,
-            attn_mask_start_row_indices=self.startend_row_indices,
+            attn_mask_startend_row_indices=self.startend_row_indices,
             sink=self.sink,
         )
 
@@ -261,7 +261,7 @@ class TestAttentionInterface(unittest.TestCase):
             self.key,
             self.value,
             scaling=self.scaling,
-            attn_mask_start_row_indices=self.startend_row_indices,
+            attn_mask_startend_row_indices=self.startend_row_indices,
             sink=self.sink,
             is_causal=False,
         )
