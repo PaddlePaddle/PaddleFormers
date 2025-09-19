@@ -573,7 +573,7 @@ def set_proxy(download_hub: DownloadSource = None):
                 )  # proxy_aistudio also suit for modelscope
 
             print(f"set proxy for {download_hub}, proxy path: {proxy_path}")
-            command = f"source {proxy_path} && env"
+            command = f". {proxy_path} && env"
 
             proc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
             out, _ = proc.communicate()

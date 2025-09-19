@@ -598,7 +598,7 @@ def load_state_dict(
 def prepare_safe_save_state_dict(state_dict, save_to_hf=False):
     for k in list(state_dict.keys()):
         if isinstance(state_dict[k], paddle.Tensor):
-            if save_to_hf:
+            if state_dict[k].dtype == paddle.bfloat16:
                 state_dict[k] = state_dict.pop(k).astype("float32").cpu().numpy().astype(ml_dtypes.bfloat16)
             else:
                 state_dict[k] = state_dict.pop(k).cpu().numpy()
