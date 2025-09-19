@@ -17,6 +17,7 @@ testpaths = [
     "tests/datasets",
     "tests/generation",
     "tests/mergekit",
+    "tests/nn",
     "tests/peft",
     "tests/trainer",
     "tests/transformers",

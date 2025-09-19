@@ -552,11 +552,11 @@ def set_proxy(download_hub: DownloadSource = None):
             if download_hub is None:
                 return func(*args, **kwargs)
             elif download_hub == DownloadSource.HUGGINGFACE:
-                command = "source $work_dir/../../../proxy_hf && env"
+                command = ". $work_dir/../../../proxy_hf && env"
             elif download_hub == DownloadSource.AISTUDIO:
-                command = "source $work_dir/../../../proxy_aistudio && env"
+                command = ". $work_dir/../../../proxy_aistudio && env"
             elif download_hub == DownloadSource.MODELSCOPE:
-                command = "source $work_dir/../../../proxy_aistudio && env"  # proxy_aistudio also suit for modelscope
+                command = ". $work_dir/../../../proxy_aistudio && env"  # proxy_aistudio also suit for modelscope
 
             proc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
             out, _ = proc.communicate()
