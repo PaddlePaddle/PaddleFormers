@@ -319,7 +319,7 @@ def dpo_loss_forward(
         self, logits, labels
     )
 
-    if self.dpo_config.offset_alpha > 0 and len(labels) == 6:
+    if self.dpo_config.offset_alpha > 0 or len(labels) == 6:
         (
             chosen_labels,
             rejected_labels,
