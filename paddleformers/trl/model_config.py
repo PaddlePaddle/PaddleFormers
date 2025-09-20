@@ -153,3 +153,6 @@ class ModelConfig:
     pp_seg_method: Optional[str] = field(
         default="layer:DecoderLayer|EmptyLayer", metadata={"help": "PP Segmentation Method"}
     )
+    use_fused_head_and_loss_fn: bool = field(
+        default=False, metadata={"help": "Whether to use fused head and loss function"}
+    )

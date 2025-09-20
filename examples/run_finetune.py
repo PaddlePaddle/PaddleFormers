@@ -136,7 +136,7 @@ def main():
     model_config._attn_implementation = model_args.attn_impl
     if training_args.use_expert_parallel and training_args.expert_parallel_degree >= 1:
         model_config.n_group = training_args.expert_parallel_degree
-    model_config.use_fused_head_and_loss_fn = training_args.use_fused_head_and_loss_fn
+    model_config.use_fused_head_and_loss_fn = model_args.use_fused_head_and_loss_fn
     model_config.use_filtered_label_loss = training_args.use_filtered_label_loss
     model_config.loss_subbatch_sequence_length = training_args.loss_subbatch_sequence_length
     logger.info(f"Final model config: {model_config}")
