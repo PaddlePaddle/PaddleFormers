@@ -238,7 +238,7 @@ def cal_dpo_loss(
     logits = pi_logratios - ref_logratios
 
     if self.dpo_config.loss_type == "sigmoid":
-        if self.dpo_config.offset_alpha > 0:
+        if self.dpo_config.offset_alpha > 0 and score_deltas is not None:
             logits = logits - self.dpo_config.offset_alpha / self.dpo_config.beta * paddle.log(score_deltas + 1e-6)
         loss = (
             -F.log_sigmoid(self.dpo_config.beta * logits) * (1 - self.dpo_config.label_smoothing)
@@ -319,24 +319,14 @@ def dpo_loss_forward(
         self, logits, labels
     )
 
-    if self.dpo_config.offset_alpha > 0:
-        (
-            chosen_labels,
-            rejected_labels,
-            response_indexs,
-            score_deltas,
-            reference_chosen_logps,
-            reference_rejected_logps,
-        ) = labels
-    else:
-        (
-            chosen_labels,
-            rejected_labels,
-            response_indexs,
-            reference_chosen_logps,
-            reference_rejected_logps,
-        ) = labels
-        score_deltas = None
+    (
+        chosen_labels,
+        rejected_labels,
+        response_indexs,
+        score_deltas,
+        reference_chosen_logps,
+        reference_rejected_logps,
+    ) = labels
 
     average_log_prob = False
     if self.dpo_config.loss_type in ["ipo", "or", "simpo"]:
