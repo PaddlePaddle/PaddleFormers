@@ -319,14 +319,24 @@ def dpo_loss_forward(
         self, logits, labels
     )
 
-    (
-        chosen_labels,
-        rejected_labels,
-        response_indexs,
-        score_deltas,
-        reference_chosen_logps,
-        reference_rejected_logps,
-    ) = labels
+    if self.dpo_config.offset_alpha > 0 and len(labels) == 6:
+        (
+            chosen_labels,
+            rejected_labels,
+            response_indexs,
+            score_deltas,
+            reference_chosen_logps,
+            reference_rejected_logps,
+        ) = labels
+    else:
+        (
+            chosen_labels,
+            rejected_labels,
+            response_indexs,
+            reference_chosen_logps,
+            reference_rejected_logps,
+        ) = labels
+        score_deltas = None
 
     average_log_prob = False
     if self.dpo_config.loss_type in ["ipo", "or", "simpo"]:
