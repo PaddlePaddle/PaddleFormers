@@ -14,14 +14,7 @@
 
 import paddle
 import paddle.nn as nn
-
-from ..utils.log import logger
-
-try:
-    from paddle.incubate.nn.functional import fused_rms_norm_ext
-except ImportError:
-    logger.warning_once("Fail to import fused_rms_norm_ext")
-    fused_rms_norm_ext = None
+from paddle.incubate.nn.functional import fused_rms_norm_ext
 
 from ..generation.configuration_utils import PretrainedConfig
 from ..utils.log import logger
@@ -67,7 +60,7 @@ class RMSNorm(nn.Layer):
         self.config = config
 
     def forward(self, hidden_states):
-        if self.config.get("fuse_rms_norm", False) and fused_rms_norm_ext is not None:
+        if self.config.get("fuse_rms_norm", False):
             return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
 
         if paddle.in_dynamic_mode():

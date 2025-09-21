@@ -202,7 +202,6 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             output += self.gate.weight.sum() * 0.0  # hack for grad
             output = output.reshape(orig_shape or orig_shape_2)  # [e*1,c,m]
             return output, None, 0
-        # print("input:",input._md5sum())
         (
             dispatched_input,
             global_hidden_states,
@@ -217,8 +216,6 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             (gate_logits_mm, gate_prob_mm),
             expert_num_local,
         ) = self.fused_gate_and_dispatch(input, token_type_ids, global_dense_expert_mask)
-        # for idx in range(len(dispatched_input)):
-        #     print("dispatched_input:",idx,dispatched_input[idx]._md5sum())
         seqlen_this_mp = input.shape[0]
         if len(scatter_index_rev):
             recv_rank_local = scatter_index_rev // seqlen_this_mp
@@ -316,8 +313,6 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             recv_counts_num_cpu = recv_counts_cpu.sum(-1)
 
             dispatched_input = self.forward_experts(*dispatched_input)
-            # for idx in range(len(dispatched_input)):
-            #     print("dispatched_input:",dispatched_input[idx]._md5sum())
             if recv_size_task is not None:
                 recv_size_task.cpu_wait()
             if send_rank_this_rank_task is not None:
@@ -736,10 +731,6 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 continue
 
             expert_out = true_experts[iexpert](chunk.contiguous())
-            # print("chunk", chunk, chunk._md5sum())
-            # print(f"iexpert: {iexpert}", expert_out._md5sum())
-            # print("up:", true_experts[iexpert].up_proj.weight._md5sum())
-            # print("gate:", true_experts[iexpert].gate_proj.weight._md5sum())
             expert_outputs.append(expert_out)
 
         # if self.config.moe_layer_feed_fake_token and len(no_tokens_expert_outputs) > 0:
