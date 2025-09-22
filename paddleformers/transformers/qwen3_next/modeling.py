@@ -185,7 +185,7 @@ class Qwen3NextAttention(Qwen3MoeAttention):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
         self.q_proj = nn.Linear(
-            config.hidden_size, config.num_attention_heads * self.head_dim * 2, bias=config.attention_bias
+            config.hidden_size, config.num_attention_heads * self.head_dim * 2, bias_attr=config.attention_bias
         )
         del self.sliding_window
 
@@ -302,7 +302,7 @@ def torch_chunk_gated_delta_rule(
         x.reshape(x.shape[0], x.shape[1], -1, chunk_size, x.shape[-1]) for x in (query, key, value, k_beta, v_beta)
     ]
     g = g.reshape(g.shape[0], g.shape[1], -1, chunk_size)
-    mask = paddle.triu(paddle.ones(chunk_size, chunk_size, dtype=paddle.bool, device=query.device), diagonal=0)
+    mask = paddle.triu(paddle.ones(chunk_size, chunk_size, dtype=paddle.bool), diagonal=0)
 
     # chunk decay
     g = g.cumsum(dim=-1)
@@ -312,7 +312,7 @@ def torch_chunk_gated_delta_rule(
         row = attn[..., i, :i].clone()
         sub = attn[..., :i, :i].clone()
         attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
-    attn = attn + paddle.eye(chunk_size, dtype=attn.dtype, device=attn.device)
+    attn = attn + paddle.eye(chunk_size, dtype=attn.dtype)
     value = attn @ v_beta
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
     last_recurrent_state = (
@@ -321,7 +321,7 @@ def torch_chunk_gated_delta_rule(
         else initial_state.to(value)
     )
     core_attn_out = paddle.zeros_like(value)
-    mask = paddle.triu(paddle.ones(chunk_size, chunk_size, dtype=paddle.bool, device=query.device), diagonal=1)
+    mask = paddle.triu(paddle.ones(chunk_size, chunk_size, dtype=paddle.bool), diagonal=1)
 
     # for each chunk
     for i in range(0, tot_heads // chunk_size):
@@ -456,10 +456,10 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
 
         # QKV
         self.conv_dim = self.key_dim * 2 + self.value_dim
-        self.conv1d = nn.Conv1d(
+        self.conv1d = nn.Conv1D(
             in_channels=self.conv_dim,
             out_channels=self.conv_dim,
-            bias=False,
+            bias_attr=False,
             kernel_size=self.conv_kernel_size,
             groups=self.conv_dim,
             padding=self.conv_kernel_size - 1,
@@ -468,8 +468,8 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         # projection of the input hidden states
         projection_size_qkvz = self.key_dim * 2 + self.value_dim * 2
         projection_size_ba = self.num_v_heads * 2
-        self.in_proj_qkvz = nn.Linear(self.hidden_size, projection_size_qkvz, bias=False)
-        self.in_proj_ba = nn.Linear(self.hidden_size, projection_size_ba, bias=False)
+        self.in_proj_qkvz = nn.Linear(self.hidden_size, projection_size_qkvz, bias_attr=False)
+        self.in_proj_ba = nn.Linear(self.hidden_size, projection_size_ba, bias_attr=False)
 
         # time step projection (discretization)
         # instantiate once and copy inv_dt in init_weights of PretrainedModel
@@ -490,7 +490,7 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
             )
         )
 
-        self.out_proj = nn.Linear(self.value_dim, self.hidden_size, bias=False)
+        self.out_proj = nn.Linear(self.value_dim, self.hidden_size, bias_attr=False)
 
         self.causal_conv1d_fn = causal_conv1d_fn
         self.causal_conv1d_update = causal_conv1d_update or torch_causal_conv1d_update
@@ -670,8 +670,8 @@ class Qwen3NextDecoderLayer(nn.Layer):
         else:
             self.mlp = Qwen3MoeMLP(config, intermediate_size=config.intermediate_size)
 
-        self.input_layernorm = Gemma3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Gemma3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -739,6 +739,7 @@ class Qwen3NextPretrainedModel(PretrainedModel):
             module.A_log.data.uniform_(0, 16).log_()
 
 
+@register_base_model
 class Qwen3NextModel(Qwen3NextPretrainedModel):
     def __init__(self, config: Qwen3NextConfig):
         super().__init__(config)
@@ -746,11 +747,18 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
         self.layers = nn.LayerList(
             [Qwen3NextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = Gemma3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.rotary_emb = Qwen3MoeRotaryEmbedding(config=config)
+        self.norm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.rotary_emb = Qwen3MoeRotaryEmbedding(
+            config.head_dim,
+            max_position_embeddings=config.max_position_embeddings,
+            base=config.rope_theta,
+        )
+        if config.rope_scaling:
+            logger.warning_once("The rope_scaling is not implemented.")
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
-        self.post_init()
+        # TODO(liangshuhao): uncomment this
+        # self.post_init()
 
     def forward(
         self,
@@ -775,7 +783,7 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
         if cache_position is None:
             past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
             cache_position = paddle.arange(
-                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1]
             )
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)

@@ -263,6 +263,10 @@ class Qwen3NextConfig(PretrainedConfig):
         self.router_aux_loss_coef = router_aux_loss_coef
         self.mlp_only_layers = mlp_only_layers
 
+        # for backward compatibility
+        self.sliding_window = None
+        self.use_sliding_window = False
+
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
         self.register_unsavable_keys(
