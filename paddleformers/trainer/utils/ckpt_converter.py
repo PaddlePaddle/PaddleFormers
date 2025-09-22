@@ -381,7 +381,7 @@ class CheckpointConverter:
 
                 if not is_replicated:
                     # Derive the partition strategy based on the global_shape, then concatenate.
-                    concat_optimier_state_dict[opt_state_name_removed_tp_rank] = paddle.concat(tp_tensors, axis=axis)
+                    concat_optimier_state_dict[opt_state_name_removed_tp_rank] = paddle.cat(tp_tensors, axis=axis)
                 else:
                     concat_optimier_state_dict[opt_state_name_removed_tp_rank] = tp_tensors[0]
 
