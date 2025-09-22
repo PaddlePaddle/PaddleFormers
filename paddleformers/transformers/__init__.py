@@ -43,7 +43,7 @@ import_structure = {
     ],
     "attention_utils": ["create_bigbird_rand_mask_idx_list"],
     "tensor_parallel_utils": [],
-    "configuration_utils": ["PretrainedConfig", "layer_type_validation"],
+    "configuration_utils": ["PretrainedConfig"],
     "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
@@ -346,7 +346,7 @@ import_structure = {
 }
 
 if TYPE_CHECKING:
-    from .configuration_utils import PretrainedConfig, layer_type_validation
+    from .configuration_utils import PretrainedConfig
     from .model_utils import PretrainedModel, register_base_model
     from .tokenizer_utils import (
         PretrainedTokenizer,
