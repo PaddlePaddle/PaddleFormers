@@ -22,12 +22,12 @@ from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ...nn.activation import ACT2FN
-# from ...utils.masking_utils import create_causal_mask
-from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
-from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.attention.eager_attention import eager_attention_forward
-from ..model_utils import PretrainedModel, register_base_model
+from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.general import GeneralInterface
 from ...utils.log import logger
+from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
+from ..model_utils import PretrainedModel, register_base_model
 
 from ..qwen2_moe.modeling import Qwen2MoeSparseMoeBlock
 from ..qwen3_moe.modeling import (
@@ -35,6 +35,7 @@ from ..qwen3_moe.modeling import (
     Qwen3MoeMLP,
     Qwen3MoeRotaryEmbedding,
 )
+from ..configuration_utils import PretrainedConfig
 from .configuration import Qwen3NextConfig
 
 __all__ = [
@@ -238,6 +239,64 @@ class Qwen3NextAttention(Qwen3MoeAttention):
 
         attn_output = self.o_proj(attn_output)
         return attn_output, attn_weights
+
+
+def create_causal_mask(
+    config: PretrainedConfig,
+    input_embeds: Tensor,
+    attention_mask: Optional[Tensor],
+    cache_position: Tensor,
+    past_key_values: Optional[Tensor],
+    position_ids: Optional[Tensor] = None,
+    or_mask_function: Optional[Callable] = None,
+    and_mask_function: Optional[Callable] = None,
+) -> Optional[Tensor]:
+    """
+    Create a standard causal mask based on the attention implementation used (stored in the config). If `past_key_values`
+    has an hybrid cache structure, this function will return the mask corresponding to one of the "full_attention" layers (to align
+    to what is needed in the `modeling_xxx.py` files).
+
+    Args:
+        config (`PretrainedConfig`):
+            The model config.
+        input_embeds (`paddle.Tensor`):
+            The input embeddings of shape (batch_size, query_length, hidden_dim). This is used only to infer the
+            batch size, query length and dtype.
+        attention_mask (`paddle.Tensor`, optional):
+            The 2D attention mask corresponding to padded tokens of shape (batch_size, number_of_seen_tokens+q_length).
+            It can also be an already prepared 4D mask, in which case it is returned as-is.
+        cache_position (`paddle.Tensor`):
+            A tensor of shape (query_length,) indicating the current indices of the input sequence elements.
+        past_key_values (`paddle.Tensor`, optional):
+            The past key values, if we use a cache.
+        position_ids (`paddle.Tensor`, optional)
+            A 2D tensor of shape (batch_size, query_length) indicating the positions of each token in the sequences.
+        or_mask_function (`Callable`, optional):
+            An optional mask function to combine with the causal mask function (by doing the union of both). This is
+            useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
+        and_mask_function (`Callable`, optional):
+            An optional mask function to combine with the causal mask function (by doing the intersection of both). This is
+            useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
+    """
+    assert config._attn_implementation == "eager", "Currently only supports eager attention."
+    assert attention_mask is None, "Currently attention_mask is not supported."
+    assert (or_mask_function is None) and (and_mask_function is None), (
+        "Currently or_mask_function or and_mask_function is not supported."
+    )
+
+    batch_size, dtype = input_embeds.shape[0], input_embeds.dtype
+    query_length = cache_position.shape[-1]
+    min_dtype = paddle.finfo(dtype).min
+
+    causal_mask = paddle.where(
+        cache_position.expand([query_length, -1]) <
+        cache_position.unsqueeze(-1).expand([-1, query_length]),
+        min_dtype,
+        paddle.to_tensor(0.0, dtype),
+    )
+    causal_mask = causal_mask.expand([batch_size, 1, 1, -1, -1])
+
+    return causal_mask
 
 
 def torch_causal_conv1d_update(
@@ -799,9 +858,11 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
         linear_attn_mask = self._update_linear_attn_mask(attention_mask, cache_position)
 
         hidden_states = inputs_embeds
+        print('hidden_states', hidden_states)
+        print('position_ids', position_ids)
 
         # create position embeddings to be shared across the decoder layers
-        position_embeddings = self.rotary_emb(hidden_states, position_ids)
+        position_embeddings = self.rotary_emb(hidden_states, inputs_embeds.shape[1])
 
         for decoder_layer in self.layers[: self.config.num_hidden_layers]:
             layer_mask = linear_attn_mask if decoder_layer.layer_type == "linear_attention" else causal_mask
