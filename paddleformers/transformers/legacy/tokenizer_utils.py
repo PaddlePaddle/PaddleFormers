@@ -36,7 +36,7 @@ from jinja2.exceptions import TemplateError, TemplateSyntaxError
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 from paddle.utils import try_import
 
-from ...utils.env import CHAT_TEMPLATE_CONFIG_NAME
+from ...utils.env import CHAT_TEMPLATE_CONFIG_NAME, CHAT_TEMPLATE_JINJA_CONFIG_NAME
 from ...utils.log import logger
 
 try:
@@ -925,7 +925,8 @@ class ChatTemplateMixin:
 
         # load chat-template
         chat_template_file = os.path.join(tokenizer_config_file_dir, CHAT_TEMPLATE_CONFIG_NAME)
-        if not os.path.exists(chat_template_file):
+        chat_template_jinja_file = os.path.join(tokenizer_config_file_dir, CHAT_TEMPLATE_JINJA_CONFIG_NAME)
+        if not os.path.exists(chat_template_file) and not os.path.exist(chat_template_jinja_file):
             return tokenizer
 
         if tokenizer.chat_template is not None:
@@ -935,7 +936,12 @@ class ChatTemplateMixin:
             logger.warning(
                 "`chat_template.json` will be deprecated in the future! Please set it in `tokenizer_config.json`."
             )
-        tokenizer.init_chat_template(chat_template_file)
+        if os.path.exists(chat_template_file):
+            tokenizer.init_chat_template(chat_template_file)
+        elif os.path.exists(chat_template_jinja_file):
+            with open(chat_template_jinja_file, encoding="utf-8") as chat_template_handle:
+                chat_template_content = chat_template_handle.read()
+                tokenizer.init_chat_template(chat_template_content)
         return tokenizer
 
     def init_chat_template(self, chat_template: str | dict):

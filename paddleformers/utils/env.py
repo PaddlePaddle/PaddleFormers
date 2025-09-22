@@ -79,6 +79,7 @@ LEGACY_CONFIG_NAME = "model_config.json"
 CONFIG_NAME = "config.json"
 TOKENIZER_CONFIG_NAME = "tokenizer_config.json"
 CHAT_TEMPLATE_CONFIG_NAME = "chat_template.json"
+CHAT_TEMPLATE_JINJA_CONFIG_NAME = "chat_template.jinja"
 NONE_CHAT_TEMPLATE = "{% for message in messages -%} {% if message['role'] == 'user' or message['role'] == 'assistant' -%} {{ message['content'] }} {% endif -%}{% endfor -%}"
 GENERATION_CONFIG_NAME = "generation_config.json"
 
