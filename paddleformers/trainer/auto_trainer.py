@@ -311,7 +311,7 @@ class AutoTrainer(Trainer):
                                 tensor_list.append(
                                     global_datas[index * self.args.per_device_train_batch_size + offset]
                                 )
-                            concat_tensor = paddle.concat(tensor_list, axis=0)
+                            concat_tensor = paddle.cat(tensor_list, axis=0)
                             global_micro_batchs[index].update({key: [concat_tensor]})
                         global_datas_next = next_dtensor.split(self.args.gradient_accumulation_steps, axis=0)
                         for index, data in enumerate(global_datas):
@@ -356,7 +356,7 @@ class AutoTrainer(Trainer):
                                             tensor_list.append(
                                                 global_datas[index * self.args.per_device_train_batch_size + offset]
                                             )
-                                        concat_tensor = paddle.concat(tensor_list, axis=0)
+                                        concat_tensor = paddle.cat(tensor_list, axis=0)
                                         if key in global_micro_batchs[index].keys():
                                             global_micro_batchs[index][key].append(concat_tensor)
                                         else:

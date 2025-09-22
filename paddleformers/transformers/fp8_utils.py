@@ -147,9 +147,9 @@ class FP8LinearFunctionBase:
                 padding_size = 128
             pad_size = padding_size - (x.shape[axis] % padding_size)
             if axis == 0:
-                x = paddle.concat([x, paddle.zeros([pad_size, x.shape[-1]], dtype=x.dtype)], axis=0)
+                x = paddle.cat([x, paddle.zeros([pad_size, x.shape[-1]], dtype=x.dtype)], axis=0)
             else:
-                x = paddle.concat([x, paddle.zeros([x.shape[0], pad_size], dtype=x.dtype)], axis=-1)
+                x = paddle.cat([x, paddle.zeros([x.shape[0], pad_size], dtype=x.dtype)], axis=-1)
         return x
 
     @staticmethod
@@ -890,7 +890,7 @@ class FP8GroupGemmMlpFunctionNode:
         tokens = []
         for i in range(len(tokens_per_expert)):
             tokens.append(paddle.full([tokens_per_expert[i]], i, dtype="int32"))
-        out = paddle.concat(tokens, axis=0)
+        out = paddle.cat(tokens, axis=0)
         return out
 
     def fwd_gate_up(self, x, expert_w1, num_expert, tokens_per_expert, m_indices=None):

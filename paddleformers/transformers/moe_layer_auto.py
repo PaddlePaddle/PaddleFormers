@@ -96,12 +96,12 @@ def combining(x, combine_weights, scatter_index):
 
     dim = x.shape[-1]
     if isinstance(scatter_index, (list, tuple)):
-        scatter_index = paddle.concat([i.unsqueeze([-1]) for i in scatter_index], -1)
+        scatter_index = paddle.cat([i.unsqueeze([-1]) for i in scatter_index], -1)
     scatter_index = scatter_index.reshape([-1])
     num_k = len(combine_weights) if isinstance(combine_weights, (list, tuple)) else combine_weights.shape[-1]
     x = paddle.gather(x, scatter_index).reshape([-1, num_k, dim])  # [seq,2,dim]
     if isinstance(combine_weights, (list, tuple)):
-        combine_weights = paddle.concat(combine_weights, -1).unsqueeze([1])
+        combine_weights = paddle.cat(combine_weights, -1).unsqueeze([1])
     return paddle.matmul(combine_weights, x).squeeze(1)  # [seq,1,2] @ [seq,2,dim] -> [seq,1,dim]
 
 

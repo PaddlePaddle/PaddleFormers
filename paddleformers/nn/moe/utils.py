@@ -183,7 +183,7 @@ def all_gather_group(input, group=None, axis=0):
         return output
     outputs = [paddle.empty(output_shape, dtype=input.dtype) for _ in range(parallelism)]
     dist.stream.all_gather(outputs, input, group=group, use_calc_stream=True)
-    output = paddle.concat(outputs, axis=axis)
+    output = paddle.cat(outputs, axis=axis)
     return output
 
 

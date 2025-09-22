@@ -50,7 +50,7 @@ def distributed_concat(tensor: Any, num_total_examples: Optional[int] = None) ->
         output_tensors = []
         dist.all_gather(output_tensors, tensor)
         output_tensors = [t if len(t.shape) > 0 else t.reshape_([-1]) for t in output_tensors]
-        concat = paddle.concat(output_tensors, axis=0)
+        concat = paddle.cat(output_tensors, axis=0)
 
         # truncate the dummy elements added by SequentialDistributedSampler
         if num_total_examples is not None:
@@ -63,7 +63,7 @@ def distributed_concat(tensor: Any, num_total_examples: Optional[int] = None) ->
 def paddle_pad_and_concatenate(tensor1, tensor2, padding_index=-100):
     """Concatenates `tensor1` and `tensor2` on first axis, applying padding on the second if necessary."""
     if len(tensor1.shape) == 1 or tensor1.shape[1] == tensor2.shape[1]:
-        return paddle.concat((tensor1, tensor2), axis=0)
+        return paddle.cat((tensor1, tensor2), axis=0)
 
     # raise ValueError("Error")
     # Let's figure out the new shape
@@ -164,7 +164,7 @@ def distributed_file(filename):
 
         tensor_list = []
         paddle.distributed.all_gather(tensor_list, found_file)
-        src = paddle.min(paddle.concat(tensor_list)).item()
+        src = paddle.min(paddle.cat(tensor_list)).item()
 
         file_object_list = [None]
         if paddle.distributed.get_rank() == src:
