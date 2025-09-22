@@ -46,10 +46,12 @@ export FLAGS_small_pool_auto_growth_chunk_size_in_mb=20
 export FLAGS_small_pool_size_in_mb=10
 export FLAGS_samll_pool_pre_alloc_in_mb=500
 
+master_ip=$(hostname -I | awk '{print $1}')
+port=36677
 python3.10 -m paddle.distributed.launch \
     --log_dir output/paddle_distributed_logs \
-    --master <master_ip>:<port> \
-    --nnodes 8 \
+    --master $master_ip:$port \
+    --nnodes 1 \
     --run_mode=collective \
     ${script:-run_pretrain.py}  \
     $@
