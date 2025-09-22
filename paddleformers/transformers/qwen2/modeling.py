@@ -139,7 +139,6 @@ class Qwen2Attention(nn.Layer):
         self.num_attention_heads = config.num_attention_heads
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.scaling = self.head_dim**-0.5
-        self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
 
         self.num_key_value_heads = config.num_key_value_heads
         assert config.num_attention_heads // config.num_key_value_heads
@@ -241,7 +240,6 @@ class Qwen2Attention(nn.Layer):
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
             scaling=self.scaling,
-            sliding_window=self.sliding_window,
         )
 
         # if sequence_parallel is true, out shape are [q_len / n, bs, num_head * head_dim]
