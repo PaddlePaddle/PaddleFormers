@@ -1729,9 +1729,7 @@ class GenerationMixin(object):
             beam_idx = paddle.maximum(beam_idx, paddle.full_like(beam_idx, 0))
 
             cur_len += 1
-            input_ids = paddle.cat(
-                [paddle.index_select(input_ids, beam_idx), beam_next_tokens.unsqueeze(-1)], axis=-1
-            )
+            input_ids = paddle.cat([paddle.index_select(input_ids, beam_idx), beam_next_tokens.unsqueeze(-1)], axis=-1)
 
             if beam_scorer.is_done or stopping_criteria(input_ids, beam_scores):
                 if not synced_gpus:

@@ -382,9 +382,7 @@ class BigBirdSparseAttention(Attention):
         bs = self.block_size
         L = T // bs
         R = self.num_rand_blocks
-        gathered_matrix = paddle.cat(
-            [paddle.gather_nd(blocked_matrix[b, :], rand_mask_idx) for b in range(B)], axis=0
-        )
+        gathered_matrix = paddle.cat([paddle.gather_nd(blocked_matrix[b, :], rand_mask_idx) for b in range(B)], axis=0)
         gathered_matrix = paddle.reshape(gathered_matrix, [B, H, L - G, R * bs, -1])
         return gathered_matrix
 

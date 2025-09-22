@@ -631,9 +631,7 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
                 splits = expert_grad.split(send_counts_bw[i_expert].tolist(), 0)
                 for j_rank in range(world_size):
                     in_tensors_by_rank_bw[j_rank].append(splits[j_rank])
-        in_tensor_list_bw = [
-            paddle.cat(tensors, 0) if tensors else dummy_input for tensors in in_tensors_by_rank_bw
-        ]
+        in_tensor_list_bw = [paddle.cat(tensors, 0) if tensors else dummy_input for tensors in in_tensors_by_rank_bw]
 
         all_to_all_grad_input = paddle.cat(in_tensor_list_bw, 0)
         send_counts_bw_for_api = [t.shape[0] for t in in_tensor_list_bw]
