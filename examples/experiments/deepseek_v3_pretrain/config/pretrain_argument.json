@@ -1,6 +1,6 @@
 {
     "model_name_or_path": "./config/",
-    "tokenizer_name_or_path": "deepseek-ai/DeepSeek-V3",
+    "tokenizer_name_or_path": "./config/",
     "input_dir": "./data",
     "output_dir": "./checkpoints/pretrain_ckpts",
     "per_device_train_batch_size": 1,
