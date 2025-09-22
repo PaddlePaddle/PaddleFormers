@@ -13,7 +13,7 @@
 # limitations under the License.
 """Paddle Qwen3-Next model."""
 
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, List, Optional, Union
 
 import paddle
 import paddle.nn.functional as F
@@ -23,7 +23,9 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.criterion.interface import CriterionLayer
 from ...nn.general import GeneralInterface
+from ...nn.lm_head import LMHead as GeneralLMHead
 from ...utils.log import logger
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -861,9 +863,6 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
         if config.rope_scaling:
             logger.warning_once("The rope_scaling is not implemented.")
         self.gradient_checkpointing = False
-        # Initialize weights and apply final processing
-        # TODO(liangshuhao): uncomment this
-        # self.post_init()
 
     def forward(
         self,
@@ -943,23 +942,37 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
 
 
 class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
-    def __init__(self, config):
+    enable_to_static_method = True
+    _tied_weights_keys = ["lm_head.weight"]
+
+    def __init__(self, config: Qwen3NextConfig):
         super().__init__(config)
+        self.model = Qwen3NextModel(config)
+        self.lm_head = GeneralLMHead(config)
+        self.criterion = CriterionLayer(config)
+        self.router_aux_loss_coef = config.router_aux_loss_coef
         self.num_experts = config.num_experts
+        self.num_experts_per_tok = config.num_experts_per_tok
+
+        if config.sliding_window:
+            self.config.sliding_window = False
+            logger.warning("We do not support sliding window attention for now.")
 
     def forward(
         self,
-        input_ids: Optional[Tensor] = None,
-        attention_mask: Optional[Tensor] = None,
+        input_ids: Tensor = None,
         position_ids: Optional[Tensor] = None,
-        past_key_values: Optional[Qwen3NextDynamicCache] = None,
+        attention_mask: Optional[Tensor] = None,
         inputs_embeds: Optional[Tensor] = None,
         labels: Optional[Tensor] = None,
+        loss_mask: Optional[Tensor] = None,
         use_cache: Optional[bool] = None,
+        past_key_values: Optional[List[Tensor]] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
         output_router_logits: Optional[bool] = None,
-        cache_position: Optional[Tensor] = None,
-        logits_to_keep: Union[int, Tensor] = 0,
-        **kwargs,
+        return_dict: Optional[bool] = None,
+        attn_mask_startend_row_indices=None,
     ) -> MoECausalLMOutputWithPast:
         r"""
         labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -983,16 +996,68 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
         >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
         ```"""
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        output_router_logits = (
+            output_router_logits if output_router_logits is not None else self.config.output_router_logits
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+            logger.warning(
+                "You have provided both attn_mask_startend_row_indices and attention_mask. "
+                "The attn_mask_startend_row_indices will be used."
+            )
+            attention_mask = None
+
+        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        outputs = self.model(
+            input_ids=input_ids,  # [bs, seq_len]
             position_ids=position_ids,
-            past_key_values=past_key_values,
+            attention_mask=attention_mask,
             inputs_embeds=inputs_embeds,
-            labels=labels,
             use_cache=use_cache,
+            past_key_values=past_key_values,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
             output_router_logits=output_router_logits,
-            cache_position=cache_position,
-            logits_to_keep=logits_to_keep,
-            **kwargs,
+            return_dict=return_dict,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+        )
+
+        hidden_states = outputs[0]  # [bs, seq_len, dim]
+
+        logits = self.lm_head(hidden_states)
+
+        loss = None
+        if labels is not None:
+            loss, _ = self.criterion(logits, labels)
+
+        aux_loss = None
+        if output_router_logits:
+            aux_loss = load_balancing_loss_func(
+                outputs.router_logits if return_dict else outputs[-1],
+                self.num_experts,
+                self.num_experts_per_tok,
+                attention_mask,
+            )
+            if labels is not None:
+                loss += self.router_aux_loss_coef * aux_loss
+
+        if not return_dict:
+            output = (logits,) + outputs[1:]
+            if output_router_logits:
+                output = (aux_loss,) + output
+            return (loss,) + output if loss is not None else output
+
+        return MoECausalLMOutputWithPast(
+            loss=loss,
+            aux_loss=aux_loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+            router_logits=outputs.router_logits,
         )
