@@ -22,7 +22,6 @@ from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ...nn.activation import ACT2FN
-from ...nn.attention.eager_attention import eager_attention_forward
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.general import GeneralInterface
 from ...utils.log import logger
@@ -182,6 +181,44 @@ class Qwen3NextRMSNorm(nn.Layer):
         return f"{tuple(self.weight.shape)}, eps={self.eps}"
 
 
+def repeat_kv(hidden_states: Tensor, n_rep: int) -> Tensor:
+    """
+    This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
+    num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
+    """
+    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
+    if n_rep == 1:
+        return hidden_states
+    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+
+
+def eager_attention_forward(
+    module: nn.Layer,
+    query: Tensor,
+    key: Tensor,
+    value: Tensor,
+    attention_mask: Optional[Tensor],
+    scaling: float,
+    dropout: float = 0.0,
+    **kwargs,
+):
+    key_states = repeat_kv(key, module.num_key_value_groups)
+    value_states = repeat_kv(value, module.num_key_value_groups)
+
+    attn_weights = paddle.matmul(query, key_states.transpose(2, 3)) * scaling
+    if attention_mask is not None:
+        causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+        attn_weights = attn_weights + causal_mask
+
+    attn_weights = nn.functional.softmax(attn_weights, axis=-1, dtype=paddle.float32).to(query.dtype)
+    attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
+    attn_output = paddle.matmul(attn_weights, value_states)
+    attn_output = attn_output.transpose(1, 2).contiguous()
+
+    return attn_output, attn_weights
+
+
 class Qwen3NextAttention(Qwen3MoeAttention):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
@@ -294,7 +331,7 @@ def create_causal_mask(
         min_dtype,
         paddle.to_tensor(0.0, dtype),
     )
-    causal_mask = causal_mask.expand([batch_size, 1, 1, -1, -1])
+    causal_mask = causal_mask.expand([batch_size, 1, -1, -1])
 
     return causal_mask
 
@@ -456,6 +493,13 @@ def apply_mask_to_padding_states(hidden_states, attention_mask):
     return hidden_states
 
 
+def rotate_half(x):
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return paddle.cat((-x2, x1), axis=-1)
+
+
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors.
 
@@ -478,6 +522,8 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     Returns:
         `tuple(paddle.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
+    cos = cos.squeeze(2)  # => [batch_size, seq_len, head_dim]
+    sin = sin.squeeze(2)  # => [batch_size, seq_len, head_dim]
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
 
@@ -583,8 +629,8 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
             (self.num_v_heads // self.num_k_heads * self.head_v_dim),
         ]
         split_arg_list_ba = [self.num_v_heads // self.num_k_heads, self.num_v_heads // self.num_k_heads]
-        query, key, value, z = paddle.split(mixed_qkvz, split_arg_list_qkvz, dim=3)
-        b, a = paddle.split(mixed_ba, split_arg_list_ba, dim=3)
+        query, key, value, z = paddle.split(mixed_qkvz, split_arg_list_qkvz, axis=3)
+        b, a = paddle.split(mixed_ba, split_arg_list_ba, axis=3)
         # [b, sq, ng, np/ng * hn] -> [b, sq, np, hn]
         value = value.reshape(value.size(0), value.size(1), -1, self.head_v_dim)
         z = z.reshape(z.size(0), z.size(1), -1, self.head_v_dim)
@@ -657,7 +703,7 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
                 self.key_dim,
                 self.value_dim,
             ],
-            dim=-1,
+            axis=-1,
         )
         query = query.reshape(query.shape[0], query.shape[1], -1, self.head_k_dim)
         key = key.reshape(key.shape[0], key.shape[1], -1, self.head_k_dim)
@@ -667,8 +713,8 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         # If the model is loaded in fp16, without the .float() here, A might be -inf
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
         if self.num_v_heads // self.num_k_heads > 1:
-            query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
-            key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
+            query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, axis=2)
+            key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, axis=2)
 
         if not use_precomputed_states:
             core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
@@ -858,8 +904,6 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
         linear_attn_mask = self._update_linear_attn_mask(attention_mask, cache_position)
 
         hidden_states = inputs_embeds
-        print('hidden_states', hidden_states)
-        print('position_ids', position_ids)
 
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, inputs_embeds.shape[1])
@@ -880,7 +924,7 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
 
         hidden_states = self.norm(hidden_states)
 
-        return MoeModelOutputWithPast(
+        return MoEModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=past_key_values,
         )
