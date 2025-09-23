@@ -89,7 +89,7 @@ def merge_splited_param(
                     tmp_tensor = paddle.empty(shape=[length], dtype=state_dict[key].dtype)
                     dist.stream.recv(tmp_tensor, src=send_rank)
                     tmp_tensor_list.append(tmp_tensor)
-            state_dict[key] = paddle.concat(tmp_tensor_list, axis=0).reshape(shape)
+            state_dict[key] = paddle.cat(tmp_tensor_list, axis=0).reshape(shape)
         else:
             for send_rank, begin, end in send_info:
                 padding_start = max(begin, base_padding_start)
@@ -213,7 +213,7 @@ def reshape_params(state_dict, struct2static_name_mappings, param_shape_info, pa
             padding_start = max(begin, index + numel)
             padding_end = min(end, index + padded_size)
             if padding_start < padding_end:
-                state_dict[key] = paddle.concat(
+                state_dict[key] = paddle.cat(
                     (
                         state_dict[key],
                         paddle.zeros([padding_end - padding_start], dtype=state_dict[key].dtype),

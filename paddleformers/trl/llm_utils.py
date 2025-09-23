@@ -802,7 +802,7 @@ def get_rotary_position_embedding(position_ids, head_dim, rope_theta=10000.0, ro
     # shape: [B, S, D/2]
     freqs = paddle.einsum("ij,k->ijk", position_ids.cast("float32"), inv_freq)
     # shape: [B, S, 1, D]
-    emb = paddle.concat([freqs, freqs], axis=-1).reshape((bsz, max_seq_len, 1, head_dim))
+    emb = paddle.cat([freqs, freqs], axis=-1).reshape((bsz, max_seq_len, 1, head_dim))
 
     rot_emb[0] = paddle.cos(emb)
     rot_emb[1] = paddle.sin(emb)

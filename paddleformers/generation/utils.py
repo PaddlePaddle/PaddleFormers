@@ -565,11 +565,11 @@ class GenerationMixin(object):
         # update token_type_ids with last value
         if "token_type_ids" in model_kwargs and model_kwargs["token_type_ids"] is not None:
             token_type_ids = model_kwargs["token_type_ids"]
-            model_kwargs["token_type_ids"] = paddle.concat([token_type_ids, token_type_ids[:, -1:]], axis=-1)
+            model_kwargs["token_type_ids"] = paddle.cat([token_type_ids, token_type_ids[:, -1:]], axis=-1)
         if not is_encoder_decoder and model_kwargs.get("attention_mask", None) is not None:
             # update attention mask
             attention_mask = model_kwargs["attention_mask"]
-            model_kwargs["attention_mask"] = paddle.concat(
+            model_kwargs["attention_mask"] = paddle.cat(
                 [
                     attention_mask,
                     paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype),
@@ -579,7 +579,7 @@ class GenerationMixin(object):
         # update role_ids
         if "role_ids" in model_kwargs and model_kwargs["role_ids"] is not None:
             role_ids = model_kwargs["role_ids"]
-            model_kwargs["role_ids"] = paddle.concat([role_ids, role_ids[:, -1:]], axis=-1)
+            model_kwargs["role_ids"] = paddle.cat([role_ids, role_ids[:, -1:]], axis=-1)
 
         return model_kwargs
 
@@ -1235,7 +1235,7 @@ class GenerationMixin(object):
             scores = self.update_scores_for_generation(scores, next_scores, cur_len - origin_len, unfinished_flag)
             cur_len += 1
 
-            input_ids = paddle.concat([input_ids, next_tokens], axis=1)
+            input_ids = paddle.cat([input_ids, next_tokens], axis=1)
             if streamer is not None:
                 if self.config.tensor_parallel_rank == 0:
                     streamer.put(next_tokens.cpu())
@@ -1379,7 +1379,7 @@ class GenerationMixin(object):
             scores = self.update_scores_for_generation(scores, next_scores, cur_len - origin_len, unfinished_flag)
 
             cur_len += 1
-            input_ids = paddle.concat([input_ids, next_tokens], axis=1)
+            input_ids = paddle.cat([input_ids, next_tokens], axis=1)
             if streamer is not None:
                 if self.config.tensor_parallel_rank == 0:
                     streamer.put(next_tokens.cpu())
@@ -1550,7 +1550,7 @@ class GenerationMixin(object):
             if eos_token_id is not None:
                 next_tokens = paddle.where(unfinished_flag, next_tokens, paddle.full_like(next_tokens, pad_token_id))
 
-            input_ids = paddle.concat([input_ids, next_tokens], axis=1)
+            input_ids = paddle.cat([input_ids, next_tokens], axis=1)
 
             if eos_token_id is not None:
                 unfinished_flag = get_unfinished_flag(input_ids, unfinished_flag, eos_token_id)
@@ -1729,9 +1729,7 @@ class GenerationMixin(object):
             beam_idx = paddle.maximum(beam_idx, paddle.full_like(beam_idx, 0))
 
             cur_len += 1
-            input_ids = paddle.concat(
-                [paddle.index_select(input_ids, beam_idx), beam_next_tokens.unsqueeze(-1)], axis=-1
-            )
+            input_ids = paddle.cat([paddle.index_select(input_ids, beam_idx), beam_next_tokens.unsqueeze(-1)], axis=-1)
 
             if beam_scorer.is_done or stopping_criteria(input_ids, beam_scores):
                 if not synced_gpus:
@@ -1893,7 +1891,7 @@ class GenerationMixin(object):
                 beam_idx = paddle.maximum(beam_idx, paddle.full_like(beam_idx, 0))
 
                 input_ids[batch_group_indices] = group_input_ids[beam_idx]
-                group_input_ids = paddle.concat(
+                group_input_ids = paddle.cat(
                     [paddle.index_select(group_input_ids, index=beam_idx), beam_next_tokens.unsqueeze(-1)], axis=-1
                 )
                 current_tokens[batch_group_indices] = beam_next_tokens
@@ -1902,7 +1900,7 @@ class GenerationMixin(object):
                     num_beams * (beam_idx // group_size) + group_start_idx + (beam_idx % group_size)
                 )
 
-            input_ids = paddle.concat([input_ids, current_tokens.unsqueeze(-1)], axis=-1)
+            input_ids = paddle.cat([input_ids, current_tokens.unsqueeze(-1)], axis=-1)
 
             cur_len += 1
 

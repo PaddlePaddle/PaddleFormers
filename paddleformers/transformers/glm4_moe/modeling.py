@@ -78,7 +78,7 @@ def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.concat((-x2, x1), axis=-1)
+    return paddle.cat((-x2, x1), axis=-1)
 
 
 def _apply_rotary_emb(
@@ -106,8 +106,8 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     k_embed = _apply_rotary_emb(k_rot, cos, sin)
 
     # Concatenate back to full shape
-    q_embed = paddle.concat([q_embed, q_pass], axis=-1)
-    k_embed = paddle.concat([k_embed, k_pass], axis=-1)
+    q_embed = paddle.cat([q_embed, q_pass], axis=-1)
+    k_embed = paddle.cat([k_embed, k_pass], axis=-1)
 
     return q_embed, k_embed
 
@@ -257,8 +257,8 @@ class Glm4MoeAttention(nn.Layer):
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         if past_key_value is not None:
-            key_states = paddle.concat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
@@ -892,7 +892,7 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
         position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
 
         freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
-        emb = paddle.concat((freqs, freqs), axis=-1)
+        emb = paddle.cat((freqs, freqs), axis=-1)
         cos = paddle.cos(emb) * self.attention_scaling
         sin = paddle.sin(emb) * self.attention_scaling
 
@@ -1151,17 +1151,17 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         # update position_ids
         if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
             position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
+            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
         if not is_encoder_decoder and "attention_mask" in model_kwargs:
             # TODO: support attention mask for other models
             attention_mask = model_kwargs["attention_mask"]
             if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )
             elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )[:, :, -1:, :]

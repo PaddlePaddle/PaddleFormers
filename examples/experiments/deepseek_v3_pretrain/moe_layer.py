@@ -294,7 +294,7 @@ class MoELayer(nn.Layer):
             expert_out = expert(tokens_for_this_expert)
             outputs.append(expert_out)
             start_idx = end_idx
-        outs = paddle.concat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
+        outs = paddle.cat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
         if self.expert_parallel_degree > 1:
             new_x = paddle.empty_like(outs)
             new_x[gatherd_idxs] = outs
@@ -349,7 +349,7 @@ class MoEFlexTokenLayer(nn.Layer):
             # assert chunk.shape[0] != 0, "Cannot dispatch empty input"
             outputs += [expert(chunk)]
 
-        return paddle.concat(outputs, axis=0)
+        return paddle.cat(outputs, axis=0)
 
     def forward(self, hidden_states: paddle.Tensor):
         _, _, d_model = hidden_states.shape

@@ -55,7 +55,7 @@ class RotaryEmbedding(nn.Layer):
         with paddle.amp.auto_cast(enable=False):
             freqs = paddle.outer(t.astype(self.inv_freq.dtype), self.inv_freq)
         # [seq_len, dim]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         self.cos_cached = emb.cos()[:, :]
         self.sin_cached = emb.sin()[:, :]
 
@@ -78,7 +78,7 @@ class LinearScalingRotaryEmbedding(RotaryEmbedding):
         with paddle.amp.auto_cast(enable=False):
             freqs = paddle.outer(t.astype(self.inv_freq.dtype), self.inv_freq)
         # [seq_len, dim]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         self.cos_cached = emb.cos()[:, :]
         self.sin_cached = emb.sin()[:, :]
 
@@ -113,7 +113,7 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         with paddle.amp.auto_cast(enable=False):
             freqs = paddle.outer(t.astype(inv_freq.dtype), inv_freq)
         # [seq_len, dim]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         self.cos_cached = emb.cos()[:, :]
         self.sin_cached = emb.sin()[:, :]
 
@@ -163,7 +163,7 @@ class YaRNScalingRotaryEmbedding(nn.Layer):
         with paddle.amp.auto_cast(enable=False):
             freqs = paddle.outer(t.astype(self.inv_freq.dtype), self.inv_freq)
         # [seq_len, dim]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         self.cos_cached = emb.cos()[:, :] * self.mscale
         self.sin_cached = emb.sin()[:, :] * self.mscale
 
@@ -172,7 +172,7 @@ class YaRNScalingRotaryEmbedding(nn.Layer):
 
         t = paddle.arange(self.max_seq_len_cached, dtype=self.inv_freq.dtype)
         freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
-        emb = paddle.concat((freqs, freqs), axis=-1)
+        emb = paddle.cat((freqs, freqs), axis=-1)
 
         self.cos_cached = emb.cos()[:, :] * self.mscale
         self.sin_cached = emb.sin()[:, :] * self.mscale

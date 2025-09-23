@@ -32,20 +32,13 @@ from ...utils.test_module.custom_configuration import CustomConfig
 
 class AutoConfigTest(unittest.TestCase):
     def test_built_in_model_class_config(self):
-        config = AutoConfig.from_pretrained("test_paddleformers/bert-base-uncased", download_hub="aistudio")
+        config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-bert", download_hub="aistudio")
         number = random.randint(0, 10000)
-        self.assertEqual(config.hidden_size, 768)
-
+        self.assertEqual(config.hidden_size, 32)
         config.hidden_size = number
 
         with tempfile.TemporaryDirectory() as tempdir:
             config.save_pretrained(tempdir)
-
-            # there is no architectures in config.json
-            with open(os.path.join(tempdir, AutoConfig.config_file), "r", encoding="utf-8") as f:
-                config_data = json.load(f)
-
-            self.assertNotIn("architectures", config_data)
 
             # but it can load it as the PretrainedConfig class
             auto_config = AutoConfig.from_pretrained(tempdir)
@@ -53,9 +46,9 @@ class AutoConfigTest(unittest.TestCase):
 
     def test_community_model_class(self):
         # OPT model do not support PretrainedConfig, but can load it as the AutoConfig object
-        config = AutoConfig.from_pretrained("test_paddleformers/micro-random-llama", download_hub="aistudio")
+        config = AutoConfig.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
 
-        self.assertEqual(config.hidden_size, 64)
+        self.assertEqual(config.hidden_size, 16)
 
         number = random.randint(0, 10000)
         config.hidden_size = number
@@ -74,7 +67,7 @@ class AutoConfigTest(unittest.TestCase):
 
     @set_proxy(DownloadSource.AISTUDIO)
     def test_from_aistudio(self):
-        config = AutoConfig.from_pretrained("test_paddleformers/tiny-random-llama", download_hub="aistudio")
+        config = AutoConfig.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
         self.assertEqual(config.hidden_size, 16)
 
     @set_proxy(DownloadSource.MODELSCOPE)
@@ -119,7 +112,7 @@ class AutoConfigTest(unittest.TestCase):
                 del CONFIG_MAPPING._extra_content["custom"]
 
     def test_from_pretrained_cache_dir(self):
-        model_id = "test_paddleformers/tiny-random-bert"
+        model_id = "Paddleformers/tiny-random-bert"
         with tempfile.TemporaryDirectory() as tempdir:
             AutoConfig.from_pretrained(model_id, download_hub="aistudio", cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))

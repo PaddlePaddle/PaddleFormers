@@ -123,7 +123,7 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
                     )
                 else:
                     raise ValueError(f"Unexpected attention_mask shape: {attention_mask.shape}")
-                attention_mask = paddle.concat((prefix_attention_mask, attention_mask), axis=-1)
+                attention_mask = paddle.cat((prefix_attention_mask, attention_mask), axis=-1)
             kwargs["attention_mask"] = attention_mask
 
         if "past_key_values" in self.forward_keys:
@@ -169,7 +169,7 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
                 )
             else:
                 raise ValueError(f"Unexpected attention_mask shape: {attention_mask.shape}")
-            attention_mask = paddle.concat((prefix_attention_mask, attention_mask), axis=-1)
+            attention_mask = paddle.cat((prefix_attention_mask, attention_mask), axis=-1)
         model_kwargs["attention_mask"] = attention_mask
 
         if "past_key_values" in self.forward_keys:

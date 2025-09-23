@@ -324,7 +324,7 @@ def naive_fuse_merge_tp(weight_list, is_column=True, fuse_tensor_parts=2):
     if isinstance(weight_list[0], np.ndarray):
         return np.concatenate([reorder[i] for i in index], axis=axis)
     else:
-        tensor = paddle.concat([reorder[i] for i in index], axis=axis)
+        tensor = paddle.cat([reorder[i] for i in index], axis=axis)
 
         if tensor.place.is_gpu_place():
             tensor = tensor._copy_to(paddle.CUDAPinnedPlace(), False)
@@ -390,7 +390,7 @@ def naive_fuse_split_tp(
                 slice_idx[axis] = slice(start, end)
                 block = weight[tuple(slice_idx)]
                 slices.append(block)
-            result = paddle.concat(slices, axis=axis)
+            result = paddle.cat(slices, axis=axis)
             return result
 
         if tensor_parallel_rank is not None:
@@ -401,7 +401,7 @@ def naive_fuse_split_tp(
             splited = paddle.split(weight, fuse_tensor_parts * tensor_parallel_degree, axis=axis)
             ret = []
             for tensor_parallel_rank in range(tensor_parallel_degree):
-                ret.append(paddle.concat(splited[tensor_parallel_rank::tensor_parallel_degree], axis=axis))
+                ret.append(paddle.cat(splited[tensor_parallel_rank::tensor_parallel_degree], axis=axis))
             return ret
     else:
         splited = np.split(weight, fuse_tensor_parts * tensor_parallel_degree, axis=axis)
@@ -432,7 +432,7 @@ def normal_fuse_merge_tp(weight_list, is_column=True):
         if isinstance(weight_list[0], np.ndarray):
             return np.concatenate(weight_list, axis=-1)
         else:
-            tensor = paddle.concat(weight_list, axis=-1)
+            tensor = paddle.cat(weight_list, axis=-1)
             if tensor.place.is_gpu_place():
                 tensor = tensor._copy_to(paddle.CUDAPinnedPlace(), False)
             return tensor
@@ -440,7 +440,7 @@ def normal_fuse_merge_tp(weight_list, is_column=True):
         if isinstance(weight_list[0], np.ndarray):
             return np.concatenate(weight_list, axis=0)
         else:
-            tensor = paddle.concat(weight_list, axis=0)
+            tensor = paddle.cat(weight_list, axis=0)
             if tensor.place.is_gpu_place():
                 tensor = tensor._copy_to(paddle.CUDAPinnedPlace(), False)
             return tensor
@@ -569,9 +569,9 @@ def naive_merged_qkv_to_tensor_parallel_qkv(weight, num_attention_heads):
         split_heads = paddle.split(weight, 3 * num_attention_heads, axis=partition_dim)
 
         for i in range(num_attention_heads):
-            qkv_pair = paddle.concat(split_heads[i::num_attention_heads], axis=partition_dim)
+            qkv_pair = paddle.cat(split_heads[i::num_attention_heads], axis=partition_dim)
             qkv_pairs.append(qkv_pair)
-        return paddle.concat(qkv_pairs, axis=partition_dim)
+        return paddle.cat(qkv_pairs, axis=partition_dim)
     else:
         split_heads = np.split(weight, 3 * num_attention_heads, axis=partition_dim)
 
@@ -622,7 +622,7 @@ def fuse_param_func():
         concat_fn = np.concatenate
         split_fn = np.split
         if isinstance(fuse_params[0], paddle.Tensor):
-            concat_fn = paddle.concat
+            concat_fn = paddle.cat
             split_fn = paddle.split
 
         if is_qkv:
@@ -680,7 +680,7 @@ def split_param_func():
         concat_fn = np.concatenate
         split_fn = np.split
         if isinstance(fused_param, paddle.Tensor):
-            concat_fn = paddle.concat
+            concat_fn = paddle.cat
             split_fn = paddle.split
 
         if is_qkv:

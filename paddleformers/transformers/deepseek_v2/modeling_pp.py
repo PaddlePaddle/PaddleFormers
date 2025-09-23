@@ -161,7 +161,7 @@ class DeepseekV2EmbeddingPipe(nn.Layer):
                 inputs_embeds = ScatterOp.apply(inputs_embeds)
             embeds_res = [inputs_embeds]
             for depth in range(self.config.num_nextn_predict_layers):
-                inputs_embeds_mtp = paddle.concat(
+                inputs_embeds_mtp = paddle.cat(
                     [
                         inputs_embeds_ori[:, (depth + 1) :, :],
                         inputs_embeds_extra[:, : (depth + 1), :],
@@ -176,7 +176,7 @@ class DeepseekV2EmbeddingPipe(nn.Layer):
             # mtp_embeds: [B*num_nextn_predict_layers, seq_len, hidden_size]
             # else:
             # mtp_embeds: [B*seq_len*num_nextn_predict_layers, hidden_size]
-            inputs_embeds = paddle.concat(embeds_res, axis=-1)
+            inputs_embeds = paddle.cat(embeds_res, axis=-1)
             return return_args(inputs_embeds, attention_mask, attn_mask_startend_row_indices, position_ids)
         else:
             if self.sequence_parallel:
@@ -236,7 +236,7 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
             )
 
         if self.config.num_nextn_predict_layers > 0:
-            hidden_states = paddle.concat([hidden_states, inputs_embeds_mtp], axis=-1)
+            hidden_states = paddle.cat([hidden_states, inputs_embeds_mtp], axis=-1)
 
         return return_args(hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids)
 
@@ -296,7 +296,7 @@ class DeepseekV2MTPLayerPipe(DeepseekV2MTPLayer):
                 )
             output_list.append(hidden_states)
 
-        hidden_states = paddle.concat(output_list, axis=-1)
+        hidden_states = paddle.cat(output_list, axis=-1)
         return return_args(hidden_states, attention_mask, attn_mask_startend_row_indices, position_ids)
 
 

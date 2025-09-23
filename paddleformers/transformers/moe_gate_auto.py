@@ -438,7 +438,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         mask2 = self._one_hot_to_int64(indices2_s, self.num_experts)  # [S, E]
 
         # Note: mask1 and mask2 can be combined to form a single mask.
-        # mask = paddle.concat([mask1, mask2], axis=0)
+        # mask = paddle.cat([mask1, mask2], axis=0)
         # locations = paddle.cumsum(mask, axis=0) - 1
         # locations1, locations2 = locations.split(2, axis=0)
         # Compute locations in capacity buffer.
