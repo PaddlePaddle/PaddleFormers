@@ -11,12 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional
 
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
-from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp
 
 from ...transformers.model_outputs import CausalLMOutputWithPast
 from ...transformers.sequence_parallel_utils import (
@@ -57,10 +56,12 @@ def dpo_logps(
     bias = lm_head_bias
     transpose_y = self.tie_word_embeddings
     labels = chosen_labels + rejected_labels
+    ignore_index = kwargs.pop("ignore_index", 0)  # default is 0
+
     # drop ignored index token
     if self.use_filtered_label_loss:
         if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel and logits is None:
-            labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, 0)
+            labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, ignore_index)
 
             if hidden_states is not None:
                 hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
@@ -77,8 +78,15 @@ def dpo_logps(
             if logits is not None:
                 logits = paddle.gather(logits, sparse_tgt_idx, axis=1)
     else:
-        if hidden_states is not None:
-            hidden_states = AllGatherOp.apply(hidden_states)
+        if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel and hidden_states is not None:
+            hidden_states = GatherOp.apply(hidden_states)
+            hidden_states = hidden_states.reshape(
+                [
+                    -1,
+                    self.config.max_sequence_length,
+                    hidden_states.shape[-1],
+                ]
+            )
 
     #   bsz,seq_len,hidden_size or seq_len,hidden_size
     seq_len = labels.shape[1] if labels.ndim == 2 else labels.shape[0]
@@ -97,7 +105,7 @@ def dpo_logps(
             False,  # fused_linear
             self.loss_subbatch_sequence_length,
             return_token_loss=True,
-            ignore_index=0,
+            ignore_index=ignore_index,
         )
         per_token_logps = per_token_logps.reshape([1, per_token_logps.shape[-1], 1])
     else:
@@ -109,7 +117,6 @@ def dpo_logps(
                 transpose_y=transpose_y,
                 tensor_parallel_output=self.config.tensor_parallel_output,
             )
-
         if isinstance(logits, tuple):
             logits = logits[0]
         elif isinstance(logits, CausalLMOutputWithPast):
@@ -129,14 +136,15 @@ def dpo_logps(
                 1,
             )
 
-            per_token_logps = sb_loss_func(logits, labels.unsqueeze(-1))
+            per_token_logps = -sb_loss_func(logits, labels.unsqueeze(-1))
         else:
-            per_token_logps = self.loss_func(logits, labels.unsqueeze(-1))
+            per_token_logps = -self.loss_func(logits, labels.unsqueeze(-1))
 
     if len(response_indexs.shape) == 3:
         response_indexs = response_indexs[0]
 
     offset = 1 if self.ignore_eos_token else 0
+
     if self.use_filtered_label_loss:
         chosen_logps = paddle.stack(
             [
@@ -146,6 +154,8 @@ def dpo_logps(
                         paddle.arange(response_index[1], response_index[2], dtype=paddle.int32),
                         axis=0,
                     ).sum()
+                    if response_index[3] != 0
+                    else paddle.to_tensor(100.0)
                 )
                 for response_index in response_indexs
             ],
@@ -159,6 +169,8 @@ def dpo_logps(
                         paddle.arange(response_index[2] + offset, response_index[3], dtype=paddle.int32),
                         axis=0,
                     ).sum()
+                    if response_index[3] != 0
+                    else paddle.to_tensor(100.0)
                 )
                 for response_index in response_indexs
             ],
@@ -173,6 +185,8 @@ def dpo_logps(
                         paddle.arange(response_index[1], response_index[2], dtype=paddle.int32),
                         axis=0,
                     ).sum()
+                    if response_index[3] != 0
+                    else paddle.to_tensor(100.0)
                 )
                 for response_index in response_indexs
             ],
@@ -186,6 +200,8 @@ def dpo_logps(
                         paddle.arange(response_index[2] + offset, response_index[3], dtype=paddle.int32),
                         axis=0,
                     ).sum()
+                    if response_index[3] != 0
+                    else paddle.to_tensor(100.0)
                 )
                 for response_index in response_indexs
             ],
@@ -194,15 +210,27 @@ def dpo_logps(
 
     sft_loss = -chosen_logps.sum() / (chosen_labels != 0).sum()
     if average_log_prob:
-        chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1] - offset
+        chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1]
         rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
         chosen_logps /= chosen_response_length.astype("float32")
         rejected_logps /= rejected_response_length.astype("float32")
+    elif self.dpo_config.normalize_logps:
+        avg_response_length = (response_indexs[:, 3] - response_indexs[:, 1]) / 2
+        chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1]
+        rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
+        chosen_logps *= avg_response_length / chosen_response_length.astype("float32")
+        rejected_logps *= avg_response_length / rejected_response_length.astype("float32")
     return chosen_logps, rejected_logps, sft_loss * self.dpo_config.sft_loss_ratio
 
 
 def cal_dpo_loss(
-    self, policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, **kwargs
+    self,
+    policy_chosen_logps,
+    policy_rejected_logps,
+    reference_chosen_logps,
+    reference_rejected_logps,
+    score_deltas,
+    **kwargs
 ):
     """DPO Loss"""
     pi_logratios = policy_chosen_logps - policy_rejected_logps
@@ -210,6 +238,8 @@ def cal_dpo_loss(
     logits = pi_logratios - ref_logratios
 
     if self.dpo_config.loss_type == "sigmoid":
+        if self.dpo_config.offset_alpha > 0 and score_deltas is not None:
+            logits = logits - self.dpo_config.offset_alpha / self.dpo_config.beta * paddle.log(score_deltas + 1e-6)
         loss = (
             -F.log_sigmoid(self.dpo_config.beta * logits) * (1 - self.dpo_config.label_smoothing)
             - F.log_sigmoid(-self.dpo_config.beta * logits) * self.dpo_config.label_smoothing
@@ -282,21 +312,31 @@ def cal_dpo_loss(
 
 
 def dpo_loss_forward(
-    self: nn.Layer, logits: paddle.Tensor, labels: paddle.Tensor, loss_mask: Optional[paddle.Tensor] = None, **kwargs
+    self: nn.Layer, logits: paddle.Tensor, labels: paddle.Tensor, loss_mask: paddle.Tensor = None, **kwargs
 ):
     # unpack logtis and labels
     logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y = dpo_preprocess_inputs(
         self, logits, labels
     )
 
-    (
-        chosen_labels,
-        rejected_labels,
-        response_indexs,
-        score_deltas,
-        reference_chosen_logps,
-        reference_rejected_logps,
-    ) = labels
+    if self.dpo_config.offset_alpha > 0 or len(labels) == 6:
+        (
+            chosen_labels,
+            rejected_labels,
+            response_indexs,
+            score_deltas,
+            reference_chosen_logps,
+            reference_rejected_logps,
+        ) = labels
+    else:
+        (
+            chosen_labels,
+            rejected_labels,
+            response_indexs,
+            reference_chosen_logps,
+            reference_rejected_logps,
+        ) = labels
+        score_deltas = None
 
     average_log_prob = False
     if self.dpo_config.loss_type in ["ipo", "or", "simpo"]:
@@ -336,7 +376,12 @@ def dpo_loss_forward(
         **kwargs,
     )
     dpo_loss = cal_dpo_loss(
-        self, policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps
+        self,
+        policy_chosen_logps,
+        policy_rejected_logps,
+        reference_chosen_logps,
+        reference_rejected_logps,
+        score_deltas,
     )
 
     loss = dpo_loss + sft_loss

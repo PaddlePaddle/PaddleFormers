@@ -313,7 +313,6 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             recv_counts_num_cpu = recv_counts_cpu.sum(-1)
 
             dispatched_input = self.forward_experts(*dispatched_input)
-
             if recv_size_task is not None:
                 recv_size_task.cpu_wait()
             if send_rank_this_rank_task is not None:
@@ -706,18 +705,18 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         for iexpert, chunk in enumerate(dispatched_input):
             if chunk is None:
                 # QuantizationLoRALinear can not call `.weight`.
-                if not isinstance(true_experts[iexpert].up_gate_proj, QuantizationLoRALinear):
+                if not isinstance(true_experts[iexpert].down_proj, QuantizationLoRALinear):
                     input_shape = [
                         1,
-                        true_experts[iexpert].up_gate_proj.weight.shape[0],
+                        true_experts[iexpert].down_proj.weight.shape[1],
                     ]
-                    input_dtype = true_experts[iexpert].up_gate_proj.weight.dtype
+                    input_dtype = true_experts[iexpert].down_proj.weight.dtype
                 else:
                     input_shape = [
                         1,
-                        true_experts[iexpert].up_gate_proj.lora_A.shape[0],
+                        true_experts[iexpert].down_proj.lora_A.shape[1],
                     ]
-                    input_dtype = true_experts[iexpert].up_gate_proj.lora_A.dtype
+                    input_dtype = true_experts[iexpert].down_proj.lora_A.dtype
 
                 chunk = paddle.zeros(
                     input_shape,
