@@ -161,6 +161,7 @@ class MultiSourceDataset(IterableDataset):
         sub_dataset_type=["erniekit"],
         random_seed=11,
         process_fn=None,
+        process_fn_fc=None,
         shuffle_file=False,
         shuffle_files=False,
     ):
@@ -226,7 +227,7 @@ class MultiSourceDataset(IterableDataset):
                 task["dataset"] = FileDataset(
                     task["filepath"],
                     process_fn=(
-                        partial(process_fn, task_name=task["task_name"]) if "task_name" in task else process_fn
+                        partial(process_fn_fc, task_name=task["task_name"]) if "task_name" in task else process_fn_fc
                     ),
                     shuffle_file=shuffle_file,
                 )
