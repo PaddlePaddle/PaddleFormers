@@ -52,6 +52,12 @@ def sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs):
     return loss, loss_sum
 
 
+def loss_impl(self, logits, labels):
+    logits = logits.cast("float32")
+    loss = self.loss_func(logits, labels)
+    return loss
+
+
 def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias, labels, loss_mask, transpose_y):
     seq_len = labels.shape[1] if labels.ndim == 2 else labels.shape[0]
     if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
@@ -100,15 +106,15 @@ def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias
         # labels: bsz seq_len vocab_size
         if self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
             sb_loss_func = subbatch(
-                self.loss_func,
-                [0, 1],
-                [1, 1],
-                self.loss_subbatch_sequence_length,
-                1,
+                loss_impl,
+                arg_idx=[1, 2],
+                axis=[1, 1],
+                bs=self.loss_subbatch_sequence_length,
+                out_idx=1,
             )
-            masked_lm_loss = sb_loss_func(logits, labels.unsqueeze(-1))
+            masked_lm_loss = sb_loss_func(self, logits, labels.unsqueeze(-1))
         else:
-            masked_lm_loss = self.loss_func(logits, labels.unsqueeze(-1))
+            masked_lm_loss = loss_impl(self, logits, labels.unsqueeze(-1))
 
     masked_lm_loss = sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask)
     return masked_lm_loss
