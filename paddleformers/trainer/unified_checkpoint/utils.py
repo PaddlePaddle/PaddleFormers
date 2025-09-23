@@ -347,7 +347,7 @@ def merge_large_tensor_parallel(tensor, tp_group, tp_action, dst_rank, is_dst):
             tmp = []
             for j in range(num_splits):
                 tmp.append(split_tensors[j][i])
-            concat_tensors.append(paddle.concat(tmp))
+            concat_tensors.append(paddle.cat(tmp))
         tensor = tp_action(concat_tensors)
     else:
         tensor = None

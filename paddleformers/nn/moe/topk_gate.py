@@ -322,7 +322,7 @@ class TopKGate(nn.Layer):
         if not self.use_multimodel_experts:
             return self.weight
         if not transform_weight:
-            return paddle.concat(
+            return paddle.cat(
                 [getattr(self, "weight" if i == 0 else f"weight_{i}") for i in range(len(self.num_experts))], -1
             )
         weight = paddle.zeros(

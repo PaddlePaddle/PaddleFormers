@@ -201,7 +201,7 @@ class RotaryEmbedding(nn.Layer):
         sinusoid_inp = position_ids.unsqueeze(-1).astype("float32") * indices.unsqueeze(
             0
         )  # [b, s, 1] * [1, d/2] -> [b, s, d/2]
-        emb = paddle.concat((sinusoid_inp, sinusoid_inp), axis=-1)
+        emb = paddle.cat((sinusoid_inp, sinusoid_inp), axis=-1)
         cos = emb.cos()
         sin = emb.sin()
 
@@ -289,7 +289,7 @@ class EmbeddingPipe(nn.Layer):
                     inputs_embeds = ScatterOp.apply(inputs_embeds)
                 mtp_emb_res = [inputs_embeds]
                 for depth in range(num_nextn_predict_layers):
-                    inputs_embeds_mtp = paddle.concat(
+                    inputs_embeds_mtp = paddle.cat(
                         [
                             inputs_embeds_ori[:, (depth + 1) :, :],
                             inputs_embeds_extra[:, : (depth + 1), :],
@@ -301,7 +301,7 @@ class EmbeddingPipe(nn.Layer):
                         inputs_embeds_mtp = ScatterOp.apply(inputs_embeds_mtp)
 
                     mtp_emb_res.append(inputs_embeds_mtp)
-                res = paddle.concat(mtp_emb_res)
+                res = paddle.cat(mtp_emb_res)
                 ret = (res,)
         else:
             if self.sequence_parallel:
@@ -473,7 +473,7 @@ def make_decoder_layer_pipe(decoder_layer):
             if enable_mtp_magic_send:
                 ret = (ret,)
             else:
-                ret = (paddle.concat([ret[0], *inputs_embeds]),) + ret[1:]
+                ret = (paddle.cat([ret[0], *inputs_embeds]),) + ret[1:]
 
         return ret
 

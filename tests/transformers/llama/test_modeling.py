@@ -192,8 +192,8 @@ class LlamaModelTester:
         next_mask = ids_tensor((self.batch_size, 3), vocab_size=2)
 
         # append to next input_ids and
-        next_input_ids = paddle.concat([input_ids, next_tokens], axis=-1)
-        next_attention_mask = paddle.concat([input_mask, next_mask], axis=-1)
+        next_input_ids = paddle.cat([input_ids, next_tokens], axis=-1)
+        next_attention_mask = paddle.cat([input_mask, next_mask], axis=-1)
 
         outputs = model(
             next_input_ids, attention_mask=next_attention_mask, output_hidden_states=True, return_dict=self.return_dict
@@ -349,7 +349,7 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_no_attention(self):
-        model = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama")
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -372,7 +372,7 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_with_attention(self):
-        model = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama")
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -394,7 +394,7 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
 
 class LlamaGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "test_paddleformers/micro-random-llama"
+    internal_testing_model = "Paddleformers/tiny-random-llama"
 
 
 # class LlamaCompatibilityTest(unittest.TestCase):

@@ -47,6 +47,14 @@ class TestCriterionLayer(unittest.TestCase):
         loss_mask = paddle.randint(0, 2, shape=[self.batch_size, self.seq_len])
         layer(self.logits, self.labels, loss_mask=loss_mask)
 
+    def test_forward_with_recompute(self):
+        config = copy.deepcopy(self.config)
+        config.recompute = True
+        config.use_fused_head_and_loss_fn = False
+        layer = CriterionLayer(config=config)
+        loss_mask = paddle.randint(0, 2, shape=[self.batch_size, self.seq_len])
+        layer(self.logits, self.labels, loss_mask=loss_mask)
+
     def test_loss_type_selection(self):
         # 测试不同配置下的 loss_type
         config_dpo = copy.deepcopy(self.config)

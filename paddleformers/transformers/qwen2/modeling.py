@@ -84,7 +84,7 @@ class Qwen2RotaryEmbedding(nn.Layer):
         freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         # [seq_len, dim]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         # [1, seqlen, 1, dim]
         self.cos_cached = emb.cos()[None, :, None, :]
         self.sin_cached = emb.sin()[None, :, None, :]
@@ -105,7 +105,7 @@ def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.concat([-x2, x1], axis=-1)  # shape is the same as x
+    return paddle.cat([-x2, x1], axis=-1)  # shape is the same as x
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
@@ -227,8 +227,8 @@ class Qwen2Attention(nn.Layer):
 
         # [bs, seq_len, num_head, head_dim]
         if past_key_value is not None:
-            key_states = paddle.concat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
         attn_output, attn_weights = attention_interface(
@@ -656,18 +656,18 @@ class Qwen2ForCausalLM(Qwen2PretrainedModel):
         # update position_ids
         if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
             position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
+            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
 
         if not is_encoder_decoder and "attention_mask" in model_kwargs:
             # TODO: support attention mask for other models
             attention_mask = model_kwargs["attention_mask"]
             if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )
             elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )[:, :, -1:, :]
@@ -817,7 +817,7 @@ class Qwen2ForSequenceClassification(Qwen2PretrainedModel):
         else:
             if input_ids is not None:
                 # if no pad token found, use modulo instead of reverse indexing for ONNX compatibility
-                sequence_lengths = paddle.equal(input_ids, self.config.pad_token_id).astype("int32").argmax(-1) - 1
+                sequence_lengths = paddle.eq(input_ids, self.config.pad_token_id).astype("int32").argmax(-1) - 1
                 sequence_lengths = sequence_lengths % input_ids.shape[-1]
                 sequence_lengths = sequence_lengths
             else:

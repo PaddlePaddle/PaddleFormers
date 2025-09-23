@@ -89,7 +89,7 @@ class TestLoraModel(unittest.TestCase):
             enable_lora_list=[None, [True, False]],
             head_dim=2,
         )
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
         model.eval()
         original_results_1 = model(input_ids)
@@ -114,7 +114,7 @@ class TestLoraModel(unittest.TestCase):
         )
         # turn off plm dropout for to test train vs test
         model = AutoModel.from_pretrained(
-            "test_paddleformers/tiny-random-bert",
+            "Paddleformers/tiny-random-bert",
             hidden_dropout_prob=0,
             attention_probs_dropout_prob=0,
         )
@@ -150,7 +150,7 @@ class TestLoraModel(unittest.TestCase):
                 r=4,
                 lora_alpha=8,
             )
-            model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()
             original_results = lora_model(input_ids)
@@ -173,7 +173,7 @@ class TestLoraModel(unittest.TestCase):
             lora_alpha=8,
             enable_lora_list=None,
         )
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         with self.assertRaises(ValueError):
             LoRAModel(model, lora_config)
 

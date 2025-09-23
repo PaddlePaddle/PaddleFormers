@@ -540,7 +540,7 @@ class DPOAutoTrainer(Trainer):
                     if len(getattr(infohub, key)) == 0:
                         tensor = paddle.zeros([1])
                     else:
-                        tensor = paddle.concat(getattr(infohub, key), axis=0).detach()
+                        tensor = paddle.cat(getattr(infohub, key), axis=0).detach()
                     tensor_shape = paddle.to_tensor(tensor.shape, dtype="int64")
                     paddle.distributed.broadcast(
                         tensor_shape, src=self.model_wrapped.global_rank, group=self.model_wrapped.pp_group
