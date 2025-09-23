@@ -1096,6 +1096,10 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Controls the parallel execution order. False (pp first), True (sharding first)."},
     )
+    pre_alloc_memory: int = field(
+        default=0,
+        metadata={"help": "pre allocate memory size GB"},
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
