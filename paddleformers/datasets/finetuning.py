@@ -521,6 +521,10 @@ class SequenceDataset(IterableDataset):
             add_generation_prompt=False,
             tokenize=False,
         )
+        # (21b think model) remove generation content
+        s = "<|im_end|>\n\n<|im_start|>assistant\n<think>\n"
+        if all_str.endswith(s):
+            all_str = all_str[: -len(s)]
         response_str = all_str[history_len:]
         history_id = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(history_str))
         response_id = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(response_str))
