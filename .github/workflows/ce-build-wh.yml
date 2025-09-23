@@ -73,7 +73,7 @@ jobs:
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-          bash scripts/regression/build.sh
+          bash scripts/dependence/build.sh
           '
           
       - name: Upload Products
