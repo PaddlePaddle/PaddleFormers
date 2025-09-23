@@ -1269,3 +1269,20 @@ def get_configuration_file(configuration_files: List[str]) -> str:
             break
 
     return configuration_file
+
+
+ALLOWED_LAYER_TYPES = (
+    "full_attention",
+    "sliding_attention",
+)
+
+
+def layer_type_validation(layer_types: List[str], num_hidden_layers: Optional[int] = None):
+    """Check that `layer_types` is correctly defined."""
+    if not all(layer_type in ALLOWED_LAYER_TYPES for layer_type in layer_types):
+        raise ValueError(f"The `layer_types` entries must be in {ALLOWED_LAYER_TYPES}")
+    if num_hidden_layers is not None and num_hidden_layers != len(layer_types):
+        raise ValueError(
+            f"`num_hidden_layers` ({num_hidden_layers}) must be equal to the number of layer types "
+            f"({len(layer_types)})"
+        )
