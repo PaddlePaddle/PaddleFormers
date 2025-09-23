@@ -69,7 +69,8 @@ def create_dataset(**dataset_config):
         task_dataset_path=task_dataset_path,
         task_dataset_prob=task_dataset_prob,
         sub_dataset_type=sub_dataset_type,
-        process_fn=(process_fc if dataset_config["sub_dataset_type"] == "chatml" else process_example),
+        process_fn=process_example,
+        process_fn_fc=process_fc,
     )
     sequence_dataset = SequenceDataset(
         dataset=example_dataset,
