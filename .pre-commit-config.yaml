@@ -1,49 +1,49 @@
 repos:
-# For Python files - 更新版本
--   repo: https://github.com/psf/black
-    rev: 23.9.1  # 更新到最新
+# For Python files
+-   repo: https://github.com/psf/black.git
+    rev: 22.8.0
     hooks:
     -   id: black
         files: \.(py|pyi)$
-        args: [--config=pyproject.toml]  # 指定配置
-
+        additional_dependencies: [toml]
 -   repo: https://github.com/PyCQA/isort
-    rev: 5.12.0  # 更新到最新
+    rev: 5.11.5
     hooks:
     -   id: isort
-        args: [--settings-path=pyproject.toml]  # 指定配置
-
 -   repo: https://github.com/PyCQA/flake8
-    rev: 6.0.0  # 更新到最新
+    rev: 4.0.1
     hooks:
     -   id: flake8
-        args: [--config=setup.cfg]  # 或 pyproject.toml
-
-# 使用官方 hooks 替代 Lucas-C 的 hooks
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0  # 更新到最新
+    rev: v4.1.0
     hooks:
     -   id: check-merge-conflict
     -   id: check-symlinks
     -   id: detect-private-key
-        exclude: .*paddle.*  # 更清晰的排除模式
+        files: (?!.*paddle)^.*$
     -   id: end-of-file-fixer
-        types: [markdown]
+        files: \.md$
     -   id: trailing-whitespace
-        types: [markdown]
-    -   id: mixed-line-ending  # 替代 CRLF 相关功能
-        args: [--fix=lf]
-        types: [markdown]
-
-# Local hooks - 改进配置
+        files: \.md$
+-   repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.1.14
+    hooks:
+    -   id: forbid-crlf
+        files: \.md$
+    -   id: remove-crlf
+        files: \.md$
+    -   id: forbid-tabs
+        files: \.md$
+    -   id: remove-tabs
+        files: \.md$
 -   repo: local
     hooks:
     -   id: copyright_checker
         name: copyright_checker
-        entry: .copyright.hook  # 直接执行，假设有 shebang
-        language: script  # 改为 script
+        entry: python .copyright.hook
+        language: system
         files: \.(c|cc|cxx|cpp|cu|h|hpp|hxx|proto|xpu|kps|py|sh)$
-
+# For Markdown files
 -   repo: local
     hooks:
     -   id: add-spaces-between-chinese-and-english
@@ -52,7 +52,7 @@ repos:
         language: python
         files: \.(md|markdown)$
         pass_filenames: true
-
+# For dead links
 -   repo: local
     hooks:
     -   id: check-dead-links
