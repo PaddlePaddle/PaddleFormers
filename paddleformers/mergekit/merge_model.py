@@ -590,7 +590,7 @@ class MergeModel:
                     tensor = paddle.Tensor.__call__(tensor, zero_copy=True)
                     lora_A_tensor = paddle.Tensor.__call__(lora_A_tensor, zero_copy=True)
                     lora_B_tensor = paddle.Tensor.__call__(lora_B_tensor, zero_copy=True)
-                    if self.is_cpu and is_bf16 or self.merge_config.save_to_hf:
+                    if self.is_cpu and is_bf16:
                         tensor = tensor.astype("float32")
                         lora_A_tensor = lora_A_tensor.astype("float32")
                         lora_B_tensor = lora_B_tensor.astype("float32")
