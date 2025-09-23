@@ -68,7 +68,7 @@ def _traverse_copy_to_shm(value, meta, buffer):
                 _traverse_copy_to_shm(v, m, buffer)
             elif paddle.is_tensor(v):
                 m = meta[k]
-                _write_shared_memory(v, m, buffer)
+                _write_shared_memory(v.contiguous(), m, buffer)
             else:
                 meta[k] = v
     elif isinstance(value, List):
@@ -78,7 +78,7 @@ def _traverse_copy_to_shm(value, meta, buffer):
                 _traverse_copy_to_shm(v, m, buffer)
             elif paddle.is_tensor(v):
                 m = meta[i]
-                _write_shared_memory(v, m, buffer)
+                _write_shared_memory(v.contiguous(), m, buffer)
             else:
                 meta[i] = v
 
