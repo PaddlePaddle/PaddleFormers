@@ -162,7 +162,7 @@ class DPOTrainTest(unittest.TestCase):
         EXCEPTED_LOSS = 0.474284
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
-        # test lora merge
+        # test lora  merge
         lora_merge_output_dir = os.path.join(output_dir, "lora_merge")
         lora_merge_path = os.path.join(TRAIN_PATH, "tools/mergekit.py")
 
