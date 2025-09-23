@@ -225,10 +225,6 @@ class Glm4MoeAttention(nn.Layer):
                 q_len = max_sequence_length
             else:
                 bsz, q_len, _ = hidden_states.shape
-            # if self.sequence_parallel:
-            #     q_len, bsz, _ = hidden_states.shape
-            # else:
-            #     bsz, q_len, _ = hidden_states.shape
             query_states = query_states.reshape([bsz, q_len, -1, self.head_dim])
             key_states = key_states.reshape([bsz, q_len, -1, self.head_dim])
             value_states = value_states.reshape([bsz, q_len, -1, self.head_dim])
@@ -1162,24 +1158,14 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             cache_length = past_key_values[0][0].shape[1]
             seq_length_with_past += cache_length
 
-        print(f"input_ids:{input_ids}")
-        cnt = 0
-        for idx in input_ids.flatten().numpy():
-            if idx == self.padding_idx:
-                cnt += 1
-        numel = paddle.numel(input_ids).numpy()
-        print(f"input_ids len:{input_ids.shape}, numel: {numel}, padding_idx:{cnt}, percent:{cnt/numel}")
         if inputs_embeds is None:
             # [bs, seq_len, dim]
             inputs_embeds = self.embed_tokens(input_ids)
 
-        bs, seq_len, hidden_size = inputs_embeds.shape
         if self.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
             bs, seq_len, hidden_size = inputs_embeds.shape
-            # !!!!
             inputs_embeds = paddle.reshape_(inputs_embeds, [bs * seq_len, hidden_size])
-            # inputs_embeds = paddle.transpose(inputs_embeds, [1, 0, 2]) # [B, S, H] --> [S, B, H]
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
