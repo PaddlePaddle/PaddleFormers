@@ -31,7 +31,6 @@ def flashmask_attention_forward(
     sink: Optional[paddle.Tensor] = None,
     scaling: Optional[float] = None,
     is_causal: Optional[bool] = None,
-    sliding_window: Optional[int] = None,
     **kwargs
 ):
     # b,l,h,d
@@ -46,7 +45,6 @@ def flashmask_attention_forward(
             value,
             startend_row_indices=attn_mask_startend_row_indices,
             causal=True,
-            window_size=sliding_window,
         )
     else:
         out = sink_attention_forward(

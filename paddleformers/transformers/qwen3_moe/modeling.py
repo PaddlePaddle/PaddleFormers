@@ -205,7 +205,6 @@ class Qwen3MoeAttention(nn.Layer):
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
             scaling=self.scaling,
-            sliding_window=self.sliding_window,
         )
 
         # if sequence_parallel is true, out shape are [q_len / n, bs, num_head * head_dim]
