@@ -603,12 +603,21 @@ class SequenceDataset(IterableDataset):
                 del loss_mask[-1]
                 labels = tokens[1:] + [self.tokenizer.eos_token_id]
 
-            # end_of_response is a special token that indicates the end of the turn.
-            # end_token is a special token that indicates the end of the answer.
-            labels = [label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels]
+                # end_of_response is a special token that indicates the end of the turn.
+                # end_token is a special token that indicates the end of the answer.
+                labels = [
+                    label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
+                ]
+            else:
+                tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
+                labels = tokens[1:] + [-100]
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
         else:
-            tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
-            labels = tokens[1:] + [-100]
+            oral_tokens = tokens
+            tokens = oral_tokens[:-1]
+            labels = oral_tokens[1:]
+            loss_mask = loss_mask[1:]
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
