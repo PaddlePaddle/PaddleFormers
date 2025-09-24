@@ -43,5 +43,5 @@ class ConfigLoadTester(unittest.TestCase):
         )
 
         logger.info("Download Bert Config from aistudio")
-        bert_config = BertConfig.from_pretrained("test_paddleformers/bert-base-uncased", download_hub="aistudio")
-        bert_config = AutoConfig.from_pretrained("test_paddleformers/bert-base-uncased", download_hub="aistudio")
+        bert_config = BertConfig.from_pretrained("PaddleFormers/tiny-random-bert", download_hub="aistudio")
+        bert_config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-bert", download_hub="aistudio")
