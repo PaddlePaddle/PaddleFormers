@@ -254,7 +254,7 @@ class Qwen3MoeModelTester:
         position_ids = paddle.arange(seq_len).expand((batch_size, seq_len))
         result_position_id = model(
             input_ids,
-            position_ids,
+            position_ids=position_ids,
             labels=input_ids if self.parent.use_labels else None,
             return_dict=self.parent.return_dict,
         )
