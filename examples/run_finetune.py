@@ -49,19 +49,6 @@ from paddleformers.utils.log import logger
 os.environ["USE_CASUAL_MASK"] = "False"
 
 
-def mock_offload_optimizer():
-    """
-    mock offload optimizer
-    """
-    try:
-        from paddleformers.trainer.utils.offload_optimizer import hack_offload_optimizer
-
-        hack_offload_optimizer()
-        logger.warning("hack_offload_optimizer called.")
-    except ImportError:
-        logger.warning("hack_offload_optimizer is not imported")
-
-
 def main():
     parser = PdArgumentParser((ModelConfig, DataConfig, SFTConfig))
     if len(sys.argv) >= 2 and sys.argv[1].endswith(".json"):
@@ -72,9 +59,6 @@ def main():
         model_args, data_args, training_args = parser.parse_python_file_and_cmd_lines()
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-
-    if training_args.tensorwise_offload_optimizer:
-        mock_offload_optimizer()
 
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")

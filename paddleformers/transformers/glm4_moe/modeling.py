@@ -312,12 +312,12 @@ class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
             hidden_states (_type_): [batch_size * seq_len, hidden_size]
         """
 
-        # _, _, h_dim = hidden_states.shape
-
         # compute gating score
         with paddle.amp.auto_cast(False):
             hidden_states = hidden_states.cast(self.weight.dtype)
+
             logits = F.linear(hidden_states.cast("float32"), self.weight.cast("float32").t())
+
             scores = self.gate_score_func(logits=logits)
             scores = scores.cast(paddle.float32)
 
@@ -491,8 +491,6 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
             moe_group=moe_group,
         )
         if hasattr(dist, "fleet") and dist.is_initialized() and expert_parallel_degree > 1:
-            # for p in self.experts.parameters():
-            #     setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
             self.is_mp_moe = False
             self.is_ep_moe = True
             for p in self.experts.parameters():
@@ -593,7 +591,6 @@ class Glm4MoeDecoderLayer(nn.Layer):
         sub_seq_len = self.config.moe_subbatch_token_num
         seq_axis = 0 if self.config.sequence_parallel else 1
         seq_len = hidden_states.shape[seq_axis]
-        # seq_len = sequence_length
         assert seq_len % sub_seq_len == 0
         num_chunks = seq_len // sub_seq_len
         split_list = [sub_seq_len] * num_chunks
@@ -696,18 +693,13 @@ class Glm4MoeDecoderLayer(nn.Layer):
         present_key_value=None,
     ):
         hidden_states = residual + hidden_states
-
         outputs = (hidden_states,)
-
         if output_attentions:
             outputs += (self_attn_weights,)
-
         if use_cache:
             outputs += (present_key_value,)
-
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
-
         return outputs
 
     def forward(
