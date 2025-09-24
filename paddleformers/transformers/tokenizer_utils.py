@@ -542,16 +542,20 @@ class PaddleTokenizerMixin:
             conversation_id = []
             conversation_dict["messages"].append(conversations["messages"][idx])
             round_str = conversation_dict["messages"]
-            query = round_str[len(cur_str) :]
-            input_ids = self.convert_tokens_to_ids(self.tokenize(query))
+            # fake template
+            tokenize_input = "".join(item["content"] for item in round_str)
+            tokenize_input = tokenize_input[len(cur_str) :]
+            input_ids = self.convert_tokens_to_ids(self.tokenize(tokenize_input))
             conversation_id.append(input_ids)
-            cur_str = round_str
+            cur_str = tokenize_input
 
             if idx + 1 < len(conversations["messages"]):
                 conversation_dict["messages"].append(conversations["messages"][idx + 1])
                 round_str = conversation_dict["messages"]
-                answer = round_str[len(cur_str) :]
-                output_ids = self.convert_tokens_to_ids(self.tokenize(answer))
+                # fake template
+                tokenize_input = "".join(item["content"] for item in round_str)
+                tokenize_input = tokenize_input[len(cur_str) :]
+                output_ids = self.convert_tokens_to_ids(self.tokenize(tokenize_input))
                 conversation_id.append(output_ids)
 
             conversation_ids.append(conversation_id)

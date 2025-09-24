@@ -59,9 +59,7 @@ class DataConfig:
     )
     use_template: bool = field(
         default=True,
-        metadata={
-            "help": "Whether to use template in data processing."
-        },
+        metadata={"help": "Whether to use template in data processing."},
     )
     encode_one_turn: bool = field(
         default=True,

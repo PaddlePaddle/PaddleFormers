@@ -539,15 +539,12 @@ class SequenceDataset(IterableDataset):
         Returns:
             Sequence: Processed sequence or None if invalid.
         """
-        if self.use_template:
-            if not self.tokenizer.chat_template:
-                self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
-            if example.is_function_call:
-                encoded_messages = self._postprocess_fc_sequence(example)
-            else:
-                encoded_messages = self.tokenizer.encode_chat_inputs(example.request, encode_one_turn=self.encode_one_turn)
+        if not self.tokenizer.chat_template:
+            self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
+        if example.is_function_call:
+            encoded_messages = self._postprocess_fc_sequence(example)
         else:
-            encoded_messages = self.tokenizer.encode_chat_inputs_with_no_template(example.request, encode_one_turn=self.encode_one_turn)
+            encoded_messages = self.tokenizer.encode_chat_inputs(example.request, encode_one_turn=self.encode_one_turn)
 
         num_reserved_tokens_for_each_dialog = 1  # only break_turn_token or end_token
         num_reserved_tokens_for_each_turn = 8
@@ -606,17 +603,12 @@ class SequenceDataset(IterableDataset):
                 del loss_mask[-1]
                 labels = tokens[1:] + [self.tokenizer.eos_token_id]
 
-                # end_of_response is a special token that indicates the end of the turn.
-                # end_token is a special token that indicates the end of the answer.
-                labels = [label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels]
-            else:
-                tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
-                labels = tokens[1:] + [-100]
-                if len(tokens) > self.max_seq_len:
-                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+            # end_of_response is a special token that indicates the end of the turn.
+            # end_token is a special token that indicates the end of the answer.
+            labels = [label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels]
         else:
-            tokens = tokens[:-1]
-            labels = tokens[1:]
+            tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
+            labels = tokens[1:] + [-100]
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
