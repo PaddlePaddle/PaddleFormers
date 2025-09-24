@@ -13,28 +13,17 @@
 # limitations under the License.
 
 
-from modular_moe_layer import ModularMoELayer
+from .modular_moe_layer import ModularMoELayer
+from ...transformers.configuration_utils import PretrainedConfig
 
 
 class QuickAccessMoEFactory:
-    @classmethod
+    @staticmethod
     def create_from_model_name(
-        cls,
-        config,
-        model_name: str,
-        hidden_size: int,
-        intermediate_size: int,
-        num_experts: int,
-        num_experts_per_tok: int = 2,
-        num_shared_experts: int = 1,
-        expert_parallel_degree: int = 1,
+        config: PretrainedConfig
     ) -> ModularMoELayer:
+        config_dict = config.to_dict()
+        print("QuickAccessMoEFactory create_from_model_name", config)
         return ModularMoELayer(
-            hidden_size=hidden_size,
-            intermediate_size=intermediate_size,
-            num_experts=num_experts,
-            num_experts_per_tok=num_experts_per_tok,
-            num_shared_experts=num_shared_experts,
-            expert_parallel_degree=expert_parallel_degree,
-            **config,
+            **config_dict,
         )

@@ -146,6 +146,7 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         sorted_tokens = gathered_tokens[gatherd_idxs]
         tokens_per_expert = tokens_per_expert_post_gather
 
+        # expert 计算前向
         outputs = []
         start_idx = 0
         for i, num_tokens in enumerate(tokens_per_expert):

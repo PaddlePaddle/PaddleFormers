@@ -31,6 +31,8 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.moe_deepep import ModularMoELayer
+from ...nn.moe_deepep import QuickAccessMoEFactory
 from ...utils.log import logger
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -62,7 +64,7 @@ class Qwen3MoeAttention(Qwen3Attention):
 class Qwen3MoeGate(Qwen2MoeGate):
     pass
 
-
+# 未被使用
 class ExpertParallelQwen3MoeSparseMoeBlock(MoELayer):
     def __init__(self, config: Qwen3MoeConfig):
         gate = Qwen3MoeGate(
@@ -78,7 +80,7 @@ class ExpertParallelQwen3MoeSparseMoeBlock(MoELayer):
             config,
             moe_num_experts=config.num_experts,
             expert_class=Qwen3MoeMLP,
-            expert_kwargs={"config": config, "intermediate_size": config.moe_intermediate_size},
+            expert_kwargs={"config": config, "intermediate_size": config.intermediate_size},
             gate=gate,
             capacity=2.0,
         )
@@ -102,7 +104,7 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
         # gating
         self.gate = GeneralLinear.create(config.hidden_size, config.num_experts, has_bias=False, linear_type="default")
         self.experts = nn.LayerList(
-            [Qwen3MoeMLP(config, intermediate_size=config.moe_intermediate_size) for _ in range(self.num_experts)]
+            [Qwen3MoeMLP(config, intermediate_size=config.intermediate_size) for _ in range(self.num_experts)]
         )
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
@@ -160,7 +162,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         self.self_attn = Qwen3MoeAttention(config, layer_idx)
 
         if config.num_experts > 0:
-            self.mlp = Qwen3MoeSparseMoeBlock(config)
+            self.mlp = QuickAccessMoEFactory.create_from_model_name(config)
         else:
             # num_experts == 0 or this layer is not sparse layer
             self.mlp = Qwen3MoeMLP(config)
@@ -180,6 +182,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             self.post_attention_layernorm.enable_sequence_parallel()
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
+        print("================= Qwen3MoeDecoderLayer Init =================")
 
     def forward(
         self,
@@ -211,6 +214,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
                 (see `past_key_values`).
             past_key_value (`Tuple(paddle.Tensor)`, *optional*): cached past key and value projection states
         """
+        print("================= Qwen3MoeDecoderLayer Forward =================")
 
         # [bs * seq_len, embed_dim] -> [seq_len * bs / n, embed_dim] (sequence_parallel)
         residual = hidden_states
@@ -235,7 +239,8 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
+        hidden_states, aux_loss, z_loss = self.mlp(hidden_states)
+        print("After MLP, hidden_states: ", hidden_states.shape, hidden_states.dtype) # [8, seq_len, 2048]
         if isinstance(hidden_states, tuple):
             hidden_states, router_logits = hidden_states
         else:
@@ -436,6 +441,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         attn_mask_startend_row_indices=None,
         **kwargs,
     ) -> Union[Tuple, MoEModelOutputWithPast]:
+        print("================= Qwen3MoeModel Forward =================")
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_router_logits = (
@@ -494,6 +500,8 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         next_decoder_cache = () if use_cache else None
 
         for idx, (decoder_layer) in enumerate(self.layers):
+            print("================= {idx} Layer Forward =================")
+
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
@@ -569,7 +577,11 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config: Qwen3MoeConfig):
+        print("================= Qwen3MoeForCausalLM Init =================")
         super().__init__(config)
+        config.num_hidden_layers = 2
+        # config.num_experts_per_tok = 8
+        # config.num_experts = 128
         self.model = Qwen3MoeModel(config)
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
