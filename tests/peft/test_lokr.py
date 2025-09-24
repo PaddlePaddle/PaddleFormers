@@ -34,7 +34,7 @@ DEFAULT_LINEAR_TEST_CONFIG = {
     "decompose_both": False,
 }
 DEFAULT_MODEL_TEST_CONFIG = {
-    "base_model_name_or_path": "test_paddleformers/tiny-random-bert",
+    "base_model_name_or_path": "Paddleformers/tiny-random-bert",
     "target_modules": [".*q_proj*.", ".*v_proj*."],
     "lokr_alpha": 8,
     "lokr_dim": 8,
@@ -155,13 +155,13 @@ class TestLoKrModel(unittest.TestCase):
     def test_tp_raise_exception(self):
         with self.assertRaises(NotImplementedError):
             lokr_config = LoKrConfig(**DEFAULT_MODEL_TEST_CONFIG, tensor_parallel_degree=2)
-            model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
             lokr_model = LoKrModel(model, lokr_config)
             lokr_model.eval()
 
     def test_lokr_model_restore(self):
         lokr_config = LoKrConfig(**DEFAULT_MODEL_TEST_CONFIG)
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
         model.eval()
         original_results_1 = model(input_ids)
@@ -177,7 +177,7 @@ class TestLoKrModel(unittest.TestCase):
     def test_lokr_model_constructor(self):
         lokr_config = LoKrConfig(**DEFAULT_MODEL_TEST_CONFIG)
         model = AutoModel.from_pretrained(
-            "test_paddleformers/tiny-random-bert",
+            "Paddleformers/tiny-random-bert",
             hidden_dropout_prob=0,
             attention_probs_dropout_prob=0,
         )
@@ -194,7 +194,7 @@ class TestLoKrModel(unittest.TestCase):
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
             lokr_config = LoKrConfig(**DEFAULT_MODEL_TEST_CONFIG)
-            model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
             lokr_model = LoKrModel(model, lokr_config)
             lokr_model.eval()
             original_results = lokr_model(input_ids)

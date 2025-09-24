@@ -1,5 +1,5 @@
-# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2024 The Qwen team, Alibaba Group and The HuggingFace Inc. team. All rights reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright 2020 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,11 +22,9 @@ import paddle
 from parameterized import parameterized
 
 from paddleformers.transformers import (
-    Qwen2Config,
-    Qwen2ForCausalLM,
-    Qwen2ForSequenceClassification,
-    Qwen2ForTokenClassification,
-    Qwen2Model,
+    Qwen3MoeConfig,
+    Qwen3MoeForCausalLM,
+    Qwen3MoeModel,
 )
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
@@ -39,66 +37,76 @@ from tests.transformers.test_modeling_common import (
 )
 
 
-class Qwen2ModelTester:
+class Qwen3MoeModelTester:
     def __init__(
         self,
         parent,
-        batch_size=13,
-        seq_length=7,
-        is_training=True,
-        use_input_mask=True,
-        use_labels=True,
-        vocab_size=99,
-        hidden_size=32,
-        num_hidden_layers=5,
-        max_window_layers=3,
-        use_sliding_window=True,
-        sliding_window=1024,
-        num_attention_heads=4,
-        num_key_value_heads=2,
-        intermediate_size=37,
-        hidden_act="gelu",
-        hidden_dropout_prob=0.1,
-        attention_probs_dropout_prob=0.1,
-        max_position_embeddings=512,
-        type_vocab_size=16,
-        type_sequence_label_size=2,
+        vocab_size=32000,
+        hidden_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=8,
+        num_key_value_heads=8,
+        masked_softmax_fusion=True,
+        layer_norm_epsilon=1e-5,
         initializer_range=0.02,
-        num_labels=3,
-        num_choices=4,
+        is_training=True,
+        use_cache=False,
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
+        apply_residual_connection_post_layernorm=False,
+        hidden_dropout=0.0,
+        attention_dropout=0.0,
+        attention_softmax_in_fp32=True,
+        pretraining_tp=1,  # TP rank used when training with megatron
+        dtype="bfloat16",
+        slow_but_exact=False,
+        batch_size: int = 2,
+        seq_length: int = 10,
+        type_sequence_label_size=2,
+        activation_function="silu",
+        num_labels=3,
+        num_choices=4,
         scope=None,
+        dropout=0.56,
+        use_input_mask: bool = False,
+        use_labels: bool = False,
+        return_dict=False,
     ):
-        self.parent: Qwen2ModelTest = parent
-        self.batch_size = batch_size
-        self.seq_length = seq_length
-        self.is_training = is_training
-        self.use_input_mask = use_input_mask
-        self.use_labels = use_labels
+        self.parent: Qwen3MoeModelTest = parent
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
-        self.max_window_layers = max_window_layers
-        self.use_sliding_window = use_sliding_window
-        self.sliding_window = sliding_window
         self.num_attention_heads = num_attention_heads
         self.num_key_value_heads = num_key_value_heads
-        self.intermediate_size = intermediate_size
-        self.hidden_act = hidden_act
-        self.hidden_dropout_prob = hidden_dropout_prob
-        self.attention_probs_dropout_prob = attention_probs_dropout_prob
-        self.max_position_embeddings = max_position_embeddings
-        self.type_vocab_size = type_vocab_size
-        self.type_sequence_label_size = type_sequence_label_size
+        self.masked_softmax_fusion = masked_softmax_fusion
+        self.layer_norm_epsilon = layer_norm_epsilon
         self.initializer_range = initializer_range
-        self.num_labels = num_labels
-        self.num_choices = num_choices
+        self.is_training = is_training
+        self.use_cache = use_cache
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
+        self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
+        self.hidden_dropout = hidden_dropout
+        self.attention_dropout = attention_dropout
+        self.attention_softmax_in_fp32 = attention_softmax_in_fp32
+        self.pretraining_tp = pretraining_tp
+        self.dtype = dtype
+        self.slow_but_exact = slow_but_exact
+
+        self.batch_size = batch_size
+        self.seq_length = seq_length
+        self.type_sequence_label_size = type_sequence_label_size
+        self.activation_function = activation_function
+        self.num_labels = num_labels
+        self.num_choices = num_choices
         self.scope = scope
+        self.dropout = dropout
+
+        self.use_input_mask = use_input_mask
+        self.use_labels = use_labels
+        self.return_dict = return_dict
 
     def prepare_config_and_inputs(self):
         input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
@@ -118,40 +126,40 @@ class Qwen2ModelTester:
         config = self.get_config()
         return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
 
-    def get_config(self) -> Qwen2Config:
-        return Qwen2Config(
+    def get_config(self) -> Qwen3MoeConfig:
+        return Qwen3MoeConfig(
             vocab_size=self.vocab_size,
             hidden_size=self.hidden_size,
             num_hidden_layers=self.num_hidden_layers,
-            max_window_layers=self.max_window_layers,
-            use_sliding_window=self.use_sliding_window,
-            sliding_window=self.sliding_window,
             num_attention_heads=self.num_attention_heads,
             num_key_value_heads=self.num_key_value_heads,
-            intermediate_size=self.intermediate_size,
-            hidden_act=self.hidden_act,
-            hidden_dropout_prob=self.hidden_dropout_prob,
-            attention_probs_dropout_prob=self.attention_probs_dropout_prob,
-            max_position_embeddings=self.max_position_embeddings,
-            type_vocab_size=self.type_vocab_size,
-            is_decoder=False,
+            masked_softmax_fusion=self.masked_softmax_fusion,
+            layer_norm_epsilon=self.layer_norm_epsilon,
             initializer_range=self.initializer_range,
+            use_cache=self.use_cache,
             pad_token_id=self.pad_token_id,
             bos_token_id=self.bos_token_id,
             eos_token_id=self.eos_token_id,
+            apply_residual_connection_post_layernorm=self.apply_residual_connection_post_layernorm,
+            hidden_dropout=self.hidden_dropout,
+            attention_dropout=self.attention_dropout,
+            attention_softmax_in_fp32=self.attention_softmax_in_fp32,
+            pretraining_tp=self.pretraining_tp,
+            dtype=self.dtype,
+            slow_but_exact=self.slow_but_exact,
+            activation_function=self.activation_function,
         )
 
     def create_and_check_model(
-        self, config: Qwen2Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self, config: Qwen3MoeConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
     ):
-        model = Qwen2Model(config=config)
+        model = Qwen3MoeModel(config)
         model.eval()
-        result = model(input_ids, attention_mask=input_mask)
         result = model(input_ids)
         self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
 
-    def create_and_check_model_attention_mask(self, config: Qwen2Config, input_ids):
-        model = Qwen2Model(config)
+    def create_and_check_model_attention_mask(self, config: Qwen3MoeConfig, input_ids):
+        model = Qwen3MoeModel(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
@@ -177,7 +185,7 @@ class Qwen2ModelTester:
         choice_labels,
     ):
         config.add_cross_attention = True
-        model = Qwen2Model(config)
+        model = Qwen3MoeModel(config)
         model.eval()
         result = model(
             input_ids,
@@ -199,7 +207,7 @@ class Qwen2ModelTester:
         token_labels,
         choice_labels,
     ):
-        model = Qwen2ForCausalLM(config=config)
+        model = Qwen3MoeForCausalLM(config=config)
         model.eval()
         result = model(input_ids, attention_mask=input_mask, labels=token_labels, return_dict=True)
         self.parent.assertEqual(result.logits.shape, [self.batch_size, self.seq_length, self.vocab_size])
@@ -218,7 +226,7 @@ class Qwen2ModelTester:
         return config, inputs_dict
 
     def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
-        model = Qwen2ForCausalLM(config)
+        model = Qwen3MoeForCausalLM(config)
         model.eval()
 
         result = model(
@@ -234,7 +242,7 @@ class Qwen2ModelTester:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
-        model = Qwen2ForCausalLM(config)
+        model = Qwen3MoeForCausalLM(config)
         model.eval()
 
         result_no_position_id = model(
@@ -256,26 +264,34 @@ class Qwen2ModelTester:
             self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
 
 
-class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
-    base_model_class = Qwen2Model
+class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+    base_model_class = Qwen3MoeModel
     return_dict = False
     use_labels = False
     use_test_model_name_list = False
 
-    all_model_classes = (Qwen2Model, Qwen2ForCausalLM)
-    all_generative_model_classes = {Qwen2ForCausalLM: {Qwen2Model, "qwen2"}}
-    pipeline_model_mapping = {
-        "feature-extraction": Qwen2Model,
-        "text-classification": Qwen2ForSequenceClassification,
-        "token-classification": Qwen2ForTokenClassification,
-        "text-generation": Qwen2ForCausalLM,
-        "zero-shot": Qwen2ForSequenceClassification,
-    }
+    all_model_classes = (Qwen3MoeModel, Qwen3MoeForCausalLM)
+    all_generative_model_classes = {Qwen3MoeForCausalLM: (Qwen3MoeModel, "qwen3_moe")}
 
     def setUp(self):
         super().setUp()
-        self.model_tester = Qwen2ModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=Qwen2Config, hidden_size=37)
+
+        self.model_tester = Qwen3MoeModelTester(self)
+        self.config_tester = ConfigTester(self, config_class=Qwen3MoeConfig, vocab_size=256, hidden_size=24)
+
+    def _get_input_ids_and_config(self):
+        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+
+        input_ids = inputs_dict[self.input_name]
+        attention_mask = paddle.ones_like(input_ids, dtype=paddle.int64)
+
+        max_batch_size = 2
+        sequence_length = input_ids.shape[-1] // 2
+        input_ids = input_ids[:max_batch_size, :sequence_length]
+        attention_mask = attention_mask[:max_batch_size, :sequence_length]
+        max_length = 3
+
+        return config, input_ids, attention_mask, max_length
 
     def test_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
@@ -289,6 +305,10 @@ class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.check_model_position_ids(*config_and_inputs)
 
+    def test_generate_without_input_ids(self):
+        # this requires 4-D attention mask logic, which is not supported yet
+        pass
+
     def test_model_decoder_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model_as_decoder(*config_and_inputs)
@@ -301,78 +321,12 @@ class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
 
-    def test_model_various_embeddings(self):
-        config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        for type in ["absolute", "relative_key", "relative_key_query"]:
-            config_and_inputs[0].position_embedding_type = type
-            self.model_tester.create_and_check_model(*config_and_inputs)
 
-    def test_Qwen2_sequence_classification_model(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        config.num_labels = 3
-        input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        sequence_labels = ids_tensor([self.model_tester.batch_size], self.model_tester.type_sequence_label_size)
-        model = Qwen2ForSequenceClassification(config)
-        model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
-        self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
-
-    def test_Qwen2_sequence_classification_model_for_single_label(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        config.num_labels = 3
-        config.problem_type = "single_label_classification"
-        input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        sequence_labels = ids_tensor([self.model_tester.batch_size], self.model_tester.type_sequence_label_size)
-        model = Qwen2ForSequenceClassification(config)
-        model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
-        self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
-
-    def test_Qwen2_sequence_classification_model_for_multi_label(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        config.num_labels = 3
-        config.problem_type = "multi_label_classification"
-        input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        sequence_labels = ids_tensor(
-            [self.model_tester.batch_size, config.num_labels], self.model_tester.type_sequence_label_size
-        ).to(paddle.float32)
-        model = Qwen2ForSequenceClassification(config)
-
-        model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
-        self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
-
-    def test_Qwen2_token_classification_model(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        config.num_labels = 3
-        input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        token_labels = ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.num_labels)
-        model = Qwen2ForTokenClassification(config=config)
-        model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=token_labels, return_dict=True)
-        self.assertEqual(
-            result.logits.shape,
-            [self.model_tester.batch_size, self.model_tester.seq_length, self.model_tester.num_labels],
-        )
-
-    @unittest.skip("Qwen2 buffers include complex numbers, which breaks this test")
-    def test_save_load_fast_init_from_base(self):
-        pass
-
-    @unittest.skip("Qwen2 uses GQA on all models so the KV cache is a non standard format")
-    def test_past_key_values_format(self):
-        pass
-
-
-class Qwen2IntegrationTest(unittest.TestCase):
+class Qwen3MoeIntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
-        model = Qwen2ForCausalLM.from_pretrained(
-            "PaddleFormers/tiny-random-qwen2", dtype="float32", convert_from_hf=True
+        model = Qwen3MoeForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen3moe", dtype="float32", convert_from_hf=True
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
@@ -380,55 +334,62 @@ class Qwen2IntegrationTest(unittest.TestCase):
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[0.00012923, 0.00022866, 0.00083712, 0.00048324, 0.00050315, 0.00085108, 0.00076548, 0.00031629]]
+            [[-0.00030643, -0.00071559, -0.00056766, -0.00085897, -0.00123006, -0.00022042, -0.00023746, -0.00052526]]
         )
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
 
         # slicing logits[0, 0, 0:30]
-        EXPECTED_SLICE = paddle.to_tensor([-0.05235012, -0.05254495, -0.54650372, -0.00349111, -0.15289409,
-                                           0.07966875, -0.09445626, 0.05722746, 0.08273896, 0.13118745,
-                                           0.03527237, 0.02604982, 0.22931044, 0.30118701, -0.09604376,
-                                           -0.00862435, 0.05576831, 0.06650923, -0.24256611, -0.30112153,
-                                           -0.02920971, -0.01462070, -0.13825229, 0.08126508, -0.17080611,
-                                           -0.34227434, 0.27646801, 0.25437784, -0.03299456, -0.40561515])  # fmt: skip
-        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        EXPECTED_SLICE = paddle.to_tensor([0.30254516, -0.30803320, -0.38494134, -0.47322115, -0.21808594,
+                                           0.13004600, -0.13100961, 0.08265260, 0.19084544, -0.27980503,
+                                           0.14799611, 0.08284992, -0.19547234, -0.16578345, -0.16760986,
+                                           -0.04950186, 0.02147415, -0.51295358, 0.08290517, -0.31099084,
+                                           0.12259193, -0.07422141, 0.10754116, 0.00818088, -0.18319097,
+                                           0.01319447, 0.13641201, -0.26029447, -0.33172122, 0.05208641])  # fmt: skip
+        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2))
 
 
-class Qwen2GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "PaddleFormers/tiny-random-qwen2"
+class Qwen3MoeGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
+    internal_testing_model = "PaddleFormers/tiny-random-qwen3moe"
 
 
-class Qwen2CompatibilityTest(unittest.TestCase):
+class Qwen3MoeCompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
-        from transformers import Qwen2Config, Qwen2ForCausalLM
+        from transformers import Qwen3MoeConfig, Qwen3MoeForCausalLM
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = Qwen2Config(
-            hidden_size=16, intermediate_size=1120, num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2
+        config = Qwen3MoeConfig(
+            hidden_size=16,
+            intermediate_size=384,
+            num_hidden_layers=4,
+            num_attention_heads=8,
+            num_key_value_heads=2,
+            moe_intermediate_size=192,
+            num_experts_per_tok=2,
+            num_experts=8,
         )
-        model = Qwen2ForCausalLM(config)
+        model = Qwen3MoeForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
 
     @require_package("transformers", "torch")
-    def test_Qwen2_converter(self):
+    def test_Qwen3Moe_converter(self):
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
         # 2. forward the paddle model
-        from paddleformers.transformers import Qwen2Model
+        from paddleformers.transformers import Qwen3MoeModel
 
-        paddle_model = Qwen2Model.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
+        paddle_model = Qwen3MoeModel.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
         import torch
-        from transformers import Qwen2Model
+        from transformers import Qwen3MoeModel
 
-        torch_model = Qwen2Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = Qwen3MoeModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -442,7 +403,7 @@ class Qwen2CompatibilityTest(unittest.TestCase):
         )
 
     @require_package("transformers", "torch")
-    def test_Qwen2_converter_from_local_dir(self):
+    def test_Qwen3Moe_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
 
             # 1. create common input
@@ -450,17 +411,17 @@ class Qwen2CompatibilityTest(unittest.TestCase):
 
             # 2. forward the torch  model
             import torch
-            from transformers import Qwen2Model
+            from transformers import Qwen3MoeModel
 
-            torch_model = Qwen2Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Qwen3MoeModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             # 2. forward the paddle model
-            from paddleformers.transformers import Qwen2Model
+            from paddleformers.transformers import Qwen3MoeModel
 
-            paddle_model = Qwen2Model.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Qwen3MoeModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -473,9 +434,9 @@ class Qwen2CompatibilityTest(unittest.TestCase):
                 )
             )
 
-    @parameterized.expand([("Qwen2Model",), ("Qwen2ForCausalLM",)])
+    @parameterized.expand([("Qwen3MoeModel",), ("Qwen3MoeForCausalLM",)])
     @require_package("transformers", "torch")
-    def test_qwen2_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
+    def test_Qwen3Moe_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
         pytorch_class_name = pytorch_class_name or class_name
         with tempfile.TemporaryDirectory() as tempdir:
 
@@ -500,7 +461,7 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
             paddle_model.eval()
 
-            if class_name == "Qwen2Model":
+            if class_name == "Qwen3MoeModel":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits

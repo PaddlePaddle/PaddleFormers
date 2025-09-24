@@ -37,7 +37,7 @@ class TestModeling(unittest.TestCase):
     """Test PretrainedModel single time, not in Transformer models"""
 
     def test_from_pretrained_cache_dir_community_model(self):
-        model_name = "test_paddleformers/tiny-random-bert"
+        model_name = "Paddleformers/tiny-random-bert"
         with TemporaryDirectory() as tempdir:
             BertModel.from_pretrained(model_name, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))
@@ -47,7 +47,7 @@ class TestModeling(unittest.TestCase):
 
     @slow
     def test_from_pretrained_cache_dir_pretrained_init(self):
-        model_name = "test_paddleformers/bert-base-uncased"
+        model_name = "PaddleFormers/tiny-random-bert"
         with TemporaryDirectory() as tempdir:
             BertModel.from_pretrained(model_name, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))

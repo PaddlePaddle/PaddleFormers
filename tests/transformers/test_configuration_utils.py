@@ -25,7 +25,9 @@ from paddleformers.transformers.configuration_utils import (
 )
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils import CONFIG_NAME
+from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import LEGACY_CONFIG_NAME
+from tests.testing_utils import set_proxy
 
 
 class FakeSimplePretrainedModelConfig(PretrainedConfig):
@@ -135,29 +137,28 @@ class StandardConfigMappingTest(unittest.TestCase):
         class FakeBertConfig(BertConfig):
             pass
 
-        config = FakeBertConfig.from_pretrained("test_paddleformers/tiny-random-bert")
+        config = FakeBertConfig.from_pretrained("Paddleformers/tiny-random-bert")
         hidden_size = config.hidden_size
 
         FakeBertConfig.attribute_map = {"fake_field": "hidden_size"}
 
-        loaded_config = FakeBertConfig.from_pretrained("test_paddleformers/tiny-random-bert")
+        loaded_config = FakeBertConfig.from_pretrained("Paddleformers/tiny-random-bert")
         fake_field = loaded_config.fake_field
         self.assertEqual(fake_field, hidden_size)
 
     def test_from_pretrained_cache_dir(self):
-        model_id = "test_paddleformers/tiny-random-bert"
+        model_id = "Paddleformers/tiny-random-bert"
         with tempfile.TemporaryDirectory() as tempdir:
             BertConfig.from_pretrained(model_id, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
 
-    @unittest.skip("skipping due to connection error!")
-    # @set_proxy(DownloadSource.HUGGINGFACE)
+    @set_proxy(DownloadSource.HUGGINGFACE)
     def test_load_from_hf(self):
         """test load config from hf"""
-        config = BertConfig.from_pretrained("hf-internal-testing/tiny-random-BertModel", download_hub="huggingface")
-        self.assertEqual(config.hidden_size, 32)
+        config = BertConfig.from_pretrained("Baicai003/tiny-bert", download_hub="huggingface")
+        self.assertEqual(config.hidden_size, 16)
 
         with tempfile.TemporaryDirectory() as tempdir:
             config.save_pretrained(tempdir)
@@ -165,7 +166,7 @@ class StandardConfigMappingTest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(tempdir, CONFIG_NAME)))
 
             loaded_config = BertConfig.from_pretrained(tempdir)
-            self.assertEqual(loaded_config.hidden_size, 32)
+            self.assertEqual(loaded_config.hidden_size, 16)
 
     def test_config_mapping(self):
         # create new fake-bert class to prevent static-attributed modified by this test
@@ -173,7 +174,7 @@ class StandardConfigMappingTest(unittest.TestCase):
             pass
 
         with tempfile.TemporaryDirectory() as tempdir:
-            config = FakeBertConfig.from_pretrained("test_paddleformers/bert-base-uncased")
+            config = FakeBertConfig.from_pretrained("PaddleFormers/tiny-random-bert")
             config.save_pretrained(tempdir)
 
             # rename `config.json` -> `model_config.json`
