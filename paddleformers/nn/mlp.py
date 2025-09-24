@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import paddle
 import paddle.nn as nn
 from paddle.incubate.nn.functional import swiglu as fused_swiglu
 
@@ -117,5 +117,9 @@ class MLP(nn.Layer):
         else:
             gate = self.gate_proj(x)
             up = self.up_proj(x)
-            x = self.act_fn(gate) * up
+            if self.fuse_swiglu:
+                x = paddle.concat([gate, up], axis=-1)
+                x = fused_swiglu(x)
+            else:
+                x = self.act_fn(gate) * up
         return self.down_proj(x)
