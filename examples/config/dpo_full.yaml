@@ -1,0 +1,49 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./data/dpo/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./data/dpo/dev.jsonl
+eval_dataset_prob: "1.0"
+max_seq_len: 8192
+num_samples_each_epoch: 6000000
+packing: false
+mix_strategy: concat
+
+### model
+model_name_or_path: Qwen/Qwen3-0.6B-Base
+attn_impl: flashmask
+
+### finetuning
+# base
+seed: 23
+do_train: true
+do_eval: true
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: -1
+eval_steps: 100
+evaluation_strategy: steps
+save_steps: 100
+save_total_limit: 1
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 4
+logging_dir: ./vdl_log
+output_dir: ./checkpoints/qwen3_hf_0p6b_dpo_ckpts
+disable_tqdm: true
+eval_accumulation_steps: 16
+
+# train
+warmup_steps: 20
+learning_rate: 1.0e-6
+
+# performance
+tensor_parallel_degree: 1
+pipeline_parallel_degree: 1
+sharding: stage2
+recompute: true
+bf16: true
+fp16_opt_level: O2
+unified_checkpoint: true
