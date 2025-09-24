@@ -63,6 +63,35 @@ __all__ = [
 ]
 
 
+def _make_sliding_window_mask(input_shape, past_key_values_length=0, window_size=5):
+    """
+    Generate a sliding window mask that restricts each position to only attend to historical positions within the window.
+    Format: [bsz, 1, tgt_seq_len, src_seq_len], where True indicates allowed attention and False indicates masking.
+    """
+    batch_size, seq_length = input_shape
+    # Total sequence length = historical sequence length + current sequence length (for generating complete mask)
+    total_length = past_key_values_length + seq_length
+
+    # Initialize mask with all False values
+    mask = paddle.zeros((seq_length, total_length), dtype=paddle.bool)
+
+    for i in range(seq_length):
+        # Absolute position of current location in the total sequence (including historical sequence)
+        current_pos = past_key_values_length + i
+        # Window start position: max(0, current position - window size + 1)
+        start = max(0, current_pos - window_size + 1)
+        # Window end position: current position (causal mask restriction, cannot exceed self)
+        end = current_pos + 1  # Slice is left closed and right open, so+1
+        # Mark window range as True (allow attention)
+        mask[i, start:end] = True
+
+    # Expand dimensions to [bsz, 1, tgt_seq_len, src_seq_len]
+    mask = mask.unsqueeze(0).unsqueeze(0)
+    # Copy to each sample in batch_size
+    mask = paddle.tile(mask, repeat_times=[batch_size, 1, 1, 1])
+    return mask
+
+
 def get_unfinished_flag(
     input_ids: Tensor, unfinished_flag: Tensor, eos_token_id: Union[int, list[int], list[list[int]]]
 ) -> Tensor:
@@ -354,16 +383,31 @@ class GenerationMixin(object):
         return attention_mask
 
     @staticmethod
-    def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
+    def _prepare_decoder_attention_mask(
+        attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None
+    ):
+        # Step 1: Process input mask to generate basic expanded mask
         if attention_mask is not None:
             # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
             if len(attention_mask.shape) == 2:
                 expanded_attn_mask = _expand_2d_mask(attention_mask, dtype, tgt_length=input_shape[-1])
-                # For decoding phase in generation, seq_length = 1, we don't need to add causal mask
+                # When not generating in single step, need to combine causal mask and sliding window mask
                 if input_shape[-1] > 1:
-                    combined_attention_mask = _make_causal_mask(
-                        input_shape, past_key_values_length=past_key_values_length
-                    )
+                    # Generate basic causal mask (prevent future information leakage)
+                    causal_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
+                    # Generate sliding window mask (limit historical attention range)
+                    if sliding_window_size is not None and sliding_window_size > 0:
+                        window_mask = _make_sliding_window_mask(
+                            input_shape, past_key_values_length=past_key_values_length, window_size=sliding_window_size
+                        )
+                        # Take intersection of sliding window mask and causal mask (satisfy both restrictions)
+                        combined_attention_mask = causal_mask & window_mask
+                    else:
+                        combined_attention_mask = (
+                            causal_mask  # Use causal mask directly when sliding window is disabled
+                        )
+
+                    # Combine with user-provided mask (e.g., padding mask)
                     if get_env_device() in ["npu", "mlu", "intel_hpu"]:
                         expanded_attn_mask = expanded_attn_mask.astype("bool") & combined_attention_mask.astype("bool")
                     else:
@@ -371,12 +415,21 @@ class GenerationMixin(object):
             # [bsz, seq_len, seq_len] -> [bsz, 1, seq_len, seq_len]
             elif len(attention_mask.shape) == 3:
                 expanded_attn_mask = attention_mask.unsqueeze(1).astype("bool")
-            # if attention_mask is already 4-D, do nothing
+            # 4D mask is used directly
             else:
                 expanded_attn_mask = attention_mask
         else:
-            expanded_attn_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
-        # Convert bool attention_mask to float attention mask, which will be added to attention_scores later
+            # When no input mask, generate causal mask + sliding window mask (if enabled)
+            causal_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
+            if sliding_window_size is not None and sliding_window_size > 0:
+                window_mask = _make_sliding_window_mask(
+                    input_shape, past_key_values_length=past_key_values_length, window_size=sliding_window_size
+                )
+                expanded_attn_mask = causal_mask & window_mask
+            else:
+                expanded_attn_mask = causal_mask  # Use causal mask directly when sliding window is disabled
+
+        # Step 2: Convert boolean mask to numerical mask (adapt to different devices)
         if get_env_device() in ["npu", "mlu", "intel_hpu"]:
             x = paddle.to_tensor(0.0, dtype="float32")
             y = paddle.to_tensor(paddle.finfo(dtype).min, dtype="float32")

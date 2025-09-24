@@ -15,7 +15,7 @@
 # limitations under the License.
 """Qwen3MoE model configuration"""
 
-from ..configuration_utils import PretrainedConfig
+from ..configuration_utils import PretrainedConfig, layer_type_validation
 
 __all__ = [
     "Qwen3MoeConfig",
@@ -187,6 +187,7 @@ class Qwen3MoeConfig(PretrainedConfig):
         output_router_logits=False,
         router_aux_loss_coef=0.001,
         mlp_only_layers=None,
+        layer_types=None,
         pp_seg_method="layer:Qwen3MoeDecoderLayer",
         **kwargs,
     ):
@@ -197,7 +198,7 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.use_sliding_window = use_sliding_window
-        self.sliding_window = sliding_window if use_sliding_window else None
+        self.sliding_window = sliding_window
 
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
@@ -228,6 +229,14 @@ class Qwen3MoeConfig(PretrainedConfig):
 
         self.pp_seg_method = pp_seg_method
 
+        self.layer_types = layer_types
+        if self.layer_types is None:
+            self.layer_types = [
+                "sliding_attention" if self.use_sliding_window and i >= self.max_window_layers else "full_attention"
+                for i in range(self.num_hidden_layers)
+            ]
+        layer_type_validation(self.layer_types, self.num_hidden_layers)
+
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
@@ -244,5 +253,6 @@ class Qwen3MoeConfig(PretrainedConfig):
                 "pp_seg_method",
                 "dpo_config",
                 "kto_config",
+                "layer_types",
             ]
         )

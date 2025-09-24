@@ -47,45 +47,116 @@ from ..model_outputs import (
     TokenClassifierOutput,
 )
 from ..model_utils import PretrainedModel, register_base_model
-from ..qwen2.modeling import Qwen2Attention, Qwen2RotaryEmbedding, apply_rotary_pos_emb
 from .configuration import Qwen3Config
 
-__all__ = [
-    "Qwen3Model",
-    "Qwen3PretrainedModel",
-    "Qwen3ForCausalLM",
-    "Qwen3ForCausalLMPipe",
-    "Qwen3ForSequenceClassification",
-    "Qwen3ForTokenClassification",
-    "Qwen3SentenceEmbedding",
-]
+
+def prepare_sliding_window_startend_row_indices(startend_row_indices, window_size=5):
+    if startend_row_indices is None:
+        return None
+    batch_size, num_head, seq_length, bound_num = startend_row_indices.shape
+    assert bound_num <= 2, f"bound_num should be less than or equal to 2 when use sling window, but got {bound_num}"
+    sliding_window_startend_row_indices = startend_row_indices.clone()
+    for bi in range(batch_size):
+        for hi in range(num_head):
+            for j in range(seq_length):
+                sliding_window_startend_row_indices[bi, hi, j, 0] = min(
+                    startend_row_indices[bi, hi, j, 0], window_size + j
+                )
+    return sliding_window_startend_row_indices
 
 
-class Qwen3RotaryEmbedding(Qwen2RotaryEmbedding):
-    pass
+def rotate_half(x):
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return paddle.cat([-x2, x1], axis=-1)  # shape is the same as x
 
 
-class Qwen3Attention(Qwen2Attention):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
+    cos = cos.squeeze(axis=[0, 2])  # [seq_len, dim]
+    sin = sin.squeeze(axis=[0, 2])  # [seq_len, dim]
+    cos = cos[position_ids].unsqueeze(2)  # [bs, seq_len, 1, dim]
+    sin = sin[position_ids].unsqueeze(2)  # [bs, seq_len, 1, dim]
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.astype(q.dtype), k_embed.astype(q.dtype)
+
+
+class Qwen3Attention(nn.Layer):
     """
     Multi-headed attention from 'Attention Is All You Need' paper. Modified to use sliding window attention: Longformer
     and "Generating Long Sequences with Sparse Transformers".
     """
 
     def __init__(self, config: Qwen3Config, layer_idx: int = 0):
-        super().__init__(config, layer_idx)
+        super().__init__()
+        self.layer_idx = layer_idx
+        self.config = config
+        self.hidden_size = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        self.num_attention_heads = config.num_attention_heads
+        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+        self.scaling = self.head_dim**-0.5
+        self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
+
+        self.num_key_value_heads = config.num_key_value_heads
+        assert config.num_attention_heads // config.num_key_value_heads
+        self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
+        self.attention_dropout = config.attention_dropout
+
+        self.sequence_parallel = config.sequence_parallel
+        self.fuse_attention_qkv = config.fuse_attention_qkv
+
+        if config.tensor_parallel_degree > 1:
+            assert (
+                self.num_heads % config.tensor_parallel_degree == 0
+            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
+            self.num_heads = self.num_heads // config.tensor_parallel_degree
+
+            assert (
+                self.num_key_value_heads % config.tensor_parallel_degree == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+
+        kv_hidden_size = self.config.num_key_value_heads * self.head_dim
+        q_hidden_size = self.num_attention_heads * self.head_dim
+
+        self.q_proj = GeneralLinear.create(
+            self.hidden_size,
+            q_hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="colwise",
+        )
+        self.k_proj = GeneralLinear.create(
+            self.hidden_size,
+            kv_hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="colwise",
+        )
+        self.v_proj = GeneralLinear.create(
+            self.hidden_size,
+            kv_hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="colwise",
+        )
+        self.o_proj = GeneralLinear.create(
+            q_hidden_size,
+            self.hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="rowwise",
+        )
         self.q_norm = GeneralNorm.create(
             config, hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
         )  # unlike olmo, only on the head dim!
         self.k_norm = GeneralNorm.create(
             config, hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
         )  # thus post q_norm does not need reshape
-        self.sliding_window = config.sliding_window
-        if not (
-            self.config.use_sliding_window
-            and getattr(self.config, "sliding_window", None) is not None
-            and self.layer_idx >= self.config.max_window_layers
-        ):
-            self.sliding_window = None
+        self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
+
         if config.sequence_parallel:
             self.q_norm.enable_sequence_parallel()
             self.k_norm.enable_sequence_parallel()
@@ -94,9 +165,8 @@ class Qwen3Attention(Qwen2Attention):
         self,
         hidden_states,
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        output_attentions: bool = False,
+        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: bool = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
@@ -131,7 +201,7 @@ class Qwen3Attention(Qwen2Attention):
             value_states = paddle.cat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
-        attn_output, attn_weights = attention_interface(
+        attn_output, _ = attention_interface(
             self,
             query=query_states,
             key=key_states,
@@ -148,9 +218,7 @@ class Qwen3Attention(Qwen2Attention):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
 
-        if not output_attentions:
-            attn_weights = None
-        return attn_output, attn_weights, past_key_value
+        return attn_output, past_key_value
 
 
 class Qwen3DecoderLayer(nn.Layer):
@@ -158,6 +226,7 @@ class Qwen3DecoderLayer(nn.Layer):
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size
+        self.attention_type = config.layer_types[layer_idx]
         self.self_attn = Qwen3Attention(config, layer_idx)
         self.mlp = Qwen3MLP(config)
         self.input_layernorm = GeneralNorm.create(
@@ -179,9 +248,8 @@ class Qwen3DecoderLayer(nn.Layer):
     def forward(
         self,
         hidden_states: paddle.Tensor,
-        position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        output_attentions: Optional[bool] = False,
+        position_ids: Optional[paddle.Tensor] = None,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -208,15 +276,14 @@ class Qwen3DecoderLayer(nn.Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, present_key_value = self.self_attn(
             hidden_states=hidden_states,
-            past_key_value=past_key_value,
             attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_ids=position_ids,
-            output_attentions=output_attentions,
+            past_key_value=past_key_value,
             use_cache=use_cache,
             position_embeddings=position_embeddings,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             batch_size=batch_size,
         )
 
@@ -229,18 +296,13 @@ class Qwen3DecoderLayer(nn.Layer):
 
         hidden_states = residual + hidden_states
 
-        outputs = (hidden_states,)
-
-        if output_attentions:
-            outputs += (self_attn_weights,)
-
         if use_cache:
-            outputs += (present_key_value,)
-
-        if type(outputs) is tuple and len(outputs) == 1:
-            outputs = outputs[0]
-
-        return outputs
+            return (
+                hidden_states,
+                present_key_value,
+            )
+        else:
+            return hidden_states
 
 
 class Qwen3PretrainedModel(PretrainedModel):
@@ -310,6 +372,47 @@ class Qwen3PretrainedModel(PretrainedModel):
         return mappings
 
 
+class Qwen3RotaryEmbedding(nn.Layer):
+    def __init__(self, head_dim, max_position_embeddings=2048, base=10000):
+        super().__init__()
+        self.head_dim = head_dim
+        self.max_position_embeddings = max_position_embeddings
+        self.base = base
+
+        self.inv_freq = 1.0 / (
+            self.base ** (paddle.cast(paddle.arange(0, self.head_dim, 2), dtype="float32") / self.head_dim)
+        )
+        self._set_cos_sin_cache(seq_len=max_position_embeddings)
+
+    def _set_cos_sin_cache(self, seq_len):
+        self.max_seq_len_cached = seq_len
+        if self.inv_freq.dtype != paddle.float32:
+            self.inv_freq = 1.0 / (
+                self.base ** (paddle.cast(paddle.arange(0, self.head_dim, 2), dtype="float32") / self.head_dim)
+            )
+        # [seq_len]
+        t = paddle.arange(seq_len, dtype="float32")
+        # [seq_len, dim/2]
+        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
+        # Different from paper, but it uses a different permutation in order to obtain the same calculation
+        # [seq_len, dim]
+        emb = paddle.cat([freqs, freqs], axis=-1)
+        # [1, seqlen, 1, dim]
+        self.cos_cached = emb.cos()[None, :, None, :]
+        self.sin_cached = emb.sin()[None, :, None, :]
+
+    def forward(self, x, seq_len=None):
+        # x: [bs, num_attention_heads, seq_len, head_size]
+        if seq_len > self.max_seq_len_cached:
+            self._set_cos_sin_cache(seq_len)
+        cos = self.cos_cached[:, :seq_len, :, :]
+        sin = self.sin_cached[:, :seq_len, :, :]
+        return (
+            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
+            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
+        )
+
+
 @register_base_model
 class Qwen3Model(Qwen3PretrainedModel):
     """
@@ -346,9 +449,8 @@ class Qwen3Model(Qwen3PretrainedModel):
         self,
         layer_module: nn.Layer,
         hidden_states: Tensor,
-        position_ids: Optional[Tensor],
         attention_mask: Tensor,
-        output_attentions: bool,
+        position_ids: Optional[Tensor],
         past_key_value: Tensor,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -364,9 +466,8 @@ class Qwen3Model(Qwen3PretrainedModel):
         hidden_states = recompute(
             create_custom_forward(layer_module),
             hidden_states,
-            position_ids,
             attention_mask,
-            output_attentions,
+            position_ids,
             past_key_value,
             use_cache,
             position_embeddings,
@@ -379,19 +480,15 @@ class Qwen3Model(Qwen3PretrainedModel):
     def forward(
         self,
         input_ids: paddle.Tensor = None,
-        position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
+        position_ids: Optional[paddle.Tensor] = None,
+        past_key_values: Optional[List[paddle.Tensor]] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
 
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states  # fmt:skip
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -426,10 +523,49 @@ class Qwen3Model(Qwen3PretrainedModel):
 
         if attn_mask_startend_row_indices is not None:
             attention_mask = None
+            causal_mask_mapping = {}
+            attn_mask_startend_row_indices_mapping = {}
+            causal_mask_mapping["full_attention"] = None
+            causal_mask_mapping["sliding_attention"] = None
+
+            attn_mask_startend_row_indices_mapping["full_attention"] = attn_mask_startend_row_indices
+
+            if self.config.use_sliding_window:
+                attn_mask_startend_row_indices_mapping[
+                    "sliding_attention"
+                ] = prepare_sliding_window_startend_row_indices(
+                    attn_mask_startend_row_indices, window_size=self.config.sliding_window
+                )
+            else:
+                attn_mask_startend_row_indices_mapping["sliding_attention"] = None
         else:
-            attention_mask = self._prepare_decoder_attention_mask(
-                attention_mask, (batch_size, seq_length), cache_length, inputs_embeds.dtype
+            attention_mask = (
+                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
+                if attention_mask is None
+                else attention_mask
             )
+            causal_mask_mapping = {}
+            attn_mask_startend_row_indices_mapping = {}
+            attn_mask_startend_row_indices_mapping["full_attention"] = None
+            attn_mask_startend_row_indices_mapping["sliding_attention"] = None
+
+            causal_mask_mapping["full_attention"] = self._prepare_decoder_attention_mask(
+                attention_mask=attention_mask,
+                input_shape=(batch_size, seq_length),
+                past_key_values_length=cache_length,
+                dtype=inputs_embeds.dtype,
+            )
+
+            if self.config.use_sliding_window:
+                causal_mask_mapping["sliding_attention"] = self._prepare_decoder_attention_mask(
+                    attention_mask=attention_mask,
+                    input_shape=(batch_size, seq_length),
+                    past_key_values_length=cache_length,
+                    dtype=inputs_embeds.dtype,
+                    sliding_window_size=self.config.sliding_window,
+                )
+            else:
+                causal_mask_mapping["sliding_attention"] = None
 
         hidden_states = inputs_embeds
 
@@ -437,68 +573,52 @@ class Qwen3Model(Qwen3PretrainedModel):
         position_embeddings = self.rotary_emb(hidden_states, seq_length_with_past)
 
         # decoder layers
-        all_hidden_states = () if output_hidden_states else None
-        all_self_attns = () if output_attentions else None
-        next_decoder_cache = () if use_cache else None
+        next_cache = () if use_cache else None
 
         for idx, (decoder_layer) in enumerate(self.layers):
-            if output_hidden_states:
-                all_hidden_states += (hidden_states,)
-
             past_key_value = past_key_values[idx] if past_key_values is not None else None
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
+                    causal_mask_mapping[decoder_layer.attention_type],
                     position_ids,
-                    attention_mask,
-                    output_attentions,
                     past_key_value,
                     use_cache,
                     position_embeddings,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
+                        decoder_layer.attention_type
+                    ],
                     batch_size=batch_size,
                 )
             else:
                 layer_outputs = decoder_layer(
                     hidden_states,
+                    causal_mask_mapping[decoder_layer.attention_type],
                     position_ids,
-                    attention_mask,
-                    output_attentions,
                     past_key_value,
                     use_cache,
                     position_embeddings,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
+                        decoder_layer.attention_type
+                    ],
                     batch_size=batch_size,
                 )
 
-            if isinstance(layer_outputs, (tuple, list)):
+            if use_cache:
                 hidden_states = layer_outputs[0]
+                next_cache += (layer_outputs[1],)
             else:
                 hidden_states = layer_outputs
 
-            if output_attentions:
-                all_self_attns += (layer_outputs[1],)
-
-            if use_cache:
-                next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
-
         hidden_states = self.norm(hidden_states)
 
-        # add hidden states from the last decoder layer
-        if output_hidden_states:
-            all_hidden_states += (hidden_states,)
-
-        next_cache = next_decoder_cache if use_cache else None
-
         if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
+            return tuple(v for v in [hidden_states, next_cache] if v is not None)
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=next_cache,
-            hidden_states=all_hidden_states,
-            attentions=all_self_attns,
         )
 
 
@@ -511,7 +631,6 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
         self.model = Qwen3Model(config)
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
-        self.vocab_size = config.vocab_size
         self.tie_weights()
 
     def prepare_inputs_for_generation(
@@ -579,15 +698,13 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
     def forward(
         self,
         input_ids: paddle.Tensor = None,
-        position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
+        position_ids: Optional[paddle.Tensor] = None,
+        past_key_values: Optional[List[paddle.Tensor]] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
-        loss_mask: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        loss_mask: Optional[paddle.Tensor] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
@@ -617,10 +734,6 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
         "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
         ```"""
 
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if attn_mask_startend_row_indices is not None and attention_mask is not None:
@@ -633,13 +746,11 @@ class Qwen3ForCausalLM(Qwen3PretrainedModel):
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.model(
             input_ids=input_ids,
-            position_ids=position_ids,
             attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
-            past_key_values=past_key_values,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
@@ -675,14 +786,12 @@ class Qwen3ForSequenceClassification(Qwen3PretrainedModel):
     def forward(
         self,
         input_ids: paddle.Tensor = None,
-        position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        inputs_embeds: Optional[paddle.Tensor] = None,
+        position_ids: Optional[paddle.Tensor] = None,
         past_key_values: Optional[List[paddle.Tensor]] = None,
+        inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
         r"""
@@ -700,8 +809,6 @@ class Qwen3ForSequenceClassification(Qwen3PretrainedModel):
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
         hidden_states = transformer_outputs[0]
@@ -786,8 +893,6 @@ class Qwen3ForTokenClassification(Qwen3PretrainedModel):
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
         r"""
@@ -805,8 +910,6 @@ class Qwen3ForTokenClassification(Qwen3PretrainedModel):
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
         sequence_output = outputs[0]
@@ -880,11 +983,9 @@ class Qwen3SentenceEmbedding(Qwen3PretrainedModel):
     def encode(
         self,
         input_ids,
+        attention_mask=None,
         position_ids=None,
         embedding_indices=None,
-        attention_mask=None,
-        output_attentions=False,
-        output_hidden_states=False,
         return_dict=False,
         **kwargs,
     ):
@@ -892,10 +993,8 @@ class Qwen3SentenceEmbedding(Qwen3PretrainedModel):
         input_type = type(input_ids)
         outputs = self.model(
             input_ids,
-            position_ids=position_ids,
             attention_mask=attention_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
+            position_ids=position_ids,
             return_dict=return_dict,
             **kwargs,
         )
@@ -915,3 +1014,14 @@ class Qwen3ForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = Qwen3Model._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen3Model.transpose_weight_keys
+
+
+__all__ = [
+    "Qwen3Model",
+    "Qwen3PretrainedModel",
+    "Qwen3ForCausalLM",
+    "Qwen3ForCausalLMPipe",
+    "Qwen3ForSequenceClassification",
+    "Qwen3ForTokenClassification",
+    "Qwen3SentenceEmbedding",
+]
