@@ -21,6 +21,7 @@ import inspect
 import json
 import os
 import re
+import sys
 import tempfile
 import warnings
 from contextlib import contextmanager
@@ -29,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
 import aistudio_sdk
+import ml_dtypes
 import numpy as np
 import paddle
 import paddle.nn as nn
@@ -126,9 +128,14 @@ def unwrap_optimizer(optimizer, optimizer_instances=()):
 
 
 if is_safetensors_available():
-    from safetensors import safe_open
-    from safetensors.paddle import load_file as safe_load_file
-    from safetensors.paddle import save_file as safe_save_file
+    from safetensors.numpy import save_file as safe_save_file
+
+    from ..utils.safetensors import fast_load_file as safe_load_file
+
+    if sys.platform.startswith("win"):
+        from safetensors import safe_open
+    else:
+        from ..utils.safetensors import fast_safe_open as safe_open
 
 
 def prune_linear_layer(layer: nn.Linear, index: paddle.Tensor, dim: int = 0) -> nn.Linear:
@@ -395,7 +402,7 @@ def _load_part_state_dict(
 
     part_state_dict = {}
     scale_dict = {}
-    with safe_open(checkpoint_file, framework="paddle") as f:
+    with safe_open(checkpoint_file, framework="np") as f:
         for key in keys:
             # 1. non-merge ckpt loading dont have filter key.
             # 2. merge ckpt will skip quant scale by `fliter_dict_keys`
@@ -415,7 +422,8 @@ def _load_part_state_dict(
                 and key.split(".weight")[0] in quantization_linear_list
                 and not key.endswith("_scale")
             ):
-                weight = py_safe_slice_[:]
+                # numpy.array -> paddle.tensor
+                weight = paddle.Tensor.__call__(py_safe_slice_[:], zero_copy=True)
                 weight = _transpose_hf_weight(key, weight)
                 key_name = key.split(".weight")[0]
                 quant_key_name = key_name + ".quant_weight"
@@ -450,17 +458,19 @@ def _load_part_state_dict(
                         is_column = not is_column
                         tp_fn = partial(tp_fn.func, *tp_fn.args, **{**tp_fn.keywords, "is_column": is_column})
                     if len(py_safe_slice_.shape) == 0:
-                        weight = tp_fn(py_safe_slice_[:])
+                        weight = tp_fn(py_safe_slice_.get())
                     else:
                         weight = tp_fn(py_safe_slice_)
                 else:
-                    weight = py_safe_slice_[:]
-
+                    if len(py_safe_slice_.shape) == 0:
+                        weight = py_safe_slice_.get()
+                    else:
+                        weight = py_safe_slice_[:]
                 if not return_numpy and device == "expected":
+                    with device_guard():
+                        weight = paddle.Tensor.__call__(weight, zero_copy=True)
                     weight = weight._copy_to(paddle.framework._current_expected_place(), False)
                 weight = _transpose_hf_weight(key, weight)
-                if return_numpy:
-                    weight = weight.numpy()
                 part_state_dict[key] = weight
 
         for key in keys:
@@ -471,9 +481,9 @@ def _load_part_state_dict(
             ):
                 scale = f.get_tensor(key)
                 if not return_numpy and device == "expected":
+                    with device_guard():
+                        scale = paddle.Tensor.__call__(scale, zero_copy=True)
                     scale = scale._copy_to(paddle.framework._current_expected_place(), False)
-                if return_numpy:
-                    scale = scale.numpy()
                 scale_dict[key] = scale
     return part_state_dict, scale_dict
 
@@ -501,34 +511,26 @@ def load_state_dict(
     if (
         checkpoint_file.endswith(".safetensors") or re.search(r"\.safetensors_shard_\d{4}$", checkpoint_file)
     ) and is_safetensors_available():
-        thread_num = int(os.environ.get("LOAD_STATE_DICT_THREAD_NUM", "1"))
-        if thread_num > 1:
-            logger.info(f"Set loading state_dict thread num to {thread_num}")
-        state_dict, scale_dict = {}, {}
-        if thread_num <= 1:
-            with safe_open(checkpoint_file, framework="paddle") as f:
-                state_dict, scale_dict = _load_part_state_dict(
-                    list(f.keys()),
-                    checkpoint_file,
-                    tensor_parallel_split_mapping,
-                    fliter_dict_keys,
-                    device,
-                    quantization_linear_list,
-                    quantization_config,
-                    dtype,
-                    return_numpy,
-                    convert_from_hf,
-                    transpose_weight_keys,
-                )
-        else:
-            # Load state dict in multi-thread to speed up loading
-            with safe_open(checkpoint_file, framework="paddle") as f:
-                keys_groups = _split_keys_evenly(list(f.keys()), thread_num)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=thread_num) as executor:
-                future_to_key = {
-                    executor.submit(
-                        _load_part_state_dict,
-                        keys,
+        # Check format of the archive
+        with safe_open(checkpoint_file, framework="np") as f:
+            metadata = {"format": "np"}
+
+        if metadata.get("format", "np") not in ["pd", "np"]:
+            raise OSError(
+                f"The safetensors archive passed at {checkpoint_file} does not contain the valid metadata. Make sure "
+                "you save your model with the `save_pretrained` method."
+            )
+        if metadata.get("format", "np") == "pd":
+            raise ValueError("Currently unsupport paddle weights file, use numpy instead.")
+        if metadata.get("format", "np") == "np":
+            thread_num = int(os.environ.get("LOAD_STATE_DICT_THREAD_NUM", "1"))
+            if thread_num > 1:
+                logger.info(f"Set loading state_dict thread num to {thread_num}")
+            state_dict, scale_dict = {}, {}
+            if thread_num <= 1:
+                with safe_open(checkpoint_file, framework="np") as f:
+                    state_dict, scale_dict = _load_part_state_dict(
+                        list(f.keys()),
                         checkpoint_file,
                         tensor_parallel_split_mapping,
                         fliter_dict_keys,
@@ -539,41 +541,54 @@ def load_state_dict(
                         return_numpy,
                         convert_from_hf,
                         transpose_weight_keys,
-                    ): keys
-                    for keys in keys_groups
-                }
-                for future in concurrent.futures.as_completed(future_to_key):
-                    res_state_dict, res_scale_dict = future.result()
-                    state_dict.update(res_state_dict)
-                    scale_dict.update(res_scale_dict)
-
-        if not return_numpy:
-            if device == "pin_memory":
-                for k in list(state_dict.keys()):
-                    pd_tensor = state_dict.pop(k)
-                    state_dict[k] = (
-                        pd_tensor
-                        if pd_tensor.place == paddle.CUDAPinnedPlace()
-                        else pd_tensor.to(paddle.CUDAPinnedPlace())
                     )
-        else:
-            for k in list(state_dict.keys()):
-                state_dict[k] = state_dict.pop(k).numpy()
+            else:
+                # Load state dict in multi-thread to speed up loading
+                with safe_open(checkpoint_file, framework="np") as f:
+                    keys_groups = _split_keys_evenly(list(f.keys()), thread_num)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=thread_num) as executor:
+                    future_to_key = {
+                        executor.submit(
+                            _load_part_state_dict,
+                            keys,
+                            checkpoint_file,
+                            tensor_parallel_split_mapping,
+                            fliter_dict_keys,
+                            device,
+                            quantization_linear_list,
+                            quantization_config,
+                            dtype,
+                            return_numpy,
+                            convert_from_hf,
+                            transpose_weight_keys,
+                        ): keys
+                        for keys in keys_groups
+                    }
+                    for future in concurrent.futures.as_completed(future_to_key):
+                        res_state_dict, res_scale_dict = future.result()
+                        state_dict.update(res_state_dict)
+                        scale_dict.update(res_scale_dict)
 
-        if len(scale_dict) != 0:
-            if ckpt_quant_stage == "O0":
-                raise ValueError('optimizer weight has quantization scales but `ckpt_quant_stage` is set to "O0"')
-            state_dict = dequant_unified_optimizer(state_dict, ckpt_quant_stage, scale_dict, use_pd=True)
+            if not return_numpy:
+                if device == "cpu":
+                    with device_guard():
+                        for k in list(state_dict.keys()):
+                            state_dict[k] = paddle.Tensor.__call__(state_dict.pop(k), zero_copy=True)
+                elif device == "pin_memory":
+                    for k in list(state_dict.keys()):
+                        state_dict[k] = paddle.to_tensor(state_dict.pop(k), place=paddle.CUDAPinnedPlace())
 
-        return state_dict
+            if len(scale_dict) != 0:
+                if ckpt_quant_stage == "O0":
+                    raise ValueError('optimizer weight has quantization scales but `ckpt_quant_stage` is set to "O0"')
+                state_dict = dequant_unified_optimizer(state_dict, ckpt_quant_stage, scale_dict, use_pd=True)
+
+            return state_dict
 
     # load from hf but not safetensors checkpoint
     if convert_from_hf:
         state_dict = load_torch(checkpoint_file)
         state_dict = ConversionMixin.convert_transpose_selected_weights(state_dict, transpose_weight_keys)
-        if return_numpy:
-            for k in list(state_dict.keys()):
-                state_dict[k] = state_dict.pop(k).numpy()
         return state_dict
 
     state_dict = paddleformers_load(checkpoint_file, map_location="cpu")
@@ -584,8 +599,10 @@ def prepare_safe_save_state_dict(state_dict, save_to_hf=False):
     for k in list(state_dict.keys()):
         if isinstance(state_dict[k], paddle.Tensor):
             if state_dict[k].dtype == paddle.bfloat16:
-                state_dict[k] = state_dict.pop(k).contiguous().astype(paddle.bfloat16)
-    metadata = {"format": "pt"} if save_to_hf else {"format": "paddle"}
+                state_dict[k] = state_dict.pop(k).astype("float32").cpu().numpy().astype(ml_dtypes.bfloat16)
+            else:
+                state_dict[k] = state_dict.pop(k).cpu().numpy()
+    metadata = {"format": "pt"} if save_to_hf else {"format": "np"}
     return state_dict, metadata
 
 
@@ -2034,6 +2051,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         f"Error no files {filenames} found in repo {pretrained_model_name_or_path}."
                     )
                 elif "pytorch_model.bin" in str(resolved_archive_file):
+
                     if download_hub == DownloadSource.AISTUDIO and not convert_from_hf:
                         raise ValueError(
                             f"Download pytorch weight in "
@@ -2614,7 +2632,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             logger.warning("`load_state_as_np` is deprecated,  please delete it!")
 
         model_kwargs = kwargs
+
         if convert_from_hf is None and download_hub == DownloadSource.MODELSCOPE:
+
             logger.warning(
                 "If you are attempting to load weights from ModelScope Hub and want to disable the default behavior of considering torch weights,"
                 " you can set ·convert_from_hf=False·. By default, `convert_from_hf` is set to `True`. "
@@ -2687,7 +2707,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model_state.pdparams"):
                 state_dict = cls.convert_tensor_parallel(resolved_archive_file, config)
             elif config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model.safetensors"):
-                with safe_open(resolved_archive_file, framework="paddle", device="cpu") as f:
+                with safe_open(resolved_archive_file, framework="np", device="cpu") as f:
                     loaded_keys = f.keys()
                 tp_actions = cls.get_tensor_parallel_convert_actions(config, loaded_keys)
                 state_dict = load_state_dict(
@@ -3332,7 +3352,7 @@ def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=
         elif os.path.exists(model_path):
             state_dict = cls.convert_tensor_parallel(model_path, config)
         elif os.path.exists(safe_model_path):
-            with safe_open(safe_model_path, framework="paddle", device="cpu") as f:
+            with safe_open(safe_model_path, framework="np", device="cpu") as f:
                 loaded_keys = f.keys()
             tp_actions = cls.get_tensor_parallel_convert_actions(config, loaded_keys)
             state_dict = load_state_dict(
