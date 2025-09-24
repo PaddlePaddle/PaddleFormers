@@ -110,7 +110,7 @@ jobs:
               docker rmi "$img" || true
             done
             # mv test image to latest or new build latest
-            if docker images --format '{{.Repository}}:{{.Tag}}' | grep 'test-$(date +%Y%m%d)'; then
+            if docker images --format '{{.Repository}}:{{.Tag}}' | grep 'test'; then
               echo "mv test image to latest, no need to build"
               docker tag "$img" "${image_name}"
               docker rmi "$img" || true

@@ -14,7 +14,7 @@
 # limitations under the License.
 """Qwen2 model configuration"""
 
-from ..configuration_utils import PretrainedConfig
+from ..configuration_utils import PretrainedConfig, layer_type_validation
 
 __all__ = [
     "Qwen2Config",
@@ -129,6 +129,7 @@ class Qwen2Config(PretrainedConfig):
         attention_dropout=0.0,
         rope_scaling_factor=1.0,
         rope_scaling_type=None,
+        layer_types=None,
         pp_seg_method="layer:Qwen2DecoderLayer",
         **kwargs,
     ):
@@ -167,6 +168,14 @@ class Qwen2Config(PretrainedConfig):
 
         self.pp_seg_method = pp_seg_method
 
+        self.layer_types = layer_types
+        if self.layer_types is None:
+            self.layer_types = [
+                "sliding_attention" if self.use_sliding_window and i >= self.max_window_layers else "full_attention"
+                for i in range(self.num_hidden_layers)
+            ]
+        layer_type_validation(self.layer_types, self.num_hidden_layers)
+
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
@@ -190,5 +199,6 @@ class Qwen2Config(PretrainedConfig):
                 "pp_seg_method",
                 "dpo_config",
                 "kto_config",
+                "layer_types",
             ]
         )
