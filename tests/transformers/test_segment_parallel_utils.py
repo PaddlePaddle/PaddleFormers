@@ -58,7 +58,7 @@ def prepare_data(batch_major=True, dim_size=4, batch_size=2, seq_len=2, num_head
         split_tensor_list.append(paddle.split(t, sep, axis=split_axis))
     input_data = input_data_list[dist.get_rank()]
     expected_output_data = [t[local_rank] for t in split_tensor_list]
-    expected_output_data = paddle.concat(expected_output_data, axis=concat_axis)
+    expected_output_data = paddle.cat(expected_output_data, axis=concat_axis)
     return input_data, expected_output_data
 
 

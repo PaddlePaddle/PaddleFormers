@@ -53,7 +53,7 @@ class Qwen3ModelTester:
         num_hidden_layers=5,
         max_window_layers=3,
         use_sliding_window=True,
-        sliding_window=2,
+        sliding_window=1024,
         num_attention_heads=4,
         num_key_value_heads=2,
         intermediate_size=37,
@@ -250,7 +250,7 @@ class Qwen3ModelTester:
         position_ids = paddle.arange(seq_len).expand((batch_size, seq_len))
         result_position_id = model(
             input_ids,
-            position_ids,
+            position_ids=position_ids,
             labels=input_ids if self.parent.use_labels else None,
             return_dict=self.parent.return_dict,
         )

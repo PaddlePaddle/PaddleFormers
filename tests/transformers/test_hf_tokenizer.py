@@ -64,7 +64,7 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         self.assertEqual(output_ids, true_ids)
 
     def test_auto_tokenizer(self):
-        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama")
+        tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
         input_text = "hello world, 你好"
         output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input_text))
         true_ids = [12199, 3186, 29892, 29871, 30919, 31076]

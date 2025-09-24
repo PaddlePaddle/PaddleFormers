@@ -191,8 +191,8 @@ class GptOssModelTester:
         next_mask = ids_tensor((self.batch_size, 3), vocab_size=2)
 
         # append to next input_ids and
-        next_input_ids = paddle.concat([input_ids, next_tokens], axis=-1)
-        next_attention_mask = paddle.concat([input_mask, next_mask], axis=-1)
+        next_input_ids = paddle.cat([input_ids, next_tokens], axis=-1)
+        next_attention_mask = paddle.cat([input_mask, next_mask], axis=-1)
 
         outputs = model(
             next_input_ids, attention_mask=next_attention_mask, output_hidden_states=True, return_dict=self.return_dict
