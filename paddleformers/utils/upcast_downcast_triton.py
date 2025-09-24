@@ -17,6 +17,8 @@ import paddle.nn.functional as F
 import triton
 import triton.language as tl
 
+from paddleformers.utils.log import logger
+
 try:
     import use_triton_in_paddle
 
@@ -472,7 +474,7 @@ def upcast_from_mxfp(tensor: paddle.Tensor, scale: paddle.Tensor, target_dtype: 
 
 def right_shift_unsigned(x, shift):
     # CUDA paddle does not support bit ops on uint32, so we need to mask to get unsigned right shift
-    return (x >> shift) & ((1 << (32 - shift)) - 1)
+    return (x >> shift) & paddle.to_tensor(((1 << (32 - shift)) - 1), dtype=paddle.int32)
 
 
 def get_max_quant_val(dtype: paddle.dtype):
@@ -514,7 +516,7 @@ def downcast_to_mxfp_paddle(
     is_fp8 = "float8" in str(out_quant_type)
     assert is_fp4 or is_fp8, f"Invalid input tensor dtype {out_quant_type}"
 
-    device = src_tensor.device
+    place = src_tensor.place
 
     # For mxfp4 conversion, we assume the contiguous axis length is even.
     if is_fp4:
@@ -528,19 +530,19 @@ def downcast_to_mxfp_paddle(
     # Pad the axis to be divisible by 32, in case it is not.
     next_multiple = triton.cdiv(axis_shape, MXFP_BLOCK_SIZE) * MXFP_BLOCK_SIZE
     pad_amount = next_multiple - axis_shape
-    padded_src = F.pad(src, (0, pad_amount))
-    valid_mask = F.pad(paddle.ones_like(src, dtype=paddle.bool), (0, pad_amount))
+    padded_src = F.pad(src, (0, int(pad_amount)))
+    valid_mask = F.pad(paddle.ones_like(src), (0, int(pad_amount))).to(paddle.bool)
     padded_axis_shape = padded_src.size(-1)  # now divisible by 32
 
     # --- Compute per-group maximums for scale ---
     # Set padded entries to -1 so they don’t affect the max.
     abs_f = paddle.abs(padded_src)
-    abs_f = paddle.where(valid_mask, abs_f, paddle.tensor(-1.0, device=device, dtype=padded_src.dtype))
+    abs_f = paddle.where(valid_mask, abs_f, paddle.to_tensor(-1.0, place=place, dtype=padded_src.dtype))
     # Reshape the last dimension into groups of 32.
-    new_shape = padded_src.shape[:-1] + (padded_axis_shape // MXFP_BLOCK_SIZE, MXFP_BLOCK_SIZE)
+    new_shape = padded_src.shape[:-1] + [int(padded_axis_shape // MXFP_BLOCK_SIZE), int(MXFP_BLOCK_SIZE)]
     abs_groups = abs_f.view(*new_shape)
     # Compute maximum along the group dimension (of size 32).
-    max_val, _ = abs_groups.max(dim=-1, keepdim=True)
+    max_val = abs_groups.max(axis=-1, keepdim=True)
 
     # Choose a max quantization value depending on type.
     max_quant_val = get_max_quant_val(out_quant_type)
@@ -549,15 +551,17 @@ def downcast_to_mxfp_paddle(
     # Convert to int to round the FP32 scale, prior to quantization!
     ds_int = dequant_scale.view(paddle.int32)
     if DEQUANT_SCALE_ROUNDING_MODE == DequantScaleRoundingMode.ROUND_UP:
-        ds_int_rounded = (ds_int + paddle.to_tensor(0x007FFFFF)) & paddle.to_tensor(0x7F800000)
+        ds_int_rounded = (ds_int + paddle.to_tensor(0x007FFFFF, dtype=paddle.int32)) & paddle.to_tensor(
+            0x7F800000, dtype=paddle.int32
+        )
     else:
-        ds_int_rounded = ds_int & paddle.to_tensor(0x7F800000)
+        ds_int_rounded = ds_int & paddle.to_tensor(0x7F800000, dtype=paddle.int32)
     # Reinterpret back as float32.
     dequant_scale_rounded = ds_int_rounded.view(paddle.float32)
 
     # Compute the quantization scale.
     quant_scale = paddle.where(
-        dequant_scale_rounded == 0, paddle.tensor(0.0, device=device), 1.0 / dequant_scale_rounded
+        dequant_scale_rounded == 0, paddle.to_tensor(0.0, place=place), 1.0 / dequant_scale_rounded
     )
 
     # Quantize the tensor
@@ -579,27 +583,30 @@ def downcast_to_mxfp_paddle(
         # First, reinterpret the quantized tensor bits.
         q_int = quant_tensor.contiguous().view(paddle.int32)
         # Extract sign, exponent, and mantissa.
-        signs = q_int & paddle.to_tensor(0x80000000)
-        exponents = right_shift_unsigned(q_int, 23) & paddle.to_tensor(0xFF)
-        mantissas = q_int & paddle.to_tensor(0x7FFFFF)
+        signs = q_int & paddle.to_tensor(0x80000000, dtype=paddle.int32)
+        exponents = right_shift_unsigned(q_int, 23) & paddle.to_tensor(0xFF, dtype=paddle.int32)
+        mantissas = q_int & paddle.to_tensor(0x7FFFFF, dtype=paddle.int32)
 
         E8_BIAS = 127
         E2_BIAS = 1
         # Adjust mantissas for subnormals.
         mantissas = paddle.where(
             exponents < E8_BIAS,
-            (paddle.to_tensor(0x400000) | right_shift_unsigned(mantissas, 1)) >> (E8_BIAS - exponents - 1),
+            (paddle.to_tensor(0x400000, dtype=paddle.int32) | right_shift_unsigned(mantissas, 1))
+            >> (E8_BIAS - exponents - 1),
             mantissas,
         )
-        exponents = paddle.maximum(exponents, paddle.tensor(E8_BIAS - E2_BIAS, device=device)) - (E8_BIAS - E2_BIAS)
+        exponents = paddle.maximum(exponents, paddle.to_tensor(E8_BIAS - E2_BIAS, place=place, dtype=paddle.int32)) - (
+            E8_BIAS - E2_BIAS
+        )
         # Round to nearest, ties to even (RTNE)
-        m2bits = right_shift_unsigned(mantissas, 21) & paddle.to_tensor(0x3)
-        lsb_keep = right_shift_unsigned(m2bits, 1) & paddle.to_tensor(0x1)
-        guard = m2bits & paddle.to_tensor(0x1)
-        sticky = (mantissas & ((1 << 21) - 1)) != 0
+        m2bits = right_shift_unsigned(mantissas, 21) & paddle.to_tensor(0x3, dtype=paddle.int32)
+        lsb_keep = right_shift_unsigned(m2bits, 1) & paddle.to_tensor(0x1, dtype=paddle.int32)
+        guard = m2bits & paddle.to_tensor(0x1, dtype=paddle.int32)
+        sticky = (mantissas & paddle.to_tensor(((1 << 21) - 1), dtype=paddle.int32)) != 0
         round_inc = guard & (sticky.to(paddle.int32) | lsb_keep)
         e2m1_tmp = right_shift_unsigned(((exponents << 2) | m2bits) + round_inc, 1)
-        e2m1_tmp = paddle.minimum(e2m1_tmp, paddle.tensor(paddle.to_tensor(0x7), device=device))
+        e2m1_tmp = paddle.minimum(e2m1_tmp, paddle.to_tensor(0x7, place=place, dtype=paddle.int32))
         e2m1_value = (right_shift_unsigned(signs, 28) | e2m1_tmp).to(paddle.uint8)  # shape: (..., even_axis_shape)
 
         # Pack pairs of 4-bit values along the last dimension.
@@ -658,24 +665,126 @@ def upcast_from_mxfp_paddle(tensor: paddle.Tensor, scale: paddle.Tensor, target_
         fp32_tensor = cvt_e2m1_to_fp32(tensor)
     else:
         fp32_tensor = tensor.to(paddle.float32)
-
     logical_quant_dim = tensor.shape[-1] * (2 if tensor.dtype == paddle.uint8 else 1)
-    axis_shape = fp32_tensor.size(-1)
+    axis_shape = fp32_tensor.shape[-1]
     padded_axis_shape = triton.cdiv(logical_quant_dim, MXFP_BLOCK_SIZE) * MXFP_BLOCK_SIZE
     pad_size = padded_axis_shape - axis_shape
-    padded_tensor = F.pad(fp32_tensor, (0, pad_size))
-
+    print("fp32_tensor = ", fp32_tensor.shape)
+    padded_tensor = F.pad(fp32_tensor, (0, int(pad_size)))
+    print("padded_tensor = ", padded_tensor.shape)
     new_axis_shape = padded_tensor.shape[-1]
-    new_shape = padded_tensor.shape[:-1] + (new_axis_shape // MXFP_BLOCK_SIZE, MXFP_BLOCK_SIZE)
+    print("new_axis_shape = ", new_axis_shape)
+    new_shape = padded_tensor.shape[:-1] + [int(new_axis_shape // MXFP_BLOCK_SIZE), int(MXFP_BLOCK_SIZE)]
+
     padded_tensor = padded_tensor.view(*new_shape)
-    dq_scale_padded = dq_scale.unsqueeze(-1)  # shape: [..., ceil(axis_shape/32), 1]
+    dq_scale_padded = dq_scale.view(*new_shape[:-1])
+    dq_scale_padded = dq_scale_padded.unsqueeze(-1)  # shape: [..., ceil(axis_shape/32), 1]
     out_padded = padded_tensor * dq_scale_padded
-
+    print("out_padded = ", out_padded.shape)
     # Flatten back and remove the padded tail
-    out_padded = out_padded.view(*fp32_tensor.shape[:-1], new_axis_shape)
+    out_padded = out_padded.view(*padded_tensor.shape[:-2], new_axis_shape)
     out_tensor = out_padded[..., :axis_shape]
-
+    print("out_tensor ", out_tensor.shape)
     out_tensor = out_tensor.to(target_dtype).contiguous()
     out_tensor = out_tensor.transpose(axis, tensor.ndim - 1)
 
     return out_tensor
+
+
+FP4_VALUES = [
+    +0.0,
+    +0.5,
+    +1.0,
+    +1.5,
+    +2.0,
+    +3.0,
+    +4.0,
+    +6.0,
+    -0.0,
+    -0.5,
+    -1.0,
+    -1.5,
+    -2.0,
+    -3.0,
+    -4.0,
+    -6.0,
+]
+
+
+def convert_moe_packed_tensors(
+    blocks,
+    scales,
+    *,
+    dtype: paddle.dtype = paddle.bfloat16,
+    rows_per_chunk: int = 32768 * 1024,  # TODO these values are not here by mistake ;)
+) -> paddle.Tensor:
+    """
+    Convert the mxfp4 weights again, dequantizing and makes them compatible with the forward
+    pass of GPT_OSS.
+    """
+    import math
+
+    # # Check if blocks and scales are on CPU, and move to GPU if so
+    # if not blocks.is_cuda and paddle.cuda.is_available():
+    #     blocks = blocks.cuda()
+    #     scales = scales.cuda()
+
+    scales = scales.to(paddle.int32) - 127  # TODO that's because 128=2**7
+
+    assert blocks.shape[:-1] == scales.shape, f"{blocks.shape[:-1]=} does not match {scales.shape=}"
+
+    lut = paddle.to_tensor(FP4_VALUES, dtype=dtype, place=blocks.place)
+
+    *prefix_shape, G, B = blocks.shape
+    rows_total = math.prod(prefix_shape) * G
+
+    blocks = blocks.reshape(rows_total, B)
+    scales = scales.reshape(rows_total, 1)
+
+    out = paddle.empty(rows_total, B * 2, dtype=dtype)
+    for r0 in range(0, rows_total, rows_per_chunk):
+        r1 = min(r0 + rows_per_chunk, rows_total)
+        blk = blocks[r0:r1]
+        exp = scales[r0:r1]
+
+        # nibble indices -> int64
+        idx_lo = (blk & paddle.to_tensor(0x0F, dtype=paddle.uint8)).to(paddle.int64)
+        idx_hi = (blk >> 4).to(paddle.int64)
+        sub = out[r0:r1]
+
+        sub[:, 0::2] = lut[idx_lo]
+        sub[:, 1::2] = lut[idx_hi]
+
+        out[r0:r1] = paddle.ldexp(sub, exp)
+        del idx_lo, idx_hi, blk, exp, sub
+
+    out = out.reshape(*prefix_shape, G, B * 2).view(*prefix_shape, G * B * 2)
+    del blocks, scales, lut
+    return out.transpose(1, 2).contiguous()
+
+
+def upcast_dict(param_origin_dict):
+    logger.info("len of dict is : ", len(param_origin_dict))
+    remove_list = []
+    param_new_dict = {}
+
+    logger.info("lenparam_origin_dict :", len(param_origin_dict))
+    for key, block_value in param_origin_dict.items():
+        if key.endswith("blocks"):
+            scale_key = key
+            scale_key = scale_key.replace("blocks", "scales")
+            assert scale_key in param_origin_dict.keys(), f"{scale_key} not in param_origin_dict.keys()"
+
+            scale_value = param_origin_dict[scale_key]
+
+            bf16_key = key[: -len("_blocks")]
+            # bf16_value = upcast_from_mxfp_paddle(block_value, scale_value, paddle.uint8, axis=1)
+            bf16_value = convert_moe_packed_tensors(block_value, scale_value)
+            param_new_dict[bf16_key] = bf16_value
+            remove_list.append(scale_key)
+            remove_list.append(key)
+
+    for key in remove_list:
+        param_origin_dict.pop(key)
+
+    param_origin_dict.update(param_new_dict)
