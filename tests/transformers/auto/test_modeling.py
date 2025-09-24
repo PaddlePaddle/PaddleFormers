@@ -45,7 +45,7 @@ from ..llama.test_modeling import LlamaModelTester
 class AutoModelTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.model = AutoModel.from_pretrained("test_paddleformers/tiny-random-llama")
+        cls.model = AutoModel.from_pretrained("Paddleformers/tiny-random-llama")
 
     def test_from_pretrained_local(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -67,7 +67,7 @@ class AutoModelTest(unittest.TestCase):
             self.assertIsInstance(reloaded_model, LlamaModel)
 
     def test_model_from_pretrained_cache_dir(self):
-        model_name = "test_paddleformers/tiny-random-llama"
+        model_name = "Paddleformers/tiny-random-llama"
         with tempfile.TemporaryDirectory() as tempdir:
             AutoModel.from_pretrained(model_name, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))
@@ -86,7 +86,7 @@ class AutoModelTest(unittest.TestCase):
     # @unittest.skip("skipping due to connection error!")
     @set_proxy(DownloadSource.AISTUDIO)
     def test_from_aistudio(self):
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-llama", download_hub="aistudio")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
         self.assertIsInstance(model, LlamaModel)
 
     # @unittest.skip("skipping due to connection error!")

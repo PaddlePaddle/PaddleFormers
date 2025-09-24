@@ -114,7 +114,7 @@ class TestVeraModel(unittest.TestCase):
         )
         # turn off plm dropout for to test train vs test
         model = AutoModel.from_pretrained(
-            "test_paddleformers/tiny-random-bert",
+            "Paddleformers/tiny-random-bert",
             hidden_dropout_prob=0,
             attention_probs_dropout_prob=0,
         )
@@ -145,7 +145,7 @@ class TestVeraModel(unittest.TestCase):
                 r=4,
                 vera_alpha=4,
             )
-            model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
             vera_model = VeRAModel(model, vera_config)
             vera_model.eval()
             original_results = vera_model(input_ids)
@@ -167,20 +167,20 @@ class TestVeraModel(unittest.TestCase):
             r=4,
             vera_alpha=4,
         )
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         vera_model = VeRAModel(model, vera_config)
         with self.assertRaises(NotImplementedError):
             vera_model.restore_original_model()
 
     def test_vera_module_raise_exception(self):
         vera_config = VeRAConfig(target_modules=[".*norm1.*"], r=4, vera_alpha=4)
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         with self.assertRaises(ValueError):
             VeRAModel(model, vera_config)
 
     def test_pissa_raise_exception(self):
         vera_config = VeRAConfig(target_modules=[".*q_proj.*"], r=4, vera_alpha=8, pissa_init=True)
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         with self.assertRaises(AssertionError):
             VeRAModel(model, vera_config)
 
