@@ -306,14 +306,14 @@ class AlltoAllSmart(paddle.autograd.PyLayer):
                 ]
                 alltoall_shape = [i.shape[0] for i in recv_mask_alltoall_out]
 
-                recv_mask_alltoall_out = paddle.concat(recv_mask_alltoall_out, 0)
+                recv_mask_alltoall_out = paddle.cat(recv_mask_alltoall_out, 0)
                 distributed_input_to_alltoall_out = paddle.maximum(
                     recv_mask_alltoall_out.cumsum() - 1,
                     paddle.zeros([1], dtype=recv_mask_alltoall_out.dtype),
                 )
                 distributed_input_to_alltoall_out = distributed_input_to_alltoall_out.split(alltoall_shape)
 
-                distributed_input_to_alltoall_out = paddle.concat(
+                distributed_input_to_alltoall_out = paddle.cat(
                     [
                         distributed_input_to_alltoall_out[
                             (iexpert % num_local_experts) * world_size + (iexpert // num_local_experts)
@@ -503,7 +503,7 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
 
                 no_tokens_expert_outputs.append(expert_out * 0.0)
 
-        all_processed_inputs = paddle.concat(processed_inputs, axis=0) if processed_inputs else dummy_input
+        all_processed_inputs = paddle.cat(processed_inputs, axis=0) if processed_inputs else dummy_input
 
         if no_tokens_expert_outputs:
             if all_processed_inputs.shape[0] > 0:
@@ -523,9 +523,9 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
                 for j_rank in range(world_size):
                     in_tensors_by_rank[j_rank].append(splits[j_rank])
 
-        in_tensor_list = [paddle.concat(tensors, 0) if tensors else dummy_input for tensors in in_tensors_by_rank]
+        in_tensor_list = [paddle.cat(tensors, 0) if tensors else dummy_input for tensors in in_tensors_by_rank]
 
-        all_to_all_input = paddle.concat(in_tensor_list, 0)
+        all_to_all_input = paddle.cat(in_tensor_list, 0)
         send_counts_for_api = [t.shape[0] for t in in_tensor_list]
 
         recv_counts_tensor = paddle.to_tensor(recv_counts)
@@ -570,13 +570,13 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
                     for iexpert in range(world_size * num_local_experts)
                 ]
                 alltoall_shape = [i.shape[0] for i in recv_mask_alltoall_out]
-                recv_mask_alltoall_out = paddle.concat(recv_mask_alltoall_out, 0)
+                recv_mask_alltoall_out = paddle.cat(recv_mask_alltoall_out, 0)
                 distributed_input_to_alltoall_out = paddle.maximum(
                     recv_mask_alltoall_out.cumsum() - 1,
                     paddle.zeros([1], dtype=recv_mask_alltoall_out.dtype),
                 )
                 distributed_input_to_alltoall_out = distributed_input_to_alltoall_out.split(alltoall_shape)
-                distributed_input_to_alltoall_out = paddle.concat(
+                distributed_input_to_alltoall_out = paddle.cat(
                     [
                         distributed_input_to_alltoall_out[
                             (iexpert % num_local_experts) * world_size + (iexpert // num_local_experts)
@@ -602,8 +602,8 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
         output_chunks = []
         for i_expert in range(num_local_experts):
             if recv_counts_num[i_expert] > 0:
-                output_chunks.append(paddle.concat(chunks_by_expert[i_expert], 0))
-        output = paddle.concat(output_chunks, 0) if output_chunks else dummy_input
+                output_chunks.append(paddle.cat(chunks_by_expert[i_expert], 0))
+        output = paddle.cat(output_chunks, 0) if output_chunks else dummy_input
 
         return output, router_loss, distributed_input_to_alltoall_out
 
@@ -631,11 +631,9 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
                 splits = expert_grad.split(send_counts_bw[i_expert].tolist(), 0)
                 for j_rank in range(world_size):
                     in_tensors_by_rank_bw[j_rank].append(splits[j_rank])
-        in_tensor_list_bw = [
-            paddle.concat(tensors, 0) if tensors else dummy_input for tensors in in_tensors_by_rank_bw
-        ]
+        in_tensor_list_bw = [paddle.cat(tensors, 0) if tensors else dummy_input for tensors in in_tensors_by_rank_bw]
 
-        all_to_all_grad_input = paddle.concat(in_tensor_list_bw, 0)
+        all_to_all_grad_input = paddle.cat(in_tensor_list_bw, 0)
         send_counts_bw_for_api = [t.shape[0] for t in in_tensor_list_bw]
 
         recv_counts_bw = ctx.send_counts
@@ -676,7 +674,7 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
         for i_expert in range(num_local_experts):
             num_tokens = ctx.send_counts_num[i_expert]
             if num_tokens > 0:
-                reconstructed_grad = paddle.concat(grad_chunks_by_expert[i_expert], 0)
+                reconstructed_grad = paddle.cat(grad_chunks_by_expert[i_expert], 0)
                 if i_expert in ctx.bw_funcs:
                     (final_grad,) = ctx.bw_funcs[i_expert](reconstructed_grad)
                 else:

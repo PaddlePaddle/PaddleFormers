@@ -321,7 +321,7 @@ class SFTTrainer(Trainer):
                 model_parallel_group = hcg.get_model_parallel_group()
                 gathered_logits = []
                 dist.all_gather(gathered_logits, logits, group=model_parallel_group)
-                logits = paddle.concat(gathered_logits, axis=-1)
+                logits = paddle.cat(gathered_logits, axis=-1)
             return (loss, logits.argmax(axis=-1, keepdim=True), labels)
 
         loss = None

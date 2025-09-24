@@ -241,7 +241,7 @@ def cal_dpo_loss(
         rejected_logratios = policy_rejected_logps - reference_rejected_logps
         # As described in the KTO report, the KL term for chosen (rejected) is
         # estimated using the rejected (chosen) half.
-        loss = paddle.concat(
+        loss = paddle.cat(
             (
                 1 - F.sigmoid(self.dpo_config.beta * (chosen_logratios - rejected_KL)),
                 1 - F.sigmoid(self.dpo_config.beta * (chosen_KL - rejected_logratios)),

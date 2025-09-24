@@ -56,7 +56,7 @@ def _nested_gather(self, tensors):
     if local_rank != -1:
         output_tensors = []
         paddle.distributed.all_gather(output_tensors, paddle.tile(tensors, repeat_times=[1, 1]), group=self.comm_group)
-        tensors = paddle.concat(output_tensors, axis=0)
+        tensors = paddle.cat(output_tensors, axis=0)
     return tensors
 
 
@@ -212,7 +212,7 @@ def kto_loss(
     else:
         rejected_logratios = policy_rejected_logps - reference_rejected_logps
         rejected_losses = 1 - F.sigmoid(self.config.kto_config.beta * (kl - rejected_logratios))
-    losses = paddle.concat(
+    losses = paddle.cat(
         (
             self.config.kto_config.desirable_weight * chosen_losses,
             self.config.kto_config.undesirable_weight * rejected_losses,

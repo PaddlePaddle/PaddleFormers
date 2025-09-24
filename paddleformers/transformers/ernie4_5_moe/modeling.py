@@ -110,7 +110,7 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
         sinusoid_inp = position_ids.unsqueeze(-1).astype("float32") * indices.unsqueeze(
             0
         )  # [b, s, 1] * [1, d/2] -> [b, s, d/2]
-        emb = paddle.concat((sinusoid_inp, sinusoid_inp), axis=-1)
+        emb = paddle.cat((sinusoid_inp, sinusoid_inp), axis=-1)
         cos = emb.cos()
         sin = emb.sin()
 
@@ -916,7 +916,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     hidden_states = GatherOp.apply(hidden_states)
                     hidden_states = hidden_states.reshape([-1, seq_length, hidden_states.shape[-1]])
 
-                inputs_embeds_cur_depth = paddle.concat(
+                inputs_embeds_cur_depth = paddle.cat(
                     [
                         inputs_embeds_ori[:, (depth + 1) :, :],
                         inputs_embeds_extra[:, : (depth + 1), :],
@@ -934,7 +934,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     ]
 
                 if attn_mask_startend_row_indices is not None:
-                    attn_mask_startend_row_indices = paddle.concat(
+                    attn_mask_startend_row_indices = paddle.cat(
                         [
                             attn_mask_startend_row_indices_ori[:, :, (depth + 1) :],
                             attn_mask_startend_row_indices_extra[:, :, : (depth + 1)],
@@ -942,7 +942,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                         axis=-1,
                     )
                 if position_ids is not None:
-                    position_ids = paddle.concat(
+                    position_ids = paddle.cat(
                         [
                             position_ids_ori[:, (depth + 1) :],
                             position_ids_extra[:, : (depth + 1)],
@@ -950,7 +950,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                         axis=1,
                     )
 
-                nbatch_pack_offset_cur_depth = paddle.concat(
+                nbatch_pack_offset_cur_depth = paddle.cat(
                     [
                         nbatch_pack_offset_ori[:, (depth + 1) :],
                         nbatch_pack_offset_extra[:, : (depth + 1)],
@@ -964,7 +964,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 hidden_states_norm = self.mtp_hidden_norm[depth](hidden_states)
 
                 inputs_embeds_cur_depth = self.mtp_linear_proj[depth](
-                    paddle.concat([inputs_embeds_cur_depth_norm, hidden_states_norm], axis=-1)
+                    paddle.cat([inputs_embeds_cur_depth_norm, hidden_states_norm], axis=-1)
                 )
 
                 if self.config.sequence_parallel:

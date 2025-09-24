@@ -634,18 +634,18 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         # update position_ids
         if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
             position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
+            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
 
         if not is_encoder_decoder and "attention_mask" in model_kwargs:
             # TODO: support attention mask for other models
             attention_mask = model_kwargs["attention_mask"]
             if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )
             elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )[:, :, -1:, :]

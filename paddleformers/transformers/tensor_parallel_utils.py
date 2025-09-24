@@ -272,7 +272,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
                     logits_chunk_cast,
                     group=model_parallel_group,
                 )
-                logits_chunk_cast = paddle.concat(logits_chunk_cast_lst, axis=-1)
+                logits_chunk_cast = paddle.cat(logits_chunk_cast_lst, axis=-1)
             logits_chunk = logits_chunk_cast.astype("float32")
 
             # log softmax
@@ -512,7 +512,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
                     logits_chunk_cast,
                     group=model_parallel_group,
                 )
-                logits_chunk_cast = paddle.concat(logits_chunk_cast_lst, axis=-1)
+                logits_chunk_cast = paddle.cat(logits_chunk_cast_lst, axis=-1)
             logits_chunk = logits_chunk_cast.astype("float32")
 
             # log softmax

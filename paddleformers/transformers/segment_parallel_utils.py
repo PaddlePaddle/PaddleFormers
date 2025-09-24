@@ -79,7 +79,7 @@ def _reshard_qkv(x, group, split_axis=2, concat_axis=0):
     comm_tensor_list = paddle.split(x, nranks, axis=split_axis)
     output_list = [paddle.empty_like(comm_tensor_list[0]) for _ in comm_tensor_list]
     dist.alltoall(output_list, comm_tensor_list, group=group)
-    reshard_tensor = paddle.concat(output_list, axis=concat_axis)
+    reshard_tensor = paddle.cat(output_list, axis=concat_axis)
 
     return reshard_tensor
 

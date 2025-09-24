@@ -176,7 +176,7 @@ class TestAttentionInterface(unittest.TestCase):
         # Step 5: Prepare and concatenate the sink logits. The sink is a special token
         # that every other token can attend to, preventing the attention from collapsing.
         sinks = sink.reshape(shape=[1, -1, 1, 1]).expand(shape=[query_states.shape[0], -1, query_states.shape[-2], -1])
-        combined_logits = paddle.concat(x=[attn_weights, sinks], axis=-1)
+        combined_logits = paddle.cat(x=[attn_weights, sinks], axis=-1)
 
         # Step 6: Apply softmax over the combined logits (scores + sink)
         combined_logits = combined_logits - paddle.max(combined_logits, axis=-1, keepdim=True)
