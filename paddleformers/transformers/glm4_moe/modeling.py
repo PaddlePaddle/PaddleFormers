@@ -292,7 +292,7 @@ class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
 
         self.weight = paddle.create_parameter(
             shape=[num_experts, expert_hidden_size],
-            dtype="bfloat16",
+            dtype="float32",
             default_initializer=paddle.nn.initializer.Uniform(),
         )
 
