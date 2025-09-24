@@ -26,7 +26,7 @@ class TestMergeModel(unittest.TestCase):
     @parameterized.expand([("slerp",), ("della",), ("dare_linear",), ("ties",)])
     def test_merge_model_np(self, merge_method):
         with TemporaryDirectory() as tempdir:
-            model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert", dtype="bfloat16")
+            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert", dtype="bfloat16")
             pd_path = os.path.join(tempdir, "pd_model")
             model.save_pretrained(pd_path)
             safe_path = os.path.join(tempdir, "safe_model")
@@ -70,7 +70,7 @@ class TestMergeModel(unittest.TestCase):
     @parameterized.expand([("slerp",), ("della",), ("dare_linear",), ("ties",)])
     def test_merge_model_pd(self, merge_method):
         with TemporaryDirectory() as tempdir:
-            model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert", dtype="bfloat16")
+            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert", dtype="bfloat16")
             pd_path = os.path.join(tempdir, "pd_model")
             model.save_pretrained(pd_path)
             safe_path = os.path.join(tempdir, "safe_model")

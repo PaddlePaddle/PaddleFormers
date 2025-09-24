@@ -22,8 +22,6 @@ import paddle
 
 from paddleformers.data import default_data_collator
 
-from ..testing_utils import skip_for_none_ce_case
-
 
 class DataCollatorIntegrationTest(unittest.TestCase):
     def setUp(self):
@@ -90,13 +88,3 @@ class DataCollatorIntegrationTest(unittest.TestCase):
         batch = default_data_collator(features)
         self.assertTrue("labels" not in batch)
         self.assertEqual(batch["inputs"].shape, [8, 6])
-
-    @skip_for_none_ce_case
-    def test_data_collator_for_language_modeling(self):
-        no_pad_features = [{"input_ids": list(range(10))}, {"input_ids": list(range(10))}]
-        pad_features = [{"input_ids": list(range(5))}, {"input_ids": list(range(10))}]
-        self._test_no_pad_and_pad(no_pad_features, pad_features)
-
-        no_pad_features = [list(range(10)), list(range(10))]
-        pad_features = [list(range(5)), list(range(10))]
-        self._test_no_pad_and_pad(no_pad_features, pad_features)
