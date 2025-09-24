@@ -139,12 +139,29 @@ class MoEGateMixin:
         Returns:
             paddle.Tensor: The value of sequence auxiliary loss.
         """
-        batch_size, seq_len, _ = gates.shape
-        ce = paddle.zeros([batch_size, self.num_experts])
-        topk_idx = topk_idx.reshape([batch_size, -1])
-        ce.put_along_axis_(indices=topk_idx, values=paddle.ones([batch_size, seq_len * top_k]), axis=1, reduce="add")
-        ce = ce / (seq_len * top_k / self.num_experts)
-        aux_loss = (ce * paddle.mean(gates, axis=1)).sum(axis=1).mean()
+        if self.config.sequence_parallel:
+            # [bs * seq_len, dim]
+            max_sequence_length = self.config.max_sequence_length
+            local_batch_seq, num_experts = gates.shape
+            global_batch_seq = local_batch_seq * self.config.tensor_parallel_degree
+            local_batch_size = global_batch_seq // max_sequence_length
+            ce = paddle.zeros([local_batch_size, num_experts])
+            topk_idx = topk_idx.reshape([local_batch_size, -1])
+            ones = paddle.ones([local_batch_size, max_sequence_length * top_k // self.config.tensor_parallel_degree])
+            ce.put_along_axis_(indices=topk_idx, values=ones, axis=1, reduce="add")
+            ce = ce / (max_sequence_length * top_k / num_experts)
+            avg_gates = paddle.mean(gates, axis=0)  # [num_experts]
+            aux_loss = (ce * avg_gates).sum(axis=1).mean()
+        else:
+            # [bs, seq_len, dim]
+            batch_size, seq_len, num_experts = gates.shape
+            ce = paddle.zeros([batch_size, self.num_experts])
+            topk_idx = topk_idx.reshape([batch_size, -1])
+            ce.put_along_axis_(
+                indices=topk_idx, values=paddle.ones([batch_size, seq_len * top_k]), axis=1, reduce="add"
+            )
+            ce = ce / (seq_len * top_k / self.num_experts)
+            aux_loss = (ce * paddle.mean(gates, axis=1)).sum(axis=1).mean()
         return aux_loss
 
     def _cal_z_loss(self, logits) -> paddle.Tensor:
@@ -473,7 +490,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         gates: paddle.Tensor,
     ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """Implements TopKGating on logits."""
-        batch_size, seq_len, d_model = gates.shape
+        d_model = gates.shape[-1]
         gates_ori = gates
         gates = gates.reshape([-1, d_model])
 
@@ -553,7 +570,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
 
     def topkgating_nodrop(self, gates: paddle.Tensor):
         """Implements TopKGating on logits."""
-        batch_size, seq_len, d_model = gates.shape
+        d_model = gates.shape[-1]
         gates_ori = gates
         gates = gates.reshape([-1, d_model])
 
