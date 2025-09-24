@@ -353,6 +353,7 @@ class MoEFlexTokenLayer(nn.Layer):
             self.num_local_experts, self.moe_router_topk, self.moe_num_experts, moe_group
         )
         self.expert_parallel_degree = 1 if self.ep_size < 0 else self.ep_size
+        self.is_dummy_moe = False if self.expert_parallel_degree > 1 else True
         self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
             self.moe_num_experts, self.expert_parallel_degree
         )
@@ -363,6 +364,14 @@ class MoEFlexTokenLayer(nn.Layer):
             else:
                 self.experts.append(None)
         self.gate = gate
+        self._post_init()
+
+    def _post_init(self):
+        for k in self.experts:
+            if k is not None:
+                for p in k.parameters():
+                    p.expert = not self.is_dummy_moe
+                    p.no_sync = not self.is_dummy_moe
 
     def expert_forward(self, dispatched_input, tokens_per_expert):
         outputs = []
@@ -380,8 +389,6 @@ class MoEFlexTokenLayer(nn.Layer):
         return paddle.cat(outputs, axis=0)
 
     def forward(self, hidden_states: paddle.Tensor):
-        _, _, d_model = hidden_states.shape
-        # reshaped_input = hidden_states.reshape([-1, d_model])
         probs, routing_map, l_aux, l_zloss = self.gate(hidden_states)
         (dispatched_input, tokens_per_expert) = self.token_dispatcher.token_permutation(
             hidden_states, probs, routing_map
