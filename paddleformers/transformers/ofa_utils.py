@@ -42,8 +42,8 @@ def prepare_qkv_ofa(self, query, key, value, cache=None):
 
     if isinstance(cache, self.Cache):
         # for decoder self-attention in inference
-        k = paddle.concat([cache.k, k], axis=2)
-        v = paddle.concat([cache.v, v], axis=2)
+        k = paddle.cat([cache.k, k], axis=2)
+        v = paddle.cat([cache.v, v], axis=2)
         cache = self.Cache(k, v)
 
     return (q, k, v) if cache is None else (q, k, v, cache)

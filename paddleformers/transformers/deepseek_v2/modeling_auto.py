@@ -106,7 +106,7 @@ def scaled_dot_product_attention(
             [bsz, kv_seq_len, v_num_heads, head_dim - v_head_dim],
             dtype=value_states.dtype,
         )
-        value_states = paddle.concat([value_states, value_padding], axis=-1)
+        value_states = paddle.cat([value_states, value_padding], axis=-1)
 
         outputs = fusion_ops.fusion_flash_attention(
             query_states,
@@ -479,8 +479,8 @@ class DeepseekV2AttentionAuto(nn.Layer):
         sin = sin[None, :, None, :]
         q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids)
 
-        query_states = paddle.concat([q_nope, q_pe], axis=-1)
-        key_states = paddle.concat([k_nope, k_pe.expand([bsz, q_len, self.num_heads, k_pe.shape[-1]])], axis=-1)
+        query_states = paddle.cat([q_nope, q_pe], axis=-1)
+        key_states = paddle.cat([k_nope, k_pe.expand([bsz, q_len, self.num_heads, k_pe.shape[-1]])], axis=-1)
 
         # key_states[:, :, :, : self.qk_nope_head_dim] = k_nope
         # key_states[:, :, :, self.qk_nope_head_dim :] = k_pe
@@ -488,8 +488,8 @@ class DeepseekV2AttentionAuto(nn.Layer):
         # [bs, seq_len, num_head, head_dim]
         if past_key_value is not None:
             # reuse k, v, self_attention
-            key_states = paddle.concat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
         has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
@@ -674,7 +674,7 @@ class DeepseekV2MTPLayerAuto(DeepseekV2DecoderLayerAuto):
         hidden_states = self.hnorm(hidden_states)
         nextn_hidden_state = self.enorm(nextn_hidden_state)
 
-        hidden_states = self.eh_proj(paddle.concat([hidden_states, nextn_hidden_state], axis=-1))
+        hidden_states = self.eh_proj(paddle.cat([hidden_states, nextn_hidden_state], axis=-1))
 
         layer_outputs = super(DeepseekV2MTPLayerAuto, self).forward(
             hidden_states,
@@ -994,7 +994,7 @@ class DeepseekV2ModelAuto(DeepseekV2PretrainedModelAuto):
                 decoder_layer = self.layers[nextn + self.config.num_hidden_layers]
 
                 # 构建输入向量
-                inputs_embeds_cur_depth = paddle.concat(
+                inputs_embeds_cur_depth = paddle.cat(
                     [inputs_embeds_ori[:, (nextn + 1) :, :], inputs_embeds_extra[:, : (nextn + 1), :]], axis=1
                 )
 
@@ -1218,18 +1218,18 @@ class DeepseekV2ForCausalLMAuto(DeepseekV2PretrainedModelAuto):
         # update position_ids
         if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
             position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
+            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
 
         if not is_encoder_decoder and "attention_mask" in model_kwargs:
             # TODO: support attention mask for other models
             attention_mask = model_kwargs["attention_mask"]
             if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )
             elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )[:, :, -1:, :]

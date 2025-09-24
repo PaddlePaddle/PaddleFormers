@@ -343,7 +343,7 @@ def _make_causal_mask(input_ids_shape, past_key_values_length):
 
     if past_key_values_length > 0:
         # [tgt_len, tgt_len + past_len]
-        mask = paddle.concat([paddle.ones([target_length, past_key_values_length], dtype="bool"), mask], axis=-1)
+        mask = paddle.cat([paddle.ones([target_length, past_key_values_length], dtype="bool"), mask], axis=-1)
 
     # [bs, 1, tgt_len, tgt_len + past_len]
     return mask[None, None, :, :].expand([batch_size, 1, target_length, target_length + past_key_values_length])
@@ -436,11 +436,11 @@ class LlamaRotaryEmbedding(nn.Layer):
             freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         # [seq_len, dim]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         # [1, seqlen, 1, dim]
         self.cos_cached = emb.cos()[None, :, None, :]
         self.sin_cached = emb.sin()[None, :, None, :]
-        self.cos_sin_table = None if get_env_device() != "gcu" else paddle.concat([freqs.cos(), freqs.sin()], axis=-1)
+        self.cos_sin_table = None if get_env_device() != "gcu" else paddle.cat([freqs.cos(), freqs.sin()], axis=-1)
 
     def forward(self, x, seq_len=None):
         # x: [bs, num_attention_heads, seq_len, head_size]
@@ -479,11 +479,11 @@ class LlamaLinearScalingRotaryEmbedding(LlamaRotaryEmbedding):
             freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         # [seq_len, dim]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         # [1, seqlen, 1, dim]
         self.cos_cached = emb.cos()[None, :, None, :]
         self.sin_cached = emb.sin()[None, :, None, :]
-        self.cos_sin_table = None if get_env_device() != "gcu" else paddle.concat([freqs.cos(), freqs.sin()], axis=-1)
+        self.cos_sin_table = None if get_env_device() != "gcu" else paddle.cat([freqs.cos(), freqs.sin()], axis=-1)
 
 
 class LlamaNTKScalingRotaryEmbedding(LlamaRotaryEmbedding):
@@ -512,11 +512,11 @@ class LlamaDynamicNTKScalingRotaryEmbedding(LlamaRotaryEmbedding):
         freqs = paddle.einsum("i,j->ij", t, inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         # [seq_len, dim]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         # [1, seqlen, 1, dim]
         scale_cos = emb.cos()[None, :, None, :]
         scale_sin = emb.sin()[None, :, None, :]
-        scale_cos_sin = None if get_env_device() != "gcu" else paddle.concat([freqs.cos(), freqs.sin()], axis=-1)
+        scale_cos_sin = None if get_env_device() != "gcu" else paddle.cat([freqs.cos(), freqs.sin()], axis=-1)
         return scale_cos, scale_sin, scale_cos_sin
 
     def forward(self, x, seq_len=None):
@@ -584,7 +584,7 @@ def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.concat([-x2, x1], axis=-1)  # shape is the same as x
+    return paddle.cat([-x2, x1], axis=-1)  # shape is the same as x
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
@@ -1055,7 +1055,7 @@ class LlamaAttention(nn.Layer):
                 second_chunk_ids = paddle.arange(
                     (chunk_num - rank - 1) * chunk_size, (chunk_num - rank) * chunk_size, dtype="int64"
                 )
-                position_ids = paddle.concat([first_chunk_ids, second_chunk_ids]).expand((batch_size, seq_length))
+                position_ids = paddle.cat([first_chunk_ids, second_chunk_ids]).expand((batch_size, seq_length))
             if self.use_fused_rope:
                 query_states, key_states = fusion_ops.fusion_rope(
                     query_states,
@@ -1087,8 +1087,8 @@ class LlamaAttention(nn.Layer):
         # [bs, seq_len, num_head, head_dim]
         if past_key_value is not None:
             # reuse k, v, self_attention
-            key_states = paddle.concat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
             if self.config.immediate_clear_past_key_value:
                 past_key_value[0]._clear_data()
                 past_key_value[1]._clear_data()
@@ -1899,7 +1899,7 @@ class ConcatMaskedLoss(PyLayer):
         inputs = []
         paddle.distributed.all_gather(inputs, inp, group=group)
         with paddle.no_grad():
-            cat = paddle.concat(inputs, axis=axis)
+            cat = paddle.cat(inputs, axis=axis)
         ctx.args_axis = axis
         ctx.args_group = group
         return cat
@@ -2068,11 +2068,11 @@ class LlamaForCausalLM(LlamaPretrainedModel):
         # update position_ids
         if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
             position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
+            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
 
         if not is_encoder_decoder and "attention_mask" in model_kwargs and model_kwargs["attention_mask"] is not None:
             attention_mask = model_kwargs["attention_mask"]
-            model_kwargs["attention_mask"] = paddle.concat(
+            model_kwargs["attention_mask"] = paddle.cat(
                 [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)], axis=-1
             )
 

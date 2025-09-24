@@ -100,7 +100,7 @@ class AllGatherVarlenOp(PyLayer):
             input_shape = input.shape
             input_shape[0] = padding
             padding_tensor = paddle.empty(shape=input_shape, dtype=input.dtype)
-            input = paddle.concat([input, padding_tensor], axis=0)
+            input = paddle.cat([input, padding_tensor], axis=0)
         output = all_gather(input)
         output = paddle.take_along_axis(output, indices, axis=0)
 

@@ -39,7 +39,7 @@ from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Ernie4_5MLP
-from ...nn.moe.moe_alltoall_layer import MOEAlltoAllLayer
+from ...nn.moe.moe_allgather_layer import MOEAllGatherLayerV2
 from ...nn.moe.moe_block import MoEStatics
 from ...nn.moe.topk_gate import TopKGate
 from ...nn.moe.utils import _parse_moe_group
@@ -110,7 +110,7 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
         sinusoid_inp = position_ids.unsqueeze(-1).astype("float32") * indices.unsqueeze(
             0
         )  # [b, s, 1] * [1, d/2] -> [b, s, d/2]
-        emb = paddle.concat((sinusoid_inp, sinusoid_inp), axis=-1)
+        emb = paddle.cat((sinusoid_inp, sinusoid_inp), axis=-1)
         cos = emb.cos()
         sin = emb.sin()
 
@@ -214,7 +214,7 @@ class FakeMoERouterLoss(PyLayer):
         return out_grad, paddle.full(ctx.loss_shape, router_loss_grad_value, dtype=ctx.loss_dtype)
 
 
-class Ernie4_5_MoeSparseMoeBlock(MOEAlltoAllLayer):
+class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
     def __init__(self, config, layer_idx):
         # correction bias (yes it seems to be a typo with statics <> statistics)
         moe_num_experts = config.moe_num_experts
@@ -232,7 +232,7 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAlltoAllLayer):
             f"using moe-world-size: {config.moe_world_size} expert-per-device:{moe_num_experts_per_device}, moe_group={config.moe_group}"
         )
 
-        moe_statics = MoEStatics(config, layer_idx)
+        moe_statics = MoEStatics(config, layer_idx) if config.moe_use_aux_free else None
         experts = nn.LayerList([])
         moe_rank = paddle.distributed.get_rank(config.moe_group)
 
@@ -258,7 +258,8 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAlltoAllLayer):
             shared_experts = Ernie4_5_MoeMLP(
                 deepcopy(config), config.hidden_size, config.moe_intermediate_size * config.moe_num_shared_experts
             )
-
+        use_expert_out_alltoall = use_expert_out_alltoall = "alltoall" in config.moe_multimodal_dispatch_use_allgather
+        use_padding = "unpad" not in config.moe_multimodal_dispatch_use_allgather
         super().__init__(
             gate=gate,
             experts=experts,
@@ -271,6 +272,9 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAlltoAllLayer):
             group_experts=config.moe_group_experts,
             moe_statics=moe_statics,
             moe_num_experts=config.moe_num_experts,
+            use_expert_out_alltoall=use_expert_out_alltoall,
+            use_padding=use_padding,
+            dense_token_type=3,
         )
         self.norm_min = config.moe_norm_min
         self.num_experts = config.moe_num_experts
@@ -452,7 +456,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
         "up_proj",
         "down_proj",
         "gate",
-        "mtp_linear_proj.0",
+        "mtp_linear_proj\.\d+",
     ]
 
     @classmethod
@@ -522,7 +526,10 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                 # bias
                 if config.use_bias:
                     actions.update(
-                        {f"{cls.base_model_prefix}.layers.0.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                            for b in BIAS_KEYS
+                        }
                     )
             # MTP block
             if config.num_nextn_predict_layers > 0:
@@ -694,6 +701,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         attention_mask,
         attn_mask_startend_row_indices,
         position_ids,
+        position_embeddings,
         output_attentions,
         past_key_value,
         use_cache,
@@ -726,6 +734,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             attention_mask,
             attn_mask_startend_row_indices,
             position_ids,
+            position_embeddings,
             output_attentions,
             past_key_value,
             use_cache,
@@ -916,7 +925,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     hidden_states = GatherOp.apply(hidden_states)
                     hidden_states = hidden_states.reshape([-1, seq_length, hidden_states.shape[-1]])
 
-                inputs_embeds_cur_depth = paddle.concat(
+                inputs_embeds_cur_depth = paddle.cat(
                     [
                         inputs_embeds_ori[:, (depth + 1) :, :],
                         inputs_embeds_extra[:, : (depth + 1), :],
@@ -934,7 +943,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     ]
 
                 if attn_mask_startend_row_indices is not None:
-                    attn_mask_startend_row_indices = paddle.concat(
+                    attn_mask_startend_row_indices = paddle.cat(
                         [
                             attn_mask_startend_row_indices_ori[:, :, (depth + 1) :],
                             attn_mask_startend_row_indices_extra[:, :, : (depth + 1)],
@@ -942,7 +951,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                         axis=-1,
                     )
                 if position_ids is not None:
-                    position_ids = paddle.concat(
+                    position_ids = paddle.cat(
                         [
                             position_ids_ori[:, (depth + 1) :],
                             position_ids_extra[:, : (depth + 1)],
@@ -950,7 +959,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                         axis=1,
                     )
 
-                nbatch_pack_offset_cur_depth = paddle.concat(
+                nbatch_pack_offset_cur_depth = paddle.cat(
                     [
                         nbatch_pack_offset_ori[:, (depth + 1) :],
                         nbatch_pack_offset_extra[:, : (depth + 1)],
@@ -964,7 +973,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 hidden_states_norm = self.mtp_hidden_norm[depth](hidden_states)
 
                 inputs_embeds_cur_depth = self.mtp_linear_proj[depth](
-                    paddle.concat([inputs_embeds_cur_depth_norm, hidden_states_norm], axis=-1)
+                    paddle.cat([inputs_embeds_cur_depth_norm, hidden_states_norm], axis=-1)
                 )
 
                 if self.config.sequence_parallel:

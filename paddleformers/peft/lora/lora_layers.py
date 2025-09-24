@@ -176,7 +176,7 @@ class LoRALinear(nn.Linear):
             inv_freq = 1.0 / (10000 ** (paddle.arange(0, self.r, 2, dtype=paddle.float32) / self.r))
             t = paddle.arange(self.rb1, dtype=paddle.float32)
             freqs = t.unsqueeze(1) @ inv_freq.unsqueeze(0)
-            emb = paddle.concat([freqs, freqs], axis=-1)
+            emb = paddle.cat([freqs, freqs], axis=-1)
             self.cos = paddle.unsqueeze(paddle.cos(emb), axis=0).astype(self._dtype)
             self.sin = paddle.unsqueeze(paddle.sin(emb), axis=0).astype(self._dtype)
 
@@ -193,14 +193,14 @@ class LoRALinear(nn.Linear):
         # padding
         if self.in_features % r != 0:
             pad_size = r - self.in_features % r
-            x = paddle.concat([x, x[..., :pad_size]], axis=-1)
+            x = paddle.cat([x, x[..., :pad_size]], axis=-1)
             sum_inter += 1
 
         # reshape the input to apply RoPE
         in_x = x.reshape([*x.shape[:-1], sum_inter, r])
 
         # apply RoPE rotation
-        rh_in_x = paddle.concat([-in_x[..., r // 2 :], in_x[..., : r // 2]], axis=-1)
+        rh_in_x = paddle.cat([-in_x[..., r // 2 :], in_x[..., : r // 2]], axis=-1)
         in_x = in_x * self.cos + rh_in_x * self.sin
 
         # matmul with high rank matrix
@@ -212,7 +212,7 @@ class LoRALinear(nn.Linear):
             repeat_time = self.out_features // out_x.shape[-1]
             if self.out_features % out_x.shape[-1] != 0:
                 repeat_time += 1
-            out_x = paddle.concat([out_x] * repeat_time, axis=-1)[..., : self.out_features]
+            out_x = paddle.cat([out_x] * repeat_time, axis=-1)[..., : self.out_features]
 
         return out_x
 
@@ -232,7 +232,7 @@ class LoRALinear(nn.Linear):
             w = paddle.zeros([self.in_features + pad_size, self.in_features], dtype=lora_A.dtype)
 
             # create the weights after rotation
-            aw2 = paddle.concat([lora_A[:, r // 2 :], -lora_A[:, : r // 2]], axis=-1)
+            aw2 = paddle.cat([lora_A[:, r // 2 :], -lora_A[:, : r // 2]], axis=-1)
             # apply RoPE
             for i in range(self.rb1 - 1):
                 w[i * r : (i + 1) * r, i * r : (i + 1) * r] = aw2 * self.sin[:, i] + lora_A * self.cos[:, i]
@@ -244,7 +244,7 @@ class LoRALinear(nn.Linear):
                 w[i * r :, :pad_size] = (aw2 * self.sin[:, i] + lora_A * self.cos[:, i])[:, r - pad_size :]
             # reshape the weights
             if self.in_features < self.out_features:
-                w = paddle.concat([w] * self.rb2, axis=0)[: self.out_features]
+                w = paddle.cat([w] * self.rb2, axis=0)[: self.out_features]
             else:
                 w = w[: self.out_features]
             final_weight = w
