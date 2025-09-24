@@ -515,6 +515,50 @@ class PaddleTokenizerMixin:
                     query = self._encode_chat_inputs_openai_format(conversations)
         return query
 
+    def encode_chat_inputs_with_no_template(
+        self, conversations: List[List[str, str]] | Dict[str, Any], context_data: Dict[str, Any] = {}, **kwargs
+    ):
+        """
+        Args:
+            conversation (List[List[str, str]]): the conversation of data
+            context_data (Dict[str, Any]): the context data of conversation
+
+        Returns:
+            List[list[int], list[int]]: the pair of input_ids and target_ids
+        """
+        assert isinstance(conversations, dict)
+
+        conversation_dict = {} if "tools" not in conversations else {"tools": conversations["tools"]}
+        conversation_dict["messages"] = (
+            [conversations["messages"][0]] if conversations["messages"][0]["role"] == "system" else []
+        )
+
+        if conversations["messages"][0]["role"] == "system":
+            conversations["messages"] = conversations["messages"][1:]
+
+        cur_str = ""
+        conversation_ids = []
+        for idx in range(0, len(conversations["messages"]), 2):
+            conversation_id = []
+            conversation_dict["messages"].append(conversations["messages"][idx])
+            round_str = conversation_dict["messages"]
+            query = round_str[len(cur_str) :]
+            input_ids = self.convert_tokens_to_ids(self.tokenize(query))
+            conversation_id.append(input_ids)
+            cur_str = round_str
+
+            if idx + 1 < len(conversations["messages"]):
+                conversation_dict["messages"].append(conversations["messages"][idx + 1])
+                round_str = conversation_dict["messages"]
+                answer = round_str[len(cur_str) :]
+                output_ids = self.convert_tokens_to_ids(self.tokenize(answer))
+                conversation_id.append(output_ids)
+
+            conversation_ids.append(conversation_id)
+            conversation_dict["messages"] = []
+            cur_str = ""
+        return conversation_ids
+
     def decode_token(
         self,
         all_input_ids: List[int],
