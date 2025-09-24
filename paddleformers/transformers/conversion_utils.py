@@ -745,7 +745,7 @@ def get_tensor_parallel_split_func(tensor_parallel_degree, tensor_parallel_rank,
             return None
         if transpose:
             if isinstance(x, paddle.Tensor):
-                x = paddle.transpose(x, [1, 0])
+                x = paddle.transpose(x, [1, 0]).contiguous()
             else:
                 x = np.transpose(x, [1, 0])
         if is_old_qkv:
@@ -1252,7 +1252,7 @@ class ConversionMixin:
                     continue
                 for trans_key in transpose_weight_keys:
                     if re.search(f"\.{trans_key}\.weight$", key) or re.fullmatch(f"^{trans_key}\.weight$", key):
-                        state_dict[key] = state_dict.pop(key).transpose([-1, -2])
+                        state_dict[key] = state_dict.pop(key).transpose([-1, -2]).contiguous()
         return state_dict
 
     @classmethod

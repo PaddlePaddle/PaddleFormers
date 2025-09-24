@@ -397,7 +397,7 @@ def _load_part_state_dict(
 
     def _transpose_hf_weight(key, weight):
         if _is_need_transpose(key):
-            return weight.transpose([-1, -2])
+            return weight.transpose([-1, -2]).contiguous()
         return weight
 
     part_state_dict = {}
