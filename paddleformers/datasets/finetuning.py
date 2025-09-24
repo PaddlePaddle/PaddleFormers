@@ -83,6 +83,7 @@ def create_dataset(**dataset_config):
         packing=dataset_config["packing"],
         mix_strategy=dataset_config["mix_strategy"],
         encode_one_turn=dataset_config["encode_one_turn"],
+        use_template=dataset_config["use_template"],
     )
     return sequence_dataset
 
@@ -289,6 +290,7 @@ class SequenceDataset(IterableDataset):
         packing: bool = False,
         mix_strategy: str = "random",
         encode_one_turn: bool = True,
+        use_template: bool = True,
     ):
         """Initialize SequenceDataset.
 
@@ -319,6 +321,7 @@ class SequenceDataset(IterableDataset):
         self.packing = packing
         self.mix_strategy = mix_strategy
         self.encode_one_turn = encode_one_turn
+        self.use_template = use_template
         self.num_samples_each_epoch = num_samples_each_epoch
         self.reverse = True
 
@@ -536,12 +539,19 @@ class SequenceDataset(IterableDataset):
         Returns:
             Sequence: Processed sequence or None if invalid.
         """
-        if not self.tokenizer.chat_template:
-            self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
-        if example.is_function_call:
-            encoded_messages = self._postprocess_fc_sequence(example)
+        if self.use_template:
+            if not self.tokenizer.chat_template:
+                self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
+            if example.is_function_call:
+                encoded_messages = self._postprocess_fc_sequence(example)
+            else:
+                encoded_messages = self.tokenizer.encode_chat_inputs(
+                    example.request, encode_one_turn=self.encode_one_turn
+                )
         else:
-            encoded_messages = self.tokenizer.encode_chat_inputs(example.request, encode_one_turn=self.encode_one_turn)
+            encoded_messages = self.tokenizer.encode_chat_inputs_with_no_template(
+                example.request, encode_one_turn=self.encode_one_turn
+            )
 
         num_reserved_tokens_for_each_dialog = 1  # only break_turn_token or end_token
         num_reserved_tokens_for_each_turn = 8
@@ -585,26 +595,36 @@ class SequenceDataset(IterableDataset):
 
             return None
 
-        if self.begin_token_id is not None and self.end_of_response_id is not None:
-            # Maybe left truncated, so need to add begin_token
-            if tokens[0] != self.begin_token_id:
-                tokens = [self.begin_token_id] + tokens
-                loss_mask = [0] + loss_mask
+        if self.use_template:
+            if self.begin_token_id is not None and self.end_of_response_id is not None:
+                # Maybe left truncated, so need to add begin_token
+                if tokens[0] != self.begin_token_id:
+                    tokens = [self.begin_token_id] + tokens
+                    loss_mask = [0] + loss_mask
 
-            if len(tokens) > self.max_seq_len:
-                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
-            # Add EOS token at the end
-            del tokens[-1]
-            del loss_mask[-1]
-            labels = tokens[1:] + [self.tokenizer.eos_token_id]
+                # Add EOS token at the end
+                del tokens[-1]
+                del loss_mask[-1]
+                labels = tokens[1:] + [self.tokenizer.eos_token_id]
 
-            # end_of_response is a special token that indicates the end of the turn.
-            # end_token is a special token that indicates the end of the answer.
-            labels = [label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels]
+                # end_of_response is a special token that indicates the end of the turn.
+                # end_token is a special token that indicates the end of the answer.
+                labels = [
+                    label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
+                ]
+            else:
+                tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
+                labels = tokens[1:] + [-100]
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
         else:
-            tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
-            labels = tokens[1:] + [-100]
+            oral_tokens = tokens
+            tokens = oral_tokens[:-1]
+            labels = oral_tokens[1:]
+            loss_mask = loss_mask[1:]
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 

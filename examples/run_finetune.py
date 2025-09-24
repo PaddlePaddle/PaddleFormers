@@ -204,6 +204,7 @@ def main():
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
+        "use_template": data_args.use_template,
     }
 
     train_dataset = create_dataset_sft(
