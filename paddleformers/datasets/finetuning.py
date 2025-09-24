@@ -591,7 +591,7 @@ class SequenceDataset(IterableDataset):
                 if LOGGER_COUNT <= 5:
                     logger.warning(f"even one turn, example_output:'{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
             except Exception:
-                logger.warning(f"[SKIP] wrong example: {example}")
+                logger.warning("[SKIP] wrong example")
 
             return None
 
