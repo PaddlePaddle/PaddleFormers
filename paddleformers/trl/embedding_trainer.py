@@ -126,10 +126,10 @@ class EmbeddingTrainer(Trainer):
         # Step2: representation gradient computation and caching
         for i in range(len(self.accum_q_features)):
             self.accum_q_features[i].stop_gradient = False
-        q_reps = paddle.concat(self.accum_q_features, axis=0)
+        q_reps = paddle.cat(self.accum_q_features, axis=0)
         for i in range(len(self.accum_p_features)):
             self.accum_p_features[i].stop_gradient = False
-        p_reps = paddle.concat(self.accum_p_features, axis=0)
+        p_reps = paddle.cat(self.accum_p_features, axis=0)
 
         loss = self.loss_fn(q_reps, p_reps)
         if self.do_grad_scaling:

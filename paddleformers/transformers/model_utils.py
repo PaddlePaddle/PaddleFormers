@@ -255,7 +255,7 @@ def apply_chunking_to_forward(
         # apply forward fn to every tuple
         output_chunks = tuple(forward_fn(*input_tensors_chunk) for input_tensors_chunk in zip(*input_tensors_chunks))
         # concatenate output at same dimension
-        return paddle.concat(output_chunks, axis=chunk_dim)
+        return paddle.cat(output_chunks, axis=chunk_dim)
 
     return forward_fn(*input_tensors)
 
@@ -1567,7 +1567,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                             dtype=output_embeddings._dtype,
                             is_bias=True,
                         )
-                        new_bias = paddle.concat(
+                        new_bias = paddle.cat(
                             [old_bias, paddle.zeros([pad_length], dtype=output_embeddings.bias.dtype)]
                         )
                         output_embeddings.bias.set_value(new_bias)
