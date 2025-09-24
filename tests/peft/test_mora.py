@@ -101,7 +101,7 @@ class TestMoraModel(unittest.TestCase):
             head_dim=2,
             use_mora=True,
         )
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
         model.eval()
         original_results_1 = model(input_ids)
@@ -127,7 +127,7 @@ class TestMoraModel(unittest.TestCase):
         )
         # turn off plm dropout for to test train vs test
         model = AutoModel.from_pretrained(
-            "test_paddleformers/tiny-random-bert",
+            "Paddleformers/tiny-random-bert",
             hidden_dropout_prob=0,
             attention_probs_dropout_prob=0,
         )
@@ -159,7 +159,7 @@ class TestMoraModel(unittest.TestCase):
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
             mora_config = LoRAConfig(target_modules=[".*q_proj.*", ".*v_proj.*"], r=4, lora_alpha=8, use_mora=True)
-            model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
             mora_model = LoRAModel(model, mora_config)
             mora_model.eval()
             original_results = mora_model(input_ids)
@@ -177,7 +177,7 @@ class TestMoraModel(unittest.TestCase):
 
     def test_lora_module_raise_exception(self):
         mora_config = LoRAConfig(target_modules=[".*norm1.*"], r=4, lora_alpha=8, enable_lora_list=None, use_mora=True)
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         with self.assertRaises(ValueError):
             LoRAModel(model, mora_config)
 

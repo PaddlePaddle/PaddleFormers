@@ -349,22 +349,22 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_no_attention(self):
-        model = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama")
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 768]
+        expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
 
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [0.20443289, 0.18662477, -0.75216216],
-                    [0.37699354, -0.38747141, -1.21889985],
-                    [0.31100151, -0.40143669, -0.64101797],
+                    [-1.41304350, 0.50553894, 1.06899679],
+                    [-0.22070873, -0.05084248, -0.92472076],
+                    [-0.45478714, -1.70910871, 0.60857075],
                 ]
             ]
         )
@@ -372,21 +372,21 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_with_attention(self):
-        model = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama")
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 768]
+        expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [0.20443289, 0.18662477, -0.75216216],
-                    [0.37699354, -0.38747141, -1.21889985],
-                    [0.31100151, -0.40143669, -0.64101797],
+                    [-1.41304350, 0.50553894, 1.06899679],
+                    [-0.22070873, -0.05084248, -0.92472076],
+                    [-0.45478714, -1.70910871, 0.60857075],
                 ]
             ]
         )
@@ -394,7 +394,7 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
 
 class LlamaGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "test_paddleformers/micro-random-llama"
+    internal_testing_model = "Paddleformers/tiny-random-llama"
 
 
 # class LlamaCompatibilityTest(unittest.TestCase):
