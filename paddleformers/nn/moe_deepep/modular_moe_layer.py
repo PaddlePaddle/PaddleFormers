@@ -16,34 +16,28 @@ from __future__ import annotations
 
 import logging
 import os
-import paddle.nn.functional as F
 from typing import Any, Dict, Optional
 
 import paddle
 import paddle.distributed as dist
 from paddle import nn
 
-from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
+from ...transformers import PretrainedConfig
+from ..linear import Linear as GeneralLinear
 from .moe_communication import (
     DeepEPMoECommunication,
     MoECommunicationInterface,
     StandardMoECommunication,
 )
-from .moe_expert import MoEExpertInterface, StandardMoEExpert, Qwen2MLP
-from .moe_gate import PretrainedMoEGate
+from .moe_expert import MoEExpertInterface, Qwen2MoeMLP, StandardMoEExpert
+from .moe_gate import FlexibleMoEGate, PretrainedMoEGate
 from .moe_loss import LossCombiner, LossConfig, LossFunction, LossRegistry, LossType
-from ..linear import Linear as GeneralLinear
 
 logger = logging.getLogger(__name__)
 
 # 全局损失注册器实例
 loss_registry = LossRegistry()
 
-class Qwen2MoeMLP(Qwen2MLP):
-    def __init__(self, config: Qwen2MoeConfig, intermediate_size=None):
-        super().__init__(hidden_size=config.hidden_size, intermediate_size=intermediate_size, config=config)
-class Qwen3MoeMLP(Qwen2MoeMLP):
-    pass
 
 class ModularMoELayer(nn.Layer):
     """
@@ -113,13 +107,13 @@ class ModularMoELayer(nn.Layer):
         self._init_expert_parallel()
         # 创建门控网络
         if self.custom_gate is not None:
-            self.gate = custom_gate
+            self.gate = self.custom_gate
         elif self.use_flexible_loss:
             # 使用灵活损失系统
-            if loss_configs is None:
-                loss_configs = [
-                    LossConfig("auxiliary", LossType.AUXILIARY, weight=aux_loss_weight),
-                    LossConfig("z_loss", LossType.Z_LOSS, weight=z_loss_weight),
+            if self.loss_configs is None:
+                self.loss_configs = [
+                    LossConfig("auxiliary", LossType.AUXILIARY, weight=self.aux_loss_weight),
+                    LossConfig("z_loss", LossType.Z_LOSS, weight=self.z_loss_weight),
                 ]
             self.gate = FlexibleMoEGate(
                 hidden_size=self.hidden_size,
@@ -149,31 +143,25 @@ class ModularMoELayer(nn.Layer):
                 topk_method=self.topk_method,
                 drop_tokens=self.drop_tokens,
             )
-            # self.gate = GeneralLinear.create(config.hidden_size, config.num_experts, has_bias=False, linear_type="default")
 
         # 创建专家网络
         if self.custom_expert is not None:
             # 如果传入的是实例，直接使用
             if isinstance(self.custom_expert, MoEExpertInterface):
-                expert_class = type(cself.ustom_expert)
+                expert_class = type(self.custom_expert)
             else:
                 expert_class = self.custom_expert
         else:
-            expert_class = Qwen3MoeMLP
+            # expert_class = Qwen2MoeMLP
+            expert_class = StandardMoEExpert
 
         self.experts = nn.LayerList([])
         for i in range(self.num_experts):
             if i // self.num_experts_per_device == self.moe_rank:
-                # expert = expert_class(
-                #     hidden_size=self.hidden_size,
-                #     intermediate_size=self.moe_intermediate_size,
-                #     expert_activation=self.expert_activation,
-                #     expert_dropout=self.expert_dropout,
-                #     config=config,
-                # )
                 expert = expert_class(
-                    config,
+                    hidden_size=self.hidden_size,
                     intermediate_size=self.moe_intermediate_size,
+                    config=config,
                 )
                 self.experts.append(expert)
             else:
@@ -183,16 +171,10 @@ class ModularMoELayer(nn.Layer):
 
         # 创建共享专家
         if self.num_shared_experts > 0:
-            # self.shared_experts = expert_class(
-            #     hidden_size=self.hidden_size,
-            #     intermediate_size=self.moe_intermediate_size * self.num_shared_experts,
-            #     expert_activation=self.expert_activation,
-            #     expert_dropout=self.expert_dropout,
-            #     config=config,
-            # )
             expert = expert_class(
-                config,
+                hidden_size=self.hidden_size,
                 intermediate_size=self.moe_intermediate_size * self.num_shared_experts,
+                config=config,
             )
         else:
             self.shared_experts = None

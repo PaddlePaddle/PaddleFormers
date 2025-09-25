@@ -16,8 +16,18 @@ from abc import ABC, abstractmethod
 
 import paddle
 from paddle import nn
-from ...transformers import PretrainedConfig, linear_utils, Linear
+
+from ...transformers import Linear, PretrainedConfig, linear_utils
+from ...transformers.activations import ACT2FN
 from ...transformers.llama import fusion_ops
+from ...transformers.refined_recompute import (
+    RRColumnParallelLinear,
+    RRColumnSequenceParallelLinear,
+    RRRowParallelLinear,
+    RRRowSequenceParallelLinear,
+    get_skip_recompute_ops,
+    no_recompute,
+)
 
 
 class MoEExpertInterface(ABC):
@@ -52,43 +62,39 @@ class StandardMoEExpert(nn.Layer, MoEExpertInterface):
         self,
         hidden_size: int,
         intermediate_size: int,
-        expert_activation: str = "silu",
-        expert_dropout: float = 0.0,
         config: PretrainedConfig = None,
     ):
-        """
-        初始化标准MoE专家网络
-
-        Args:
-            hidden_size: 隐藏维度
-            intermediate_size: 中间维度
-            expert_activation: 专家激活函数 ("silu", "gelu", "relu")
-            expert_dropout: 专家dropout
-        """
         super().__init__()
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
-        self.expert_activation = expert_activation
-        self.expert_dropout = expert_dropout
+
+        self.skip_recompute_ops = config.get("skip_recompute_ops", {})
+        self.fuse_attention_ffn = config.get("skip_recompute_ops", False)
+        self.tensor_parallel_degree = config.get("tensor_parallel_degree", 1)
+        self.sequence_parallel = config.get("sequence_parallel", 1)
+        self.recompute = config.get("recompute", False)
+        self.recompute_use_reentrant = config.get("recompute_use_reentrant", False)
+        self.expert_activation = config.get("hidden_act", config.get("expert_activation", "silu"))
+        self.expert_dropout = config.get("expert_dropout", 0.0)
 
         # 创建MLP层
-        self.gate_proj = nn.Linear(hidden_size, intermediate_size)
-        self.up_proj = nn.Linear(hidden_size, intermediate_size)
-        self.down_proj = nn.Linear(intermediate_size, hidden_size)
+        self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias_attr=False)
+        self.up_proj = nn.Linear(hidden_size, intermediate_size, bias_attr=False)
+        self.down_proj = nn.Linear(intermediate_size, hidden_size, bias_attr=False)
 
         # 激活函数
-        if expert_activation == "silu":
+        if self.expert_activation == "silu":
             self.activation = paddle.nn.functional.silu
-        elif expert_activation == "gelu":
+        elif self.expert_activation == "gelu":
             self.activation = paddle.nn.functional.gelu
-        elif expert_activation == "relu":
+        elif self.expert_activation == "relu":
             self.activation = paddle.nn.functional.relu
         else:
             self.activation = paddle.nn.functional.silu
 
         # Dropout
-        if expert_dropout > 0.0:
-            self.dropout = nn.Dropout(expert_dropout)
+        if self.expert_dropout > 0.0:
+            self.dropout = nn.Dropout(self.expert_dropout)
         else:
             self.dropout = None
 
@@ -119,19 +125,17 @@ class StandardMoEExpert(nn.Layer, MoEExpertInterface):
 
         return output
 
+
 class Qwen2MLP(nn.Layer):
     def __init__(
-        self, 
+        self,
         hidden_size: int,
         intermediate_size: int,
-        expert_activation: str = "silu",
-        expert_dropout: float = 0.0,
         config: PretrainedConfig = None,
     ):
         super().__init__()
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
-        self.expert_activation = expert_activation
 
         self.skip_recompute_ops = config.get("skip_recompute_ops", {})
         self.fuse_attention_ffn = config.get("skip_recompute_ops", False)
@@ -139,6 +143,8 @@ class Qwen2MLP(nn.Layer):
         self.sequence_parallel = config.get("sequence_parallel", 1)
         self.recompute = config.get("recompute", False)
         self.recompute_use_reentrant = config.get("recompute_use_reentrant", False)
+        self.expert_activation = config.get("hidden_act", config.get("expert_activation", "silu"))
+        self.expert_dropout = config.get("expert_dropout", 0.0)
 
         if self.sequence_parallel:
             ColumnParallelLinear = linear_utils.ColumnSequenceParallelLinear
@@ -146,9 +152,9 @@ class Qwen2MLP(nn.Layer):
 
             # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
             if self.recompute and not self.recompute_use_reentrant:
-                if skip_recompute_ops.get("mlp_column_ln", False):
+                if self.skip_recompute_ops.get("mlp_column_ln", False):
                     ColumnParallelLinear = RRColumnSequenceParallelLinear
-                if skip_recompute_ops.get("mlp_row_ln", False):
+                if self.skip_recompute_ops.get("mlp_row_ln", False):
                     RowParallelLinear = RRRowSequenceParallelLinear
         else:
             ColumnParallelLinear = linear_utils.ColumnParallelLinear
@@ -156,9 +162,9 @@ class Qwen2MLP(nn.Layer):
 
             # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
             if self.recompute and not self.recompute_use_reentrant:
-                if skip_recompute_ops.get("mlp_column_ln", False):
+                if self.skip_recompute_ops.get("mlp_column_ln", False):
                     ColumnParallelLinear = RRColumnParallelLinear
-                if skip_recompute_ops.get("mlp_row_ln", False):
+                if self.skip_recompute_ops.get("mlp_row_ln", False):
                     RowParallelLinear = RRRowParallelLinear
 
         if self.tensor_parallel_degree > 1:
@@ -219,3 +225,13 @@ class Qwen2MLP(nn.Layer):
             x = self.act_fn(x) * y
 
         return self.down_proj(x)
+
+
+class Qwen2MoeMLP(Qwen2MLP):
+    def __init__(
+        self,
+        hidden_size: int,
+        intermediate_size: int,
+        config: PretrainedConfig = None,
+    ):
+        super().__init__(hidden_size=config.hidden_size, intermediate_size=config.moe_intermediate_size, config=config)
