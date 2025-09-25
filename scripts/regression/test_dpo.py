@@ -26,7 +26,7 @@ import yaml
 TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "PaddleFormers/tiny-random-qwen3"
+MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
@@ -119,7 +119,7 @@ class DPOTrainTest(unittest.TestCase):
             train_path,
             updated_config_path,
         ]
-        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=150)
 
         # test training result
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
@@ -153,7 +153,7 @@ class DPOTrainTest(unittest.TestCase):
             train_path,
             updated_config_path,
         ]
-        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=150)
 
         # test training result
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
@@ -177,7 +177,9 @@ class DPOTrainTest(unittest.TestCase):
             "--output_path",
             lora_merge_output_dir,
         ]
-        lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        lora_merge_p = subprocess.run(
+            lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=150
+        )
         self.dpotrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
