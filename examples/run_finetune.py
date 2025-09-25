@@ -204,6 +204,7 @@ def main():
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
         "use_template": data_args.use_template,
+        "only_train_last": data_args.only_train_last,
     }
 
     train_dataset = create_dataset_sft(

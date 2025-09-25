@@ -71,6 +71,7 @@ def create_dataset(**dataset_config):
         sub_dataset_type=sub_dataset_type,
         process_fn=process_example,
         process_fn_fc=process_fc,
+        only_train_last=dataset_config["only_train_last"],
     )
     sequence_dataset = SequenceDataset(
         dataset=example_dataset,
@@ -173,7 +174,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: 
     return input_dict
 
 
-def process_fc(data, input_file):
+def process_fc(data, input_file, only_train_last=False):
     multi_turns_messages = data["messages"]
     tools_list = data["tools"] if "tools" in data else None
     label = data["label"] if "label" in data else None
@@ -192,19 +193,30 @@ def process_fc(data, input_file):
                 label.append(1)
 
     assistant_index = 0
-    for index, turn in enumerate(multi_turns_messages):
-        if "assistant" in turn["role"] and label[assistant_index]:
-            message = copy.deepcopy(multi_turns_messages[: index + 1])
-            ex = Example(
-                request={"messages": message, "tools": tools_list},
-                system=system,
-                label=label,
-                is_system=is_system,
-                source=input_file,
-                is_function_call=True,
-            )
-            yield ex
-            assistant_index += 1
+    if only_train_last:
+        ex = Example(
+            request={"messages": multi_turns_messages, "tools": tools_list},
+            system=system,
+            label=label,
+            is_system=is_system,
+            source=input_file,
+            is_function_call=True,
+        )
+        return ex
+    else:
+        for index, turn in enumerate(multi_turns_messages):
+            if "assistant" in turn["role"] and label[assistant_index]:
+                message = copy.deepcopy(multi_turns_messages[: index + 1])
+                ex = Example(
+                    request={"messages": message, "tools": tools_list},
+                    system=system,
+                    label=label,
+                    is_system=is_system,
+                    source=input_file,
+                    is_function_call=True,
+                )
+                yield ex
+                assistant_index += 1
 
 
 def process_example(data, input_file):
