@@ -295,6 +295,7 @@ def main():
         data_collator=data_collator,
         do_generation=data_args.eval_with_do_generation,
         data_args=data_args,
+        callbacks=callbacks,
     )
     trainable_parameters = [
         p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)
