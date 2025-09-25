@@ -26,6 +26,11 @@ from paddleformers.transformers.bert.configuration import BertConfig
 from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import CONFIG_NAME
 from tests.testing_utils import set_proxy
+from tests.testing_utils import (
+    require_paddle_at_least_2_gpu,
+    require_paddle_at_least_8_gpu,
+    skip_for_none_ce_case,
+)
 
 from ...utils.test_module.custom_configuration import CustomConfig
 
@@ -79,6 +84,7 @@ class AutoConfigTest(unittest.TestCase):
     #     config = AutoConfig.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="text_encoder")
     #     self.assertEqual(config.hidden_size, 768)
 
+    @skip_for_none_ce_case
     def test_load_from_legacy_config(self):
         number = random.randint(0, 10000)
         legacy_config = {"init_class": "BertModel", "hidden_size": number}
@@ -119,6 +125,7 @@ class AutoConfigTest(unittest.TestCase):
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
 
+    @skip_for_none_ce_case
     def test_load_from_custom_arch(self):
         config_dict = {
             "alibi": False,

@@ -23,6 +23,11 @@ from paddleformers.transformers.configuration_utils import (
     PretrainedConfig,
     attribute_map,
 )
+from tests.testing_utils import (
+    require_paddle_at_least_2_gpu,
+    require_paddle_at_least_8_gpu,
+    skip_for_none_ce_case,
+)
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils import CONFIG_NAME
 from paddleformers.utils.download import DownloadSource
@@ -154,6 +159,7 @@ class StandardConfigMappingTest(unittest.TestCase):
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
 
+    @skip_for_none_ce_case
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_load_from_hf(self):
         """test load config from hf"""

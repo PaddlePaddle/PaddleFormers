@@ -31,6 +31,11 @@ from paddleformers.transformers.model_utils import (
     load_sharded_checkpoint,
     shard_checkpoint,
 )
+from tests.testing_utils import (
+    require_paddle_at_least_2_gpu,
+    require_paddle_at_least_8_gpu,
+    skip_for_none_ce_case,
+)
 from paddleformers.utils.env import (
     PADDLE_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_NAME,
@@ -103,6 +108,7 @@ class TestFromPretrained(unittest.TestCase):
         for p1, p2 in zip(model.parameters(), model_load.parameters()):
             self.assertTrue(paddle.allclose(p1, p2))
 
+    @skip_for_none_ce_case
     @unittest.skipIf(not is_paddle_cuda_available(), "some op is missing in cpu mode")
     def test_load_from_torch_dtyp_cast(self):
         pass
