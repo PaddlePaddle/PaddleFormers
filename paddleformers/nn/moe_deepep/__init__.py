@@ -19,9 +19,9 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "modular_moe_layer": ["ModularMoELayer"], 
+    "modular_moe_layer": ["ModularMoELayer"],
     "moe_communication": ["MoECommunicationInterface", "StandardMoECommunication", "DeepEPMoECommunication"],
-    "moe_expert": ["MoEExpertInterface", "StandardMoEExpert"],
+    "moe_expert": ["MoEExpertInterface", "StandardMoEExpert", "Qwen2MLP"],
     "moe_gate": ["PretrainedMoEGate"],
     "moe_factory": ["QuickAccessMoEFactory"],
 }
@@ -30,8 +30,8 @@ if TYPE_CHECKING:
     from .modular_moe_layer import *
     from .moe_communication import *
     from .moe_expert import *
-    from .moe_gate import *
     from .moe_factory import *
+    from .moe_gate import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

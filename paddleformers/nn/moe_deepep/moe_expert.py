@@ -16,6 +16,8 @@ from abc import ABC, abstractmethod
 
 import paddle
 from paddle import nn
+from ...transformers import PretrainedConfig, linear_utils, Linear
+from ...transformers.llama import fusion_ops
 
 
 class MoEExpertInterface(ABC):
@@ -52,7 +54,7 @@ class StandardMoEExpert(nn.Layer, MoEExpertInterface):
         intermediate_size: int,
         expert_activation: str = "silu",
         expert_dropout: float = 0.0,
-        **kwargs
+        config: PretrainedConfig = None,
     ):
         """
         初始化标准MoE专家网络
@@ -116,3 +118,104 @@ class StandardMoEExpert(nn.Layer, MoEExpertInterface):
         output = self.down_proj(intermediate)
 
         return output
+
+class Qwen2MLP(nn.Layer):
+    def __init__(
+        self, 
+        hidden_size: int,
+        intermediate_size: int,
+        expert_activation: str = "silu",
+        expert_dropout: float = 0.0,
+        config: PretrainedConfig = None,
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.intermediate_size = intermediate_size
+        self.expert_activation = expert_activation
+
+        self.skip_recompute_ops = config.get("skip_recompute_ops", {})
+        self.fuse_attention_ffn = config.get("skip_recompute_ops", False)
+        self.tensor_parallel_degree = config.get("tensor_parallel_degree", 1)
+        self.sequence_parallel = config.get("sequence_parallel", 1)
+        self.recompute = config.get("recompute", False)
+        self.recompute_use_reentrant = config.get("recompute_use_reentrant", False)
+
+        if self.sequence_parallel:
+            ColumnParallelLinear = linear_utils.ColumnSequenceParallelLinear
+            RowParallelLinear = linear_utils.RowSequenceParallelLinear
+
+            # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
+            if self.recompute and not self.recompute_use_reentrant:
+                if skip_recompute_ops.get("mlp_column_ln", False):
+                    ColumnParallelLinear = RRColumnSequenceParallelLinear
+                if skip_recompute_ops.get("mlp_row_ln", False):
+                    RowParallelLinear = RRRowSequenceParallelLinear
+        else:
+            ColumnParallelLinear = linear_utils.ColumnParallelLinear
+            RowParallelLinear = linear_utils.RowParallelLinear
+
+            # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
+            if self.recompute and not self.recompute_use_reentrant:
+                if skip_recompute_ops.get("mlp_column_ln", False):
+                    ColumnParallelLinear = RRColumnParallelLinear
+                if skip_recompute_ops.get("mlp_row_ln", False):
+                    RowParallelLinear = RRRowParallelLinear
+
+        if self.tensor_parallel_degree > 1:
+            if self.fuse_attention_ffn:
+                self.gate_up_fused_proj = ColumnParallelLinear(
+                    self.hidden_size,
+                    self.intermediate_size * 2,
+                    gather_output=False,
+                    has_bias=False,
+                )
+            else:
+                self.gate_proj = ColumnParallelLinear(
+                    self.hidden_size,
+                    self.intermediate_size,
+                    gather_output=False,
+                    has_bias=False,
+                )
+                self.up_proj = ColumnParallelLinear(
+                    self.hidden_size,
+                    self.intermediate_size,
+                    gather_output=False,
+                    has_bias=False,
+                )
+            self.down_proj = RowParallelLinear(
+                self.intermediate_size,
+                self.hidden_size,
+                input_is_parallel=True,
+                has_bias=False,
+            )
+        else:
+            if self.fuse_attention_ffn:
+                self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False)
+            else:
+                self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)  # w1
+                self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)  # w3
+            self.down_proj = Linear(self.intermediate_size, self.hidden_size, bias_attr=False)  # w2
+
+        if self.expert_activation == "silu":
+            self.act_fn = fusion_ops.swiglu
+            self.fuse_swiglu = True
+        else:
+            self.act_fn = ACT2FN[self.expert_activation]
+            self.fuse_swiglu = False
+
+    def forward(self, x):
+        if self.fuse_attention_ffn:
+            x = self.gate_up_fused_proj(x)
+            if self.fuse_swiglu:
+                y = None
+            else:
+                x, y = x.chunk(2, axis=-1)
+        else:
+            x, y = self.gate_proj(x), self.up_proj(x)
+
+        if self.fuse_swiglu:
+            x = self.act_fn(x, y)
+        else:
+            x = self.act_fn(x) * y
+
+        return self.down_proj(x)

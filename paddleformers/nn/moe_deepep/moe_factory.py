@@ -13,17 +13,13 @@
 # limitations under the License.
 
 
-from .modular_moe_layer import ModularMoELayer
 from ...transformers.configuration_utils import PretrainedConfig
+from .modular_moe_layer import ModularMoELayer
 
 
 class QuickAccessMoEFactory:
     @staticmethod
-    def create_from_model_name(
-        config: PretrainedConfig
-    ) -> ModularMoELayer:
-        config_dict = config.to_dict()
-        print("QuickAccessMoEFactory create_from_model_name", config)
+    def create_from_model_name(config: PretrainedConfig) -> ModularMoELayer:
         return ModularMoELayer(
-            **config_dict,
+            config
         )
