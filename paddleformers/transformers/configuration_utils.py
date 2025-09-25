@@ -294,6 +294,10 @@ class LlmMetaConfig:
         ),
     ]
 
+    moe_attributes = [
+        ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
+    ]
+
     @classmethod
     def _get_defaults(cls):
         ret = {}
@@ -302,6 +306,7 @@ class LlmMetaConfig:
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
             cls.loss_attributes,
+            cls.moe_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -316,6 +321,7 @@ class LlmMetaConfig:
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
             cls.loss_attributes,
+            cls.moe_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -330,6 +336,7 @@ class LlmMetaConfig:
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
             cls.loss_attributes,
+            cls.moe_attributes,
         ]:
             for attr in attrs:
                 ret.add(attr[0])
@@ -488,6 +495,8 @@ class PretrainedConfig:
         problem_type (`str`, *optional*):
             Problem type for `XxxForSequenceClassification` models. Can be one of `"regression"`,
             `"single_label_classification"` or `"multi_label_classification"`.
+        moe_subbatch_token_num (`int`, *optional*, defaults to 0):
+            The number of tokens in a subbatch for MoE.
 
         > Parameters for general components
 
@@ -631,6 +640,8 @@ class PretrainedConfig:
 
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
+
+        self.num_subbatch_token_num = kwargs.pop("num_subbatch_token_num", 0)
 
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config
         self.tokenizer_class = kwargs.pop("tokenizer_class", None)
