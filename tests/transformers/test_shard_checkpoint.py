@@ -38,10 +38,7 @@ from paddleformers.utils.env import (
     SAFE_WEIGHTS_NAME,
 )
 from paddleformers.utils.import_utils import is_paddle_cuda_available
-from tests.testing_utils import (
-    require_package,
-    skip_for_none_ce_case,
-)
+from tests.testing_utils import require_package, skip_for_none_ce_case
 
 
 class FakeConfig(PretrainedConfig):
