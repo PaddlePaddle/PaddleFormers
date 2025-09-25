@@ -31,11 +31,6 @@ from paddleformers.transformers.model_utils import (
     load_sharded_checkpoint,
     shard_checkpoint,
 )
-from tests.testing_utils import (
-    require_paddle_at_least_2_gpu,
-    require_paddle_at_least_8_gpu,
-    skip_for_none_ce_case,
-)
 from paddleformers.utils.env import (
     PADDLE_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_NAME,
@@ -43,7 +38,10 @@ from paddleformers.utils.env import (
     SAFE_WEIGHTS_NAME,
 )
 from paddleformers.utils.import_utils import is_paddle_cuda_available
-from tests.testing_utils import require_package
+from tests.testing_utils import (
+    require_package,
+    skip_for_none_ce_case,
+)
 
 
 class FakeConfig(PretrainedConfig):

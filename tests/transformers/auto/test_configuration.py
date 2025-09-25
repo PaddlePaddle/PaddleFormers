@@ -25,10 +25,8 @@ from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.bert.configuration import BertConfig
 from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import CONFIG_NAME
-from tests.testing_utils import set_proxy
 from tests.testing_utils import (
-    require_paddle_at_least_2_gpu,
-    require_paddle_at_least_8_gpu,
+    set_proxy,
     skip_for_none_ce_case,
 )
 

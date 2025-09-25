@@ -23,16 +23,14 @@ from paddleformers.transformers.configuration_utils import (
     PretrainedConfig,
     attribute_map,
 )
-from tests.testing_utils import (
-    require_paddle_at_least_2_gpu,
-    require_paddle_at_least_8_gpu,
-    skip_for_none_ce_case,
-)
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils import CONFIG_NAME
 from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import LEGACY_CONFIG_NAME
-from tests.testing_utils import set_proxy
+from tests.testing_utils import (
+    set_proxy,
+    skip_for_none_ce_case,
+)
 
 
 class FakeSimplePretrainedModelConfig(PretrainedConfig):
