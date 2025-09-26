@@ -170,3 +170,8 @@ class DPOModelArgument:
 
     # Attention
     attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
+
+    # pp
+    pp_seg_method: Optional[str] = field(
+        default="layer:DecoderLayer|EmptyLayer", metadata={"help": "PP Segmentation Method"}
+    )
