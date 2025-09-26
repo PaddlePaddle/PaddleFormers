@@ -73,7 +73,6 @@ jobs:
             -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
             -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
             -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
-          docker exec -it $container_name nvidia-smi
             
       - name: Download Code
         run: |
