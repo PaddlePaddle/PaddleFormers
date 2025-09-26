@@ -21,10 +21,7 @@ export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/model_unittest_logs
 export model_unittest_path=/workspace/PaddleFormers/scripts/regression
 cd $nlp_dir
-
-if [ ! -d "model_unittest_logs" ];then
-    mkdir model_unittest_logs
-fi
+mkdir -p $log_path
 
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -107,7 +104,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all model unittest cases '
     unset http_proxy && unset https_proxy
     set +e
-    DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1

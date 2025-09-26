@@ -112,7 +112,7 @@ jobs:
           source $work_dir/../../../proxy
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
           cp -r $work_dir/../../../models ./models
-          timeout 30m bash scripts/unit_test/ci_model_unittest.sh ${paddle_whl}
+          timeout 30m bash scripts/regression/ci_model_unittest.sh ${paddle_whl}
           '
           
       - name: Upload Products
