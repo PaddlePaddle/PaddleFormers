@@ -219,6 +219,7 @@ def process_fc(data, input_file, split_dialogue_to_single_turn=True):
         )
         return ex
 
+
 def process_example(data, input_file):
     """Convert raw data example into training example.
 
