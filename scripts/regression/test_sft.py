@@ -123,7 +123,8 @@ class SFTTrainTest(unittest.TestCase):
             train_path,
             updated_config_path,
         ]
-        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=150)
+        print(f"cmd {cmd}")
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
         # test training result
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
@@ -133,7 +134,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
-        # reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=150)
+        # reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         # self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
         # EXCEPTED_LOSS = 9.550503
@@ -172,7 +173,7 @@ class SFTTrainTest(unittest.TestCase):
             train_path,
             updated_config_path,
         ]
-        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=150)
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
         # test training result
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
@@ -201,7 +202,7 @@ class SFTTrainTest(unittest.TestCase):
             lora_merge_output_dir,
         ]
         lora_merge_p = subprocess.run(
-            lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=150
+            lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
         self.sfttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 

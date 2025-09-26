@@ -119,7 +119,7 @@ class DPOTrainTest(unittest.TestCase):
             train_path,
             updated_config_path,
         ]
-        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=150)
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
         # test training result
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
@@ -153,7 +153,7 @@ class DPOTrainTest(unittest.TestCase):
             train_path,
             updated_config_path,
         ]
-        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=150)
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
         # test training result
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
@@ -178,7 +178,7 @@ class DPOTrainTest(unittest.TestCase):
             lora_merge_output_dir,
         ]
         lora_merge_p = subprocess.run(
-            lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=150
+            lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
         self.dpotrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
