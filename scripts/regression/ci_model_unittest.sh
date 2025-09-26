@@ -30,7 +30,7 @@ install_requirements() {
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
-    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
+    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off --force-reinstall
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
 
     python setup.py bdist_wheel > /dev/null
@@ -104,8 +104,9 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all model unittest cases '
     unset http_proxy && unset https_proxy
     set +e
-    echo "Check Cuda Version"
+    echo "Check paddle Cuda Version"
     python -c "import paddle; print(paddle.version.cuda()); print(paddle.version.cudnn()); print(paddle.is_compiled_with_cuda())"
+    echo "Check docker Cuda Version"
     nvcc -V  
     cat /usr/local/cuda/version.txt
     PYTHONPATH=$(pwd) \
