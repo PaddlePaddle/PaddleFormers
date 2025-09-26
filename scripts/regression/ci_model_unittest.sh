@@ -111,7 +111,8 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     cat /usr/local/cuda/version.txt
     echo "Check nvidia-smi"
     nvidia-smi
-    python -c "import paddle; print(paddle.device.get_device_count())"
+    python -c "import paddle; print(paddle.device.device_count())"
+    export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
