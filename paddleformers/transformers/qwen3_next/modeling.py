@@ -18,8 +18,6 @@ from typing import Any, Callable, List, Optional, Union
 import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
-from paddle.distributed.fleet.utils import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -34,7 +32,6 @@ from ..qwen2_moe.modeling import Qwen2MoeSparseMoeBlock
 from ..qwen3_moe.modeling import (
     Qwen3MoeAttention,
     Qwen3MoeMLP,
-    Qwen3MoeRotaryEmbedding,
 )
 from ..configuration_utils import PretrainedConfig
 from .configuration import Qwen3NextConfig
@@ -68,6 +65,9 @@ class Qwen3NextRMSNormGated(nn.Layer):
         hidden_states = hidden_states * F.silu(gate.to(paddle.float32))
 
         return hidden_states.to(input_dtype)
+
+    def extra_repr(self):
+        return f"dim={tuple(self.weight.shape)}, variance_epsilon={self.variance_epsilon}, dtype={self.weight.dtype}"
 
 
 class Qwen3NextDynamicCache:
@@ -163,6 +163,69 @@ class Qwen3NextDynamicCache:
         return self.conv_states[self.last_linear_layer] is not None
 
 
+def _compute_default_rope_parameters(
+    config: Optional[PretrainedConfig] = None,
+    seq_len: Optional[int] = None,
+) -> tuple[Tensor, float]:
+    """
+    Computes the inverse frequencies according to the original RoPE implementation
+    Args:
+        config ([`~transformers.PretrainedConfig`]):
+            The model configuration.
+        seq_len (`int`, *optional*):
+            The current sequence length. Unused for this type of RoPE.
+    Returns:
+        Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+        post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+    """
+    base = config.rope_theta
+    partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
+    head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+    dim = int(head_dim * partial_rotary_factor)
+
+    attention_factor = 1.0  # Unused in this type of RoPE
+
+    # Compute the inverse frequencies
+    inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype="int64").to(dtype="float") / dim))
+    return inv_freq, attention_factor
+
+
+class Qwen3NextRotaryEmbedding(nn.Layer):
+    inv_freq: Tensor
+
+    def __init__(self, config: Qwen3NextConfig, device=None):
+        super().__init__()
+        # BC: "rope_type" was originally "type"
+        if hasattr(config, "rope_scaling") and isinstance(config.rope_scaling, dict):
+            self.rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
+        else:
+            self.rope_type = "default"
+        assert self.rope_type == "default", (
+            f"Currently only supports default rope_type, but got {self.rope_type}"
+        )
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
+
+        self.config = config
+        self.rope_init_fn = _compute_default_rope_parameters
+
+        self.inv_freq, self.attention_scaling = self.rope_init_fn(self.config)
+        self.original_inv_freq = self.inv_freq
+
+    @paddle.no_grad()
+    def forward(self, x, position_ids):
+        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+        position_ids_expanded = position_ids[:, None, :].float()
+
+        with paddle.amp.auto_cast(False):  # Force float32
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+            emb = paddle.cat((freqs, freqs), dim=-1)
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+
+
 class Qwen3NextRMSNorm(nn.Layer):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
@@ -180,7 +243,7 @@ class Qwen3NextRMSNorm(nn.Layer):
         return output.type_as(x)
 
     def extra_repr(self):
-        return f"{tuple(self.weight.shape)}, eps={self.eps}"
+        return f"dim={tuple(self.weight.shape)}, eps={self.eps}, dtype={self.weight.dtype}"
 
 
 def repeat_kv(hidden_states: Tensor, n_rep: int) -> Tensor:
@@ -195,38 +258,106 @@ def repeat_kv(hidden_states: Tensor, n_rep: int) -> Tensor:
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
-def eager_attention_forward(
+def scaled_dot_product_attention(
+    query,
+    key,
+    value,
+    attn_mask=None,
+    dropout_p=0.0,
+    is_causal=False,
+    scale=None,
+) -> paddle.Tensor:
+    L, S = query.size(-2), key.size(-2)
+    scale_factor = query.size(-1) ** -0.5 if scale is None else scale
+    attn_bias = paddle.zeros([L, S], dtype=query.dtype)
+
+    if is_causal:
+        assert attn_mask is None
+        temp_mask = paddle.ones([L, S], dtype="bool").tril(diagonal=0)
+        attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
+        attn_bias.to(query.dtype)
+
+    if attn_mask is not None:
+        if attn_mask.dtype == paddle.bool:
+            attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
+        else:
+            attn_bias = attn_mask + attn_bias
+
+    attn_weight = query @ key.transpose(-2, -1) * scale_factor
+    attn_weight += attn_bias
+    with paddle.amp.auto_cast(False):
+        attn_weight = paddle.softmax(attn_weight, dim=-1, dtype="float32").astype(query.dtype)
+    attn_weight = F.dropout(attn_weight, dropout_p)
+    return attn_weight @ value
+
+
+def sdpa_attention_forward(
     module: nn.Layer,
     query: Tensor,
     key: Tensor,
     value: Tensor,
     attention_mask: Optional[Tensor],
-    scaling: float,
     dropout: float = 0.0,
+    scaling: Optional[float] = None,
+    is_causal: Optional[bool] = None,
     **kwargs,
-):
-    key_states = repeat_kv(key, module.num_key_value_groups)
-    value_states = repeat_kv(value, module.num_key_value_groups)
+) -> tuple[Tensor, None]:
+    if kwargs.get("output_attentions", False) or kwargs.get("head_mask") is not None:
+        logger.warning_once(
+            "`sdpa` attention does not support `output_attentions=True` or `head_mask`."
+            " Please set your attention to `eager` if you want any of these features."
+        )
+    if hasattr(module, "num_key_value_groups"):
+        key = repeat_kv(key, module.num_key_value_groups)
+        value = repeat_kv(value, module.num_key_value_groups)
 
-    attn_weights = paddle.matmul(query, key_states.transpose(2, 3)) * scaling
-    if attention_mask is not None:
-        causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
-        attn_weights = attn_weights + causal_mask
+    if attention_mask is not None and attention_mask.ndim == 4:
+        attention_mask = attention_mask[:, :, :, : key.shape[-2]]
 
-    attn_weights = nn.functional.softmax(attn_weights, axis=-1, dtype=paddle.float32).to(query.dtype)
-    attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
-    attn_output = paddle.matmul(attn_weights, value_states)
+    # We dispatch to SDPA's Flash Attention or Efficient kernels via this `is_causal` if statement instead of an inline conditional assignment
+    # in SDPA to support both torch.compile's dynamic shapes and full graph options. An inline conditional prevents dynamic shapes from compiling.
+    # Note that it is important to check first for the shape, otherwise compile will fail with `argument 'is_causal' must be bool, not SymBool`
+    if is_causal is None:
+        # The last condition is for encoder (decoder) models which specify this by passing their own `is_causal` flag
+        # This is mainly due to those models having mixed implementations for encoder, decoder, and encoder-decoder attns
+        is_causal = query.shape[2] > 1 and attention_mask is None and getattr(module, "is_causal", True)
+
+    if scaling is not None:
+        default_scaling = query.shape[-1] ** -0.5
+        if scaling != default_scaling:
+            logger.warning_once(
+                "The paddle version of scaled_dot_product_attention doesn't support custom scaling."
+                f" The default scaling is {default_scaling}, but got {scaling}."
+            )
+
+    attn_output = scaled_dot_product_attention(
+        query,
+        key,
+        value,
+        attn_mask=attention_mask,
+        dropout_p=dropout,
+        is_causal=is_causal,
+    )
+
     attn_output = attn_output.transpose(1, 2).contiguous()
 
-    return attn_output, attn_weights
+    return attn_output, None
 
 
 class Qwen3NextAttention(Qwen3MoeAttention):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
         self.q_proj = nn.Linear(
-            config.hidden_size, config.num_attention_heads * self.head_dim * 2, bias_attr=config.attention_bias
+            config.hidden_size,
+            config.num_attention_heads * self.head_dim * 2,
+            bias_attr=config.attention_bias
         )
+        self.q_norm = Qwen3NextRMSNorm(
+            self.head_dim, eps=config.rms_norm_eps
+        )  # unlike olmo, only on the head dim!
+        self.k_norm = Qwen3NextRMSNorm(
+            self.head_dim, eps=config.rms_norm_eps
+        )  # thus post q_norm does not need reshape
         del self.sliding_window
 
     def forward(
@@ -258,9 +389,9 @@ class Qwen3NextAttention(Qwen3MoeAttention):
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
-        attention_interface: Callable = eager_attention_forward
-        if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface: Callable = sdpa_attention_forward
+        # if self.config._attn_implementation != "eager":
+        #     attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -318,7 +449,7 @@ def create_causal_mask(
             useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
     """
     assert config._attn_implementation == "eager", "Currently only supports eager attention."
-    assert attention_mask is None, "Currently attention_mask is not supported."
+    # assert attention_mask is None, "Currently attention_mask is not supported."
     assert (or_mask_function is None) and (and_mask_function is None), (
         "Currently or_mask_function or and_mask_function is not supported."
     )
@@ -831,13 +962,21 @@ class Qwen3NextDecoderLayer(nn.Layer):
 class Qwen3NextPretrainedModel(PretrainedModel):
     config_class = Qwen3NextConfig
     base_model_prefix = "model"
-    supports_gradient_checkpointing = True
-    _no_split_modules = ["Qwen3NextDecoderLayer"]
-    _skip_keys_device_placement = "past_key_values"
-    _supports_flash_attn_2 = True
-    _supports_sdpa = True
     _keys_to_ignore_on_load_unexpected = [r"^mtp.*"]
-    _is_stateful = True
+    transpose_weight_keys = [
+        "gate",
+        "gate_proj",
+        "in_proj_ba",
+        "in_proj_qkvz",
+        "out_proj",
+        "up_proj",
+        "down_proj",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "shared_expert_gate",
+    ]
 
     def _init_weights(self, module):
         super()._init_weights(module)
@@ -855,11 +994,7 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
             [Qwen3NextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         self.norm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.rotary_emb = Qwen3MoeRotaryEmbedding(
-            config.head_dim,
-            max_position_embeddings=config.max_position_embeddings,
-            base=config.rope_theta,
-        )
+        self.rotary_emb = Qwen3NextRotaryEmbedding(config)
         if config.rope_scaling:
             logger.warning_once("The rope_scaling is not implemented.")
         self.gradient_checkpointing = False
@@ -900,12 +1035,13 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
             past_key_values=past_key_values,
             position_ids=position_ids,
         )
+        causal_mask = None
         linear_attn_mask = self._update_linear_attn_mask(attention_mask, cache_position)
 
         hidden_states = inputs_embeds
 
         # create position embeddings to be shared across the decoder layers
-        position_embeddings = self.rotary_emb(hidden_states, inputs_embeds.shape[1])
+        position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
         for decoder_layer in self.layers[: self.config.num_hidden_layers]:
             layer_mask = linear_attn_mask if decoder_layer.layer_type == "linear_attention" else causal_mask

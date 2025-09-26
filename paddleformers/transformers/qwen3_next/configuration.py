@@ -266,6 +266,7 @@ class Qwen3NextConfig(PretrainedConfig):
         # for backward compatibility
         self.sliding_window = None
         self.use_sliding_window = False
+        self.use_rmsnorm = True
 
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
