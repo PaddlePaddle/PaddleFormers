@@ -126,7 +126,7 @@ class StandardMoEExpert(nn.Layer, MoEExpertInterface):
         return output
 
 
-class Qwen2MLP(nn.Layer):
+class Qwen2MoeMLP(nn.Layer):
     def __init__(
         self,
         hidden_size: int,
@@ -225,13 +225,3 @@ class Qwen2MLP(nn.Layer):
             x = self.act_fn(x) * y
 
         return self.down_proj(x)
-
-
-class Qwen2MoeMLP(Qwen2MLP):
-    def __init__(
-        self,
-        hidden_size: int,
-        intermediate_size: int,
-        config: PretrainedConfig = None,
-    ):
-        super().__init__(hidden_size=config.hidden_size, intermediate_size=config.moe_intermediate_size, config=config)

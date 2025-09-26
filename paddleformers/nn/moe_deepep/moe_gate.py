@@ -302,7 +302,6 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             assert self.group is not None, "group is required when global_aux_loss is True"
             self.rank = dist.get_rank(self.group)
 
-        self.expert_drop = config.get("expert_drop", False)
         self.noisy_gate_policy = config.get("noisy_gate_policy", None)
         self.drop_tokens = config.get("drop_tokens", False)
         self.use_rts = config.get("use_rts", True)
@@ -325,8 +324,14 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             default_initializer=paddle.nn.initializer.Uniform(),
         )
 
-    # def topkgating(
     def forward(
+        self,
+        gates: paddle.Tensor,
+    ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+        # return self.topkgating(gates)
+        return self.topkgating_nodrop(gates)
+
+    def topkgating(
         self,
         gates: paddle.Tensor,
     ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
@@ -398,6 +403,8 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         else:
             # Do not drop tokens - set capacity according to current expert assignments
             local_capacity = paddle.max(exp_counts)
+            print("----------MOE Gate, no drop tokens: local_capacity = ", local_capacity)
+            print("----------SELF.GROUP ", self.group)
             if self.group is not None:
                 dist.all_reduce(local_capacity, op=dist.ReduceOp.MAX, group=self.group)
             capacity = int(local_capacity)
@@ -406,7 +413,6 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         # normalize gates
         # gates_masked is equal to top_gate.
         gates_masked = gates * mask
-        print("gates_masked: ", gates_masked.shape, gates_masked.dtype)  # [776, 2048] paddle.bfloat16
 
         # if self.training:
         gates_s = paddle.sum(gates_masked, axis=-1, keepdim=True)
@@ -431,6 +437,13 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         batch_size, seq_len, d_model = gates.shape
         gates_ori = gates
         gates = gates.reshape([-1, d_model])
+
+        # 将 hidden_state 转换成 score（每个 token 对每个专家的偏好分数）
+        with paddle.amp.auto_cast(False):
+            hidden_states = gates.cast(self.weight.dtype)
+            logits = F.linear(hidden_states.cast("float32"), self.weight.cast("float32"))
+            gates = self.gate_score_func(logits=logits)
+        print("forward after logits gates: ", gates.shape, gates.dtype)  # [776, 2048] paddle.bfloat16
 
         l_zloss = self._cal_z_loss(gates)
 
