@@ -714,9 +714,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 else:
                     input_shape = [
                         1,
-                        true_experts[iexpert].down_proj.lora_A.shape[1],
+                        true_experts[iexpert].down_proj.lora_B.shape[1],
                     ]
-                    input_dtype = true_experts[iexpert].down_proj.lora_A.dtype
+                    input_dtype = true_experts[iexpert].down_proj.lora_B.dtype
 
                 chunk = paddle.zeros(
                     input_shape,

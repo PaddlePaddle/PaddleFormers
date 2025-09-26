@@ -284,8 +284,14 @@ class LlmMetaConfig:
     ]
 
     loss_attributes = [
-        ("use_fused_head_loss_fn", bool, False, "Whether to use fused head and loss function."),
+        ("use_fused_head_and_loss_fn", bool, False, "Whether to use fused head and loss function."),
         ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
+        (
+            "use_sparse_head_and_loss_fn",
+            bool,
+            False,
+            "Maintained for compatibility, recommend using use_filtered_label_loss instead. (Legacy params)",
+        ),
         (
             "loss_subbatch_sequence_length",
             int,
