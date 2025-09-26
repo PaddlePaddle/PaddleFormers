@@ -109,6 +109,9 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo "Check docker Cuda Version"
     nvcc -V  
     cat /usr/local/cuda/version.txt
+    echo "Check nvidia-smi"
+    nvidia-smi
+    python -c "import paddle; print(paddle.device.get_device_count())"
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
