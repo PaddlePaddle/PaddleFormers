@@ -34,7 +34,7 @@ defaults:
 jobs:
   model-unittest-gpu-ci:
     name: model-unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu-1' }}
+    runs-on: ${{ inputs.runner || 'ernie-8gpu-2' }}
     steps:
       - name: Determine Image Name
         env:
@@ -114,8 +114,6 @@ jobs:
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           echo "work_dir = ${work_dir}"
-          source $work_dir/../../../proxy
-          source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
           cp -r $work_dir/../../../models ./models
           echo "Check models:"
           ls -l ./models
