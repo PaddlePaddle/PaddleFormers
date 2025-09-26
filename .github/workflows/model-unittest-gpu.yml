@@ -34,7 +34,7 @@ defaults:
 jobs:
   model-unittest-gpu-ci:
     name: model-unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu-2' }}
+    runs-on: ${{ inputs.runner || 'ernie-8gpu' }}
     steps:
       - name: Determine Image Name
         env:
@@ -149,8 +149,8 @@ jobs:
           # python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
           # echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/coverage.xml"
           # logs
-          cd /workspace/PaddleFormers/model-unittest_logs
-          for FILE in /workspace/PaddleFormers/model-unittest_logs/*; do
+          cd /workspace/PaddleFormers/model_unittest_logs
+          for FILE in /workspace/PaddleFormers/model_unittest_logs/*; do
             file=$(basename "$FILE")
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
