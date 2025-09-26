@@ -104,6 +104,10 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all model unittest cases '
     unset http_proxy && unset https_proxy
     set +e
+    echo "Check Cuda Version"
+    python -c "import paddle; print(paddle.version.cuda()); print(paddle.version.cudnn()); print(paddle.is_compiled_with_cuda())"
+    nvcc -V  
+    cat /usr/local/cuda/version.txt
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1

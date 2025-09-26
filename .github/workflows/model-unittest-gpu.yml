@@ -116,10 +116,6 @@ jobs:
           cp -r $work_dir/../../../models ./models
           echo "Check models:"
           ls -l ./models
-          echo "Check Cuda Version"
-          python -c "import paddle; print(paddle.version.cuda()); print(paddle.version.cudnn()); print(paddle.is_compiled_with_cuda())"
-          nvcc -V  
-          cat /usr/local/cuda/version.txt
           echo "Test Start"
           timeout 30m bash scripts/regression/ci_model_unittest.sh ${paddle_whl}
           '
