@@ -177,9 +177,7 @@ class DPOTrainTest(unittest.TestCase):
             "--output_path",
             lora_merge_output_dir,
         ]
-        lora_merge_p = subprocess.run(
-            lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-        )
+        lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.dpotrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
