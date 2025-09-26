@@ -164,6 +164,7 @@ class MultiSourceDataset(IterableDataset):
         process_fn_fc=None,
         shuffle_file=False,
         shuffle_files=False,
+        split_dialogue_to_single_turn=True,
     ):
         """Initialize the multi-source dataset.
 
@@ -227,7 +228,9 @@ class MultiSourceDataset(IterableDataset):
                 task["dataset"] = FileDataset(
                     task["filepath"],
                     process_fn=(
-                        partial(process_fn_fc, task_name=task["task_name"]) if "task_name" in task else process_fn_fc
+                        partial(process_fn_fc, task_name=task["task_name"], split_dialogue_to_single_turn=split_dialogue_to_single_turn)
+                        if "task_name" in task
+                        else partial(process_fn_fc, split_dialogue_to_single_turn=split_dialogue_to_single_turn)
                     ),
                     shuffle_file=shuffle_file,
                 )

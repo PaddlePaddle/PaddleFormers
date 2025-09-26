@@ -71,6 +71,7 @@ def create_dataset(**dataset_config):
         sub_dataset_type=sub_dataset_type,
         process_fn=process_example,
         process_fn_fc=process_fc,
+        split_dialogue_to_single_turn=dataset_config["split_dialogue_to_single_turn"],
     )
     sequence_dataset = SequenceDataset(
         dataset=example_dataset,
@@ -173,7 +174,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: 
     return input_dict
 
 
-def process_fc(data, input_file):
+def process_fc(data, input_file, split_dialogue_to_single_turn=True):
     multi_turns_messages = data["messages"]
     tools_list = data["tools"] if "tools" in data else None
     label = data["label"] if "label" in data else None
@@ -184,28 +185,39 @@ def process_fc(data, input_file):
         system = multi_turns_messages[0]["content"]
         is_system = True
 
-    # be default, all assistant output should be learned, labels are all 1
-    if label is None:
-        label = []
-        for index, turn in enumerate(multi_turns_messages):
-            if "assistant" in turn["role"]:
-                label.append(1)
+    # Only the last round involves the assistant participating in the training.
+    label = []
+    for index, turn in enumerate(multi_turns_messages):
+        if "assistant" in turn["role"]:
+            label.append(0)
+    if len(label) > 0:
+        label[-1] = 1
 
     assistant_index = 0
-    for index, turn in enumerate(multi_turns_messages):
-        if "assistant" in turn["role"] and label[assistant_index]:
-            message = copy.deepcopy(multi_turns_messages[: index + 1])
-            ex = Example(
-                request={"messages": message, "tools": tools_list},
-                system=system,
-                label=label,
-                is_system=is_system,
-                source=input_file,
-                is_function_call=True,
-            )
-            yield ex
-            assistant_index += 1
-
+    if split_dialogue_to_single_turn:
+        for index, turn in enumerate(multi_turns_messages):
+            if "assistant" in turn["role"] and label[assistant_index]:
+                message = copy.deepcopy(multi_turns_messages[: index + 1])
+                ex = Example(
+                    request={"messages": message, "tools": tools_list},
+                    system=system,
+                    label=label,
+                    is_system=is_system,
+                    source=input_file,
+                    is_function_call=True,
+                )
+                yield ex
+                assistant_index += 1
+    else:
+        ex = Example(
+            request={"messages": multi_turns_messages, "tools": tools_list},
+            system=system,
+            label=label,
+            is_system=is_system,
+            source=input_file,
+            is_function_call=True,
+        )
+        return ex
 
 def process_example(data, input_file):
     """Convert raw data example into training example.

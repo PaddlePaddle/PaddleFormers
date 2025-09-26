@@ -61,6 +61,10 @@ class DataConfig:
         default=True,
         metadata={"help": "Whether to use template in data processing."},
     )
+    split_dialogue_to_single_turn: bool = field(
+        default=True,
+        metadata={"help": "Whether to train only the last turn in multi-turn dialogue."},
+    )
     encode_one_turn: bool = field(
         default=True,
         metadata={"help": "Whether encode each round independently in a multi-round dialogue."},
