@@ -41,8 +41,6 @@ from ..contrastive_loss import SimpleContrastiveLoss
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..embedding_utils import dist_gather_tensor_with_gradient
 from ..linear_utils import Linear
-from ..llama import fusion_ops
-from ..llama.modeling import get_use_casual_mask
 from ..model_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
@@ -60,6 +58,20 @@ from ..refined_recompute import (
 from ..refined_recompute import recompute as rr_recompute
 from ..utils import caculate_llm_per_token_flops, logger
 from .configuration import Qwen2Config
+from ..llama.modeling import (
+    LlamaPretrainedModel,
+    LlamaModel,
+    LlamaForCausalLM,
+    LlamaMLP,
+    LlamaDecoderLayer,
+    LlamaRMSNorm,
+    LlamaRotaryEmbedding,
+    LlamaPretrainingCriterion,
+    LlamaLMHead,
+    fusion_ops,
+)
+from ..llama.modeling import apply_rotary_pos_emb, repeat_kv
+
 
 try:
     from paddle.incubate.nn.functional import fused_rotary_position_embedding
@@ -79,8 +91,6 @@ try:
     from paddle.nn.functional.flash_attention import flash_attention
 except:
     flash_attention = None
-
-
 __all__ = [
     "Qwen2Model",
     "Qwen2PretrainedModel",
@@ -90,7 +100,6 @@ __all__ = [
     "Qwen2ForTokenClassification",
     "Qwen2SentenceEmbedding",
 ]
-
 
 def get_triangle_upper_mask(x, mask=None):
     if mask is not None:
@@ -103,66 +112,6 @@ def get_triangle_upper_mask(x, mask=None):
     mask = paddle.triu(mask, diagonal=1)
     mask.stop_gradient = True
     return mask
-
-
-def assign_kv_heads(num_kv_heads: int, num_gpus: int):
-    # Initialize the assignment list
-    """
-    Assign kv heads to different GPUs in the Tensor Parallel Setup
-
-    Examples:
-        assign_kv_heads(num_kv_heads=1, num_gpus=2): [[0], [0]]
-        assign_kv_heads(num_kv_heads=2, num_gpus=2): [[0], [1]]
-        assign_kv_heads(num_kv_heads=4, num_gpus=2): [[0,1], [2,3]]
-        assign_kv_heads(num_kv_heads=1, num_gpus=4): [[0],[0],[0],[0]]
-        assign_kv_heads(num_kv_heads=2, num_gpus=4): [[0],[0],[1],[1]]
-        assign_kv_heads(num_kv_heads=4, num_gpus=4): [[0],[1],[2],[3]]
-    """
-    assignment_list = [[] for _ in range(num_gpus)]
-    # Case 1: more heads than cards
-    if num_kv_heads > num_gpus:
-        num_heads_per_card = num_kv_heads // num_gpus
-        for i in range(num_gpus):
-            for j in range(num_heads_per_card):
-                assignment_list[i].append(i * num_heads_per_card + j)
-    # Case 2: more cards than heads. each card get only 1 head.
-    else:
-        num_card_per_heads = num_gpus // num_kv_heads
-        for i in range(num_kv_heads):
-            for j in range(num_card_per_heads):
-                assignment_list[i * num_card_per_heads + j].append(i)
-    return assignment_list
-
-
-def parallel_matmul(x: Tensor, y: Tensor, transpose_y=True, tensor_parallel_output=True):
-    is_fleet_init = True
-    tensor_parallel_degree = 1
-    try:
-        hcg = fleet.get_hybrid_communicate_group()
-        model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
-    except:
-        is_fleet_init = False
-
-    if paddle.in_dynamic_mode():
-        y_is_distributed = y.is_distributed
-    else:
-        y_is_distributed = tensor_parallel_degree > 1
-
-    if is_fleet_init and tensor_parallel_degree > 1 and y_is_distributed:
-        # if not running under distributed.launch, it will raise AttributeError: 'Fleet' object has no attribute '_hcg'
-        input_parallel = paddle.distributed.collective._c_identity(x, group=model_parallel_group)
-        logits = paddle.matmul(input_parallel, y, transpose_y=transpose_y)
-
-        if tensor_parallel_output:
-            return logits
-
-        return paddle.distributed.collective._c_concat(logits, group=model_parallel_group)
-
-    else:
-        logits = paddle.matmul(x, y, transpose_y=transpose_y)
-        return logits
-
 
 def scaled_dot_product_attention(
     query_states,
@@ -250,219 +199,36 @@ def scaled_dot_product_attention(
         return (attn_output, attn_weights) if output_attentions else attn_output
 
 
-def masked_fill(x, mask, value):
-    y = paddle.full(x.shape, value, x.dtype)
-    return paddle.where(mask.to("bool"), y, x)
-
-
-def is_casual_mask(attention_mask):
-    """
-    Upper triangular of attention_mask equals to attention_mask is casual
-    """
-    return (paddle.triu(attention_mask) == attention_mask).all().item()
-
-
-def _make_causal_mask(input_ids_shape, past_key_values_length):
-    """
-    Make causal mask used for self-attention
-    """
-    batch_size, target_length = input_ids_shape  # target_length: seq_len
-
-    mask = paddle.tril(paddle.ones((target_length, target_length), dtype="bool"))
-
-    if past_key_values_length > 0:
-        # [tgt_len, tgt_len + past_len]
-        mask = paddle.concat([paddle.ones([target_length, past_key_values_length], dtype="bool"), mask], axis=-1)
-
-    # [bs, 1, tgt_len, tgt_len + past_len]
-    return mask[None, None, :, :].expand([batch_size, 1, target_length, target_length + past_key_values_length])
-
-
-def _expand_2d_mask(mask, dtype, tgt_length):
-    """
-    Expands attention_mask from `[batch_size, src_length]` to `[batch_size, 1, tgt_length, src_length]`.
-    """
-    batch_size, src_length = mask.shape[0], mask.shape[-1]
-    tgt_length = tgt_length if tgt_length is not None else src_length
-
-    mask = mask[:, None, None, :].astype("bool")
-    mask.stop_gradient = True
-    expanded_mask = mask.expand([batch_size, 1, tgt_length, src_length])
-
-    return expanded_mask
-
-
-class Qwen2RMSNorm(nn.Layer):
+class Qwen2RMSNorm(LlamaRMSNorm):
+    """Qwen2的RMSNorm，继承自LlamaRMSNorm"""
     def __init__(self, config: Qwen2Config):
-        """
-        Qwen2RMSNorm is equivalent to T5LayerNorm
-        """
-        super().__init__()
-        self.hidden_size = config.hidden_size
-        self.weight = paddle.create_parameter(
-            shape=[self.hidden_size],
-            dtype=paddle.get_default_dtype(),
-            default_initializer=nn.initializer.Constant(1.0),
-        )
-        self.variance_epsilon = config.rms_norm_eps
-        self.config = config
-
-        if config.sequence_parallel:
-            mark_as_sequence_parallel_parameter(self.weight)
-
-    def forward(self, hidden_states):
-        if self.config.use_fused_rms_norm:
-            return fusion_ops.fusion_rms_norm(hidden_states, self.weight, self.variance_epsilon)
-
-        if paddle.in_dynamic_mode():
-            with paddle.amp.auto_cast(False):
-                variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
-                hidden_states = paddle.rsqrt(variance + self.variance_epsilon) * hidden_states
-        else:
-            variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
-            hidden_states = paddle.rsqrt(variance + self.variance_epsilon) * hidden_states
-
-        if self.weight.dtype in [paddle.float16, paddle.bfloat16]:
-            hidden_states = paddle.cast(hidden_states, self.weight.dtype)
-        return hidden_states * self.weight
-
-
-class Qwen2RotaryEmbedding(nn.Layer):
+        super().__init__(config)
+class Qwen2RotaryEmbedding(LlamaRotaryEmbedding):
     def __init__(self, dim, max_position_embeddings=2048, base=10000):
-        super().__init__()
-        self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        # [dim / 2]
-        self.inv_freq = 1.0 / (self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim))
-        self._set_cos_sin_cache(seq_len=max_position_embeddings)
-
+        super().__init__(dim, max_position_embeddings, base)
     def _set_cos_sin_cache(self, seq_len):
         self.max_seq_len_cached = seq_len
         if self.inv_freq.dtype != paddle.float32:
             self.inv_freq = 1.0 / (
                 self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim)
             )
-        # [seq_len]
-        t = paddle.arange(seq_len, dtype="float32")
-        # [seq_len, dim/2]
-        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        # [seq_len, dim]
-        emb = paddle.concat([freqs, freqs], axis=-1)
-        # [1, seqlen, 1, dim]
-        self.cos_cached = emb.cos()[None, :, None, :]
-        self.sin_cached = emb.sin()[None, :, None, :]
-
+        super()._set_cos_sin_cache(seq_len)
     def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
         if seq_len > self.max_seq_len_cached:
             self._set_cos_sin_cache(seq_len)
-        cos = self.cos_cached[:, :seq_len, :, :]
-        sin = self.sin_cached[:, :seq_len, :, :]
-        return (
-            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
-            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
-        )
+        super().forward(x, seq_len)
 
-
-def rotate_half(x):
-    """Rotates half the hidden dims of the input."""
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.concat([-x2, x1], axis=-1)  # shape is the same as x
-
-
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
-    if position_ids is None:
-        # Note: Only for Qwen2MoEForCausalLMPipe model pretraining
-        cos = cos[:, : q.shape[1], :, :]  # [bs, seq_len, 1, dim]
-        sin = sin[:, : q.shape[1], :, :]  # [bs, seq_len, 1, dim]
-    else:
-        cos = cos.squeeze(axis=[0, 2])  # [seq_len, dim]
-        sin = sin.squeeze(axis=[0, 2])  # [seq_len, dim]
-        cos = cos[position_ids].unsqueeze(2)  # [bs, seq_len, 1, dim]
-        sin = sin[position_ids].unsqueeze(2)  # [bs, seq_len, 1, dim]
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed, k_embed
-
-
-class Qwen2MLP(nn.Layer):
-    def __init__(self, config: Qwen2Config, is_shared=False, skip_recompute_ops=None):
-        super().__init__()
-        if skip_recompute_ops is None:
-            skip_recompute_ops = {}
-        self.skip_recompute_ops = skip_recompute_ops
-        self.hidden_size = config.hidden_size
-        self.intermediate_size = config.intermediate_size
-        self.fuse_attention_ffn = config.fuse_attention_ffn
-
-        self.tensor_parallel_degree = config.tensor_parallel_degree
-
-        if config.sequence_parallel:
-            ColumnParallelLinear = linear_utils.ColumnSequenceParallelLinear
-            RowParallelLinear = linear_utils.RowSequenceParallelLinear
-
-            # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-            if config.recompute and not config.recompute_use_reentrant:
-                if skip_recompute_ops.get("mlp_column_ln", False):
-                    ColumnParallelLinear = RRColumnSequenceParallelLinear
-                if skip_recompute_ops.get("mlp_row_ln", False):
-                    RowParallelLinear = RRRowSequenceParallelLinear
-        else:
-            ColumnParallelLinear = linear_utils.ColumnParallelLinear
-            RowParallelLinear = linear_utils.RowParallelLinear
-
-            # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-            if config.recompute and not config.recompute_use_reentrant:
-                if skip_recompute_ops.get("mlp_column_ln", False):
-                    ColumnParallelLinear = RRColumnParallelLinear
-                if skip_recompute_ops.get("mlp_row_ln", False):
-                    RowParallelLinear = RRRowParallelLinear
-
-        if config.tensor_parallel_degree > 1:
-            if self.fuse_attention_ffn:
-                self.gate_up_fused_proj = ColumnParallelLinear(
-                    self.hidden_size,
-                    self.intermediate_size * 2,
-                    gather_output=False,
-                    has_bias=False,
-                )
-            else:
-                self.gate_proj = ColumnParallelLinear(
-                    self.hidden_size,
-                    self.intermediate_size,
-                    gather_output=False,
-                    has_bias=False,
-                )
-                self.up_proj = ColumnParallelLinear(
-                    self.hidden_size,
-                    self.intermediate_size,
-                    gather_output=False,
-                    has_bias=False,
-                )
-            self.down_proj = RowParallelLinear(
-                self.intermediate_size,
-                self.hidden_size,
-                input_is_parallel=True,
-                has_bias=False,
-            )
-        else:
-            if self.fuse_attention_ffn:
-                self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False)
-            else:
-                self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)  # w1
-                self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)  # w3
-            self.down_proj = Linear(self.intermediate_size, self.hidden_size, bias_attr=False)  # w2
-
+class Qwen2MLP(LlamaMLP):
+    """Qwen2的MLP，继承自LlamaMLP"""
+    def __init__(self, config: Qwen2Config,is_shared=False, skip_recompute_ops=None):
+        super().__init__(config)
         if config.hidden_act == "silu":
             self.act_fn = fusion_ops.swiglu
             self.fuse_swiglu = True
         else:
             self.act_fn = ACT2FN[config.hidden_act]
             self.fuse_swiglu = False
-
+        # Qwen2的MLP结构与Llama相同，但使用不同的配置
     def forward(self, x):
         if self.fuse_attention_ffn:
             x = self.gate_up_fused_proj(x)
@@ -479,20 +245,6 @@ class Qwen2MLP(nn.Layer):
             x = self.act_fn(x) * y
 
         return self.down_proj(x)
-
-
-def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
-    """
-    This is the equivalent of paddle.repeat_interleave(hidden_states, n_rep, axis=1). The hidden states go from (batch,
-    num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
-    """
-    batch, slen, num_key_value_heads, head_dim = hidden_states.shape
-    if n_rep == 1:
-        return hidden_states
-
-    hidden_states = hidden_states.unsqueeze(-2).tile([1, 1, 1, n_rep, 1])
-    return hidden_states.reshape([batch, slen, num_key_value_heads * n_rep, head_dim])
-
 
 class Qwen2Attention(nn.Layer):
     """
@@ -763,26 +515,10 @@ class Qwen2Attention(nn.Layer):
         return outputs
 
 
-class Qwen2DecoderLayer(nn.Layer):
+class Qwen2DecoderLayer(LlamaDecoderLayer):
+    """Qwen2的解码器层，继承自LlamaDecoderLayer"""
     def __init__(self, config: Qwen2Config, layerwise_recompute: bool = False, skip_recompute_ops=None):
-        super().__init__()
-        if skip_recompute_ops is None:
-            skip_recompute_ops = {}
-        self.config = config
-        self.skip_recompute_ops = skip_recompute_ops
-        self.hidden_size = config.hidden_size
-        self.self_attn = Qwen2Attention(config, layerwise_recompute, skip_recompute_ops=skip_recompute_ops)
-
-        self.mlp = Qwen2MLP(config, skip_recompute_ops=skip_recompute_ops)
-        self.input_layernorm = Qwen2RMSNorm(config)
-        self.post_attention_layernorm = Qwen2RMSNorm(config)
-
-        # Note that we will actually perform a recompute only if both enable_recompute and layerwise_recompute are set to True
-        # Enable_recompute defaults to False and is controlled by Trainer
-        self.enable_recompute = False
-        self.layerwise_recompute = layerwise_recompute
-        self.recompute_granularity = config.recompute_granularity
-
+        super().__init__(config)
     def forward(
         self,
         hidden_states: paddle.Tensor,
@@ -879,13 +615,13 @@ class Qwen2DecoderLayer(nn.Layer):
             outputs = outputs[0]
 
         return outputs
+            
 
-
-class Qwen2PretrainedModel(PretrainedModel):
+class Qwen2PretrainedModel(LlamaPretrainedModel):
+    """Qwen2预训练模型基类，继承自LlamaPretrainedModel"""
     config_class = Qwen2Config
     base_model_prefix = "qwen2"
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
-
     @classmethod
     def _get_name_mappings(cls, config: Qwen2Config) -> list[StateDictNameMapping]:
         mappings: list[StateDictNameMapping] = []
@@ -986,7 +722,6 @@ class Qwen2PretrainedModel(PretrainedModel):
         mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
 
         return mappings
-
     @classmethod
     def _get_fuse_or_split_param_mappings(cls, config: Qwen2Config, is_fuse=False):
         # return parameter fuse utils
@@ -1078,147 +813,13 @@ class Qwen2PretrainedModel(PretrainedModel):
             recompute_granularity=self.config.recompute_granularity,
         )
 
-    def _init_weights(self, layer):
-        """Initialization hook"""
-        if self.config.tensor_parallel_degree > 1:
-            rng_tracker = get_rng_state_tracker().rng_state
-        if isinstance(
-            layer,
-            (
-                nn.Linear,
-                nn.Embedding,
-                mpu.VocabParallelEmbedding,
-                mpu.RowParallelLinear,
-                mpu.ColumnParallelLinear,
-                linear_utils.RowSequenceParallelLinear,
-                linear_utils.ColumnSequenceParallelLinear,
-                Qwen2LMHead,
-            ),
-        ):
-            # In the dygraph mode, use the `set_value` to reset the parameter directly,
-            # and reset the `state_dict` to update parameter in static mode.
-            if isinstance(layer.weight, paddle.Tensor):
-                if layer.weight.is_distributed:
-                    with rng_tracker():
-                        layer.weight.set_value(
-                            paddle.tensor.normal(
-                                mean=0.0,
-                                std=self.config.initializer_range
-                                if hasattr(self.config, "initializer_range")
-                                else self.qwen2.config.initializer_range,
-                                shape=layer.weight.shape,
-                            )
-                        )
-                else:
-                    layer.weight.set_value(
-                        paddle.tensor.normal(
-                            mean=0.0,
-                            std=self.config.initializer_range
-                            if hasattr(self.config, "initializer_range")
-                            else self.qwen2.config.initializer_range,
-                            shape=layer.weight.shape,
-                        )
-                    )
-            if hasattr(layer, "bias") and isinstance(layer.bias, paddle.Tensor):
-                layer.bias.set_value(paddle.zeros_like(layer.bias))
-        # Layer.apply is DFS https://github.com/PaddlePaddle/Paddle/blob/a6f5021fcc58b21f4414bae6bf4731ef6971582c/python/paddle/nn/layer/layers.py#L527-L530
-        # sublayer is init first
-        # scale RowParallelLinear weight
-        with paddle.no_grad():
-            if isinstance(layer, Qwen2MLP):
-                factor = 1 / math.sqrt(2 * self.config.num_hidden_layers)
-                layer.down_proj.weight.scale_(factor)
-            if isinstance(layer, Qwen2Attention):
-                factor = 1 / math.sqrt(2 * self.config.num_hidden_layers)
-                layer.o_proj.weight.scale_(factor)
-
 
 @register_base_model
-class Qwen2Model(Qwen2PretrainedModel):
-    """
-    Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`Qwen2DecoderLayer`]
-
-    Args:
-        config: Qwen2Config
-    """
-
+class Qwen2Model(LlamaModel):
+    """Qwen2模型，继承自LlamaModel"""
     def __init__(self, config: Qwen2Config):
         super().__init__(config)
         self.padding_idx = config.pad_token_id
-        self.vocab_size = config.vocab_size
-
-        self.hidden_size = config.hidden_size
-        self.sequence_parallel = config.sequence_parallel
-        self.recompute_granularity = config.recompute_granularity
-        self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
-
-        # Recompute defaults to False and is controlled by Trainer
-        self.enable_recompute = False
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            self.embed_tokens = mpu.VocabParallelEmbedding(
-                self.vocab_size,
-                self.hidden_size,
-                weight_attr=paddle.ParamAttr(initializer=nn.initializer.XavierNormal()),
-            )
-        else:
-            self.embed_tokens = nn.Embedding(
-                self.vocab_size,
-                self.hidden_size,
-            )
-
-        self.layers = nn.LayerList(
-            [
-                Qwen2DecoderLayer(
-                    config=config,
-                    layerwise_recompute=layer_idx not in self.no_recompute_layers,
-                    skip_recompute_ops=get_skip_recompute_ops(config, layer_idx),
-                )
-                for layer_idx in range(config.num_hidden_layers)
-            ]
-        )
-        self.norm = Qwen2RMSNorm(config)
-
-    def get_input_embeddings(self):
-        return self.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.embed_tokens = value
-
-    @staticmethod
-    def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
-        if attention_mask is not None:
-            # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-            if len(attention_mask.shape) == 2:
-                expanded_attn_mask = _expand_2d_mask(attention_mask, dtype, tgt_length=input_shape[-1])
-                # For decoding phase in generation, seq_length = 1, we don't need to add causal mask
-                if input_shape[-1] > 1:
-                    combined_attention_mask = _make_causal_mask(
-                        input_shape,
-                        past_key_values_length=past_key_values_length,
-                    )
-                    expanded_attn_mask = expanded_attn_mask & combined_attention_mask
-            # [bsz, seq_len, seq_len] -> [bsz, 1, seq_len, seq_len]
-            elif len(attention_mask.shape) == 3:
-                expanded_attn_mask = attention_mask.unsqueeze(1).astype("bool")
-            # if attention_mask is already 4-D, do nothing
-            else:
-                expanded_attn_mask = attention_mask
-        else:
-            expanded_attn_mask = _make_causal_mask(
-                input_shape,
-                past_key_values_length=past_key_values_length,
-            )
-        # Convert bool attention_mask to float attention mask, which will be added to attention_scores later
-        if get_env_device() == "xpu":
-            x = paddle.to_tensor(0.0, dtype="float32")
-            y = paddle.to_tensor(-1.7005809656952787e38, dtype="float32")
-            expanded_attn_mask = paddle.where(expanded_attn_mask, x, y)
-        else:
-            expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), 0.0, paddle.finfo(dtype).min).astype(
-                dtype
-            )
-        return expanded_attn_mask
-
     @paddle.jit.not_to_static
     def recompute_training_full(
         self,
@@ -1253,7 +854,6 @@ class Qwen2Model(Qwen2PretrainedModel):
         )
 
         return hidden_states
-
     def forward(
         self,
         input_ids: paddle.Tensor = None,
@@ -1267,215 +867,17 @@ class Qwen2Model(Qwen2PretrainedModel):
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
-
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states  # fmt:skip
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        # retrieve input_ids and inputs_embeds
-        if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
-        elif input_ids is not None:
-            batch_size, seq_length = input_ids.shape
-        elif inputs_embeds is not None:
-            batch_size, seq_length, _ = inputs_embeds.shape
-        else:
-            raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
-
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-        # NOTE: to make cache can be clear in-time
-        past_key_values = list(past_key_values)
-
-        seq_length_with_past = seq_length
-        cache_length = 0
-        if past_key_values[0] is not None:
-            cache_length = past_key_values[0][0].shape[1]
-            seq_length_with_past += cache_length
-        if inputs_embeds is None:
-            # [bs, seq_len, dim]
-            inputs_embeds = self.embed_tokens(input_ids)
-
-        if self.sequence_parallel:
-            # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
-            bs, seq_len, hidden_size = inputs_embeds.shape
-            inputs_embeds = paddle.reshape_(inputs_embeds, [bs * seq_len, hidden_size])
-            # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
-            inputs_embeds = ScatterOp.apply(inputs_embeds)
-
-        # embed positions
-        if attn_mask_startend_row_indices is not None or get_use_casual_mask():
-            attention_mask = None
-        else:
-            # [bs, seq_len]
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-            attention_mask = self._prepare_decoder_attention_mask(
-                attention_mask, (batch_size, seq_length), cache_length, inputs_embeds.dtype
-            )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                attention_mask = None if is_casual_mask(attention_mask) else attention_mask
-
-        if position_ids is None:
-            position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
-
-        hidden_states = inputs_embeds
-
-        # decoder layers
-        all_hidden_states = () if output_hidden_states else None
-        all_self_attns = () if output_attentions else None
-        next_decoder_cache = () if use_cache else None
-
-        for idx, (decoder_layer) in enumerate(self.layers):
-            if output_hidden_states:
-                all_hidden_states += (hidden_states,)
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
-
-            has_gradient = not hidden_states.stop_gradient
-            if (
-                self.enable_recompute
-                and idx not in self.no_recompute_layers
-                and has_gradient
-                and self.recompute_granularity == "full"
-            ):
-                layer_outputs = self.recompute_training_full(
-                    decoder_layer,
-                    hidden_states,
-                    position_ids,
-                    attention_mask,
-                    output_attentions,
-                    past_key_value,
-                    use_cache,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    batch_size=batch_size,
-                )
-            else:
-                layer_outputs = decoder_layer(
-                    hidden_states,
-                    position_ids,
-                    attention_mask,
-                    output_attentions,
-                    past_key_value,
-                    use_cache,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    batch_size=batch_size,
-                )
-
-            # NOTE: clear outdate cache after it has been used for memory saving
-            past_key_value = past_key_values[idx] = None
-            if type(layer_outputs) is tuple:
-                hidden_states = layer_outputs[0]
-            else:
-                hidden_states = layer_outputs
-
-            if output_attentions:
-                all_self_attns += (layer_outputs[1],)
-
-            if use_cache:
-                next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
-
-        hidden_states = self.norm(hidden_states)
-
-        # add hidden states from the last decoder layer
-        if output_hidden_states:
-            all_hidden_states += (hidden_states,)
-
-        next_cache = next_decoder_cache if use_cache else None
-
-        if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
-        return BaseModelOutputWithPastAndCrossAttentions(
-            last_hidden_state=hidden_states,
-            past_key_values=next_cache,
-            hidden_states=all_hidden_states,
-            attentions=all_self_attns,
-        )
-
-
-class Qwen2PretrainingCriterion(nn.Layer):
-    """
-    Criterion for Mixtral.
-    It calculates the final loss.
-    """
-
+        super().forward()
+class Qwen2PretrainingCriterion(LlamaPretrainingCriterion):
+    """Qwen2的预训练损失计算，继承自LlamaPretrainingCriterion"""
     def __init__(self, config: Qwen2Config):
-        super(Qwen2PretrainingCriterion, self).__init__()
-        self.ignore_index = getattr(config, "ignore_index", -100)
-        self.config = config
+        super().__init__(config)
         self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
 
-        if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
-            self.loss_func = mpu.ParallelCrossEntropy(ignore_index=self.ignore_index)
-        else:
-            self.loss_func = paddle.nn.CrossEntropyLoss(reduction="none", ignore_index=self.ignore_index)
-
-    def forward(self, prediction_scores, masked_lm_labels):
-        if self.enable_parallel_cross_entropy:
-            if prediction_scores.shape[-1] == self.config.vocab_size:
-                warnings.warn(
-                    f"enable_parallel_cross_entropy, the vocab_size should be splitted: {prediction_scores.shape[-1]}, {self.config.vocab_size}"
-                )
-                self.loss_func = paddle.nn.CrossEntropyLoss(reduction="none", ignore_index=self.ignore_index)
-
-        with paddle.amp.auto_cast(False):
-            masked_lm_loss = self.loss_func(prediction_scores.astype("float32"), masked_lm_labels.unsqueeze(2))
-
-            # skip ignore_index which loss == 0
-            # masked_lm_loss = masked_lm_loss[masked_lm_loss > 0]
-            # loss = paddle.mean(masked_lm_loss)
-            binary_sequence = paddle.where(
-                masked_lm_loss > 0, paddle.ones_like(masked_lm_loss), paddle.zeros_like(masked_lm_loss)
-            )
-            count = paddle.sum(binary_sequence)
-            if count == 0:
-                loss = paddle.sum(masked_lm_loss * binary_sequence)
-            else:
-                loss = paddle.sum(masked_lm_loss * binary_sequence) / count
-
-        return loss
-
-
-class Qwen2LMHead(nn.Layer):
-    def __init__(self, config: Qwen2Config, embedding_weights=None, transpose_y=False):
-        super(Qwen2LMHead, self).__init__()
-        self.config = config
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
-        else:
-            vocab_size = config.vocab_size
-
-        self.transpose_y = transpose_y
-        if transpose_y:
-            if embedding_weights is not None:
-                self.weight = embedding_weights
-            else:
-                self.weight = self.create_parameter(
-                    shape=[vocab_size, config.hidden_size],
-                    dtype=paddle.get_default_dtype(),
-                )
-        else:
-            if vocab_size != config.vocab_size:
-                with get_rng_state_tracker().rng_state():
-                    self.weight = self.create_parameter(
-                        shape=[config.hidden_size, vocab_size],
-                        dtype=paddle.get_default_dtype(),
-                    )
-            else:
-                self.weight = self.create_parameter(
-                    shape=[config.hidden_size, vocab_size],
-                    dtype=paddle.get_default_dtype(),
-                )
-
-        # Must set distributed attr for Tensor Parallel !
-        self.weight.is_distributed = True if (vocab_size != config.vocab_size) else False
-        if self.weight.is_distributed:
-            # for tie_word_embeddings
-            self.weight.split_axis = 0 if self.transpose_y else 1
-
+class Qwen2LMHead(LlamaLMHead):
+    """Qwen2的语言模型头，继承自LlamaLMHead"""
+    def __init__(self, config: Qwen2Config):
+        super().__init__(config)
     def forward(self, hidden_states, tensor_parallel_output=None, batch_size=None):
         if self.config.sequence_parallel:
             hidden_states = GatherOp.apply(hidden_states)
@@ -1488,73 +890,10 @@ class Qwen2LMHead(nn.Layer):
             hidden_states, self.weight, transpose_y=self.transpose_y, tensor_parallel_output=tensor_parallel_output
         )
         return logits
-
-
-class Qwen2ForCausalLM(Qwen2PretrainedModel):
-    enable_to_static_method = True
-    _tied_weights_keys = ["lm_head.weight"]
-
+class Qwen2ForCausalLM(LlamaForCausalLM):
+    """用于因果语言建模的Qwen2模型，继承自LlamaForCausalLM"""
     def __init__(self, config: Qwen2Config):
         super().__init__(config)
-        self.qwen2 = Qwen2Model(config)
-        if config.tie_word_embeddings:
-            self.lm_head = Qwen2LMHead(config, embedding_weights=self.qwen2.embed_tokens.weight, transpose_y=True)
-            self.tie_weights()
-        else:
-            self.lm_head = Qwen2LMHead(config)
-        self.criterion = Qwen2PretrainingCriterion(config)
-        self.vocab_size = config.vocab_size
-
-    def get_input_embeddings(self):
-        return self.qwen2.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.qwen2.embed_tokens = value
-
-    def get_output_embeddings(self):
-        return self.lm_head
-
-    def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
-
-    def set_decoder(self, decoder):
-        self.qwen2 = decoder
-
-    def get_decoder(self):
-        return self.qwen2
-
-    def prepare_inputs_for_generation(
-        self, input_ids, use_cache=False, past_key_values=None, attention_mask=None, inputs_embeds=None, **kwargs
-    ):
-        batch_size, seq_length = input_ids.shape
-        position_ids = kwargs.get("position_ids", paddle.arange(seq_length).expand((batch_size, seq_length)))
-        if past_key_values:
-            input_ids = input_ids[:, -1].unsqueeze(axis=-1)
-            position_ids = position_ids[:, -1].unsqueeze(-1)
-
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-
-        model_inputs.update(
-            {
-                "position_ids": position_ids,
-                "past_key_values": past_key_values,
-                "use_cache": use_cache,
-                "attention_mask": attention_mask,
-            }
-        )
-        return model_inputs
-
-    def _get_model_inputs_spec(self, dtype: str):
-        return {
-            "input_ids": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
-            "attention_mask": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
-            "position_ids": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
-        }
-
     @staticmethod
     def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
         # update cache
@@ -1971,3 +1310,4 @@ class Qwen2SentenceEmbedding(Qwen2PretrainedModel):
             hidden_states = outputs[0]
         last_hidden_states = hidden_states.gather_nd(embedding_indices)
         return last_hidden_states
+
