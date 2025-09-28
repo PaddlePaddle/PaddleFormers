@@ -76,7 +76,6 @@ class AutoModelTest(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_name, model_name)))
 
     # @unittest.skip("skipping due to connection error!")
-    @skip_for_none_ce_case
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_from_hf_hub(self):
         model = AutoModel.from_pretrained(
