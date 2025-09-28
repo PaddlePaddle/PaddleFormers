@@ -72,8 +72,6 @@ jobs:
             -e python_version \
             -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
             -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
-            -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
-            -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
             -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             
       - name: Download Code
