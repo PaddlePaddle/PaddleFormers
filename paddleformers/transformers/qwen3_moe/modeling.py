@@ -337,7 +337,7 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
             )
 
         final_hidden_states = final_hidden_states.reshape([batch_size, sequence_length, hidden_dim])
-        return final_hidden_states, None, None
+        return final_hidden_states, router_logits
 
 
 class Qwen3MoeDecoderLayer(nn.Layer):
@@ -422,7 +422,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states, aux_loss, z_loss = self.mlp(hidden_states)
+        hidden_states = self.mlp(hidden_states)
         if isinstance(hidden_states, tuple):
             hidden_states, _ = hidden_states
         hidden_states = residual + hidden_states

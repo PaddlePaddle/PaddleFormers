@@ -288,7 +288,8 @@ class ModularMoELayer(nn.Layer):
             shared_output = self.shared_experts(residuals)
             output = output + shared_output
 
-        return output, aux_loss, z_loss
+        # currently no need return aux_loss and z_loss
+        return output, None
 
     def _forward_traditional_moe(
         self, hidden_states: paddle.Tensor, topk_indices: paddle.Tensor, topk_weights: paddle.Tensor
