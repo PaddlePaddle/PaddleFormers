@@ -21,11 +21,11 @@ env:
   PR_ID: ${{ github.event.pull_request.number }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-model-unittest-gpu
-  ci_scripts: /workspace/PaddleFormers/scripts/unit_test
+  CI_SCRIPTS: /workspace/PaddleFormers/scripts/ci_model_unittest.sh
   BRANCH: ${{ github.event.pull_request.base.ref }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
-  CI_name: model-unittest-gpu-ci
-  no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+  CI_NAME: model-unittest-gpu-ci
+  NO_PROXY: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 defaults:
   run:
@@ -48,31 +48,31 @@ jobs:
       
       - name: Run Container
         env:
-          work_dir: ${{ github.workspace }}
+          WORK_DIR: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
           paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
-          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          container_name=${{env.TASK}}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
           docker run -d -t --gpus all --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
-            -v $work_dir/../../..:$work_dir/../../.. \
-            -v $work_dir:/workspace \
+            -v $WORK_DIR/../../..:$WORK_DIR/../../.. \
+            -v $WORK_DIR:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
-            -e BRANCH \
-            -e AGILE_COMPILE_BRANCH \
-            -e PR_ID \
-            -e COMMIT_ID \
-            -e work_dir \
-            -e ci_scripts \
-            -e no_proxy \
-            -e CI_name \
-            -e paddle_whl \
-            -e FLAGS_dynamic_static_unified_comm \
-            -e python_version \
-            -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
-            -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
-            -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
+            -e BRANCH=${{env.BRANCH}} \
+            -e AGILE_COMPILE_BRANCH=${{env.AGILE_COMPILE_BRANCH}} \
+            -e PR_ID=${{env.PR_ID}} \
+            -e COMMIT_ID=${{env.COMMIT_ID}} \
+            -e WORK_DIR=${{env.WORK_DIR}} \
+            -e CI_SCRIPTS=${{env.CI_SCRIPTS}} \
+            -e NO_PROXY=${{env.NO_PROXY}} \
+            -e CI_NAME=${{env.CI_NAME}} \
+            -e paddle_whl=${{env.paddle_whl}} \
+            -e FLAGS_dynamic_static_unified_comm=${{env.FLAGS_dynamic_static_unified_comm}} \
+            -e python_version=${{env.python_version}} \
+            -e HF_PROXY_PATH=${{env.WORK_DIR}}/../../../proxy_huggingface \
+            -e AISTUDIO_PROXY_PATH=${{env.WORK_DIR}}/../../../proxy_aistudio \
+            -w /workspace --privileged ${{env.IMAGE_NAME}}
             
       - name: Download Code
         run: |
@@ -82,9 +82,9 @@ jobs:
             wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
             echo "Extracting PaddleFormers.tar"
             tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
-            echo "work_dir = ${work_dir}"
-            source $work_dir/../../../proxy
-            cat $work_dir/../../../proxy
+            echo "WORK_DIR = ${{env.WORK_DIR}}"
+            source ${{env.WORK_DIR}}/../../../proxy
+            cat ${{env.WORK_DIR}}/../../../proxy
             cd PaddleFormers
             git config --global user.name "PaddleCI"
             git config --global user.email "paddle_ci@example.com"
@@ -94,6 +94,7 @@ jobs:
               git fetch origin pull/${PR_ID}/head
               git checkout -b PR_${PR_ID} FETCH_HEAD
               git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
+              echo "Checking out ${BRANCH}..."
               git fetch upstream ${BRANCH}:${BRANCH}
               git merge ${BRANCH} --no-edit
               git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
@@ -111,8 +112,8 @@ jobs:
           set -e
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-          echo "work_dir = ${work_dir}"
-          cp -r $work_dir/../../../models ./models
+          echo "WORK_DIR = ${WORK_DIR}"
+          cp -r $WORK_DIR/../../../models ./models
           echo "Check models:"
           ls -l ./models
           echo "Test Start"
@@ -165,85 +166,3 @@ jobs:
         if: always()
         run: |
           docker rm -f $container_name 2>/dev/null || true
-          
-  # upload-coverage:
-  #   name: upload-coverage
-  #   needs: [model-unittest-gpu-ci]
-  #   if: always()
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v4
-  #       with:
-  #         fetch-depth: 0
-
-  #     - name: Download coverage.xml
-  #       run: |
-  #         if [ -n "${PR_ID}" ]; then
-  #           bos_prefix="${PR_ID}/${COMMIT_ID}"
-  #         else
-  #           bos_prefix="schedule/$(date +%Y%m%d)"
-  #         fi
-  #         wget -q --no-proxy \
-  #           https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/coverage.xml \
-  #           --no-check-certificate -O coverage.xml
-
-  #     - name: Fix coverage.xml paths
-  #       run: |
-  #         echo "Before fix:"
-  #         head -n 10 coverage.xml || true
-
-  #         old_source=$(grep -oPm1 '(?<=<source>).*?(?=</source>)' coverage.xml || true)
-  #         if [ -n "$old_source" ]; then
-  #           echo "Replacing source '$old_source' with 'paddleformers'"
-  #           sed -i "s|<source>$old_source</source>|<source>paddleformers</source>|g" coverage.xml
-  #         else
-  #           echo "No <source> found, injecting <source>paddleformers</source>"
-  #           sed -i 's|<sources>|<sources>\n        <source>paddleformers</source>|' coverage.xml
-  #         fi
-
-  #         echo "After fix:"
-  #         head -n 10 coverage.xml || true
-
-  #     - name: Upload coverage to Codecov
-  #       uses: codecov/codecov-action@v4
-  #       with:
-  #         files: coverage.xml
-  #       env:
-  #         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-  # upload-allure:
-  #   name: upload-allure
-  #   needs: [model-unittest-gpu-ci]
-  #   if: success() || failure()
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v4
-  #       with:
-  #         fetch-depth: 0
-
-  #     - name: Download report.tar.gz
-  #       run: |
-  #         if [ -n "${PR_ID}" ]; then
-  #           bos_prefix="${PR_ID}/${COMMIT_ID}"
-  #         else
-  #           bos_prefix="schedule/$(date +%Y%m%d)"
-  #         fi
-  #         wget -q --no-proxy \
-  #           https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
-  #           --no-check-certificate -O report.tar.gz
-  #         tar -xzf report.tar.gz
-
-  #     - name: Upload Allure Report
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: allure-report
-  #         path: report
-  #         if-no-files-found: ignore
-
-  #     - name: Deploy allure report to GitHub Pages
-  #       uses: peaceiris/actions-gh-pages@v4
-  #       with:
-  #         github_token: ${{ secrets.GITHUB_TOKEN }}
-  #         publish_dir: ./report
