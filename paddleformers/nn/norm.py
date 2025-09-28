@@ -85,7 +85,7 @@ class Norm(GeneralInterface):
     @classmethod
     def create(self, config, hidden_size=None, has_bias=None, norm_eps=None, norm_type=None, **kwargs):
         if norm_type is None:
-            norm_type = "rms_norm" if config.get("use_rmsnorm", False) else "layer_norm"
+            norm_type = "rms_norm"
         if has_bias is None:
             has_bias = config.get("use_bias", False)
         norm_cls = self._global_mapping[norm_type]
