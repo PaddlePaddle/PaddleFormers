@@ -397,7 +397,12 @@ def _load_part_state_dict(
 
     def _transpose_hf_weight(key, weight):
         if _is_need_transpose(key):
-            return np.ascontiguousarray(weight.transpose([-1, -2]))
+            if isinstance(weight, np.ndarray):
+                return np.ascontiguousarray(weight.transpose([-1, -2]))
+            elif isinstance(weight, paddle.Tensor):
+                return weight.transpose([-1, -2]).contiguous()
+            else:
+                raise ValueError(f"Unsupported weight type: {type(weight)}. Expected np.ndarray or paddle.Tensor")
         return weight
 
     part_state_dict = {}
