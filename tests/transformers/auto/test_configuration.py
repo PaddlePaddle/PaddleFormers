@@ -59,7 +59,8 @@ class AutoConfigTest(unittest.TestCase):
             # but it can load it as the PretrainedConfig class
             auto_config = AutoConfig.from_pretrained(tempdir)
             self.assertEqual(auto_config.hidden_size, number)
-
+            
+    @skip_for_none_ce_case
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_from_hf_hub(self):
         config = AutoConfig.from_pretrained("dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface")
