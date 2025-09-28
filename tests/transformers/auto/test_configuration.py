@@ -25,7 +25,7 @@ from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.bert.configuration import BertConfig
 from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import CONFIG_NAME
-from tests.testing_utils import set_proxy
+from tests.testing_utils import set_proxy, skip_for_none_ce_case
 
 from ...utils.test_module.custom_configuration import CustomConfig
 
@@ -60,6 +60,7 @@ class AutoConfigTest(unittest.TestCase):
             auto_config = AutoConfig.from_pretrained(tempdir)
             self.assertEqual(auto_config.hidden_size, number)
 
+    @skip_for_none_ce_case
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_from_hf_hub(self):
         config = AutoConfig.from_pretrained("dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface")
