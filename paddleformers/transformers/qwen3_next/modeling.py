@@ -24,6 +24,7 @@ from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.general import GeneralInterface
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -258,39 +259,6 @@ def repeat_kv(hidden_states: Tensor, n_rep: int) -> Tensor:
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
-def scaled_dot_product_attention(
-    query,
-    key,
-    value,
-    attn_mask=None,
-    dropout_p=0.0,
-    is_causal=False,
-    scale=None,
-) -> paddle.Tensor:
-    L, S = query.size(-2), key.size(-2)
-    scale_factor = query.size(-1) ** -0.5 if scale is None else scale
-    attn_bias = paddle.zeros([L, S], dtype=query.dtype)
-
-    if is_causal:
-        assert attn_mask is None
-        temp_mask = paddle.ones([L, S], dtype="bool").tril(diagonal=0)
-        attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
-        attn_bias.to(query.dtype)
-
-    if attn_mask is not None:
-        if attn_mask.dtype == paddle.bool:
-            attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
-        else:
-            attn_bias = attn_mask + attn_bias
-
-    attn_weight = query @ key.transpose(-2, -1) * scale_factor
-    attn_weight += attn_bias
-    with paddle.amp.auto_cast(False):
-        attn_weight = paddle.softmax(attn_weight, dim=-1, dtype="float32").astype(query.dtype)
-    attn_weight = F.dropout(attn_weight, dropout_p)
-    return attn_weight @ value
-
-
 def sdpa_attention_forward(
     module: nn.Layer,
     query: Tensor,
@@ -330,16 +298,14 @@ def sdpa_attention_forward(
                 f" The default scaling is {default_scaling}, but got {scaling}."
             )
 
-    attn_output = scaled_dot_product_attention(
-        query,
-        key,
-        value,
+    attn_output = F.scaled_dot_product_attention(
+        query.permute(0, 2, 1, 3),
+        key.permute(0, 2, 1, 3),
+        value.permute(0, 2, 1, 3),
         attn_mask=attention_mask,
         dropout_p=dropout,
         is_causal=is_causal,
     )
-
-    attn_output = attn_output.transpose(1, 2).contiguous()
 
     return attn_output, None
 
@@ -893,6 +859,8 @@ class Qwen3NextDecoderLayer(nn.Layer):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
+        self.layer_idx = layer_idx
+        self.config = config
 
         # token mixer
         self.layer_type = config.layer_types[layer_idx]
@@ -923,7 +891,10 @@ class Qwen3NextDecoderLayer(nn.Layer):
     ) -> Tensor:
         residual = hidden_states
 
+        import numpy as np
+        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag0.npy", hidden_states.float().numpy())
         hidden_states = self.input_layernorm(hidden_states)
+        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag1.npy", hidden_states.float().numpy())
 
         # Token Mixer
         if self.layer_type == "linear_attention":
@@ -944,17 +915,22 @@ class Qwen3NextDecoderLayer(nn.Layer):
                 position_embeddings=position_embeddings,
                 **kwargs,
             )
+        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag2.npy", hidden_states.float().numpy())
 
         hidden_states = residual + hidden_states
+        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag3.npy", hidden_states.float().numpy())
 
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
+        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag4.npy", hidden_states.float().numpy())
         hidden_states = self.mlp(hidden_states)
         # For the MoE layers, we need to unpack
         if isinstance(hidden_states, tuple):
             hidden_states, _ = hidden_states
+        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag5.npy", hidden_states.float().numpy())
         hidden_states = residual + hidden_states
+        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag6.npy", hidden_states.float().numpy())
 
         return hidden_states
 
@@ -979,7 +955,7 @@ class Qwen3NextPretrainedModel(PretrainedModel):
     ]
 
     def _init_weights(self, module):
-        super()._init_weights(module)
+        # super()._init_weights(module)
         if isinstance(module, Qwen3NextGatedDeltaNet):
             module.dt_bias.data.fill_(1.0)
             module.A_log.data.uniform_(0, 16).log_()
@@ -1197,3 +1173,12 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
             attentions=outputs.attentions,
             router_logits=outputs.router_logits,
         )
+
+
+class Qwen3NextForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = Qwen3NextConfig
+    _rotary_emb_cls = Qwen3NextRotaryEmbedding
+    _decoder_layer_cls = Qwen3NextDecoderLayer
+    _init_weights = Qwen3NextModel._init_weights
+    _tied_weights_keys = ["lm_head.weight"]
+    transpose_weight_keys = Qwen3NextModel.transpose_weight_keys
