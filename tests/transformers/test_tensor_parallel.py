@@ -123,5 +123,5 @@ class TestTensorParallel(TestMultipleGpus):
 
 
 if __name__ == "__main__":
-    # _test_llama()
+    _test_llama()
     _test_qwen2()
