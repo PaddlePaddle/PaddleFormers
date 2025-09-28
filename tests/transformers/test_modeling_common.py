@@ -39,7 +39,7 @@ from paddleformers.transformers.configuration_utils import PretrainedConfig
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils.env import CONFIG_NAME, LEGACY_CONFIG_NAME  # MODEL_HOME,
 
-from ..testing_utils import slow, skip_for_none_ce_case
+from ..testing_utils import skip_for_none_ce_case, slow
 
 
 def _config_zero_init(config):
