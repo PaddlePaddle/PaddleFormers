@@ -186,7 +186,7 @@ def scaled_dot_product_attention(
             [bsz, kv_seq_len, v_num_heads, head_dim - v_head_dim],
             dtype=value_states.dtype,
         )
-        value_states = paddle.concat([value_states, value_padding], axis=-1)
+        value_states = paddle.cat([value_states, value_padding], axis=-1)
 
         outputs = fusion_ops.fusion_flash_attention(
             query_states,
@@ -279,7 +279,7 @@ def _make_causal_mask(input_ids_shape, past_key_values_length):
 
     if past_key_values_length > 0:
         # [tgt_len, tgt_len + past_len]
-        mask = paddle.concat([paddle.ones([target_length, past_key_values_length], dtype="bool"), mask], axis=-1)
+        mask = paddle.cat([paddle.ones([target_length, past_key_values_length], dtype="bool"), mask], axis=-1)
 
     # [bs, 1, tgt_len, tgt_len + past_len]
     return mask[None, None, :, :].expand([batch_size, 1, target_length, target_length + past_key_values_length])
@@ -377,7 +377,7 @@ class DeepseekV2RotaryEmbedding(nn.Layer):
         freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         # [seq_len, axis]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         # [1, seqlen, 1, axis]
         self.cos_cached = emb.cos()[None, :, None, :]
         self.sin_cached = emb.sin()[None, :, None, :]
@@ -417,11 +417,11 @@ class DeepseekV2LinearScalingRotaryEmbedding(DeepseekV2RotaryEmbedding):
         freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         # [seq_len, axis]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         # [1, seqlen, 1, axis]
         self.cos_cached = emb.cos()[None, :, None, :]
         self.sin_cached = emb.sin()[None, :, None, :]
-        self.cos_sin_table = None if get_env_device() != "gcu" else paddle.concat([freqs.cos(), freqs.sin()], axis=-1)
+        self.cos_sin_table = None if get_env_device() != "gcu" else paddle.cat([freqs.cos(), freqs.sin()], axis=-1)
 
 
 # Copied from transformers.models.llama.modeling_llama.LlamaDynamicNTKScalingRotaryEmbedding with Llama->DeepseekV2
@@ -448,11 +448,11 @@ class DeepseekV2DynamicNTKScalingRotaryEmbedding(DeepseekV2RotaryEmbedding):
         freqs = paddle.einsum("i,j->ij", t, inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         # [seq_len, axis]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         # [1, seqlen, 1, axis]
         scale_cos = emb.cos()[None, :, None, :]
         scale_sin = emb.sin()[None, :, None, :]
-        scale_cos_sin = None if get_env_device() != "gcu" else paddle.concat([freqs.cos(), freqs.sin()], axis=-1)
+        scale_cos_sin = None if get_env_device() != "gcu" else paddle.cat([freqs.cos(), freqs.sin()], axis=-1)
         return scale_cos, scale_sin, scale_cos_sin
 
     def forward(self, x, seq_len=None):
@@ -553,7 +553,7 @@ class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
             / yarn_get_mscale(self.scaling_factor, self.mscale_all_dim)
         )
 
-        emb = paddle.concat((freqs, freqs), axis=-1)
+        emb = paddle.cat((freqs, freqs), axis=-1)
         self.cos_cached = emb.cos() * _mscale
         self.sin_cached = emb.sin() * _mscale
 
@@ -562,7 +562,7 @@ def rotate_half(x):
     """Rotates half the hidden axiss of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.concat([-x2, x1], axis=-1)  # shape is the same as x
+    return paddle.cat([-x2, x1], axis=-1)  # shape is the same as x
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
@@ -1088,14 +1088,14 @@ class DeepseekV2Attention(nn.Layer):
         sin = sin[None, :, None, :]
         q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids, self.fuse_rope)
 
-        query_states = paddle.concat([q_nope, q_pe], axis=-1)
-        key_states = paddle.concat([k_nope, k_pe], axis=-1)
+        query_states = paddle.cat([q_nope, q_pe], axis=-1)
+        key_states = paddle.cat([k_nope, k_pe], axis=-1)
 
         # [bs, seq_len, num_head, head_dim]
         if past_key_value is not None:
             # reuse k, v, self_attention
-            key_states = paddle.concat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
         has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
@@ -1310,7 +1310,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         hidden_states = self.hnorm(hidden_states)
         nextn_hidden_state = self.enorm(nextn_hidden_state)
 
-        hidden_states = self.eh_proj(paddle.concat([hidden_states, nextn_hidden_state], axis=-1))
+        hidden_states = self.eh_proj(paddle.cat([hidden_states, nextn_hidden_state], axis=-1))
 
         layer_outputs = super(DeepseekV2MTPLayer, self).forward(
             hidden_states,
@@ -1844,7 +1844,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                     hidden_states = GatherOp.apply(hidden_states)
                     hidden_states = hidden_states.reshape([-1, seq_length, hidden_states.shape[-1]])
 
-                inputs_embeds_cur_depth = paddle.concat(
+                inputs_embeds_cur_depth = paddle.cat(
                     [inputs_embeds_ori[:, (nextn + 1) :, :], inputs_embeds_extra[:, : (nextn + 1), :]], axis=1
                 )
 
@@ -2205,18 +2205,18 @@ class DeepseekV2ForCausalLM(DeepseekV2PretrainedModel):
         # update position_ids
         if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
             position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
+            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
 
         if not is_encoder_decoder and "attention_mask" in model_kwargs:
             # TODO: support attention mask for other models
             attention_mask = model_kwargs["attention_mask"]
             if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )
             elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )[:, :, -1:, :]

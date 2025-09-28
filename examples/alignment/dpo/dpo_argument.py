@@ -102,6 +102,8 @@ class DPOConfig:
     ref_model_update_steps: int = field(default=-1, metadata={"help": "Update ref model state dict "})
     reference_free: bool = field(default=False, metadata={"help": "No reference model."})
     lora: bool = field(default=False, metadata={"help": "Use LoRA model."})
+    offset_alpha: float = field(default=0.0, metadata={"help": "offset alpha"})
+    normalize_logps: bool = field(default=True, metadata={"help": "normalize logps"})
 
 
 @dataclass

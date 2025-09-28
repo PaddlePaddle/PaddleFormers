@@ -14,7 +14,7 @@
 # limitations under the License.
 """Qwen3 model configuration"""
 
-from ..configuration_utils import PretrainedConfig
+from ..configuration_utils import PretrainedConfig, layer_type_validation
 
 __all__ = [
     "Qwen3Config",
@@ -166,6 +166,7 @@ class Qwen3Config(PretrainedConfig):
         sliding_window=4096,
         max_window_layers=28,
         attention_dropout=0.0,
+        layer_types=None,
         pp_seg_method="layer:Qwen3DecoderLayer",
         **kwargs,
     ):
@@ -205,6 +206,14 @@ class Qwen3Config(PretrainedConfig):
 
         self.pp_seg_method = pp_seg_method
 
+        self.layer_types = layer_types
+        if self.layer_types is None:
+            self.layer_types = [
+                "sliding_attention" if self.use_sliding_window and i >= self.max_window_layers else "full_attention"
+                for i in range(self.num_hidden_layers)
+            ]
+        layer_type_validation(self.layer_types, self.num_hidden_layers)
+
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
@@ -222,6 +231,6 @@ class Qwen3Config(PretrainedConfig):
                 "pp_seg_method",
                 "dpo_config",
                 "kto_config",
-                "max_sequence_length",
+                "layer_types",
             ]
         )

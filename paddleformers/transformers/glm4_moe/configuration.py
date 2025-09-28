@@ -158,6 +158,7 @@ class Glm4MoeConfig(PretrainedConfig):
         seq_aux=True,
         topk_method="noaux_tc",
         using_flex_token=True,
+        moe_subbatch_token_num=0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -200,6 +201,7 @@ class Glm4MoeConfig(PretrainedConfig):
         self.topk_method = topk_method
         self.using_flex_token = using_flex_token
         self.use_fp8 = False
+        self.moe_subbatch_token_num = moe_subbatch_token_num
 
         self.pp_seg_method = pp_seg_method
         self.disable_ffn_model_parallel = disable_ffn_model_parallel

@@ -49,7 +49,7 @@ def eager_attention_forward(
 
     if sink is not None:
         sink = sink.reshape([1, -1, 1, 1]).expand([query.shape[0], -1, query.shape[-2], -1])
-        combined_logits = paddle.concat([attn_weights, sink], axis=-1)
+        combined_logits = paddle.cat([attn_weights, sink], axis=-1)
         probs = nn.functional.softmax(combined_logits, axis=-1, dtype=combined_logits.dtype)
         scores = probs[..., :-1]  # we drop the sink here
         attn_weights = nn.functional.dropout(scores, p=dropout, training=module.training)

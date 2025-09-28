@@ -255,7 +255,7 @@ def apply_chunking_to_forward(
         # apply forward fn to every tuple
         output_chunks = tuple(forward_fn(*input_tensors_chunk) for input_tensors_chunk in zip(*input_tensors_chunks))
         # concatenate output at same dimension
-        return paddle.concat(output_chunks, axis=chunk_dim)
+        return paddle.cat(output_chunks, axis=chunk_dim)
 
     return forward_fn(*input_tensors)
 
@@ -397,7 +397,12 @@ def _load_part_state_dict(
 
     def _transpose_hf_weight(key, weight):
         if _is_need_transpose(key):
-            return weight.transpose([-1, -2])
+            if isinstance(weight, np.ndarray):
+                return np.ascontiguousarray(weight.transpose([-1, -2]))
+            elif isinstance(weight, paddle.Tensor):
+                return weight.transpose([-1, -2]).contiguous()
+            else:
+                raise ValueError(f"Unsupported weight type: {type(weight)}. Expected np.ndarray or paddle.Tensor")
         return weight
 
     part_state_dict = {}
@@ -1567,7 +1572,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                             dtype=output_embeddings._dtype,
                             is_bias=True,
                         )
-                        new_bias = paddle.concat(
+                        new_bias = paddle.cat(
                             [old_bias, paddle.zeros([pad_length], dtype=output_embeddings.bias.dtype)]
                         )
                         output_embeddings.bias.set_value(new_bias)

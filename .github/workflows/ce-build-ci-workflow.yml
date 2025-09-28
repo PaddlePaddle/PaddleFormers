@@ -16,7 +16,7 @@ jobs:
   build-ci-images-test:
     name: build-ci-images-test
     if: github.ref == 'refs/heads/develop'
-    uses: ./.github/workflows/ce-build-images.yaml
+    uses: ./.github/workflows/ce-build-images.yml
     with:
       flag_build: test
       runner: ernie-8gpu-2
@@ -45,7 +45,7 @@ jobs:
   update-ci-images-1:
     name: update-ci-images-1
     needs: [build-ci-images-test, test-ci-images]
-    uses: ./.github/workflows/ce-build-images.yaml
+    uses: ./.github/workflows/ce-build-images.yml
     with:
       flag_build: update
       runner: ernie-8gpu-1
@@ -54,7 +54,7 @@ jobs:
   update-ci-images-2:
     name: update-ci-images-2
     needs: [build-ci-images-test, test-ci-images]
-    uses: ./.github/workflows/ce-build-images.yaml
+    uses: ./.github/workflows/ce-build-images.yml
     with:
       flag_build: update
       runner: ernie-8gpu-2

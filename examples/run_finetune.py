@@ -63,6 +63,12 @@ def main():
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
 
+    if training_args.pre_alloc_memory > 0:
+        memory_size = int(training_args.pre_alloc_memory * 1024 * 1024 * 1024)
+        x = paddle.empty([memory_size], dtype=paddle.uint8)
+        logger.info(f"pre_alloc_memory size {x.shape}")
+        del x
+
     # Setup GPU & distributed training
     paddle.set_device(training_args.device)
     set_seed(seed=training_args.seed)
@@ -197,6 +203,7 @@ def main():
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
+        "use_template": data_args.use_template,
     }
 
     train_dataset = create_dataset_sft(

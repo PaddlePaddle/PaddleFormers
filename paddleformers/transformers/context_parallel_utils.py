@@ -47,7 +47,7 @@ def split_inputs_sequence_dim_load_balance(inputs, rank=None, degree=None):
         assert len(data.shape) == 2, f"data dims should be 2, but shaped: {data.shape}"
         sliced_datas = paddle.split(data, num_or_sections=degree * 2, axis=-1)
         sliced_data0, sliced_data1 = sliced_datas[rank], sliced_datas[degree * 2 - 1 - rank]
-        return paddle.concat([sliced_data0, sliced_data1], axis=-1)
+        return paddle.cat([sliced_data0, sliced_data1], axis=-1)
 
     if isinstance(inputs, paddle.Tensor):
         return do_split_sequence_dim_load_balance(inputs, rank, degree)

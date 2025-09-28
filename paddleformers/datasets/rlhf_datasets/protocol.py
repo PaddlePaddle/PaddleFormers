@@ -544,7 +544,7 @@ class DataProto:
         for batch in data:
             batch_lst.append(batch.batch)
         if batch_lst[0] is not None:
-            new_batch = paddle.concat(batch_lst, axis=0)
+            new_batch = paddle.cat(batch_lst, axis=0)
         else:
             new_batch = None
 

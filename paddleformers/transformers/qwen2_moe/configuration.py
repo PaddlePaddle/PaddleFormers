@@ -14,7 +14,7 @@
 # limitations under the License.
 """ Qwen2Moe model configuration"""
 
-from ..configuration_utils import PretrainedConfig
+from ..configuration_utils import PretrainedConfig, layer_type_validation
 
 __all__ = [
     "Qwen2MoeConfig",
@@ -153,6 +153,7 @@ class Qwen2MoeConfig(PretrainedConfig):
         norm_topk_prob=False,
         output_router_logits=False,
         router_aux_loss_coef=0.001,
+        layer_types=None,
         pp_seg_method="layer:Qwen2MoeDecoderLayer",
         **kwargs,
     ):
@@ -197,6 +198,14 @@ class Qwen2MoeConfig(PretrainedConfig):
 
         self.pp_seg_method = pp_seg_method
 
+        self.layer_types = layer_types
+        if self.layer_types is None:
+            self.layer_types = [
+                "sliding_attention" if self.use_sliding_window and i >= self.max_window_layers else "full_attention"
+                for i in range(self.num_hidden_layers)
+            ]
+        layer_type_validation(self.layer_types, self.num_hidden_layers)
+
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
@@ -221,5 +230,6 @@ class Qwen2MoeConfig(PretrainedConfig):
                 "pp_seg_method",
                 "dpo_config",
                 "kto_config",
+                "layer_types",
             ]
         )
