@@ -1,6 +1,6 @@
 {
     "qwen3_moe": {
-        "gate_type": "topk",
+        "expert_parallel_degree": 1,
         "gate_activation": "softmax",
         "expert_activation": "silu",
         "train_topk_method": "greedy",
@@ -10,7 +10,7 @@
         "expert_dropout": 0.0
     },
     "deepdeek_v3": {
-        "gate_type": "topk",
+        "expert_parallel_degree": 1,
         "gate_activation": "softmax",
         "expert_activation": "silu",
         "train_topk_method": "_topk_group_limited_greedy",

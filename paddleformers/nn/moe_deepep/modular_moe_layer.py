@@ -22,8 +22,6 @@ import paddle
 import paddle.distributed as dist
 from paddle import nn
 
-from ...transformers import PretrainedConfig
-from ..linear import Linear as GeneralLinear
 from .moe_communication import (
     DeepEPMoECommunication,
     MoECommunicationInterface,
@@ -48,60 +46,75 @@ class ModularMoELayer(nn.Layer):
     2. 易于扩展：支持自定义门控策略和专家架构
     """
 
-    def __init__(self, config: PretrainedConfig, moe_config: Dict):
+    def __init__(
+        self,
+        hidden_size: int,
+        moe_intermediate_size: int,
+        num_experts: int,
+        num_shared_experts: int,
+        num_experts_per_tok: int,
+        norm_topk_prob: int,
+        expert_activation: str,
+        moe_config: Dict,
+    ):
         """
         初始化模块化MoE Layer
 
         Args:
             hidden_size: 隐藏维度
-            intermediate_size: 中间维度
+            moe_intermediate_size: MoE 中间维度
             num_experts: 专家数量
-            num_experts_per_tok: 每个token选择的专家数
+            num_experts_per_tok: 每个token选择的专家数(TopK)
             num_shared_experts: 共享专家数量
-            expert_parallel_degree: 专家并行度
-            gate_type: 门控类型
-            gate_activation: 门控激活函数
-            expert_activation: 专家激活函数
-            aux_loss_weight: 辅助损失权重（传统模式）
-            z_loss_weight: Z损失权重（传统模式）
-            loss_configs: 损失配置列表（灵活模式）
-            loss_combiner_name: 损失组合器名称
-            use_flexible_loss: 是否使用灵活损失系统
-            expert_dropout: 专家dropout
+            norm_topk_prob: 是否归一化TopK的概率
+            expert_activation: 专家使用的激活函数
+            moe_config: 其他 MoE 相关配置
+
+
+        moe_config 内参数：
             moe_group: MoE通信组
-            all_to_all_dropout: All-to-All dropout
             custom_gate: 自定义门控网络
             custom_expert: 自定义专家网络
             custom_communication: 自定义通信策略
+            expert_parallel_degree: EP 并行度
+            gate_activation: 门控激活函数
+            aux_loss_weight: 辅助损失权重（传统模式）
+            z_loss_weight: Z损失权重（传统模式）
+            train_topk_method: 训练时使用的 TopK 具体方法
+            inference_topk_method: 推理时使用的 TopK 具体方法
+            drop_tokens: 是否在 Expert 满后抛弃 Token
+            use_flexible_loss: 是否使用灵活损失系统
+            loss_configs: 损失配置列表（灵活模式）
+            loss_combiner_name: 损失组合器名称
+            expert_dropout: 专家dropout
         """
         super().__init__()
-        self.hidden_size = config.get("hidden_size", 1024)
-        self.intermediate_size = config.get("intermediate_size", 1024)
-        self.num_experts = config.get("num_experts", 8)
-        self.num_experts_per_tok = config.get("num_experts_per_tok", 2)
-        self.num_shared_experts = config.get("num_shared_experts", 0)
-        self.expert_parallel_degree = config.get("expert_parallel_degree", 1)
-        self.loss_configs = config.get("loss_configs", None)
-        self.loss_combiner_name = config.get("loss_combiner_name", "weighted_sum")
-        self.use_flexible_loss = config.get("use_flexible_loss", False)
-        self.moe_group = config.get("moe_group", "data")
-        self.all_to_all_dropout = config.get("all_to_all_dropout", 0.0)
-        self.custom_gate = config.get("custom_gate", None)
-        self.custom_expert = config.get("custom_expert", None)
-        self.custom_communication = config.get("custom_communication", None)
-        self.moe_intermediate_size = config.get("moe_intermediate_size", 768)
-        self.config = config
+        self.hidden_size = hidden_size
+        self.num_experts = num_experts
+        self.num_experts_per_tok = num_experts_per_tok
+        self.num_shared_experts = num_shared_experts
+        self.moe_intermediate_size = moe_intermediate_size
+        self.expert_activation = expert_activation
+        self.norm_topk_prob = norm_topk_prob
 
-        self.gate_type = moe_config.get("gate_type", "topk")
+        self.moe_group = moe_config.get("moe_group", "data")
+        self.custom_gate = moe_config.get("custom_gate", None)
+        self.custom_expert = moe_config.get("custom_expert", None)
+        self.custom_communication = moe_config.get("custom_communication", None)
+        self.expert_parallel_degree = moe_config.get("expert_parallel_degree", 1)
         self.gate_activation = moe_config.get("gate_activation", "softmax")
-        self.expert_activation = moe_config.get("expert_activation", "silu")
         self.aux_loss_weight = moe_config.get("aux_loss_weight", 0.01)
         self.z_loss_weight = moe_config.get("z_loss_weight", 0.0)
-        self.train_topk_method = moe_config.get("train_topk_method", "greedy")
-        self.inference_topk_method = moe_config.get("inference_topk_method", "greedy")
+        self.topk_method = (
+            moe_config.get("train_topk_method", "greedy")
+            if self.training
+            else moe_config.get("inference_topk_method", "greedy")
+        )
         self.drop_tokens = moe_config.get("drop_tokens", True)
+        self.use_flexible_loss = moe_config.get("use_flexible_loss", False)
         self.expert_dropout = moe_config.get("expert_dropout", 0.0)
-        self.moe_config = moe_config
+        self.loss_configs = moe_config.get("loss_configs", None)
+        self.loss_combiner_name = moe_config.get("loss_combiner_name", "weighted_sum")
 
         # 初始化EP并行相关参数
         self._init_expert_parallel()
@@ -120,28 +133,19 @@ class ModularMoELayer(nn.Layer):
                 num_experts=self.num_experts,
                 loss_registry=self.loss_registry,
                 num_experts_per_tok=self.num_experts_per_tok,
-                gate_type=self.gate_type,
                 gate_activation=self.gate_activation,
                 loss_configs=self.loss_configs,
                 loss_combiner_name=self.loss_combiner_name,
             )
         else:
-            # self.gate = StandardMoEGate(
-            #     hidden_size=hidden_size,
-            #     num_experts=num_experts,
-            #     num_experts_per_tok=num_experts_per_tok,
-            #     gate_type=gate_type,
-            #     gate_activation=gate_activation,
-            #     aux_loss_weight=aux_loss_weight,
-            #     z_loss_weight=z_loss_weight,
-            # )
             self.gate = PretrainedMoEGate(
-                config=config,
                 num_experts=self.num_experts,
                 expert_hidden_size=self.hidden_size,
-                top_k=self.num_experts_per_tok,
-                topk_method=self.train_topk_method if self.training else self.inference_topk_method,
                 drop_tokens=self.drop_tokens,
+                topk_method=self.topk_method,
+                num_experts_per_tok=self.num_experts_per_tok,
+                norm_topk_prob=self.norm_topk_prob,
+                moe_config=moe_config,
             )
 
         # 创建专家网络
@@ -152,8 +156,8 @@ class ModularMoELayer(nn.Layer):
             else:
                 expert_class = self.custom_expert
         else:
-            # expert_class = Qwen2MoeMLP
-            expert_class = StandardMoEExpert
+            expert_class = Qwen2MoeMLP
+            # expert_class = StandardMoEExpert
 
         self.experts = nn.LayerList([])
         for i in range(self.num_experts):
@@ -161,7 +165,9 @@ class ModularMoELayer(nn.Layer):
                 expert = expert_class(
                     hidden_size=self.hidden_size,
                     intermediate_size=self.moe_intermediate_size,
-                    config=config,
+                    expert_activation=self.expert_activation,
+                    expert_dropout=self.expert_dropout,
+                    config={},
                 )
                 self.experts.append(expert)
             else:
@@ -174,7 +180,9 @@ class ModularMoELayer(nn.Layer):
             expert = expert_class(
                 hidden_size=self.hidden_size,
                 intermediate_size=self.moe_intermediate_size * self.num_shared_experts,
-                config=config,
+                expert_activation=self.expert_activation,
+                expert_dropout=self.expert_dropout,
+                config={},
             )
         else:
             self.shared_experts = None
@@ -193,7 +201,7 @@ class ModularMoELayer(nn.Layer):
         初始化专家并行相关参数
         """
 
-        def _parse_moe_expert_parallel(self, num_experts: int, expert_parallel_degree: int) -> int:
+        def _parse_moe_expert_parallel(num_experts: int, expert_parallel_degree: int) -> int:
             """
             解析MoE专家并行参数
 
@@ -229,12 +237,13 @@ class ModularMoELayer(nn.Layer):
         ):
             self.moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
             self.moe_rank = dist.get_rank(self.moe_group)
+            print("self.moe_group, ", self.moe_group)
+            print("self.moe_rank before, ", self.moe_rank)
             self.moe_rank = 0 if self.moe_rank < 0 else self.moe_rank
             self.expert_parallel_degree = dist.get_world_size(self.moe_group)
+            print("self.expert_parallel_degree before, ", self.expert_parallel_degree)
             self.expert_parallel_degree = 1 if self.expert_parallel_degree < 0 else self.expert_parallel_degree
-            self.num_experts_per_device = self._parse_moe_expert_parallel(
-                self.num_experts, self.expert_parallel_degree
-            )
+            self.num_experts_per_device = _parse_moe_expert_parallel(self.num_experts, self.expert_parallel_degree)
         else:
             self.moe_group = None
             self.moe_rank = 0

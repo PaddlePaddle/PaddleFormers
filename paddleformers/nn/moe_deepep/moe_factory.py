@@ -45,4 +45,17 @@ class QuickAccessMoEFactory:
         if moe_config is None:
             raise ValueError(f"No MOE configuration found for model type: {model_type}")
 
-        return ModularMoELayer(pretrained_config, moe_config)
+        return ModularMoELayer(
+            hidden_size=pretrained_config.hidden_size,
+            moe_intermediate_size=pretrained_config.moe_intermediate_size,
+            num_experts=pretrained_config.get(
+                "num_experts", pretrained_config.get("n_routed_experts", pretrained_config.get("moe_num_experts", -1))
+            ),
+            num_shared_experts=pretrained_config.get(
+                "n_shared_experts", pretrained_config.get("moe_num_shared_experts", 0)
+            ),
+            num_experts_per_tok=pretrained_config.get("num_experts_per_tok", pretrained_config.get("moe_k", -1)),
+            norm_topk_prob=pretrained_config.get("norm_topk_prob", True),
+            expert_activation=pretrained_config.get("hidden_act", pretrained_config.get("expert_activation", "silu")),
+            moe_config=moe_config,
+        )

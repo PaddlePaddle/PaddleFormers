@@ -16,7 +16,7 @@
 # limitations under the License.
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Dict, List, Optional, Tuple
 
 import paddle
 import paddle.distributed as dist
@@ -130,7 +130,7 @@ class MoEGateMixin:
         aux_loss = paddle.sum(me * ce) * float(self.num_experts)
         return aux_loss
 
-    def _cal_seq_aux_loss(self, gates, top_k, topk_idx) -> paddle.Tensor:
+    def _cal_seq_aux_loss(self, gates, num_experts_per_tok, topk_idx) -> paddle.Tensor:
         """
         Calculate sequence auxiliary loss.
 
@@ -143,8 +143,10 @@ class MoEGateMixin:
         batch_size, seq_len, _ = gates.shape
         ce = paddle.zeros([batch_size, self.num_experts])
         topk_idx = topk_idx.reshape([batch_size, -1])
-        ce.put_along_axis_(indices=topk_idx, values=paddle.ones([batch_size, seq_len * top_k]), axis=1, reduce="add")
-        ce = ce / (seq_len * top_k / self.num_experts)
+        ce.put_along_axis_(
+            indices=topk_idx, values=paddle.ones([batch_size, seq_len * num_experts_per_tok]), axis=1, reduce="add"
+        )
+        ce = ce / (seq_len * num_experts_per_tok / self.num_experts)
         aux_loss = (ce * paddle.mean(gates, axis=1)).sum(axis=1).mean()
         return aux_loss
 
@@ -279,43 +281,47 @@ class MoEGateMixin:
 
 
 class PretrainedMoEGate(nn.Layer, MoEGateMixin):
-    def __init__(self, config, num_experts, expert_hidden_size, **kwargs):
+    def __init__(
+        self,
+        num_experts: int,
+        expert_hidden_size: int,
+        drop_tokens: bool,
+        topk_method: str,
+        num_experts_per_tok: int,
+        norm_topk_prob: bool,
+        moe_config: Dict,
+    ):
         super(PretrainedMoEGate, self).__init__()
-
-        self.config = config
-        self.scoring_func = config.get("scoring_func", None)
 
         self.num_experts = num_experts
         self.expert_hidden_size = expert_hidden_size
-
+        self.drop_tokens = drop_tokens
+        # Qwen2MoE: greedy
+        # DeepSeekV2&V3: group_limited_greedy for training, and noaux_tc for inference
+        self.topk_method = topk_method
+        self.num_experts_per_tok = num_experts_per_tok
+        self.norm_topk_prob = norm_topk_prob
         # force keep in float32 when using amp
         self._cast_to_low_precision = False
 
-        self.capacity_factor = config.get("capacity_factor", 1.0)
-        self.eval_capacity_factor = config.get("eval_capacity_factor", 1.0)
-        self.min_capacity = config.get("min_capacity", 1.0)
-        self.max_capacity = config.get("max_capacity", pow(2, 32))
+        self.scoring_func = moe_config.get("scoring_func", "sigmoid")
+        self.capacity_factor = moe_config.get("capacity_factor", 1.0)
+        self.eval_capacity_factor = moe_config.get("eval_capacity_factor", 1.0)
+        self.min_capacity = moe_config.get("min_capacity", 1)
+        self.max_capacity = moe_config.get("max_capacity", pow(2, 32))
+        self.group = moe_config.get("group", None)
+        self.global_aux_loss = moe_config.get("global_aux_loss", False)
+        self.use_rts = moe_config.get("use_rts", True)
+        self.top2_2nd_expert_sampling = moe_config.get("top2_2nd_expert_sampling", True)
+        self.drop_policy = moe_config.get("drop_policy", "probs")
+        self.n_group = moe_config.get("n_group", 1)  # for group_limited_greedy
+        self.topk_group = moe_config.get("topk_group", 1)  # for group_limited_greedy
+        self.routed_scaling_factor = moe_config.get("routed_scaling_factor", 1.0)
+        self.seq_aux = moe_config.get("seq_aux", False)
 
-        self.group = config.get("group", None)
-        self.global_aux_loss = config.get("global_aux_loss", False)
         if self.global_aux_loss:
             assert self.group is not None, "group is required when global_aux_loss is True"
             self.rank = dist.get_rank(self.group)
-
-        self.noisy_gate_policy = config.get("noisy_gate_policy", None)
-        self.drop_tokens = config.get("drop_tokens", False)
-        self.use_rts = config.get("use_rts", True)
-        self.top2_2nd_expert_sampling = config.get("top2_2nd_expert_sampling", True)
-
-        self.drop_policy = config.get("drop_policy", "probs")
-        # Qwen2MoE: greedy
-        # DeepSeekV2&V3: group_limited_greedy for training, and noaux_tc for inference
-        self.topk_method = config.get("topk_method", "greedy")
-        self.top_k = config.get("num_experts_per_tok", 2)
-        self.n_group = config.get("n_group", 1)  # for group_limited_greedy
-        self.topk_group = config.get("topk_group", 1)  # for group_limited_greedy
-        self.norm_topk_prob = config.get("norm_topk_prob", False)
-        self.routed_scaling_factor = config.get("routed_scaling_factor", 1.0)
 
         # weight of hidden_state -> score
         self.weight = paddle.create_parameter(
@@ -328,8 +334,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         self,
         gates: paddle.Tensor,
     ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
-        # return self.topkgating(gates)
-        return self.topkgating_nodrop(gates)
+        return self.topkgating(gates)
 
     def topkgating(
         self,
@@ -353,17 +358,20 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
 
         # get topk gates
         if self.topk_method == "greedy":
-            top_gate, top_idx = self._topk_greedy(gates, k=self.top_k)
+            top_gate, top_idx = self._topk_greedy(gates, k=self.num_experts_per_tok)
         elif self.topk_method == "group_limited_greedy":
             top_gate, top_idx = self._topk_group_limited_greedy(
-                gates, k=self.top_k, n_group=self.n_group, topk_group=self.topk_group
+                gates, k=self.num_experts_per_tok, n_group=self.n_group, topk_group=self.topk_group
             )
         elif self.topk_method == "noaux_tc":
             top_gate, top_idx = self._topk_noaux_tc(
-                gates, k=self.top_k, n_group=self.n_group, topk_group=self.topk_group
+                gates, k=self.num_experts_per_tok, n_group=self.n_group, topk_group=self.topk_group
             )
-            # norm gate to sum 1
-        if self.top_k > 1 and self.norm_topk_prob:
+        else:
+            raise NotImplementedError(f"Invalid topk_method: {self.topk_method}")
+
+        # norm gate to sum 1
+        if self.num_experts_per_tok > 1 and self.norm_topk_prob:
             denominator = top_gate.sum(axis=-1, keepdim=True) + 1e-20
             top_gate = top_gate / denominator
         top_gate = top_gate * self.routed_scaling_factor
@@ -374,8 +382,8 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         print("top_idx: ", top_idx.shape, top_idx.dtype)  # [776, 8] paddle.int64
         mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1)
 
-        if hasattr(self.config, "seq_aux") and self.config.seq_aux:
-            l_aux = self._cal_seq_aux_loss(gates_ori, self.top_k, top_idx)
+        if self.seq_aux:
+            l_aux = self._cal_seq_aux_loss(gates_ori, self.num_experts_per_tok, top_idx)
         else:
             l_aux = self._cal_aux_loss(gates, mask)
 
@@ -385,7 +393,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             # Calculate configured capacity and remove locations outside capacity from mask
             capacity = self._capacity(
                 gates,
-                self.capacity_factor * self.top_k,
+                self.capacity_factor * self.num_experts_per_tok,
                 self.max_capacity,
                 self.min_capacity,
             )
@@ -432,57 +440,6 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             l_zloss,
         )
 
-    def topkgating_nodrop(self, gates: paddle.Tensor):
-        """Implements TopKGating on logits."""
-        batch_size, seq_len, d_model = gates.shape
-        gates_ori = gates
-        gates = gates.reshape([-1, d_model])
-
-        # 将 hidden_state 转换成 score（每个 token 对每个专家的偏好分数）
-        with paddle.amp.auto_cast(False):
-            hidden_states = gates.cast(self.weight.dtype)
-            logits = F.linear(hidden_states.cast("float32"), self.weight.cast("float32"))
-            gates = self.gate_score_func(logits=logits)
-        print("forward after logits gates: ", gates.shape, gates.dtype)  # [776, 2048] paddle.bfloat16
-
-        l_zloss = self._cal_z_loss(gates)
-
-        # get topk gates
-        if self.topk_method == "greedy":
-            top_gate, top_idx = self._topk_greedy(gates, k=self.top_k)
-        elif self.topk_method == "group_limited_greedy":
-            top_gate, top_idx = self._topk_group_limited_greedy(
-                gates, k=self.top_k, n_group=self.n_group, topk_group=self.topk_group
-            )
-        elif self.topk_method == "noaux_tc":
-            top_gate, top_idx = self._topk_noaux_tc(
-                gates, k=self.top_k, n_group=self.n_group, topk_group=self.topk_group
-            )
-            # norm gate to sum 1
-        if self.top_k > 1 and self.norm_topk_prob:
-            denominator = top_gate.sum(axis=-1, keepdim=True) + 1e-20
-            top_gate = top_gate / denominator
-        top_gate = top_gate * self.routed_scaling_factor
-
-        # get topk mask
-        mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0), axis=1)
-
-        if hasattr(self.config, "seq_aux") and self.config.seq_aux:
-            l_aux = self._cal_seq_aux_loss(gates_ori, self.top_k, top_idx)
-        else:
-            l_aux = self._cal_aux_loss(gates, mask)
-
-        # The gate applied during dispatch and to weight the FFN output is computed from the original affinity score s_{i,t} (without the bias).
-        gates_masked = gates * mask
-        gates_s = paddle.sum(gates_masked, axis=-1, keepdim=True)
-        denom_s = paddle.clip(gates_s, min=paddle.finfo(gates_masked.dtype).eps)
-        if self.norm_topk_prob:
-            gates_masked = gates_masked / denom_s
-        gates_masked *= self.routed_scaling_factor
-
-        exp_counts = paddle.sum(mask.cast(paddle.int64), axis=0)
-        return gates_masked, mask, exp_counts, l_aux, l_zloss
-
 
 class FlexibleMoEGate(nn.Layer, MoEGateMixin):
     """自定义损失函数的 MoE Gate"""
@@ -493,7 +450,6 @@ class FlexibleMoEGate(nn.Layer, MoEGateMixin):
         num_experts: int,
         loss_registry,
         num_experts_per_tok: int = 2,
-        gate_type: str = "topk",
         gate_activation: str = "softmax",
         loss_configs: Optional[List[LossConfig]] = None,
         loss_combiner_name: str = "weighted_sum",
@@ -529,34 +485,27 @@ class FlexibleMoEGate(nn.Layer, MoEGateMixin):
     ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """Implements TopKGating on logits."""
         batch_size, seq_len, d_model = gates.shape
-        gates_ori = gates
         gates = gates.reshape([-1, d_model])
 
         # get topk gates
         if self.topk_method == "greedy":
-            top_gate, top_idx = self._topk_greedy(gates, k=self.top_k)
+            top_gate, top_idx = self._topk_greedy(gates, k=self.num_experts_per_tok)
         elif self.topk_method == "group_limited_greedy":
             top_gate, top_idx = self._topk_group_limited_greedy(
-                gates, k=self.top_k, n_group=self.n_group, topk_group=self.topk_group
+                gates, k=self.num_experts_per_tok, n_group=self.n_group, topk_group=self.topk_group
             )
         elif self.topk_method == "noaux_tc":
             top_gate, top_idx = self._topk_noaux_tc(
-                gates, k=self.top_k, n_group=self.n_group, topk_group=self.topk_group
+                gates, k=self.num_experts_per_tok, n_group=self.n_group, topk_group=self.topk_group
             )
             # norm gate to sum 1
-        if self.top_k > 1 and self.norm_topk_prob:
+        if self.num_experts_per_tok > 1 and self.norm_topk_prob:
             denominator = top_gate.sum(axis=-1, keepdim=True) + 1e-20
             top_gate = top_gate / denominator
         top_gate = top_gate * self.routed_scaling_factor
 
         # get topk mask
         mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype="float32"), axis=1)
-
-        # l_zloss = self._cal_z_loss(gates)
-        # if hasattr(self.config, "seq_aux") and self.config.seq_aux:
-        #     l_aux = self._cal_seq_aux_loss(gates_ori, self.top_k, top_idx)
-        # else:
-        #     l_aux = self._cal_aux_loss(gates, mask)
 
         # 计算所有损失函数
         self.current_losses = {}
@@ -595,7 +544,7 @@ class FlexibleMoEGate(nn.Layer, MoEGateMixin):
             # Calculate configured capacity and remove locations outside capacity from mask
             capacity = self._capacity(
                 gates,
-                self.capacity_factor * self.top_k,
+                self.capacity_factor * self.num_experts_per_tok,
                 self.max_capacity,
                 self.min_capacity,
             )
