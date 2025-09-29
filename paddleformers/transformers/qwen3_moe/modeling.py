@@ -33,26 +33,11 @@ from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..masking_utils import prepare_causal_and_row_indices_masks
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen3MoeConfig
-
-
-def prepare_sliding_window_startend_row_indices(startend_row_indices, window_size=5):
-    if startend_row_indices is None:
-        return None
-    batch_size, num_head, seq_length, bound_num = startend_row_indices.shape
-    assert bound_num <= 2, f"bound_num should be less than or equal to 2 when use sling window, but got {bound_num}"
-    sliding_window_startend_row_indices = startend_row_indices.clone()
-    for bi in range(batch_size):
-        for hi in range(num_head):
-            for j in range(seq_length):
-                sliding_window_startend_row_indices[bi, hi, j, 0] = min(
-                    startend_row_indices[bi, hi, j, 0], window_size + j
-                )
-    return sliding_window_startend_row_indices
 
 
 def rotate_half(x):
@@ -637,17 +622,20 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        causal_mask, attn_mask_startend_row_indices = prepare_causal_and_row_indices_masks(
-            config=self.config,
-            inputs_embeds=inputs_embeds,
-            batch_size=batch_size,
-            seq_length=seq_length,
-            cache_length=cache_length,
-            attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            prepare_decoder_attention_mask=self._prepare_decoder_attention_mask,
-            return_mapping=False,
-        )
+        # Prepare mask arguments
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+            "return_mapping": False,
+        }
+        # Create the causal mask and row indices
+        causal_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
 
         hidden_states = inputs_embeds
 
