@@ -33,6 +33,7 @@ from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
+from ..masking_utils import prepare_causal_and_row_indices_masks
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
@@ -621,13 +622,11 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
             # [bs, seq_len, dim]
             inputs_embeds = self.embed_tokens(input_ids)
 
-        seq_length_with_past = seq_length
         cache_length = 0
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
         else:
             cache_length = past_key_values[0][0].shape[1]
-            seq_length_with_past += cache_length
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
@@ -638,38 +637,17 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        if attn_mask_startend_row_indices is not None:
-            attention_mask = None
-            causal_mask = None
-            if self.config.sliding_window is None:
-                attn_mask_startend_row_indices = attn_mask_startend_row_indices
-            else:
-                attn_mask_startend_row_indices = prepare_sliding_window_startend_row_indices(
-                    attn_mask_startend_row_indices, window_size=self.config.sliding_window
-                )
-        else:
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-            attn_mask_startend_row_indices = None
-
-            if self.config.sliding_window is None:
-                causal_mask = self._prepare_decoder_attention_mask(
-                    attention_mask=attention_mask,
-                    input_shape=(batch_size, seq_length),
-                    past_key_values_length=cache_length,
-                    dtype=inputs_embeds.dtype,
-                )
-            else:
-                causal_mask = self._prepare_decoder_attention_mask(
-                    attention_mask=attention_mask,
-                    input_shape=(batch_size, seq_length),
-                    past_key_values_length=cache_length,
-                    dtype=inputs_embeds.dtype,
-                    sliding_window_size=self.config.sliding_window,
-                )
+        causal_mask, attn_mask_startend_row_indices = prepare_causal_and_row_indices_masks(
+            config=self.config,
+            inputs_embeds=inputs_embeds,
+            batch_size=batch_size,
+            seq_length=seq_length,
+            cache_length=cache_length,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            prepare_decoder_attention_mask=self._prepare_decoder_attention_mask,
+            return_mapping=False,
+        )
 
         hidden_states = inputs_embeds
 
