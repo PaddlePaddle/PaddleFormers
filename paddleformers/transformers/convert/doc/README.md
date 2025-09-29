@@ -259,7 +259,7 @@ python main.py
 
 ###  **自动化处理流水线**
 
-<img src="C:\Users\10133\AppData\Roaming\Typora\typora-user-images\image-20250927220934334.png" alt="image-20250927220934334" style="zoom:50%;" />
+<img src="../images/process.png" style="zoom:33%;" />
 
 ### 最终输出
 
