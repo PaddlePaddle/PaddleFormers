@@ -30,6 +30,7 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import GptOssConfig
@@ -657,21 +658,6 @@ class GptOssPreTrainedModel(PretrainedModel):
         return mappings
 
 
-def prepare_sliding_window_startend_row_indices(startend_row_indices, window_size=5):
-    if startend_row_indices is None:
-        return None
-    batch_size, num_head, seq_length, bound_num = startend_row_indices.shape
-    assert bound_num <= 2, f"bound_num should be less than or equal to 2 when use sling window, but got {bound_num}"
-    sliding_window_startend_row_indices = startend_row_indices.clone()
-    for bi in range(batch_size):
-        for hi in range(num_head):
-            for j in range(seq_length):
-                sliding_window_startend_row_indices[bi, hi, j, 0] = min(
-                    startend_row_indices[bi, hi, j, 0], window_size + j
-                )
-    return sliding_window_startend_row_indices
-
-
 @register_base_model
 class GptOssModel(GptOssPreTrainedModel):
     """
@@ -788,13 +774,11 @@ class GptOssModel(GptOssPreTrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        seq_length_with_past = seq_length
         cache_length = 0
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
         else:
             cache_length = past_key_values[0][0].shape[1]
-            seq_length_with_past += cache_length
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
@@ -807,47 +791,21 @@ class GptOssModel(GptOssPreTrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        # embed positions
-        if attn_mask_startend_row_indices is not None:
-            attention_mask = None
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            causal_mask_mapping["full_attention"] = None
-            causal_mask_mapping["sliding_attention"] = None
-            attn_mask_startend_row_indices_mapping["full_attention"] = attn_mask_startend_row_indices
-            attn_mask_startend_row_indices_mapping["sliding_attention"] = prepare_sliding_window_startend_row_indices(
-                attn_mask_startend_row_indices, window_size=self.config.sliding_window
-            )
-        else:
-            # [bs, seq_len]
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            attn_mask_startend_row_indices_mapping["full_attention"] = None
-            attn_mask_startend_row_indices_mapping["sliding_attention"] = None
-
-            # full_attention
-            causal_mask = self._prepare_decoder_attention_mask(
-                attention_mask=attention_mask,
-                input_shape=(batch_size, seq_length),
-                past_key_values_length=cache_length,
-                dtype=inputs_embeds.dtype,
-            )  # [bs, 1, seq_len, seq_len]
-            causal_mask_mapping["full_attention"] = causal_mask
-
-            # sliding_attention
-            causal_mask = self._prepare_decoder_attention_mask(
-                attention_mask=attention_mask,
-                input_shape=(batch_size, seq_length),
-                past_key_values_length=cache_length,
-                dtype=inputs_embeds.dtype,
-                sliding_window_size=self.config.sliding_window,
-            )
-            causal_mask_mapping["sliding_attention"] = causal_mask
+        # Prepare mask arguments
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+        }
+        # Create the causal mask and row indices
+        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
+            **mask_kwargs
+        )
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))

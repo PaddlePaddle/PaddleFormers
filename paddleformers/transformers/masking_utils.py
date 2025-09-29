@@ -51,7 +51,7 @@ def prepare_sliding_window_startend_row_indices(
     return sliding_window_startend_row_indices
 
 
-def prepare_causal_and_row_indices_masks(
+def create_causal_masks_and_row_indices(
     config: PretrainedConfig,
     inputs_embeds: paddle.Tensor,
     batch_size: int,
@@ -152,8 +152,8 @@ def prepare_causal_and_row_indices_masks(
                 else None
             ),
         }
-        row_mapping = {"full_attention": None, "sliding_attention": None}
-        return causal_mask_mapping, row_mapping
+        attn_mask_startend_row_indices_mapping = {"full_attention": None, "sliding_attention": None}
+        return causal_mask_mapping, attn_mask_startend_row_indices_mapping
     else:
         causal_mask = (
             prepare_decoder_attention_mask(
