@@ -30,11 +30,10 @@ from .moe_communication import (
 from .moe_expert import MoEExpertInterface, Qwen2MoeMLP, StandardMoEExpert
 from .moe_gate import FlexibleMoEGate, PretrainedMoEGate
 from .moe_loss import LossCombiner, LossConfig, LossFunction, LossRegistry, LossType
+from .moe_loss_instance import get_global_loss_registry
 
 logger = logging.getLogger(__name__)
-
-# 全局损失注册器实例
-loss_registry = LossRegistry()
+global_loss_registry = get_global_loss_registry()
 
 
 class ModularMoELayer(nn.Layer):
@@ -129,11 +128,14 @@ class ModularMoELayer(nn.Layer):
                     LossConfig("z_loss", LossType.Z_LOSS, weight=self.z_loss_weight),
                 ]
             self.gate = FlexibleMoEGate(
-                hidden_size=self.hidden_size,
                 num_experts=self.num_experts,
-                loss_registry=self.loss_registry,
+                expert_hidden_size=self.hidden_size,
+                drop_tokens=self.drop_tokens,
+                topk_method=self.topk_method,
                 num_experts_per_tok=self.num_experts_per_tok,
-                gate_activation=self.gate_activation,
+                norm_topk_prob=self.norm_topk_prob,
+                moe_config=moe_config,
+                loss_registry=global_loss_registry,
                 loss_configs=self.loss_configs,
                 loss_combiner_name=self.loss_combiner_name,
             )

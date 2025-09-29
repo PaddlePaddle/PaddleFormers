@@ -446,19 +446,48 @@ class FlexibleMoEGate(nn.Layer, MoEGateMixin):
 
     def __init__(
         self,
-        hidden_size: int,
         num_experts: int,
+        expert_hidden_size: int,
+        drop_tokens: bool,
+        topk_method: str,
+        num_experts_per_tok: int,
+        norm_topk_prob: bool,
+        moe_config: Dict,
         loss_registry,
-        num_experts_per_tok: int = 2,
-        gate_activation: str = "softmax",
         loss_configs: Optional[List[LossConfig]] = None,
         loss_combiner_name: str = "weighted_sum",
         **kwargs
     ):
-        super().__init__()
-        self.loss_registry = loss_registry
+        super(FlexibleMoEGate, self).__init__()
 
-        # 设置损失配置
+        self.num_experts = num_experts
+        self.expert_hidden_size = expert_hidden_size
+        self.drop_tokens = drop_tokens
+        # Qwen2MoE: greedy
+        # DeepSeekV2&V3: group_limited_greedy for training, and noaux_tc for inference
+        self.topk_method = topk_method
+        self.num_experts_per_tok = num_experts_per_tok
+        self.norm_topk_prob = norm_topk_prob
+        # force keep in float32 when using amp
+        self._cast_to_low_precision = False
+
+        self.scoring_func = moe_config.get("scoring_func", "sigmoid")
+        self.capacity_factor = moe_config.get("capacity_factor", 1.0)
+        self.eval_capacity_factor = moe_config.get("eval_capacity_factor", 1.0)
+        self.min_capacity = moe_config.get("min_capacity", 1)
+        self.max_capacity = moe_config.get("max_capacity", pow(2, 32))
+        self.group = moe_config.get("group", None)
+        self.global_aux_loss = moe_config.get("global_aux_loss", False)
+        self.use_rts = moe_config.get("use_rts", True)
+        self.top2_2nd_expert_sampling = moe_config.get("top2_2nd_expert_sampling", True)
+        self.drop_policy = moe_config.get("drop_policy", "probs")
+        self.n_group = moe_config.get("n_group", 1)  # for group_limited_greedy
+        self.topk_group = moe_config.get("topk_group", 1)  # for group_limited_greedy
+        self.routed_scaling_factor = moe_config.get("routed_scaling_factor", 1.0)
+        self.seq_aux = moe_config.get("seq_aux", False)
+
+        # 损失相关配置
+        self.loss_registry = loss_registry
         self.loss_configs = loss_configs or [
             LossConfig("auxiliary", LossType.AUXILIARY, weight=0.01),
             LossConfig("z_loss", LossType.Z_LOSS, weight=0.0),
@@ -474,6 +503,13 @@ class FlexibleMoEGate(nn.Layer, MoEGateMixin):
         self.current_losses = {}
         self.total_loss = paddle.to_tensor(0.0)
 
+        # weight of hidden_state -> score
+        self.weight = paddle.create_parameter(
+            shape=[self.expert_hidden_size, self.num_experts],
+            dtype="bfloat16",
+            default_initializer=paddle.nn.initializer.Uniform(),
+        )
+
     def _gumbel_softmax(self, logits: paddle.Tensor, temperature: float = 1.0) -> paddle.Tensor:
         """Gumbel-Softmax采样"""
         gumbel_noise = -paddle.log(-paddle.log(paddle.rand_like(logits) + 1e-8) + 1e-8)
@@ -485,7 +521,14 @@ class FlexibleMoEGate(nn.Layer, MoEGateMixin):
     ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """Implements TopKGating on logits."""
         batch_size, seq_len, d_model = gates.shape
+        gates_ori = gates
         gates = gates.reshape([-1, d_model])
+
+        # 将 hidden_state 转换成 score（每个 token 对每个专家的偏好分数）
+        with paddle.amp.auto_cast(False):
+            hidden_states = gates.cast(self.weight.dtype)
+            logits = F.linear(hidden_states.cast("float32"), self.weight.cast("float32"))
+            gates = self.gate_score_func(logits=logits)
 
         # get topk gates
         if self.topk_method == "greedy":
@@ -521,16 +564,16 @@ class FlexibleMoEGate(nn.Layer, MoEGateMixin):
                 continue
 
             try:
-                loss_value = loss_func(
-                    routing_weights=routing_weights,
-                    selected_experts=selected_experts,
-                    gate_logits=gate_logits,
+                self.loss_value = loss_func(
+                    routing_weights=top_gate,
+                    selected_experts=top_idx,
+                    gate_logits=gates,
                     num_experts=self.num_experts,
                     batch_size=batch_size,
                     seq_len=seq_len,
                     **config.params,
                 )
-                self.current_losses[config.name] = loss_value
+                self.current_losses[config.name] = self.loss_value
             except Exception as e:
                 logger.warning(f"计算损失函数 {config.name} 时出错: {e}")
                 self.current_losses[config.name] = paddle.to_tensor(0.0)

@@ -59,3 +59,5 @@ class QuickAccessMoEFactory:
             expert_activation=pretrained_config.get("hidden_act", pretrained_config.get("expert_activation", "silu")),
             moe_config=moe_config,
         )
+
+__all__ = ["QuickAccessMoEFactory"]
