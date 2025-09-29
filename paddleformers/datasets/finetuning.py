@@ -520,7 +520,7 @@ class SequenceDataset(IterableDataset):
             if not self.tokenizer.chat_template:
                 self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
             if example.is_function_call:
-                encoded_messages = postprocess_fc_sequence(self.tokenizer, example)
+                encoded_messages = postprocess_fc_sequence(self.tokenizer, example.request)
             else:
                 encoded_messages = self.tokenizer.encode_chat_inputs(
                     example.request, encode_one_turn=self.encode_one_turn
