@@ -193,6 +193,7 @@ def convert_to_input_ids(
         num_input_tokens += len(input_ids[-1])
     return input_ids, num_input_tokens
 
+
 def function_call_chat_template(tokenizer, messages, tools):
     history = messages[:-1]
     input_dict = dict()
@@ -225,6 +226,7 @@ def postprocess_fc_sequence(tokenizer, example):
     tools = example["tools"]
     encoded_messages = [function_call_chat_template(tokenizer, messages, tools)]
     return encoded_messages
+
 
 def estimate_training(train_dataset, data_args, training_args, model_args):
     """

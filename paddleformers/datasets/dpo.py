@@ -145,16 +145,10 @@ def process_fc(data, input_file):
 
     assistant_index = 0
     for index, turn in enumerate(multi_turns_messages):
-        is_assistant_turn = (
-            turn["role"] == "assistant"
-            if "role" in turn
-            else "non_preferred_output" in turn
-        )
+        is_assistant_turn = turn["role"] == "assistant" if "role" in turn else "non_preferred_output" in turn
         if is_assistant_turn:
             if label[assistant_index]:
-                chosen_m, rejected_m = split_dpo_messages(
-                    multi_turns_messages[: index + 1]
-                )
+                chosen_m, rejected_m = split_dpo_messages(multi_turns_messages[: index + 1])
                 ex = Example(
                     chosen={"messages": chosen_m, "tools": tools_list},
                     rejected={"messages": rejected_m, "tools": tools_list},
@@ -646,17 +640,11 @@ class SequenceDataset(IterableDataset):
         if not self.tokenizer.chat_template:
             self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
         if example.is_function_call:
-            chosen_encoded_messages = postprocess_fc_sequence(
-                self.tokenizer, example.chosen
-            )
-            rejected_encoded_messages = postprocess_fc_sequence(
-                self.tokenizer, example.rejected
-            )
+            chosen_encoded_messages = postprocess_fc_sequence(self.tokenizer, example.chosen)
+            rejected_encoded_messages = postprocess_fc_sequence(self.tokenizer, example.rejected)
         else:
             chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example.chosen)
-            rejected_encoded_messages = self.tokenizer.encode_chat_inputs(
-                example.rejected
-            )
+            rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example.rejected)
 
         # chosen/rejected response
         response_token_ids_list = []
