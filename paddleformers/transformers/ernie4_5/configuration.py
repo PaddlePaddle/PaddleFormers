@@ -44,7 +44,6 @@ class Ernie4_5Config(PretrainedConfig):
         recompute_granularity="core_attn",
         recompute_use_reentrant=False,
         tie_word_embeddings=True,
-        use_rmsnorm=True,
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
@@ -81,7 +80,6 @@ class Ernie4_5Config(PretrainedConfig):
             recompute (bool): Whether to use gradient checkpointing to save memory
             recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
-            use_rmsnorm (bool): Whether to use RMSNorm instead of LayerNorm
             tie_word_embeddings (bool):  Whether the input and output word embeddings should be tied
             Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
             model has a output word embedding layer.
@@ -129,7 +127,6 @@ class Ernie4_5Config(PretrainedConfig):
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
-        self.use_rmsnorm = use_rmsnorm
         self.micro_batch_size = micro_batch_size
 
         self.max_sequence_length = max_sequence_length
@@ -153,7 +150,6 @@ class Ernie4_5Config(PretrainedConfig):
                 "hidden_dropout_prob",
                 "ignored_index",
                 "scale_qk_coeff",
-                "use_rmsnorm",
                 "recompute",
                 "recompute_use_reentrant",
                 "recompute_granularity",

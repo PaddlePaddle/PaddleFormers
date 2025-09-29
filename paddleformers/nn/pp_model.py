@@ -507,6 +507,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     transpose_weight_keys = None
     _embed_cls = None
     _rotary_emb_cls = None
+    _norm_cls = "rms_norm"
 
     def __init__(self, config: PretrainedConfig, **kwargs):
         # dynamic inherit DecoderLayer
@@ -582,7 +583,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             )
 
         self.add_sequential_layer(
-            LayerDesc(RMSNormPipe if config.use_rmsnorm else LayerNormPipe, config=config),
+            LayerDesc(RMSNormPipe if self._norm_cls == "rms_norm" else LayerNormPipe, config=config),
             "model.norm",
         )
 
