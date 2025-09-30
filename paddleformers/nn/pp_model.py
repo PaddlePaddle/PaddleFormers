@@ -510,6 +510,12 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     _norm_cls = "rms_norm"
 
     def __init__(self, config: PretrainedConfig, **kwargs):
+        if config.sliding_window is not None and "sliding_attention" in config.layer_types:
+            logger.error(
+                "Pipeline Parallelism (PP) does not support sliding window attention. "
+                "To prevent issues during training, please set use_sliding_window=False."
+            )
+
         # dynamic inherit DecoderLayer
         if self._decoder_layer_cls is None:
             raise ValueError("_decoder_layer_cls must be set before init.")
