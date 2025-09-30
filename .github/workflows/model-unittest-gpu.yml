@@ -34,7 +34,7 @@ defaults:
 jobs:
   model-unittest-gpu-ci:
     name: model-unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu-1' }}
+    runs-on: ${{ inputs.runner || 'ernie-8gpu' }}
     steps:
       - name: Determine Image Name
         env:
