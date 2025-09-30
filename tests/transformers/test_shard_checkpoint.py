@@ -38,7 +38,7 @@ from paddleformers.utils.env import (
     SAFE_WEIGHTS_NAME,
 )
 from paddleformers.utils.import_utils import is_paddle_cuda_available
-from tests.testing_utils import require_package, skip_for_none_ce_case
+from tests.testing_utils import require_package
 
 
 class FakeConfig(PretrainedConfig):
@@ -103,7 +103,6 @@ class TestFromPretrained(unittest.TestCase):
         for p1, p2 in zip(model.parameters(), model_load.parameters()):
             self.assertTrue(paddle.allclose(p1, p2))
 
-    @skip_for_none_ce_case
     @unittest.skipIf(not is_paddle_cuda_available(), "some op is missing in cpu mode")
     def test_load_from_torch_dtyp_cast(self):
         pass

@@ -284,6 +284,7 @@ class LlmMetaConfig:
     ]
 
     loss_attributes = [
+        ("use_fused_head_and_loss_fn", bool, False, "Whether to use fused head and loss function."),
         ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
         (
             "use_sparse_head_and_loss_fn",

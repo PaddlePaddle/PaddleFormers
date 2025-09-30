@@ -20,6 +20,9 @@ export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/unittest_logs
 cd $nlp_dir
+if [ ! -d "unittest_logs" ];then
+    mkdir unittest_logs
+fi
 mkdir -p $log_path
 
 install_requirements() {
