@@ -126,17 +126,12 @@ jobs:
         env:
           HOME_PATH: ${{ github.workspace }}/../../..
           BOS_UPLOAD_SCRIPT: ${{ github.workspace }}/../../../bos/BosClient.py
-          ALLURE_FILE: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
         run: |
           docker exec -t $CONTAINER_NAME /bin/bash -c '
           if [ ! -f "${BOS_UPLOAD_SCRIPT}" ]; then
             wget -q --no-proxy -O ${HOME_PATH}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir ${HOME_PATH}/bos
             tar xf ${HOME_PATH}/bos_new.tar.gz -C ${HOME_PATH}/bos
-          fi
-          if [ ! -f "${ALLURE_FILE}" ]; then
-            wget -q --no-proxy -O ${HOME_PATH}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
-            unzip -q ${HOME_PATH}/allure-2.19.0.zip
           fi
           if [ -n "${PR_ID}" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
