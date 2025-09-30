@@ -195,6 +195,79 @@ class MoEGateMixin:
 
         return (token_priority > 0.0).astype("float32")
 
+    def _probs_drop_policy(
+        self,
+        scores: torch.Tensor, 
+        capacity: int, 
+    ) -> torch.Tensor:
+        """
+        Implements the Probability-based (Probs) drop policy to enforce expert capacity.
+
+        A token is assigned (mask value 1.0) to an expert if:
+        1. It chose that expert (score > 0). (Implicitly handled by input scores).
+        2. Its score for that expert is among the top 'capacity' scores for that expert.
+
+        Args:
+            scores (torch.Tensor): [num_tokens, num_total_experts].
+                                This should already contain zeros for non-selected
+                                experts (i.e., the result of top-K gating).
+            capacity (int): The maximum number of tokens any single expert can handle.
+                                    (Not strictly used here, but good practice to include).
+
+        Returns:
+            torch.Tensor: [num_tokens, num_total_experts] boolean mask (converted to float).
+                        1.0 = Assigned and within capacity. 0.0 = Dropped or unassigned.
+        """
+        num_tokens, num_experts = scores.shape
+        
+        # --- Step 1: Find the 'capacity' best tokens for *each* expert ---
+        
+        # Use torch.topk along dim=0 (the token dimension) to find the indices 
+        # of the tokens that have the highest scores for each expert (column).
+        # Since 'scores' has shape [Tokens, Experts], dim=0 returns the token indices.
+        
+        # topk_token_indices has shape [capacity, num_total_experts]
+        # It tells us WHICH tokens (row indices) are prioritized by capacity.
+        
+        # We use min(num_tokens, capacity) just in case there are fewer tokens than capacity.
+        k_to_use = min(num_tokens, capacity)
+        
+        # We only care about the indices of the selected tokens
+        _, topk_token_indices = paddle.topk(
+            scores, 
+            k=k_to_use, 
+            dim=0, 
+            sorted=True  # Sorted=True is usually faster, but we only use the indices.
+        )
+
+        # --- Step 2: Create the final assignment mask using scatter ---
+
+        # Initialize the mask to all zeros (tokens are initially dropped/unassigned).
+        # We use boolean type for efficient scattering, then convert to float later.
+        final_mask = paddle.zeros(num_tokens, num_experts, dtype=paddle.bool)
+        
+        # 2a. Create the column indices for the assignment.
+        # We need a tensor of shape [k_to_use, num_experts] where each row is [0, 1, 2, ..., num_experts-1].
+        col_indices = paddle.arange(num_experts).unsqueeze(0).expand_as(topk_token_indices)
+        
+        # 2b. Flatten the row (token) and column (expert) indices for advanced indexing.
+        token_indices_flat = topk_token_indices.flatten()
+        col_indices_flat = col_indices.flatten()
+
+        # 2c. Use advanced indexing to set the mask positions to True.
+        # This sets mask[token_index, expert_index] = True for all prioritized tokens.
+        final_mask[token_indices_flat, col_indices_flat] = True
+
+        # --- Step 3: Ensure only originally selected tokens are kept ---
+        
+        # Since torch.topk can pick up tokens with score 0 if num_tokens < capacity, 
+        # we must ensure that we only keep tokens that had a positive score initially.
+        # This step implicitly cleans up any spurious assignments made by topk on zero scores.
+        
+        token_priority_mask = final_mask.float() * (scores > 0).float()
+
+        return token_priority_mask
+
     def _topk_greedy(self, scores: paddle.Tensor, k: int) -> Tuple[paddle.Tensor, paddle.Tensor]:
         """_summary_
 
@@ -208,6 +281,7 @@ class MoEGateMixin:
             topk_idx: [bsz*seq_len, k]
         """
         topk_weight, topk_idx = paddle.topk(scores, k=k, axis=-1, sorted=True)
+
         return topk_weight, topk_idx
 
     def _topk_group_limited_greedy(
@@ -341,7 +415,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         gates: paddle.Tensor,
     ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """Implements TopKGating on logits."""
-        print("forward input gates: ", gates.shape, gates.dtype)  # [8, 97, 2048] paddle.bfloat16
+        # print("forward input gates: ", gates.shape, gates.dtype)  # [8, 97, 2048] paddle.bfloat16
 
         batch_size, seq_len, d_model = gates.shape
         gates_ori = gates
@@ -352,7 +426,6 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             hidden_states = gates.cast(self.weight.dtype)
             logits = F.linear(hidden_states.cast("float32"), self.weight.cast("float32"))
             gates = self.gate_score_func(logits=logits)
-        print("forward after logits gates: ", gates.shape, gates.dtype)  # [776, 2048] paddle.bfloat16
 
         l_zloss = self._cal_z_loss(gates)
 
@@ -377,9 +450,9 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         top_gate = top_gate * self.routed_scaling_factor
 
         # get topk mask
-        print("gates: ", gates.shape, gates.dtype)  # [776, 2048] paddle.bfloat16
-        print("top_gate: ", top_gate.shape, top_gate.dtype)  #
-        print("top_idx: ", top_idx.shape, top_idx.dtype)  # [776, 8] paddle.int64
+        # print("gates: ", gates.shape, gates.dtype)  # [776, 2048] paddle.bfloat16
+        # print("top_gate: ", top_gate.shape, top_gate.dtype)  # [776, 8] paddle.float32
+        # print("top_idx: ", top_idx.shape, top_idx.dtype)  # [776, 8] paddle.int64
         mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1)
 
         if self.seq_aux:
@@ -401,8 +474,15 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             # update mask and locations by capacity
             if self.drop_policy == "probs":
                 topk_masked_gates = paddle.zeros_like(gates).put_along_axis(top_idx, top_gate, axis=1)
-                capacity_probs, capacity_indices = paddle.topk(topk_masked_gates, k=capacity, axis=0, sorted=False)
-                token_priority = self._priority(capacity_indices, capacity)
+                # print("--topk_masked_gates: ", topk_masked_gates)
+                # capacity_probs, capacity_indices = paddle.topk(topk_masked_gates, k=capacity, axis=0, sorted=False)
+                # print("--capacity_probs: ", capacity_probs)
+                # print("--capacity_indices: ", capacity_indices)
+                # token_priority = self._priority(capacity_indices, capacity)
+                # print("--token_priority: ", token_priority)
+
+                token_priority = self._probs_drop_policy(topk_masked_gates, capacity)
+                # print("--token_priority: ", token_priority)
 
             elif self.drop_policy == "position":
                 token_priority = self._priority(top_idx, capacity)
@@ -411,25 +491,20 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         else:
             # Do not drop tokens - set capacity according to current expert assignments
             local_capacity = paddle.max(exp_counts)
-            print("----------MOE Gate, no drop tokens: local_capacity = ", local_capacity)
-            print("----------SELF.GROUP ", self.group)
             if self.group is not None:
                 dist.all_reduce(local_capacity, op=dist.ReduceOp.MAX, group=self.group)
             capacity = int(local_capacity)
             token_priority = self._priority(top_idx, capacity)
 
         # normalize gates
-        # gates_masked is equal to top_gate.
         gates_masked = gates * mask
 
         # if self.training:
         gates_s = paddle.sum(gates_masked, axis=-1, keepdim=True)
-        print("gates_s: ", gates_s.shape, gates_s.dtype)  # [776, 1] paddle.bfloat16
         denom_s = paddle.clip(gates_s, min=paddle.finfo(gates_masked.dtype).eps)
         if self.norm_topk_prob:
             gates_masked = gates_masked / denom_s
         gates_masked *= self.routed_scaling_factor
-        print("gates_masked after: ", gates_masked.shape, gates_masked.dtype)  # [776, 2048] paddle.bfloat16
 
         return (
             capacity,

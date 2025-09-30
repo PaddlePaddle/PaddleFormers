@@ -23,7 +23,12 @@ import paddle.nn.functional as F
 from paddle import Tensor, nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
-
+from paddle.distributed.fleet.meta_parallel import (
+    LayerDesc,
+    PipelineLayer,
+    SharedLayerDesc,
+)
+from paddle.distributed.fleet.recompute.recompute import recompute
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
@@ -860,6 +865,8 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
 
     def __init__(self, config: Qwen3MoeConfig):
         super().__init__(config)
+        # config.num_hidden_layers = 4
+        # config.num_experts = 4
         self.model = Qwen3MoeModel(config)
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)

@@ -101,7 +101,6 @@ class StandardMoEExpert(nn.Layer, MoEExpertInterface):
             output: 输出隐藏状态，形状: [seq_len, hidden_size]
         """
         # 计算门控和上投影
-        print("hidden_states.shape: ", hidden_states.shape)
         gate = self.gate_proj(hidden_states)
         up = self.up_proj(hidden_states)
 

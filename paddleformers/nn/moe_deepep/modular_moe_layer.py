@@ -228,22 +228,24 @@ class ModularMoELayer(nn.Layer):
             dist.fleet.get_hybrid_communicate_group()
             is_fleet_init = True
         except AttributeError as e:
-            print(f"is_fleet_init AttributeError occurred: {e}")
             is_fleet_init = False
 
-        print("is_fleet_init = ", is_fleet_init)
+        # print("is_fleet_init = ", is_fleet_init)
         if (
             is_fleet_init
             and dist.fleet.get_hybrid_communicate_group().get_data_parallel_world_size() > 1
-            and self.moe_group == "data"
         ):
-            self.moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
+            if self.moe_group == "data":
+                self.moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
+            elif self.moe_group == "expert":
+                self.moe_group = dist.fleet.get_hybrid_communicate_group().expert_parallel_group
             self.moe_rank = dist.get_rank(self.moe_group)
-            print("self.moe_group, ", self.moe_group)
-            print("self.moe_rank before, ", self.moe_rank)
+            # print("self.moe_group, ", self.moe_group)
+            # print("self.moe_rank before, ", self.moe_rank)
             self.moe_rank = 0 if self.moe_rank < 0 else self.moe_rank
-            self.expert_parallel_degree = dist.get_world_size(self.moe_group)
-            print("self.expert_parallel_degree before, ", self.expert_parallel_degree)
+            new_expert_parallel_degree = dist.get_world_size(self.moe_group)
+            assert (self.expert_parallel_degree == new_expert_parallel_degree), f"self.expert_parallel_degree={self.expert_parallel_degree} != moe_world_size={new_expert_parallel_degree}"
+            # print("self.expert_parallel_degree before, ", self.expert_parallel_degree)
             self.expert_parallel_degree = 1 if self.expert_parallel_degree < 0 else self.expert_parallel_degree
             self.num_experts_per_device = _parse_moe_expert_parallel(self.num_experts, self.expert_parallel_degree)
         else:
@@ -275,11 +277,11 @@ class ModularMoELayer(nn.Layer):
         # MoE前向传播
         if self.expert_parallel_degree > 1:
             # 使用EP并行
-            print("----------------- using _forward_with_ep_parallel")
+            # print("----------------- using _forward_with_ep_parallel")
             output = self._forward_with_ep_parallel(reshaped_input, topk_indices, topk_weights)
         else:
             # 使用传统MoE
-            print("----------------- using _forward_traditional_moe")
+            # print("----------------- using _forward_traditional_moe")
             output = self._forward_traditional_moe(reshaped_input, topk_indices, topk_weights)
 
         # 恢复原始形状
