@@ -206,6 +206,7 @@ def function_call_chat_template(tokenizer, messages, tools):
         tokenize=False,
     )
     history_len = len(history_str)
+    input_dict["messages"] = messages
     all_str = tokenizer.apply_chat_template(
         input_dict,
         add_generation_prompt=False,
