@@ -296,46 +296,41 @@ class ModularMoELayer(nn.Layer):
         return output, None
 
     def _forward_traditional_moe(
-        self, hidden_states: paddle.Tensor, topk_indices: paddle.Tensor, topk_weights: paddle.Tensor
+        self, hidden_states: paddle.Tensor, selected_experts: paddle.Tensor, topk_weights: paddle.Tensor
     ) -> paddle.Tensor:
         """
         传统MoE前向传播
 
         Args:
             hidden_states: 输入隐藏状态，形状: [batch_size*seq_len, hidden_size]
-            topk_indices: TopK专家索引，形状: [seq_len, num_experts_per_tok]
+            selected_experts: TopK专家索引，形状: [seq_len, num_experts_per_tok]
             topk_weights: TopK权重，形状: [seq_len, num_experts_per_tok]
 
         Returns:
             output: 输出隐藏状态，形状: [seq_len, hidden_size]
         """
-        final_hidden_states = paddle.zeros_like(hidden_states, dtype=topk_weights.dtype)
+        _, d_model = hidden_states.shape
+        final_hidden_states = paddle.zeros_like(hidden_states, dtype=hidden_states.dtype)
 
-        # 创建专家掩码
-        expert_mask = paddle.nn.functional.one_hot(topk_indices, num_classes=self.num_experts)
-        expert_mask = expert_mask.transpose([2, 0, 1])  # [num_experts, seq_len, num_experts_per_tok]
-
-        # 遍历每个专家
+        # One hot encode the selected experts to create an expert mask
+        # this will be used to easily index which expert is going to be sollicitated
+        expert_mask = paddle.nn.functional.one_hot(selected_experts, num_classes=self.num_experts).transpose([2, 1, 0])
+        # [num_experts, topk, bs*seq]
+        tokens_per_expert = expert_mask.reshape([expert_mask.shape[0], -1]).sum(axis=-1)
+        # Loop over all available experts in the model and perform the computation on each expert
         for expert_idx in range(self.num_experts):
-            expert = self.experts[expert_idx]
-            mask = expert_mask[expert_idx]
-            token_indices, weight_indices = paddle.where(mask)
-
-            if token_indices.numel() > 0:
-                # 获取专家权重和输入
-                expert_weights = topk_weights[token_indices, weight_indices]
-                expert_input = hidden_states[token_indices]
-
-                # 计算专家输出
-                expert_output = expert(expert_input)
-
-                # 加权输出
-                weighted_output = expert_output * expert_weights.unsqueeze(-1)
-
-                # 累加到最终输出
-                # 使用scatter代替index_add_
-                for i, token_idx in enumerate(token_indices):
-                    final_hidden_states[token_idx] += weighted_output[i]
+            expert_layer = self.experts[expert_idx]
+            top_x, idx = paddle.where(expert_mask[expert_idx])
+            # Index the correct hidden states and compute the expert hidden state for
+            # the current expert. We need to make sure to multiply the output hidden
+            # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
+            if tokens_per_expert[expert_idx] <= 0.1:
+                continue
+            current_state = hidden_states[idx, None].reshape([-1, d_model])
+            current_hidden_states = expert_layer(current_state) * topk_weights[idx, top_x].unsqueeze(-1)
+            final_hidden_states.index_add_(
+                index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
+            )
 
         return final_hidden_states.cast(hidden_states.dtype)
 
