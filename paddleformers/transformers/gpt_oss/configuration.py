@@ -50,6 +50,7 @@ class GptOssConfig(PretrainedConfig):
         output_router_logits=False,
         use_cache=True,
         layer_types=None,
+        pp_seg_method="layer:GptOssDecoderLayer",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -91,6 +92,7 @@ class GptOssConfig(PretrainedConfig):
         self.output_router_logits = output_router_logits
         self.use_cache = use_cache
         self.use_bias = False
+        self.pp_seg_method = pp_seg_method
 
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,

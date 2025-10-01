@@ -14,6 +14,7 @@
 
 import paddle
 import paddle.nn as nn
+from paddle.incubate.nn.functional import fused_rms_norm_ext
 
 from ..generation.configuration_utils import PretrainedConfig
 from ..utils.log import logger
@@ -59,6 +60,9 @@ class RMSNorm(nn.Layer):
         self.config = config
 
     def forward(self, hidden_states):
+        if self.config.get("fuse_rms_norm", False):
+            return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
+
         if paddle.in_dynamic_mode():
             with paddle.amp.auto_cast(False):
                 variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
@@ -81,7 +85,7 @@ class Norm(GeneralInterface):
     @classmethod
     def create(self, config, hidden_size=None, has_bias=None, norm_eps=None, norm_type=None, **kwargs):
         if norm_type is None:
-            norm_type = "rms_norm" if config.get("use_rmsnorm", False) else "layer_norm"
+            norm_type = "rms_norm"
         if has_bias is None:
             has_bias = config.get("use_bias", False)
         norm_cls = self._global_mapping[norm_type]

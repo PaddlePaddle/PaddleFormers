@@ -37,8 +37,8 @@ class StreamerTester(unittest.TestCase):
         }
 
     def test_text_streamer_matches_non_streaming(self):
-        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama")
-        model = AutoModelForCausalLM.from_pretrained("test_paddleformers/tiny-random-llama")
+        tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
         model.config.eos_token_id = -1
 
         input_kwargs = self.get_inputs(model)
@@ -54,8 +54,8 @@ class StreamerTester(unittest.TestCase):
         self.assertEqual(streamer_text, greedy_text)
 
     def test_iterator_streamer_matches_non_streaming(self):
-        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama")
-        model = AutoModelForCausalLM.from_pretrained("test_paddleformers/tiny-random-llama")
+        tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
         model.config.eos_token_id = -1
 
         input_kwargs = self.get_inputs(model)
@@ -77,9 +77,10 @@ class StreamerTester(unittest.TestCase):
         # Tests that we can pass `decode_kwargs` to the streamer to control how the tokens are decoded. Must be tested
         # with actual models -- the dummy models' tokenizers are not aligned with their models, and
         # `skip_special_tokens=True` has no effect on them
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/bloom-560m")
-        model = AutoModelForCausalLM.from_pretrained("PaddleNLP/bloom-560m")
+        tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-qwen3")
+        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
         model.config.eos_token_id = -1
+        model.config.bos_token_id = 1
 
         input_ids = paddle.ones([1, 5], dtype="int64") * model.config.bos_token_id
         attention_mask = paddle.ones_like(input_ids, dtype="bool")
@@ -95,8 +96,8 @@ class StreamerTester(unittest.TestCase):
         self.assertEqual(streamer_text_tokenized.input_ids.shape, [1, 1])
 
     def test_iterator_streamer_timeout(self):
-        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama")
-        model = AutoModelForCausalLM.from_pretrained("test_paddleformers/tiny-random-llama")
+        tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
         model.config.eos_token_id = -1
 
         input_kwargs = self.get_inputs(model)

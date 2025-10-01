@@ -119,7 +119,7 @@ def merge_tensors(k, tensor_list, shape):
         t = tensor_list[0]
     else:
         assert len(tensor_list[0].shape) == 1
-        t = paddle.concat(x=tensor_list, axis=0)
+        t = paddle.cat(x=tensor_list, axis=0)
     tensor_size = np.prod(shape)
     padded_size = t._numel()
     assert padded_size >= tensor_size, f"{k} padded_size {padded_size} tensor_size {tensor_size}"

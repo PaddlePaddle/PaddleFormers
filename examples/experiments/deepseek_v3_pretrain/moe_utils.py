@@ -56,7 +56,7 @@ if not hasattr(paddle.Tensor, "_holder_size"):
 
 def topk_to_permuted_indices(x, num_tokens_per_expert_list, topk):
     x = paddle.flatten(x)
-    prob_permuted_indices = paddle.concat(
+    prob_permuted_indices = paddle.cat(
         [
             paddle.tensor.search._restrict_nonzero(x == i, total_true_num)
             for i, total_true_num in enumerate(num_tokens_per_expert_list)

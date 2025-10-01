@@ -41,6 +41,8 @@ class TestSFTDataset(unittest.TestCase):
             "greedy_intokens": True,
             "packing": False,
             "mix_strategy": "random",
+            "encode_one_turn": True,
+            "use_template": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -69,6 +71,8 @@ class TestSFTDataset(unittest.TestCase):
             "greedy_intokens": True,
             "packing": False,
             "mix_strategy": "concat",
+            "encode_one_turn": True,
+            "use_template": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -97,6 +101,8 @@ class TestSFTDataset(unittest.TestCase):
             "greedy_intokens": True,
             "packing": False,
             "mix_strategy": "interleave_under",
+            "encode_one_turn": True,
+            "use_template": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -125,6 +131,8 @@ class TestSFTDataset(unittest.TestCase):
             "greedy_intokens": True,
             "packing": False,
             "mix_strategy": "interleave_over",
+            "encode_one_turn": True,
+            "use_template": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -162,6 +170,7 @@ class TestDPODataset(unittest.TestCase):
             "mask_out_eos_token": True,
             "packing": False,
             "mix_strategy": "random",
+            "encode_one_turn": True,
         }
 
         train_dataset = create_dataset_dpo(
@@ -197,6 +206,7 @@ class TestDPODataset(unittest.TestCase):
             "mask_out_eos_token": True,
             "packing": False,
             "mix_strategy": "concat",
+            "encode_one_turn": True,
         }
 
         train_dataset = create_dataset_dpo(
@@ -232,6 +242,7 @@ class TestDPODataset(unittest.TestCase):
             "mask_out_eos_token": True,
             "packing": False,
             "mix_strategy": "interleave_under",
+            "encode_one_turn": True,
         }
 
         train_dataset = create_dataset_dpo(
@@ -267,6 +278,7 @@ class TestDPODataset(unittest.TestCase):
             "mask_out_eos_token": True,
             "packing": False,
             "mix_strategy": "interleave_over",
+            "encode_one_turn": True,
         }
 
         train_dataset = create_dataset_dpo(

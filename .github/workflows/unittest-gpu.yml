@@ -2,19 +2,20 @@ name: Unittest GPU CI
 
 on:
   pull_request:
+  push:
   schedule:
-    - cron: "3 0 * * *"
+    - cron: "0 18 * * *"
   workflow_call:
     inputs:
-      run_downstream:
-        required: true
+      runner:
+        required: false
         type: string
       image_name:
-        required: true
+        required: false
         type: string
 
 concurrency:
-  group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:
@@ -26,7 +27,6 @@ env:
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_name: unittest-gpu-ci
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-  RUN_DOWNSTREAM: ${{ inputs.run_downstream }}
 
 defaults:
   run:
@@ -35,7 +35,7 @@ defaults:
 jobs:
   unittest-gpu-ci:
     name: unittest-gpu-ci
-    runs-on: [self-hosted, ernie-8gpu]
+    runs-on: ${{ inputs.runner || 'ernie-8gpu' }}
     steps:
       - name: Determine Image Name
         env:
@@ -56,35 +56,28 @@ jobs:
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
-          if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
-            echo "Not in a pull_request or test_build event. Skipping..."
-          else
-            docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
-              -v $work_dir/../../..:$work_dir/../../.. \
-              -v $work_dir:/workspace \
-              -v /home/.cache/pip:/home/.cache/pip \
-              -e BRANCH \
-              -e AGILE_COMPILE_BRANCH \
-              -e PR_ID \
-              -e COMMIT_ID \
-              -e work_dir \
-              -e ci_scripts \
-              -e no_proxy \
-              -e CI_name \
-              -e paddle_whl \
-              -e FLAGS_dynamic_static_unified_comm \
-              -e python_version \
-              -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
-              -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
-              -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
-          fi
+          docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+            -v $work_dir/../../..:$work_dir/../../.. \
+            -v $work_dir:/workspace \
+            -v /home/.cache/pip:/home/.cache/pip \
+            -e BRANCH \
+            -e AGILE_COMPILE_BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e work_dir \
+            -e ci_scripts \
+            -e no_proxy \
+            -e CI_name \
+            -e paddle_whl \
+            -e FLAGS_dynamic_static_unified_comm \
+            -e python_version \
+            -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
+            -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
+            -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             
       - name: Download Code
         run: |
-          if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
-            echo "Not in a pull_request or test_build event. Skipping..."
-          else
-            docker exec -t $container_name /bin/bash -c '
+          docker exec -t $container_name /bin/bash -c '
             rm -rf * .[^.]*
             echo "Downloading PaddleFormers.tar"
             wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
@@ -108,23 +101,19 @@ jobs:
             fi
             git log --pretty=oneline -10
             '
-          fi
 
       - name: Test
         run: |
-          if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
-            echo "Not in a pull_request or test_build event. Skipping..."
-          else
-            docker exec -t $container_name /bin/bash -c '
-            ldconfig
-            pip config set global.cache-dir "/home/.cache/pip"
-            set -e
-            rm -rf /root/.cache/aistudio/
-            cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-            source $work_dir/../../../proxy
-            timeout 100m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
-            '
-          fi
+          docker exec -t $container_name /bin/bash -c '
+          ldconfig
+          pip config set global.cache-dir "/home/.cache/pip"
+          set -e
+          rm -rf /root/.cache/aistudio/
+          cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
+          source $work_dir/../../../proxy
+          source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
+          timeout 30m bash scripts/unit_test/ci_unit.sh ${paddle_whl}
+          '
           
       - name: Upload Products
         if: always()
@@ -133,45 +122,39 @@ jobs:
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
           allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
         run: |
-          if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
-            echo "Not in a pull_request or test_build event. Skipping..."
-          else
-            docker exec -t $container_name /bin/bash -c '
-            if [ ! -f "${{ env.bos_file }}" ]; then
-              wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
-              mkdir ${{ env.home_path }}/bos
-              tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
-            fi
-            if [ ! -f "${{ env.allure_file }}" ]; then
-              wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
-              unzip -q ${{ env.home_path }}/allure-2.19.0.zip
-            fi
-            if [[ "${{ env.RUN_DOWNSTREAM }}" == "" && -n "${PR_ID}" ]]; then
-              bos_prefix="${PR_ID}/${COMMIT_ID}"
-            elif [[ "${{ env.RUN_DOWNSTREAM }}" == "true" && -n "${PR_ID}" ]]; then
-              bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
-            else
-              bos_prefix="schedule/$(date +%Y%m%d)"
-            fi
-            # coverage.xml
-            cd /workspace/PaddleFormers
-            python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-            echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
-            # logs
-            cd /workspace/PaddleFormers/unittest_logs
-            for FILE in /workspace/PaddleFormers/unittest_logs/*; do
-              file=$(basename "$FILE")
-              python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-              echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
-            done
-            # allure
-            cd /workspace/PaddleFormers/
-            ${{ env.allure_file }} generate result -o report
-            tar -czf report.tar.gz report
-            python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-            echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
-            '
+          docker exec -t $container_name /bin/bash -c '
+          if [ ! -f "${{ env.bos_file }}" ]; then
+            wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+            mkdir ${{ env.home_path }}/bos
+            tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
           fi
+          if [ ! -f "${{ env.allure_file }}" ]; then
+            wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
+            unzip -q ${{ env.home_path }}/allure-2.19.0.zip
+          fi
+          if [ -n "${PR_ID}" ]; then
+            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          else
+            bos_prefix="schedule/$(date +%Y%m%d)"
+          fi
+          # coverage.xml
+          cd /workspace/PaddleFormers
+          python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+          echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
+          # logs
+          cd /workspace/PaddleFormers/unittest_logs
+          for FILE in /workspace/PaddleFormers/unittest_logs/*; do
+            file=$(basename "$FILE")
+            python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+            echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
+          done
+          # allure
+          # cd /workspace/PaddleFormers/
+          # ${{ env.allure_file }} generate result -o report
+          # tar -czf report.tar.gz report
+          # python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+          # echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
+          '
 
       - name: Terminate And Delete the Container
         if: always()
@@ -191,10 +174,8 @@ jobs:
 
       - name: Download coverage.xml
         run: |
-          if [[ "${{ env.RUN_DOWNSTREAM }}" == "" && -n "${PR_ID}" ]]; then
+          if [ -n "${PR_ID}" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
-          elif [[ "${{ env.RUN_DOWNSTREAM }}" == "true" && -n "${PR_ID}" ]]; then
-            bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
           else
             bos_prefix="schedule/$(date +%Y%m%d)"
           fi
@@ -226,27 +207,28 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  # upload-products:
-  #   name: upload-products
+  # upload-allure:
+  #   name: upload-allure
   #   needs: [unittest-gpu-ci]
-  #   if: always()
+  #   if: success() || failure()
   #   runs-on: ubuntu-latest
   #   steps:
-  #     - name: Wget Files
+  #     - name: Checkout Code
+  #       uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+
+  #     - name: Download report.tar.gz
   #       run: |
-  #         if [[ "$RUN_DOWNSTREAM" == "false" ]]; then
-  #           echo "Not in a pull_request or test_build event. Skipping..."
+  #         if [ -n "${PR_ID}" ]; then
+  #           bos_prefix="${PR_ID}/${COMMIT_ID}"
   #         else
-  #           if [[ "$RUN_DOWNSTREAM" == "" && -n "${PR_ID}" ]]; then
-  #             bos_prefix="${PR_ID}/${COMMIT_ID}"
-  #           elif [[ "$RUN_DOWNSTREAM" == "true" && -n "${PR_ID}" ]]; then
-  #             bos_prefix="${PR_ID}/${COMMIT_ID}/test_build"
-  #           else
-  #             bos_prefix="schedule/$(date +%Y%m%d)"
-  #           fi
-  #           wget -q --no-proxy  https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz --no-check-certificate
-  #           tar -xzf products.tar.gz
+  #           bos_prefix="schedule/$(date +%Y%m%d)"
   #         fi
+  #         wget -q --no-proxy \
+  #           https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz \
+  #           --no-check-certificate -O report.tar.gz
+  #         tar -xzf report.tar.gz
 
   #     - name: Upload Allure Report
   #       uses: actions/upload-artifact@v4
@@ -255,10 +237,8 @@ jobs:
   #         path: report
   #         if-no-files-found: ignore
 
-  #     - name: Upload Logs
-  #       uses: actions/upload-artifact@v4
+  #     - name: Deploy allure report to GitHub Pages
+  #       uses: peaceiris/actions-gh-pages@v4
   #       with:
-  #         name: unittest-gpu-ci-log
-  #         path: |
-  #           unittest_logs
-  #         if-no-files-found: ignore
+  #         github_token: ${{ secrets.GITHUB_TOKEN }}
+  #         publish_dir: ./report

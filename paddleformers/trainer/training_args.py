@@ -1096,6 +1096,10 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Controls the parallel execution order. False (pp first), True (sharding first)."},
     )
+    pre_alloc_memory: int = field(
+        default=0,
+        metadata={"help": "pre allocate memory size GB"},
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -2231,6 +2235,17 @@ class TrainingArguments:
         else:
             return 0
 
+    @property
+    def moe_sharding_parallel_rank(self):
+        if self.use_hybrid_parallel:
+            hcg = fleet.get_hybrid_communicate_group()
+            if hasattr(hcg, "get_moe_sharding_parallel_group"):
+                return max(hcg.get_moe_sharding_parallel_group().rank, 0)
+            else:
+                return 0
+        else:
+            return 0
+
     def _format_name(self, prefix, rank, degree):
         size = 2
         return f"{prefix}{rank:0>{size}d}"
@@ -2390,7 +2405,9 @@ class TrainingArguments:
                 return True
             elif self.use_hybrid_parallel:
                 # save on dataset rank 0
-                return self.sharding_parallel_rank == 0 and (self.data_parallel_rank == 0 or self.use_expert_parallel)
+                return (
+                    self.sharding_parallel_rank == 0 and (self.data_parallel_rank == 0 or self.use_expert_parallel)
+                ) or (self.expert_parallel_degree > 1 and self.moe_sharding_parallel_rank == 0)
             else:
                 return self.process_index == 0 or self.use_expert_parallel
 

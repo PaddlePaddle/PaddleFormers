@@ -10,8 +10,7 @@ __pycache__/
 .Python
 build/
 build*
-!scripts/regression/build.sh
-!.github/workflows/build-ci-docker-images.yml
+!scripts/dependence/build.sh
 develop-eggs/
 dist/
 downloads/

@@ -55,7 +55,7 @@ def calc_lm_head_logits(
         hidden_states,
         weight,
         bias=bias,
-        transpose_y=config.get("tie_word_embeddings", False),
+        transpose_y=True,
         tensor_parallel_degree=config.tensor_parallel_degree,
         tensor_parallel_output=tensor_parallel_output,
         fuse_linear=config.get("fuse_linear", False),
@@ -123,6 +123,6 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
                 out = f(*_args, **kwargs)
             outs.append(out)
 
-        return paddle.concat(outs, out_idx)
+        return paddle.cat(outs, out_idx)
 
     return wrapper

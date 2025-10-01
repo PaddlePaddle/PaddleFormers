@@ -255,7 +255,7 @@ def apply_chunking_to_forward(
         # apply forward fn to every tuple
         output_chunks = tuple(forward_fn(*input_tensors_chunk) for input_tensors_chunk in zip(*input_tensors_chunks))
         # concatenate output at same dimension
-        return paddle.concat(output_chunks, axis=chunk_dim)
+        return paddle.cat(output_chunks, axis=chunk_dim)
 
     return forward_fn(*input_tensors)
 
@@ -391,13 +391,18 @@ def _load_part_state_dict(
     def _is_need_transpose(key):
         if "lora" not in key and convert_from_hf and isinstance(transpose_weight_keys, list):
             for trans_key in transpose_weight_keys:
-                if key.endswith(f".{trans_key}.weight") or key == f"{trans_key}.weight":
+                if re.search(f"\.{trans_key}\.weight$", key) or re.fullmatch(f"^{trans_key}\.weight$", key):
                     return True
         return False
 
     def _transpose_hf_weight(key, weight):
         if _is_need_transpose(key):
-            return weight.transpose([-1, -2])
+            if isinstance(weight, np.ndarray):
+                return np.ascontiguousarray(weight.transpose([-1, -2]))
+            elif isinstance(weight, paddle.Tensor):
+                return weight.transpose([-1, -2]).contiguous()
+            else:
+                raise ValueError(f"Unsupported weight type: {type(weight)}. Expected np.ndarray or paddle.Tensor")
         return weight
 
     part_state_dict = {}
@@ -598,7 +603,7 @@ def load_state_dict(
 def prepare_safe_save_state_dict(state_dict, save_to_hf=False):
     for k in list(state_dict.keys()):
         if isinstance(state_dict[k], paddle.Tensor):
-            if save_to_hf:
+            if state_dict[k].dtype == paddle.bfloat16:
                 state_dict[k] = state_dict.pop(k).astype("float32").cpu().numpy().astype(ml_dtypes.bfloat16)
             else:
                 state_dict[k] = state_dict.pop(k).cpu().numpy()
@@ -1567,7 +1572,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                             dtype=output_embeddings._dtype,
                             is_bias=True,
                         )
-                        new_bias = paddle.concat(
+                        new_bias = paddle.cat(
                             [old_bias, paddle.zeros([pad_length], dtype=output_embeddings.bias.dtype)]
                         )
                         output_embeddings.bias.set_value(new_bias)
@@ -1604,7 +1609,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         """
         return cls.config_class is not None and issubclass(cls.config_class, PretrainedConfig)
 
-    def save_model_config(self, save_dir: str):
+    def save_model_config(self, save_dir: str, **kwargs):
         """
         Deprecated, please use `.config.save_pretrained()` instead.
         Saves model configuration to a file named "config.json" under `save_dir`.
@@ -1613,7 +1618,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             save_dir (str): Directory to save model_config file into.
         """
         logger.warning("The `save_model_config` is deprecated! Please use `.config.save_pretrained()` instead.")
-        self.config.save_pretrained(save_dir)
+        self.config.save_pretrained(save_dir, **kwargs)
 
     def save_to_hf_hub(
         self,

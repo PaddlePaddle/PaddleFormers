@@ -417,10 +417,10 @@ class FlashMaskSinkPyLayer(PyLayer):
                 value_states,
                 raw_output,
                 lse_original,
-                dropout,
-                attention_mask,
-                causal,
-                scale,
+                dropout=dropout,
+                attention_mask=attention_mask,
+                causal=causal,
+                softmax_scale=scale,
             )
         else:
             grad_q_main, grad_k_repeated, grad_v_repeated = _flashmask_attention_backward_dispatch(
@@ -477,7 +477,16 @@ class FlashMaskSinkPyLayer(PyLayer):
             )
             x = (g_ell.unsqueeze(-1) * query).to(query.dtype)
             _, grad_k_extra_repeated, _ = _flash_attention_backward_dispatch(
-                x, query, key_states, key_states, mu_k, lse_k, dropout, causal, scale
+                x,
+                query,
+                key_states,
+                key_states,
+                mu_k,
+                lse_k,
+                dropout=dropout,
+                attention_mask=attention_mask,
+                causal=causal,
+                softmax_scale=scale,
             )
         else:
             # Use FlashMask for computing mu_k
@@ -511,12 +520,23 @@ class FlashMaskSinkPyLayer(PyLayer):
         # Combine main and extra gradients
         grad_q = grad_q_main + grad_q_extra
         grad_k = grad_k_main + grad_k_extra
-
-        # Return gradients (number of return values must match forward inputs)
-        if startend_row_indices is None:
-            return grad_q, grad_k, grad_v, grad_sink
+        if query.dtype != grad_q.dtype:
+            grad_q = grad_q.cast(query.dtype)
+        if key.dtype != grad_k.dtype:
+            grad_k = grad_k.cast(key.dtype)
+        if value.dtype != grad_v.dtype:
+            grad_v = grad_v.cast(value.dtype)
+        if sink.stop_gradient:
+            # Return gradients (number of return values must match forward inputs)
+            if startend_row_indices is None:
+                return grad_q, grad_k, grad_v, None  # grad_sink
+            else:
+                return grad_q, grad_k, grad_v, None, None
         else:
-            return grad_q, grad_k, grad_v, grad_sink, None
+            if startend_row_indices is None:
+                return grad_q, grad_k, grad_v, grad_sink
+            else:
+                return grad_q, grad_k, grad_v, grad_sink, None
 
 
 def sink_attention_forward(

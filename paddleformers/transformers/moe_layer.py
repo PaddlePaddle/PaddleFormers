@@ -83,12 +83,12 @@ def combining(x, combine_weights, scatter_index):
 
     dim = x.shape[-1]
     if isinstance(scatter_index, (list, tuple)):
-        scatter_index = paddle.concat([i.unsqueeze([-1]) for i in scatter_index], -1)
+        scatter_index = paddle.cat([i.unsqueeze([-1]) for i in scatter_index], -1)
     scatter_index = scatter_index.reshape([-1])
     num_k = len(combine_weights) if isinstance(combine_weights, (list, tuple)) else combine_weights.shape[-1]
     x = paddle.gather(x, scatter_index).reshape([-1, num_k, dim])  # [seq,2,dim]
     if isinstance(combine_weights, (list, tuple)):
-        combine_weights = paddle.concat(combine_weights, -1).unsqueeze([1])
+        combine_weights = paddle.cat(combine_weights, -1).unsqueeze([1])
     return paddle.matmul(combine_weights, x).squeeze(1)  # [seq,1,2] @ [seq,2,dim] -> [seq,1,dim]
 
 
@@ -309,7 +309,7 @@ class MoELayer(nn.Layer):
             expert_out = expert(tokens_for_this_expert)
             outputs.append(expert_out)
             start_idx = end_idx
-        outs = paddle.concat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
+        outs = paddle.cat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
         if self.expert_parallel_degree > 1:
             new_x = paddle.empty_like(outs)
             new_x[gatherd_idxs] = outs
@@ -353,6 +353,7 @@ class MoEFlexTokenLayer(nn.Layer):
             self.num_local_experts, self.moe_router_topk, self.moe_num_experts, moe_group
         )
         self.expert_parallel_degree = 1 if self.ep_size < 0 else self.ep_size
+        self.is_dummy_moe = False if self.expert_parallel_degree > 1 else True
         self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
             self.moe_num_experts, self.expert_parallel_degree
         )
@@ -363,6 +364,14 @@ class MoEFlexTokenLayer(nn.Layer):
             else:
                 self.experts.append(None)
         self.gate = gate
+        self._post_init()
+
+    def _post_init(self):
+        for k in self.experts:
+            if k is not None:
+                for p in k.parameters():
+                    p.expert = not self.is_dummy_moe
+                    p.no_sync = not self.is_dummy_moe
 
     def expert_forward(self, dispatched_input, tokens_per_expert):
         outputs = []
@@ -377,11 +386,9 @@ class MoEFlexTokenLayer(nn.Layer):
             expert = self.experts[i + self.moe_rank * self.moe_num_experts_per_device]
             outputs += [expert(chunk)]
 
-        return paddle.concat(outputs, axis=0)
+        return paddle.cat(outputs, axis=0)
 
     def forward(self, hidden_states: paddle.Tensor):
-        # _, _, d_model = hidden_states.shape
-        # reshaped_input = hidden_states.reshape([-1, d_model])
         probs, routing_map, l_aux, l_zloss = self.gate(hidden_states)
         (dispatched_input, tokens_per_expert) = self.token_dispatcher.token_permutation(
             hidden_states, probs, routing_map

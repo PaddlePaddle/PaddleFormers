@@ -37,26 +37,8 @@ from paddleformers.transformers import (
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
     AutoTokenizer,
-    DeepseekV2ForCausalLM,
-    DeepseekV2ForCausalLMPipe,
-    DeepseekV3ForCausalLM,
-    DeepseekV3ForCausalLMPipe,
-    Ernie4_5_MoeForCausalLM,
-    Ernie4_5_MoeForCausalLMPipe,
-    Ernie4_5ForCausalLM,
-    Ernie4_5ForCausalLMPipe,
     Llama3Tokenizer,
-    LlamaForCausalLM,
-    LlamaForCausalLMPipe,
     LlamaTokenizer,
-    Qwen2ForCausalLM,
-    Qwen2ForCausalLMPipe,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeForCausalLMPipe,
-    Qwen3ForCausalLM,
-    Qwen3ForCausalLMPipe,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeForCausalLMPipe,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DataConfig, ModelConfig, SFTConfig, SFTTrainer
@@ -65,27 +47,6 @@ from paddleformers.utils.log import logger
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "False"
-
-flash_mask_support_list = [
-    DeepseekV2ForCausalLM,
-    DeepseekV2ForCausalLMPipe,
-    DeepseekV3ForCausalLM,
-    DeepseekV3ForCausalLMPipe,
-    Ernie4_5ForCausalLM,
-    Ernie4_5ForCausalLMPipe,
-    Ernie4_5_MoeForCausalLM,
-    Ernie4_5_MoeForCausalLMPipe,
-    LlamaForCausalLM,
-    LlamaForCausalLMPipe,
-    Qwen2ForCausalLM,
-    Qwen2ForCausalLMPipe,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeForCausalLMPipe,
-    Qwen3ForCausalLM,
-    Qwen3ForCausalLMPipe,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeForCausalLMPipe,
-]
 
 
 def main():
@@ -101,6 +62,12 @@ def main():
 
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
+
+    if training_args.pre_alloc_memory > 0:
+        memory_size = int(training_args.pre_alloc_memory * 1024 * 1024 * 1024)
+        x = paddle.empty([memory_size], dtype=paddle.uint8)
+        logger.info(f"pre_alloc_memory size {x.shape}")
+        del x
 
     # Setup GPU & distributed training
     paddle.set_device(training_args.device)
@@ -173,6 +140,8 @@ def main():
     model_config.max_sequence_length = training_args.max_seq_len
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     model_config._attn_implementation = model_args.attn_impl
+    if hasattr(model_args, "moe_subbatch_token_num") and hasattr(model_config, "moe_subbatch_token_num"):
+        model_config.moe_subbatch_token_num = model_args.moe_subbatch_token_num
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
@@ -191,9 +160,6 @@ def main():
         )
     else:
         model = model_class.from_config(model_config, dtype=dtype)
-
-    if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
-        raise NotImplementedError(f"{model.__class__} not support flash mask.")
 
     if training_args.do_train and model_args.neftune:
         # Inspired by https://github.com/neelsjain/NEFTune
@@ -239,6 +205,7 @@ def main():
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
+        "use_template": data_args.use_template,
     }
 
     train_dataset = create_dataset_sft(
@@ -330,6 +297,7 @@ def main():
         data_collator=data_collator,
         do_generation=data_args.eval_with_do_generation,
         data_args=data_args,
+        callbacks=callbacks,
     )
     trainable_parameters = [
         p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)

@@ -327,10 +327,15 @@ def merge_large_tensor_parallel(tensor, tp_group, tp_action, dst_rank, is_dst):
     split_tensors = []
     for i in range(num_splits):
         if get_env_device() == "xpu":
-            ret = distributed_allgather(tensor[split_parts[i] : split_parts[i + 1], :], group=tp_group, offload=False)
+            ret = distributed_allgather(
+                tensor[split_parts[i] : split_parts[i + 1], :].contiguous(), group=tp_group, offload=False
+            )
         else:
             ret = distributed_gather(
-                tensor[split_parts[i] : split_parts[i + 1], :], dst=dst_rank, group=tp_group, offload=False
+                tensor[split_parts[i] : split_parts[i + 1], :].contiguous(),
+                dst=dst_rank,
+                group=tp_group,
+                offload=False,
             )
         # Copy to CPUPlace temporarily, may lower speed.
         if ret is not None:
@@ -342,7 +347,7 @@ def merge_large_tensor_parallel(tensor, tp_group, tp_action, dst_rank, is_dst):
             tmp = []
             for j in range(num_splits):
                 tmp.append(split_tensors[j][i])
-            concat_tensors.append(paddle.concat(tmp))
+            concat_tensors.append(paddle.cat(tmp))
         tensor = tp_action(concat_tensors)
     else:
         tensor = None
@@ -383,9 +388,9 @@ def merge_tensor_parallel_with_shard(state_dict, tp_actions, all_filter_keys):
                     tensor = merge_large_tensor_parallel(tensor, tp_group, tp_actions[key], j, is_dst)
                 else:
                     if get_env_device() == "xpu":
-                        ret = distributed_allgather(tensor, group=tp_group, offload=False)
+                        ret = distributed_allgather(tensor.contiguous(), group=tp_group, offload=False)
                     else:
-                        ret = distributed_gather(tensor, dst=j, group=tp_group, offload=False)
+                        ret = distributed_gather(tensor.contiguous(), dst=j, group=tp_group, offload=False)
                     action = tp_actions.pop(key)
                     tensor = action(ret) if is_dst else None
             else:
@@ -439,9 +444,9 @@ def merge_tensor_parallel_for_optimizer(state_dict, model_state_dict, tp_actions
                         tensor = merge_large_tensor_parallel(tensor, tp_group, tp_actions[model_key], j, is_dst)
                     else:
                         if get_env_device() == "xpu":
-                            ret = distributed_allgather(tensor, group=tp_group, offload=False)
+                            ret = distributed_allgather(tensor.contiguous(), group=tp_group, offload=False)
                         else:
-                            ret = distributed_gather(tensor, dst=j, group=tp_group, offload=False)
+                            ret = distributed_gather(tensor.contiguous(), dst=j, group=tp_group, offload=False)
                         action = tp_actions[model_key]
                         tensor = action(ret) if is_dst else None
             else:
@@ -488,7 +493,8 @@ def filter_params(model_to_save, state_dict, args, is_optimizer=False):
             weight_key = k.split("/")[0]
             model_v = model_state_dict[weight_key] if is_optimizer else v
             mp_moe = getattr(model_v, "mp_moe", False)
-            if not mp_moe:
+            no_sync = getattr(model_v, "no_sync", False)
+            if not mp_moe or no_sync:
                 if not quant or not is_optimizer:
                     if hasattr(model_v, "is_distributed") and model_v.is_distributed:
                         tensor_bytes_dict[k] = v.numel().item() * tp_size * dtype_byte_size(v.dtype)
@@ -550,6 +556,9 @@ def filter_params(model_to_save, state_dict, args, is_optimizer=False):
         mp_moe = getattr(model_v, "mp_moe", False)
         if mp_moe:
             filter_tensor_list[tp_rank].append(k)
+        no_sync = getattr(model_v, "no_sync", False)
+        if no_sync and k not in filter_tensor_list[tp_rank]:
+            filter_tensor_list[tp_rank].append(k)
 
     final_filter_tensor_list = []
     dist.all_gather_object(final_filter_tensor_list, filter_tensor_list[tp_rank], group=tp_group)
@@ -563,14 +572,20 @@ def get_sharded_file_name(args, file_name, is_optimizer=False):
     """
     if not is_optimizer:
         sd_degree = args.sharding_parallel_degree if args.sharding_parallel_degree > 1 else 1
-        size = sd_degree if args.use_expert_parallel else args.dataset_world_size
+        if args.use_expert_parallel:
+            if args.expert_parallel_degree > 1:
+                size = dist.get_world_size() // args.moe_sharding_parallel_degree
+            else:
+                size = args.world_size // sd_degree
+        else:
+            size = args.world_size // args.dataset_world_size
         shard_file = file_name.replace(
             ".pdparams",
-            f"-{args.logical_process_index + 1:05d}-of-{args.world_size//size:05d}.pdparams",
+            f"-{args.logical_process_index + 1:05d}-of-{size:05d}.pdparams",
         )
         shard_file = shard_file.replace(
             ".safetensors",
-            f"-{args.logical_process_index + 1:05d}-of-{args.world_size//size:05d}.safetensors",
+            f"-{args.logical_process_index + 1:05d}-of-{size:05d}.safetensors",
         )
     else:
         hcg = fleet.get_hybrid_communicate_group()
@@ -612,7 +627,9 @@ def get_sharded_index(
     return None
 
 
-def gather_sharded_object(index_file, total_size, is_optimizer=False, use_expert_parallel=False):
+def gather_sharded_object(
+    index_file, total_size, is_optimizer=False, use_expert_parallel=False, expert_parallel_degree=1
+):
     """
     All gather sharded files list across different groups.
     """
@@ -649,7 +666,7 @@ def gather_sharded_object(index_file, total_size, is_optimizer=False, use_expert
         index_file_list = [index_file]
         total_size_list = [total_size]
 
-    if use_expert_parallel:
+    if use_expert_parallel and expert_parallel_degree <= 1:
         data_group = hcg.get_data_parallel_group()
         if data_group.nranks > 1:
             data_index_file_list = []
@@ -659,7 +676,7 @@ def gather_sharded_object(index_file, total_size, is_optimizer=False, use_expert
             index_file_list = flatten_list(data_index_file_list)
             total_size_list = flatten_list(data_total_size_list)
 
-    if is_optimizer:
+    if is_optimizer or expert_parallel_degree > 1:
         sharding_group = hcg.get_sharding_parallel_group()
         if sharding_group.nranks > 1:
             sharding_index_file_list = []
@@ -739,7 +756,7 @@ def is_sharding_split_param_mode(args):
     )
 
 
-def save_model_config(model_to_save, save_directory):
+def save_model_config(model_to_save, save_directory, save_to_hf=False):
     """
     Save model config.
     """
@@ -770,35 +787,54 @@ def save_model_config(model_to_save, save_directory):
     else:
         config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
 
-    config_to_save.save_pretrained(save_directory)
+    config_to_save.save_pretrained(save_directory, save_to_hf=save_to_hf)
     # save generation config
     if model_to_save.can_generate():
         model_to_save.generation_config.save_pretrained(save_directory)
 
 
-def filter_sync_parameters(model_state_dict, optim_state_dict=None, master_weights=None, is_model_weight=True):
+def filter_sync_parameters(
+    model_state_dict,
+    optim_state_dict=None,
+    master_weights=None,
+    is_model_weight=True,
+    use_expert_parallel=False,
+    expert_parallel_degree=1,
+):
     """Filter sync parameters under expert parallel mode."""
 
     hcg = fleet.get_hybrid_communicate_group()
     dp_group = hcg.get_data_parallel_group()
+    sharding_group = hcg.get_sharding_parallel_group()
     dp_rank = dp_group.rank if dp_group.nranks > 1 else 0
+    sharding_rank = sharding_group.rank if sharding_group.nranks > 1 else 0
+    if expert_parallel_degree > 1:
+        ep_group = hcg.get_expert_parallel_group()
+        ep_rank = ep_group.rank if ep_group.nranks > 1 else 0
+    logger.info("Filter sync parameters under expert parallel mode.")
 
     if is_model_weight:
         for key in list(model_state_dict.keys()):
-            if dp_rank > 0 and not getattr(model_state_dict[key], "no_sync", False):
-                model_state_dict.pop(key)
+            if use_expert_parallel:
+                if expert_parallel_degree > 1:
+                    if ep_rank > 0 and sharding_rank > 0 and not getattr(model_state_dict[key], "no_sync", False):
+                        model_state_dict.pop(key)
+                else:
+                    if dp_rank > 0 and not getattr(model_state_dict[key], "no_sync", False):
+                        model_state_dict.pop(key)
     else:
-        no_sync_kname = []
-        for k, v in model_state_dict.items():
-            if getattr(v, "no_sync", False):
-                no_sync_kname.append(k)
+        if use_expert_parallel and expert_parallel_degree == 1:
+            no_sync_kname = []
+            for k, v in model_state_dict.items():
+                if getattr(v, "no_sync", False):
+                    no_sync_kname.append(k)
 
-        for key in list(optim_state_dict.keys()):
-            model_key = key.split("/")[0]
-            if dp_rank > 0 and model_key not in no_sync_kname:
-                optim_state_dict.pop(key)
+            for key in list(optim_state_dict.keys()):
+                model_key = key.split("/")[0]
+                if dp_rank > 0 and model_key not in no_sync_kname:
+                    optim_state_dict.pop(key)
 
-        if master_weights is not None:
-            for key in list(master_weights.keys()):
-                if dp_rank > 0 and key not in no_sync_kname:
-                    master_weights.pop(key)
+            if master_weights is not None:
+                for key in list(master_weights.keys()):
+                    if dp_rank > 0 and key not in no_sync_kname:
+                        master_weights.pop(key)

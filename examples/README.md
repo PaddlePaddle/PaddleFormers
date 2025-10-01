@@ -19,13 +19,14 @@ export DOWNLOAD_SOURCE=aistudio
 
 ### Paddle 权重使用说明
 
-使用 **Paddle** 格式权重，需要在配置文件（如 `sft_full.json`、`sft_lora.json`等）中手动添加以下参数，以避免与 **HuggingFace** 格式冲突：
+使用 **Paddle** 格式权重，需要在配置文件（如 `sft_full.yaml`、`sft_lora.yaml`等）中手动添加以下参数，以避免与 **HuggingFace** 格式冲突：
 
-```json
-"model_name_or_path": "your_model_name",
-"convert_from_hf": false,
-"save_to_hf": false,
+```yaml
+model_name_or_path: your_model_name_or_path
+convert_from_hf: false
+save_to_hf: false
 ```
+
 
 ## 1. 精调
 
@@ -54,19 +55,19 @@ tar -xvf alpaca_demo.gz
 
 单卡
 ```bash
-python -u run_finetune.py ./config/sft_full.json
+python -u run_finetune.py ./config/sft_full.yaml
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/sft_full.json
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/sft_full.yaml
 ```
 
 ### 1.3 LoRA SFT
 
 LoRA SFT 启动命令参考
 ```bash
-python -u run_finetune.py ./config/sft_lora.json
+python -u run_finetune.py ./config/sft_lora.yaml
 ```
 
 
@@ -108,17 +109,64 @@ tar -zxvf ultrafeedback_binarized.tar.gz
 
 单卡
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/dpo_full.json
+python -u ./alignment/dpo/run_dpo.py ./config/dpo_full.yaml
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/dpo_full.json
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/dpo_full.yaml
 ```
 
 ### 2.3 LoRA DPO
 
 LoRA DPO 启动命令参考
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/dpo_lora.json
+python -u ./alignment/dpo/run_dpo.py ./config/dpo_lora.yaml
+```
+
+
+## 3. LoRA 参数合并
+
+使用 LoRA 方式训练模型后，为了方便推理，我们提供将 LoRA 参数合并到模型主权重中的脚本`tools/mergekit.py`。
+
+运行示例（默认加载和保存 **HuggingFace** 权重参数）：
+
+单卡
+```bash
+python -u ./tools/mergekit.py \
+    --lora_model_path ${lora_model_path} \
+    --model_name_or_path ${base_model_path} \
+    --output_path ${merged_output_path}
+```
+
+多卡
+```bash
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./tools/mergekit.py \
+    --lora_model_path ${lora_model_path} \
+    --model_name_or_path ${base_model_path} \
+    --output_path ${merged_output_path}
+```
+
+### Paddle 权重使用说明
+
+如需使用 **Paddle** 格式权重，需要在启动脚本中添加 `--convert_from_hf False` 和 `--save_to_hf False` 参数。
+
+单卡
+```bash
+python -u ./tools/mergekit.py \
+    --lora_model_path ${lora_model_path} \
+    --model_name_or_path ${base_model_path} \
+    --output_path ${merged_output_path} \
+    --convert_from_hf False \
+    --save_to_hf False
+```
+
+多卡
+```bash
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./tools/mergekit.py \
+    --lora_model_path ${lora_model_path} \
+    --model_name_or_path ${base_model_path} \
+    --output_path ${merged_output_path} \
+    --convert_from_hf False \
+    --save_to_hf False
 ```

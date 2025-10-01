@@ -47,14 +47,12 @@ set_env() {
     export FLAGS_cudnn_deterministic=1
     export HF_ENDPOINT=https://hf-mirror.com
     export FLAGS_use_cuda_managed_memory=true
-    export running_time=80m
 
     # for CE
     if [[ ${FLAGS_enable_CE} == "true" ]];then
         export CE_TEST_ENV=1
         export RUN_SLOW_TEST=1
         export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
-        export running_time=5h
     fi
 }
 
@@ -111,7 +109,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    timeout ${running_time} \
     python -m pytest -v -n 8 \
         --dist loadgroup \
         --retries 3 --retry-delay 1 \
@@ -126,7 +123,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
         cd ${nlp_dir}
         echo -e "\033[35m ---- Generate Allure Report  \033[0m"
         unset http_proxy && unset https_proxy
-        cp scripts/regression/gen_allure_report.py ./
+        cp scripts/unit_test/gen_allure_report.py ./
         python gen_allure_report.py > /dev/null
         echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"
     else

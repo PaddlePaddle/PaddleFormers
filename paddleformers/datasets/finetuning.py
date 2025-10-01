@@ -25,7 +25,7 @@ from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 
 from ..utils.log import logger
 from .base import MultiSourceDataset
-from .data_utils import Example, pad_batch_data
+from .data_utils import Example, pad_batch_data, postprocess_fc_sequence
 from .mix_datasets import create_dataset_instance
 
 LOGGER_COUNT = 0
@@ -69,7 +69,8 @@ def create_dataset(**dataset_config):
         task_dataset_path=task_dataset_path,
         task_dataset_prob=task_dataset_prob,
         sub_dataset_type=sub_dataset_type,
-        process_fn=(process_fc if dataset_config["sub_dataset_type"] == "chatml" else process_example),
+        process_fn=process_example,
+        process_fn_fc=process_fc,
     )
     sequence_dataset = SequenceDataset(
         dataset=example_dataset,
@@ -83,6 +84,7 @@ def create_dataset(**dataset_config):
         packing=dataset_config["packing"],
         mix_strategy=dataset_config["mix_strategy"],
         encode_one_turn=dataset_config["encode_one_turn"],
+        use_template=dataset_config["use_template"],
     )
     return sequence_dataset
 
@@ -173,7 +175,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: 
 
 def process_fc(data, input_file):
     multi_turns_messages = data["messages"]
-    tools_list = data["tools"]
+    tools_list = data["tools"] if "tools" in data else None
     label = data["label"] if "label" in data else None
 
     system = ""
@@ -289,6 +291,7 @@ class SequenceDataset(IterableDataset):
         packing: bool = False,
         mix_strategy: str = "random",
         encode_one_turn: bool = True,
+        use_template: bool = True,
     ):
         """Initialize SequenceDataset.
 
@@ -319,6 +322,7 @@ class SequenceDataset(IterableDataset):
         self.packing = packing
         self.mix_strategy = mix_strategy
         self.encode_one_turn = encode_one_turn
+        self.use_template = use_template
         self.num_samples_each_epoch = num_samples_each_epoch
         self.reverse = True
 
@@ -502,30 +506,6 @@ class SequenceDataset(IterableDataset):
             while True:
                 yield from self.__iter_func()
 
-    def function_call_chat_template(self, messages, tools):
-        history = messages[:-1]
-        history_str = self.tokenizer.apply_chat_template(
-            {"messages": history, "tools": tools},
-            add_generation_prompt=True,
-            tokenize=False,
-        )
-        history_len = len(history_str)
-        all_str = self.tokenizer.apply_chat_template(
-            {"messages": messages, "tools": tools},
-            add_generation_prompt=False,
-            tokenize=False,
-        )
-        response_str = all_str[history_len:]
-        history_id = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(history_str))
-        response_id = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(response_str))
-        return [history_id, response_id]
-
-    def _postprocess_fc_sequence(self, example):
-        messages = example.request["messages"]
-        tools = example.request["tools"]
-        encoded_messages = [self.function_call_chat_template(messages, tools)]
-        return encoded_messages
-
     def _postprocess_sequence(self, example, actual_example_num):
         """Process code completion examples into token sequences.
 
@@ -536,12 +516,19 @@ class SequenceDataset(IterableDataset):
         Returns:
             Sequence: Processed sequence or None if invalid.
         """
-        if not self.tokenizer.chat_template:
-            self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
-        if example.is_function_call:
-            encoded_messages = self._postprocess_fc_sequence(example)
+        if self.use_template:
+            if not self.tokenizer.chat_template:
+                self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
+            if example.is_function_call:
+                encoded_messages = postprocess_fc_sequence(self.tokenizer, example.request)
+            else:
+                encoded_messages = self.tokenizer.encode_chat_inputs(
+                    example.request, encode_one_turn=self.encode_one_turn
+                )
         else:
-            encoded_messages = self.tokenizer.encode_chat_inputs(example.request, encode_one_turn=self.encode_one_turn)
+            encoded_messages = self.tokenizer.encode_chat_inputs_with_no_template(
+                example.request, encode_one_turn=self.encode_one_turn
+            )
 
         num_reserved_tokens_for_each_dialog = 1  # only break_turn_token or end_token
         num_reserved_tokens_for_each_turn = 8
@@ -581,30 +568,40 @@ class SequenceDataset(IterableDataset):
                 if LOGGER_COUNT <= 5:
                     logger.warning(f"even one turn, example_output:'{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
             except Exception:
-                logger.warning(f"[SKIP] wrong example: {example}")
+                logger.warning("[SKIP] wrong example")
 
             return None
 
-        if self.begin_token_id is not None and self.end_of_response_id is not None:
-            # Maybe left truncated, so need to add begin_token
-            if tokens[0] != self.begin_token_id:
-                tokens = [self.begin_token_id] + tokens
-                loss_mask = [0] + loss_mask
+        if self.use_template:
+            if self.begin_token_id is not None and self.end_of_response_id is not None:
+                # Maybe left truncated, so need to add begin_token
+                if tokens[0] != self.begin_token_id:
+                    tokens = [self.begin_token_id] + tokens
+                    loss_mask = [0] + loss_mask
 
-            if len(tokens) > self.max_seq_len:
-                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
-            # Add EOS token at the end
-            del tokens[-1]
-            del loss_mask[-1]
-            labels = tokens[1:] + [self.tokenizer.eos_token_id]
+                # Add EOS token at the end
+                del tokens[-1]
+                del loss_mask[-1]
+                labels = tokens[1:] + [self.tokenizer.eos_token_id]
 
-            # end_of_response is a special token that indicates the end of the turn.
-            # end_token is a special token that indicates the end of the answer.
-            labels = [label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels]
+                # end_of_response is a special token that indicates the end of the turn.
+                # end_token is a special token that indicates the end of the answer.
+                labels = [
+                    label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
+                ]
+            else:
+                tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
+                labels = tokens[1:] + [-100]
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
         else:
-            tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
-            labels = tokens[1:] + [-100]
+            oral_tokens = tokens
+            tokens = oral_tokens[:-1]
+            labels = oral_tokens[1:]
+            loss_mask = loss_mask[1:]
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 

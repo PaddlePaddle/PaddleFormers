@@ -22,15 +22,15 @@ from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 from paddle.nn import functional as F
 
-from ...nn.attention.utils import repeat_kv
+from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
+from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ...utils.tools import get_env_device
-from ..llama.modeling import get_use_casual_mask
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import GptOssConfig
@@ -53,7 +53,7 @@ def _make_causal_mask(input_ids_shape, past_key_values_length):
 
     if past_key_values_length > 0:
         # [tgt_len, tgt_len + past_len]
-        mask = paddle.concat([paddle.ones([target_length, past_key_values_length], dtype="bool"), mask], axis=-1)
+        mask = paddle.cat([paddle.ones([target_length, past_key_values_length], dtype="bool"), mask], axis=-1)
 
     # [bs, 1, tgt_len, tgt_len + past_len]
     return mask[None, None, :, :].expand([batch_size, 1, target_length, target_length + past_key_values_length])
@@ -341,7 +341,7 @@ def _apply_rotary_emb(
     first_half, second_half = paddle.chunk(x.transpose([0, 2, 1, 3]), 2, axis=-1)
     first_ = first_half * cos - second_half * sin
     second_ = second_half * cos + first_half * sin
-    return paddle.concat((first_, second_), axis=-1).transpose([0, 2, 1, 3])
+    return paddle.cat((first_, second_), axis=-1).transpose([0, 2, 1, 3])
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
@@ -350,49 +350,6 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     q_embed = _apply_rotary_emb(q, cos, sin)
     k_embed = _apply_rotary_emb(k, cos, sin)
     return q_embed, k_embed
-
-
-def eager_attention_forward(
-    module: nn.Layer,
-    query: paddle.Tensor,
-    key: paddle.Tensor,
-    value: paddle.Tensor,
-    attention_mask: Optional[paddle.Tensor] = None,
-    dropout: float = 0.0,
-    scaling: Optional[float] = None,
-    **kwargs,
-):
-    if hasattr(module, "num_key_value_groups"):
-        num_key_value_groups = module.num_key_value_groups
-
-        key = repeat_kv(key, num_key_value_groups)
-        value = repeat_kv(value, num_key_value_groups)
-
-    perm = [0, 2, 1, 3]  # b l h d -> b h l d
-    query = paddle.transpose(x=query, perm=perm)
-    key = paddle.transpose(x=key, perm=perm)
-    value = paddle.transpose(x=value, perm=perm)
-
-    attn_weights = paddle.matmul(query, key.transpose([0, 1, 3, 2])) * scaling
-
-    if attention_mask is not None:
-
-        causal_mask = attention_mask[:, :, :, : key.shape[-2]]
-        attn_weights = attn_weights + causal_mask
-
-    sinks = module.sinks.reshape([1, -1, 1, 1]).expand([query.shape[0], -1, query.shape[-2], -1])
-
-    combined_logits = paddle.concat([attn_weights, sinks], axis=-1)
-
-    probs = F.softmax(combined_logits, axis=-1, dtype=combined_logits.dtype)
-    scores = probs[..., :-1]  # we drop the sink here
-
-    attn_weights = nn.functional.dropout(scores, p=dropout, training=module.training)
-    attn_output = paddle.matmul(attn_weights, value)  # b h l l @ b h l d -> b h l d
-    attn_output = attn_output.transpose([0, 2, 1, 3])  # b h l d -> b l h d
-    attn_output = paddle.reshape(x=attn_output, shape=[0, 0, attn_output.shape[2] * attn_output.shape[3]])
-
-    return attn_output, attn_weights
 
 
 class GptOssAttention(nn.Layer):
@@ -426,7 +383,6 @@ class GptOssAttention(nn.Layer):
         self.fuse_attention_qkv = config.fuse_attention_qkv
 
         self.scaling = self.head_dim**-0.5
-        self.attn_implementation = config._attn_implementation
 
         self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
 
@@ -483,11 +439,11 @@ class GptOssAttention(nn.Layer):
         hidden_states,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        attn_mask_start_row_indices: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         batch_size: Optional[int] = None,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         """Compute attention outputs.
@@ -496,7 +452,7 @@ class GptOssAttention(nn.Layer):
             hidden_states (paddle.Tensor): Input tensor [bsz, seq_len, hidden_size]
             past_key_value (Optional[Tuple[paddle.Tensor, paddle.Tensor]]): Cached key/value states
             attention_mask (Optional[paddle.Tensor]): Attention mask tensor
-            attn_mask_start_row_indices (Optional[paddle.Tensor]): Variable length attention indices
+            attn_mask_startend_row_indices (Optional[paddle.Tensor]): Variable length attention indices
             position_ids (Optional[paddle.Tensor]): Position indices for RoPE
             output_attentions (bool): Return attention weights if True
             use_cache (bool): Cache key/value states if True
@@ -521,12 +477,12 @@ class GptOssAttention(nn.Layer):
         key_states = key_states.reshape(target_key_value_shape)
         value_states = value_states.reshape(target_key_value_shape)
 
-        attention_interface = eager_attention_forward
-        cos, sin = position_embedding
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
         if past_key_value is not None:
-            key_states = paddle.concat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
         attn_output, attn_weights = attention_interface(
@@ -535,7 +491,8 @@ class GptOssAttention(nn.Layer):
             key=key_states,
             value=value_states,
             attention_mask=attention_mask,
-            attn_mask_start_row_indices=attn_mask_start_row_indices,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            sink=self.sinks,
             dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
             scaling=self.scaling,
         )
@@ -589,8 +546,8 @@ class GptOssDecoderLayer(nn.Layer):
         output_router_logits: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_start_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         """
@@ -615,11 +572,11 @@ class GptOssDecoderLayer(nn.Layer):
             hidden_states=hidden_states,
             past_key_value=past_key_value,
             attention_mask=attention_mask,
-            attn_mask_start_row_indices=attn_mask_start_row_indices,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_ids=position_ids,
             output_attentions=output_attentions,
             use_cache=use_cache,
-            position_embedding=position_embedding,
+            position_embeddings=position_embeddings,
         )
         hidden_states = residual + hidden_states
 
@@ -650,7 +607,7 @@ class GptOssPreTrainedModel(PretrainedModel):
     config_class = GptOssConfig
     base_model_prefix = "model"
     keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
-    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: GptOssConfig, is_split=True):
@@ -667,7 +624,7 @@ class GptOssPreTrainedModel(PretrainedModel):
             final_actions = {}
 
             base_actions = {
-                "lm_head.weight": partial(fn, is_column=True),
+                "lm_head.weight": partial(fn, is_column=False),
                 # Row Linear
                 "embed_tokens.weight": partial(fn, is_column=False),
                 "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
@@ -701,99 +658,6 @@ class GptOssPreTrainedModel(PretrainedModel):
         return mappings
 
 
-def _make_sliding_window_mask(input_shape, past_key_values_length=0, window_size=5):
-    """
-    Generate a sliding window mask that restricts each position to only attend to historical positions within the window.
-    Format: [bsz, 1, tgt_seq_len, src_seq_len], where True indicates allowed attention and False indicates masking.
-    """
-    batch_size, seq_length = input_shape
-    # Total sequence length = historical sequence length + current sequence length (for generating complete mask)
-    total_length = past_key_values_length + seq_length
-
-    # Initialize mask with all False values
-    mask = paddle.zeros((seq_length, total_length), dtype=paddle.bool)
-
-    for i in range(seq_length):
-        # Absolute position of current location in the total sequence (including historical sequence)
-        current_pos = past_key_values_length + i
-        # Window start position: max(0, current position - window size + 1)
-        start = max(0, current_pos - window_size + 1)
-        # Window end position: current position (causal mask restriction, cannot exceed self)
-        end = current_pos + 1  # 切片是左闭右开，所以+1
-        # Mark window range as True (allow attention)
-        mask[i, start:end] = True
-
-    # Expand dimensions to [bsz, 1, tgt_seq_len, src_seq_len]
-    mask = mask.unsqueeze(0).unsqueeze(0)
-    # Copy to each sample in batch_size
-    mask = paddle.tile(mask, repeat_times=[batch_size, 1, 1, 1])
-    return mask
-
-
-def _prepare_decoder_attention_mask(
-    attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None  # 新增：滑动窗口大小，None表示不启用
-):
-    # Step 1: Process input mask to generate basic expanded mask
-    if attention_mask is not None:
-        # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-        if len(attention_mask.shape) == 2:
-            expanded_attn_mask = _expand_2d_mask(attention_mask, dtype, tgt_length=input_shape[-1])
-            # When not generating in single step, need to combine causal mask and sliding window mask
-            if input_shape[-1] > 1:
-                # Generate basic causal mask (prevent future information leakage)
-                causal_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
-                # Generate sliding window mask (limit historical attention range)
-                if sliding_window_size is not None and sliding_window_size > 0:
-                    window_mask = _make_sliding_window_mask(
-                        input_shape, past_key_values_length=past_key_values_length, window_size=sliding_window_size
-                    )
-                    # Take intersection of sliding window mask and causal mask (satisfy both restrictions)
-                    combined_attention_mask = causal_mask & window_mask
-                else:
-                    combined_attention_mask = causal_mask  # Use causal mask directly when sliding window is disabled
-
-                # Combine with user-provided mask (e.g., padding mask)
-                if get_env_device() in ["npu", "mlu", "intel_hpu"]:
-                    expanded_attn_mask = expanded_attn_mask.astype("bool") & combined_attention_mask.astype("bool")
-                else:
-                    expanded_attn_mask = expanded_attn_mask & combined_attention_mask
-        # [bsz, seq_len, seq_len] -> [bsz, 1, seq_len, seq_len]
-        elif len(attention_mask.shape) == 3:
-            expanded_attn_mask = attention_mask.unsqueeze(1).astype("bool")
-        # 4D mask is used directly
-        else:
-            expanded_attn_mask = attention_mask
-    else:
-        # When no input mask, generate causal mask + sliding window mask (if enabled)
-        causal_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
-        if sliding_window_size is not None and sliding_window_size > 0:
-            window_mask = _make_sliding_window_mask(
-                input_shape, past_key_values_length=past_key_values_length, window_size=sliding_window_size
-            )
-            expanded_attn_mask = causal_mask & window_mask
-        else:
-            expanded_attn_mask = causal_mask  # Use causal mask directly when sliding window is disabled
-
-    # Step 2: Convert boolean mask to numerical mask (adapt to different devices)
-    if get_env_device() in ["npu", "mlu", "intel_hpu"]:
-        x = paddle.to_tensor(0.0, dtype="float32")
-        y = paddle.to_tensor(paddle.finfo(dtype).min, dtype="float32")
-        expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), x, y).astype(dtype)
-    elif get_env_device() == "xpu":
-        x = paddle.to_tensor(0.0, dtype="float32")
-        y = paddle.to_tensor(-1.7005809656952787e38, dtype="float32")
-        expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), x, y)
-    elif get_env_device() == "gcu":
-        min_val = paddle.finfo(dtype).min
-        x = paddle.to_tensor(0.0, dtype=dtype)
-        y = paddle.to_tensor(min_val, dtype=dtype)
-        expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), x, y).astype(dtype)
-    else:
-        expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), 0.0, paddle.finfo(dtype).min)
-        expanded_attn_mask = expanded_attn_mask.astype(dtype)
-    return expanded_attn_mask
-
-
 @register_base_model
 class GptOssModel(GptOssPreTrainedModel):
     """
@@ -821,7 +685,7 @@ class GptOssModel(GptOssPreTrainedModel):
             [
                 GptOssDecoderLayer(
                     config=config,
-                    layer_idx=layer_idx not in self.no_recompute_layers,
+                    layer_idx=layer_idx,
                 )
                 for layer_idx in range(config.num_hidden_layers)
             ]
@@ -848,8 +712,8 @@ class GptOssModel(GptOssPreTrainedModel):
         output_router_logits: bool,
         past_key_value: Tensor,
         use_cache: bool,
-        position_embedding: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_start_row_indices=None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        attn_mask_startend_row_indices=None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -866,8 +730,8 @@ class GptOssModel(GptOssPreTrainedModel):
             # output_router_logits,
             past_key_value,
             use_cache,
-            position_embedding,
-            attn_mask_start_row_indices,
+            position_embeddings,
+            attn_mask_startend_row_indices,
             # use_reentrant=self.config.recompute_use_reentrant,
         )
 
@@ -885,7 +749,7 @@ class GptOssModel(GptOssPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         output_router_logits: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        attn_mask_start_row_indices=None,
+        attn_mask_startend_row_indices=None,
         **kwargs,
     ) -> Union[Tuple, MoEModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -910,13 +774,11 @@ class GptOssModel(GptOssPreTrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        seq_length_with_past = seq_length
         cache_length = 0
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
         else:
             cache_length = past_key_values[0][0].shape[1]
-            seq_length_with_past += cache_length
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
@@ -929,46 +791,27 @@ class GptOssModel(GptOssPreTrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        # embed positions
-        if attn_mask_start_row_indices is not None or get_use_casual_mask():
-            attention_mask = None
-        else:
-            # [bs, seq_len]
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-            causal_mask_mapping = {}
-
-            # full_attention
-            causal_mask = _prepare_decoder_attention_mask(
-                attention_mask=attention_mask,
-                input_shape=(batch_size, seq_length),
-                past_key_values_length=cache_length,
-                dtype=inputs_embeds.dtype,
-            )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                causal_mask = None if is_casual_mask(causal_mask) else causal_mask
-            causal_mask_mapping["full_attention"] = causal_mask
-
-            # sliding_attention
-            causal_mask = _prepare_decoder_attention_mask(
-                attention_mask=attention_mask,
-                input_shape=(batch_size, seq_length),
-                past_key_values_length=cache_length,
-                dtype=inputs_embeds.dtype,
-                sliding_window_size=self.config.sliding_window,
-            )
-            if self.config.use_flash_attention:
-                causal_mask = None if is_casual_mask(causal_mask) else causal_mask
-            causal_mask_mapping["sliding_attention"] = causal_mask
+        # Prepare mask arguments
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+        }
+        # Create the causal mask and row indices
+        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
+            **mask_kwargs
+        )
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
 
         hidden_states = inputs_embeds
-        position_embedding = self.rotary_emb(hidden_states, position_ids)
+        position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -987,25 +830,29 @@ class GptOssModel(GptOssPreTrainedModel):
                     layer_module=decoder_layer,
                     hidden_states=hidden_states,
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                    attn_mask_start_row_indices=attn_mask_start_row_indices,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
+                        decoder_layer.attention_type
+                    ],
                     position_ids=position_ids,
                     output_attentions=output_attentions,
                     output_router_logits=output_router_logits,
                     past_key_value=past_key_value,
                     use_cache=use_cache,
-                    position_embedding=position_embedding,
+                    position_embeddings=position_embeddings,
                 )
             else:
                 layer_outputs = decoder_layer(
                     hidden_states=hidden_states,
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                    attn_mask_start_row_indices=attn_mask_start_row_indices,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
+                        decoder_layer.attention_type
+                    ],
                     position_ids=position_ids,
                     output_attentions=output_attentions,
                     output_router_logits=output_router_logits,
                     past_key_value=past_key_value,
                     use_cache=use_cache,
-                    position_embedding=position_embedding,
+                    position_embeddings=position_embeddings,
                 )
 
             # # NOTE: clear outdate cache after it has been used for memory saving
@@ -1074,7 +921,7 @@ def load_balancing_loss_func(
 
     if isinstance(gate_logits, tuple):
         compute_device = gate_logits[0].device
-        concatenated_gate_logits = paddle.concat([layer_gate.to(compute_device) for layer_gate in gate_logits], dim=0)
+        concatenated_gate_logits = paddle.cat([layer_gate.to(compute_device) for layer_gate in gate_logits], dim=0)
 
     routing_weights = F.softmax(concatenated_gate_logits, dim=-1)
 
@@ -1135,10 +982,6 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
         self.router_aux_loss_coef = config.router_aux_loss_coef
         self.num_experts = config.num_experts
         self.num_experts_per_tok = config.num_experts_per_tok
-        # Initialize weights and apply final processing
-        if config.sliding_window:
-            self.config.sliding_window = False
-            logger.warning("We do not support sliding window attention for now.")
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
@@ -1206,17 +1049,17 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
         # update position_ids
         if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
             position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
+            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
         if not is_encoder_decoder and "attention_mask" in model_kwargs:
             # TODO: support attention mask for other models
             attention_mask = model_kwargs["attention_mask"]
             if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )
             elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )[:, :, -1:, :]
@@ -1229,6 +1072,7 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
+        loss_mask: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         past_key_values: Optional[List[paddle.Tensor]] = None,
         output_attentions: Optional[bool] = None,
@@ -1321,4 +1165,15 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
         )
 
 
-__all__ = ["GptOssForCausalLM", "GptOssModel", "GptOssPreTrainedModel"]
+class GptOssForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = GptOssConfig
+    _decoder_layer_cls = GptOssDecoderLayer
+    _get_tensor_parallel_mappings = GptOssModel._get_tensor_parallel_mappings
+    _init_weights = GptOssModel._init_weights
+    _rotary_emb_cls = GptOssRotaryEmbedding
+    _keep_in_fp32_modules = GptOssModel._keep_in_fp32_modules
+    _tied_weights_keys = ["lm_head.weight"]
+    transpose_weight_keys = GptOssModel.transpose_weight_keys
+
+
+__all__ = ["GptOssForCausalLM", "GptOssModel", "GptOssPreTrainedModel", "GptOssForCausalLMPipe"]

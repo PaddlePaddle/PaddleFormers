@@ -280,8 +280,8 @@ class QWenAttentionAuto(nn.Layer):
 
         if layer_past is not None:
             past_key, past_value = layer_past[0], layer_past[1]
-            key = paddle.concat([past_key, key], axis=1)
-            value = paddle.concat([past_value, value], axis=1)
+            key = paddle.cat([past_key, key], axis=1)
+            value = paddle.cat([past_value, value], axis=1)
 
         if use_cache:
             present = (key, value)
@@ -606,7 +606,7 @@ class QWenModelAuto(QWenPretrainedModelAuto):
         # casual mask
         casual_mask = paddle.tril(paddle.ones([batch_size, 1, seq_length, seq_length], dtype="bool"))
         if past_length > 0:
-            casual_mask = paddle.concat(
+            casual_mask = paddle.cat(
                 [paddle.ones([batch_size, 1, seq_length, past_length], dtype="bool"), casual_mask], axis=-1
             )
 
@@ -906,7 +906,7 @@ class RotaryEmbedding(nn.Layer):
             seq = paddle.arange(self._seq_len_cached)
             with paddle.amp.auto_cast(enable=False):
                 freqs = paddle.outer(seq.astype(paddle.float32), self.inv_freq.astype(paddle.float32))
-            emb = paddle.concat([freqs, freqs], axis=-1)
+            emb = paddle.cat([freqs, freqs], axis=-1)
             self.cos_cached = emb.cos()[None, :, None, :]
             self.sin_cached = emb.sin()[None, :, None, :]
 
@@ -924,7 +924,7 @@ def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.concat([-x2, x1], axis=-1)
+    return paddle.cat([-x2, x1], axis=-1)
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None):

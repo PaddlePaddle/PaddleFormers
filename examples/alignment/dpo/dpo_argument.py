@@ -102,6 +102,8 @@ class DPOConfig:
     ref_model_update_steps: int = field(default=-1, metadata={"help": "Update ref model state dict "})
     reference_free: bool = field(default=False, metadata={"help": "No reference model."})
     lora: bool = field(default=False, metadata={"help": "Use LoRA model."})
+    offset_alpha: float = field(default=0.0, metadata={"help": "offset alpha"})
+    normalize_logps: bool = field(default=True, metadata={"help": "normalize logps"})
 
 
 @dataclass
@@ -143,14 +145,6 @@ class DPOModelArgument:
     fuse_attention_ffn: bool = field(
         default=None,
         metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
-    use_sparse_head_and_loss_fn: bool = field(
-        default=True,
-        metadata={"help": "Whether to use sparse indexing for loss calculation."},
-    )
-    use_fused_head_and_loss_fn: bool = field(
-        default=True,
-        metadata={"help": "Whether to use fused kernel to calculate lm head and loss."},
     )
     use_attn_mask_startend_row_indices: bool = field(
         default=True,

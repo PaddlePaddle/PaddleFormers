@@ -76,6 +76,8 @@ def main():
     parser = PdArgumentParser((DPOModelArgument, DPODataArgument, DPOTrainingArguments, DPOConfig))
     if len(sys.argv) >= 2 and sys.argv[1].endswith(".json"):
         model_args, data_args, training_args, dpo_config = parser.parse_json_file_and_cmd_lines()
+    elif len(sys.argv) >= 2 and sys.argv[1].endswith(".yaml"):
+        model_args, data_args, training_args, dpo_config = parser.parse_yaml_file_and_cmd_lines()
     else:
         model_args, data_args, training_args, dpo_config = parser.parse_args_into_dataclasses()
 
@@ -150,6 +152,8 @@ def main():
             model_args.model_name_or_path,
             dtype=dtype,
         )
+        ref_model_config._attn_implementation = model_args.attn_impl
+
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
 
     if training_args.pipeline_parallel_degree > 1:
@@ -307,8 +311,8 @@ def main():
             collate_fn,
             tokenizer=tokenizer,
             max_seq_len=max_seq_len,
-            use_sparse_head_and_loss_fn=model_args.use_sparse_head_and_loss_fn,
-            use_fused_head_and_loss_fn=model_args.use_fused_head_and_loss_fn,
+            use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
+            use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
         ignore_eos_token=True,
     )
