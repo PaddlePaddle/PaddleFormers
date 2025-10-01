@@ -510,7 +510,9 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     _norm_cls = "rms_norm"
 
     def __init__(self, config: PretrainedConfig, **kwargs):
-        if config.sliding_window is not None and "sliding_attention" in config.layer_types:
+        if getattr(config, "sliding_window", None) is not None and "sliding_attention" in getattr(
+            config, "layer_types", []
+        ):
             logger.error(
                 "Pipeline Parallelism (PP) does not support sliding window attention. "
                 "To prevent issues during training, please set use_sliding_window=False."
