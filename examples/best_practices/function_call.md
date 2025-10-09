@@ -19,33 +19,32 @@ Demo data for function call training:
 ```json
 [
     {
-        "messages": [
-          {
-            "role": "user",
-            "content": "This is normal turn's query."
-          }
-          {
-            "role": "assistant",
-            "content": "This is normal turn's answer.",
-          }  
-          {
-            "role": "user",
-            "content": "Hello, can you tell me how cold San Francisco is today?"
-          },
-          {
-             "non_preferred_output": {
-                  "role": "assistant",
-                  "content": "It is not particularly cold in San Francisco today."
-              },
-             "preferred_output": {
-                  "role": "assistant",
-                  "content": "<think>I need to call function to get temperature info of SF.</think>"
-                  "tool_calls": [{"type": "function", "function": {"name": "get_temperature", "arguments": {"area": "San Francisco"}}}],
-              },
-          }
-        ],
-        "tools": [],
-        "label": [0,1], 
+        "messages": [
+            {"role": "user", "content": "This is normal turn's query."},
+            {"role": "assistant", "content": "This is normal turn's answer."},
+            {"role": "user", "content": "Hello, can you tell me how cold San Francisco is today?"},
+            {
+                "non_preferred_output": {
+                    "role": "assistant", 
+                    "content": "It is not particularly cold in San Francisco today."
+                }, 
+                "preferred_output": {
+                    "role": "assistant", 
+                    "content": "<think>I need to call function to get temperature info of SF.</think>", 
+                    "tool_calls": [
+                        {
+                            "type": "function", 
+                            "function": {
+                                "name": "get_temperature", 
+                                "arguments": {"area": "San Francisco"}
+                            }
+                        }
+                    ]
+                }
+            }
+        ],
+        "tools": [],
+        "label": [0, 1]
     }
 ]
 ```
