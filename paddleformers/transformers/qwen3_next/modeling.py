@@ -24,7 +24,7 @@ from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.general import GeneralInterface
 from ...nn.lm_head import LMHead as GeneralLMHead
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.pp_model import GeneralModelForCausalLMPipe, RMSNormPipe, parse_args
 from ...utils.log import logger
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -891,6 +891,10 @@ class Qwen3NextDecoderLayer(nn.Layer):
     ) -> Tensor:
         residual = hidden_states
 
+        if attention_mask is not None:
+            logger.warning_once("The attention_mask is not supported.")
+            attention_mask = None
+
         import numpy as np
         np.save(f"/work/paddle.decoder.{self.layer_idx}.flag0.npy", hidden_states.float().numpy())
         hidden_states = self.input_layernorm(hidden_states)
@@ -1175,6 +1179,16 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
         )
 
 
+class Qwen3NextRMSNormPipe(RMSNormPipe):
+    def _norm(self, x):
+        self.eps = self.variance_epsilon
+        return Qwen3NextRMSNorm._norm(self, x)
+
+    def forward(self, args):
+        hidden_states, _, _, _, _ = parse_args(args)
+        return Qwen3NextRMSNorm.forward(self, hidden_states)
+
+
 class Qwen3NextForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Qwen3NextConfig
     _rotary_emb_cls = Qwen3NextRotaryEmbedding
@@ -1182,3 +1196,12 @@ class Qwen3NextForCausalLMPipe(GeneralModelForCausalLMPipe):
     _init_weights = Qwen3NextModel._init_weights
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen3NextModel.transpose_weight_keys
+
+    def __init__(self, *args, **kwargs):
+        # TODO(liangshuhao): Qwen3Next uses a non-standard RMSNorm, so we have
+        # to hack the default RMSNormPipe.
+        from ...nn import pp_model
+        RMSNormPipe = pp_model.RMSNormPipe
+        pp_model.RMSNormPipe = Qwen3NextRMSNormPipe
+        super().__init__(*args, **kwargs)
+        pp_model.RMSNormPipe = RMSNormPipe
