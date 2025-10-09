@@ -19,14 +19,15 @@ from paddleformers.transformers.qwen3_next import Qwen3NextForCausalLMPipe
 strategy = fleet.DistributedStrategy()
 model_parallel_size = 1
 data_parallel_size = 1
-pipeline_parallel_size = 2
+pipeline_parallel_size = 4
+batch_size = pipeline_parallel_size * 2  # 1f1b will fail if too small
 strategy.hybrid_configs = {
     "dp_degree": data_parallel_size,
     "mp_degree": model_parallel_size,
     "pp_degree": pipeline_parallel_size,
 }
 strategy.pipeline_configs = {
-    "accumulate_steps": 1,
+    "accumulate_steps": batch_size,
     "micro_batch_size": 1,
 }
 
@@ -56,16 +57,9 @@ input_ids = [tokenizer("今天是周五,明天是周六,后天是周日,那么�
 input_ids = paddle.to_tensor(input_ids)
 
 query_length = input_ids.shape[-1]
-position_ids = paddle.arange(query_length)
-batch_size = 1
 dtype = paddle.bfloat16
-causal_mask = paddle.where(
-    position_ids.expand([query_length, -1]) <
-    position_ids.unsqueeze(-1).expand([-1, query_length]),
-    paddle.finfo(dtype).min,
-    paddle.to_tensor(0.0, dtype),
-)
-causal_mask = causal_mask.expand([batch_size, 1, -1, -1])
+input_ids = input_ids.expand([batch_size, -1])  # repeat input for batch_size times
+causal_mask = paddle.zeros([batch_size, 1, query_length, query_length], dtype)  # placeholder only
 
 config = AutoConfig.from_pretrained(model_path)
 
@@ -119,13 +113,16 @@ for key, param in model.state_dict().items():
     param.copy_(tensor)
 
 x = (input_ids, causal_mask)
-loss = model.eval_batch([x, x])
-print('loss:', loss)
+logits = model.eval_batch([x, x])
 
+if pp_id == pipeline_parallel_size - 1:
+    logits = logits[0]
+    print('logits:', logits)
+    np.save("/work/paddle.logits.npy", logits.float().numpy())
+else:
+    print('done')
 
 '''
-
-cv 0,1
-rm -rf log; python -m paddle.distributed.launch c.py
-
+cv 0,1,2,3
+rm -rf log; python -m paddle.distributed.launch test_pp_eval.py
 '''
