@@ -17,35 +17,37 @@ Demo data for function call training:
 Demo data for function call training:
 
 ```json
-{
-    "messages": [
-      {
-        "role": "user",
-        "content": "This is normal turn's query."
-      }
-      {
-        "role": "assistant",
-        "content": "This is normal turn's answer.",
-      }  
-      {
-        "role": "user",
-        "content": "Hello, can you tell me how cold San Francisco is today?"
-      },
-      {
-         "non_preferred_output": {
-              "role": "assistant",
-              "content": "It is not particularly cold in San Francisco today."
-          },
-         "preferred_output": {
-              "role": "assistant",
-              "content": "<think>I need to call function to get temperature info of SF.</think>"
-              "tool_calls": [{"type": "function", "function": {"name": "get_temperature", "arguments": {"area": "San Francisco"}}}],
-          },
-      }
-    ],
-    "tools": [...],
-    "label": [0,1], 
-}
+[
+    {
+        "messages": [
+          {
+            "role": "user",
+            "content": "This is normal turn's query."
+          }
+          {
+            "role": "assistant",
+            "content": "This is normal turn's answer.",
+          }  
+          {
+            "role": "user",
+            "content": "Hello, can you tell me how cold San Francisco is today?"
+          },
+          {
+             "non_preferred_output": {
+                  "role": "assistant",
+                  "content": "It is not particularly cold in San Francisco today."
+              },
+             "preferred_output": {
+                  "role": "assistant",
+                  "content": "<think>I need to call function to get temperature info of SF.</think>"
+                  "tool_calls": [{"type": "function", "function": {"name": "get_temperature", "arguments": {"area": "San Francisco"}}}],
+              },
+          }
+        ],
+        "tools": [],
+        "label": [0,1], 
+    }
+]
 ```
 - The assistant in normal Q&A rounds does not participate in training.
 - For DPO training rounds, corresponding positions in the label field need to be indicated, where `preferred_output` represents the preferred output and `non_preferred_output` represents the rejected output.
@@ -54,7 +56,7 @@ Demo data for function call training:
 
 ## 训练
 - 训练脚本请参考：[训练脚本](../README.md)
-- 训练配置请参考：[SFT训练配置](../config/fc/sft_full_fc.yaml)，[DPO训练配置](../config/fc/dpo_full_fc.yaml)
+- 训练配置请参考：[SFT 训练配置](../config/fc/sft_full_fc.yaml)，[DPO 训练配置](../config/fc/dpo_full_fc.yaml)
 
 ## 推理
 
