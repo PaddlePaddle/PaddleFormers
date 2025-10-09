@@ -669,22 +669,17 @@ def upcast_from_mxfp_paddle(tensor: paddle.Tensor, scale: paddle.Tensor, target_
     axis_shape = fp32_tensor.shape[-1]
     padded_axis_shape = triton.cdiv(logical_quant_dim, MXFP_BLOCK_SIZE) * MXFP_BLOCK_SIZE
     pad_size = padded_axis_shape - axis_shape
-    print("fp32_tensor = ", fp32_tensor.shape)
     padded_tensor = F.pad(fp32_tensor, (0, int(pad_size)))
-    print("padded_tensor = ", padded_tensor.shape)
     new_axis_shape = padded_tensor.shape[-1]
-    print("new_axis_shape = ", new_axis_shape)
     new_shape = padded_tensor.shape[:-1] + [int(new_axis_shape // MXFP_BLOCK_SIZE), int(MXFP_BLOCK_SIZE)]
 
     padded_tensor = padded_tensor.view(*new_shape)
     dq_scale_padded = dq_scale.view(*new_shape[:-1])
     dq_scale_padded = dq_scale_padded.unsqueeze(-1)  # shape: [..., ceil(axis_shape/32), 1]
     out_padded = padded_tensor * dq_scale_padded
-    print("out_padded = ", out_padded.shape)
     # Flatten back and remove the padded tail
     out_padded = out_padded.view(*padded_tensor.shape[:-2], new_axis_shape)
     out_tensor = out_padded[..., :axis_shape]
-    print("out_tensor ", out_tensor.shape)
     out_tensor = out_tensor.to(target_dtype).contiguous()
     out_tensor = out_tensor.transpose(axis, tensor.ndim - 1)
 
@@ -764,11 +759,10 @@ def convert_moe_packed_tensors(
 
 
 def upcast_dict(param_origin_dict):
-    logger.info("len of dict is : ", len(param_origin_dict))
+    logger.info(f"upcast len of origin dict is : {len(param_origin_dict)}")
     remove_list = []
     param_new_dict = {}
 
-    logger.info("lenparam_origin_dict :", len(param_origin_dict))
     for key, block_value in param_origin_dict.items():
         if key.endswith("blocks"):
             scale_key = key
@@ -788,3 +782,37 @@ def upcast_dict(param_origin_dict):
         param_origin_dict.pop(key)
 
     param_origin_dict.update(param_new_dict)
+    logger.info(f"upcast len of new dict is : {len(param_origin_dict)}")
+
+
+FP4_LIST = ["down_proj", "gate_up_proj"]
+
+
+def endswith(key, list):
+    for suffix in list:
+        if key.endswith(suffix):
+            return True
+    return False
+
+
+def downcast_dict(param_origin_dict):
+    logger.info(f"downcast len of origin dict is : {len(param_origin_dict)}")
+    remove_list = []
+    param_new_dict = {}
+
+    for key, value in param_origin_dict.items():
+        if endswith(key, FP4_LIST):
+            block_key = key + "_blocks"
+            scale_key = key + "_scales"
+
+            fp4_blocks, fp4_scales = downcast_to_mxfp_paddle(value, paddle.uint8, axis=1)
+
+            param_new_dict[block_key] = fp4_blocks
+            param_new_dict[scale_key] = fp4_scales
+            remove_list.append(key)
+
+    for key in remove_list:
+        param_origin_dict.pop(key)
+
+    param_origin_dict.update(param_new_dict)
+    logger.info(f"downcast len of new dict is : {len(param_origin_dict)}")
