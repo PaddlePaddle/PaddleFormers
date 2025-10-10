@@ -119,6 +119,19 @@ class ModelArguments:
     fuse_rms_norm: bool = field(
         default=True, metadata={"help": "Whether to fuse RMSNorm for efficiency"}
     )
+    use_fast_layer_norm: bool = field(
+        default=False,
+        metadata={"help": "GPT3 model, use fast layernorm"},
+    )
+    fuse_attention_qkv: bool = field(
+        default=None,
+        metadata={"help": "whether to fuse attention qkv"},
+    )
+    fuse_attention_ffn: bool = field(
+        default=None,
+        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
+    )
+    attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
     fuse_swiglu: bool = field(
         default=True,
         metadata={
@@ -137,6 +150,8 @@ class ModelArguments:
             "help": "The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `None`."
         },
     )
+    neftune: bool = field(default=False, metadata={"help": "Whether to apply NEFT"})
+    neftune_noise_alpha: float = field(default=5.0, metadata={"help": "NEFT noise alpha"})
 
     # performance
     virtual_pp_degree: int = field(

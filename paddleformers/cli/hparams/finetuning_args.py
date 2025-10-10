@@ -479,6 +479,12 @@ class FinetuningArguments(
         metadata={"help": "Whether to use huggingface model to finetune."},
     )
 
+    # NOTE(gongenlei): new add autotuner_benchmark
+    autotuner_benchmark: bool = field(
+        default=False,
+        metadata={"help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."},
+    )
+
     def __post_init__(self):
         self.bf16 = True
         if self.compute_type == "bf16":

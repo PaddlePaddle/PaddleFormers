@@ -78,16 +78,7 @@ def run_sft(
         ValueError: _description_
     """
 
-    parser = PdArgumentParser((ModelConfig, DataConfig, SFTConfig))
-    if len(sys.argv) >= 2 and sys.argv[1].endswith(".json"):
-        model_args, data_args, training_args = parser.parse_json_file_and_cmd_lines()
-    elif len(sys.argv) >= 2 and sys.argv[1].endswith(".yaml"):
-        model_args, data_args, training_args = parser.parse_yaml_file_and_cmd_lines()
-    elif len(sys.argv) >= 2 and sys.argv[1].endswith(".py"):
-        model_args, data_args, training_args = parser.parse_python_file_and_cmd_lines()
-    else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-
+    training_args = finetuning_args
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
 
@@ -164,8 +155,8 @@ def run_sft(
         raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
 
     model_config.pp_seg_method = model_args.pp_seg_method
-    model_config.seq_length = training_args.max_seq_len
-    model_config.max_sequence_length = training_args.max_seq_len
+    model_config.seq_length = data_args.max_seq_len
+    model_config.max_sequence_length = data_args.max_seq_len
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     model_config._attn_implementation = model_args.attn_impl
     if hasattr(model_args, "moe_subbatch_token_num") and hasattr(model_config, "moe_subbatch_token_num"):
@@ -223,7 +214,7 @@ def run_sft(
 
     dataset_config = {
         "tokenizer": tokenizer,
-        "max_seq_len": training_args.max_seq_len,
+        "max_seq_len": data_args.max_seq_len,
         "random_seed": training_args.seed,
         "num_replicas": training_args.dataset_world_size,
         "rank": training_args.dataset_rank,
@@ -259,7 +250,7 @@ def run_sft(
     else:
         metrics = compute_metrics
 
-    max_seq_len = training_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
+    max_seq_len = data_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
     data_collator = partial(
         collate_fn,
         tokenizer=tokenizer,
