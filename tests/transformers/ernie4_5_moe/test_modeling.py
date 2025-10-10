@@ -52,7 +52,6 @@
 #         rms_norm_eps=1e-6,
 #         use_cache=False,
 #         use_flash_attention=False,
-#         use_rmsnorm=True,
 #         pad_token_id=0,
 #         bos_token_id=1,
 #         eos_token_id=2,
@@ -125,7 +124,6 @@
 #         self.bos_token_id = bos_token_id
 #         self.eos_token_id = eos_token_id
 #         self.fuse_swiglu = fuse_swiglu
-#         self.use_rmsnorm = use_rmsnorm
 #         self.micro_batch_size = micro_batch_size
 #         self.max_sequence_length = max_sequence_length
 #         self.use_bias = use_bias
@@ -217,7 +215,6 @@
 #             bos_token_id=self.bos_token_id,
 #             eos_token_id=self.eos_token_id,
 #             fuse_swiglu=self.fuse_swiglu,
-#             use_rmsnorm=self.use_rmsnorm,
 #             micro_batch_size=self.micro_batch_size,
 #             max_sequence_length=self.max_sequence_length,
 #             use_bias=self.use_bias,
