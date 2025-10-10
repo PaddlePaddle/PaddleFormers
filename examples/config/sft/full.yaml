@@ -10,7 +10,7 @@ packing: false
 mix_strategy: concat
 
 ### model
-model_name_or_path: Qwen/Qwen3-0.6B-Base
+model_name_or_path: /home/work/Qwen/Qwen3-Next-80B-A3B-Instruct/
 attn_impl: flashmask
 
 ### finetuning

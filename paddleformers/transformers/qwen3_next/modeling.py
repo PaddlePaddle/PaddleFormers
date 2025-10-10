@@ -324,7 +324,6 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         self.k_norm = Qwen3NextRMSNorm(
             self.head_dim, eps=config.rms_norm_eps
         )  # thus post q_norm does not need reshape
-        del self.sliding_window
 
     def forward(
         self,
@@ -345,7 +344,7 @@ class Qwen3NextAttention(Qwen3MoeAttention):
 
         query_states = self.q_norm(query_states.view(hidden_shape)).transpose(1, 2)
         key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -356,8 +355,12 @@ class Qwen3NextAttention(Qwen3MoeAttention):
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
         attention_interface: Callable = sdpa_attention_forward
-        # if self.config._attn_implementation != "eager":
-        #     attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        if self.config._attn_implementation != "eager":
+            # TODO(liangshuhao): support various attention implements.
+            # attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+            logger.warning_once(
+                f"The `{self.config._attn_implementation}` is not supported, fallback to eager attention."
+            )
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -414,8 +417,6 @@ def create_causal_mask(
             An optional mask function to combine with the causal mask function (by doing the intersection of both). This is
             useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
     """
-    assert config._attn_implementation == "eager", "Currently only supports eager attention."
-    # assert attention_mask is None, "Currently attention_mask is not supported."
     assert (or_mask_function is None) and (and_mask_function is None), (
         "Currently or_mask_function or and_mask_function is not supported."
     )
@@ -895,10 +896,7 @@ class Qwen3NextDecoderLayer(nn.Layer):
             logger.warning_once("The attention_mask is not supported.")
             attention_mask = None
 
-        import numpy as np
-        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag0.npy", hidden_states.float().numpy())
         hidden_states = self.input_layernorm(hidden_states)
-        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag1.npy", hidden_states.float().numpy())
 
         # Token Mixer
         if self.layer_type == "linear_attention":
@@ -919,22 +917,17 @@ class Qwen3NextDecoderLayer(nn.Layer):
                 position_embeddings=position_embeddings,
                 **kwargs,
             )
-        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag2.npy", hidden_states.float().numpy())
 
         hidden_states = residual + hidden_states
-        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag3.npy", hidden_states.float().numpy())
 
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
-        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag4.npy", hidden_states.float().numpy())
         hidden_states = self.mlp(hidden_states)
         # For the MoE layers, we need to unpack
         if isinstance(hidden_states, tuple):
             hidden_states, _ = hidden_states
-        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag5.npy", hidden_states.float().numpy())
         hidden_states = residual + hidden_states
-        np.save(f"/work/paddle.decoder.{self.layer_idx}.flag6.npy", hidden_states.float().numpy())
 
         return hidden_states
 
