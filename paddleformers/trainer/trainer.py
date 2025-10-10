@@ -860,6 +860,13 @@ class Trainer:
         logger.info("Create zero cost checkpoint manager done.")
 
     def _load_flex_checkpoint(self, resume_from_checkpoint):
+        def get_metadata_file_name(path):
+            files = os.listdir(path)
+            metadata_files = [f for f in files if f.endswith(".metadata")]
+            assert len(metadata_files) > 0, f"Found no metadata files in {path}"
+            assert len(metadata_files) == 1, f"Found multiple metadata files in {path}"
+            return metadata_files[0]
+
         model_sharded_state_dict = self.model.sharded_state_dict()
         master_weights_path = os.path.join(resume_from_checkpoint, MASTER_WEIGHT_DIC)
         opt_states_path = os.path.join(resume_from_checkpoint, OPTIMIZER_STATE_DIC)
@@ -867,21 +874,16 @@ class Trainer:
         if not self.args.ignore_load_lr_and_optim:
             state_dict_metadata = {}
             metadata_paths = [
-                os.path.join(model_states_path, "0.metadata"),
-                os.path.join(opt_states_path, "0.metadata"),
-                os.path.join(master_weights_path, "0.metadata"),
+                os.path.join(model_states_path, get_metadata_file_name(model_states_path)),
+                os.path.join(opt_states_path, get_metadata_file_name(opt_states_path)),
+                os.path.join(master_weights_path, get_metadata_file_name(master_weights_path)),
             ]
 
             for metadata_file in metadata_paths:
                 if not os.path.exists(metadata_file):
                     raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
                 metadata = paddle.load(metadata_file)
-                if hasattr(metadata, "state_dict_metadata"):
-                    state_dict_metadata.update(metadata.state_dict_metadata)
-                else:
-                    raise AttributeError(
-                        f"Loaded metadata from {metadata_file} does not have 'state_dict_metadata' attribute"
-                    )
+                state_dict_metadata.update(metadata.state_dict_metadata)
 
             init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
@@ -926,13 +928,9 @@ class Trainer:
             )
 
             optimizer_state_pin = {}
-
             for k, v in opt_states.items():
-                tmp = v.local_tensor
-                optimizer_state_pin[k] = tmp.pin_memory()
-                tmp._clear_to_zero_allocation()
-                del tmp
-
+                optimizer_state_pin[k] = v.local_tensor.pin_memory()
+            del opt_states
             for k, v in master_weights.items():
                 new_v = ShardedWeight(
                     key=v.key,
@@ -952,21 +950,16 @@ class Trainer:
             )
 
             master_weights_pin = {}
-
             for k, v in master_weights.items():
-                tmp = v.local_tensor
-                master_weights_pin[k] = tmp.pin_memory()
-                tmp._clear_to_zero_allocation()
-                del tmp
+                master_weights_pin[k] = v.local_tensor.pin_memory()
+            del master_weights
 
             optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-
             optimizer_sharded_state_dict_pin = {**master_weights_pin, **optimizer_state_pin}
 
             for k, v in optimizer_sharded_state_dict.items():
                 source_tensor = optimizer_sharded_state_dict_pin[k]
-                source_tensor._share_buffer_to(v.local_tensor)
-                del source_tensor
+                v.local_tensor.set_value(source_tensor)
 
             if isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2):
                 color_to_comm_buffer_list = self.optimizer._color_to_comm_buffer_list
@@ -977,7 +970,7 @@ class Trainer:
                 state_dict = self.model.state_dict()
                 for k, v in state_dict.items():
                     new_v = paddle.zeros_like(v)
-                    new_v._share_buffer_to(v)
+                    v.set_value(new_v)
 
             self._load_scheduler(resume_from_checkpoint)
 
