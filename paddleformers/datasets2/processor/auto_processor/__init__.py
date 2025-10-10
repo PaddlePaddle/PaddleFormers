@@ -13,8 +13,10 @@
 # limitations under the License.
 
 from .auto_processor import AutoProcessor, Ernie45VLProcessor
+from .qwen_processor import Qwen2VLProcessor
 
 __all__ = [
     "AutoProcessor",
     "Ernie45VLProcessor",
+    "Qwen2VLProcessor",
 ]

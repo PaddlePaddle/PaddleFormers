@@ -21,7 +21,7 @@ import numpy as np
 from pathlib import Path
 from dataclasses import dataclass
 from PIL import Image, ImageDraw, ImageFont
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, Tuple
 from packaging import version
 
 if version.parse(version.parse(PIL.__version__).base_version) >= version.parse("9.1.0"):
@@ -38,7 +38,7 @@ from paddleformers.utils.log import logger
 
 @dataclass
 class AutoProcessor:
-    def __init__(self, data_args: "DataArguments"):
+    def __init__(self, data_args: "DataArguments", **kwargs):
         """
         init
         """
@@ -70,18 +70,18 @@ class Ernie45VLProcessor(AutoProcessor):
     IDS_TYPE_FLAG = {"text": 0, "image": 1, "video": 2}
     MAX_RATIO = 200
 
-    def __init__(self, data_args: "DataArguments"):
-        super().__init__(data_args)
-        self.max_seq_len = data_args.max_seq_len
-        self.patch_size = data_args.patch_size
-        self.merge_size = data_args.merge_size
-        self.spatial_conv_size = data_args.spatial_conv_size
-        self.temporal_conv_size = data_args.temporal_conv_size
-        self.min_pixels = data_args.min_pixels
-        self.max_pixels = data_args.max_pixels
-        self.video_min_pixels = data_args.video_min_pixels
-        self.video_max_pixels = data_args.video_max_pixels
-        self.render_timestamp = data_args.render_timestamp
+    def __init__(self, data_args: "DataArguments", **kwargs):
+        super().__init__(data_args, **kwargs)
+        self.max_seq_len = data_args.get("max_seq_len", 4096)
+        self.patch_size = data_args.get("patch_size", 14)
+        self.merge_size = data_args.get("merge_size", 2)
+        self.spatial_conv_size = data_args.get("spatial_conv_size", 2)
+        self.temporal_conv_size = data_args.get("temporal_conv_size", 2)
+        self.min_pixels = data_args.get("min_pixels", 56 * 56)
+        self.max_pixels = data_args.get("max_pixels", 28 * 28 * 1280)
+        self.video_min_pixels = data_args.get("video_min_pixels", 56 * 56)
+        self.video_max_pixels = data_args.get("video_max_pixels", 28 * 28 * 1280)
+        self.render_timestamp = data_args.get("render_timestamp", False)
 
     def get_special_tokens(self, tokenizer: "PreTrainedTokenizer") -> None:
         self.image_start_token = tokenizer.special_tokens_map.get(
@@ -110,7 +110,7 @@ class Ernie45VLProcessor(AutoProcessor):
         parts = re.split(f'({pattern})', text)
         return [part for part in parts if part]
     
-    def smart_resize(self, height: int, width: int, factor: int, min_pixels: int, max_pixels: int) -> (int, int):
+    def smart_resize(self, height: int, width: int, factor: int, min_pixels: int, max_pixels: int) -> Tuple[int, int]:
         """
         Rescales the image so that the following conditions are met:
 
@@ -180,7 +180,7 @@ class Ernie45VLProcessor(AutoProcessor):
 
         return height_patches * width_patches // (self.spatial_conv_size ** 2)
 
-    def squeeze_video(self, messages: list[dict], image_inputs: list[dict], video_inputs: list[list[dict]], tokenizer: "PreTrainedTokenizer") -> (list[list[dict]], int):
+    def squeeze_video(self, messages: list[dict], image_inputs: list[dict], video_inputs: list[list[dict]], tokenizer: "PreTrainedTokenizer") -> Tuple[list[list[dict]], int]:
         r"""Squeeze video into one sequence."""
         def judge_single_adaptive_resolution(
             tmp_video_min_pixels, tmp_video_max_pixels, quota_num_tokens
@@ -390,7 +390,7 @@ class Ernie45VLProcessor(AutoProcessor):
                 )
             return new_video_inputs, video_max_pixels
 
-    def convert_to_rgb(self, image_input: dict) -> Image.Image:
+    def convert_to_rgb(self, image: Image.Image) -> Image.Image:
         def has_transparent_background(img):
             """has_transparent_background"""
             if img.mode in ("RGBA", "LA") or (
@@ -423,7 +423,6 @@ class Ernie45VLProcessor(AutoProcessor):
             # Since the point function in I mode only supports addition, subtraction, and multiplication, the following * (1 / 256) cannot be changed to division.
             return img.point(lambda i: i * (1 / 256)).convert("L")
 
-        image = image_input["image"]
         try:
             if image.mode == "I;16":
                 image = change_I16_to_L(image)
@@ -483,7 +482,8 @@ class Ernie45VLProcessor(AutoProcessor):
         images = []
         predetermined_grid_thw = []
         for image_input in image_inputs:
-            image = self.convert_to_rgb(image_input)
+            image = image_input["image"]
+            image = self.convert_to_rgb(image)
 
             if add_timestamps and self.render_timestamp:
                 timestamp = image_input.get("time_stamp", -1)
@@ -553,7 +553,7 @@ class Ernie45VLProcessor(AutoProcessor):
 
         return patches, image_grid_thw
 
-    def process_vision_info(self, messages: list[dict], image_inputs: list[dict], video_inputs: list[list[dict]], tokenizer: "PreTrainedTokenizer") -> (list[dict], list[list[dict]]):
+    def process_vision_info(self, messages: list[dict], image_inputs: list[dict], video_inputs: list[list[dict]], tokenizer: "PreTrainedTokenizer") -> Tuple[list[dict], list[list[dict]]]:
         r"""Process vision info."""
         video_inputs, video_max_pixels = self.squeeze_video(
                 messages=messages,

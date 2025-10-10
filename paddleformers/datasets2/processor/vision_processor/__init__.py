@@ -13,8 +13,10 @@
 # limitations under the License.
 
 from .vision_processor import VisionProcessor, ErnieVisionProcessor
+from .qwen_vision_processor import Qwen2VLVisionProcessor
 
 __all__ = [
     "VisionProcessor",
     "ErnieVisionProcessor",
+    "Qwen2VLVisionProcessor",
 ]

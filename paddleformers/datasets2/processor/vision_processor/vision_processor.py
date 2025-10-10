@@ -24,7 +24,7 @@ from decord import VideoReader, cpu
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 from paddleformers.hparams.data_args import DataArguments
 from paddleformers.utils.log import logger
@@ -32,8 +32,6 @@ from paddleformers.utils.log import logger
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer
 
-    from ...hparams import DataArguments
-    
 @dataclass
 class VisionProcessor(ABC):
     r"""A class for vision processors."""
@@ -44,11 +42,28 @@ class VisionProcessor(ABC):
         """
         self.data_args = data_args
 
-    @abstractmethod
-    def __call__(self, messages: list[dict], images: list[str], videos: list[str], tokenizer: "PreTrainedTokenizer") -> (dict, dict):
-        r"""Process vision input."""
-        ...
+    def get_image_info(self, url: str) -> dict:
+        raise NotImplementedError
 
+    def get_video_info(self, url: str) -> list[dict]:
+        raise NotImplementedError
+
+    def __call__(self, images: list[str], videos: list[str]) -> Tuple[list[dict], list[list[dict]]]:
+        r"""Process vision input."""
+        image_inputs = []
+        video_inputs = []
+
+        if images and len(images) > 0:
+            for url in images:
+                image_info = self.get_image_info(url)
+                image_inputs.append(image_info)
+
+        if videos and len(videos) > 0:
+            for url in videos:
+                video_info = self.get_video_info(url)
+                video_inputs.append(video_info)
+
+        return image_inputs, video_inputs
 
 @dataclass
 class ErnieVisionProcessor(VisionProcessor):
@@ -127,7 +142,7 @@ class ErnieVisionProcessor(VisionProcessor):
                 video_frame_args["target_frames"] = video_frame_args["max_frames"]
         return video_frame_args["target_frames"]
 
-    def read_frames_decord(self, video_reader: "VideoReader") -> (dict, dict):
+    def read_frames_decord(self, video_reader: "VideoReader") -> Tuple[dict, dict]:
         assert self.video_frames_sample in ["rand", "middle", "leading"]
 
         vlen = len(video_reader)
@@ -203,7 +218,6 @@ class ErnieVisionProcessor(VisionProcessor):
             "image": img,
             "image_width": image_width,
             "image_height": image_height,
-            "is_valid": True,
         }
         return img_one
 
@@ -241,24 +255,6 @@ class ErnieVisionProcessor(VisionProcessor):
                 "image": frame,
                 "image_width": video_width,
                 "image_height": video_height,
-                "is_valid": True,
                 "time_stamp": timestamp,
             })
         return ret
-
-    def __call__(self, images: list[str], videos: list[str]) -> (list[dict], list[list[dict]]):
-        r"""Process vision input."""
-        image_inputs = []
-        video_inputs = []
-
-        if images and len(images) > 0:
-            for url in images:
-                image_info = self.get_image_info(url)
-                image_inputs.append(image_info)
-
-        if videos and len(videos) > 0:
-            for url in videos:
-                video_info = self.get_video_info(url)
-                video_inputs.append(video_info)
-
-        return image_inputs, video_inputs

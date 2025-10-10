@@ -62,3 +62,6 @@ class DataArguments:
     )
     render_timestamp: bool = field(default=False, metadata={"help": "render timestamp"})
     do_resize: bool = field(default=True, metadata={"help": "whether to resize"})
+
+    def get(self, attr, default=None):
+        return getattr(self, attr, default)
