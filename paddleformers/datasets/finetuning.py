@@ -195,13 +195,10 @@ def process_fc(data, input_file):
     for index, turn in enumerate(multi_turns_messages):
         if "assistant" in turn["role"] and label[assistant_index]:
             message = copy.deepcopy(multi_turns_messages[: index + 1])
-            # Only the last round of dialogue is involved in the calculation of the loss.
-            label_processed = copy.deepcopy(label)
-            label_processed[:-1] = 0
             ex = Example(
                 request={"messages": message, "tools": tools_list},
                 system=system,
-                label=label_processed,
+                label=[1],
                 is_system=is_system,
                 source=input_file,
                 is_function_call=True,
