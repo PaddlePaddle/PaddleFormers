@@ -54,6 +54,7 @@ if "datasets" in sys.modules.keys():
 modules = [
     "data",
     "datasets",
+    "generation",
     "nn",
     "mergekit",
     "ops",
@@ -72,6 +73,7 @@ if TYPE_CHECKING:
     from . import (
         data,
         datasets,
+        generation,
         mergekit,
         nn,
         ops,

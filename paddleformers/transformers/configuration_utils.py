@@ -284,14 +284,24 @@ class LlmMetaConfig:
     ]
 
     loss_attributes = [
-        ("use_fused_head_loss_fn", bool, False, "Whether to use fused head and loss function."),
+        ("use_fused_head_and_loss_fn", bool, False, "Whether to use fused head and loss function."),
         ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
+        (
+            "use_sparse_head_and_loss_fn",
+            bool,
+            False,
+            "Maintained for compatibility, recommend using use_filtered_label_loss instead. (Legacy params)",
+        ),
         (
             "loss_subbatch_sequence_length",
             int,
             -1,
             "Sequence length larger than loss_subbatch_sequence_length will be divided into multiple subbatches during loss computation (-1 means disable subbatch).",
         ),
+    ]
+
+    moe_attributes = [
+        ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
     ]
 
     @classmethod
@@ -302,6 +312,7 @@ class LlmMetaConfig:
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
             cls.loss_attributes,
+            cls.moe_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -316,6 +327,7 @@ class LlmMetaConfig:
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
             cls.loss_attributes,
+            cls.moe_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -330,6 +342,7 @@ class LlmMetaConfig:
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
             cls.loss_attributes,
+            cls.moe_attributes,
         ]:
             for attr in attrs:
                 ret.add(attr[0])
@@ -488,6 +501,8 @@ class PretrainedConfig:
         problem_type (`str`, *optional*):
             Problem type for `XxxForSequenceClassification` models. Can be one of `"regression"`,
             `"single_label_classification"` or `"multi_label_classification"`.
+        moe_subbatch_token_num (`int`, *optional*, defaults to 0):
+            The number of tokens in a subbatch for MoE.
 
         > Parameters for general components
 
@@ -631,6 +646,8 @@ class PretrainedConfig:
 
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
+
+        self.num_subbatch_token_num = kwargs.pop("num_subbatch_token_num", 0)
 
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config
         self.tokenizer_class = kwargs.pop("tokenizer_class", None)

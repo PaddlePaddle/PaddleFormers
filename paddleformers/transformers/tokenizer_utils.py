@@ -582,7 +582,7 @@ class PaddleTokenizerMixin:
             all_input_ids[prefix_offset:], skip_special_tokens=skip_special_tokens, clean_up_tokenization_spaces=False
         )
 
-        if len(new_text) > len(prefix_text) and "�" not in prefix_text and "�" not in new_text:
+        if len(new_text) > len(prefix_text) and not new_text.endswith("�") and not new_text[:-1].endswith("�"):
             # utf-8 char at the end means it's a potential unfinished byte sequence
             # from byte fallback tokenization.
             # If it's in the middle, it's probably a real invalid id generated
