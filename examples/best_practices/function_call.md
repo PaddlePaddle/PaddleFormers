@@ -8,7 +8,72 @@ Demo data for function call training:
 
 ```json
 [
-    {"messages": [{"role": "user", "content": "I'm feeling a bit down. Can you tell me a joke to cheer me up?"}, {"role": "assistant", "content": "<think>Okay, let me try to figure out how to approach this. The user is feeling down and asks for a joke to cheer up. I need to connect this request to the appropriate function call. Looking at the available tools, there's a function called get_random_joke which is designed exactly for this purpose. Since the user's main need is to feel better, providing a joke makes sense. The function doesn't require any parameters, so it's straightforward to call it without any additional arguments.\n</think>", "tool_calls": [{"type": "function", "function": {"name": "get_random_joke", "arguments": {}}}]}, {"role": "tool", "content": [{"joke": "Why don't scientists trust atoms? Because they make up everything!"}]}, {"role": "assistant", "content": "Sure, here's a joke for you: \"Why don't scientists trust atoms? Because they make up everything!\" I hope that brings a smile to your face."}], "tools": [{"type": "function", "function": {"name": "get_random_joke", "description": "Get a random joke", "parameters": {"type": "object", "properties": {}, "required": []}}}, {"type": "function", "function": {"name": "generate_random_number", "description": "Generate a random number within a specified range", "parameters": {"type": "object", "properties": {"min": {"type": "number", "description": "The minimum value of the range"}, "max": {"type": "number", "description": "The maximum value of the range"}}, "required": ["min", "max"]}}}]}
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "I'm feeling a bit down. Can you tell me a joke to cheer me up?"
+            },
+            {
+                "role": "assistant",
+                "content": "<think>The user is feeling down and requested a joke. The available tool 'get_random_joke' is directly relevant to this request. Since it requires no parameters, I'll call it immediately.</think>",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "get_random_joke",
+                            "arguments": {}
+                        }
+                    }
+                ]
+            },
+            {
+                "role": "tool",
+                "content": {
+                    "joke": "Why don't scientists trust atoms? Because they make up everything!"
+                }
+            },
+            {
+                "role": "assistant",
+                "content": "Here's a joke to cheer you up: \"Why don't scientists trust atoms? Because they make up everything!\" I hope that brightens your day."
+            }
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_random_joke",
+                    "description": "Retrieves a random joke to lighten the mood.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "generate_random_number",
+                    "description": "Generates a random integer within a specified range.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "min": {
+                                "type": "number",
+                                "description": "The inclusive minimum value of the range."
+                            },
+                            "max": {
+                                "type": "number",
+                                "description": "The inclusive maximum value of the range."
+                            }
+                        },
+                        "required": ["min", "max"]
+                    }
+                }
+            }
+        ]
+    }
 ]
 ```
 
