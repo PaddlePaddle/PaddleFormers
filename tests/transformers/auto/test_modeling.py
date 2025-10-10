@@ -35,7 +35,7 @@ from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.auto.modeling import MODEL_MAPPING
 from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
-from tests.testing_utils import set_proxy
+from tests.testing_utils import set_proxy, skip_for_none_ce_case
 
 from ...utils.test_module.custom_configuration import CustomConfig
 from ...utils.test_module.custom_model import CustomModel
@@ -76,6 +76,7 @@ class AutoModelTest(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_name, model_name)))
 
     # @unittest.skip("skipping due to connection error!")
+    @skip_for_none_ce_case
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_from_hf_hub(self):
         model = AutoModel.from_pretrained(

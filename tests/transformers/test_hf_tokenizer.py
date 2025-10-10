@@ -18,7 +18,7 @@ import paddle
 
 from paddleformers.transformers import AutoTokenizer, Qwen2Tokenizer
 from paddleformers.utils.download import DownloadSource
-from tests.testing_utils import set_proxy
+from tests.testing_utils import set_proxy, skip_for_none_ce_case
 
 
 class TestHFMultiSourceTokenizer(unittest.TestCase):
@@ -42,6 +42,7 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope")
         self.encode(tokenizer)
 
+    @skip_for_none_ce_case
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_hf_hub(self):
         tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface")
@@ -55,6 +56,7 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct")
         self.encode(tokenizer)
 
+    @skip_for_none_ce_case
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_ernie_4_5_tokenizer(self):
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT", download_hub="huggingface")

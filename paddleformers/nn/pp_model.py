@@ -499,6 +499,7 @@ class CriterionLayerPipe(CriterionLayer):
 
 class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     _decoder_layer_cls = None
+    _decoder_layer_pipe_cls = None
     _get_tensor_parallel_mappings = None
     _init_weights = None
     _keep_in_fp32_modules = None
@@ -507,12 +508,24 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     transpose_weight_keys = None
     _embed_cls = None
     _rotary_emb_cls = None
+    _norm_cls = "rms_norm"
 
     def __init__(self, config: PretrainedConfig, **kwargs):
+        if getattr(config, "sliding_window", None) is not None and "sliding_attention" in getattr(
+            config, "layer_types", []
+        ):
+            logger.error(
+                "Pipeline Parallelism (PP) does not support sliding window attention. "
+                "To prevent issues during training, please set use_sliding_window=False."
+            )
+
         # dynamic inherit DecoderLayer
         if self._decoder_layer_cls is None:
             raise ValueError("_decoder_layer_cls must be set before init.")
-        DecoderLayerPipe = make_decoder_layer_pipe(self._decoder_layer_cls)
+        if self._decoder_layer_pipe_cls is None:
+            DecoderLayerPipe = make_decoder_layer_pipe(self._decoder_layer_cls)
+        else:
+            DecoderLayerPipe = self._decoder_layer_pipe_cls
 
         new_initializer_range = math.sqrt(0.3333 / config.hidden_size)
         logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")
@@ -582,7 +595,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             )
 
         self.add_sequential_layer(
-            LayerDesc(RMSNormPipe if config.use_rmsnorm else LayerNormPipe, config=config),
+            LayerDesc(RMSNormPipe if self._norm_cls == "rms_norm" else LayerNormPipe, config=config),
             "model.norm",
         )
 

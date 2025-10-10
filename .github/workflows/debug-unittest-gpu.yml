@@ -96,6 +96,6 @@ jobs:
           echo "work_path: $work_dir/PaddleFormers"
           echo "work_path in docker: /workspace/PaddleFormers"
           echo "cmd: "
-          echo "bash scripts/unit_test/ci_unit.sh ${paddle_whl}"
+          echo "bash scripts/unit_test/ci_unittest.sh ${paddle_whl}"
           echo "or python -m pytest fail_case_name"
           echo "docker rm -f $container_name"

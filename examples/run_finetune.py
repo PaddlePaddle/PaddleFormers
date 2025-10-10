@@ -140,6 +140,8 @@ def main():
     model_config.max_sequence_length = training_args.max_seq_len
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     model_config._attn_implementation = model_args.attn_impl
+    if hasattr(model_args, "moe_subbatch_token_num") and hasattr(model_config, "moe_subbatch_token_num"):
+        model_config.moe_subbatch_token_num = model_args.moe_subbatch_token_num
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
@@ -295,6 +297,7 @@ def main():
         data_collator=data_collator,
         do_generation=data_args.eval_with_do_generation,
         data_args=data_args,
+        callbacks=callbacks,
     )
     trainable_parameters = [
         p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)
