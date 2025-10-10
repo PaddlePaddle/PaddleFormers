@@ -25,7 +25,7 @@ from pathlib import Path
 from .utils.process import terminate_process_tree, detect_device, set_ascend_environment
 
 script_dir = Path(__file__).parent.resolve()
-parent_dir = script_dir.parent
+parent_dir = script_dir.parent.parent
 
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))

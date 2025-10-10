@@ -12,24 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .data_args import DataArguments
-from .export_args import ExportArguments
-from .finetuning_args import FinetuningArguments
-from .generating_args import GeneratingArguments
-from .model_args import ModelArguments
-from .parser import get_eval_args, get_export_args, get_server_args, get_train_args, read_args
-from .server_args import ServerArguments
+import sys
+from contextlib import suppress
+from typing import TYPE_CHECKING
 
-__all__ = [
-    "DataArguments",
-    "ModelArguments",
-    "GeneratingArguments",
-    "FinetuningArguments",
-    "ExportArguments",
-    "ServerArguments",
-    "get_train_args",
-    "get_eval_args",
-    "get_server_args",
-    "get_export_args",
-    "read_args",
-]
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "data_args": ["DataArguments"],
+    "export_args": ["ExportArguments"],
+    "finetuning_args": ["FinetuningArguments"],
+    "generating_args": ["GeneratingArguments"],
+    "model_args": ["ModelArguments"],
+    "parser": ["get_eval_args", "get_train_args", "get_server_args", "get_export_args", "read_args"],
+    "server_args": ["ServerArguments"],
+}
+
+if TYPE_CHECKING:
+    from .data_args import *
+    from .export_args import *
+    from .finetuning_args import *
+    from .generating_args import *
+    from .model_args import *
+    from .parser import *
+    from .preprocess_args import *
+    from .server_args import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )
