@@ -55,19 +55,19 @@ tar -xvf alpaca_demo.gz
 
 单卡
 ```bash
-python -u run_finetune.py ./config/sft_full.yaml
+python -u run_finetune.py ./config/train_full/sft_full.yaml
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/sft_full.yaml
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/train_parallel/sft_full_parallel.yaml
 ```
 
 ### 1.3 LoRA SFT
 
 LoRA SFT 启动命令参考
 ```bash
-python -u run_finetune.py ./config/sft_lora.yaml
+python -u run_finetune.py ./config/train_lora/sft_lora.yaml
 ```
 
 
@@ -109,19 +109,19 @@ tar -zxvf ultrafeedback_binarized.tar.gz
 
 单卡
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/dpo_full.yaml
+python -u ./alignment/dpo/run_dpo.py ./config/train_full/dpo_full.yaml
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/dpo_full.yaml
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/train_parallel/dpo_full_parallel.yaml
 ```
 
 ### 2.3 LoRA DPO
 
 LoRA DPO 启动命令参考
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/dpo_lora.yaml
+python -u ./alignment/dpo/run_dpo.py ./config/train_lora/dpo_lora.yaml
 ```
 
 

@@ -147,7 +147,7 @@ class DPOModelArgument:
         metadata={"help": "whether to fuse first up and gate proj in mlp block"},
     )
     use_sparse_head_and_loss_fn: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Whether to use sparse indexing for loss calculation."},
     )
     use_fused_head_and_loss_fn: bool = field(
