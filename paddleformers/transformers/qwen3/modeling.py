@@ -40,6 +40,7 @@ from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..contrastive_loss import SimpleContrastiveLoss
 from ..embedding_utils import dist_gather_tensor_with_gradient
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
@@ -48,21 +49,6 @@ from ..model_outputs import (
 )
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import Qwen3Config
-
-
-def prepare_sliding_window_startend_row_indices(startend_row_indices, window_size=5):
-    if startend_row_indices is None:
-        return None
-    batch_size, num_head, seq_length, bound_num = startend_row_indices.shape
-    assert bound_num <= 2, f"bound_num should be less than or equal to 2 when use sling window, but got {bound_num}"
-    sliding_window_startend_row_indices = startend_row_indices.clone()
-    for bi in range(batch_size):
-        for hi in range(num_head):
-            for j in range(seq_length):
-                sliding_window_startend_row_indices[bi, hi, j, 0] = min(
-                    startend_row_indices[bi, hi, j, 0], window_size + j
-                )
-    return sliding_window_startend_row_indices
 
 
 def rotate_half(x):
@@ -423,7 +409,6 @@ class Qwen3Model(Qwen3PretrainedModel):
             norm_eps=self.config.rms_norm_eps,
         )
         self.rotary_emb = Qwen3RotaryEmbedding(config=config)
-        self.has_sliding_layers = "sliding_attention" in self.config.layer_types
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -485,13 +470,11 @@ class Qwen3Model(Qwen3PretrainedModel):
             # [bs, seq_len, dim]
             inputs_embeds = self.embed_tokens(input_ids)
 
-        seq_length_with_past = seq_length
         cache_length = 0
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
         else:
             cache_length = past_key_values[0][0].shape[1]
-            seq_length_with_past += cache_length
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
@@ -503,51 +486,21 @@ class Qwen3Model(Qwen3PretrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        if attn_mask_startend_row_indices is not None:
-            attention_mask = None
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            causal_mask_mapping["full_attention"] = None
-            causal_mask_mapping["sliding_attention"] = None
-
-            attn_mask_startend_row_indices_mapping["full_attention"] = attn_mask_startend_row_indices
-
-            if self.has_sliding_layers:
-                attn_mask_startend_row_indices_mapping[
-                    "sliding_attention"
-                ] = prepare_sliding_window_startend_row_indices(
-                    attn_mask_startend_row_indices, window_size=self.config.sliding_window
-                )
-            else:
-                attn_mask_startend_row_indices_mapping["sliding_attention"] = None
-        else:
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            attn_mask_startend_row_indices_mapping["full_attention"] = None
-            attn_mask_startend_row_indices_mapping["sliding_attention"] = None
-
-            causal_mask_mapping["full_attention"] = self._prepare_decoder_attention_mask(
-                attention_mask=attention_mask,
-                input_shape=(batch_size, seq_length),
-                past_key_values_length=cache_length,
-                dtype=inputs_embeds.dtype,
-            )
-
-            if self.has_sliding_layers:
-                causal_mask_mapping["sliding_attention"] = self._prepare_decoder_attention_mask(
-                    attention_mask=attention_mask,
-                    input_shape=(batch_size, seq_length),
-                    past_key_values_length=cache_length,
-                    dtype=inputs_embeds.dtype,
-                    sliding_window_size=self.config.sliding_window,
-                )
-            else:
-                causal_mask_mapping["sliding_attention"] = None
+        # Prepare mask arguments
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+        }
+        # Create the causal mask and row indices
+        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
+            **mask_kwargs
+        )
 
         hidden_states = inputs_embeds
 

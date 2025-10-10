@@ -25,7 +25,7 @@ from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 
 from ..utils.log import logger
 from .base import MultiSourceDataset
-from .data_utils import Example, pad_batch_data
+from .data_utils import Example, pad_batch_data, postprocess_fc_sequence
 from .mix_datasets import create_dataset_instance
 
 LOGGER_COUNT = 0
@@ -506,39 +506,6 @@ class SequenceDataset(IterableDataset):
             while True:
                 yield from self.__iter_func()
 
-    def function_call_chat_template(self, messages, tools):
-        history = messages[:-1]
-        input_dict = dict()
-        input_dict["messages"] = history
-        if tools is not None:
-            input_dict["tools"] = tools
-        history_str = self.tokenizer.apply_chat_template(
-            input_dict,
-            add_generation_prompt=True,
-            tokenize=False,
-        )
-        history_len = len(history_str)
-        input_dict["messages"] = messages
-        all_str = self.tokenizer.apply_chat_template(
-            input_dict,
-            add_generation_prompt=False,
-            tokenize=False,
-        )
-        # (21b think model) remove generation content
-        s = "<|im_end|>\n\n<|im_start|>assistant\n<think>\n"
-        if all_str.endswith(s):
-            all_str = all_str[: -len(s)]
-        response_str = all_str[history_len:]
-        history_id = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(history_str))
-        response_id = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(response_str))
-        return [history_id, response_id]
-
-    def _postprocess_fc_sequence(self, example):
-        messages = example.request["messages"]
-        tools = example.request["tools"]
-        encoded_messages = [self.function_call_chat_template(messages, tools)]
-        return encoded_messages
-
     def _postprocess_sequence(self, example, actual_example_num):
         """Process code completion examples into token sequences.
 
@@ -553,7 +520,7 @@ class SequenceDataset(IterableDataset):
             if not self.tokenizer.chat_template:
                 self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
             if example.is_function_call:
-                encoded_messages = self._postprocess_fc_sequence(example)
+                encoded_messages = postprocess_fc_sequence(self.tokenizer, example.request)
             else:
                 encoded_messages = self.tokenizer.encode_chat_inputs(
                     example.request, encode_one_turn=self.encode_one_turn
