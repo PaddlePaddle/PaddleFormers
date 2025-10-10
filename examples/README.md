@@ -48,7 +48,8 @@ save_to_hf: false
 
 ```shell
 wget https://bj.bcebos.com/paddlenlp/datasets/examples/alpaca_demo.gz
-tar -xvf alpaca_demo.gz
+tar -xf alpaca_demo.gz
+mkdir -p data/sft && mv data/*.json data/sft/
 ```
 
 ### 1.2 全参 SFT
@@ -102,7 +103,8 @@ python -u run_finetune.py ./config/sft_lora.yaml
 
 ```bash
 wget https://bj.bcebos.com/paddlenlp/datasets/examples/ultrafeedback_binarized.tar.gz
-tar -zxvf ultrafeedback_binarized.tar.gz
+tar -zxf ultrafeedback_binarized.tar.gz
+mkdir -p data/dpo && mv data/*.jsonl data/dpo/
 ```
 
 ### 2.2 全参 DPO
