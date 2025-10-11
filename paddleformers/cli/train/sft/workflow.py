@@ -79,6 +79,7 @@ def run_sft(
     """
 
     training_args = finetuning_args
+    training_args.max_seq_len = data_args.max_seq_len
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
 

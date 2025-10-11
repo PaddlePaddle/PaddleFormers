@@ -117,3 +117,21 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether to use cls to predict RM score."},
     )
+    packing: bool = field(
+        default=False,
+        metadata={"help": "Enable sequences packing in training."},
+    )
+    mix_strategy: str = field(
+        default="concat",
+        metadata={
+            "help": "Strategy to use in dataset mixing (random/concat/interleave) (undersampling/oversampling)."
+        },
+    )
+    encode_one_turn: bool = field(
+        default=True,
+        metadata={"help": "Whether encode each round independently in a multi-round dialogue."},
+    )
+    use_template: bool = field(
+        default=True,
+        metadata={"help": "Whether to use template in data processing."},
+    )

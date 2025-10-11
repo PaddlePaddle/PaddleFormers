@@ -85,13 +85,7 @@ def run_dpo(
     finetuning_args: "FinetuningArguments",
 ):
     """main"""
-    parser = PdArgumentParser((DPOModelArgument, DPODataArgument, DPOTrainingArguments, DPOConfig))
-    if len(sys.argv) >= 2 and sys.argv[1].endswith(".json"):
-        model_args, data_args, training_args, dpo_config = parser.parse_json_file_and_cmd_lines()
-    elif len(sys.argv) >= 2 and sys.argv[1].endswith(".yaml"):
-        model_args, data_args, training_args, dpo_config = parser.parse_yaml_file_and_cmd_lines()
-    else:
-        model_args, data_args, training_args, dpo_config = parser.parse_args_into_dataclasses()
+    training_args = finetuning_args
 
     paddle.set_device(training_args.device)
     set_seed(training_args.seed)
@@ -100,14 +94,14 @@ def run_dpo(
     if model_args.attn_impl not in avaible_attn_impl:
         raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
 
-    if dpo_config.loss_type == "orpo":
-        dpo_config.reference_free = True
-        dpo_config.sft_loss_ratio = 1.0
-        dpo_config.loss_type = "or"
+    if training_args.loss_type == "orpo":
+        training_args.reference_free = True
+        training_args.sft_loss_ratio = 1.0
+        training_args.loss_type = "or"
         logger.info("orpo loss_type is equal to sft_loss + pref_loss_ratio * or_loss.")
-    if dpo_config.loss_type in ["or", "simpo"] and not dpo_config.reference_free:
-        dpo_config.reference_free = True
-        logger.warning(f"{dpo_config.loss_type} loss_type only supports reference_free. Set reference_free to True.")
+    if training_args.loss_type in ["or", "simpo"] and not training_args.reference_free:
+        training_args.reference_free = True
+        logger.warning(f"{training_args.loss_type} loss_type only supports reference_free. Set reference_free to True.")
     if training_args.pipeline_parallel_degree > 1:
         assert (
             hasattr(training_args, "pipeline_parallel_config")
@@ -124,7 +118,7 @@ def run_dpo(
             logger.info("Tensor_parallel_degree = 1. Set sequence_parallel to False.")
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
-    training_args.print_config(dpo_config, "DPOConfig")
+    training_args.print_config(training_args, "DPOConfig")
 
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, world_size: "
@@ -159,7 +153,7 @@ def run_dpo(
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
-    if not dpo_config.reference_free and not dpo_config.lora:
+    if not training_args.reference_free and not model_args.lora:
         ref_model_config = AutoConfig.from_pretrained(
             model_args.model_name_or_path,
             dtype=dtype,
@@ -170,31 +164,31 @@ def run_dpo(
 
     if training_args.pipeline_parallel_degree > 1:
         model_class = AutoModelForCausalLMPipe
-        if not dpo_config.reference_free and not dpo_config.lora:
-            ref_model_config.dpo_config = dpo_config
-        model_config.dpo_config = dpo_config
+        if not training_args.reference_free and not model_args.lora:
+            ref_model_config.training_args = training_args
+        model_config.training_args = training_args
     else:
         model_class = AutoModelForCausalLM
-    if not training_args.autotuner_benchmark or model_args.weight_quantize_algo is not None:
+    if not training_args.autotuner_benchmark or training_args.weight_quantize_algo is not None:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
             config=model_config,
             convert_from_hf=training_args.convert_from_hf,
         )
         # for DPO save
-        if not dpo_config.reference_free and not dpo_config.lora:
+        if not training_args.reference_free and not model_args.lora:
             ref_model = model_class.from_config(ref_model_config)
             ref_model.set_state_dict(model.state_dict())
         else:
             ref_model = None
     else:
         model = model_class.from_config(model_config)
-        if not dpo_config.reference_free and not dpo_config.lora:
+        if not training_args.reference_free and not model_args.lora:
             ref_model = model_class.from_config(ref_model_config)
         else:
             ref_model = None
     if training_args.pipeline_parallel_degree > 1:
-        model.config.dpo_config = None
+        model.config.training_args = None
 
     if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
         raise NotImplementedError(f"{model.__class__} not support flash mask.")
@@ -206,7 +200,7 @@ def run_dpo(
 
     logger.info("Loading model & tokenizer successfully !")
 
-    if dpo_config.lora:
+    if model_args.lora:
         if training_args.sharding_parallel_degree > 1:
             assert (
                 "enable_stage1_overlap" not in training_args.sharding_parallel_config
@@ -217,7 +211,7 @@ def run_dpo(
                 model_args.rslora = True
                 model_args.lora_plus_scale = 4
                 model_args.lora_alpha = 4
-            if model_args.weight_quantize_algo is not None:
+            if training_args.weight_quantize_algo is not None:
                 if model_args.rslora or model_args.lora_plus_scale != 1.0:
                     logger.info("Weight quantization is not supported in LoRA+ and RsLoRA.")
             if model_args.lora_alpha == -1:
@@ -309,6 +303,21 @@ def run_dpo(
     else:
         eval_dataset = None
     logger.info("Creating dataset successfully ...")
+
+    dpo_config = DPOConfig(
+        beta=training_args.beta,
+        offset_alpha=training_args.offset_alpha,
+        simpo_gamma=training_args.simpo_gamma,
+        normalize_logps=training_args.normalize_logps,
+        label_smoothing=training_args.label_smoothing,
+        loss_type=training_args.loss_type,
+        pref_loss_ratio=training_args.pref_loss_ratio,
+        sft_loss_ratio=training_args.sft_loss_ratio,
+        dpop_lambda=training_args.dpop_lambda,
+        ref_model_update_steps=training_args.ref_model_update_steps,
+        reference_free=training_args.reference_free,
+        lora=model_args.lora,
+    )
 
     max_seq_len = data_args.max_seq_len if data_args.packing else None
     trainer = DPOTrainer(

@@ -150,8 +150,13 @@ class DPOModelArgument:
         default=True,
         metadata={"help": "Sparse attention mode."},
     )
+    stage: str = field(
+        default="SFT",
+        metadata={"help": "The type of training, including SFT, DPO, VL-SFT."},
+    )
 
     # LoRA
+    fine_tuning: str = field(default="LoRA", metadata={"help": "The checkpoint type."})
     lora_rank: int = field(default=8, metadata={"help": "Lora rank."})
     lora_path: str = field(default=None, metadata={"help": "Initialize lora state dict."})
     rslora: bool = field(default=False, metadata={"help": "Whether to use RsLoRA"})

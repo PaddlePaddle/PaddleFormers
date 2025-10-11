@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from paddle.distributed import fleet
 from paddleformers.trainer import TrainingArguments
@@ -418,6 +418,10 @@ class FinetuningArguments(
         default=0.0,
         metadata={"help": "dropout probability for attention layers"},
     )
+    benchmark: bool = field(
+        default=False,
+        metadata={"help": "Whether to run benchmark by autotuner. True for from_scratch."},
+    )
 
     # performance
     compute_type: str = field(
@@ -484,6 +488,10 @@ class FinetuningArguments(
         default=False,
         metadata={"help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."},
     )
+    dataset_num_proc: Optional[int] = None
+    dataset_batch_size: int = 1000
+    dataset_kwargs: Optional[dict[str, Any]] = None
+    dataset_text_field: str = "text"
 
     def __post_init__(self):
         self.bf16 = True

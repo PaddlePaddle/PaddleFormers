@@ -60,6 +60,9 @@ class ModelArguments:
         default=None,
         metadata={"help": "Pretrained model path to local directory."},
     )
+    tokenizer_name_or_path: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+    )
     continue_training: bool = field(
         default=True,
         metadata={
@@ -83,7 +86,7 @@ class ModelArguments:
     use_flash_attn_with_mask: Optional[bool] = field(
         default=True, metadata={"help": "use use_flash_attn_with_mask"}
     )
-    use_attn_mask_start_row_indices: bool = field(
+    use_attn_mask_startend_row_indices: bool = field(
         default=True,
         metadata={
             "help": "Whether to use attn_mask_start_row_indices in flash attention."
@@ -152,6 +155,7 @@ class ModelArguments:
     )
     neftune: bool = field(default=False, metadata={"help": "Whether to apply NEFT"})
     neftune_noise_alpha: float = field(default=5.0, metadata={"help": "NEFT noise alpha"})
+    pissa: bool = field(default=False, metadata={"help": "Whether to use Pissa: https://arxiv.org/pdf/2404.02948.pdf"})
 
     # performance
     virtual_pp_degree: int = field(
@@ -262,6 +266,18 @@ class ModelArguments:
     rslora_plus: bool = field(
         default=False,
         metadata={"help": "Strengthen lora performance"},
+    )
+    use_quick_lora: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to use quick lora, The use of Quick LoRa will only take effect when lora_dropout is set to 0."
+        },
+    )
+    lora_use_mixer: bool = field(
+        default=False, metadata={"help": "Whether to use MosLoRA: https://arxiv.org/pdf/2406.11909"}
+    )
+    use_mora: bool = field(
+        default=False, metadata={"help": "Whether to use MoRA: https://arxiv.org/pdf/2405.12130.pdf"}
     )
 
     # recompute

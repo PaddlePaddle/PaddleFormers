@@ -47,8 +47,13 @@ class ModelConfig:
             "help": "Whether to train from existing paddleformers model weights. If set True, the model_name_or_path argument must exist in the paddleformers models."
         },
     )
+    stage: str = field(
+        default="SFT",
+        metadata={"help": "The type of training, including SFT, DPO, VL-SFT."},
+    )
 
     # LoRA related parameters
+    fine_tuning: str = field(default="LoRA", metadata={"help": "The checkpoint type."})
     lora: bool = field(default=False, metadata={"help": "Whether to use LoRA technique"})
     lora_path: str = field(default=None, metadata={"help": "Initialize lora state dict."})
     lora_rank: int = field(default=8, metadata={"help": "Lora attention dimension"})
