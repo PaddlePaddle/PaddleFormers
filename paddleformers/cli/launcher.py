@@ -14,8 +14,8 @@
 
 import sys
 
-from paddleformers.cli.train.tuner import run_tuner
 from paddleformers.cli.export.export import run_export
+from paddleformers.cli.train.tuner import run_tuner
 
 
 def launch():
@@ -28,9 +28,9 @@ def launch():
     else:
         raise ValueError("len(sys.argv) mush be larger than 1")
 
-    if command == 'train':
+    if command == "train":
         run_tuner()
-    elif command == 'export':
+    elif command == "export":
         run_export()
     else:
         raise ValueError(f"Unknown command : {command}")

@@ -167,6 +167,7 @@ def get_package_data_files(package, data, package_dir=None):
                     all_files.append(file)
     return all_files
 
+
 def get_console_scripts() -> list[str]:
     """_summary_
 
@@ -176,6 +177,7 @@ def get_console_scripts() -> list[str]:
     console_scripts = ["paddleformers-cli = paddleformers.cli.cli:main"]
 
     return console_scripts
+
 
 if commit != "unknown":
     write_version_py(filename="paddleformers/version/__init__.py")

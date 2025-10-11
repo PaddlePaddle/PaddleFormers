@@ -40,19 +40,19 @@ import_structure = {
         "detect_device",
         "set_ascend_environment",
         "remove_paddle_shm_files",
-        "set_cuda_environment"
+        "set_cuda_environment",
     ],
     "cli": [],
     "launcher": [],
 }
 
 if TYPE_CHECKING:
-    from .hparams import *
-    from .train import *
-    from .export import *
-    from .utils import *
     from .cli import *
+    from .export import *
+    from .hparams import *
     from .launcher import *
+    from .train import *
+    from .utils import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

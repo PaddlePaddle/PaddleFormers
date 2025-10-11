@@ -14,7 +14,6 @@
 """cli
 """
 import os
-import paddle
 import shlex
 import subprocess
 import sys
@@ -22,7 +21,9 @@ from copy import deepcopy
 from functools import partial
 from pathlib import Path
 
-from .utils.process import terminate_process_tree, detect_device, set_ascend_environment
+import paddle
+
+from .utils.process import detect_device, set_ascend_environment, terminate_process_tree
 
 script_dir = Path(__file__).parent.resolve()
 parent_dir = script_dir.parent.parent
@@ -30,9 +31,7 @@ parent_dir = script_dir.parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-os.environ["PYTHONPATH"] = (
-    f"{parent_dir!s}{os.pathsep}{os.environ.get('PYTHONPATH', '')}"
-)
+os.environ["PYTHONPATH"] = f"{parent_dir!s}{os.pathsep}{os.environ.get('PYTHONPATH', '')}"
 
 
 USAGE = (
@@ -47,13 +46,7 @@ USAGE = (
 )
 
 
-WELCOME = (
-    "-" * 60
-    + "\n"
-    + "Welcome to PaddleFormers Cli"
-    + "\n"
-    + "-" * 60
-)
+WELCOME = "-" * 60 + "\n" + "Welcome to PaddleFormers Cli" + "\n" + "-" * 60
 
 
 def main():
