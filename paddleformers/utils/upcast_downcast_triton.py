@@ -806,7 +806,18 @@ def downcast_dict(param_origin_dict):
             scale_key = key + "_scales"
 
             fp4_blocks, fp4_scales = downcast_to_mxfp_paddle(value, paddle.uint8, axis=1)
-
+            fp4_scales.transpose_([0, 2, 1])
+            fp4_blocks.transpose_([0, 2, 1])
+            origin_scale_shape = fp4_scales.shape
+            origin_block_shape = fp4_blocks.shape
+            fp4_blocks.reshape_(
+                [
+                    origin_block_shape[0],
+                    origin_block_shape[1],
+                    origin_scale_shape[2],
+                    origin_block_shape[2] // origin_scale_shape[2],
+                ]
+            )
             param_new_dict[block_key] = fp4_blocks
             param_new_dict[scale_key] = fp4_scales
             remove_list.append(key)

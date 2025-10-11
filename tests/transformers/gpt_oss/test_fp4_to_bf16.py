@@ -20,7 +20,7 @@ import paddle
 from safetensors.paddle import load_file
 
 from paddleformers.utils.log import logger
-from paddleformers.utils.upcast_downcast_triton import upcast_dict
+from paddleformers.utils.upcast_downcast_triton import downcast_dict, upcast_dict
 
 PADDLE_DTYPE_MAP = {
     "paddle.float64": 8,
@@ -61,7 +61,7 @@ def save_single_safetenors(save_path, state_dict, rank, total_files_size, prefix
     )
 
 
-if __name__ == "__main__":
+def test_fp4_to_bf16():
     load_path = "./gpt-oss-model-mxfp4"
     save_path = "./gpt-oss-model-new-bf16"
     safetensor_prefix = "model"
@@ -84,3 +84,33 @@ if __name__ == "__main__":
     with open(save_index_file, "w", encoding="utf-8") as f:
         f.write(json.dumps(index, indent=2) + "\n")
     logger.info(f"Model index file saved in {save_index_file}.")
+
+
+def test_bf16_to_fp4():
+    load_path = "./gpt-oss-model-bf16"
+    save_path = "./gpt-oss-model-new-mxfp4"
+    safetensor_prefix = "model"
+    save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
+    index = {"metadata": {"total_size": 0}, "weight_map": {}}
+    file_list = find_safetensors_files(load_path)
+    file_num = len(file_list)
+    for idx, file_name in enumerate(file_list):
+        local_dict = load_file(file_name)
+
+        downcast_dict(local_dict)
+        save_single_safetenors(save_path, local_dict, idx, file_num, safetensor_prefix)
+        shard_file = f"{safetensor_prefix}-{idx + 1:05d}-of-{file_num:05d}.safetensors"
+        for key in list(local_dict.keys()):
+            index["weight_map"][key] = shard_file
+            shape_ = local_dict[key].shape
+            dtype_ = local_dict[key].dtype
+            index["metadata"]["total_size"] += int(np.prod(shape_) * PADDLE_DTYPE_MAP[str(dtype_)])
+
+    with open(save_index_file, "w", encoding="utf-8") as f:
+        f.write(json.dumps(index, indent=2) + "\n")
+    logger.info(f"Model index file saved in {save_index_file}.")
+
+
+if __name__ == "__main__":
+    test_fp4_to_bf16()
+    test_bf16_to_fp4()
