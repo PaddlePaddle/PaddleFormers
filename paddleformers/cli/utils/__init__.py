@@ -19,13 +19,14 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "process": ["terminate_process_tree",
+    "process": [
+        "terminate_process_tree",
         "is_env_enabled",
         "is_valid_model_dir",
         "detect_device",
         "set_ascend_environment",
         "remove_paddle_shm_files",
-        "set_cuda_environment"
+        "set_cuda_environment",
     ],
 }
 

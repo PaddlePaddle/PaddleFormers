@@ -16,14 +16,15 @@
 # Copyright (c) 2025 LLaMA-Factory
 # Licensed under the Apache License - https://github.com/hiyouga/LLaMA-Factory/blob/main/LICENSE
 
-import os
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Optional, Union
 
 import yaml
 from omegaconf import OmegaConf
+
 from paddleformers.trainer import PdArgumentParser
 
 from ..utils.process import (
@@ -36,8 +37,8 @@ from .export_args import ExportArguments
 from .finetuning_args import FinetuningArguments
 from .generating_args import GeneratingArguments
 from .model_args import ModelArguments
-from .server_args import ServerArguments
 from .preprocess_args import End2EndProcessorArguments
+from .server_args import ServerArguments
 
 _TRAIN_ARGS = [
     ModelArguments,
@@ -54,9 +55,7 @@ _TRAIN_CLS = tuple[
     FinetuningArguments,
 ]
 _EVAL_ARGS = [ModelArguments, DataArguments, GeneratingArguments, FinetuningArguments]
-_EVAL_CLS = tuple[
-    ModelArguments, DataArguments, GeneratingArguments, FinetuningArguments
-]
+_EVAL_CLS = tuple[ModelArguments, DataArguments, GeneratingArguments, FinetuningArguments]
 _EXPORT_ARGS = [
     ModelArguments,
     DataArguments,
@@ -77,14 +76,10 @@ _SERVER_ARGS = [
     FinetuningArguments,
     ServerArguments,
 ]
-_SERVER_CLS = tuple[
-    ModelArguments, GeneratingArguments, FinetuningArguments, ServerArguments
-]
+_SERVER_CLS = tuple[ModelArguments, GeneratingArguments, FinetuningArguments, ServerArguments]
 
 
-def read_args(
-    args: Optional[Union[dict[str, Any], list[str]]] = None
-) -> Union[dict[str, Any], list[str]]:
+def read_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> Union[dict[str, Any], list[str]]:
     r"""Get arguments from the command line or a config file."""
     if args is not None:
         return args
@@ -128,23 +123,17 @@ def _parse_args(
     if isinstance(args, dict):
         return parser.parse_dict(args)
 
-    (*parsed_args, unknown_args) = parser.parse_args_into_dataclasses(
-        args=args, return_remaining_strings=True
-    )
+    (*parsed_args, unknown_args) = parser.parse_args_into_dataclasses(args=args, return_remaining_strings=True)
 
     if unknown_args and not allow_extra_keys:
         print(parser.format_help())
         print(f"Got unknown args, potentially deprecated arguments: {unknown_args}")
-        raise ValueError(
-            f"Some specified arguments are not used by the PdArgumentParser: {unknown_args}"
-        )
+        raise ValueError(f"Some specified arguments are not used by the PdArgumentParser: {unknown_args}")
 
     return tuple(parsed_args)
 
 
-def _parse_train_args(
-    args: Optional[Union[dict[str, Any], list[str]]] = None
-) -> _TRAIN_CLS:
+def _parse_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _TRAIN_CLS:
     """_summary_
 
     Args:
@@ -158,9 +147,7 @@ def _parse_train_args(
     return _parse_args(parser, args, allow_extra_keys=allow_extra_keys)
 
 
-def _parse_eval_args(
-    args: Optional[Union[dict[str, Any], list[str]]] = None
-) -> _EVAL_CLS:
+def _parse_eval_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _EVAL_CLS:
     """_summary_
 
     Args:
@@ -174,9 +161,7 @@ def _parse_eval_args(
     return _parse_args(parser, args, allow_extra_keys=allow_extra_keys)
 
 
-def _parse_server_args(
-    args: Optional[Union[dict[str, Any], list[str]]] = None
-) -> _SERVER_CLS:
+def _parse_server_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _SERVER_CLS:
     """_summary_
 
     Args:
@@ -190,9 +175,7 @@ def _parse_server_args(
     return _parse_args(parser, args, allow_extra_keys=allow_extra_keys)
 
 
-def _parse_export_args(
-    args: Optional[Union[dict[str, Any], list[str]]] = None
-) -> _SERVER_CLS:
+def _parse_export_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _SERVER_CLS:
     """_summary_
 
     Args:
@@ -206,9 +189,7 @@ def _parse_export_args(
     return _parse_args(parser, args, allow_extra_keys=allow_extra_keys)
 
 
-def get_train_args(
-    args: Optional[Union[dict[str, Any], list[str]]] = None
-) -> _TRAIN_CLS:
+def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _TRAIN_CLS:
     """_summary_
 
     Args:
@@ -217,9 +198,7 @@ def get_train_args(
     Returns:
         _TRAIN_CLS: _description_
     """
-    model_args, data_args, preprocess_args, generating_args, finetuning_args = (
-        _parse_train_args(args)
-    )
+    model_args, data_args, preprocess_args, generating_args, finetuning_args = _parse_train_args(args)
 
     if model_args.stage == "VL-SFT":
         os.environ["NCCL_DEBUG"] = "INFO"
@@ -261,9 +240,7 @@ def get_eval_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _E
     return model_args, data_args, generating_args, finetuning_args
 
 
-def get_server_args(
-    args: Optional[Union[dict[str, Any], list[str]]] = None
-) -> _SERVER_CLS:
+def get_server_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _SERVER_CLS:
     """_summary_
 
     Args:
@@ -276,9 +253,7 @@ def get_server_args(
     return model_args, generating_args, finetuning_args, server_args
 
 
-def get_export_args(
-    args: Optional[Union[dict[str, Any], list[str]]] = None
-) -> _EXPORT_CLS:
+def get_export_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _EXPORT_CLS:
     """_summary_
 
     Args:
@@ -287,7 +262,5 @@ def get_export_args(
     Returns:
         _EXPORT_CLS: _description_
     """
-    model_args, data_args, generating_args, finetuning_args, export_args = (
-        _parse_export_args(args)
-    )
+    model_args, data_args, generating_args, finetuning_args, export_args = _parse_export_args(args)
     return model_args, data_args, generating_args, finetuning_args, export_args

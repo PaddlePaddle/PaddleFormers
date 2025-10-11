@@ -39,9 +39,7 @@ def _training_function(config: dict[str, Any]) -> None:
         ValueError: _description_
     """
     args = config.get("args")
-    model_args, data_args, preprocess_args, generating_args, finetuning_args = (
-        get_train_args(args)
-    )
+    model_args, data_args, preprocess_args, generating_args, finetuning_args = get_train_args(args)
 
     if "VL" in model_args.stage:
         pass

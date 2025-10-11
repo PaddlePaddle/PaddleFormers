@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import os
+import platform
 import re
 import subprocess
-import platform
-import paddle
 
+import paddle
 import psutil
 
 
@@ -153,9 +153,7 @@ def set_ascend_environment():
 
     # Additional Ascend-specific environment variables
     os.environ["ASCEND_AICPU_PATH"] = ascend_toolkit_home
-    os.environ["ASCEND_OPP_PATH"] = (
-        f"{ascend_toolkit_home}/opp"  # Operator package path
-    )
+    os.environ["ASCEND_OPP_PATH"] = f"{ascend_toolkit_home}/opp"  # Operator package path
     os.environ["TOOLCHAIN_HOME"] = f"{ascend_toolkit_home}/toolkit"
     os.environ["ASCEND_HOME_PATH"] = ascend_toolkit_home
 
@@ -173,9 +171,7 @@ def remove_paddle_shm_files():
 
 def set_cuda_environment():
     try:
-        nvidia_smi_output = subprocess.check_output(
-            ["nvidia-smi"], stderr=subprocess.PIPE, text=True
-        )
+        nvidia_smi_output = subprocess.check_output(["nvidia-smi"], stderr=subprocess.PIPE, text=True)
 
         cuda_version_match = re.search(r"CUDA Version:\s+(\d+)", nvidia_smi_output)
         if cuda_version_match:

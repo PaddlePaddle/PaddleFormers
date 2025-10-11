@@ -19,6 +19,7 @@ import os
 
 import numpy as np
 import paddle
+
 from paddleformers.utils.log import logger
 
 # isort: off

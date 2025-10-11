@@ -25,8 +25,8 @@ import_structure = {
 }
 
 if TYPE_CHECKING:
-    from .sft import *
     from .dpo import *
+    from .sft import *
     from .tuner import *
 else:
     sys.modules[__name__] = _LazyModule(

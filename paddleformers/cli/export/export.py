@@ -12,19 +12,82 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import shutil
 import time
 from typing import Any, Optional
-import json
 
 import paddle
+
+from paddleformers import __version__ as paddleformers_version
 from paddleformers.mergekit import MergeConfig, MergeModel
 from paddleformers.trainer import get_last_checkpoint
 from paddleformers.utils.download import resolve_file_path
 from paddleformers.utils.env import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME
 from paddleformers.utils.log import logger
-from paddleformers import __version__ as paddleformers_version
+
+try:
+    from paddleformers.utils.download import MODEL_MAPPINGS, check_repo
+except ImportError:
+    # for old paddleformers
+    import re
+
+    check_repo = None
+
+    MODEL_MAPPINGS = {
+        "ERNIE-4.5-300B-A47B-Base": {
+            "huggingface": "baidu/ERNIE-4.5-300B-A47B-Base-Paddle",
+            "aistudio": "PaddlePaddle/ERNIE-4.5-300B-A47B-Base-Paddle",
+            "modelscope": "PaddlePaddle/ERNIE-4.5-300B-A47B-Base-Paddle",
+        },
+        "ERNIE-4.5-300B-A47B": {
+            "huggingface": "baidu/ERNIE-4.5-300B-A47B-Paddle",
+            "aistudio": "PaddlePaddle/ERNIE-4.5-300B-A47B-Paddle",
+            "modelscope": "PaddlePaddle/ERNIE-4.5-300B-A47B-Paddle",
+        },
+        "ERNIE-4.5-21B-A3B-Base": {
+            "huggingface": "baidu/ERNIE-4.5-21B-A3B-Base-Paddle",
+            "aistudio": "PaddlePaddle/ERNIE-4.5-21B-A3B-Base-Paddle",
+            "modelscope": "PaddlePaddle/ERNIE-4.5-21B-A3B-Base-Paddle",
+        },
+        "ERNIE-4.5-21B-A3B": {
+            "huggingface": "baidu/ERNIE-4.5-21B-A3B-Paddle",
+            "aistudio": "PaddlePaddle/ERNIE-4.5-21B-A3B-Paddle",
+            "modelscope": "PaddlePaddle/ERNIE-4.5-21B-A3B-Paddle",
+        },
+        "ERNIE-4.5-0.3B-Base": {
+            "huggingface": "baidu/ERNIE-4.5-0.3B-Base-Paddle",
+            "aistudio": "PaddlePaddle/ERNIE-4.5-0.3B-Base-Paddle",
+            "modelscope": "PaddlePaddle/ERNIE-4.5-0.3B-Base-Paddle",
+        },
+        "ERNIE-4.5-0.3B": {
+            "huggingface": "baidu/ERNIE-4.5-0.3B-Paddle",
+            "aistudio": "PaddlePaddle/ERNIE-4.5-0.3B-Paddle",
+            "modelscope": "PaddlePaddle/ERNIE-4.5-0.3B-Paddle",
+        },
+        "ERNIE-4.5-VL-424B-A47B-Base": {
+            "huggingface": "baidu/ERNIE-4.5-VL-424B-A47B-Base-Paddle",
+            "aistudio": "PaddlePaddle/ERNIE-4.5-VL-424B-A47B-Base-Paddle",
+            "modelscope": "PaddlePaddle/ERNIE-4.5-VL-424B-A47B-Base-Paddle",
+        },
+        "ERNIE-4.5-VL-424B": {
+            "huggingface": "baidu/ERNIE-4.5-VL-424B-Paddle",
+            "aistudio": "PaddlePaddle/ERNIE-4.5-VL-424B-Paddle",
+            "modelscope": "PaddlePaddle/ERNIE-4.5-VL-424B-Paddle",
+        },
+        "ERNIE-4.5-VL-28B-A3B-Base": {
+            "huggingface": "baidu/ERNIE-4.5-VL-28B-A3B-Base-Paddle",
+            "aistudio": "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Base-Paddle",
+            "modelscope": "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Base-Paddle",
+        },
+        "ERNIE-4.5-VL-28B-A3B": {
+            "huggingface": "baidu/ERNIE-4.5-VL-28B-A3B-Paddle",
+            "aistudio": "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Paddle",
+            "modelscope": "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Paddle",
+        },
+    }
+
 
 from ..hparams import get_export_args, read_args
 from ..utils.process import is_valid_model_dir
@@ -116,9 +179,7 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
     """
 
     args = read_args(args)
-    model_args, data_args, generating_args, finetuning_args, export_args = (
-        get_export_args(args)
-    )
+    model_args, data_args, generating_args, finetuning_args, export_args = get_export_args(args)
 
     paddle.set_device(finetuning_args.device)
 
@@ -133,9 +194,7 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
     if last_checkpoint is not None:
         logger.info(f"Starting model export from checkpoint: {last_checkpoint}")
     else:
-        raise FileNotFoundError(
-            f"No valid checkpoint found in: {finetuning_args.output_dir}"
-        )
+        raise FileNotFoundError(f"No valid checkpoint found in: {finetuning_args.output_dir}")
 
     if model_args.lora:
         start = time.time()
@@ -147,9 +206,9 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
         )
 
         try:
-            from paddleformers.utils.download import (
+            from paddleformers.utils.download import (  # test if paddleformers is the newest
                 DownloadSource,
-            )  # test if paddleformers is the newest
+            )
         except Exception:
             DownloadSource = None
 
@@ -209,21 +268,13 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
         if os.path.isfile(src_file):
             shutil.copy2(src_file, dst_file)
         else:
-            logger.debug(
-                f'Copy failed: "config.json" not found in {config["base_model_path"]}'
-            )
+            logger.debug(f'Copy failed: "config.json" not found in {config["base_model_path"]}')
         src_file = os.path.join(config["base_model_path"], "preprocessor_config.json")
         dst_file = os.path.join(config["output_path"], "preprocessor_config.json")
         if os.path.isfile(src_file):
             shutil.copy2(src_file, dst_file)
         else:
-            logger.debug(
-                f'Copy failed: "preprocessor_config.json" not found in {config["base_model_path"]}'
-            )
-        logger.info(
-            f"***** Successfully finished merging LoRA model. Time cost: {time.time() - start} s *****"
-        )
+            logger.debug(f'Copy failed: "preprocessor_config.json" not found in {config["base_model_path"]}')
+        logger.info(f"***** Successfully finished merging LoRA model. Time cost: {time.time() - start} s *****")
     else:
-        raise ValueError(
-            "Only support merge lora checkpoint, but get model_args.lora is False."
-        )
+        raise ValueError("Only support merge lora checkpoint, but get model_args.lora is False.")

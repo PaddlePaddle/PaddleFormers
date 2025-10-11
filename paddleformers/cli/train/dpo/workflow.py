@@ -15,27 +15,14 @@
 """Training DPO"""
 
 import os
-import sys
 from functools import partial
 
 import paddle
-from .dpo_argument import (
-    DPOConfig,
-    DPODataArgument,
-    DPOModelArgument,
-    DPOTrainingArguments,
-)
-from .dpo_estimate_training import dpo_estimate_training
 
 from paddleformers.datasets.dpo import collate_fn, create_dataset
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
-from paddleformers.trainer import (
-    IntervalStrategy,
-    PdArgumentParser,
-    get_last_checkpoint,
-    set_seed,
-)
+from paddleformers.trainer import IntervalStrategy, get_last_checkpoint, set_seed
 from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -56,6 +43,9 @@ from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DPOTrainer
 from paddleformers.trl.llm_utils import get_lora_target_modules
 from paddleformers.utils.log import logger
+
+from .dpo_argument import DPOConfig
+from .dpo_estimate_training import dpo_estimate_training
 
 flash_mask_support_list = [
     LlamaForCausalLM,
@@ -101,7 +91,9 @@ def run_dpo(
         logger.info("orpo loss_type is equal to sft_loss + pref_loss_ratio * or_loss.")
     if training_args.loss_type in ["or", "simpo"] and not training_args.reference_free:
         training_args.reference_free = True
-        logger.warning(f"{training_args.loss_type} loss_type only supports reference_free. Set reference_free to True.")
+        logger.warning(
+            f"{training_args.loss_type} loss_type only supports reference_free. Set reference_free to True."
+        )
     if training_args.pipeline_parallel_degree > 1:
         assert (
             hasattr(training_args, "pipeline_parallel_config")

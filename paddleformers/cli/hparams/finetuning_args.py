@@ -16,9 +16,10 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from paddle.distributed import fleet
+
 from paddleformers.trainer import TrainingArguments
-from paddleformers.utils.log import logger
 from paddleformers.trainer.trainer_utils import ShardingOption
+from paddleformers.utils.log import logger
 
 try:
     from paddle.distributed import in_auto_parallel_align_mode
@@ -61,9 +62,7 @@ class DistributedArguments(TrainingArguments):
 class PreTrainingArguments(TrainingArguments):
     """pretraining arguments"""
 
-    multimodal: bool = field(
-        default=False, metadata={"help": "whether training with multimodal"}
-    )
+    multimodal: bool = field(default=False, metadata={"help": "whether training with multimodal"})
     vision_model_name_or_path: str = field(
         default=None,
         metadata={
@@ -85,21 +84,13 @@ class PreTrainingArguments(TrainingArguments):
     )
     data_filelist: tuple = field(default=None, metadata={"help": "data file list"})
     data_weights: tuple = field(default=None, metadata={"help": "data weights"})
-    from_scratch: Optional[int] = field(
-        default=1, metadata={"help": "if set, ignore init_ckpt"}
-    )
+    from_scratch: Optional[int] = field(default=1, metadata={"help": "if set, ignore init_ckpt"})
     record_optimizer_stat: Optional[bool] = field(
         default=False, metadata={"help": "whether record optimizer momentum info"}
     )
-    same_data: Optional[bool] = field(
-        default=None, metadata={"help": "whether keep the same data with previous run"}
-    )
-    adaptive_norm_clip: Optional[bool] = field(
-        default=False, metadata={"help": "whether enable AdaptiveNormClip"}
-    )
-    use_async_save: Optional[bool] = field(
-        default=False, metadata={"help": "whether enable async save"}
-    )
+    same_data: Optional[bool] = field(default=None, metadata={"help": "whether keep the same data with previous run"})
+    adaptive_norm_clip: Optional[bool] = field(default=False, metadata={"help": "whether enable AdaptiveNormClip"})
+    use_async_save: Optional[bool] = field(default=False, metadata={"help": "whether enable async save"})
     pre_alloc_memory: float = field(
         default=0.0,
         metadata={
@@ -107,33 +98,21 @@ class PreTrainingArguments(TrainingArguments):
             "and release it for avoiding memory fragmentation"
         },
     )
-    enable_global_training_logs: bool = field(
-        default=False, metadata={"help": "whether enable global_training_logs"}
-    )
-    reshard_save_then_exit: Optional[bool] = field(
-        default=False, metadata={"help": "whether reshard save then exit"}
-    )
-    use_moe: Optional[bool] = field(
-        default=False, metadata={"help": "whether enable moe"}
-    )
+    enable_global_training_logs: bool = field(default=False, metadata={"help": "whether enable global_training_logs"})
+    reshard_save_then_exit: Optional[bool] = field(default=False, metadata={"help": "whether reshard save then exit"})
+    use_moe: Optional[bool] = field(default=False, metadata={"help": "whether enable moe"})
     log_global_grad_norm: Optional[bool] = field(
         default=False,
-        metadata={
-            "help": "whether print global grad-norm, only valid when `enable_global_training_logs` is True"
-        },
+        metadata={"help": "whether print global grad-norm, only valid when `enable_global_training_logs` is True"},
     )
     enable_mtp_magic_send: Optional[bool] = field(default=False, metadata={"help": ""})
     lr_scheduler: str = field(
         default="cosine",
-        metadata={
-            "help": "The scheduler type to use. support linear, cosine, constant, constant_with_warmup"
-        },
+        metadata={"help": "The scheduler type to use. support linear, cosine, constant, constant_with_warmup"},
     )
     decay_function: str = field(
         default="half_life",
-        metadata={
-            "help": "The decay function for WSD LR scheduler. support half_life(default), 1-sqrt"
-        },
+        metadata={"help": "The decay function for WSD LR scheduler. support half_life(default), 1-sqrt"},
     )
     freeze_config: str = field(
         default="",
@@ -146,9 +125,7 @@ class PreTrainingArguments(TrainingArguments):
     )
     moe_gate_lr_ratio: float = field(
         default=None,
-        metadata={
-            "help": ("when using MoE, we need a special way to handle gate/router's LR")
-        },
+        metadata={"help": ("when using MoE, we need a special way to handle gate/router's LR")},
     )
     vit_lr_ratio: float = field(
         default=None,
@@ -167,16 +144,10 @@ class PreTrainingArguments(TrainingArguments):
         default=0,
         metadata={"help": "pipline need data degree"},
     )
-    pp_need_data: bool = field(
-        default=False, metadata={"help": "pipline need fetch data"}
-    )
-    balanced_image_preprocess: bool = field(
-        default=False, metadata={"help": "balanced image preprocess"}
-    )
+    pp_need_data: bool = field(default=False, metadata={"help": "pipline need fetch data"})
+    balanced_image_preprocess: bool = field(default=False, metadata={"help": "balanced image preprocess"})
     gc_interval: int = field(default=0, metadata={"help": "gc interval"})
-    vit_second_fwd_batch_size: int = field(
-        default=None, metadata={"help": "vit second forward batch size"}
-    )
+    vit_second_fwd_batch_size: int = field(default=None, metadata={"help": "vit second forward batch size"})
     moe_use_aux_free_update_coef: float = field(
         default=1.0e-3,
         metadata={"help": "moe aux free update coef"},
@@ -189,12 +160,8 @@ class PreTrainingArguments(TrainingArguments):
         default=1,
         metadata={"help": "the logging interval of global_training_logs"},
     )
-    train_moe_only: int = field(
-        default=None, metadata={"help": "train moe params only"}
-    )
-    use_ortho_loss_callback: bool = field(
-        default=False, metadata={"help": "whether use ortho loss callback"}
-    )
+    train_moe_only: int = field(default=None, metadata={"help": "train moe params only"})
+    use_ortho_loss_callback: bool = field(default=False, metadata={"help": "whether use ortho loss callback"})
 
     @property
     def need_data(self):
@@ -205,20 +172,13 @@ class PreTrainingArguments(TrainingArguments):
         # only mp0、pp0 need data
         if self.pp_need_data_degree:
             assert self.pipeline_parallel_degree > 1
-            assert (
-                self.pp_need_data_degree >= 2
-                and self.pp_need_data_degree <= self.pipeline_parallel_degree
-            ), (
+            assert self.pp_need_data_degree >= 2 and self.pp_need_data_degree <= self.pipeline_parallel_degree, (
                 self.pp_need_data_degree,
                 self.pipeline_parallel_degree,
             )
             # shift by 1 to avoid last pp no nee data
-            no_need_data_range = list(
-                range(self.pp_need_data_degree - 1, self.pipeline_parallel_degree - 1)
-            )
-            return self.tensor_parallel_rank == 0 and (
-                self.pipeline_parallel_rank not in no_need_data_range
-            )
+            no_need_data_range = list(range(self.pp_need_data_degree - 1, self.pipeline_parallel_degree - 1))
+            return self.tensor_parallel_rank == 0 and (self.pipeline_parallel_rank not in no_need_data_range)
         return self.pipeline_parallel_rank == 0 and self.tensor_parallel_rank == 0
 
     @property
@@ -228,21 +188,13 @@ class PreTrainingArguments(TrainingArguments):
         """
         if not self.pp_need_data_degree:
             return super().dataset_rank
-        no_need_data_range = list(
-            range(self.pp_need_data_degree - 1, self.pipeline_parallel_degree - 1)
-        )
-        ranks = [
-            i
-            for i in range(self.pipeline_parallel_degree)
-            if i not in no_need_data_range
-        ]
+        no_need_data_range = list(range(self.pp_need_data_degree - 1, self.pipeline_parallel_degree - 1))
+        ranks = [i for i in range(self.pipeline_parallel_degree) if i not in no_need_data_range]
         if self.pipeline_parallel_rank not in ranks:
             return None
         reeao_pp_rank = ranks.index(self.pipeline_parallel_rank)
         return (
-            max(self.sharding_parallel_degree, 1)
-            * max(self.pp_need_data_degree, 1)
-            * self.data_parallel_rank
+            max(self.sharding_parallel_degree, 1) * max(self.pp_need_data_degree, 1) * self.data_parallel_rank
             + max(self.pp_need_data_degree, 1) * self.sharding_parallel_rank
             + reeao_pp_rank
         )
@@ -263,35 +215,23 @@ class PreTrainingArguments(TrainingArguments):
 
 @dataclass
 class VLSFTTrainingArguments(PreTrainingArguments):
-    factor: int = field(
-        default=20, metadata={"help": "Pretrained model name or path to local model."}
-    )
+    factor: int = field(default=20, metadata={"help": "Pretrained model name or path to local model."})
     example_from_same_task_prob: float = field(default=0.0, metadata={"help": "."})
     pseudo_sampling_prob: float = field(default=0.5, metadata={"help": "."})
     trigger_data_prob: float = field(default=0.5, metadata={"help": "."})
     drop_history_with_k: bool = field(default=False, metadata={"help": "drop history"})
-    add_sys_token: bool = field(
-        default=False, metadata={"help": "use <sys> </sys> tokens segment system info"}
-    )
+    add_sys_token: bool = field(default=False, metadata={"help": "use <sys> </sys> tokens segment system info"})
     min_shot: int = field(default=2, metadata={"help": "min shot"})
     max_shot: int = field(default=8, metadata={"help": "max shot"})
 
     sampling_wo_replacement_data_resuming: Optional[bool] = field(
         default=True,
-        metadata={
-            "help": "save and load state of SFT data, support resuming without replacement"
-        },
+        metadata={"help": "save and load state of SFT data, support resuming without replacement"},
     )
-    hidden_dropout_prob: float = field(
-        default=0.0, metadata={"help": "hidden dropout rate"}
-    )
+    hidden_dropout_prob: float = field(default=0.0, metadata={"help": "hidden dropout rate"})
     moe_dropout_prob: float = field(default=0.0, metadata={"help": "moe dropout rate"})
-    token_balance_loss: bool = field(
-        default=False, metadata={"help": "use token_loss_equal_weight or not."}
-    )
-    use_train_part_sharding: Optional[bool] = field(
-        default=True, metadata={"help": "use_train_part_sharding"}
-    )
+    token_balance_loss: bool = field(default=False, metadata={"help": "use token_loss_equal_weight or not."})
+    use_train_part_sharding: Optional[bool] = field(default=True, metadata={"help": "use_train_part_sharding"})
     text_use_train_part_sharding: Optional[bool] = field(
         default=True, metadata={"help": "text dataset use_train_part_sharding"}
     )
@@ -331,9 +271,7 @@ class DPOTrainingArguments(TrainingArguments):
     )
     dpo_benchmark: bool = field(
         default=False,
-        metadata={
-            "help": "Whether to run benchmark by autotuner. True for from_scratch."
-        },
+        metadata={"help": "Whether to run benchmark by autotuner. True for from_scratch."},
     )
     # reference model
     ref_model_update_steps: int = field(
@@ -386,9 +324,7 @@ class FinetuningArguments(
     """Finetuning Argument"""
 
     output_dir: str = field(
-        metadata={
-            "help": "The output directory where the model predictions and checkpoints will be written."
-        },
+        metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
     # base
     batch_size: int = field(default=1, metadata={"help": "Batch size per GPU."})
@@ -430,9 +366,7 @@ class FinetuningArguments(
     )
     weight_quantize_algo: str = field(
         default=None,
-        metadata={
-            "help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."
-        },
+        metadata={"help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."},
     )
 
     # fp8
@@ -448,34 +382,18 @@ class FinetuningArguments(
         default=False,
         metadata={"help": "whether to enable FP8 quantize analysis"},
     )
-    apply_hadamard: bool = field(
-        default=True, metadata={"help": "Whether to apply hadamard"}
-    )
-    hadamard_block_size: int = field(
-        default=32, metadata={"help": "hadamard block size"}
-    )
-    quant_input_grad: bool = field(
-        default=False, metadata={"help": "Whether to quantize input grad"}
-    )
-    quant_weight_grad: bool = field(
-        default=False, metadata={"help": "Whether to quantize weight grad"}
-    )
+    apply_hadamard: bool = field(default=True, metadata={"help": "Whether to apply hadamard"})
+    hadamard_block_size: int = field(default=32, metadata={"help": "hadamard block size"})
+    quant_input_grad: bool = field(default=False, metadata={"help": "Whether to quantize input grad"})
+    quant_weight_grad: bool = field(default=False, metadata={"help": "Whether to quantize weight grad"})
     apply_online_actscale_step: int = field(
         default=200,
-        metadata={
-            "help": "Use online activation scale for first N step to keep stable training."
-        },
+        metadata={"help": "Use online activation scale for first N step to keep stable training."},
     )
-    actscale_moving_rate: float = field(
-        default=0.01, metadata={"help": "EMA moving_rate for activation scale"}
-    )
+    actscale_moving_rate: float = field(default=0.01, metadata={"help": "EMA moving_rate for activation scale"})
     fp8_format_type: str = field(default="hybrid", metadata={"help": "FP8 Format"})
-    multi_token_pred_lambda: float = field(
-        default=0.3, metadata={"help": "multi token pred lambda"}
-    )
-    use_recompute_mtp: bool = field(
-        default=False, metadata={"help": "Whether to use recompute_mtp"}
-    )
+    multi_token_pred_lambda: float = field(default=0.3, metadata={"help": "multi token pred lambda"})
+    use_recompute_mtp: bool = field(default=False, metadata={"help": "Whether to use recompute_mtp"})
 
     # training pytorch models from huggingFace
     use_huggingface_model: bool = field(
@@ -529,40 +447,26 @@ class FinetuningArguments(
             self.adaptive_norm_clip = False
 
         self.global_batch_size = (
-            self.per_device_train_batch_size
-            * self.dataset_world_size
-            * self.gradient_accumulation_steps
+            self.per_device_train_batch_size * self.dataset_world_size * self.gradient_accumulation_steps
         )
-        logger.info(
-            f"reset finetuning arguments global_batch_size to {self.global_batch_size}"
-        )
+        logger.info(f"reset finetuning arguments global_batch_size to {self.global_batch_size}")
 
         self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
 
         if self.pipeline_parallel_degree > 1:
-            self.per_device_eval_batch_size = (
-                self.per_device_train_batch_size * self.gradient_accumulation_steps
-            )
-            logger.warning(
-                f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!"
-            )
+            self.per_device_eval_batch_size = self.per_device_train_batch_size * self.gradient_accumulation_steps
+            logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
             user_defined_strategy = fleet.fleet._user_defined_strategy
-            user_defined_strategy.strategy.pipeline_configs.accumulate_steps = (
-                self.gradient_accumulation_steps
-            )
+            user_defined_strategy.strategy.pipeline_configs.accumulate_steps = self.gradient_accumulation_steps
             if self.pp_need_data and not self.pp_need_data_degree:
                 self.pp_need_data_degree = self.pipeline_parallel_degree
             if self.pp_need_data_degree:
-                assert (
-                    self.gradient_accumulation_steps % self.pp_need_data_degree == 0
-                ), (
+                assert self.gradient_accumulation_steps % self.pp_need_data_degree == 0, (
                     f"gradient_accumulation_steps[{self.gradient_accumulation_steps}] should be divisible by "
                     f"pp_need_data_degree[{self.pp_need_data_degree}]"
                 )
 
-                self.gradient_accumulation_steps = (
-                    self.gradient_accumulation_steps // self.pp_need_data_degree
-                )
+                self.gradient_accumulation_steps = self.gradient_accumulation_steps // self.pp_need_data_degree
                 logger.info(
                     f"pp-need-data hack args.gradient_accumulation_steps to - {self.gradient_accumulation_steps}"
                 )
@@ -574,9 +478,7 @@ class FinetuningArguments(
 
         if self.sharding_parallel_degree > 1:
             sharding_parallel_config = (
-                set(self.sharding_parallel_config.split(" "))
-                if self.sharding_parallel_config
-                else set()
+                set(self.sharding_parallel_config.split(" ")) if self.sharding_parallel_config else set()
             )
             sharding_comm_overlap_non_pp = (
                 True
@@ -608,10 +510,7 @@ class FinetuningArguments(
                         f"local_batch_size[{lbs}] should be divisible by "
                         f"per_device_train_batch_size[{self.per_device_train_batch_size}]"
                     )
-                    assert (
-                        lbs // self.per_device_train_batch_size
-                        == sd_configs.accumulate_steps
-                    ), (
+                    assert lbs // self.per_device_train_batch_size == sd_configs.accumulate_steps, (
                         f"local_batch_size[{lbs}] should be equal to "
                         f"accumulate_steps[{sd_configs.accumulate_steps}] * "
                         f"per_device_train_batch_size[{self.per_device_train_batch_size}]"

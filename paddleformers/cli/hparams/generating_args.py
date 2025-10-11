@@ -85,6 +85,4 @@ class GeneratingArguments:
         default=None,
         metadata={"help": "Relevant options for stream output"},
     )
-    enable_thinking: bool = field(
-        default=False, metadata={"help": "Whether enable thinking when using VL model."}
-    )
+    enable_thinking: bool = field(default=False, metadata={"help": "Whether enable thinking when using VL model."})

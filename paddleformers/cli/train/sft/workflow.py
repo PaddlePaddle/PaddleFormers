@@ -16,7 +16,6 @@
 
 import gc
 import os
-import sys
 from functools import partial
 
 import paddle
@@ -30,7 +29,6 @@ from paddleformers.trainer import (
     IntervalStrategy,
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
-    PdArgumentParser,
     get_last_checkpoint,
     set_seed,
 )
@@ -43,7 +41,7 @@ from paddleformers.transformers import (
     LlamaTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
-from paddleformers.trl import DataConfig, ModelConfig, SFTConfig, SFTTrainer
+from paddleformers.trl import SFTTrainer
 from paddleformers.trl.llm_utils import compute_metrics, get_lora_target_modules
 from paddleformers.utils.log import logger
 
