@@ -15,6 +15,7 @@
 import sys
 
 from paddleformers.cli.train.tuner import run_tuner
+from paddleformers.cli.export.export import run_export
 
 
 def launch():
@@ -29,6 +30,8 @@ def launch():
 
     if command == 'train':
         run_tuner()
+    elif command == 'export':
+        run_export()
     else:
         raise ValueError(f"Unknown command : {command}")
 

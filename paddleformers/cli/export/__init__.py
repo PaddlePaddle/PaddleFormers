@@ -13,46 +13,17 @@
 # limitations under the License.
 
 import sys
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
-from ..utils.lazy_import import _LazyModule
+from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "hparams": [
-        "DataArguments",
-        "ModelArguments",
-        "GeneratingArguments",
-        "FinetuningArguments",
-        "ExportArguments",
-        "ServerArguments",
-        "get_train_args",
-        "get_eval_args",
-        "get_server_args",
-        "get_export_args",
-        "read_args",
-    ],
-    "train": [],
     "export": [],
-    "utils": [
-        "terminate_process_tree",
-        "is_env_enabled",
-        "is_valid_model_dir",
-        "detect_device",
-        "set_ascend_environment",
-        "remove_paddle_shm_files",
-        "set_cuda_environment"
-    ],
-    "cli": [],
-    "launcher": [],
 }
 
 if TYPE_CHECKING:
-    from .hparams import *
-    from .train import *
     from .export import *
-    from .utils import *
-    from .cli import *
-    from .launcher import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

@@ -40,6 +40,7 @@ USAGE = (
     + "\n"
     + "| Usage:                                                              |\n"
     + "|   paddleformers-cli train -h: model finetuning                      |\n"
+    + "|   paddleformers-cli export -h: model export                         |\n"
     + "|   paddleformers-cli version: show version info                      |\n"
     + "|   paddleformers-cli help: show helping info                         |\n"
     + "-" * 60
@@ -58,16 +59,18 @@ WELCOME = (
 def main():
     """cli main process"""
     from . import launcher
+    from .export.export import run_export
     from .train.tuner import run_tuner
 
     COMMAND_MAP = {
         "train": run_tuner,
+        "export": run_export,
         "version": partial(print, WELCOME),
         "help": partial(print, USAGE),
     }
 
     command = sys.argv[1] if len(sys.argv) > 1 else "help"
-    distributed_funcs = ["train"]
+    distributed_funcs = ["train", "export"]
     paddleformers_dist_log = os.getenv("PADDLEFORMERS_DIST_LOG", "paddleformers_dist_log")
     nnodes = os.getenv("NNODES", "1")
     master_ip = os.getenv("MASTER_ADDR", "127.0.0.1")
