@@ -26,7 +26,7 @@ import yaml
 TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "PaddleFormers/tiny-random-qwen3"
+MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
@@ -125,7 +125,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.439819
+        EXCEPTED_LOSS = 0.474259
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
@@ -159,7 +159,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.474284
+        EXCEPTED_LOSS = 0.474163
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test lora  merge
