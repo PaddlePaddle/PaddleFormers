@@ -50,11 +50,6 @@ from paddleformers.transformers.image_utils import (
     valid_images,
 )
 
-# if version.parse(version.parse(PIL.__version__).base_version) >= version.parse("9.1.0"):
-#     PILImageResampling = PIL.Image.Resampling
-# else:
-#     PILImageResampling = PIL.Image
-
 from typing_extensions import override
 
 if TYPE_CHECKING:
