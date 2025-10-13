@@ -367,6 +367,9 @@ class MoEFlexTokenLayer(nn.Layer):
         self._post_init()
 
     def _post_init(self):
+        for p in self.gate.parameters():
+            p.is_gate = True
+
         for k in self.experts:
             if k is not None:
                 for p in k.parameters():

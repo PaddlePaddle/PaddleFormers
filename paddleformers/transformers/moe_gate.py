@@ -22,6 +22,7 @@ import paddle
 import paddle.distributed as dist
 import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 
 from ..utils.log import logger
 
@@ -129,43 +130,33 @@ class MoEGateMixin:
         aux_loss = paddle.sum(me * ce) * float(self.num_experts)
         return aux_loss
 
-    def _cal_seq_aux_loss(self, gates, top_k, topk_idx) -> paddle.Tensor:
-        """
-        Calculate sequence auxiliary loss.
-
-        Args:
-            logits (paddle.Tensor): Model output.
-
-        Returns:
-            paddle.Tensor: The value of sequence auxiliary loss.
-        """
-        if self.config.sequence_parallel:
-            # [bs * seq_len, dim]
-            # Todo: Temporary measure to be compatible with SP input dimensions:
-            # this function affects loss_aux, but the glm4moe model does not actually use this result.
-            # Correctness unvalidated; to be verified later.
-            max_sequence_length = self.config.max_sequence_length
-            local_total_tokens, local_num_experts = gates.shape
-            batch_size = local_total_tokens * self.config.tensor_parallel_degree // max_sequence_length
-            seq_len = max_sequence_length
-            ce = paddle.zeros([local_total_tokens, local_num_experts])
-            ce.put_along_axis_(
-                indices=topk_idx, values=paddle.ones_like(topk_idx, dtype=ce.dtype), axis=1, reduce="add"
-            )
-            ce = ce / (top_k / local_num_experts)
-            gates_mean = paddle.mean(gates, axis=tuple(range(len(gates.shape) - 1))).unsqueeze(0)
-            aux_loss = (ce * gates_mean).sum(axis=1).mean()
+    def _cal_seq_aux_loss(self, probs, top_k, routing_map):
+        max_seq_len = self.config.max_sequence_length
+        if self.config.tensor_parallel_degree > 1:
+            assert self.config.sequence_parallel and max_seq_len % self.config.tensor_parallel_degree == 0
+            local_seq_len = max_seq_len // self.config.tensor_parallel_degree
+            # [B*S, E]
+            all_probs = AllGatherOp.apply(probs)
+            # [B, S, E]
+            all_probs = all_probs.reshape([-1, max_seq_len, self.num_experts])
+            batch_size = all_probs.shape[0]
+            # [B, S, E]
+            routing_map = routing_map.reshape([batch_size, local_seq_len, -1])
         else:
-            # [bs, seq_len, dim]
-            batch_size, seq_len, num_experts = gates.shape
-            ce = paddle.zeros([batch_size, self.num_experts])
-            topk_idx = topk_idx.reshape([batch_size, -1])
-            ce.put_along_axis_(
-                indices=topk_idx, values=paddle.ones([batch_size, seq_len * top_k]), axis=1, reduce="add"
-            )
-            ce = ce / (seq_len * top_k / self.num_experts)
-            aux_loss = (ce * paddle.mean(gates, axis=1)).sum(axis=1).mean()
-        return aux_loss
+            # [B, S, E]
+            batch_size, local_seq_len, _ = probs.shape
+            routing_map = routing_map.reshape([batch_size, local_seq_len, -1])
+            all_probs = probs
+
+        seq_axis = 1
+        # [B, E]
+        cost_coeff = routing_map.sum(axis=seq_axis, dtype="float32") / paddle.to_tensor(
+            max_seq_len * top_k / self.num_experts, dtype="float32"
+        )
+        # [B, E] -> [B] -> []
+        seq_aux_loss = (cost_coeff * all_probs.sum(axis=seq_axis) / max_seq_len).sum(axis=1).mean()
+
+        return seq_aux_loss
 
     def _cal_z_loss(self, logits) -> paddle.Tensor:
         """
@@ -520,7 +511,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         # get topk mask
         mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype="float32"), axis=1)
         if hasattr(self.config, "seq_aux") and self.config.seq_aux:
-            l_aux = self._cal_seq_aux_loss(gates_ori, self.top_k, top_idx)
+            l_aux = self._cal_seq_aux_loss(gates_ori, self.top_k, mask)
         else:
             l_aux = self._cal_aux_loss(gates, mask)
 
@@ -610,7 +601,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             gates_masked = gates_masked / denom_s
         gates_masked *= self.routed_scaling_factor
         if hasattr(self.config, "seq_aux") and self.config.seq_aux:
-            l_aux = self._cal_seq_aux_loss(gates_ori, self.top_k, top_idx)
+            l_aux = self._cal_seq_aux_loss(gates_ori, self.top_k, mask)
         else:
             l_aux = self._cal_aux_loss(gates, mask)
         exp_counts = paddle.sum(mask.cast(paddle.int64), axis=0)

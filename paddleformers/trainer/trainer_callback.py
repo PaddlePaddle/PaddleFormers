@@ -49,6 +49,7 @@ __all__ = [
     "FP8QuantWeightCallback",
     "MoECorrectionBiasAdjustCallback",
     "MoeExpertsGradScaleCallback",
+    "MoEGateSpGradSyncCallBack",
 ]
 
 
@@ -783,3 +784,30 @@ class MoeExpertsGradScaleCallback(TrainerCallback):
                         p.grad.scale_(self.expert_gradient_scaling_factor)
                         param_count += 1
         logger.info("correct ep grad count:{}".format(param_count))
+
+
+class MoEGateSpGradSyncCallBack(TrainerCallback):
+    """
+    用于绕过sp allreduce hook被错误调用多次的bug，此bug是框架内部机制的问题，将来会进行修复。
+    目前仅gate的梯度在开启moe_subbatch_token_num存在这个问题，因此这里只添加gate的梯度聚合。
+    但保险起见mark_as_sequence_parallel_parameter的参数最好都通过类似的hook处理。
+    """
+
+    def __init__(self):
+        logger.info("MoEGateSpGradSyncCallBack Created")
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        if args.tensor_parallel_degree > 1 and args.sequence_parallel:
+            model = kwargs["model"]
+            hcg = fleet.get_hybrid_communicate_group()
+            pg = hcg.get_model_parallel_group().process_group
+            for param in model.parameters():
+                if getattr(param, "is_gate", False):
+                    if hasattr(param, "main_grad"):
+                        # print("before allreduce param name:{}, main_grad:{}".format(param.name, param.main_grad), flush=True)
+                        pg.allreduce(param.main_grad).wait()
+                        # print("after allreduce param name:{}, main_grad:{}".format(param.name, param.main_grad), flush=True)
+                    else:
+                        pg.allreduce(param.grad).wait()
+
+            logger.info("MoEGate grad allreduced done")
