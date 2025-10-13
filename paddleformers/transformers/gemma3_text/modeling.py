@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+from functools import partial
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -23,19 +24,27 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 from ...generation import GenerationMixin
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
+from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-
-# from ...utils.masking_utils import is_casual_mask
 from ..activations import ACT2FN
 from ..configuration_utils import PretrainedConfig
-
-# from ..llama.modeling import get_use_casual_mask
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
 from .configuration import Gemma3Config, Gemma3TextConfig
-from .utils import ignore_causal_mask_sdpa, prepare_sliding_window_startend_row_indices
+
+try:
+    from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+        mark_as_sequence_parallel_parameter,
+    )
+except ImportError:
+    logger.warning_once("Fail to import mark_as_sequence_parallel_parameter!")
+
+    def mark_as_sequence_parallel_parameter(parameter):
+        return parameter
 
 
 class Gemma3TextScaledWordEmbedding(nn.Embedding):
@@ -76,7 +85,7 @@ class Gemma3MLP(nn.Layer):
             self.hidden_size,
             has_bias=False,
             config=config,
-            tp_plan="colwise",
+            tp_plan="rowwise",
         )
         self.act_fn = ACT2FN[config.hidden_activation]
 
@@ -86,13 +95,21 @@ class Gemma3MLP(nn.Layer):
 
 
 class Gemma3RMSNorm(nn.Layer):
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, hidden_size: int, eps: float = 1e-6):
         super().__init__()
         self.eps = eps
-        self.weight = nn.Parameter(paddle.zeros(dim))
+        self.weight = paddle.create_parameter(
+            shape=[hidden_size],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=nn.initializer.Constant(0.0),
+        )
 
     def _norm(self, x):
-        return x * paddle.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        if paddle.in_dynamic_mode():
+            with paddle.amp.auto_cast(False):
+                return x * paddle.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        else:
+            return x * paddle.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
         output = self._norm(x.float())
@@ -101,8 +118,8 @@ class Gemma3RMSNorm(nn.Layer):
         output = output * (1.0 + self.weight.float())
         return output.type_as(x)
 
-    def extra_repr(self):
-        return f"{tuple(self.weight.shape)}, eps={self.eps}"
+    def enable_sequence_parallel(self):
+        mark_as_sequence_parallel_parameter(self.weight)
 
 
 def _compute_default_rope_parameters(
@@ -197,11 +214,37 @@ class Gemma3Attention(nn.Layer):
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
         self.scaling = config.query_pre_attn_scalar**-0.5
-        self.attention_dropout = self.config.attention_dropout
-        self.is_causal = not self.config.use_bidirectional_attention
+        self.attention_dropout = config.attention_dropout
+        self.is_causal = not config.use_bidirectional_attention
+        self.attn_implementation = config._attn_implementation
+
+        self.num_heads = config.num_attention_heads
+        self.num_key_value_heads = config.num_key_value_heads
+        self.num_attention_heads = config.num_attention_heads
+        assert config.num_attention_heads // config.num_key_value_heads
+
+        kv_tp_plan = "default"
+        if config.tensor_parallel_degree > 1:
+            assert (
+                self.num_heads % config.tensor_parallel_degree == 0
+            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
+            self.num_heads = self.num_heads // config.tensor_parallel_degree
+
+            # assert (
+            #     self.num_key_value_heads % config.tensor_parallel_degree == 0
+            # ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
+            if self.num_key_value_heads % config.tensor_parallel_degree != 0:
+                logger.warning_once(
+                    f"num_key_value_heads={self.num_key_value_heads} cannot be divided by "
+                    f"tensor_parallel_degree={config.tensor_parallel_degree}, tp cannot be enabled for K/V"
+                )
+            else:
+                self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                kv_tp_plan = "colwise"
 
         kv_hidden_size = config.num_key_value_heads * self.head_dim
         q_hidden_size = config.num_attention_heads * self.head_dim
+
         self.q_proj = GeneralLinear.create(
             config.hidden_size,
             q_hidden_size,
@@ -214,27 +257,33 @@ class Gemma3Attention(nn.Layer):
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            tp_plan="colwise",
+            # tp_plan="colwise",
+            tp_plan=kv_tp_plan,
         )
         self.v_proj = GeneralLinear.create(
             config.hidden_size,
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            tp_plan="colwise",
+            # tp_plan="colwise",
+            tp_plan=kv_tp_plan,
         )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
             config.hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            tp_plan="colwise",
+            tp_plan="rowwise",
         )
-        self.attn_logit_softcapping = self.config.attn_logit_softcapping
+
         self.sliding_window = config.sliding_window if self.is_sliding else None
 
-        self.q_norm = Gemma3RMSNorm(dim=config.head_dim, eps=config.rms_norm_eps)
-        self.k_norm = Gemma3RMSNorm(dim=config.head_dim, eps=config.rms_norm_eps)
+        self.q_norm = Gemma3RMSNorm(hidden_size=self.head_dim, eps=config.rms_norm_eps)
+        self.k_norm = Gemma3RMSNorm(hidden_size=self.head_dim, eps=config.rms_norm_eps)
+
+        if config.sequence_parallel:
+            self.q_norm.enable_sequence_parallel()
+            self.k_norm.enable_sequence_parallel()
 
     def forward(
         self,
@@ -256,9 +305,9 @@ class Gemma3Attention(nn.Layer):
 
         hidden_shape = (bsz, q_len, -1, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(hidden_shape)
+        query_states = self.q_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).reshape(hidden_shape)
 
         query_states = self.q_norm(query_states)
         key_states = self.k_norm(key_states)
@@ -271,7 +320,9 @@ class Gemma3Attention(nn.Layer):
             value_states = paddle.concat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        if attn_mask_startend_row_indices is None and attention_mask is None:
+            self.attn_implementation = "sdpa"
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -312,14 +363,14 @@ class Gemma3DecoderLayer(nn.Layer):
     def forward(
         self,
         hidden_states: paddle.Tensor,
-        position_embeddings_global: paddle.Tensor,
-        position_embeddings_local: paddle.Tensor,
-        attention_mask: Optional[paddle.Tensor] = None,
-        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.LongTensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
+        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
+        position_embeddings_global: paddle.Tensor = None,
+        position_embeddings_local: paddle.Tensor = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> tuple[paddle.FloatTensor, Optional[tuple[paddle.FloatTensor, paddle.FloatTensor]]]:
         # [bs * seq_len, embed_dim] -> [seq_len * bs / n, embed_dim] (sequence_parallel)
@@ -398,10 +449,71 @@ class Gemma3PreTrainedModel(PretrainedModel):
         "lm_head",
     ]
 
-    def _init_weights(self, module):
-        super()._init_weights(module)
-        if isinstance(module, Gemma3MultiModalProjector):
-            module.mm_input_projection_weight.data.zero_()
+    @classmethod
+    def _get_tensor_parallel_mappings(cls, config: Gemma3TextConfig, is_split=True):
+        """Generate tensor parallel mappings for model conversion."""
+        from ..conversion_utils import split_or_merge_func
+
+        fn = split_or_merge_func(
+            is_split=is_split,
+            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_parallel_rank=config.tensor_parallel_rank,
+            num_attention_heads=config.num_attention_heads,
+        )
+
+        LAYER_COLWISE = [
+            "self_attn.q_proj.weight",
+            "mlp.up_proj.weight",
+            "mlp.gate_proj.weight",
+        ]
+
+        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
+
+        BIAS_KEYS = [
+            "self_attn.q_proj.bias",
+            "self_attn.o_proj.bias",
+        ]
+
+        # if we have enough num_key_value_heads to split, then split it.
+        if config.num_key_value_heads % config.tensor_parallel_degree == 0:
+            LAYER_COLWISE.extend(["self_attn.k_proj.weight", "self_attn.v_proj.weight"])
+            BIAS_KEYS.extend(["self_attn.k_proj.bias", "self_attn.v_proj.bias"])
+
+        def make_base_actions():
+            if config.vocab_size % config.tensor_parallel_degree == 0:
+                actions = {
+                    "lm_head.weight": partial(fn, is_column=False),
+                    "embed_tokens.weight": partial(fn, is_column=False),
+                }
+            else:
+                actions = {}
+
+            for layer_idx in range(config.num_hidden_layers):
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                        for k in LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
+                        for k in LAYER_ROWWISE
+                    }
+                )
+                # bias
+                if config.attention_bias:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                            for b in BIAS_KEYS
+                        }
+                    )
+
+            return actions
+
+        mappings = make_base_actions()
+        return mappings
 
 
 class Gemma3TextModel(Gemma3PreTrainedModel):
@@ -412,10 +524,18 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
         self.sequence_parallel = config.sequence_parallel
+        if self._supports_sdpa:
+            config._attn_implementation = "sdpa"
 
         # Gemma3 downcasts the below to bfloat16, causing sqrt(3072)=55.4256 to become 55.5. See https://github.com/huggingface/transformers/pull/29402
-        self.embed_tokens = Gemma3TextScaledWordEmbedding(
-            config.vocab_size, config.hidden_size, self.padding_idx, embed_scale=self.config.hidden_size**0.5
+        # self.embed_tokens = Gemma3TextScaledWordEmbedding(
+        #     config.vocab_size, config.hidden_size, self.padding_idx, embed_scale=self.config.hidden_size**0.5
+        # )
+        self.embed_tokens = GeneralEmbedding.create(
+            config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
+        )
+        self.embed_tokens.register_buffer(
+            "embed_scale", paddle.to_tensor(config.hidden_size**0.5), persistable=False
         )
         self.layers = nn.LayerList(
             [Gemma3DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
@@ -433,19 +553,16 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         if config.sequence_parallel:
             self.norm.enable_sequence_parallel()
 
-        if self._supports_sdpa:
-            self.config._attn_implementation = "sdpa"
-
     @paddle.jit.not_to_static
     def recompute_training_full(
         self,
         layer_module: nn.Layer,
         hidden_states: paddle.Tensor,
-        attention_mask: paddle.Tensor,
         position_ids: Optional[paddle.Tensor],
+        attention_mask: paddle.Tensor,
+        output_attentions: bool,
         past_key_value: paddle.Tensor,
         use_cache: bool,
-        output_attentions: bool,
         position_embeddings_global: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         position_embeddings_local: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
@@ -458,15 +575,15 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
 
         hidden_states = recompute(
             create_custom_forward(layer_module),
-            hidden_states=hidden_states,
-            position_embeddings_global=position_embeddings_global,
-            position_embeddings_local=position_embeddings_local,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_value=past_key_value,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            hidden_states,
+            position_ids,
+            attention_mask,
+            output_attentions,
+            past_key_value,
+            use_cache,
+            position_embeddings_global,
+            position_embeddings_local,
+            attn_mask_startend_row_indices,
         )
 
         return hidden_states
@@ -515,6 +632,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         # Get input embeddings
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = inputs_embeds * self.embed_tokens.embed_scale.to(inputs_embeds.dtype)
 
         if self.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
@@ -530,61 +648,21 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             )
             self.config.use_bidirectional_attention = False
 
-        # Prepare causal mask mapping
-        if attn_mask_startend_row_indices is not None:
-            attention_mask = None
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            causal_mask_mapping["full_attention"] = None
-            causal_mask_mapping["sliding_attention"] = None
-
-            attn_mask_startend_row_indices_mapping["full_attention"] = attn_mask_startend_row_indices
-
-            if self.config.sliding_window is not None:
-                attn_mask_startend_row_indices_mapping[
-                    "sliding_attention"
-                ] = prepare_sliding_window_startend_row_indices(
-                    attn_mask_startend_row_indices, window_size=self.config.sliding_window
-                )
-            else:
-                attn_mask_startend_row_indices_mapping["sliding_attention"] = None
-        else:
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            attn_mask_startend_row_indices_mapping["full_attention"] = None
-            attn_mask_startend_row_indices_mapping["sliding_attention"] = None
-
-            mask_kwargs = {
-                "attention_mask": attention_mask,
-                "input_shape": (batch_size, seq_length),
-                "past_key_values_length": cache_length,
-                "dtype": inputs_embeds.dtype,
-            }
-
-            if self.config._attn_implementation == "sdpa":
-                # There is no return of None in `_prepare_decoder_attention_mask`
-                should_ignore = ignore_causal_mask_sdpa(**mask_kwargs) and not self.training
-            full_attention_mask = None if should_ignore else self._prepare_decoder_attention_mask(**mask_kwargs)
-
-            if self.config.sliding_window is not None:
-                mask_kwargs["sliding_window_size"] = self.config.sliding_window
-                if self.config._attn_implementation == "sdpa":
-                    should_ignore_sliding_window = ignore_causal_mask_sdpa(**mask_kwargs) and not self.training
-                    sliding_attention_mask = (
-                        None if should_ignore_sliding_window else self._prepare_decoder_attention_mask(**mask_kwargs)
-                    )
-            else:
-                sliding_attention_mask = None
-
-            causal_mask_mapping = {
-                "full_attention": full_attention_mask,
-                "sliding_attention": sliding_attention_mask,
-            }
+        # Prepare mask arguments
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+        }
+        # Create the causal mask and row indices
+        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
+            **mask_kwargs
+        )
 
         # Generate position_ids if not provided
         if position_ids is None:
@@ -611,30 +689,30 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
+                    position_ids=position_ids,
+                    attention_mask=causal_mask_mapping[decoder_layer.attention_type],
+                    output_attentions=output_attentions,
+                    past_key_value=past_key_value,
+                    use_cache=use_cache,
                     position_embeddings_global=position_embeddings_global,
                     position_embeddings_local=position_embeddings_local,
-                    attention_mask=causal_mask_mapping[decoder_layer.attention_type],
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
                         decoder_layer.attention_type
                     ],
-                    position_ids=position_ids,
-                    past_key_value=past_key_value,
-                    output_attentions=output_attentions,
-                    use_cache=use_cache,
                 )
             else:
                 layer_outputs = decoder_layer(
                     hidden_states,
+                    position_ids=position_ids,
+                    attention_mask=causal_mask_mapping[decoder_layer.attention_type],
+                    output_attentions=output_attentions,
+                    past_key_value=past_key_value,
+                    use_cache=use_cache,
                     position_embeddings_global=position_embeddings_global,
                     position_embeddings_local=position_embeddings_local,
-                    attention_mask=causal_mask_mapping[decoder_layer.attention_type],
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
                         decoder_layer.attention_type
                     ],
-                    position_ids=position_ids,
-                    past_key_value=past_key_value,
-                    output_attentions=output_attentions,
-                    use_cache=use_cache,
                 )
 
             hidden_states = layer_outputs[0]
@@ -818,8 +896,20 @@ class Gemma3TextForSequenceClassification(Gemma3PreTrainedModel):
     # TODO: implement the class refer to deepseekv2 & QWen3
 
 
+class Gemma3TextForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = Gemma3TextConfig
+    _decoder_layer_cls = Gemma3DecoderLayer
+    _get_tensor_parallel_mappings = Gemma3TextModel._get_tensor_parallel_mappings
+    _init_weights = Gemma3TextModel._init_weights
+    _rotary_emb_cls = Gemma3RotaryEmbedding
+    _keep_in_fp32_modules = Gemma3TextModel._keep_in_fp32_modules
+    _tied_weights_keys = ["lm_head.weight"]
+    transpose_weight_keys = Gemma3TextModel.transpose_weight_keys
+
+
 __all__ = [
     "Gemma3PreTrainedModel",
     "Gemma3TextModel",
     "Gemma3ForCausalLM",
+    "Gemma3TextForCausalLMPipe",
 ]

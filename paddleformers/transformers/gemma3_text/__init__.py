@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["Gemma3Config", "Gemma3TextConfig"],
+    "configuration": ["Gemma3Config", "Gemma3TextConfig", "Gemma3TextForCausalLMPipe"],
     "modeling": [
         "Gemma3PreTrainedModel",
         "Gemma3TextModel",
