@@ -153,6 +153,3 @@ class ModelConfig:
     pp_seg_method: Optional[str] = field(
         default="layer:DecoderLayer|EmptyLayer", metadata={"help": "PP Segmentation Method"}
     )
-    moe_subbatch_token_num: int = field(
-        default=0, metadata={"help": "moelayer subbatch token num, The smaller the value, the smaller the peak memory"}
-    )

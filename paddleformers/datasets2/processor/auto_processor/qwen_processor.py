@@ -601,4 +601,4 @@ class Qwen2VLProcessor(AutoProcessor):
             "labels": labels,
             "position_ids": position_ids,
         }
-        return model_input
+        return [model_input]

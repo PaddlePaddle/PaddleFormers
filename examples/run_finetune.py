@@ -20,8 +20,10 @@ from functools import partial
 import paddle
 
 from paddleformers.datasets.data_utils import estimate_training
-from paddleformers.datasets.finetuning import collate_fn
-from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
+# from paddleformers.datasets.finetuning import collate_fn
+# from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
+from paddleformers.datasets2.collect import collate_fn
+from paddleformers.datasets2.data_builder import create_dataset as create_dataset_sft
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
@@ -206,6 +208,7 @@ def main():
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
         "use_template": data_args.use_template,
+        "reverse": True,
     }
 
     train_dataset = create_dataset_sft(

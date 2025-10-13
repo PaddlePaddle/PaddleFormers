@@ -63,7 +63,7 @@ def create_dataset(**dataset_config):
     )  
     auto_processor = Qwen2VLProcessor(data_args=data_args)
     tokenizer = AutoTokenizer.from_pretrained(
-        "Qwen/Qwen3-VL-235B-A22B-Thinking",
+        "/root/paddlejob/workspace/env/output/lrl/PaddleFormers/Qwen3-0.6B-base",
         trust_remote_code=True,    
     )
     vision_processor = Qwen2VLVisionProcessor(data_args=data_args)
@@ -77,8 +77,10 @@ def create_dataset(**dataset_config):
     
     # debug
     for item in processed_dataset:
-        print('results : ', item)
+        print(item)
         break
+
+    return processed_dataset
 
     # """
 
