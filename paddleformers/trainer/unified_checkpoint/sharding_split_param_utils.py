@@ -97,7 +97,7 @@ def merge_splited_param(
                 if global_rank == send_rank:
                     tensor = (
                         state_dict[key] if padding_start >= padding_end else state_dict[key][: padding_start - begin]
-                    )
+                    ).cuda()
                     dist.stream.send(tensor, dst=recv_rank)
                     state_dict.pop(key)
 
