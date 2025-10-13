@@ -17,6 +17,7 @@ import os
 
 import numpy as np
 import paddle
+from aistudio_sdk.file_download import model_file_download as aistudio_download
 from safetensors.paddle import load_file
 
 from paddleformers.utils.log import logger
@@ -32,6 +33,15 @@ PADDLE_DTYPE_MAP = {
     "paddle.float8_e4m3fn": 1,
     "paddle.float8_e5m2": 1,
 }
+
+POSTFIX_UINT8_LIST = [
+    ".down_proj_blocks",
+    ".down_proj_scales",
+    ".gate_up_proj_blocks",
+    ".gate_up_proj_scales",
+    "down_proj",
+    "gate_up_proj",
+]
 
 
 def find_safetensors_files(directory):
@@ -61,9 +71,10 @@ def save_single_safetenors(save_path, state_dict, rank, total_files_size, prefix
     )
 
 
-def test_fp4_to_bf16():
-    load_path = "./gpt-oss-model-mxfp4"
-    save_path = "./gpt-oss-model-new-bf16"
+def test_fp4_to_bf16(tempdir):
+    load_path = os.path.join(tempdir, "gpt-oss-test-fp4")
+    save_path = os.path.join(tempdir, "gpt-oss-test-new-bf16")
+
     safetensor_prefix = "model"
     save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
     index = {"metadata": {"total_size": 0}, "weight_map": {}}
@@ -86,9 +97,9 @@ def test_fp4_to_bf16():
     logger.info(f"Model index file saved in {save_index_file}.")
 
 
-def test_bf16_to_fp4():
-    load_path = "./gpt-oss-model-bf16"
-    save_path = "./gpt-oss-model-new-mxfp4"
+def test_bf16_to_fp4(tempdir):
+    load_path = os.path.join(tempdir, "gpt-oss-test-bf16")
+    save_path = os.path.join(tempdir, "gpt-oss-test-new-fp4")
     safetensor_prefix = "model"
     save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
     index = {"metadata": {"total_size": 0}, "weight_map": {}}
@@ -111,6 +122,42 @@ def test_bf16_to_fp4():
     logger.info(f"Model index file saved in {save_index_file}.")
 
 
+def check_weight(origin_path, new_path, atol):
+    origin_file_name = "model-00008-of-00009.safetensors"
+    new_file_name = "model-00000-of-00001.safetensors"
+
+    origin_dict = load_file(os.path.join(origin_path, origin_file_name))
+    for key in list(origin_dict.keys()):
+        if endswith(key, POSTFIX_UINT8_LIST):
+            continue
+        else:
+            origin_dict.pop(key)
+
+    new_dict = load_file(os.path.join(new_path, new_file_name))
+    for key in list(new_dict.keys()):
+        if endswith(key, POSTFIX_UINT8_LIST):
+            continue
+        else:
+            new_dict.pop(key)
+
+    assert len(origin_dict) == len(new_dict)
+    for key in new_dict:
+        assert key in origin_dict
+        assert np.allclose(new_dict[key].numpy(), origin_dict[key].numpy(), atol=atol)
+
+
 if __name__ == "__main__":
-    test_fp4_to_bf16()
-    test_bf16_to_fp4()
+    tempdir = "./gpt-oss-weight-test"
+    repo_id = "PaddleFormers/gpt-oss-test-fp4"
+    filename = "model-00008-of-00009.safetensors"
+    aistudio_download(repo_id, filename, None, False, os.path.join(tempdir, "gpt-oss-test-fp4/"))
+
+    repo_id = "PaddleFormers/gpt-oss-test-bf16"
+    filename = "model-00008-of-00009.safetensors"
+    aistudio_download(repo_id, filename, None, False, os.path.join(tempdir, "gpt-oss-test-bf16/"))
+
+    test_fp4_to_bf16(tempdir)
+    test_bf16_to_fp4(tempdir)
+
+    check_weight(os.path.join(tempdir, "gpt-oss-test-fp4/"), os.path.join(tempdir, "gpt-oss-test-new-fp4"), 1e-2)
+    check_weight(os.path.join(tempdir, "gpt-oss-test-bf16/"), os.path.join(tempdir, "gpt-oss-test-new-bf16"), 1e-2)
