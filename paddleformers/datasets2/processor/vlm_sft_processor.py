@@ -15,7 +15,8 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
-from base_processor import DatasetProcessor
+from .base_processor import DatasetProcessor
+from paddle.io import IterableDataset
 
 
 @dataclass
@@ -30,13 +31,20 @@ class SupervisedDatasetProcessor(DatasetProcessor):
 
         return model_input
 
-    def preprocess_dataset(self, examples: list[dict]) -> list[dict]:
-        model_inputs = []
-        for example in examples:
-            model_input = self.encode_example(example)
-            model_inputs.append(model_input)
-
-        return model_inputs
+    def preprocess_dataset(self, example) -> list[dict]:
+        return self.encode_example(example)
 
     def print_data_example(self, example: list[dict]) -> None:
         print("Example:", example)
+
+@dataclass
+class ProcessDataset(IterableDataset):
+
+    def __init__(self, mix_datasets, dataset_processor):
+        self.mix_datasets = mix_datasets
+        self.processor = dataset_processor
+
+    def __iter__(self):
+        for item in self.mix_datasets:
+            res = self.processor.preprocess_dataset(item)
+            yield res

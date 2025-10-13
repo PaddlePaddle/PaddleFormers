@@ -13,9 +13,10 @@
 # limitations under the License.
 
 from .base_processor import DatasetProcessor
-from .vlm_sft_processor import SupervisedDatasetProcessor
+from .vlm_sft_processor import SupervisedDatasetProcessor, ProcessDataset
 
 __all__ = [
     "DatasetProcessor",
     "SupervisedDatasetProcessor",
+    "ProcessDataset"
 ]

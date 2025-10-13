@@ -13,11 +13,20 @@
 # limitations under the License.
 """ Basic datasets implement. """
 
+import os
 import random
 from abc import abstractmethod
 
 import numpy as np
 from paddle.io import IterableDataset, get_worker_info
+
+from .file_reader import (
+    FileListReader,
+    FileReader,
+    HuggingFaceReader,
+    get_hf_dataset_config,
+)
+
 
 class InfiniteDataset(IterableDataset):
     """Infinite iterable dataset with shuffle support.
@@ -53,6 +62,89 @@ class InfiniteDataset(IterableDataset):
                 yield self.data[i]
 
 
+class MultiSourceDataset(IterableDataset):
+    """Dataset that combines multiple data sources with probability sampling."""
+
+    def __init__(self, **dataset_config):
+        """Initialize the multi-source dataset.
+
+        Args:
+            dataset_config (dict): dataset configurations.
+        """
+
+        # arguments process
+        task_dataset_path = [
+            path for path in str(dataset_config["task_group"]).replace(" ", "").split(",") if path != ""
+        ]
+        task_dataset_prob = [
+            float(prob) for prob in str(dataset_config["task_group_prob"]).replace(" ", "").split(",") if prob != ""
+        ]
+        sub_dataset_type = [
+            type_ for type_ in str(dataset_config["sub_dataset_type"]).replace(" ", "").split(",") if type_ != ""
+        ]
+
+        if not (len(task_dataset_path) == len(task_dataset_prob) == len(sub_dataset_type)):
+            raise ValueError("The len of dataset path, prob, type are inconsistent, please check the configuration.")
+
+        if len(task_dataset_path) == 0:
+            raise ValueError("The len of dataset path is zero, please check the configuration.")
+
+        tasks = []
+        for i in range(len(task_dataset_path)):
+            tasks.append({"prob": task_dataset_prob[i], "filepath": task_dataset_path[i]})
+        # filter zero probability task
+        tasks = [task for task in tasks if task["prob"] > 0]
+        self._task_group = tasks
+        supported_type = ["erniekit", "alpaca", "sharegpt", "openai", "query-response"]
+        for idx, task in enumerate(self._task_group):
+            each_sub_dataset_type = sub_dataset_type[idx]
+            if get_hf_dataset_config(task["filepath"]) is not None:
+                task["dataset"] = HuggingFaceReader(
+                    file_path=task["filepath"],
+                    file_type=each_sub_dataset_type,
+                    shuffle_file=dataset_config["random_shuffle"],
+                )
+            if os.path.isdir(task["filepath"]):
+                task["dataset"] = FileListReader(
+                    file_path=task["filepath"],
+                    file_type=each_sub_dataset_type,
+                    shuffle_file=dataset_config["random_shuffle"],
+                )
+            elif each_sub_dataset_type in supported_type:
+                task["dataset"] = FileReader(
+                    file_path=task["filepath"],
+                    file_type=each_sub_dataset_type,
+                    shuffle_file=dataset_config["random_shuffle"],
+                )
+            else:
+                raise NotImplementedError(f"Cannot support {each_sub_dataset_type} now.")
+        sum_prob = sum([task["prob"] for task in self._task_group])
+        for task in self._task_group:
+            task["prob_origin"] = task["prob"]
+            task["prob"] = task["prob"] / sum_prob
+
+        self.random_seed = dataset_config["random_seed"]
+
+    def __iter__(self):
+        """Iterate through examples from multiple sources with probability sampling.
+
+        Yields:
+            dict: Processed examples from randomly selected data sources.
+        """
+        rng = random.Random(self.random_seed)
+        probs = [task["prob"] for task in self._task_group]
+        # Initialize task iterator
+        for task in self._task_group:
+            task["iterator"] = iter(task["dataset"])
+        while True:
+            task = rng.choices(self._task_group, weights=probs)[0]
+            try:
+                yield from task["iterator"]
+            except StopIteration:
+                task["iterator"] = iter(task["dataset"])
+                yield from task["iterator"]
+
+
 class BaseMixDataset(IterableDataset):
     """
     A dataset randomly samples from multiple datasets with specified probabilities.
@@ -60,13 +152,8 @@ class BaseMixDataset(IterableDataset):
 
     def __init__(
         self,
-        datasets_list,
-        datasets_prob,
-        mode: str = "upsampling",
-        seed=42,
-        random_shuffle=True,
-        num_samples_each_epoch=6000000,
-        reverse=False,
+        multi_source_dataset,
+        **dataset_config,
     ):
         """
         Initialize the RandomDataset.
@@ -78,17 +165,17 @@ class BaseMixDataset(IterableDataset):
             random_shuffle: Whether to shuffle samples within each dataset (default True)
             num_samples_each_epoch: Total number of samples to generate per epoch
         """
-        self.datasets_list = datasets_list
-        self.datasets_prob = datasets_prob
-        self.mode = mode
-        self.seed = seed
-        self.rng = random.Random(seed)
+        self.datasets_list = [task["dataset"] for task in multi_source_dataset._task_group]
+        self.datasets_prob = [task["prob"] for task in multi_source_dataset._task_group]
+        self.mode = "upsampling" if dataset_config["mix_strategy"] == "interleave_under" else "oversampling"
+        self.seed = 42
+        self.rng = random.Random(dataset_config["random_seed"])
         self.np_rng = np.random.default_rng(self.seed)
         self.epoch_index = 0
         self.epoch_np_rng = np.random.RandomState(self.epoch_index)
-        self.random_shuffle = random_shuffle
-        self.num_samples_each_epoch = num_samples_each_epoch
-        self.reverse = reverse
+        self.random_shuffle = dataset_config["random_shuffle"]
+        self.num_samples_each_epoch = dataset_config["num_samples_each_epoch"]
+        self.reverse = dataset_config["reverse"]
 
     @abstractmethod
     def __iter__(self):

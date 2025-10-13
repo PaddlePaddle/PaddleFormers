@@ -12,56 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from paddleformers.datasets2.reader.file_reader import MultiSourceDataset
-from paddleformers.datasets2.reader.mix_datasets import create_dataset_instance
+import json
+import numpy as np
+from pprint import pprint
+from paddleformers.datasets2.processor.vision_processor import Qwen2VLVisionProcessor
+from paddleformers.datasets2.processor.auto_processor import Qwen2VLProcessor
+from paddleformers.transformers import AutoTokenizer
+from paddleformers.hparams.data_args import DataArguments
+from paddleformers.datasets2.processor import SupervisedDatasetProcessor, ProcessDataset
+
+
+from paddleformers.datasets2.reader.mix_datasets import MultiSourceDataset, create_dataset_instance
 
 
 def create_dataset(**dataset_config):
 
     # data loader
-    task_dataset_path = [path for path in str(dataset_config["task_group"]).replace(" ", "").split(",") if path != ""]
-    task_dataset_prob = [
-        float(prob) for prob in str(dataset_config["task_group_prob"]).replace(" ", "").split(",") if prob != ""
-    ]
-    sub_dataset_type = [
-        type_ for type_ in str(dataset_config["sub_dataset_type"]).replace(" ", "").split(",") if type_ != ""
-    ]
+    multi_source_dataset = MultiSourceDataset(**dataset_config)
 
-    if not (len(task_dataset_path) == len(task_dataset_prob) == len(sub_dataset_type)):
-        raise ValueError("The len of dataset path, prob, type are inconsistent, please check the configuration.")
-
-    if len(task_dataset_path) == 0:
-        raise ValueError("The len of dataset path is zero, please check the configuration.")
-
-    multi_source_dataset = MultiSourceDataset(
-        task_dataset_path=task_dataset_path,
-        task_dataset_prob=task_dataset_prob,
-        sub_dataset_type=sub_dataset_type,
+    # data mix
+    mix_datasets = create_dataset_instance(
+        dataset_config["mix_strategy"],
+        multi_source_dataset,
+        **dataset_config,
     )
 
-    datasets_list = [task["dataset"] for task in multi_source_dataset._task_group]
-    datasets_prob = [task["prob"] for task in multi_source_dataset._task_group]
-
-    if dataset_config["mix_strategy"] not in [
-        "random",
-        "concat",
-        "interleave_under",
-        "interleave_over",
-    ]:
-        raise ValueError(f"Unsupported mix strategy: {dataset_config['mix_strategy']}")
-    else:
-        mix_datasets = create_dataset_instance(
-            dataset_config["mix_strategy"],
-            datasets_list,
-            datasets_prob,
-            ("upsampling" if dataset_config["mix_strategy"] == "interleave_under" else "oversampling"),
-            dataset_config["random_seed"],
-            dataset_config["random_shuffle"],
-            dataset_config["num_samples_each_epoch"],
-            dataset_config["reverse"],
-        )
-
-    print(mix_datasets)
+    # debug
     for item in mix_datasets:
         print(item)
         break
@@ -76,13 +52,34 @@ def create_dataset(**dataset_config):
     # dataset_processor = _get_dataset_processor(
     #     data_args, stage, template, tokenizer, processor, do_generate=(training_args.predict_with_generate and is_eval)
     # )
-    # dataset = dataset.map(
-    #     dataset_processor.preprocess_dataset,
-    #     batched=True,
-    #     batch_size=data_args.preprocessing_batch_size,
-    #     remove_columns=column_names,
-    #     **kwargs,
-    # )
+
+    data_args = DataArguments(
+        max_seq_len=16384,
+        min_pixels=3136,
+        max_pixels=4816896,
+        video_min_frames=4,
+        video_max_frames=768,
+        render_timestamp=True,
+    )  
+    auto_processor = Qwen2VLProcessor(data_args=data_args)
+    tokenizer = AutoTokenizer.from_pretrained(
+        "Qwen/Qwen3-VL-235B-A22B-Thinking",
+        trust_remote_code=True,    
+    )
+    vision_processor = Qwen2VLVisionProcessor(data_args=data_args)
+    processor = SupervisedDatasetProcessor(
+        auto_processor=auto_processor,
+        tokenizer=dataset_config["tokenizer"],
+        vision_processor=vision_processor,
+        data_args=data_args,
+    )
+    processed_dataset = ProcessDataset(mix_datasets, processor)
+    
+    # debug
+    for item in processed_dataset:
+        print('results : ', item)
+        break
+
     # """
 
     # # packing
@@ -132,12 +129,11 @@ if __name__ == "__main__":
         "encode_one_turn": True,
         "use_template": True,
         "reverse": True,
+        "task_group": "/root/paddlejob/workspace/env/output/lrl/PaddleFormers/data/sft/train.jsonl",
+        "task_group_prob": "1.0",
+        "sub_dataset_type": "erniekit",
     }
 
     create_dataset(
-        task_group="/root/paddlejob/workspace/env/output/lrl/PaddleFormers/data/sft/train.jsonl",
-        task_group_prob="1.0",
-        sub_dataset_type="erniekit",
         **dataset_config,
     )
-
