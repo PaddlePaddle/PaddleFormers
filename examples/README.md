@@ -19,7 +19,7 @@ export DOWNLOAD_SOURCE=aistudio
 
 ### Paddle 权重使用说明
 
-使用 **Paddle** 格式权重，需要在配置文件（如 `sft_full.yaml`、`sft_lora.yaml`等）中手动添加以下参数，以避免与 **HuggingFace** 格式冲突：
+使用 **Paddle** 格式权重，需要在配置文件（如 `full.yaml`、`lora.yaml`等）中手动添加以下参数，以避免与 **HuggingFace** 格式冲突：
 
 ```yaml
 model_name_or_path: your_model_name_or_path
@@ -55,19 +55,19 @@ tar -xvf alpaca_demo.gz
 
 单卡
 ```bash
-python -u run_finetune.py ./config/train_full/sft_full.yaml
+python -u run_finetune.py ./config/sft/full.yaml
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/train_parallel/sft_full_parallel.yaml
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/sft/full_tp_pp.yaml
 ```
 
 ### 1.3 LoRA SFT
 
 LoRA SFT 启动命令参考
 ```bash
-python -u run_finetune.py ./config/train_lora/sft_lora.yaml
+python -u run_finetune.py ./config/sft/lora.yaml
 ```
 
 
@@ -109,19 +109,19 @@ tar -zxvf ultrafeedback_binarized.tar.gz
 
 单卡
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/train_full/dpo_full.yaml
+python -u ./alignment/dpo/run_dpo.py ./config/dpo/full.yaml
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/train_parallel/dpo_full_parallel.yaml
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/dpo/full_tp_pp.yaml
 ```
 
 ### 2.3 LoRA DPO
 
 LoRA DPO 启动命令参考
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/train_lora/dpo_lora.yaml
+python -u ./alignment/dpo/run_dpo.py ./config/dpo/lora.yaml
 ```
 
 
