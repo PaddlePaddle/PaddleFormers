@@ -50,11 +50,6 @@ from paddleformers.transformers.image_utils import (
     valid_images,
 )
 
-if version.parse(version.parse(PIL.__version__).base_version) >= version.parse("9.1.0"):
-    PILImageResampling = PIL.Image.Resampling
-else:
-    PILImageResampling = PIL.Image
-
 from typing_extensions import override
 
 if TYPE_CHECKING:
@@ -85,7 +80,7 @@ class Qwen2VLProcessor(AutoProcessor):
         self.temporal_conv_size = data_args.get("temporal_conv_size", 2)
         self.patch_factor = int(self.patch_size * self.spatial_conv_size)
         self.min_pixels = data_args.get("min_pixels", self.IMAGE_MIN_TOKEN_NUM * self.patch_factor ** 2)
-        self.max_pixels = data_args.get("max_pixels", self.IMAGE_MIN_TOKEN_NUM * self.patch_factor ** 2)
+        self.max_pixels = data_args.get("max_pixels", self.IMAGE_MAX_TOKEN_NUM * self.patch_factor ** 2)
         self.video_min_pixels = data_args.get("video_min_pixels", self.VIDEO_MIN_TOKEN_NUM * self.patch_factor ** 2)
         self.video_max_pixels = data_args.get("video_max_pixels", self.VIDEO_MAX_TOKEN_NUM * self.patch_factor ** 2)
         size = data_args.get("size", None)
@@ -110,8 +105,12 @@ class Qwen2VLProcessor(AutoProcessor):
         self.video_token = tokenizer.special_tokens_map.get(
             "video_token", "<|video_pad|>"
         )
-        # self.eos_token = tokenizer.special_tokens_map.get("eos_token", "</s>")
-        # self.sep_token = tokenizer.special_tokens_map.get("sep_token", "<|endofprompt|>")
+        self.vision_start_token = tokenizer.special_tokens_map.get(
+            "vision_start_token", "<|vision_start|>"
+        )
+        self.vision_end_token = tokenizer.special_tokens_map.get(
+            "vision_end_token", "<|vision_end|>"
+        )
 
     def split_by_tags(self, text: str, tags: list[str]=[image_placeholder, video_placeholder]):
         pattern = '|'.join(map(re.escape, tags))
@@ -497,7 +496,7 @@ class Qwen2VLProcessor(AutoProcessor):
                     )
 
                     range_tensor = np.arange(llm_grid_t).reshape(-1, 1)
-                    expanded_range = np.tile(range_tensor, (-1, llm_grid_h * llm_grid_w))
+                    expanded_range = np.tile(range_tensor, (1, llm_grid_h * llm_grid_w))
 
                     time_tensor = expanded_range * second_per_grid_t * 2
 
@@ -506,11 +505,11 @@ class Qwen2VLProcessor(AutoProcessor):
      
                     h_index = np.tile(
                         np.arange(llm_grid_h).reshape([1, -1, 1]),
-                        ([llm_grid_t, -1, llm_grid_w]),
+                        ([llm_grid_t, 1, llm_grid_w]),
                     ).flatten()
                     w_index = np.tile(
                         np.arange(llm_grid_w).reshape([1, 1, -1]),
-                        ([llm_grid_t, llm_grid_h, -1]),
+                        ([llm_grid_t, llm_grid_h, 1]),
                     ).flatten()
                     llm_pos_ids_list.append(
                         np.stack([t_index, h_index, w_index]) + text_len + st_idx
@@ -541,7 +540,7 @@ class Qwen2VLProcessor(AutoProcessor):
                     np.arange(input_ids.shape[1])
                     .reshape(1, 1, -1)
                 )
-                position_ids = np.tile(position_ids, (3, input_ids.shape[0], -1))
+                position_ids = np.tile(position_ids, (3, input_ids.shape[0], 1))
 
             return position_ids
 
@@ -570,12 +569,12 @@ class Qwen2VLProcessor(AutoProcessor):
         for part in self.split_by_tags(history_str):
             if part == self.image_placeholder:
                 num_image_tokens = image_grid_thw[image_id].prod() // merge_length
-                added_text = self.image_token * num_image_tokens
+                added_text = self.vision_start_token +  self.image_token * num_image_tokens + self.vision_end_token
                 input_id = tokenizer.encode(added_text)
                 image_id += 1
             elif part == self.video_placeholder:
                 num_video_tokens = video_grid_thw[video_id].prod() // merge_length
-                added_text = self.video_token * num_video_tokens
+                added_text = self.vision_start_token +  self.video_token * num_video_tokens + self.vision_end_token
                 input_id = tokenizer.encode(added_text)
                 video_id += 1
             else:

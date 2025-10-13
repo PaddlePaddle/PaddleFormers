@@ -714,9 +714,12 @@ class Ernie45VLProcessor(AutoProcessor):
             input_ids.extend(input_id)
             labels.extend([self.ignored_index] * len(input_id))
         
-        pixel_values = np.concatenate(
-            pixel_values, axis=0
-        )
+        if len(pixel_values) > 0:
+            pixel_values = np.concatenate(
+                pixel_values, axis=0
+            )
+        else:
+            pixel_values = np.array(pixel_values)
         vision_grid_thws = np.array(vision_grid_thws)
 
         vocab = tokenizer.get_vocab()

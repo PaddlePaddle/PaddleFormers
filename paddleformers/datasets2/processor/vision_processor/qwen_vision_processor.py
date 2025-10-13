@@ -53,7 +53,6 @@ class Qwen2VLVisionProcessor(VisionProcessor):
         self.FPS_MIN_FRAMES = data_args.video_min_frames
         self.FPS_MAX_FRAMES = data_args.video_max_frames
 
-
     def round_by_factor(self, number: int, factor: int) -> int:
         """Returns the closest integer to 'number' that is divisible by 'factor'."""
         return round(number / factor) * factor
