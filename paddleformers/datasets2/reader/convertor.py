@@ -16,13 +16,56 @@
 def erniekit_convertor(data):
     all_data = []
     for item in data:
-        each_line = dict()
-        each_line["messages"] = []
+
+        if isinstance(item["src"], str):
+            item["src"] = [item["src"]]
+        if isinstance(item["tgt"], str):
+            item["tgt"] = [item["tgt"]]
+
+        # data check
+        if len(item["src"]) == 0 or len(item["tgt"]) == 0:
+            # raise ValueError("Ignore example with empty src or empty tgt.")
+            continue
+
+        for item_str in item["src"] + item["tgt"]:
+            if len(item_str.strip()) == 0:
+                # raise ValueError("Ignore example with empty string in str / tgt field.")
+                continue
+
+        if "label" not in item:
+            item["label"] = [1] * len(item["src"])
+
+        if not (len(item["src"]) == len(item["tgt"]) == len(item["label"])):
+            # raise ValueError(
+            #     f"The length of src & tgt & label must be equal, but get len(item['src']) : {len(item['src'])}, ' len(item['tgt']) : {len(item['tgt'])}, ' len(item['label']) : {len(item['label'])}"
+            # )
+            continue
+
+        if "is_system" not in item:
+            # If is_system is 1, it indicates that the sample includes system settings
+            # and no other sample should be concatenated before it.
+            item["is_system"] = 0
+
+        if item["is_system"] == 1:
+            item["system"] = item["src"][0]
+            item["src"] = item["src"][1:]
+            item["tgt"] = item["tgt"][1:]
+            item["label"] = item["label"][1:]
+
+        # update "system"
         if "system" in item:
-            each_line["messages"].append({"role": "system", "content": item["system"]})
+            if not isinstance(item["system"], str):
+                raise ValueError("System field must be a string.")
+            item["is_system"] = 1
+
+        res = {}
+        # convert to OpenAI format
+        res["messages"] = []
+        if "system" in item:
+            res["messages"].append({"role": "system", "content": item["system"]})
         for q, a in zip(item["src"], item["tgt"]):
-            each_line["messages"].append({"role": "user", "content": q.strip()})
-            each_line["messages"].append({"role": "assistant", "content": a.strip()})
-        all_data.append(each_line)
+            res["messages"].append({"role": "user", "content": q.strip()})
+            res["messages"].append({"role": "assistant", "content": a.strip()})
+        all_data.append(res)
 
     return all_data

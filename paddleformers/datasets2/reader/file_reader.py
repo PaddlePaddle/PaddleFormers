@@ -13,11 +13,17 @@
 # limitations under the License.
 
 import os
+import json
 import collections
 from paddle.io import IterableDataset
 
 from .convertor import erniekit_convertor
 from .io import load_csv, load_json, load_jsonl, load_parquet, load_txt
+from .download_manager import HuggingFaceDownload
+
+DATA_INFO_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), "data_info.json")
+DATASET_WORKROOT = os.getenv("DATASET_WORKROOT", "/root/.cache/paddleformers")
+DATASET_DOWNLOAD_ROOT = os.path.join(DATASET_WORKROOT, "download")
 
 
 class BaseReader(IterableDataset):
@@ -45,35 +51,24 @@ class FileReader(BaseReader):
     def __iter__(self):
         ext = self._get_extension()
 
+        print('run here')
+
         # load file
         if ext not in self.loader_map:
             raise ValueError(f"Unsupported file extension: {ext}")
-        try:
-            res = self.loader_map[ext](self._file_path)
-        except Exception as e:
-            logger.warning(
-                f"Skip loading error data at line {lineno} of {self._filename}. Error message: {e}"
-            )
-            continue
+        res = self.loader_map[ext](self._file_path)
 
         # data preprocess
         if self._file_type not in self.convertor_map:
             raise ValueError(f"Unsupported file type: {self._file_type}")
-        try:
-            res = self.convertor_map[self._file_type](res)
-        except Exception as e:
-            logger.warning(
-                        f"Skip parsing error data at line {lineno} of {self._filename}. Error message: {e}"
-            )
-            continue
-
-        # ignore invalid example
-        if res is None:
-            continue
-        elif isinstance(res, list) or isinstance(ex, collections.abc.Generator):
-            yield from res
-        else:
-            yield res
+        for item in self.convertor_map[self._file_type](res):
+            # ignore invalid example
+            if item is None:
+                continue
+            elif isinstance(item, list) or isinstance(item, collections.abc.Generator):
+                yield from item
+            else:
+                yield item
 
     def _get_extension(self):
         _, ext = os.path.splitext(self._file_path)
@@ -133,66 +128,27 @@ class MultiSourceDataset(IterableDataset):
         # filter zero probability task
         tasks = [task for task in tasks if task["prob"] > 0]
         self._task_group = tasks
+        supported_type = ["erniekit", "alpaca", "sharegpt", "openai", "query-response"]
         for idx, task in enumerate(self._task_group):
             each_sub_dataset_type = sub_dataset_type[idx]
-            if hf_parser.is_hf_dataset(task["filepath"]):
-                task["dataset"] = hf_parser.create_hf_dataset(
-                    repo_id=task["filepath"],
-                    process_fn=(
-                        partial(process_fn, task_name=task["task_name"])
-                        if "task_name" in task
-                        else process_fn
-                    ),
-                    shuffle_file=shuffle_file,
-                )
-                continue
-
-            if each_sub_dataset_type == "erniekit":
-                task["dataset"] = FileDataset(
-                    task["filepath"],
-                    process_fn=(
-                        partial(process_fn, task_name=task["task_name"])
-                        if "task_name" in task
-                        else process_fn
-                    ),
-                    shuffle_file=shuffle_file,
-                )
-            elif each_sub_dataset_type in ["filelist", "glob"]:
-                task["dataset"] = FileListDataset(
-                    task["train_filelist"],
-                    file_format=each_sub_dataset_type,
-                    process_fn=(
-                        partial(process_fn, task_name=task["task_name"])
-                        if "task_name" in task
-                        else process_fn
-                    ),
-                    shuffle_file=shuffle_file,
-                    shuffle_files=shuffle_files,
-                )
-            elif each_sub_dataset_type in ["alpaca"]:
-                task["dataset"] = hf_parser.create_dataset_from_file(
+            if get_hf_dataset_config(task["filepath"]) is not None:
+                task["dataset"] = HuggingFaceReader(
                     file_path=task["filepath"],
-                    formatting="alpaca",
-                    doc_formatting="auto",
-                    process_fn=(
-                        partial(process_fn, task_name=task["task_name"])
-                        if "task_name" in task
-                        else process_fn
-                    ),
+                    file_type=each_sub_dataset_type,
                     shuffle_file=shuffle_file,
                 )
-            elif each_sub_dataset_type == "chatml":
-                # only support for function call dataset
-                task["dataset"] = FileDataset(
-                    task["filepath"],
-                    process_fn=(
-                        partial(process_fn_fc, task_name=task["task_name"])
-                        if "task_name" in task
-                        else process_fn_fc
-                    ),
+            if os.path.isdir(task["filepath"]):
+                task["dataset"] = FileListReader(
+                    file_path=task["filepath"],
+                    file_type=each_sub_dataset_type,
                     shuffle_file=shuffle_file,
                 )
-
+            elif each_sub_dataset_type in supported_type:
+                task["dataset"] = FileReader(
+                    file_path=task["filepath"],
+                    file_type=each_sub_dataset_type,
+                    shuffle_file=shuffle_file,
+                )
             else:
                 raise NotImplementedError(
                     f"Cannot support {each_sub_dataset_type} now."
@@ -222,3 +178,34 @@ class MultiSourceDataset(IterableDataset):
             except StopIteration:
                 task["iterator"] = iter(task["dataset"])
                 yield from task["iterator"]
+
+
+def get_hf_dataset_config(file_path):
+    with open(DATA_INFO_FILE) as fp:
+        hf_repo_config_map = json.load(fp)
+    hf_dataset_config = hf_repo_config_map.get(file_path, None)
+    return hf_dataset_config
+
+
+class HuggingFaceReader(BaseReader):
+    def __init__(self, file_path, file_type="alpaca", shuffle_file=True):
+        # download
+        config_map = get_hf_dataset_config(file_path)
+        if config_map is not None:
+            HuggingFaceDownload(file_path)
+            download_dir = os.path.join(DATASET_DOWNLOAD_ROOT, file_path)
+            file_name = config_map.get("file_name", "")
+            download_file_path = os.path.join(download_dir, file_name)
+            download_file_type = config_map.get("formatting", file_type)
+            if os.path.isdir(download_file_path):
+                self.file_reader = FileListReader(download_file_path, download_file_type, shuffle_file)
+            else:
+                self.file_reader = FileReader(download_file_path, download_file_type, shuffle_file)
+
+            self.file_reader.__init__()
+
+        else:
+            raise ValueError(f"Unsupported huggingface dataset {file_path}")
+
+    def read(self):
+        return self.file_reader.read()

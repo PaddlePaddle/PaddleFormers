@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .base_reader import BaseReader
-from .file_reader import FileReader, FileListReader
-from .hf_reader import HuggingFaceReader
+from .file_reader import BaseReader, FileReader, FileListReader, MultiSourceDataset, HuggingFaceReader
+from .mix_datasets import create_dataset_instance
 
 from .convertor import erniekit_convertor
 
@@ -23,5 +22,7 @@ __all__ = [
     FileReader,
     FileListReader,
     HuggingFaceReader,
+    MultiSourceDataset,
+    create_dataset_instance,
     erniekit_convertor
 ]
