@@ -60,6 +60,9 @@ class DataArguments:
     video_min_pixels: int = field(
         default=56 * 56, metadata={"help": "video adaptiveuse min-pixels"}
     )
+    size: dict = field(
+        default=None, metadata={"help": "size for resize"}
+    )
     render_timestamp: bool = field(default=False, metadata={"help": "render timestamp"})
     do_resize: bool = field(default=True, metadata={"help": "whether to resize"})
 
