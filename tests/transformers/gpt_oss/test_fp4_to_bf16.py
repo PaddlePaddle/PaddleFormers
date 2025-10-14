@@ -124,7 +124,7 @@ def test_bf16_to_fp4(tempdir):
 
 def check_weight(origin_path, new_path, atol):
     origin_file_name = "model-00008-of-00009.safetensors"
-    new_file_name = "model-00000-of-00001.safetensors"
+    new_file_name = "model-00001-of-00001.safetensors"
 
     origin_dict = load_file(os.path.join(origin_path, origin_file_name))
     for key in list(origin_dict.keys()):
@@ -139,10 +139,9 @@ def check_weight(origin_path, new_path, atol):
             continue
         else:
             new_dict.pop(key)
-
     assert len(origin_dict) == len(new_dict)
-    for key in new_dict:
-        assert key in origin_dict
+    for key in new_dict.keys():
+        assert key in origin_dict.keys()
         assert np.allclose(new_dict[key].numpy(), origin_dict[key].numpy(), atol=atol)
 
 
@@ -159,5 +158,5 @@ if __name__ == "__main__":
     test_fp4_to_bf16(tempdir)
     test_bf16_to_fp4(tempdir)
 
-    check_weight(os.path.join(tempdir, "gpt-oss-test-fp4/"), os.path.join(tempdir, "gpt-oss-test-new-fp4"), 1e-2)
-    check_weight(os.path.join(tempdir, "gpt-oss-test-bf16/"), os.path.join(tempdir, "gpt-oss-test-new-bf16"), 1e-2)
+    check_weight(os.path.join(tempdir, "gpt-oss-test-fp4/"), os.path.join(tempdir, "gpt-oss-test-new-fp4/"), 1e-2)
+    check_weight(os.path.join(tempdir, "gpt-oss-test-bf16/"), os.path.join(tempdir, "gpt-oss-test-new-bf16/"), 1e-2)
