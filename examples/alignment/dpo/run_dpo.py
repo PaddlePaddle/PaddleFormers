@@ -146,7 +146,6 @@ def main():
     model_config._attn_implementation = model_args.attn_impl
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.max_sequence_length = data_args.max_seq_len
-    model_config.use_sparse_head_and_loss_fn = model_args.use_sparse_head_and_loss_fn
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
