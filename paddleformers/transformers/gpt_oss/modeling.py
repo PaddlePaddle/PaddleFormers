@@ -167,7 +167,7 @@ class GptOssExperts(nn.Layer):
                 next_states * routing_weights.transpose([0, 1]).reshape((num_experts, batch_size, -1))[..., None]
             )
             next_states = next_states.sum(axis=0)
-        if sequence_parallel == 2:
+        if sequence_parallel:
             bs, seq_len, hidden_size = next_states.shape
             next_states = paddle.reshape_(next_states, [bs * seq_len, hidden_size])
         return next_states
