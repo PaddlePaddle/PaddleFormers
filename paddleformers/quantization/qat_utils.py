@@ -248,7 +248,7 @@ def fp8_backward(ctx, x, grad_output, quant_weight, weight_scale, quant_x, x_sca
             if SUPPORT_TE:
                 grad_output_shape = grad_output_fp8.shape
                 grad_output_fp8 = grad_output_fp8.view((-1, grad_output_fp8.shape[-1]))
-                fwd_scales = paddle.concat([x_scale.astype("float32"), weight_scale.astype("float32")])
+                fwd_scales = paddle.cat([x_scale.astype("float32"), weight_scale.astype("float32")])
                 bwd_scales = grad_output_scale[None].astype("float32")
                 input_grad, _ = fp8_gemm(
                     A=quant_weight,
@@ -296,7 +296,7 @@ def fp8_backward(ctx, x, grad_output, quant_weight, weight_scale, quant_x, x_sca
             if SUPPORT_TE:
                 quant_x = quant_x.view((-1, quant_x.shape[-1]))
                 grad_output_fp8 = grad_output_fp8.view((-1, grad_output_fp8.shape[-1]))
-                fwd_scales = paddle.concat([x_scale.astype("float32"), weight_scale.astype("float32")])
+                fwd_scales = paddle.cat([x_scale.astype("float32"), weight_scale.astype("float32")])
                 bwd_scales = grad_output_scale[None].astype("float32")
                 # FP8 gemm need k % 16 = 0
                 ALIGNMENT_SIZE = 16
@@ -307,7 +307,7 @@ def fp8_backward(ctx, x, grad_output, quant_weight, weight_scale, quant_x, x_sca
                     # Create padding zeros with matching shape and dtype
                     padding_shape = [padding_size, tensor.shape[1]]
                     padding = paddle.zeros(padding_shape, dtype=dtype)
-                    padded_tensor = paddle.concat([tensor, padding], axis=0)
+                    padded_tensor = paddle.cat([tensor, padding], axis=0)
                     return padded_tensor
 
                 if quant_x.shape[0] % ALIGNMENT_SIZE != 0:

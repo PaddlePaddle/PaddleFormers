@@ -154,7 +154,7 @@ def _test_fast_ffn():
 
                 concat_fn = np.concatenate
                 if isinstance(fuse_params[0], paddle.Tensor):
-                    concat_fn = paddle.concat
+                    concat_fn = paddle.cat
 
                 if convert_fast_ffn:
                     # fast_ffn

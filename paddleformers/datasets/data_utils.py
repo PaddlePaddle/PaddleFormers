@@ -194,6 +194,41 @@ def convert_to_input_ids(
     return input_ids, num_input_tokens
 
 
+def function_call_chat_template(tokenizer, messages, tools):
+    history = messages[:-1]
+    input_dict = dict()
+    input_dict["messages"] = history
+    if tools is not None:
+        input_dict["tools"] = tools
+    history_str = tokenizer.apply_chat_template(
+        input_dict,
+        add_generation_prompt=True,
+        tokenize=False,
+    )
+    history_len = len(history_str)
+    input_dict["messages"] = messages
+    all_str = tokenizer.apply_chat_template(
+        input_dict,
+        add_generation_prompt=False,
+        tokenize=False,
+    )
+    # (21b think model) remove generation content
+    s = "<|im_end|>\n\n<|im_start|>assistant\n<think>\n"
+    if all_str.endswith(s):
+        all_str = all_str[: -len(s)]
+    response_str = all_str[history_len:]
+    history_id = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(history_str))
+    response_id = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(response_str))
+    return [history_id, response_id]
+
+
+def postprocess_fc_sequence(tokenizer, example):
+    messages = example["messages"]
+    tools = example["tools"]
+    encoded_messages = [function_call_chat_template(tokenizer, messages, tools)]
+    return encoded_messages
+
+
 def estimate_training(train_dataset, data_args, training_args, model_args):
     """
     Estimate required training steps based on dataset.

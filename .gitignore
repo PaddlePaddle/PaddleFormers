@@ -10,7 +10,7 @@ __pycache__/
 .Python
 build/
 build*
-!scripts/regression/build.sh
+!scripts/dependence/build.sh
 develop-eggs/
 dist/
 downloads/

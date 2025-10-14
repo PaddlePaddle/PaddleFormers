@@ -30,6 +30,7 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import GptOssConfig
@@ -52,7 +53,7 @@ def _make_causal_mask(input_ids_shape, past_key_values_length):
 
     if past_key_values_length > 0:
         # [tgt_len, tgt_len + past_len]
-        mask = paddle.concat([paddle.ones([target_length, past_key_values_length], dtype="bool"), mask], axis=-1)
+        mask = paddle.cat([paddle.ones([target_length, past_key_values_length], dtype="bool"), mask], axis=-1)
 
     # [bs, 1, tgt_len, tgt_len + past_len]
     return mask[None, None, :, :].expand([batch_size, 1, target_length, target_length + past_key_values_length])
@@ -340,7 +341,7 @@ def _apply_rotary_emb(
     first_half, second_half = paddle.chunk(x.transpose([0, 2, 1, 3]), 2, axis=-1)
     first_ = first_half * cos - second_half * sin
     second_ = second_half * cos + first_half * sin
-    return paddle.concat((first_, second_), axis=-1).transpose([0, 2, 1, 3])
+    return paddle.cat((first_, second_), axis=-1).transpose([0, 2, 1, 3])
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
@@ -480,8 +481,8 @@ class GptOssAttention(nn.Layer):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
         if past_key_value is not None:
-            key_states = paddle.concat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
         attn_output, attn_weights = attention_interface(
@@ -657,21 +658,6 @@ class GptOssPreTrainedModel(PretrainedModel):
         return mappings
 
 
-def prepare_sliding_window_startend_row_indices(startend_row_indices, window_size=5):
-    if startend_row_indices is None:
-        return None
-    batch_size, num_head, seq_length, bound_num = startend_row_indices.shape
-    assert bound_num <= 2, f"bound_num should be less than or equal to 2 when use sling window, but got {bound_num}"
-    sliding_window_startend_row_indices = startend_row_indices.clone()
-    for bi in range(batch_size):
-        for hi in range(num_head):
-            for j in range(seq_length):
-                sliding_window_startend_row_indices[bi, hi, j, 0] = min(
-                    startend_row_indices[bi, hi, j, 0], window_size + j
-                )
-    return sliding_window_startend_row_indices
-
-
 @register_base_model
 class GptOssModel(GptOssPreTrainedModel):
     """
@@ -788,13 +774,11 @@ class GptOssModel(GptOssPreTrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        seq_length_with_past = seq_length
         cache_length = 0
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
         else:
             cache_length = past_key_values[0][0].shape[1]
-            seq_length_with_past += cache_length
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
@@ -807,47 +791,21 @@ class GptOssModel(GptOssPreTrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        # embed positions
-        if attn_mask_startend_row_indices is not None:
-            attention_mask = None
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            causal_mask_mapping["full_attention"] = None
-            causal_mask_mapping["sliding_attention"] = None
-            attn_mask_startend_row_indices_mapping["full_attention"] = attn_mask_startend_row_indices
-            attn_mask_startend_row_indices_mapping["sliding_attention"] = prepare_sliding_window_startend_row_indices(
-                attn_mask_startend_row_indices, window_size=self.config.sliding_window
-            )
-        else:
-            # [bs, seq_len]
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            attn_mask_startend_row_indices_mapping["full_attention"] = None
-            attn_mask_startend_row_indices_mapping["sliding_attention"] = None
-
-            # full_attention
-            causal_mask = self._prepare_decoder_attention_mask(
-                attention_mask=attention_mask,
-                input_shape=(batch_size, seq_length),
-                past_key_values_length=cache_length,
-                dtype=inputs_embeds.dtype,
-            )  # [bs, 1, seq_len, seq_len]
-            causal_mask_mapping["full_attention"] = causal_mask
-
-            # sliding_attention
-            causal_mask = self._prepare_decoder_attention_mask(
-                attention_mask=attention_mask,
-                input_shape=(batch_size, seq_length),
-                past_key_values_length=cache_length,
-                dtype=inputs_embeds.dtype,
-                sliding_window_size=self.config.sliding_window,
-            )
-            causal_mask_mapping["sliding_attention"] = causal_mask
+        # Prepare mask arguments
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+        }
+        # Create the causal mask and row indices
+        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
+            **mask_kwargs
+        )
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
@@ -963,7 +921,7 @@ def load_balancing_loss_func(
 
     if isinstance(gate_logits, tuple):
         compute_device = gate_logits[0].device
-        concatenated_gate_logits = paddle.concat([layer_gate.to(compute_device) for layer_gate in gate_logits], dim=0)
+        concatenated_gate_logits = paddle.cat([layer_gate.to(compute_device) for layer_gate in gate_logits], dim=0)
 
     routing_weights = F.softmax(concatenated_gate_logits, dim=-1)
 
@@ -1091,17 +1049,17 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
         # update position_ids
         if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
             position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
+            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
         if not is_encoder_decoder and "attention_mask" in model_kwargs:
             # TODO: support attention mask for other models
             attention_mask = model_kwargs["attention_mask"]
             if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )
             elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
                     axis=-1,
                 )[:, :, -1:, :]

@@ -257,7 +257,7 @@ def _handle_mlp_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
 
 def prepare_tensor(tensor, dst_shape, *, force_transpose=False):
     if isinstance(tensor, list):
-        t = paddle.concat(
+        t = paddle.cat(
             [
                 paddle.transpose(tensor[0], perm=[1, 0]).contiguous(),
                 paddle.transpose(tensor[1], perm=[1, 0]).contiguous(),

@@ -473,10 +473,10 @@ class AdamWLoRAPro(AdamW):
 
         n_dim = U_real.shape[0]
 
-        block_top = paddle.concat([U_real, -U_imag], axis=1)  # (n, 2n)
-        block_bot = paddle.concat([U_imag, U_real], axis=1)  # (n, 2n)
-        A_block = paddle.concat([block_top, block_bot], axis=0)  # (2n, 2n)
-        B_block = paddle.concat([CV_real, CV_imag], axis=0)  # (2n, m)
+        block_top = paddle.cat([U_real, -U_imag], axis=1)  # (n, 2n)
+        block_bot = paddle.cat([U_imag, U_real], axis=1)  # (n, 2n)
+        A_block = paddle.cat([block_top, block_bot], axis=0)  # (2n, 2n)
+        B_block = paddle.cat([CV_real, CV_imag], axis=0)  # (2n, m)
 
         F_block = paddle.linalg.solve(A_block, B_block)  # [F_real; F_imag]
 

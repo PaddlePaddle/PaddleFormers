@@ -813,14 +813,14 @@ class DeepseekV2Attention(nn.Layer):
             sin = sin[None, :, None, :]
             q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids, self.fuse_rope)
 
-            query_states = paddle.concat([q_nope, q_pe], axis=-1)
-            key_states = paddle.concat([k_nope, k_pe], axis=-1)
+            query_states = paddle.cat([q_nope, q_pe], axis=-1)
+            key_states = paddle.cat([k_nope, k_pe], axis=-1)
 
             # [bs, seq_len, num_head, head_dim]
             if past_key_value is not None:
                 # reuse k, v, self_attention
-                key_states = paddle.concat([past_key_value[0], key_states], axis=1)
-                value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+                key_states = paddle.cat([past_key_value[0], key_states], axis=1)
+                value_states = paddle.cat([past_key_value[1], value_states], axis=1)
             past_key_value = (key_states, value_states) if use_cache else None
 
             has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
@@ -1141,7 +1141,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         hidden_states = self.hnorm(hidden_states)
         nextn_hidden_state = self.enorm(nextn_hidden_state)
 
-        concat_h = paddle.concat([nextn_hidden_state, hidden_states], axis=-1)
+        concat_h = paddle.cat([nextn_hidden_state, hidden_states], axis=-1)
         hidden_states = FP8LinearFunction.apply(concat_h, self.eh_proj)
 
         layer_outputs = super(DeepseekV2MTPLayer, self).forward(
@@ -1686,7 +1686,7 @@ class DeepseekV2ModelFast(DeepseekV2PretrainedModelFast):
                     hidden_states = GatherOp.apply(hidden_states)
                     hidden_states = hidden_states.reshape([-1, seq_length, hidden_states.shape[-1]])
 
-                inputs_embeds_cur_depth = paddle.concat(
+                inputs_embeds_cur_depth = paddle.cat(
                     [inputs_embeds_ori[:, (nextn + 1) :, :], inputs_embeds_extra[:, : (nextn + 1), :]], axis=1
                 )
 
@@ -1848,7 +1848,7 @@ class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
                 / yarn_get_mscale(self.scaling_factor, self.mscale_all_dim)
             )
 
-            emb = paddle.concat((freqs, freqs), axis=-1)
+            emb = paddle.cat((freqs, freqs), axis=-1)
             self.cos_cached = emb.cos() * _mscale
             self.sin_cached = emb.sin() * _mscale
 
@@ -1919,7 +1919,7 @@ class DeepseekV2RotaryEmbedding(nn.Layer):
         freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         # [seq_len, axis]
-        emb = paddle.concat([freqs, freqs], axis=-1)
+        emb = paddle.cat([freqs, freqs], axis=-1)
         # [1, seqlen, 1, axis]
         self.cos_cached = emb.cos()[None, :, None, :]
         self.sin_cached = emb.sin()[None, :, None, :]
@@ -2137,8 +2137,8 @@ def qkv_pre_process_no_fuse(
     sin = sin[None, :, None, :]
     q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids, False)
 
-    query_states = paddle.concat([q_nope, q_pe], axis=-1)
-    key_states = paddle.concat([k_nope, k_pe], axis=-1)
+    query_states = paddle.cat([q_nope, q_pe], axis=-1)
+    key_states = paddle.cat([k_nope, k_pe], axis=-1)
 
     return query_states, key_states, value_states
 
@@ -2149,7 +2149,7 @@ def rearrange_kv(kv, k_pe, qk_nope_head_dim, num_heads):
     value_states = kv[..., qk_nope_head_dim:]
 
     k_pe = k_pe.expand([k_pe.shape[0], k_pe.shape[1], num_heads, k_pe.shape[3]])
-    key_states = paddle.concat([k_nope, k_pe], axis=-1)
+    key_states = paddle.cat([k_nope, k_pe], axis=-1)
 
     return key_states, value_states
 
@@ -2315,7 +2315,7 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                 [bsz, kv_seq_len, v_num_heads, q_head_dim - v_head_dim],
                 dtype=value_states.dtype,
             )
-            value_states_pad = paddle.concat([value_states, value_padding], axis=-1)
+            value_states_pad = paddle.cat([value_states, value_padding], axis=-1)
 
             attn_out, _, softmax_lse, seed_offset = _C_ops.flash_attn(
                 query_states,
@@ -2541,7 +2541,7 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                 [bsz, kv_seq_len, v_num_heads, q_head_dim - v_head_dim],
                 dtype=value_states.dtype,
             )
-            value_states_pad = paddle.concat([value_states, value_padding], axis=-1)
+            value_states_pad = paddle.cat([value_states, value_padding], axis=-1)
 
             with paddle.no_grad():
 
@@ -2655,7 +2655,7 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
             compressed_kv, kv_ln_weight, kv_ln_invar, d_kv_ln_t, eps
         )
 
-        d_kv_init = paddle.concat([d_compressed_kv, d_k_pe], axis=-1)
+        d_kv_init = paddle.cat([d_compressed_kv, d_k_pe], axis=-1)
 
         if hasattr(q_up_weight, "main_grad"):
 

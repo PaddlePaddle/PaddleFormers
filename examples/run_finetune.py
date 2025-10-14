@@ -63,6 +63,12 @@ def main():
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
 
+    if training_args.pre_alloc_memory > 0:
+        memory_size = int(training_args.pre_alloc_memory * 1024 * 1024 * 1024)
+        x = paddle.empty([memory_size], dtype=paddle.uint8)
+        logger.info(f"pre_alloc_memory size {x.shape}")
+        del x
+
     # Setup GPU & distributed training
     paddle.set_device(training_args.device)
     set_seed(seed=training_args.seed)
@@ -134,6 +140,8 @@ def main():
     model_config.max_sequence_length = training_args.max_seq_len
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     model_config._attn_implementation = model_args.attn_impl
+    if hasattr(model_args, "moe_subbatch_token_num") and hasattr(model_config, "moe_subbatch_token_num"):
+        model_config.moe_subbatch_token_num = model_args.moe_subbatch_token_num
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
@@ -197,6 +205,7 @@ def main():
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
+        "use_template": data_args.use_template,
     }
 
     train_dataset = create_dataset_sft(
@@ -288,6 +297,7 @@ def main():
         data_collator=data_collator,
         do_generation=data_args.eval_with_do_generation,
         data_args=data_args,
+        callbacks=callbacks,
     )
     trainable_parameters = [
         p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)

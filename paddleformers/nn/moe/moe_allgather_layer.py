@@ -270,7 +270,7 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 if self.recompute and self.training
                 else self.forward_experts(*dispatched_input)
             )
-            expert_outs = paddle.concat([e for e in expert_outs if e is not None], axis=0)  # [e*c,m]
+            expert_outs = paddle.cat([e for e in expert_outs if e is not None], axis=0)  # [e*c,m]
             expert_out_to_combine = AllGatherGroupOp.apply(expert_outs, group=self.config.moe_group)  # for test
             router_loss2 = self.calc_router_loss_and_logging(
                 router_loss,
@@ -313,7 +313,6 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             recv_counts_num_cpu = recv_counts_cpu.sum(-1)
 
             dispatched_input = self.forward_experts(*dispatched_input)
-
             if recv_size_task is not None:
                 recv_size_task.cpu_wait()
             if send_rank_this_rank_task is not None:
@@ -419,7 +418,7 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             is_group_expert=self.group_experts,
         )
         expert_id_lm = expert_id_lm.reshape(weight_lm.shape)
-        lm_weight_and_expert_id = paddle.concat([weight_lm, expert_id_lm.astype("float32")], -1)
+        lm_weight_and_expert_id = paddle.cat([weight_lm, expert_id_lm.astype("float32")], -1)
 
         if token_type_ids is None or gate_logits_mm is None:
             return (
@@ -446,7 +445,7 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             is_group_expert=False,
         )
         expert_id_mm = expert_id_mm.reshape(weight_mm.shape)
-        mm_weight_and_expert_id = paddle.concat([weight_mm, expert_id_mm.astype("float32")], -1)
+        mm_weight_and_expert_id = paddle.cat([weight_mm, expert_id_mm.astype("float32")], -1)
         weight_and_expert = paddle.where(
             (token_type_ids == 0).unsqueeze(-1),
             lm_weight_and_expert_id,
@@ -706,18 +705,18 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         for iexpert, chunk in enumerate(dispatched_input):
             if chunk is None:
                 # QuantizationLoRALinear can not call `.weight`.
-                if not isinstance(true_experts[iexpert].up_gate_proj, QuantizationLoRALinear):
+                if not isinstance(true_experts[iexpert].down_proj, QuantizationLoRALinear):
                     input_shape = [
                         1,
-                        true_experts[iexpert].up_gate_proj.weight.shape[0],
+                        true_experts[iexpert].down_proj.weight.shape[1],
                     ]
-                    input_dtype = true_experts[iexpert].up_gate_proj.weight.dtype
+                    input_dtype = true_experts[iexpert].down_proj.weight.dtype
                 else:
                     input_shape = [
                         1,
-                        true_experts[iexpert].up_gate_proj.lora_A.shape[0],
+                        true_experts[iexpert].down_proj.lora_B.shape[1],
                     ]
-                    input_dtype = true_experts[iexpert].up_gate_proj.lora_A.dtype
+                    input_dtype = true_experts[iexpert].down_proj.lora_B.dtype
 
                 chunk = paddle.zeros(
                     input_shape,

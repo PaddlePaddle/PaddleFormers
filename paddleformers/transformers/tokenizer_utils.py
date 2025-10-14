@@ -515,6 +515,54 @@ class PaddleTokenizerMixin:
                     query = self._encode_chat_inputs_openai_format(conversations)
         return query
 
+    def encode_chat_inputs_with_no_template(
+        self, conversations: List[List[str, str]] | Dict[str, Any], context_data: Dict[str, Any] = {}, **kwargs
+    ):
+        """
+        Args:
+            conversation (List[List[str, str]]): the conversation of data
+            context_data (Dict[str, Any]): the context data of conversation
+
+        Returns:
+            List[list[int], list[int]]: the pair of input_ids and target_ids
+        """
+        assert isinstance(conversations, dict)
+
+        conversation_dict = {} if "tools" not in conversations else {"tools": conversations["tools"]}
+        conversation_dict["messages"] = (
+            [conversations["messages"][0]] if conversations["messages"][0]["role"] == "system" else []
+        )
+
+        if conversations["messages"][0]["role"] == "system":
+            conversations["messages"] = conversations["messages"][1:]
+
+        cur_str = ""
+        conversation_ids = []
+        for idx in range(0, len(conversations["messages"]), 2):
+            conversation_id = []
+            conversation_dict["messages"].append(conversations["messages"][idx])
+            round_str = conversation_dict["messages"]
+            # fake template
+            tokenize_input = "".join(item["content"] for item in round_str)
+            tokenize_input = tokenize_input[len(cur_str) :]
+            input_ids = self.convert_tokens_to_ids(self.tokenize(tokenize_input))
+            conversation_id.append(input_ids)
+            cur_str = tokenize_input
+
+            if idx + 1 < len(conversations["messages"]):
+                conversation_dict["messages"].append(conversations["messages"][idx + 1])
+                round_str = conversation_dict["messages"]
+                # fake template
+                tokenize_input = "".join(item["content"] for item in round_str)
+                tokenize_input = tokenize_input[len(cur_str) :]
+                output_ids = self.convert_tokens_to_ids(self.tokenize(tokenize_input))
+                conversation_id.append(output_ids)
+
+            conversation_ids.append(conversation_id)
+            conversation_dict["messages"] = []
+            cur_str = ""
+        return conversation_ids
+
     def decode_token(
         self,
         all_input_ids: List[int],
@@ -534,7 +582,7 @@ class PaddleTokenizerMixin:
             all_input_ids[prefix_offset:], skip_special_tokens=skip_special_tokens, clean_up_tokenization_spaces=False
         )
 
-        if len(new_text) > len(prefix_text) and "�" not in prefix_text and "�" not in new_text:
+        if len(new_text) > len(prefix_text) and not new_text.endswith("�") and not new_text[:-1].endswith("�"):
             # utf-8 char at the end means it's a potential unfinished byte sequence
             # from byte fallback tokenization.
             # If it's in the middle, it's probably a real invalid id generated

@@ -102,7 +102,7 @@ jobs:
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-          timeout 40m bash scripts/unit_test/ci_unit.sh ${paddle_whl} true
+          timeout 40m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} true
           '
           
       - name: Upload Allure-reports & Logs

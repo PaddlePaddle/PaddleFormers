@@ -1726,11 +1726,11 @@ class Trainer:
                 if self.hcg._sharding_degree > 1:
                     output_tensors = []
                     paddle.distributed.all_gather(output_tensors, tensors, group=self.hcg._sharding_comm_group)
-                    tensors = paddle.concat(output_tensors).sum().reshape([1])
+                    tensors = paddle.cat(output_tensors).sum().reshape([1])
                 if self.hcg._dp_degree > 1:
                     output_tensors = []
                     paddle.distributed.all_gather(output_tensors, tensors, group=self.hcg._dp_comm_group)
-                    tensors = paddle.concat(output_tensors).sum().reshape([1])
+                    tensors = paddle.cat(output_tensors).sum().reshape([1])
                 token_list.append(tensors.item())
             if self.is_local_process_zero():
 
@@ -3434,7 +3434,7 @@ class Trainer:
             if loss is not None:
                 # losses = self._nested_gather(loss.repeat(batch_size))
                 losses = self._nested_gather(paddle.tile(loss, repeat_times=[batch_size, 1]))
-                losses_host = losses if losses_host is None else paddle.concat((losses_host, losses), axis=0)
+                losses_host = losses if losses_host is None else paddle.cat((losses_host, losses), axis=0)
             if labels is not None:
                 labels = self._pad_across_processes(labels)
                 labels = self._nested_gather(labels)

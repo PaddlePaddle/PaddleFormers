@@ -20,10 +20,10 @@ export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/unittest_logs
 cd $nlp_dir
-
 if [ ! -d "unittest_logs" ];then
     mkdir unittest_logs
 fi
+mkdir -p $log_path
 
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -32,9 +32,8 @@ install_requirements() {
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
-    python -m pip install --no-cache-dir ${paddle} --no-dependencies
+    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-
     python setup.py bdist_wheel > /dev/null
     python -m pip install  dist/p****.whl
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
@@ -123,7 +122,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
         cd ${nlp_dir}
         echo -e "\033[35m ---- Generate Allure Report  \033[0m"
         unset http_proxy && unset https_proxy
-        cp scripts/regression/gen_allure_report.py ./
+        cp scripts/unit_test/gen_allure_report.py ./
         python gen_allure_report.py > /dev/null
         echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"
     else

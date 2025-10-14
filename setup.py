@@ -186,7 +186,9 @@ try:
             where=".",
             exclude=("examples*", "tests*", "applications*", "fast_generation*", "model_zoo*"),
         ),
-        package_data={},
+        package_data={
+            "paddleformers": ["datasets/hf/data_info.json"],
+        },
         setup_requires=["cython", "numpy"],
         install_requires=REQUIRED_PACKAGES,
         entry_points={"console_scripts": ["paddleformers = paddleformers.cli:main"]},

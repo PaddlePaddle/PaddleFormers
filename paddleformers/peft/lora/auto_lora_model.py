@@ -424,9 +424,9 @@ class LoRAAutoModel(nn.Layer):
             if not weight.stop_gradient or "activation_quanter" in name or "weight_quanter" in name:
                 if concat_init_lora:
                     if "lora_A" in name:
-                        trainable_state_dict[name] = paddle.concat([weight, self.loraga_init_dict[name]], axis=1)
+                        trainable_state_dict[name] = paddle.cat([weight, self.loraga_init_dict[name]], axis=1)
                     else:
-                        trainable_state_dict[name] = paddle.concat([weight, self.loraga_init_dict[name]], axis=0)
+                        trainable_state_dict[name] = paddle.cat([weight, self.loraga_init_dict[name]], axis=0)
                 else:
                     trainable_state_dict[name] = weight
 

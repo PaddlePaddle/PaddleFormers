@@ -90,7 +90,7 @@ class QuantizationLoRALinear(QuantizationLoRABaseLinear):
     """
     Quantization lora Linear layer.
     The code implementation refers to paddlenformers.peft.lora.lora_layers.LoRALinear.
-    https://github.com/PaddlePaddle/PaddleFormers/blob/develop/paddlenformers/peft/lora/lora_layers.py
+    https://github.com/PaddlePaddle/PaddleFormers/blob/develop/paddleformers/peft/lora/lora_layers.py
     Compare to LoRALinear, this class keeps weight in INT8/INT4 with quant scale, and supports
     weight_only_linear for input tensor and origin weight(LoRA part still uses fp16/bf16).
     """
@@ -128,7 +128,7 @@ class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
     """
     Quantization lora Linear layer with mp parallelized(column).
     The code implementation refers to paddlenformers.peft.lora.lora_layers.ColumnParallelLoRALinear.
-    https://github.com/PaddlePaddle/PaddleFormers/blob/develop/paddlenformers/peft/lora/lora_layers.py#L203
+    https://github.com/PaddlePaddle/PaddleFormers/blob/develop/paddleformers/peft/lora/lora_layers.py#L203
     Compare to ColumnParallelLoRALinear, this class keeps weight in INT8/INT4 with quant scale, and supports
     weight_only_linear for input tensor and origin weight(LoRA part still uses fp16/bf16).
     """
@@ -205,7 +205,7 @@ class RowParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
     """
     Quantization lora Linear layer with mp parallelized(row).
     The code implementation refers to paddlenformers.peft.lora.lora_layers.RowParallelLoRALinear.
-    https://github.com/PaddlePaddle/PaddleFormers/blob/develop/paddlenformers/peft/lora/lora_layers.py#L99
+    https://github.com/PaddlePaddle/PaddleFormers/blob/develop/paddleformers/peft/lora/lora_layers.py#L99
     Compare to RowParallelLoRALinear, this class keeps weight in INT8/INT4 with quant scale, and supports
     weight_only_linear for input tensor and origin weight(LoRA part still uses fp16/bf16).
     """
