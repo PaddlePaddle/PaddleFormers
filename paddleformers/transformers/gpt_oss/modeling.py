@@ -115,7 +115,10 @@ class GptOssExperts(nn.Layer):
         Returns:
             paddle.Tensor
         """
-        batch_size = hidden_states.shape[0]
+        if len(hidden_states.shape) == 3:
+            batch_size = hidden_states.shape[0]
+        else:
+            batch_size = 1
         hidden_states = hidden_states.reshape([-1, self.hidden_size])  # (num_tokens, hidden_size)
         num_experts = routing_weights.shape[1]
         if self.training:
@@ -162,6 +165,9 @@ class GptOssExperts(nn.Layer):
                 next_states * routing_weights.transpose([0, 1]).reshape((num_experts, batch_size, -1))[..., None]
             )
             next_states = next_states.sum(axis=0)
+        if len(hidden_states.shape) == 2:
+            bs, seq_len, hidden_size = next_states.shape
+            next_states = paddle.reshape_(next_states, [bs * seq_len, hidden_size])
         return next_states
 
 
@@ -468,15 +474,19 @@ class GptOssAttention(nn.Layer):
         value_states = self.v_proj(hidden_states)
 
         if self.sequence_parallel:
-            target_query_shape = [batch_size, -1, self.num_heads, self.head_dim]
-            target_key_value_shape = [batch_size, -1, self.num_key_value_heads, self.head_dim]
+            if batch_size is None:
+                batch_size = (
+                    hidden_states.shape[0] * self.config.tensor_parallel_degree // self.config.max_sequence_length
+                )
+            q_len = self.config.max_sequence_length
+            target_query_shape = [batch_size, q_len, self.num_heads, self.head_dim]
+            target_key_value_shape = [batch_size, q_len, self.num_key_value_heads, self.head_dim]
         else:
             target_query_shape = [0, 0, self.num_heads, self.head_dim]
             target_key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
         query_states = query_states.reshape(target_query_shape)
         key_states = key_states.reshape(target_key_value_shape)
         value_states = value_states.reshape(target_key_value_shape)
-
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
@@ -1134,7 +1144,13 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
             logits = None
         else:
             slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-            logits = self.lm_head(hidden_states[:, slice_indices, :], tensor_parallel_output=tensor_parallel_output)
+            if len(hidden_states.shape) == 3:
+                logits = self.lm_head(
+                    hidden_states[:, slice_indices, :], tensor_parallel_output=tensor_parallel_output
+                )
+            else:
+                logits = self.lm_head(hidden_states[slice_indices, :], tensor_parallel_output=tensor_parallel_output)
+
             loss = None
             if labels is not None:
                 loss, _ = self.criterion(logits, labels)
