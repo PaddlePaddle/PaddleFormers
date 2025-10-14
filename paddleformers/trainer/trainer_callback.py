@@ -804,9 +804,7 @@ class MoEGateSpGradSyncCallBack(TrainerCallback):
             for param in model.parameters():
                 if getattr(param, "is_gate", False):
                     if hasattr(param, "main_grad"):
-                        # print("before allreduce param name:{}, main_grad:{}".format(param.name, param.main_grad), flush=True)
                         pg.allreduce(param.main_grad).wait()
-                        # print("after allreduce param name:{}, main_grad:{}".format(param.name, param.main_grad), flush=True)
                     else:
                         pg.allreduce(param.grad).wait()
 
