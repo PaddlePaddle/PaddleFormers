@@ -647,7 +647,7 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.num_subbatch_token_num = kwargs.pop("num_subbatch_token_num", 0)
+        self.moe_subbatch_token_num = kwargs.pop("moe_subbatch_token_num", 0)
 
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config
         self.tokenizer_class = kwargs.pop("tokenizer_class", None)
