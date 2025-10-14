@@ -2194,11 +2194,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         missing_keys = list(set(expected_keys) - set(loaded_keys))
         unexpected_keys = list(set(loaded_keys) - set(expected_keys))
 
-        # update both the mapping and the list of checkpoint keys to remove the missing_keys and unexpected ones
-        key_renaming_mapping = {
-            k: v for k, v in key_renaming_mapping.items() if v not in missing_keys and v not in unexpected_keys
-        }
-
         # Get reverse key mapping
         reverse_key_renaming_mapping = {v: k for k, v in key_renaming_mapping.items()}
 
@@ -2481,16 +2476,12 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         {
                             reverse_key_renaming_mapping[key]
                             for key in filter_dict_keys
-                            if key not in missing_keys and key not in unexpected_keys
+                            if key in reverse_key_renaming_mapping
                         },
                         convert_from_hf=convert_from_hf,
                         transpose_weight_keys=cls.transpose_weight_keys,
                     )
-                    state_dict = {
-                        key_renaming_mapping[key]: value
-                        for key, value in state_dict.items()
-                        if key not in mismatched_keys and key not in unexpected_keys
-                    }
+                    state_dict = {key_renaming_mapping[key]: value for key, value in state_dict.items()}
                     # convert for fusing or splitting weights
                     state_dict, resume_state_dict, fused_keys, new_keys = _fuse_or_split_keys(
                         state_dict,
