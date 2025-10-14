@@ -71,9 +71,9 @@ def save_single_safetenors(save_path, state_dict, rank, total_files_size, prefix
     )
 
 
-def test_fp4_to_bf16(tempdir):
-    load_path = os.path.join(tempdir, "gpt-oss-test-fp4")
-    save_path = os.path.join(tempdir, "gpt-oss-test-new-bf16")
+def test_fp4_to_bf16(tmpdir):
+    load_path = os.path.join(tmpdir, "gpt-oss-test-fp4")
+    save_path = os.path.join(tmpdir, "gpt-oss-test-new-bf16")
 
     safetensor_prefix = "model"
     save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
@@ -97,9 +97,9 @@ def test_fp4_to_bf16(tempdir):
     logger.info(f"Model index file saved in {save_index_file}.")
 
 
-def test_bf16_to_fp4(tempdir):
-    load_path = os.path.join(tempdir, "gpt-oss-test-bf16")
-    save_path = os.path.join(tempdir, "gpt-oss-test-new-fp4")
+def test_bf16_to_fp4(tmpdir):
+    load_path = os.path.join(tmpdir, "gpt-oss-test-bf16")
+    save_path = os.path.join(tmpdir, "gpt-oss-test-new-fp4")
     safetensor_prefix = "model"
     save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
     index = {"metadata": {"total_size": 0}, "weight_map": {}}
