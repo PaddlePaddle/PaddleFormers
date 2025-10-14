@@ -115,9 +115,11 @@ class GptOssExperts(nn.Layer):
         Returns:
             paddle.Tensor
         """
+        sequence_parallel = False
         if len(hidden_states.shape) == 3:
             batch_size = hidden_states.shape[0]
         else:
+            sequence_parallel = True
             batch_size = 1
         hidden_states = hidden_states.reshape([-1, self.hidden_size])  # (num_tokens, hidden_size)
         num_experts = routing_weights.shape[1]
@@ -165,7 +167,7 @@ class GptOssExperts(nn.Layer):
                 next_states * routing_weights.transpose([0, 1]).reshape((num_experts, batch_size, -1))[..., None]
             )
             next_states = next_states.sum(axis=0)
-        if len(hidden_states.shape) == 2:
+        if sequence_parallel == 2:
             bs, seq_len, hidden_size = next_states.shape
             next_states = paddle.reshape_(next_states, [bs * seq_len, hidden_size])
         return next_states
