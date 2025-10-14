@@ -2149,8 +2149,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         key_renaming_mapping = model._get_key_renaming_mapping(
             original_loaded_keys,
             key_mapping,
-            add_prefix_to_model,
-            remove_prefix_from_model,
         )
         loaded_keys = list(key_renaming_mapping.values())
 
@@ -2875,8 +2873,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         self,
         checkpoint_keys: list[str],
         key_mapping: Optional[dict[str, str]] = None,
-        add_prefix_to_model: bool = False,
-        remove_prefix_from_model: bool = False,
     ):
         """
         Compute a mapping between the serialized keys on disk `checkpoint_keys`, and the keys that the model
@@ -2887,16 +2883,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             This implementation is adapted from the Hugging Face Transformers library.
             Source: https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_utils.py
         """
-        prefix = self.base_model_prefix
-        _prefix = f"{prefix}."
-
-        if remove_prefix_from_model:
-            task_specific_expected_keys, base_model_keys = [], []
-            for key in self.state_dict():
-                if key.startswith(_prefix):
-                    base_model_keys.append(key[len(_prefix) :])
-                else:
-                    task_specific_expected_keys.append(key)
 
         key_renaming_mapping = {}
         for key in checkpoint_keys:
@@ -2909,24 +2895,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         break
             else:
                 new_key = key
-
-            # In this case, we need to add the prefix to the keys, to match them to the expected keys
-            if remove_prefix_from_model:
-                # small sanity check: if we find a key that is only part of the task-specific keys, we raise
-                # (if it's also part of the base model, we do not raise and assume it comes from there)
-                if new_key in task_specific_expected_keys and new_key not in base_model_keys:
-                    raise ValueError(
-                        "The state dictionary of the model you are trying to load is corrupted. Are you sure it was "
-                        "properly saved?"
-                    )
-                new_key = ".".join([prefix, new_key])
-            # In this case we need to remove the prefix from the key to match them to the expected keys, and use
-            # only the keys starting with the prefix
-            elif add_prefix_to_model:
-                if not new_key.startswith(_prefix):
-                    continue
-                new_key = new_key[len(_prefix) :]
-
             key_renaming_mapping[key] = new_key
 
         return key_renaming_mapping
