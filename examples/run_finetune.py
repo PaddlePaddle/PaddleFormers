@@ -287,7 +287,7 @@ def main():
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
 
-    if model_config.moe_subbatch_token_num > 0:
+    if training_args.sequence_parallel:
         callbacks += [MoEGateSpGradSyncCallBack()]
 
     print("callbacks:", callbacks, flush=True)
