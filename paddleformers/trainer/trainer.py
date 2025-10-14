@@ -867,6 +867,11 @@ class Trainer:
             assert len(metadata_files) == 1, f"Found multiple metadata files in {path}"
             return metadata_files[0]
 
+        def restore_storage(t):
+            t_storage = paddle.zeros_like(t)
+            t_storage._share_buffer_to(t)
+            return t
+
         model_sharded_state_dict = self.model.sharded_state_dict()
         master_weights_path = os.path.join(resume_from_checkpoint, MASTER_WEIGHT_DIC)
         opt_states_path = os.path.join(resume_from_checkpoint, OPTIMIZER_STATE_DIC)
@@ -959,6 +964,7 @@ class Trainer:
 
             for k, v in optimizer_sharded_state_dict.items():
                 source_tensor = optimizer_sharded_state_dict_pin[k]
+                restore_storage(v.local_tensor)
                 v.local_tensor.set_value(source_tensor)
 
             if isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2):
@@ -970,6 +976,7 @@ class Trainer:
                 state_dict = self.model.state_dict()
                 for k, v in state_dict.items():
                     new_v = paddle.zeros_like(v)
+                    restore_storage(v)
                     v.set_value(new_v)
 
             self._load_scheduler(resume_from_checkpoint)
