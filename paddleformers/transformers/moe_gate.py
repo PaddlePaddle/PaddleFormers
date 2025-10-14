@@ -324,6 +324,9 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         )  # [n, e]
         tmp_scores = scores_for_choice * score_mask  # [n, e]
         topk_weight, topk_idx = paddle.topk(tmp_scores, k=k, axis=-1, sorted=True)
+
+        # The bias term b is used only to adjust affinity scores for Top-K expert selection (routing); it does not affect gating.
+        # The gate applied during dispatch and to weight the FFN output is computed from the original affinity score s_{i,t} (without the bias).
         topk_weight = scores.take_along_axis(topk_idx, axis=1) if not self.training else topk_weight
 
         return topk_weight, topk_idx
@@ -509,7 +512,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         top_gate = top_gate * self.routed_scaling_factor
 
         # get topk mask
-        mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype="float32"), axis=1)
+        mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1)
         if hasattr(self.config, "seq_aux") and self.config.seq_aux:
             l_aux = self._cal_seq_aux_loss(gates_ori, self.top_k, mask)
         else:

@@ -691,7 +691,9 @@ class FP8QuantWeightCallback(TrainerCallback):
 
 
 class MoECorrectionBiasAdjustCallback(TrainerCallback):
-    """used for moe aux loss free balance"""
+    """
+    used for moe aux loss free balance
+    """
 
     def __init__(self, lr=0.001, use_mp=False):
         super().__init__()
@@ -751,7 +753,7 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
 
 class MoeExpertsGradScaleCallback(TrainerCallback):
     """
-    此 hook 用于修正专家参数的梯度被放大N倍的问题
+    This hook is used to correct the issue where the gradients of expert parameters are amplified by a factor of N.
     """
 
     def __init__(self, args):
