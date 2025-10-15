@@ -48,3 +48,6 @@ class ProcessDataset(IterableDataset):
         for item in self.mix_datasets:
             res = self.processor.preprocess_dataset(item)
             yield res
+
+    def __len__(self):
+        return self.mix_datasets.__len__()

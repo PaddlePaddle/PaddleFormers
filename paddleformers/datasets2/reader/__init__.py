@@ -21,6 +21,24 @@ from .file_reader import (
 )
 from .mix_datasets import MultiSourceDataset, create_dataset_instance
 
+# def _get_dataset_processor(
+#     data_args: "DataArguments"
+# ) -> "DatasetProcessor":
+#     r"""Return the corresponding dataset processor."""
+#     if stage == "pt":
+#         dataset_processor_class = PretrainDatasetProcessor
+#     elif stage == "sft" and not do_generate:
+        
+
+#     elif stage == "rm":
+#         dataset_processor_class = PairwiseDatasetProcessor
+#     elif stage == "kto":
+#         dataset_processor_class = FeedbackDatasetProcessor
+#     else:
+#         dataset_processor_class = UnsupervisedDatasetProcessor
+
+#     return dataset_processor_class(template=template, tokenizer=tokenizer, processor=processor, data_args=data_args)
+
 __all__ = [
     BaseReader,
     FileReader,
