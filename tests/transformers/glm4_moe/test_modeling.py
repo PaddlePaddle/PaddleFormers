@@ -382,11 +382,8 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
     base_model_class = Glm4MoeModel
 
     def test_inference_no_attention(self):
-        # model = Glm4MoeModel.from_pretrained(
-        #     "/root/paddlejob/workspace/env_run/wangyanbo05/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=True
-        # )
         model = Glm4MoeModel.from_pretrained(
-            "/root/paddlejob/workspace/env_run/wangyanbo05/tiny-random-glm4moe", convert_from_hf=False
+            "WYB27/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=False
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -398,20 +395,17 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-0.88347477, -0.92044026, -1.26066017],
-                    [-0.57637477, -0.36169809, 0.07465558],
-                    [-0.55869466, 0.54769146, -0.34098330],
+                    [1.68263435, -0.43465206, 1.29796958],
+                    [0.97458649, -1.14598989, 0.95302141],
+                    [0.49656579, -0.54560089, 1.69249272],
                 ]
             ]
         )
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
     def test_inference_with_attention(self):
-        # model = Glm4MoeModel.from_pretrained(
-        #     "PaddleFormers/tiny-random-Glm4Moe", download_hub="aistudio", convert_from_hf=True
-        # )
         model = Glm4MoeModel.from_pretrained(
-            "/root/paddlejob/workspace/env_run/wangyanbo05/tiny-random-glm4moe", convert_from_hf=False
+            "WYB27/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=False
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -423,9 +417,9 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-0.88347477, -0.92044026, -1.26066017],
-                    [-0.57637477, -0.36169809, 0.07465558],
-                    [-0.55869466, 0.54769146, -0.34098330],
+                    [1.68263435, -0.43465206, 1.29796958],
+                    [0.97458649, -1.14598989, 0.95302141],
+                    [0.49656579, -0.54560089, 1.69249272],
                 ]
             ]
         )
