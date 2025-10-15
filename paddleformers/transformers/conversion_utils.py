@@ -1251,7 +1251,10 @@ class ConversionMixin:
                     continue
                 for trans_key in transpose_weight_keys:
                     if re.search(f"\.{trans_key}\.weight$", key) or re.fullmatch(f"^{trans_key}\.weight$", key):
-                        state_dict[key] = value.transpose([-1, -2]).contiguous()
+                        if isinstance(value, np.ndarray):
+                            state_dict[key] = value.transpose([-1, -2])
+                        elif isinstance(value, paddle.Tensor):
+                            state_dict[key] = value.transpose([-1, -2]).contiguous()
         return state_dict
 
     @classmethod
