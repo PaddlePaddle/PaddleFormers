@@ -146,7 +146,7 @@ def check_weight(origin_path, new_path, atol):
 
 
 if __name__ == "__main__":
-    tempdir = "./weight/gpt-oss"
+    tempdir = "./models/gpt-oss"
     repo_id = "PaddleFormers/gpt-oss-test-fp4"
     filename = "model-00008-of-00009.safetensors"
     aistudio_download(repo_id, filename, None, False, os.path.join(tempdir, "gpt-oss-test-fp4/"))
