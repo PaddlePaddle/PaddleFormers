@@ -14,6 +14,7 @@
 
 import json
 import os
+import unittest
 
 import numpy as np
 import paddle
@@ -71,92 +72,103 @@ def save_single_safetenors(save_path, state_dict, rank, total_files_size, prefix
     )
 
 
-def test_fp4_to_bf16(tmpdir):
-    load_path = os.path.join(tmpdir, "gpt-oss-test-fp4")
-    save_path = os.path.join(tmpdir, "gpt-oss-test-new-bf16")
+class GptOssWeightChangeTest(unittest.TestCase):
+    def setUp(self):
+        self.tempdir = "./models/gpt-oss"
 
-    safetensor_prefix = "model"
-    save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
-    index = {"metadata": {"total_size": 0}, "weight_map": {}}
-    file_list = find_safetensors_files(load_path)
-    file_num = len(file_list)
-    for idx, file_name in enumerate(file_list):
-        local_dict = load_file(file_name)
+    def fp4_to_bf16(self):
+        load_path = os.path.join(self.tempdir, "gpt-oss-test-fp4")
+        save_path = os.path.join(self.tempdir, "gpt-oss-test-new-bf16")
 
-        upcast_dict(local_dict)
-        save_single_safetenors(save_path, local_dict, idx, file_num, safetensor_prefix)
-        shard_file = f"{safetensor_prefix}-{idx + 1:05d}-of-{file_num:05d}.safetensors"
-        for key in list(local_dict.keys()):
-            index["weight_map"][key] = shard_file
-            shape_ = local_dict[key].shape
-            dtype_ = local_dict[key].dtype
-            index["metadata"]["total_size"] += int(np.prod(shape_) * PADDLE_DTYPE_MAP[str(dtype_)])
+        safetensor_prefix = "model"
+        save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
+        index = {"metadata": {"total_size": 0}, "weight_map": {}}
+        file_list = find_safetensors_files(load_path)
+        file_num = len(file_list)
+        for idx, file_name in enumerate(file_list):
+            local_dict = load_file(file_name)
 
-    with open(save_index_file, "w", encoding="utf-8") as f:
-        f.write(json.dumps(index, indent=2) + "\n")
-    logger.info(f"Model index file saved in {save_index_file}.")
+            upcast_dict(local_dict)
+            save_single_safetenors(save_path, local_dict, idx, file_num, safetensor_prefix)
+            shard_file = f"{safetensor_prefix}-{idx + 1:05d}-of-{file_num:05d}.safetensors"
+            for key in list(local_dict.keys()):
+                index["weight_map"][key] = shard_file
+                shape_ = local_dict[key].shape
+                dtype_ = local_dict[key].dtype
+                index["metadata"]["total_size"] += int(np.prod(shape_) * PADDLE_DTYPE_MAP[str(dtype_)])
 
+        with open(save_index_file, "w", encoding="utf-8") as f:
+            f.write(json.dumps(index, indent=2) + "\n")
+        logger.info(f"Model index file saved in {save_index_file}.")
 
-def test_bf16_to_fp4(tmpdir):
-    load_path = os.path.join(tmpdir, "gpt-oss-test-bf16")
-    save_path = os.path.join(tmpdir, "gpt-oss-test-new-fp4")
-    safetensor_prefix = "model"
-    save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
-    index = {"metadata": {"total_size": 0}, "weight_map": {}}
-    file_list = find_safetensors_files(load_path)
-    file_num = len(file_list)
-    for idx, file_name in enumerate(file_list):
-        local_dict = load_file(file_name)
+    def bf16_to_fp4(self):
+        load_path = os.path.join(self.tempdir, "gpt-oss-test-bf16")
+        save_path = os.path.join(self.tempdir, "gpt-oss-test-new-fp4")
+        safetensor_prefix = "model"
+        save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
+        index = {"metadata": {"total_size": 0}, "weight_map": {}}
+        file_list = find_safetensors_files(load_path)
+        file_num = len(file_list)
+        for idx, file_name in enumerate(file_list):
+            local_dict = load_file(file_name)
 
-        downcast_dict(local_dict)
-        save_single_safetenors(save_path, local_dict, idx, file_num, safetensor_prefix)
-        shard_file = f"{safetensor_prefix}-{idx + 1:05d}-of-{file_num:05d}.safetensors"
-        for key in list(local_dict.keys()):
-            index["weight_map"][key] = shard_file
-            shape_ = local_dict[key].shape
-            dtype_ = local_dict[key].dtype
-            index["metadata"]["total_size"] += int(np.prod(shape_) * PADDLE_DTYPE_MAP[str(dtype_)])
+            downcast_dict(local_dict)
+            save_single_safetenors(save_path, local_dict, idx, file_num, safetensor_prefix)
+            shard_file = f"{safetensor_prefix}-{idx + 1:05d}-of-{file_num:05d}.safetensors"
+            for key in list(local_dict.keys()):
+                index["weight_map"][key] = shard_file
+                shape_ = local_dict[key].shape
+                dtype_ = local_dict[key].dtype
+                index["metadata"]["total_size"] += int(np.prod(shape_) * PADDLE_DTYPE_MAP[str(dtype_)])
 
-    with open(save_index_file, "w", encoding="utf-8") as f:
-        f.write(json.dumps(index, indent=2) + "\n")
-    logger.info(f"Model index file saved in {save_index_file}.")
+        with open(save_index_file, "w", encoding="utf-8") as f:
+            f.write(json.dumps(index, indent=2) + "\n")
+        logger.info(f"Model index file saved in {save_index_file}.")
 
+    def check_weight(self, origin_path, new_path, atol):
+        origin_file_name = "model-00008-of-00009.safetensors"
+        new_file_name = "model-00001-of-00001.safetensors"
 
-def check_weight(origin_path, new_path, atol):
-    origin_file_name = "model-00008-of-00009.safetensors"
-    new_file_name = "model-00001-of-00001.safetensors"
+        origin_dict = load_file(os.path.join(origin_path, origin_file_name))
+        for key in list(origin_dict.keys()):
+            if endswith(key, POSTFIX_UINT8_LIST):
+                continue
+            else:
+                origin_dict.pop(key)
 
-    origin_dict = load_file(os.path.join(origin_path, origin_file_name))
-    for key in list(origin_dict.keys()):
-        if endswith(key, POSTFIX_UINT8_LIST):
-            continue
-        else:
-            origin_dict.pop(key)
+        new_dict = load_file(os.path.join(new_path, new_file_name))
+        for key in list(new_dict.keys()):
+            if endswith(key, POSTFIX_UINT8_LIST):
+                continue
+            else:
+                new_dict.pop(key)
+        assert len(origin_dict) == len(new_dict)
+        for key in new_dict.keys():
+            assert key in origin_dict.keys()
+            assert np.allclose(new_dict[key].numpy(), origin_dict[key].numpy(), atol=atol)
 
-    new_dict = load_file(os.path.join(new_path, new_file_name))
-    for key in list(new_dict.keys()):
-        if endswith(key, POSTFIX_UINT8_LIST):
-            continue
-        else:
-            new_dict.pop(key)
-    assert len(origin_dict) == len(new_dict)
-    for key in new_dict.keys():
-        assert key in origin_dict.keys()
-        assert np.allclose(new_dict[key].numpy(), origin_dict[key].numpy(), atol=atol)
+    def test_change_weight(self):
+
+        repo_id = "PaddleFormers/gpt-oss-test-fp4"
+        filename = "model-00008-of-00009.safetensors"
+        aistudio_download(repo_id, filename, None, False, os.path.join(self.tempdir, "gpt-oss-test-fp4/"))
+
+        repo_id = "PaddleFormers/gpt-oss-test-bf16"
+        filename = "model-00008-of-00009.safetensors"
+        aistudio_download(repo_id, filename, None, False, os.path.join(self.tempdir, "gpt-oss-test-bf16/"))
+
+        self.fp4_to_bf16()
+        self.bf16_to_fp4()
+
+        self.check_weight(
+            os.path.join(self.tempdir, "gpt-oss-test-fp4/"), os.path.join(self.tempdir, "gpt-oss-test-new-fp4/"), 1e-2
+        )
+        self.check_weight(
+            os.path.join(self.tempdir, "gpt-oss-test-bf16/"),
+            os.path.join(self.tempdir, "gpt-oss-test-new-bf16/"),
+            1e-2,
+        )
 
 
 if __name__ == "__main__":
-    tempdir = "./models/gpt-oss"
-    repo_id = "PaddleFormers/gpt-oss-test-fp4"
-    filename = "model-00008-of-00009.safetensors"
-    aistudio_download(repo_id, filename, None, False, os.path.join(tempdir, "gpt-oss-test-fp4/"))
-
-    repo_id = "PaddleFormers/gpt-oss-test-bf16"
-    filename = "model-00008-of-00009.safetensors"
-    aistudio_download(repo_id, filename, None, False, os.path.join(tempdir, "gpt-oss-test-bf16/"))
-
-    test_fp4_to_bf16(tempdir)
-    test_bf16_to_fp4(tempdir)
-
-    check_weight(os.path.join(tempdir, "gpt-oss-test-fp4/"), os.path.join(tempdir, "gpt-oss-test-new-fp4/"), 1e-2)
-    check_weight(os.path.join(tempdir, "gpt-oss-test-bf16/"), os.path.join(tempdir, "gpt-oss-test-new-bf16/"), 1e-2)
+    unittest.main()
