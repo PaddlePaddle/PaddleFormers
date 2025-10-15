@@ -31,8 +31,13 @@ class SupervisedDatasetProcessor(DatasetProcessor):
 
         return model_input
 
-    def preprocess_dataset(self, example) -> list[dict]:
-        return self.encode_example(example)
+    def preprocess_dataset(self, examples: list[dict]) -> list[dict]:
+        model_inputs = []
+        for example in examples:
+            model_input = self.encode_example(example)
+            model_inputs.append(model_input)
+
+        return model_inputs
 
     def print_data_example(self, example: list[dict]) -> None:
         print("Example:", example)

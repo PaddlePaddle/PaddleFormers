@@ -44,6 +44,7 @@ class BaseReader(IterableDataset):
         }
         self.convertor_map = {
             "erniekit": erniekit_convertor,
+            "query_response": query_response_convertor,
         }
 
 
