@@ -280,7 +280,6 @@ class Glm4MoeAttention(nn.Layer):
         # else their shape are [bs, q_len, num_head * head_dim], n is mp parallelism.
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
-
         attn_output = self.o_proj(attn_output)
 
         if not output_attentions:
@@ -731,8 +730,9 @@ class Glm4MoeDecoderLayer(nn.Layer):
         )
         hidden_states = attn_outputs[0]
         residual = attn_outputs[1]
+        attn_idx = 2 if output_attentions else 1
         self_attn_weights = attn_outputs[2] if output_attentions else None
-        present_key_value = attn_outputs[3] if use_cache else None
+        present_key_value = attn_outputs[attn_idx + 1] if use_cache else None
 
         hidden_states = self.mlp(hidden_states)
         outputs = self.post_process(
@@ -1175,7 +1175,14 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             causal_mask = self._prepare_decoder_attention_mask(
                 attention_mask, hidden_states.shape[:2], cache_length, hidden_states.dtype
             )
+        elif attn_mask_startend_row_indices is None:
+            # Use all-True mask when there's no attention_mask and no special indices needed
+            attention_mask = paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
+            causal_mask = self._prepare_decoder_attention_mask(
+                attention_mask, hidden_states.shape[:2], cache_length, hidden_states.dtype
+            )
         else:
+            # No causal_mask needed when special indices are present
             causal_mask = None
 
         if position_ids is None:
