@@ -80,6 +80,7 @@ class UnifiedCheckpointOption(ExplicitEnum):
     REMOVE_MASTER_WEIGHT = "remove_master_weight"
     ASYNC_SAVE = "async_save"
     IGNORE_MERGE_OPTIMIZER = "ignore_merge_optimizer"
+    GATHER_SPLIT_PARAM = "gather_split_param"
 
 
 def unwrap_optimizer(optimizer):

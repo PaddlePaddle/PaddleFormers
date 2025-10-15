@@ -28,6 +28,7 @@ from paddleformers.trainer import (
     IntervalStrategy,
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
+    MoEGateSpGradSyncCallBack,
     PdArgumentParser,
     get_last_checkpoint,
     set_seed,
@@ -140,8 +141,6 @@ def main():
     model_config.max_sequence_length = training_args.max_seq_len
     model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     model_config._attn_implementation = model_args.attn_impl
-    if hasattr(model_args, "moe_subbatch_token_num") and hasattr(model_config, "moe_subbatch_token_num"):
-        model_config.moe_subbatch_token_num = model_args.moe_subbatch_token_num
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
@@ -285,6 +284,9 @@ def main():
 
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
+
+    if training_args.sequence_parallel:
+        callbacks += [MoEGateSpGradSyncCallBack()]
 
     print("callbacks:", callbacks, flush=True)
     trainer = SFTTrainer(

@@ -14,7 +14,6 @@
 
 import paddle
 import paddle.nn as nn
-from paddle.incubate.nn.functional import fused_rms_norm_ext
 
 from ..generation.configuration_utils import PretrainedConfig
 from ..utils.log import logger
@@ -30,6 +29,12 @@ except ImportError:
     def mark_as_sequence_parallel_parameter(parameter):
         return parameter
 
+
+try:
+    from paddle.incubate.nn.functional import fused_rms_norm_ext
+except ImportError:
+    logger.warning_once("Fail to import fused_rms_norm_ext!")
+    fused_rms_norm_ext = None
 
 __all__ = ["Norm"]
 
