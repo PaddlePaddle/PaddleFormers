@@ -1,33 +1,32 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-import json
 import numpy as np
-from pprint import pprint
-from paddleformers.datasets2.processor.vision_processor import Qwen2VLVisionProcessor
-from paddleformers.datasets2.processor.auto_processor import Qwen2VLProcessor
-from paddleformers.transformers import AutoTokenizer
-from paddleformers.hparams.data_args import DataArguments
-from paddleformers.datasets2.processor import SupervisedDatasetProcessor, ProcessDataset
-from paddleformers.datasets2.reader.mix_datasets import MultiSourceDataset, create_dataset_instance
-from paddleformers.transformers import AutoTokenizer
-
 from paddle.io import IterableDataset
 
-class SFTDataSet(IterableDataset):
+from paddleformers.datasets2.processor import SupervisedDatasetProcessor
+from paddleformers.datasets2.processor.auto_processor import Qwen2VLProcessor
+from paddleformers.datasets2.processor.vision_processor import Qwen2VLVisionProcessor
+from paddleformers.datasets2.reader.mix_datasets import (
+    MultiSourceDataset,
+    create_dataset_instance,
+)
+from paddleformers.hparams.data_args import DataArguments
+from paddleformers.transformers import AutoTokenizer
 
+
+class SFTDataSet(IterableDataset):
     def __init__(self, **dataset_config):
         # self.reader = dataset_config["data_reader"]
         # self.processor = dataset_config["data_processor"]
@@ -54,12 +53,8 @@ class SFTDataSet(IterableDataset):
             video_min_frames=4,
             video_max_frames=768,
             render_timestamp=True,
-        )  
-        auto_processor = Qwen2VLProcessor(data_args=data_args)
-        tokenizer = AutoTokenizer.from_pretrained(
-            "/root/paddlejob/workspace/env/output/lrl/PaddleFormers/Qwen3-0.6B-base",
-            trust_remote_code=True,    
         )
+        auto_processor = Qwen2VLProcessor(data_args=data_args)
         vision_processor = Qwen2VLVisionProcessor(data_args=data_args)
         self.processor = SupervisedDatasetProcessor(
             auto_processor=auto_processor,
@@ -67,41 +62,6 @@ class SFTDataSet(IterableDataset):
             vision_processor=vision_processor,
             data_args=data_args,
         )
-
-        # """
-
-        # # packing
-        # if dataset_config["packing"] == true:
-        #     dataset = dataset.map(
-        #         Packing_processor,
-        #         **kwargs,
-        #     )
-        # else:
-        #     dataset = dataset = dataset.map(
-        #         NoPacking_processor,
-        #         **kwargs,
-        #     )
-
-        # # sampler
-        # Sampler = _get_sampler(dataset_config)
-        # dataset = IterDataset(
-        #     Sampler(
-        #         dataset,
-        #         **kwargs,
-        #     )
-        # )
-        # return dataset
-
-        # dataset_loader = _get_dataset_loader(dataset_config)  # 默认MultiSourceDataset
-        # dataset = dataset_loader(dataset_config)
-
-        # # data processor
-        # dataset = _get_preprocessed_dataset(dataset, dataset_config)
-
-        # """
-        # dataset_processor = _get_dataset_processor(
-        #     data_args, stage, template, tokenizer, processor, do_generate=(training_args.predict_with_generate and is_eval)
-        # )
 
     def __len__(self):
         return self.mix_datasets.__len__()
@@ -115,21 +75,12 @@ class SFTDataSet(IterableDataset):
 
             yield res
 
-            # # packing
-            # packed_dataset = PackingDataset(processed_dataset, **dataset_config)
-
-            # for item in packed_dataset:
-            #     print(item)
-            #     break
-
-            # return packed_dataset
-
 
 class SFTPackingDataset(IterableDataset):
     def __init__(self, processed_dataset, **dataset_config):
         self.processed_dataset = processed_dataset
-        self.packing = dataset_config['packing']
-        self.greedy_intokens = dataset_config['greedy_intokens']
+        self.packing = dataset_config["packing"]
+        self.greedy_intokens = dataset_config["greedy_intokens"]
 
         self.estimate = False
         # The number of valid samples and skipped samples in estimation
@@ -143,7 +94,7 @@ class SFTPackingDataset(IterableDataset):
         #     self.max_estimate_samples = len(self.mix_datasets)
 
         self.max_seq_len = dataset_config["max_seq_len"]
-    
+
     def __iter__(self):
 
         dataset_iterator = iter(self.processed_dataset)
@@ -160,7 +111,7 @@ class SFTPackingDataset(IterableDataset):
                     continue
                 if self.estimate:
                     self.used_samples += actual_example_num
-                batch_sequence, cur_len = [sequence], len(sequence['input_ids'])
+                batch_sequence, cur_len = [sequence], len(sequence["input_ids"])
                 yield batch_sequence
 
                 if self.estimate:
@@ -185,12 +136,12 @@ class SFTPackingDataset(IterableDataset):
                         continue
                     if self.estimate:
                         self.used_samples += actual_example_num
-                    if cur_len + len(sequence['input_ids']) <= self.max_seq_len:
+                    if cur_len + len(sequence["input_ids"]) <= self.max_seq_len:
                         batch_sequence.append(sequence)
-                        cur_len += len(sequence['input_ids'])
+                        cur_len += len(sequence["input_ids"])
                     else:
                         yield batch_sequence
-                        batch_sequence, cur_len = [sequence], len(sequence['input_ids'])
+                        batch_sequence, cur_len = [sequence], len(sequence["input_ids"])
 
                     if self.estimate:
                         self.used_estimate_samples += actual_example_num
@@ -273,9 +224,9 @@ class SFTPackingDataset(IterableDataset):
 
             max_left_index = left_len.argmax()
             # Put the current sequence into the largest left space valid pack.
-            if len(sequence['input_ids']) <= left_len[max_left_index]:
+            if len(sequence["input_ids"]) <= left_len[max_left_index]:
                 generate_packs[max_left_index].append(sequence)
-                left_len[max_left_index] -= len(sequence['input_ids'])
+                left_len[max_left_index] -= len(sequence["input_ids"])
                 if self.estimate:
                     self.used_samples += actual_example_num_list[index]
                 index += 1
