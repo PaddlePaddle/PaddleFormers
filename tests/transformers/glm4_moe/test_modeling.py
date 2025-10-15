@@ -383,7 +383,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
 
     def test_inference_no_attention(self):
         model = Glm4MoeModel.from_pretrained(
-            "WYB27/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=False
+            "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=False
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -405,7 +405,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
 
     def test_inference_with_attention(self):
         model = Glm4MoeModel.from_pretrained(
-            "WYB27/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=False
+            "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=False
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
