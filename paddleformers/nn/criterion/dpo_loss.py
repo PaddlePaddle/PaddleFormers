@@ -39,6 +39,12 @@ def dpo_preprocess_inputs(self, logits, labels):
     return logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y
 
 
+def loss_impl(self, logits, labels):
+    logits = logits.cast("float32")
+    loss = self.loss_func(logits, labels)
+    return loss
+
+
 def dpo_logps(
     self: nn.Layer,
     logits,
@@ -121,24 +127,23 @@ def dpo_logps(
             logits = logits[0]
         elif isinstance(logits, CausalLMOutputWithPast):
             logits = logits.logits
-        logits = logits.astype("float32")
 
         if logits.dim() == 2 and labels.dim() == 2:
             logits = logits.unsqueeze(0)
         elif logits.dim() == 3 and labels.dim() == 1:
             labels = labels.unsqueeze(0)
+
         if self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
             sb_loss_func = subbatch(
-                self.loss_func,
-                [0, 1],
-                [1, 1],
-                self.loss_subbatch_sequence_length,
-                1,
+                loss_impl,
+                arg_idx=[1, 2],
+                axis=[1, 1],
+                bs=self.loss_subbatch_sequence_length,
+                out_idx=1,
             )
-
-            per_token_logps = -sb_loss_func(logits, labels.unsqueeze(-1))
+            per_token_logps = -sb_loss_func(self, logits, labels.unsqueeze(-1))
         else:
-            per_token_logps = -self.loss_func(logits, labels.unsqueeze(-1))
+            per_token_logps = -loss_impl(self, logits, labels.unsqueeze(-1))
 
     if len(response_indexs.shape) == 3:
         response_indexs = response_indexs[0]
