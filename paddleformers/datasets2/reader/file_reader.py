@@ -19,7 +19,7 @@ import random
 
 from paddle.io import IterableDataset
 
-from .convertor import erniekit_convertor
+from .convertor import erniekit_convertor, query_response_convertor
 from .download_manager import HuggingFaceDownload
 from .io import load_csv, load_json, load_jsonl, load_parquet, load_txt
 
