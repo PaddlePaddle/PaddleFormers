@@ -135,14 +135,8 @@ class ModelArguments:
         metadata={"help": "virtual_pp_degree"},
     )
     pp_seg_method: str = field(
-        default="layer:Ernie4_5_DecoderLayer|ErnieDecoderLayer|EmptyLayer",
-        metadata={
-            "help": (
-                "The method used to segment the pipeline layers among pipeline stages. "
-                "Possible values include `layer:Ernie4_5_DecoderLayer`, "
-                "`layer:Ernie4_5_DecoderLayer|ErnieDecoderLayer|Empty`, `uniform`, `[0, 30, 59]`."
-            )
-        },
+        default="layer:DecoderLayer|EmptyLayer",
+        metadata={"help": ("The method used to segment the pipeline layers among pipeline stages. ")},
     )
     tensor_parallel_output: bool = field(
         default=True,

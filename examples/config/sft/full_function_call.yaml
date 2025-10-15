@@ -18,6 +18,8 @@ loss_subbatch_sequence_length: 8192
 
 ### finetuning
 # base
+stage: SFT
+fine_tuning: full
 seed: 23
 do_train: true
 do_eval: true
