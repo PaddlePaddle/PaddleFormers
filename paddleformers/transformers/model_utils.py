@@ -2126,13 +2126,17 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         remove_prefix_from_model = not has_prefix_module and expects_prefix_module
         add_prefix_to_model = has_prefix_module and not expects_prefix_module
 
-        # Find the key names that the model expects from the serialized keys
-        original_loaded_keys = copy.deepcopy(loaded_keys)
-        key_renaming_mapping = model._get_key_renaming_mapping(
-            original_loaded_keys,
-            key_mapping,
-        )
-        loaded_keys = list(key_renaming_mapping.values())
+        # Find the key names that the model expects from the serialized keys in VLMs
+        if key_mapping is not None:
+            original_loaded_keys = copy.deepcopy(loaded_keys)
+            key_renaming_mapping = model._get_key_renaming_mapping(
+                original_loaded_keys,
+                key_mapping,
+            )
+            loaded_keys = list(key_renaming_mapping.values())
+
+            # Get reverse key mapping
+            reverse_key_renaming_mapping = {v: k for k, v in key_renaming_mapping.items()}
 
         if remove_prefix_from_model:
             _prefix = f"{prefix}."
@@ -2174,9 +2178,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         missing_keys = list(set(expected_keys) - set(loaded_keys))
         unexpected_keys = list(set(loaded_keys) - set(expected_keys))
 
-        # Get reverse key mapping
-        reverse_key_renaming_mapping = {v: k for k, v in key_renaming_mapping.items()}
-
         # Optimize for skip unused shard files for supper large model
         if sharded_metadata is not None:
             assert isinstance(resolved_archive_file, list)
@@ -2188,16 +2189,18 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 origin_expected_keys = [k.replace("quant_weight", "weight") for k in expected_keys]
                 expected_keys_set = set(expected_keys + origin_expected_keys)
 
-            for file in resolved_archive_file:
-                filename = os.path.split(file)[-1]
+            if key_mapping is not None:
                 # Determine the precise set of original checkpoint keys that are actually needed for the current file.
                 # This set will be used to identify which sharded checkpoint files are relevant and must be loaded.
-                original_expected_key_set = {
+                expected_keys_set = {
                     reverse_key_renaming_mapping[key]
-                    for key in expected_keys_set
+                    for key in list(expected_keys_set)
                     if key not in missing_keys and key not in unexpected_keys
                 }
-                if not original_expected_key_set.isdisjoint(set(sharded_metadata["file_map"][filename])):
+
+            for file in resolved_archive_file:
+                filename = os.path.split(file)[-1]
+                if not expected_keys_set.isdisjoint(set(sharded_metadata["file_map"][filename])):
                     new_archive_file.append(file)
                 else:
                     skip_archive_file.append(filename)
@@ -2457,11 +2460,14 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                             reverse_key_renaming_mapping[key]
                             for key in filter_dict_keys
                             if key in reverse_key_renaming_mapping
-                        },
+                        }
+                        if key_mapping is not None
+                        else filter_dict_keys,
                         convert_from_hf=convert_from_hf,
                         transpose_weight_keys=cls.transpose_weight_keys,
                     )
-                    state_dict = {key_renaming_mapping[key]: value for key, value in state_dict.items()}
+                    if key_mapping is not None:
+                        state_dict = {key_renaming_mapping[key]: value for key, value in state_dict.items()}
                     # convert for fusing or splitting weights
                     state_dict, resume_state_dict, fused_keys, new_keys = _fuse_or_split_keys(
                         state_dict,
@@ -2650,7 +2656,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             logger.warning("`load_state_as_np` is deprecated,  please delete it!")
 
         key_mapping = kwargs.pop("key_mapping", None)
-        # Load models with hardcoded key mapping on class for VLMs only, to keep BC and standardize model
         if key_mapping is None and any(
             allowed_name in class_name.__name__.lower() for class_name in cls.__mro__[:-1] for allowed_name in VLMS
         ):
