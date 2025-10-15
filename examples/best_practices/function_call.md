@@ -90,17 +90,17 @@ Demo data for function call training:
             {"role": "user", "content": "Hello, can you tell me how cold San Francisco is today?"},
             {
                 "non_preferred_output": {
-                    "role": "assistant", 
+                    "role": "assistant",
                     "content": "It is not particularly cold in San Francisco today."
-                }, 
+                },
                 "preferred_output": {
-                    "role": "assistant", 
-                    "content": "<think>I need to call function to get temperature info of SF.</think>", 
+                    "role": "assistant",
+                    "content": "<think>I need to call function to get temperature info of SF.</think>",
                     "tool_calls": [
                         {
-                            "type": "function", 
+                            "type": "function",
                             "function": {
-                                "name": "get_temperature", 
+                                "name": "get_temperature",
                                 "arguments": {"area": "San Francisco"}
                             }
                         }
@@ -120,7 +120,7 @@ Demo data for function call training:
 
 ## 训练
 - 训练脚本请参考：[训练脚本](../README.md)
-- 训练配置请参考：[SFT 训练配置](../config/fc/sft_full_fc.yaml)，[DPO 训练配置](../config/fc/dpo_full_fc.yaml)
+- 训练配置请参考：[SFT 训练配置](../config/sft/full_function_call.yaml)，[DPO 训练配置](../config/dpo/full_function_call.yaml)
 
 ## 推理
 

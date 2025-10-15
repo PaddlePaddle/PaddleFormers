@@ -19,7 +19,7 @@ export DOWNLOAD_SOURCE=aistudio
 
 ### Paddle 权重使用说明
 
-使用 **Paddle** 格式权重，需要在配置文件（如 `sft_full.yaml`、`sft_lora.yaml`等）中手动添加以下参数，以避免与 **HuggingFace** 格式冲突：
+使用 **Paddle** 格式权重，需要在配置文件（如 `full.yaml`、`lora.yaml`等）中手动添加以下参数，以避免与 **HuggingFace** 格式冲突：
 
 ```yaml
 model_name_or_path: your_model_name_or_path
@@ -48,26 +48,26 @@ save_to_hf: false
 
 ```shell
 wget https://bj.bcebos.com/paddlenlp/datasets/examples/alpaca_demo.gz
-tar -xvf alpaca_demo.gz
+mkdir -p data/sft && tar -xf alpaca_demo.gz -C data/sft/ --strip-components=1
 ```
 
 ### 1.2 全参 SFT
 
 单卡
 ```bash
-python -u run_finetune.py ./config/sft_full.yaml
+python -u run_finetune.py ./config/sft/full.yaml
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/sft_full.yaml
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/sft/full_tp_pp.yaml
 ```
 
 ### 1.3 LoRA SFT
 
 LoRA SFT 启动命令参考
 ```bash
-python -u run_finetune.py ./config/sft_lora.yaml
+python -u run_finetune.py ./config/sft/lora.yaml
 ```
 
 
@@ -102,26 +102,26 @@ python -u run_finetune.py ./config/sft_lora.yaml
 
 ```bash
 wget https://bj.bcebos.com/paddlenlp/datasets/examples/ultrafeedback_binarized.tar.gz
-tar -zxvf ultrafeedback_binarized.tar.gz
+mkdir -p data/dpo && tar -zxf ultrafeedback_binarized.tar.gz -C data/dpo/ --strip-components=1
 ```
 
 ### 2.2 全参 DPO
 
 单卡
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/dpo_full.yaml
+python -u ./alignment/dpo/run_dpo.py ./config/dpo/full.yaml
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/dpo_full.yaml
+python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/dpo/full_tp_pp.yaml
 ```
 
 ### 2.3 LoRA DPO
 
 LoRA DPO 启动命令参考
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/dpo_lora.yaml
+python -u ./alignment/dpo/run_dpo.py ./config/dpo/lora.yaml
 ```
 
 

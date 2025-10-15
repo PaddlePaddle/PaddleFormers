@@ -144,6 +144,8 @@ def main():
         dtype=dtype,
     )
     model_config._attn_implementation = model_args.attn_impl
+    model_config.pp_seg_method = model_args.pp_seg_method
+    model_config.max_sequence_length = data_args.max_seq_len
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
@@ -152,6 +154,8 @@ def main():
             model_args.model_name_or_path,
             dtype=dtype,
         )
+        ref_model_config.pp_seg_method = model_args.pp_seg_method
+        ref_model_config.max_sequence_length = data_args.max_seq_len
         ref_model_config._attn_implementation = model_args.attn_impl
 
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)

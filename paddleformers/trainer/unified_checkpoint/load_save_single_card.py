@@ -41,7 +41,7 @@ from ...utils.log import logger
 from ...utils.nested import nested_copy
 
 if is_safetensors_available():
-    from safetensors.numpy import save_file as safe_save_file
+    from safetensors.paddle import save_file as safe_save_file
 
 from .utils import (
     FP32_MASTER,
