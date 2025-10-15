@@ -30,21 +30,21 @@ from paddle.io import IterableDataset
 class SFTDataSet(IterableDataset):
 
     def __init__(self, **dataset_config):
-        self.reader = dataset_config["data_reader"]
-        self.processor = dataset_config["data_processor"]
+        # self.reader = dataset_config["data_reader"]
+        # self.processor = dataset_config["data_processor"]
 
         # data loader
         multi_source_dataset = MultiSourceDataset(**dataset_config)
 
         # data mix
-        mix_datasets = create_dataset_instance(
+        self.mix_datasets = create_dataset_instance(
             dataset_config["mix_strategy"],
             multi_source_dataset,
             **dataset_config,
         )
 
         # debug
-        for item in mix_datasets:
+        for item in self.mix_datasets:
             print(item)
             break
 
@@ -62,7 +62,7 @@ class SFTDataSet(IterableDataset):
             trust_remote_code=True,    
         )
         vision_processor = Qwen2VLVisionProcessor(data_args=data_args)
-        processor = SupervisedDatasetProcessor(
+        self.processor = SupervisedDatasetProcessor(
             auto_processor=auto_processor,
             tokenizer=dataset_config["tokenizer"],
             vision_processor=vision_processor,
@@ -146,5 +146,8 @@ if __name__ == "__main__":
         "sub_dataset_type": "erniekit",
     }
 
-    train_dataset = SFTDataSet(dataset_config)
+    train_dataset = SFTDataSet(**dataset_config)
 
+    for item in train_dataset:
+        print(item)
+        break
