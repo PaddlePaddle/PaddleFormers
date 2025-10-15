@@ -54,6 +54,14 @@ class DPOTrainingArguments(TrainingArguments):
         metadata={"help": "Flag indicating whether to use the intermediate API for model."},
     )
     num_hidden_layers: int = field(default=2, metadata={"help": "The number of hidden layers in the network model."})
+    use_sparse_head_and_loss_fn: bool = field(
+        default=False,
+        metadata={"help": "Whether to use sparse indexing for loss calculation."},
+    )
+    use_fused_head_and_loss_fn: bool = field(
+        default=False,
+        metadata={"help": "Whether to use fused kernel to calculate lm head and loss."},
+    )
 
     def __post_init__(self):
         super().__post_init__()
@@ -162,3 +170,8 @@ class DPOModelArgument:
 
     # Attention
     attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
+
+    # pp
+    pp_seg_method: Optional[str] = field(
+        default="layer:DecoderLayer|EmptyLayer", metadata={"help": "PP Segmentation Method"}
+    )
