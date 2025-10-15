@@ -21,7 +21,7 @@ import paddle.distributed as dist
 from paddle import Tensor, nn
 from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 from paddle.nn import functional as F
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -393,6 +393,11 @@ class Glm4MoeMoE(nn.Layer):
             config.tensor_parallel_degree = 1
         super().__init__()
         self.config = config
+        self.sequence_parallel = config.sequence_parallel
+        # if sequence_parallel is True, expert Linear will call ColumnParallelLinear instead of ColumnSequenceParallelLinear
+        if self.sequence_parallel and config.tensor_parallel_degree > 1:
+            config = deepcopy(config)
+            config.sequence_parallel = False
         self.experts = nn.LayerList(
             [
                 Glm4MoeMLP(
@@ -437,9 +442,13 @@ class Glm4MoeMoE(nn.Layer):
     def forward(self, hidden_states):
         residuals = hidden_states
         orig_shape = hidden_states.shape
+        if self.sequence_parallel:
+            hidden_states = GatherOp.apply(hidden_states)
         topk_indices, topk_weights = self.gate(hidden_states)
         hidden_states = hidden_states.reshape((-1, hidden_states.shape[-1]))
         hidden_states = self.moe(hidden_states, topk_indices, topk_weights)
+        if self.sequence_parallel:
+            hidden_states = ScatterOp.apply(hidden_states)
         hidden_states = paddle.reshape(hidden_states, orig_shape)
         hidden_states = hidden_states + self.shared_experts(residuals)
         return hidden_states

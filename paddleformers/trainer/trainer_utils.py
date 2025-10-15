@@ -68,6 +68,19 @@ __all__ = [
 ]
 
 
+def mock_offload_optimizer():
+    """
+    mock offload optimizer
+    """
+    try:
+        from paddleformers.trainer.utils.offload_optimizer import hack_offload_optimizer
+
+        hack_offload_optimizer()
+        logger.warning("hack_offload_optimizer called.")
+    except ImportError:
+        logger.warning("hack_offload_optimizer is not imported")
+
+
 def log_trainer_start():
     if "MAIN_PROCESS_STARTED" not in os.environ:
         start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())

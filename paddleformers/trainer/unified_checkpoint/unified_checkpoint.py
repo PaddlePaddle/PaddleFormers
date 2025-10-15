@@ -337,7 +337,7 @@ class UnifiedCheckpointHandler:
             dict: optimizer state dict
         """
 
-        if is_sharding_split_param_mode(self.args):
+        if is_sharding_split_param_mode(self.args) and "gather_split_param" in self.args.unified_checkpoint_config:
             return load_non_merge_optimizer_with_split_param(
                 self.args, model, optimizer, resume_from_checkpoint, ckpt_quant_stage
             )
@@ -435,7 +435,7 @@ class UnifiedCheckpointHandler:
             save_single_card_optimizer(model, optimizer, output_dir)  # no need to save signal
             return
 
-        if is_sharding_split_param_mode(self.args):
+        if is_sharding_split_param_mode(self.args) and "gather_split_param" in self.args.unified_checkpoint_config:
             optim_state_dict, master_weights = gather_splited_param_for_optimizer(
                 optimizer, self.args.ckpt_quant_stage if "quant_reach_limit" not in infohub else "O0"
             )

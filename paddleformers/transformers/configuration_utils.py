@@ -302,6 +302,7 @@ class LlmMetaConfig:
 
     moe_attributes = [
         ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
+        ("using_fake_gate", bool, False, "Whether to fake gate."),
     ]
 
     @classmethod
@@ -647,7 +648,8 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.num_subbatch_token_num = kwargs.pop("num_subbatch_token_num", 0)
+        self.moe_subbatch_token_num = kwargs.pop("moe_subbatch_token_num", 0)
+        self.using_fake_gate = kwargs.pop("using_fake_gate", False)
 
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config
         self.tokenizer_class = kwargs.pop("tokenizer_class", None)

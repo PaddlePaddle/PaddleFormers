@@ -7,7 +7,7 @@ eval_dataset_path: ./data/sft/dev.json
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 num_samples_each_epoch: 6000000
-packing: false
+packing: true
 mix_strategy: concat
 
 ### model
@@ -18,6 +18,8 @@ lora_rank: 8
 
 ### finetuning
 # base
+stage: SFT
+fine_tuning: lora
 seed: 23
 do_train: true
 do_eval: true
@@ -33,7 +35,7 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3_hf_0p6b_lora_ckpts
+output_dir: ./checkpoints/qwen3_hf_0p6b_lora_ckpts_parallel
 disable_tqdm: true
 eval_accumulation_steps: 16
 
@@ -42,9 +44,10 @@ warmup_steps: 20
 learning_rate: 1.0e-4
 
 # performance
-tensor_parallel_degree: 1
-pipeline_parallel_degree: 1
-sharding: stage2
+tensor_parallel_degree: 2
+pipeline_parallel_degree: 2
+sequence_parallel: true
+sharding: stage1
 recompute: true
 bf16: true
 fp16_opt_level: O2

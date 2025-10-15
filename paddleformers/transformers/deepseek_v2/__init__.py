@@ -50,12 +50,11 @@ import_structure = {
         "DeepseekV2DynamicNTKScalingRotaryEmbedding",
         "DeepseekV2MLP",
         "yarn_get_mscale",
-        "DeepseekV2LMHead",
         "DeepseekV2DecoderLayer",
-        "DeepseekV2PretrainingCriterion",
         "yarn_find_correction_range",
         "get_triangle_upper_mask",
         "DeepseekV2LinearScalingRotaryEmbedding",
+        "DeepseekV2ForCausalLMPipe",
     ],
     "modeling_auto": [
         "DeepseekV2LMHeadAuto",
@@ -63,7 +62,6 @@ import_structure = {
         "DeepseekV2ModelAuto",
         "DeepseekV2PretrainedModelAuto",
     ],
-    "modeling_pp": ["DeepseekV2ForCausalLMPipe"],
     "mfu_utils": ["DeepSeekProjection"],
     "kernel": [
         "act_quant",

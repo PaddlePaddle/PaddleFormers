@@ -114,6 +114,10 @@ jobs:
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           source $work_dir/../../../proxy
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
+          echo "work_dir = ${work_dir}"
+          cp -r ${work_dir}/../../../models ./models
+          echo "Check models:"
+          ls -l ./models
           timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl}
           '
           

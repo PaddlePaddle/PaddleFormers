@@ -146,3 +146,6 @@ paddle.Tensor.__call__ = enhance_init
 paddle.to_tensor = enhance_to_tensor
 paddle.core.eager.Tensor.set_value = enhance_set_value
 paddle.Tensor.numel = _numel
+
+if not hasattr(paddle, "cat"):
+    paddle.cat = paddle.concat

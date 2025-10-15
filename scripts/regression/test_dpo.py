@@ -24,7 +24,7 @@ import paddle
 import yaml
 
 TRAIN_PATH = "./examples"
-CONFIG_PATH = "./examples/config"
+CONFIG_PATH = "./examples/config/dpo"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
 
@@ -106,7 +106,7 @@ class DPOTrainTest(unittest.TestCase):
             "save_steps": 3,
             "tensor_parallel_degree": 2,
         }
-        config_path = os.path.join(CONFIG_PATH, "dpo_full.yaml")
+        config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "alignment/dpo/run_dpo.py")
         cmd = [
@@ -144,7 +144,7 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": 5,
             "save_steps": 3,
         }
-        config_path = os.path.join(CONFIG_PATH, "dpo_lora.yaml")
+        config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "alignment/dpo/run_dpo.py")
         cmd = [
