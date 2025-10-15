@@ -21,9 +21,9 @@
 
 from __future__ import annotations
 
-import contextlib
 import math
 import warnings
+from copy import deepcopy
 from functools import partial
 from typing import List, Optional, Tuple, Union
 
@@ -35,32 +35,26 @@ from paddle import Tensor, nn
 from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed.fleet.recompute.recompute import recompute
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    GatherOp,
+    ScatterOp,
+    mark_as_sequence_parallel_parameter,
+)
 from paddle.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+from paddle.nn.functional.flash_attention import flash_attention
 
-try:
-    from paddle.incubate.nn.functional import fused_rotary_position_embedding
-except ImportError:
-    fused_rotary_position_embedding = None
-
-try:
-    from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-        GatherOp,
-        ScatterOp,
-        mark_as_sequence_parallel_parameter,
-    )
-except:
-    pass
-
-try:
-    from paddle.nn.functional.flash_attention import flash_attention
-except:
-    flash_attention = None
-
-
+from ...nn.criterion.interface import CriterionLayer
+from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.linear import Linear as GeneralLinear
+from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.mlp import MLP as DeepseekV2MLP
+from ...nn.norm import Norm as GeneralNorm
+from ...nn.norm import RMSNorm
+from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_args
 from ...utils.initializer import kaiming_uniform_
 from ...utils.log import logger
 from ...utils.tools import get_env_device
-from ..activations import ACT2FN
+from .. import linear_utils
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..llama import fusion_ops
 from ..llama.modeling import get_use_casual_mask
@@ -69,21 +63,18 @@ from ..model_outputs import (
     CausalLMOutputWithPast,
     SequenceClassifierOutputWithPast,
 )
-from ..model_utils import PretrainedModel, dtype_guard, register_base_model
+from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
-from ..moe_layer import MoEFlexTokenLayer, MoELayer
+from ..moe_layer import MoEFlexTokenLayer
 from ..utils import device_guard
-from . import fp8_linear as linear_utils
 from .configuration import DeepseekV2Config
-from .fp8_linear import Linear
 
 __all__ = [
-    "DeepseekV2LMHead",
-    "DeepseekV2PretrainingCriterion",
     "DeepseekV2ForCausalLM",
     "DeepseekV2ForSequenceClassification",
     "DeepseekV2Model",
     "DeepseekV2PretrainedModel",
+    "DeepseekV2ForCausalLMPipe",
 ]
 
 
@@ -300,57 +291,6 @@ def _expand_2d_mask(mask, dtype, tgt_length):
     expanded_mask = mask.expand([batch_size, 1, tgt_length, src_length])
 
     return expanded_mask
-
-
-class DeepseekV2RMSNorm(nn.Layer):
-    def __init__(self, config: DeepseekV2Config, hidden_size=None, eps=1e-6, use_sequence_parallel=True):
-        """DeepseekV2RMSNorm is equivalent to T5LayerNorm
-
-        Args:
-            config (DeepseekV2Config): config dict of DeepseekV2
-            hidden_size (_type_): history_states size
-            eps (_type_, optional): eps value. Defaults to 1e-6.
-            use_sequence_parallel (bool, optional): A switch to disable sequence parallelism for inputs that are not in tensor parallel mode.
-                                                    By default, this is set to True.
-        """
-        super().__init__()
-        self.config = config
-        self.hidden_size = hidden_size if hidden_size is not None else config.hidden_size
-        self.variance_epsilon = eps
-
-        self.weight = paddle.create_parameter(
-            shape=[self.hidden_size],
-            dtype=paddle.get_default_dtype(),
-            default_initializer=nn.initializer.Constant(1.0),
-        )
-
-        if config.sequence_parallel and use_sequence_parallel:
-            mark_as_sequence_parallel_parameter(self.weight)
-
-    def forward(self, hidden_states):
-        if self.config.use_fused_rms_norm and get_env_device() == "xpu":
-            if self.weight.dtype != hidden_states.dtype:
-                hidden_states = paddle.cast(hidden_states, self.weight.dtype)
-            try:
-                import paddle_xpu_nn  # noqa: F821
-
-                return paddle_xpu_nn.xpu_rms_norm(hidden_states, self.weight, self.variance_epsilon)[0]
-            except ImportError:
-                raise NotImplementedError(
-                    f"Implementation of fused_rms_norm is not available on {get_env_device()}. Please install paddle_xpu to use this feature"
-                )
-
-        with paddle.amp.auto_cast(False):
-            hidden_states = hidden_states.astype("float32")
-            variance = hidden_states.pow(2).mean(-1, keepdim=True)
-            hidden_states = paddle.rsqrt(variance + self.variance_epsilon) * hidden_states
-
-        if self.weight.dtype in [paddle.float16, paddle.bfloat16]:
-            hidden_states = paddle.cast(hidden_states, self.weight.dtype)
-        return hidden_states * self.weight
-
-    def extra_repr(self):
-        return f"hidden_size={self.hidden_size}, dtype={self.weight.dtype}"
 
 
 class DeepseekV2RotaryEmbedding(nn.Layer):
@@ -592,18 +532,6 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
     b, s, h, d = k.shape
     k = k.reshape([b, s, h, d // 2, 2]).transpose([0, 1, 2, 4, 3]).reshape([b, s, h, d])
 
-    if get_env_device() == "xpu" and fuse_rope:
-        q_embed, k_embed, _ = fused_rotary_position_embedding(
-            q,
-            k,
-            None,
-            sin=sin,
-            cos=cos,
-            position_ids=position_ids,
-            use_neox_rotary_style=False,
-        )
-        return q_embed, k_embed
-
     if position_ids is None:
         # Note: Only for MixtralForCausalLMPipe model pretraining
         cos = cos[:, : q.shape[1], :, :]  # [bs, seq_len, 1, axis]
@@ -617,58 +545,6 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
-
-
-class DeepseekV2MLP(nn.Layer):
-    def __init__(self, config: DeepseekV2Config, hidden_size=None, intermediate_size=None, is_moe=False):
-        super().__init__()
-        self.config = config
-        self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
-        self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
-
-        def linear_dtype_gaurd():
-            if config.use_fp8:
-                return dtype_guard("float8_e4m3fn")
-            else:
-                return contextlib.nullcontext()
-
-        if config.sequence_parallel:
-            ColumnParallelLinear = linear_utils.ColumnSequenceParallelLinear
-            RowParallelLinear = linear_utils.RowSequenceParallelLinear
-        else:
-            ColumnParallelLinear = linear_utils.ColumnParallelLinear
-            RowParallelLinear = linear_utils.RowParallelLinear
-
-        with linear_dtype_gaurd():
-            if config.tensor_parallel_degree > 1 and not is_moe:
-                self.gate_proj = ColumnParallelLinear(
-                    self.hidden_size,
-                    self.intermediate_size,
-                    gather_output=False,
-                    has_bias=False,
-                )
-                self.up_proj = ColumnParallelLinear(
-                    self.hidden_size,
-                    self.intermediate_size,
-                    gather_output=False,
-                    has_bias=False,
-                )
-                self.down_proj = RowParallelLinear(
-                    self.intermediate_size,
-                    self.hidden_size,
-                    input_is_parallel=True,
-                    has_bias=False,
-                )
-            else:
-                self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
-                self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
-                self.down_proj = Linear(self.intermediate_size, self.hidden_size, bias_attr=False)
-
-        self.act_fn = ACT2FN[config.hidden_act]
-
-    def forward(self, x):
-        down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
-        return down_proj
 
 
 class FakeGate(paddle.autograd.PyLayer):
@@ -712,8 +588,12 @@ class MoEGate(PretrainedMoEGate):
                 default_initializer=nn.initializer.Constant(0.0),
             )
             self.e_score_correction_bias.is_distributed = True
-
-        self.using_flex_token = config.using_flex_token
+            self.e_score_correction_bias.stop_gradient = True
+            self.expert_usage = paddle.zeros(
+                shape=[num_experts],
+                dtype=paddle.int64,
+            )
+            self.expert_usage.stop_gradient = True
 
     def forward(self, hidden_states):
         """
@@ -734,12 +614,10 @@ class MoEGate(PretrainedMoEGate):
             scores = self.gate_score_func(logits=logits)
             scores = scores.cast(paddle.float32)
 
-        if self.using_flex_token:
-            scores, routing_map, exp_counts, l_aux, l_zloss = self.topkgating_nodrop(scores)
-            return scores, routing_map, l_aux, l_zloss
-
-        capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss = self.topkgating(scores)
-        return capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss
+        scores, routing_map, exp_counts, l_aux, l_zloss = self.topkgating_nodrop(scores)
+        with paddle.no_grad():
+            self.expert_usage += exp_counts
+        return scores, routing_map, l_aux, l_zloss
 
 
 class AddAuxiliaryLoss(paddle.autograd.PyLayer):
@@ -763,59 +641,6 @@ class AddAuxiliaryLoss(paddle.autograd.PyLayer):
         return grad_output, grad_loss
 
 
-class DeepseekV2MoE(MoELayer):
-    """
-    A mixed expert module containing shared experts.
-    """
-
-    def __init__(self, config: DeepseekV2Config):
-        gate = MoEGate(
-            config=config,
-            num_experts=config.n_routed_experts,
-            expert_hidden_size=config.hidden_size,
-            top_k=config.num_experts_per_tok,
-            topk_method=config.topk_method,
-            n_group=config.n_group,
-            topk_group=config.topk_group,
-            norm_topk_prob=config.norm_topk_prob,
-            routed_scaling_factor=config.routed_scaling_factor,
-            drop_tokens=False,
-        )
-
-        # (LiuTing) only support either tp or ep.
-        moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
-        expert_parallel_degree = dist.get_world_size(moe_group)
-        expert_parallel_degree = 1 if expert_parallel_degree < 0 else expert_parallel_degree
-        act_tp_shard = config.tensor_parallel_degree > 1 and expert_parallel_degree <= 1
-        super().__init__(
-            config=config,
-            moe_num_experts=config.n_routed_experts,
-            expert_class=DeepseekV2MLP,
-            expert_kwargs={
-                "config": config,
-                "intermediate_size": config.moe_intermediate_size,
-                "is_moe": not act_tp_shard,
-            },
-            gate=gate,
-            capacity=2.0,
-        )
-        self.alpha = config.aux_loss_alpha
-        if config.n_shared_experts is not None:
-            intermediate_size = config.moe_intermediate_size * config.n_shared_experts
-            self.shared_experts = DeepseekV2MLP(config=config, intermediate_size=intermediate_size, is_moe=False)
-
-    def forward(self, hidden_states):
-        final_hidden_states, l_aux, l_zloss = super().forward(hidden_states)
-        if self.training and self.alpha > 0.0:
-            l_aux = l_aux * self.alpha
-            final_hidden_states = AddAuxiliaryLoss.apply(final_hidden_states, l_aux)
-
-        if self.config.n_shared_experts is not None:
-            shared_expert_output = self.shared_experts(hidden_states)
-            final_hidden_states = final_hidden_states + shared_expert_output
-        return final_hidden_states
-
-
 class DeepseekV2MoEFlexToken(MoEFlexTokenLayer):
     """
     A mixed expert module containing shared experts.
@@ -836,25 +661,35 @@ class DeepseekV2MoEFlexToken(MoEFlexTokenLayer):
         )
 
         hcg = fleet.get_hybrid_communicate_group()
-        moe_group = hcg.expert_parallel_group
-        moe_grad_group = hcg.expert_grad_comm_group
+        moe_group = hcg.get_expert_parallel_group()
+        moe_grad_group = hcg.get_moe_sharding_parallel_group()
+        config = deepcopy(config)
+        config.tensor_parallel_degree = 1
 
         super().__init__(
             config=config,
             moe_num_experts=config.n_routed_experts,
             expert_class=DeepseekV2MLP,
-            expert_kwargs={"config": config, "intermediate_size": config.moe_intermediate_size, "is_moe": True},
+            expert_kwargs={"config": config, "intermediate_size": config.moe_intermediate_size},
             gate=gate,
             moe_group=moe_group,
         )
 
+        self.is_mp_moe = False
+        self.is_ep_moe = True
         for p in self.experts.parameters():
+            setattr(p, "is_moe_param", True)
             setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
+            p.no_sync = not self.is_mp_moe
+            p.expert = not self.is_mp_moe
+            logger.info(f"expert no-sync={p.no_sync}-{p.name}")
+            if self.is_mp_moe or self.is_ep_moe:
+                p.is_distributed = True
 
         self.alpha = config.aux_loss_alpha
         if config.n_shared_experts is not None:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
-            self.shared_experts = DeepseekV2MLP(config=config, intermediate_size=intermediate_size, is_moe=False)
+            self.shared_experts = DeepseekV2MLP(config=config, intermediate_size=intermediate_size)
 
     def forward(self, hidden_states):
         final_hidden_states, l_aux, l_zloss = super().forward(hidden_states)
@@ -868,21 +703,6 @@ class DeepseekV2MoEFlexToken(MoEFlexTokenLayer):
         return final_hidden_states
 
 
-def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
-    """
-    This is the equivalent of paddle.repeat_interleave(hidden_states, n_rep, axis=1).
-    The hidden states go from (batch, seqlen, num_key_value_heads, head_axis)
-                           to (batch, seqlen, num_attention_heads, head_axis)
-    """
-    batch, slen, num_key_value_heads, head_axis = hidden_states.shape
-    if n_rep == 1:
-        return hidden_states
-
-    hidden_states = hidden_states.unsqueeze(-2).tile([1, 1, 1, n_rep, 1])
-    return hidden_states.reshape([batch, slen, num_key_value_heads * n_rep, head_axis])
-
-
-# Copied from transformers.models.llama.modeling_llama.LlamaAttention with Llama->DeepseekV2
 class DeepseekV2Attention(nn.Layer):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
@@ -892,6 +712,12 @@ class DeepseekV2Attention(nn.Layer):
         self.attention_dropout = config.attention_dropout
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
+        self.num_local_heads = self.num_heads
+        if config.tensor_parallel_degree > 1:
+            assert (
+                self.num_heads % config.tensor_parallel_degree == 0
+            ), f"Attention head num ({self.num_heads}) is not divisible by tensor_parallel_degree ({config.tensor_parallel_degree})."
+            self.num_local_heads = self.num_heads // config.tensor_parallel_degree
 
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
@@ -905,10 +731,7 @@ class DeepseekV2Attention(nn.Layer):
         self.is_causal = True
         self.fuse_rope = config.use_fused_rope
 
-        if config.num_nextn_predict_layers > 0:
-            self.seq_length = config.seq_length - config.num_nextn_predict_layers
-        else:
-            self.seq_length = config.seq_length
+        self.seq_length = config.seq_length
         self.sequence_parallel = config.sequence_parallel
 
         # Note that we will actually perform a recompute only if both enable_recompute and layerwise_recompute are set to True
@@ -917,59 +740,92 @@ class DeepseekV2Attention(nn.Layer):
         self.layerwise_recompute = layerwise_recompute
         self.recompute_granularity = config.recompute_granularity
 
-        def linear_dtype_gaurd():
-            if config.use_fp8:
-                return dtype_guard("float8_e4m3fn")
-            else:
-                return contextlib.nullcontext()
-
         # Note (@DrownFish19): For tensor parallel we consider that q_a_proj and kv_a_proj_with_mqa
         # are the small weight and cannot achieve performance gain. So we use the original
         # linear layers. We use the tensor parallel linear layers for q_proj，q_b_proj and kv_b_proj
         # for which are the large weight and can achieve performance gain.
 
         # fmt: off
-        if self.config.tensor_parallel_degree > 1:
-            # for tensor parallel
-            if config.sequence_parallel:
-                ColumnParallelLinear = linear_utils.ColumnSequenceParallelLinear
-                RowParallelLinear = linear_utils.RowSequenceParallelLinear
-            else:
-                ColumnParallelLinear = linear_utils.ColumnParallelLinear
-                RowParallelLinear = linear_utils.RowParallelLinear
 
-            if self.q_lora_rank is None:
-                with linear_dtype_gaurd():
-                    self.q_proj = ColumnParallelLinear(self.hidden_size, self.num_heads * self.q_head_dim, has_bias=False, gather_output=True)
-            else:
-                with linear_dtype_gaurd():
-                    self.q_a_proj = Linear(self.hidden_size, config.q_lora_rank, bias_attr=config.attention_bias)
-                    self.q_b_proj = ColumnParallelLinear(config.q_lora_rank, self.num_heads * self.q_head_dim, has_bias=False, gather_output=True)
-                self.q_a_layernorm = DeepseekV2RMSNorm(config=config, hidden_size=config.q_lora_rank, use_sequence_parallel=False)
-
-            with linear_dtype_gaurd():
-                self.kv_a_proj_with_mqa = Linear(self.hidden_size, config.kv_lora_rank + config.qk_rope_head_dim, bias_attr=config.attention_bias)
-                self.kv_b_proj = ColumnParallelLinear(config.kv_lora_rank, self.num_heads * (self.q_head_dim - self.qk_rope_head_dim + self.v_head_dim), has_bias=False, gather_output=True)
-                self.o_proj = RowParallelLinear(self.num_heads * self.v_head_dim, self.hidden_size, has_bias=config.attention_bias, input_is_parallel=False)
-            self.kv_a_layernorm = DeepseekV2RMSNorm(config=config, hidden_size=config.kv_lora_rank, use_sequence_parallel=False)
+        if self.q_lora_rank is None:
+            self.q_proj = GeneralLinear.create(
+                self.hidden_size,
+                self.num_heads * self.q_head_dim,
+                has_bias=False,
+                config=config,
+                fuse_matmul_bias=config.fuse_linear,
+                tp_plan="colwise",
+                gather_output=False,
+            )
         else:
-            # for without tensor parallel
-            if self.q_lora_rank is None:
-                with linear_dtype_gaurd():
-                    self.q_proj = Linear(self.hidden_size, self.num_heads * self.q_head_dim, bias_attr=False)
-            else:
-                with linear_dtype_gaurd():
-                    self.q_a_proj = Linear(self.hidden_size, config.q_lora_rank, bias_attr=config.attention_bias)
-                    self.q_b_proj = Linear(config.q_lora_rank, self.num_heads * self.q_head_dim, bias_attr=False)
-                self.q_a_layernorm = DeepseekV2RMSNorm(config=config, hidden_size=config.q_lora_rank)
+            self.q_a_proj = GeneralLinear.create(
+                self.hidden_size,
+                config.q_lora_rank,
+                has_bias=config.attention_bias,
+                config=config,
+                fuse_matmul_bias=config.fuse_linear,
+                linear_type="default",
+                gather_output=False,
+            )
+            self.q_b_proj = GeneralLinear.create(
+                config.q_lora_rank,
+                self.num_heads * self.q_head_dim,
+                has_bias=False,
+                config=config,
+                fuse_matmul_bias=config.fuse_linear,
+                tp_plan="colwise",
+                gather_output=False,
+            )
+        self.q_a_layernorm = GeneralNorm.create(
+            config=config,
+            hidden_size=config.q_lora_rank,
+            norm_type="rms_norm",
+        )
 
-            with linear_dtype_gaurd():
-                self.kv_a_proj_with_mqa = Linear(self.hidden_size, config.kv_lora_rank + config.qk_rope_head_dim, bias_attr=config.attention_bias)
-                self.kv_b_proj = Linear(config.kv_lora_rank, self.num_heads * (self.q_head_dim - self.qk_rope_head_dim + self.v_head_dim), bias_attr=False)
-                self.o_proj = Linear(self.num_heads * self.v_head_dim, self.hidden_size, bias_attr=config.attention_bias)
-            self.kv_a_layernorm = DeepseekV2RMSNorm(config=config, hidden_size=config.kv_lora_rank)
+        self.kv_a_proj_with_mqa = GeneralLinear.create(
+            self.hidden_size,
+            config.kv_lora_rank + config.qk_rope_head_dim,
+            has_bias=config.attention_bias,
+            config=config,
+            fuse_matmul_bias=config.fuse_linear,
+            linear_type="default",
+            gather_output=False,
+        )
+
+        self.kv_b_proj = GeneralLinear.create(
+            config.kv_lora_rank,
+            self.num_heads * (self.q_head_dim - self.qk_rope_head_dim + self.v_head_dim),
+            has_bias=False,
+            config=config,
+            fuse_matmul_bias=config.fuse_linear,
+            tp_plan="colwise",
+            gather_output=False,
+        )
+
+        self.o_proj = GeneralLinear.create(
+            self.num_heads * self.v_head_dim,
+            self.hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            fuse_matmul_bias=config.fuse_linear,
+            tp_plan="rowwise",
+            gather_output=False,
+            input_is_parallel=True
+        )
+
+        self.kv_a_layernorm = GeneralNorm.create(
+            config=config,
+            hidden_size=config.kv_lora_rank,
+            norm_type="rms_norm",
+        )
 
         # fmt: on
+        if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel:
+            mark_as_sequence_parallel_parameter(self.kv_a_proj_with_mqa.weight)
+            mark_as_sequence_parallel_parameter(self.q_a_proj.weight)
+            if config.attention_bias:
+                mark_as_sequence_parallel_parameter(self.kv_a_proj_with_mqa.bias)
+                mark_as_sequence_parallel_parameter(self.q_a_proj.bias)
 
         self._init_rope()
 
@@ -1047,7 +903,11 @@ class DeepseekV2Attention(nn.Layer):
             warnings.warn(
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
-        bsz, q_len, _ = hidden_states.shape
+        ori_shape = hidden_states.shape
+        if self.config.sequence_parallel:
+            seq_len, bsz, _ = hidden_states.shape
+        else:
+            bsz, seq_len, _ = hidden_states.shape
 
         # DeepSeekV2 q_lora_rank=1536
         # DeepSeekV2-lite q_lora_rank=None
@@ -1057,8 +917,13 @@ class DeepseekV2Attention(nn.Layer):
             q = self.q_b_proj(self.q_a_layernorm(self.q_a_proj(hidden_states)))
 
         if self.sequence_parallel:
-            target_query_shape = [-1, self.seq_length, self.num_heads, self.q_head_dim]
-            target_key_value_shape = [-1, self.seq_length, self.num_heads, self.qk_nope_head_dim + self.v_head_dim]
+            target_query_shape = [bsz, self.seq_length, self.num_local_heads, self.q_head_dim]
+            target_key_value_shape = [
+                bsz,
+                self.seq_length,
+                self.num_local_heads,
+                self.qk_nope_head_dim + self.v_head_dim,
+            ]
         else:
             target_query_shape = [0, 0, self.num_heads, self.q_head_dim]
             target_key_value_shape = [0, 0, self.num_heads, self.qk_nope_head_dim + self.v_head_dim]
@@ -1071,8 +936,9 @@ class DeepseekV2Attention(nn.Layer):
         compressed_kv, k_pe = paddle.split(compressed_kv, [self.kv_lora_rank, self.qk_rope_head_dim], axis=-1)
         if self.sequence_parallel:
             k_pe = GatherOp.apply(k_pe)
-        k_pe = k_pe.reshape([-1, q_len, 1, self.qk_rope_head_dim]).expand(
-            [-1, q_len, self.num_heads, self.qk_rope_head_dim]
+            k_pe = paddle.transpose(k_pe, [1, 0, 2])
+        k_pe = k_pe.reshape([-1, self.seq_length, 1, self.qk_rope_head_dim]).expand(
+            [-1, self.seq_length, self.num_local_heads, self.qk_rope_head_dim]
         )
 
         # self.q_head_dim = config.qk_nope_head_dim + config.qk_rope_head_dim = 128+64
@@ -1140,6 +1006,8 @@ class DeepseekV2Attention(nn.Layer):
         # if sequence_parallel is true, out shape are [q_len / n, bs, num_head * head_dim]
         # else their shape are [bs, q_len, num_head * head_dim], n is mp parallelism.
         attn_output = self.o_proj(attn_output)
+        if attn_output.shape != ori_shape:
+            attn_output = attn_output.reshape(ori_shape)
 
         if not output_attentions:
             attn_weights = None
@@ -1171,7 +1039,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
 
         self.self_attn = DeepseekV2Attention(config=config, layerwise_recompute=layerwise_recompute)
 
-        MoELayerClass = DeepseekV2MoEFlexToken if config.using_flex_token else DeepseekV2MoE
+        MoELayerClass = DeepseekV2MoEFlexToken
 
         self.mlp = (
             MoELayerClass(config)
@@ -1182,10 +1050,77 @@ class DeepseekV2DecoderLayer(nn.Layer):
             )
             else DeepseekV2MLP(config)
         )
-        self.input_layernorm = DeepseekV2RMSNorm(config)
-        self.post_attention_layernorm = DeepseekV2RMSNorm(config)
 
-    def forward(
+        self.input_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+        )
+        self.post_attention_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+        )
+
+    def subbatch_recompute_forward(
+        self,
+        hidden_states: paddle.Tensor,
+        position_ids: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        output_attentions: Optional[bool] = False,
+        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        use_cache: Optional[bool] = False,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+        offload_kwargs = {}
+        offload_kwargs["offload_indices"] = [0]
+        assert self.recompute_granularity != "full_attn"
+        attn_outputs = recompute(
+            self.attn,
+            hidden_states,
+            position_ids,
+            attention_mask,
+            output_attentions,
+            past_key_value,
+            use_cache,
+            attn_mask_startend_row_indices,
+            **offload_kwargs,
+        )
+
+        hidden_states = attn_outputs[0]
+        residual = attn_outputs[1]
+        self_attn_weights = attn_outputs[2] if output_attentions else None
+        present_key_value = attn_outputs[3] if use_cache else None
+
+        assert len(hidden_states.shape) == 3
+        sub_seq_len = self.config.moe_subbatch_token_num
+        seq_axis = 0 if self.config.sequence_parallel else 1
+        seq_len = hidden_states.shape[seq_axis]
+        assert seq_len % sub_seq_len == 0
+        num_chunks = seq_len // sub_seq_len
+        split_list = [sub_seq_len] * num_chunks
+        input_list = paddle.split(hidden_states, split_list, axis=seq_axis)
+        output_list = []
+
+        for chunk in input_list:
+            out = recompute(
+                self.mlp.forward,
+                chunk,
+                **offload_kwargs,
+            )
+            output_list.append(out)
+        hidden_states = paddle.concat(output_list, axis=seq_axis)
+        outputs = recompute(
+            self.post_process,
+            hidden_states,
+            residual,
+            output_attentions,
+            use_cache,
+            self_attn_weights,
+            present_key_value,
+            **offload_kwargs,
+        )
+        return outputs
+
+    def attn(
         self,
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor] = None,
@@ -1195,25 +1130,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
-        """
-        Args:
-            hidden_states (`paddle.Tensor`): input to the layer of shape `(batch, seq_len, embed_axis)`
-            attention_mask (`paddle.Tensor`, *optional*):
-                attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
-                query_sequence_length, key_sequence_length)` if default attention is used.
-            output_attentions (`bool`, *optional*):
-                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
-                returned tensors for more detail.
-            use_cache (`bool`, *optional*):
-                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
-                (see `past_key_values`).
-            past_key_value (`Tuple(paddle.Tensor)`, *optional*): cached past key and value projection states
-        """
-        if "padding_mask" in kwargs:
-            warnings.warn(
-                "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
-            )
+    ):
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -1254,18 +1171,32 @@ class DeepseekV2DecoderLayer(nn.Layer):
         else:
             hidden_states = outputs
 
-        if output_attentions:
-            self_attn_weights = outputs[1]
-
-        if use_cache:
-            present_key_value = outputs[2 if output_attentions else 1]
-
         hidden_states = residual + hidden_states
 
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
+        attn_outputs = (hidden_states, residual)
+
+        if output_attentions:
+            self_attn_weights = outputs[1]
+            attn_outputs += (self_attn_weights,)
+
+        if use_cache:
+            present_key_value = outputs[2 if output_attentions else 1]
+            attn_outputs += (present_key_value,)
+
+        return attn_outputs
+
+    def post_process(
+        self,
+        hidden_states,
+        residual,
+        output_attentions=False,
+        use_cache=False,
+        self_attn_weights=None,
+        present_key_value=None,
+    ):
         hidden_states = residual + hidden_states
 
         outputs = (hidden_states,)
@@ -1281,6 +1212,43 @@ class DeepseekV2DecoderLayer(nn.Layer):
 
         return outputs
 
+    def forward(
+        self,
+        hidden_states: paddle.Tensor,
+        position_ids: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        output_attentions: Optional[bool] = False,
+        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        use_cache: Optional[bool] = False,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        *args,
+        **kwargs,
+    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+        if "padding_mask" in kwargs:
+            warnings.warn(
+                "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
+            )
+
+        attn_outputs = self.attn(
+            hidden_states,
+            position_ids,
+            attention_mask,
+            output_attentions,
+            past_key_value,
+            use_cache,
+            attn_mask_startend_row_indices,
+            **kwargs,
+        )
+        hidden_states = attn_outputs[0]
+        residual = attn_outputs[1]
+        self_attn_weights = attn_outputs[2] if output_attentions else None
+        present_key_value = attn_outputs[3] if use_cache else None
+        hidden_states = self.mlp(hidden_states)
+        outputs = self.post_process(
+            hidden_states, residual, output_attentions, use_cache, self_attn_weights, present_key_value
+        )
+        return outputs
+
 
 class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
     def __init__(
@@ -1291,9 +1259,54 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
     ):
         super(DeepseekV2MTPLayer, self).__init__(config, layer_idx, layerwise_recompute)
 
-        self.enorm = DeepseekV2RMSNorm(config)
-        self.hnorm = DeepseekV2RMSNorm(config)
+        self.enorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+        )
+        self.hnorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+        )
         self.eh_proj = nn.Linear(2 * config.hidden_size, config.hidden_size)
+
+        if config.sequence_parallel and config.tensor_parallel_degree > 1:
+            mark_as_sequence_parallel_parameter(self.eh_proj.weight)
+            mark_as_sequence_parallel_parameter(self.eh_proj.bias)
+
+    def subbatch_recompute_forward(
+        self,
+        hidden_states: paddle.Tensor,
+        nextn_hidden_state: paddle.Tensor,
+        position_ids: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        output_attentions: Optional[bool] = False,
+        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        use_cache: Optional[bool] = False,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        **kwargs,
+    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+        hidden_states = self.hnorm(hidden_states)
+        nextn_hidden_state = self.enorm(nextn_hidden_state)
+
+        hidden_states = self.eh_proj(paddle.concat([nextn_hidden_state, hidden_states], axis=-1))
+
+        layer_outputs = super(DeepseekV2MTPLayer, self).subbatch_recompute_forward(
+            hidden_states,
+            position_ids,
+            attention_mask,
+            output_attentions,
+            past_key_value,
+            use_cache,
+            attn_mask_startend_row_indices,
+            **kwargs,
+        )
+
+        if type(layer_outputs) is tuple:
+            hidden_states = layer_outputs[0]
+        else:
+            hidden_states = layer_outputs
+
+        return hidden_states
 
     def forward(
         self,
@@ -1333,13 +1346,24 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
 
 class DeepseekV2PretrainedModel(PretrainedModel):
     config_class = DeepseekV2Config
-    base_model_prefix = "deepseek_v2"
+    base_model_prefix = "model"
     _no_split_modules = ["DeepseekV2DecoderLayer"]
+    transpose_weight_keys = [
+        "kv_a_proj_with_mqa",
+        "kv_b_proj",
+        "o_proj",
+        "q_a_proj",
+        "q_b_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "gate",
+        "eh_proj",
+    ]
 
     def _get_model_flops(self, batch_size=1, seq_length=None, **kwargs):
         from .mfu_utils import DeepSeekProjection
 
-        # self._
         mfu_cal_proj = DeepSeekProjection(self.config)
         if seq_length is None:
             if hasattr(self.config, "seq_length"):
@@ -1431,8 +1455,6 @@ class DeepseekV2PretrainedModel(PretrainedModel):
                 "embed_tokens.weight": partial(fn, is_column=False),
                 "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
             }
-            if config.use_fp8:
-                base_actions["layers.0.self_attn.o_proj.weight.weight_scale_inv"] = partial(fn, is_column=False)
 
             if config.tie_word_embeddings:
                 base_actions["lm_head.weight"] = partial(fn, is_column=False)
@@ -1449,23 +1471,16 @@ class DeepseekV2PretrainedModel(PretrainedModel):
             base_actions["layers.0.self_attn.q_b_proj.weight"] = partial(fn, is_column=True)
 
             # if we have enough num_key_value_heads to split, then split it.
-            # ???
             if config.num_key_value_heads % config.tensor_parallel_degree == 0:
                 base_actions["layers.0.self_attn.kv_b_proj.weight"] = partial(fn, is_column=True)
-                if config.use_fp8:
-                    base_actions["layers.0.self_attn.kv_b_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
 
             # dense mlp
             base_actions["layers.0.mlp.up_proj.weight"] = partial(fn, is_column=True)
             base_actions["layers.0.mlp.gate_proj.weight"] = partial(fn, is_column=True)
             base_actions["layers.0.mlp.down_proj.weight"] = partial(fn, is_column=False)
-            if config.use_fp8:
-                base_actions["layers.0.mlp.up_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
-                base_actions["layers.0.mlp.gate_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
-                base_actions["layers.0.mlp.down_proj.weight.weight_scale_inv"] = partial(fn, is_column=False)
 
             # moe unit routed experts
-            moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
+            moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
             expert_parallel_degree = dist.get_world_size(moe_group)
             if expert_parallel_degree <= 1:
                 for e_i in range(config.n_routed_experts):
@@ -1477,16 +1492,6 @@ class DeepseekV2PretrainedModel(PretrainedModel):
             base_actions["layers.0.mlp.shared_experts.gate_proj.weight"] = partial(fn, is_column=True)
             base_actions["layers.0.mlp.shared_experts.up_proj.weight"] = partial(fn, is_column=True)
             base_actions["layers.0.mlp.shared_experts.down_proj.weight"] = partial(fn, is_column=False)
-            if config.use_fp8:
-                base_actions["layers.0.mlp.shared_experts.gate_proj.weight.weight_scale_inv"] = partial(
-                    fn, is_column=True
-                )
-                base_actions["layers.0.mlp.shared_experts.up_proj.weight.weight_scale_inv"] = partial(
-                    fn, is_column=True
-                )
-                base_actions["layers.0.mlp.shared_experts.down_proj.weight.weight_scale_inv"] = partial(
-                    fn, is_column=False
-                )
 
             for key, action in base_actions.items():
                 if "layers.0." in key:
@@ -1589,10 +1594,9 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         self.recompute_granularity = config.recompute_granularity
         self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
 
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            self.embed_tokens = mpu.VocabParallelEmbedding(config.vocab_size, config.hidden_size)
-        else:
-            self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
+        self.embed_tokens = GeneralEmbedding.create(
+            config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
+        )
 
         self.layers = nn.LayerList(
             [
@@ -1603,15 +1607,12 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         for layer_idx in range(config.num_hidden_layers, config.num_hidden_layers + config.num_nextn_predict_layers):
             self.layers.append(DeepseekV2MTPLayer(config, layer_idx, layer_idx not in self.no_recompute_layers))
 
-        self.norm = DeepseekV2RMSNorm(config)
+        self.norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+        )
 
         self.enable_recompute = False
-
-    def get_input_embeddings(self):
-        return self.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.embed_tokens = value
 
     @staticmethod
     def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
@@ -1638,14 +1639,8 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                 past_key_values_length=past_key_values_length,
             )
         # Convert bool attention_mask to float attention mask, which will be added to attention_scores later
-        if get_env_device() == "xpu":
-            x = paddle.to_tensor(0.0, dtype="float32")
-            y = paddle.to_tensor(-1.7005809656952787e38, dtype="float32")
-            expanded_attn_mask = paddle.where(expanded_attn_mask, x, y)
-        else:
-            expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), 0.0, paddle.finfo(dtype).min).astype(
-                dtype
-            )
+
+        expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), 0.0, paddle.finfo(dtype).min).astype(dtype)
         return expanded_attn_mask
 
     @paddle.jit.not_to_static
@@ -1711,14 +1706,28 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
             batch_size, seq_length = inputs_embeds.shape[:2]
         else:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
-
         if self.config.num_nextn_predict_layers > 0:
             seq_length -= self.config.num_nextn_predict_layers
 
             if attention_mask is not None:
                 attention_mask = attention_mask[
                     :, :, : -self.config.num_nextn_predict_layers, : -self.config.num_nextn_predict_layers
-                ]
+                ].contiguous()
+
+            # attn_mask_startend_row_indices: [b, num_head, seq_len] or [b, num_head, seq_len, C], C is 2 or 4
+            if attn_mask_startend_row_indices is not None:
+                if attn_mask_startend_row_indices.ndim == 3:
+                    attn_mask_startend_row_indices = attn_mask_startend_row_indices[
+                        :,
+                        :,
+                        : -self.config.num_nextn_predict_layers,
+                    ].contiguous()
+                elif attn_mask_startend_row_indices.ndim == 4:
+                    attn_mask_startend_row_indices = attn_mask_startend_row_indices[
+                        :, :, : -self.config.num_nextn_predict_layers, :
+                    ].contiguous()
+                else:
+                    raise ValueError("attn_mask_startend_row_indices must be 3D or 4D tensor")
 
         if self.enable_recompute and self.training:
             if use_cache:
@@ -1770,20 +1779,20 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
             inputs_embeds_ori = inputs_embeds
 
         if self.config.sequence_parallel:
-            # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
             bs, seq_len, hidden_size = inputs_embeds.shape
-            inputs_embeds = paddle.reshape(inputs_embeds, [bs * seq_len, hidden_size])
-            # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
+            inputs_embeds = paddle.transpose(inputs_embeds, [1, 0, 2])  # [B, S, H] --> [S, B, H]
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         # embed positions
-        hidden_states = inputs_embeds
+        hidden_states = inputs_embeds.contiguous()
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
         next_decoder_cache = () if use_cache else None
         mtp_outputs = []
+
+        moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num > 0
 
         for idx in range(self.config.num_hidden_layers):
             decoder_layer = self.layers[idx]
@@ -1794,7 +1803,17 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
             past_key_value = past_key_values[idx] if past_key_values is not None else None
 
             has_gradient = not hidden_states.stop_gradient
-            if (
+            if moelayer_use_subbatch_recompute:
+                layer_outputs = decoder_layer.subbatch_recompute_forward(
+                    hidden_states,
+                    position_ids,
+                    attention_mask,
+                    output_attentions,
+                    past_key_value,
+                    use_cache,
+                    attn_mask_startend_row_indices,
+                )
+            elif (
                 self.enable_recompute
                 and idx not in self.no_recompute_layers
                 and has_gradient
@@ -1842,7 +1861,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
 
                 if self.config.sequence_parallel:
                     hidden_states = GatherOp.apply(hidden_states)
-                    hidden_states = hidden_states.reshape([-1, seq_length, hidden_states.shape[-1]])
+                    hidden_states = paddle.transpose(hidden_states, [1, 0, 2])  # [S, B, H] --> [B, S, H]
 
                 inputs_embeds_cur_depth = paddle.cat(
                     [inputs_embeds_ori[:, (nextn + 1) :, :], inputs_embeds_extra[:, : (nextn + 1), :]], axis=1
@@ -1955,62 +1974,6 @@ class DeepseekV2PretrainingCriterion(nn.Layer):
         return loss
 
 
-class DeepseekV2LMHead(nn.Layer):
-    def __init__(self, config: DeepseekV2Config):
-        super(DeepseekV2LMHead, self).__init__()
-        self.config = config
-
-        if config.num_nextn_predict_layers > 0:
-            self.seq_length = config.seq_length - config.num_nextn_predict_layers
-        else:
-            self.seq_length = config.seq_length
-
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
-        else:
-            vocab_size = config.vocab_size
-
-        self.weight = self.create_parameter(
-            shape=[config.hidden_size, vocab_size],
-            dtype=paddle.get_default_dtype(),
-            default_initializer=nn.initializer.XavierNormal(1.0),
-        )
-        # Must set distributed attr for Tensor Parallel !
-        self.weight.is_distributed = True if (vocab_size != config.vocab_size) else False
-        if get_env_device() == "xpu":
-            try:
-                from paddle_xpu.layers.nn import (  # noqa: F401
-                    parallel_matmul as xpu_parallel_matmul,
-                )
-
-                self.xpu_parallel_matmul = xpu_parallel_matmul()
-            except ImportError:
-                self.xpu_parallel_matmul = None
-
-    def forward(self, hidden_states, tensor_parallel_output=None):
-        if self.config.sequence_parallel:
-            hidden_states = GatherOp.apply(hidden_states)
-            hidden_states = paddle.reshape_(hidden_states, [-1, self.seq_length, self.config.hidden_size])
-
-        if tensor_parallel_output is None:
-            tensor_parallel_output = self.config.tensor_parallel_output
-
-        if get_env_device() == "xpu" and self.xpu_parallel_matmul is not None:
-            logits = self.xpu_parallel_matmul(
-                hidden_states,
-                self.weight,
-                transpose_y=False,
-                tensor_parallel_output=tensor_parallel_output,
-                training=self.training,
-            )
-        else:
-            logits = parallel_matmul(hidden_states, self.weight, tensor_parallel_output=tensor_parallel_output)
-        return logits
-
-    def extra_repr(self):
-        return f"hidden_size={self.weight.shape[0]}, vocab_size={self.weight.shape[1]}, dtype={self.weight.dtype}"
-
-
 class DeepseekV2ForCausalLM(DeepseekV2PretrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -2019,8 +1982,8 @@ class DeepseekV2ForCausalLM(DeepseekV2PretrainedModel):
         self.config = config
         self.deepseek_v2 = DeepseekV2Model(config)
         self.vocab_size = config.vocab_size
-        self.lm_head = DeepseekV2LMHead(config)
-        self.criterion = DeepseekV2PretrainingCriterion(config)
+        self.lm_head = GeneralLMHead(config)
+        self.criterion = CriterionLayer(config)
 
     def get_input_embeddings(self):
         return self.deepseek_v2.embed_tokens
@@ -2084,7 +2047,6 @@ class DeepseekV2ForCausalLM(DeepseekV2PretrainedModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
         if attn_mask_startend_row_indices is not None and attention_mask is not None:
             logger.warning(
                 "You have provided both attn_mask_startend_row_indices and attention_mask. "
@@ -2134,7 +2096,6 @@ class DeepseekV2ForCausalLM(DeepseekV2PretrainedModel):
             # if labels is None，means we need full output, instead of tensor_parallel_output
             # tensor_parallel_output is together with ParallelCrossEntropy
             tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1
-
             logits = self.lm_head(hidden_states, tensor_parallel_output=tensor_parallel_output)
             mtp_logits = (
                 [
@@ -2236,7 +2197,7 @@ class DeepseekV2ForSequenceClassification(DeepseekV2PretrainedModel):
         super().__init__(config)
         self.num_labels = config.num_labels
         self.model = DeepseekV2Model(config)
-        self.score = Linear(config.hidden_size, self.num_labels, bias_attr=False)
+        self.score = nn.Linear(config.hidden_size, self.num_labels, bias_attr=False)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -2332,3 +2293,278 @@ class DeepseekV2ForSequenceClassification(DeepseekV2PretrainedModel):
             hidden_states=transformer_outputs.hidden_states,
             attentions=transformer_outputs.attentions,
         )
+
+
+class DeepseekV2MTPLayerPipe(DeepseekV2MTPLayer):
+    def forward(self, args):
+        hidden_states, attention_mask, position_ids, position_embeddings, nbatch_pack_offset = parse_args(args)
+
+        if attention_mask is None:
+            attn_mask = None
+            attn_mask_startend_row_indices = None
+        elif attention_mask.dtype == paddle.int32:
+            attn_mask = None
+            attn_mask_startend_row_indices = attention_mask
+        else:
+            attn_mask = attention_mask
+            attn_mask_startend_row_indices = None
+            assert len(attn_mask.shape) == 4, f"Attention mask should be 4D tensor, but got {attn_mask.shape}."
+
+        hidden_states_list = paddle.split(hidden_states, self.config.num_nextn_predict_layers + 1, axis=-1)
+        hidden_states_main_model = hidden_states_list[0]
+        inputs_embeds_cur_depth_list = hidden_states_list[1:]
+        has_gradient = not hidden_states_main_model.stop_gradient
+
+        output_list = [hidden_states_main_model]
+        hidden_states = hidden_states_main_model
+        for depth in range(self.config.num_nextn_predict_layers):
+            inputs_embeds_cur_depth = inputs_embeds_cur_depth_list[depth]
+
+            moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num > 0
+            if moelayer_use_subbatch_recompute:
+                hidden_states = super().subbatch_recompute_forward(
+                    hidden_states,
+                    inputs_embeds_cur_depth,
+                    position_ids=position_ids,
+                    attention_mask=attn_mask,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                )
+            elif self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+                if attn_mask is not None or attn_mask_startend_row_indices is not None:
+                    hidden_states = recompute(
+                        super().forward,
+                        hidden_states,
+                        inputs_embeds_cur_depth,
+                        position_ids=position_ids,
+                        attention_mask=attn_mask,
+                        attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                        use_reentrant=self.config.recompute_use_reentrant,
+                    )
+                else:
+                    # for pretrain
+                    hidden_states = recompute(
+                        super().forward,
+                        hidden_states,
+                        inputs_embeds_cur_depth,
+                        position_ids=position_ids,
+                        attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                        use_reentrant=self.config.recompute_use_reentrant,
+                    )
+            else:
+                hidden_states = super().forward(
+                    hidden_states,
+                    inputs_embeds_cur_depth,
+                    position_ids=position_ids,
+                    attention_mask=attn_mask,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                )
+            output_list.append(hidden_states)
+
+        hidden_states = paddle.concat(output_list, axis=-1)
+
+        ret = (hidden_states,)
+        if attention_mask is not None:
+            ret += (attention_mask.clone(),)
+        if position_ids is not None:
+            ret += (position_ids.clone(),)
+
+        return ret
+
+
+class DeepseekV2EmbeddingPipe(EmbeddingPipe):
+    def forward(self, args):
+        num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
+        input_ids, attention_mask, position_ids, _, _ = parse_args(args, num_nextn_predict_layers > 0)
+        inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
+
+        batch_size, max_seq_len = input_ids.shape
+        max_seq_len -= self.config.num_nextn_predict_layers
+        if num_nextn_predict_layers > 0:
+            if attention_mask is None:
+                attn_mask = None
+                attn_mask_startend_row_indices = None
+            elif attention_mask.dtype == paddle.int32:
+                attn_mask = None
+                attn_mask_startend_row_indices = attention_mask[:, :, :max_seq_len]
+            else:
+                attn_mask = attention_mask[:, :, :max_seq_len, :max_seq_len]
+                attn_mask_startend_row_indices = None
+                assert len(attn_mask.shape) == 4, f"Attention mask should be 4D tensor, but got {attn_mask.shape}."
+        if attn_mask is not None:
+            assert (
+                attn_mask_startend_row_indices is None
+            ), "attention_mask and attn_mask_startend_row_indices can not be set at same time"
+            attn_mask = DeepseekV2Model._prepare_decoder_attention_mask(
+                attn_mask, (batch_size, max_seq_len), 0, inputs_embeds.dtype
+            )
+        attn_mask = attn_mask_startend_row_indices if attn_mask_startend_row_indices is not None else attn_mask
+
+        if num_nextn_predict_layers > 0:
+            inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]  # [B, S, D]
+            inputs_embeds = inputs_embeds[:, : -self.config.num_nextn_predict_layers, :]
+            inputs_embeds_ori = inputs_embeds
+            batch_size, seq_length, _ = inputs_embeds.shape
+
+            if self.sequence_parallel:
+                inputs_embeds = paddle.transpose(inputs_embeds, [1, 0, 2])  # [B, S, H] --> [S, B, H]
+                inputs_embeds = ScatterOp.apply(inputs_embeds)
+            embeds_res = [inputs_embeds]
+            for depth in range(num_nextn_predict_layers):
+                inputs_embeds_mtp = paddle.concat(
+                    [
+                        inputs_embeds_ori[:, (depth + 1) :, :],
+                        inputs_embeds_extra[:, : (depth + 1), :],
+                    ],
+                    axis=1,
+                )
+                if self.sequence_parallel:
+                    inputs_embeds_mtp = paddle.transpose(inputs_embeds_mtp, [1, 0, 2])  # [B, S, H] --> [S, B, H]
+                    inputs_embeds_mtp = ScatterOp.apply(inputs_embeds_mtp)
+                embeds_res.append(inputs_embeds_mtp)
+            res = paddle.concat(embeds_res, axis=-1)
+            ret = (res,)
+        else:
+            if self.sequence_parallel:
+                inputs_embeds = paddle.transpose(inputs_embeds, [1, 0, 2])  # [B, S, H] --> [S, B, H]
+                inputs_embeds = ScatterOp.apply(inputs_embeds)
+            ret = (inputs_embeds,)
+
+        if attn_mask is not None:
+            ret += (attn_mask.clone(),)
+        if position_ids is not None:
+            ret += (position_ids.clone(),)
+        return ret
+
+
+class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
+    def forward(self, args):
+        hidden_states, attention_mask, position_ids, _, _ = parse_args(args)
+
+        if self.config.num_nextn_predict_layers > 0:
+            hidden_size = hidden_states.shape[-1]
+            batch_size_mtp = hidden_size // (self.config.num_nextn_predict_layers + 1)
+            inputs_embeds_mtp = hidden_states[..., -batch_size_mtp:].contiguous()
+            hidden_states = hidden_states[..., :batch_size_mtp].contiguous()
+
+        if attention_mask is None:
+            attn_mask = None
+            attn_mask_startend_row_indices = None
+        elif attention_mask.dtype == paddle.int32:
+            attn_mask = None
+            attn_mask_startend_row_indices = attention_mask
+        else:
+            attn_mask = attention_mask
+            attn_mask_startend_row_indices = None
+            assert len(attn_mask.shape) == 4, f"Attention mask should be 4D tensor, but got {attn_mask.shape}."
+
+        has_gradient = not hidden_states.stop_gradient
+
+        moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num > 0
+        if moelayer_use_subbatch_recompute:
+            hidden_states = super().subbatch_recompute_forward(
+                hidden_states,
+                position_ids=position_ids,
+                attention_mask=attn_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            )
+        elif self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+            hidden_states = recompute(
+                super().forward,
+                hidden_states,
+                position_ids=position_ids,
+                attention_mask=attn_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                use_reentrant=self.config.recompute_use_reentrant,
+            )
+        else:
+            hidden_states = super().forward(
+                hidden_states,
+                position_ids=position_ids,
+                attention_mask=attn_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            )
+
+        if self.config.num_nextn_predict_layers > 0:
+            hidden_states = paddle.concat([hidden_states, inputs_embeds_mtp], axis=-1)
+
+        if isinstance(hidden_states, paddle.Tensor):
+            ret = (hidden_states,)
+        if attention_mask is not None:
+            ret += (attention_mask.clone(),)
+        if position_ids is not None:
+            ret += (position_ids.clone(),)
+        if len(ret) == 1:
+            (ret,) = ret
+        return ret
+
+
+class DeepseekV2LMHeadPipe(GeneralLMHead):
+    def forward(self, args):
+        if self.config.num_nextn_predict_layers > 0:
+            logits = []
+            for _hidden_states in args:
+                logits.append(super().forward(_hidden_states))
+            return logits
+
+        hidden_states, _, _, _, _ = parse_args(args)
+        logits = super().forward(hidden_states)
+        return logits
+
+
+class DeepseekV2PretrainingCriterionPipe(DeepseekV2PretrainingCriterion):
+    def forward(self, logits, labels):
+
+        # in GeneralModelForCausalLMPipe last_stage_keys = ["labels", "loss_mask"]
+        labels = labels[0]
+        if self.config.num_nextn_predict_layers > 0:
+            mtp_logits = logits[1:]
+            logits = logits[0]
+            loss = super().forward(logits, labels, mtp_logits=mtp_logits)
+        else:
+            loss = super().forward(logits, labels)
+        return loss
+
+
+class DeepseekV2RMSNormLayerPipe(RMSNorm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.config.sequence_parallel:
+            self.enable_sequence_parallel()
+
+    def forward(self, args):
+        hidden_states, _, _, _, _ = parse_args(args)
+
+        if self.config.num_nextn_predict_layers > 0:
+            hidden_states_list = paddle.split(hidden_states, self.config.num_nextn_predict_layers + 1, axis=-1)
+            hidden_states = hidden_states_list[0]
+            hidden_states_mtp = hidden_states_list[-self.config.num_nextn_predict_layers :]
+
+            output_list = [super().forward(hidden_states)]
+            for hidden_states in hidden_states_mtp:
+                output_list.append(super().forward(hidden_states))
+            return output_list
+        else:
+            hidden_states = super().forward(hidden_states)
+            return hidden_states
+
+
+class DeepseekV2ForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = DeepseekV2Config
+    _embedding_pipe_cls = DeepseekV2EmbeddingPipe
+    _decoder_layer_cls = DeepseekV2DecoderLayer
+    _criterion_pipe_cls = DeepseekV2PretrainingCriterionPipe
+    _lmhead_pipe_cls = DeepseekV2LMHeadPipe
+    _decoder_layer_pipe_cls = DeepseekV2DecoderLayerPipe
+    _rms_norm_pipe_cls = DeepseekV2RMSNormLayerPipe
+    _base_model = DeepseekV2PretrainedModel
+
+    _get_tensor_parallel_mappings = DeepseekV2PretrainedModel._get_tensor_parallel_mappings
+    _init_weights = DeepseekV2PretrainedModel._init_weights
+    _keys_to_ignore_on_load_unexpected = DeepseekV2PretrainedModel._keys_to_ignore_on_load_unexpected
+    _get_model_flops = DeepseekV2PretrainedModel._get_model_flops
+    _get_hardware_flops = DeepseekV2PretrainedModel._get_hardware_flops
+    transpose_weight_keys = DeepseekV2PretrainedModel.transpose_weight_keys
+
+    _tied_weights_keys = ["lm_head.weight"]
+
+    _mtp_layer_pipe_cls = DeepseekV2MTPLayerPipe

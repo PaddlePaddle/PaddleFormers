@@ -24,7 +24,7 @@ import paddle
 import yaml
 
 TRAIN_PATH = "./examples"
-CONFIG_PATH = "./examples/config"
+CONFIG_PATH = "./examples/config/sft"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
 
@@ -110,7 +110,7 @@ class SFTTrainTest(unittest.TestCase):
             "sequence_parallel": True,
             "sharding": "stage1",
         }
-        config_path = os.path.join(CONFIG_PATH, "sft_full.yaml")
+        config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
         cmd = [
@@ -160,7 +160,7 @@ class SFTTrainTest(unittest.TestCase):
             "sequence_parallel": True,
             "sharding": "stage1",
         }
-        config_path = os.path.join(CONFIG_PATH, "sft_lora.yaml")
+        config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
         cmd = [
