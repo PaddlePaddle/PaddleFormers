@@ -107,6 +107,7 @@ class DPOTrainTest(unittest.TestCase):
             "tensor_parallel_degree": 2,
             "pipeline_parallel_degree": 2,
             "sequence_parallel": True,
+            "pipeline_parallel_config": "enable_clear_every_step_cache disable_partial_send_recv",
             "sharding": "stage1",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")

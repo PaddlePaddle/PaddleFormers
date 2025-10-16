@@ -7,7 +7,7 @@ eval_dataset_path: ./data/dpo/dev.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 num_samples_each_epoch: 6000000
-packing: false
+packing: true
 mix_strategy: concat
 
 ### model
