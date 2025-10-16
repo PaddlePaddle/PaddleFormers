@@ -1100,6 +1100,7 @@ class TrainingArguments:
         default=0,
         metadata={"help": "pre allocate memory size GB"},
     )
+    num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
