@@ -108,6 +108,9 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
+    echo "Check nvidia-smi"
+    nvidia-smi
+    python -c "import paddle; print(paddle.device.device_count())"
     python -m pytest -v -n 8 \
         --dist loadgroup \
         --retries 3 --retry-delay 1 \
