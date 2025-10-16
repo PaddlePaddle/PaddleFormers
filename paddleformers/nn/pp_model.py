@@ -599,7 +599,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 ),
                 f"model.layers.{i}",
             )
-        for i in range(getattr(config, "num_nextn_predict_layers", 0)):
+        for i in range(config.num_nextn_predict_layers):
             if MTPLayerPipeCls is not None:
                 self.add_sequential_layer(
                     LayerDesc(MTPLayerPipeCls, config=config, layer_idx=config.num_hidden_layers + i),
