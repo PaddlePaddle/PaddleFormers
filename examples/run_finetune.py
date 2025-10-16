@@ -235,6 +235,7 @@ def main():
     data_collator = partial(
         collate_fn,
         tokenizer=tokenizer,
+        training_args=training_args,
         model_args=model_args,
         max_seq_len=max_seq_len,
     )
