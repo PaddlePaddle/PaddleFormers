@@ -146,10 +146,7 @@ class SFTTrainTest(unittest.TestCase):
 
     def test_sft_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_tp_pp")
-        update_args = {
-            "model_name_or_path": MODEL_NAME_OR_PATH,
-            "output_dir": output_dir
-        }
+        update_args = {"model_name_or_path": MODEL_NAME_OR_PATH, "output_dir": output_dir}
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
@@ -185,7 +182,6 @@ class SFTTrainTest(unittest.TestCase):
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
-
 
     def test_sft_lora(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_lora")
@@ -252,13 +248,10 @@ class SFTTrainTest(unittest.TestCase):
             [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
         )
         self.sfttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
-    
+
     def test_sft_lora_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_lora_tp_pp")
-        update_args = {
-            "model_name_or_path": MODEL_NAME_OR_PATH,
-            "output_dir": output_dir
-        }
+        update_args = {"model_name_or_path": MODEL_NAME_OR_PATH, "output_dir": output_dir}
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
@@ -311,10 +304,7 @@ class SFTTrainTest(unittest.TestCase):
 
     def test_sft_full_function_call(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_function_call")
-        update_args = {
-            "model_name_or_path": MODEL_NAME_OR_PATH,
-            "output_dir": output_dir
-        }
+        update_args = {"model_name_or_path": MODEL_NAME_OR_PATH, "output_dir": output_dir}
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
