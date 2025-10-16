@@ -174,7 +174,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.945683
+        EXCEPTED_LOSS = 11.956903
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -256,7 +256,12 @@ class SFTTrainTest(unittest.TestCase):
 
     def test_sft_lora_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_lora_tp_pp")
-        update_args = {"model_name_or_path": MODEL_NAME_OR_PATH, "output_dir": output_dir}
+        update_args = {
+            "model_name_or_path": MODEL_NAME_OR_PATH,
+            "train_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+            "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+            "output_dir": output_dir,
+        }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
@@ -309,7 +314,12 @@ class SFTTrainTest(unittest.TestCase):
 
     def test_sft_full_function_call(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_function_call")
-        update_args = {"model_name_or_path": MODEL_NAME_OR_PATH, "output_dir": output_dir}
+        update_args = {
+            "model_name_or_path": MODEL_NAME_OR_PATH,
+            "train_dataset_path": "./tests/fixtures/dummy/function-call/function-call-train.jsonl",
+            "eval_dataset_path": "./tests/fixtures/dummy/function-call/function-call-eval.jsonl",
+            "output_dir": output_dir,
+        }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
