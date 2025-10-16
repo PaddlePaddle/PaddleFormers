@@ -131,24 +131,31 @@ class MoEGateMixin:
         return aux_loss
 
     def _cal_seq_aux_loss(self, probs, top_k, routing_map):
-        max_seq_len = self.config.max_sequence_length
+        max_seq_len = self.config.seq_length
+
+        sub_max_seq_len = max_seq_len
+        if self.config.moe_subbatch_token_num > 0:
+            sub_max_seq_len = self.config.moe_subbatch_token_num * self.config.tensor_parallel_degree
+
+        # all_probs and routing_map should be computed using the runtime local sequence length on each worker.
         if self.config.tensor_parallel_degree > 1:
             assert self.config.sequence_parallel and max_seq_len % self.config.tensor_parallel_degree == 0
-            local_seq_len = max_seq_len // self.config.tensor_parallel_degree
+            local_seq_len = sub_max_seq_len // self.config.tensor_parallel_degree
             # [B*S, E]
             all_probs = AllGatherOp.apply(probs)
             # [B, S, E]
-            all_probs = all_probs.reshape([-1, max_seq_len, self.num_experts])
+            all_probs = all_probs.reshape([-1, sub_max_seq_len, self.num_experts])
             batch_size = all_probs.shape[0]
             # [B, S, E]
             routing_map = routing_map.reshape([batch_size, local_seq_len, -1])
         else:
             # [B, S, E]
+            all_probs = probs
             batch_size, local_seq_len, _ = probs.shape
             routing_map = routing_map.reshape([batch_size, local_seq_len, -1])
-            all_probs = probs
 
         seq_axis = 1
+        # Both cost_coeff and seq_aux_loss must be computed with the global sequence length visible to all workers.
         # [B, E]
         cost_coeff = routing_map.sum(axis=seq_axis, dtype="float32") / paddle.to_tensor(
             max_seq_len * top_k / self.num_experts, dtype="float32"
@@ -324,6 +331,9 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         )  # [n, e]
         tmp_scores = scores_for_choice * score_mask  # [n, e]
         topk_weight, topk_idx = paddle.topk(tmp_scores, k=k, axis=-1, sorted=True)
+
+        # The bias term b is used only to adjust affinity scores for Top-K expert selection (routing); it does not affect gating.
+        # The gate applied during dispatch and to weight the FFN output is computed from the original affinity score s_{i,t} (without the bias).
         topk_weight = scores.take_along_axis(topk_idx, axis=1) if not self.training else topk_weight
 
         return topk_weight, topk_idx
@@ -509,7 +519,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         top_gate = top_gate * self.routed_scaling_factor
 
         # get topk mask
-        mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype="float32"), axis=1)
+        mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1)
         if hasattr(self.config, "seq_aux") and self.config.seq_aux:
             l_aux = self._cal_seq_aux_loss(gates_ori, self.top_k, mask)
         else:

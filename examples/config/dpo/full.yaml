@@ -16,6 +16,8 @@ attn_impl: flashmask
 
 ### finetuning
 # base
+stage: DPO
+fine_tuning: full
 seed: 23
 do_train: true
 do_eval: true

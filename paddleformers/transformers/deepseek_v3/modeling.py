@@ -25,12 +25,13 @@ from typing import List, Optional, Tuple, Union
 
 import paddle
 
+from ...nn.criterion.interface import CriterionLayer
+from ...nn.lm_head import LMHead as GeneralLMHead
 from ..deepseek_v2.modeling import (
+    DeepseekV2ForCausalLMPipe,
     DeepseekV2ForSequenceClassification,
-    DeepseekV2LMHead,
     DeepseekV2Model,
     DeepseekV2PretrainedModel,
-    DeepseekV2PretrainingCriterion,
 )
 from ..model_outputs import CausalLMOutputWithPast
 from ..model_utils import register_base_model
@@ -46,8 +47,20 @@ __all__ = [
 
 class DeepseekV3PretrainedModel(DeepseekV2PretrainedModel):
     config_class = DeepseekV3Config
-    base_model_prefix = "deepseek_v3"
+    base_model_prefix = "model"
     _no_split_modules = ["DeepseekV2DecoderLayer"]
+    transpose_weight_keys = [
+        "kv_a_proj_with_mqa",
+        "kv_b_proj",
+        "o_proj",
+        "q_a_proj",
+        "q_b_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "gate",
+        "eh_proj",
+    ]
 
 
 @register_base_model
@@ -61,16 +74,16 @@ class DeepseekV3ForCausalLM(DeepseekV3PretrainedModel):
 
     def __init__(self, config: DeepseekV3Config):
         super().__init__(config)
-        self.deepseek_v3 = DeepseekV3Model(config)
+        self.model = DeepseekV3Model(config)
         self.vocab_size = config.vocab_size
-        self.lm_head = DeepseekV2LMHead(config)
-        self.criterion = DeepseekV2PretrainingCriterion(config)
+        self.lm_head = GeneralLMHead(config)
+        self.criterion = CriterionLayer(config)
 
     def get_input_embeddings(self):
-        return self.deepseek_v3.embed_tokens
+        return self.model.embed_tokens
 
     def set_input_embeddings(self, value):
-        self.deepseek_v3.embed_tokens = value
+        self.model.embed_tokens = value
 
     def get_output_embeddings(self):
         return self.lm_head
@@ -79,10 +92,10 @@ class DeepseekV3ForCausalLM(DeepseekV3PretrainedModel):
         self.lm_head = new_embeddings
 
     def set_decoder(self, decoder):
-        self.deepseek_v3 = decoder
+        self.model = decoder
 
     def get_decoder(self):
-        return self.deepseek_v3
+        return self.model
 
     def forward(
         self,
@@ -129,7 +142,7 @@ class DeepseekV3ForCausalLM(DeepseekV3PretrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-        outputs = self.deepseek_v3(
+        outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -168,3 +181,22 @@ class DeepseekV3ForCausalLM(DeepseekV3PretrainedModel):
 class DeepseekV3ForSequenceClassification(DeepseekV2ForSequenceClassification):
     def __init__(self, config):
         super().__init__(config)
+
+
+class DeepseekV3ForCausalLMPipe(DeepseekV2ForCausalLMPipe):
+    """DeepseekV2ForPretraining adapted for pipeline parallelism.
+
+    The largest change is flattening the DeepseekV2Model class so we can express it as a
+    sequence of layers including embedding, transformer layers, and output.
+    """
+
+    config_class = DeepseekV3Config
+    _base_model = DeepseekV3PretrainedModel
+    _get_tensor_parallel_mappings = DeepseekV3PretrainedModel._get_tensor_parallel_mappings
+    _init_weights = DeepseekV3PretrainedModel._init_weights
+    _keys_to_ignore_on_load_unexpected = DeepseekV3PretrainedModel._keys_to_ignore_on_load_unexpected
+    _get_model_flops = DeepseekV3PretrainedModel._get_model_flops
+    _get_hardware_flops = DeepseekV3PretrainedModel._get_hardware_flops
+    _tied_weights_keys = ["lm_head.weight"]
+    base_model_prefix = DeepseekV3PretrainedModel.base_model_prefix
+    transpose_weight_keys = DeepseekV3PretrainedModel.transpose_weight_keys

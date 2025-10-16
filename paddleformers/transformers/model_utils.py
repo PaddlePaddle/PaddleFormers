@@ -101,6 +101,11 @@ from .utils import (  # convert_ndarray_dtype,
     weight_name_suffix,
 )
 
+VLMS = [
+    "qwen2vl",
+    "qwen2_5_vl",
+]
+
 __all__ = [
     "PretrainedModel",
     "register_base_model",
@@ -389,7 +394,7 @@ def _load_part_state_dict(
         return False
 
     def _transpose_hf_weight(key, weight):
-        if _is_need_transpose(key):
+        if _is_need_transpose(key) and weight.ndim == 2:
             if isinstance(weight, np.ndarray):
                 return np.ascontiguousarray(weight.transpose([-1, -2]))
             elif isinstance(weight, paddle.Tensor):
@@ -1129,6 +1134,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
     main_input_name = "input_ids"
     config_class = None
     _keep_in_fp32_modules = None
+
+    _checkpoint_conversion_mapping = {}  # used for BC support in VLMs, not meant to be used by new models
 
     # a list of `re` patterns of `state_dict` keys that should be removed from the list of missing
     # keys we find (keys inside the model but not in the checkpoint) and avoid unnecessary warnings.
@@ -2085,6 +2092,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         keep_in_fp32_modules=None,
         quantization_linear_list=None,
         sharded_metadata=None,
+        key_mapping: Optional[dict[str, str]] = None,
     ) -> Tuple[List[str]]:
         """load the state_dict into model, and do the following things:
 
@@ -2117,6 +2125,18 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # that are loaded, but always on the keys of the newly initialized model
         remove_prefix_from_model = not has_prefix_module and expects_prefix_module
         add_prefix_to_model = has_prefix_module and not expects_prefix_module
+
+        # Find the key names that the model expects from the serialized keys in VLMs
+        if key_mapping is not None:
+            original_loaded_keys = copy.deepcopy(loaded_keys)
+            key_renaming_mapping = model._get_key_renaming_mapping(
+                original_loaded_keys,
+                key_mapping,
+            )
+            loaded_keys = list(key_renaming_mapping.values())
+
+            # Get reverse key mapping
+            reverse_key_renaming_mapping = {v: k for k, v in key_renaming_mapping.items()}
 
         if remove_prefix_from_model:
             _prefix = f"{prefix}."
@@ -2168,6 +2188,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             else:
                 origin_expected_keys = [k.replace("quant_weight", "weight") for k in expected_keys]
                 expected_keys_set = set(expected_keys + origin_expected_keys)
+
+            if key_mapping is not None:
+                # Determine the precise set of original checkpoint keys that are actually needed for the current file.
+                # This set will be used to identify which sharded checkpoint files are relevant and must be loaded.
+                expected_keys_set = {
+                    reverse_key_renaming_mapping[key]
+                    for key in list(expected_keys_set)
+                    if key not in missing_keys and key not in unexpected_keys
+                }
 
             for file in resolved_archive_file:
                 filename = os.path.split(file)[-1]
@@ -2427,10 +2456,18 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     state_dict = load_state_dict(
                         shard_file,
                         tp_actions if pre_tensor_parallel_split else None,
-                        filter_dict_keys,
+                        {
+                            reverse_key_renaming_mapping[key]
+                            for key in filter_dict_keys
+                            if key in reverse_key_renaming_mapping
+                        }
+                        if key_mapping is not None
+                        else filter_dict_keys,
                         convert_from_hf=convert_from_hf,
                         transpose_weight_keys=cls.transpose_weight_keys,
                     )
+                    if key_mapping is not None:
+                        state_dict = {key_renaming_mapping[key]: value for key, value in state_dict.items()}
                     # convert for fusing or splitting weights
                     state_dict, resume_state_dict, fused_keys, new_keys = _fuse_or_split_keys(
                         state_dict,
@@ -2618,6 +2655,12 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         if load_state_as_np is not None:
             logger.warning("`load_state_as_np` is deprecated,  please delete it!")
 
+        key_mapping = kwargs.pop("key_mapping", None)
+        if key_mapping is None and any(
+            allowed_name in class_name.__name__.lower() for class_name in cls.__mro__[:-1] for allowed_name in VLMS
+        ):
+            key_mapping = cls._checkpoint_conversion_mapping
+
         model_kwargs = kwargs
         if convert_from_hf is None and download_hub == DownloadSource.MODELSCOPE:
             logger.warning(
@@ -2775,6 +2818,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             keep_in_fp32_modules=keep_in_fp32_modules,
             quantization_linear_list=quantization_linear_list,
             sharded_metadata=sharded_metadata if is_sharded else None,
+            key_mapping=key_mapping,
         )
 
         # load generation_config.json
@@ -2809,6 +2853,36 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             return model
 
         return model, state_dict
+
+    def _get_key_renaming_mapping(
+        self,
+        checkpoint_keys: list[str],
+        key_mapping: Optional[dict[str, str]] = None,
+    ):
+        """
+        Compute a mapping between the serialized keys on disk `checkpoint_keys`, and the keys that the model
+        that we are loading expects. This is the single entry point for key renaming that will be used during
+        loading.
+
+        NOTE:
+            This implementation is adapted from the Hugging Face Transformers library.
+            Source: https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_utils.py
+        """
+
+        key_renaming_mapping = {}
+        for key in checkpoint_keys:
+
+            # Optionally map the key according to `key_mapping`
+            if key_mapping is not None:
+                for pattern, replacement in key_mapping.items():
+                    new_key, n_replace = re.subn(pattern, replacement, key)
+                    if n_replace > 0:
+                        break
+            else:
+                new_key = key
+            key_renaming_mapping[key] = new_key
+
+        return key_renaming_mapping
 
     def save_pretrained(
         self,
@@ -2917,6 +2991,25 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Shard the model if it is too big.
         weights_name = SAFE_WEIGHTS_NAME if safe_serialization else PADDLE_WEIGHTS_NAME
         weights_name = _add_variant(weights_name, variant)
+
+        if any(
+            allowed_name in class_name.__name__.lower()
+            for class_name in self.__class__.__mro__[:-1]
+            for allowed_name in VLMS
+        ):
+            reverse_key_mapping = {v: k for k, v in self._checkpoint_conversion_mapping.items()}
+
+            original_state_dict = {}
+            for key, value in state_dict.items():
+                for pattern, replacement in reverse_key_mapping.items():
+                    replacement = replacement.lstrip("^")  # strip off un-needed chars and patterns
+                    replacement = re.sub(r"\(.*\)", "", replacement)
+                    key, n_replace = re.subn(pattern, replacement, key)
+                    # Early exit of the loop
+                    if n_replace > 0:
+                        break
+                original_state_dict[key] = value
+            state_dict = original_state_dict
 
         # convert to fit HF torch weights
         if save_to_hf:
