@@ -15,19 +15,20 @@
 import re
 from copy import deepcopy
 from dataclasses import dataclass
+from enum import Enum, unique
 from typing import TYPE_CHECKING, Optional, Union
 
 from typing_extensions import override
 
+from paddleformers.hparams.data_args import DataArguments
 from paddleformers.utils.log import logger
-
-from enum import Enum, unique
 
 from .formatter import EmptyFormatter, FunctionFormatter, StringFormatter, ToolFormatter
 from .mm_plugin import get_mm_plugin
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer
+
     from .formatter import SLOTS, Formatter
     from .mm_plugin import BasePlugin
     from .tool_utils import FunctionCall
@@ -40,9 +41,6 @@ class Role(str, Enum):
     SYSTEM = "system"
     FUNCTION = "function"
     OBSERVATION = "observation"
-
-
-# logger = logging.get_logger(__name__)
 
 
 @dataclass
@@ -181,13 +179,13 @@ class Template:
         is_added = tokenizer.eos_token_id is None
         num_added_tokens = tokenizer.add_special_tokens({"eos_token": eos_token})
 
-        # if is_added:
-        #     logger.info_rank0(f"Add eos token: {tokenizer.eos_token}.")
-        # else:
-        #     logger.info_rank0(f"Replace eos token: {tokenizer.eos_token}.")
+        if is_added:
+            logger.warning(f"Add eos token: {tokenizer.eos_token}.")
+        else:
+            logger.warning(f"Replace eos token: {tokenizer.eos_token}.")
 
-        # if num_added_tokens > 0:
-        #     logger.warning_rank0("New tokens have been added, make sure `resize_vocab` is True.")
+        if num_added_tokens > 0:
+            logger.warning("New tokens have been added, make sure `resize_vocab` is True.")
 
     def fix_special_tokens(self, tokenizer: "PreTrainedTokenizer") -> None:
         r"""Add eos token and pad token to the tokenizer."""
@@ -204,15 +202,15 @@ class Template:
 
         if tokenizer.pad_token_id is None:
             tokenizer.pad_token = tokenizer.eos_token
-            # logger.info_rank0(f"Add pad token: {tokenizer.pad_token}")
+            logger.info(f"Add pad token: {tokenizer.pad_token}")
 
         if stop_words:
             num_added_tokens = tokenizer.add_special_tokens(
                 dict(additional_special_tokens=stop_words), replace_additional_special_tokens=False
             )
-            # logger.info_rank0("Add {} to stop words.".format(",".join(stop_words)))
-            # if num_added_tokens > 0:
-            #     logger.warning_rank0("New tokens have been added, make sure `resize_vocab` is True.")
+            logger.info("Add {} to stop words.".format(",".join(stop_words)))
+            if num_added_tokens > 0:
+                logger.warning("New tokens have been added, make sure `resize_vocab` is True.")
 
     @staticmethod
     def _jinja_escape(content: str) -> str:
@@ -277,60 +275,6 @@ class Template:
                 tokenizer.chat_template = self._get_jinja_template(tokenizer)
             except ValueError as e:
                 logger.warning(f"Cannot add this chat template to tokenizer: {e}.")
-
-    @staticmethod
-    def _convert_slots_to_ollama(
-        slots: "SLOTS", tokenizer: "PreTrainedTokenizer", placeholder: str = "content"
-    ) -> str:
-        r"""Convert slots to ollama template."""
-        slot_items = []
-        for slot in slots:
-            if isinstance(slot, str):
-                slot_pieces = slot.split("{{content}}")
-                if slot_pieces[0]:
-                    slot_items.append(slot_pieces[0])
-                if len(slot_pieces) > 1:
-                    slot_items.append("{{ " + placeholder + " }}")
-                    if slot_pieces[1]:
-                        slot_items.append(slot_pieces[1])
-            elif isinstance(slot, set):  # do not use {{ eos_token }} since it may be replaced
-                if "bos_token" in slot and tokenizer.bos_token_id is not None:
-                    slot_items.append(tokenizer.bos_token)
-                elif "eos_token" in slot and tokenizer.eos_token_id is not None:
-                    slot_items.append(tokenizer.eos_token)
-            elif isinstance(slot, dict):
-                raise ValueError("Dict is not supported.")
-
-        return "".join(slot_items)
-
-    def _get_ollama_template(self, tokenizer: "PreTrainedTokenizer") -> str:
-        r"""Return the ollama template."""
-        prefix = self._convert_slots_to_ollama(self.format_prefix.apply(), tokenizer)
-        system = self._convert_slots_to_ollama(self.format_system.apply(), tokenizer, placeholder=".System")
-        user = self._convert_slots_to_ollama(self.format_user.apply(), tokenizer, placeholder=".Content")
-        assistant = self._convert_slots_to_ollama(self.format_assistant.apply(), tokenizer, placeholder=".Content")
-        return (
-            f"{prefix}{{{{ if .System }}}}{system}{{{{ end }}}}"
-            f"""{{{{ range .Messages }}}}{{{{ if eq .Role "user" }}}}{user}"""
-            f"""{{{{ else if eq .Role "assistant" }}}}{assistant}{{{{ end }}}}{{{{ end }}}}"""
-        )
-
-    def get_ollama_modelfile(self, tokenizer: "PreTrainedTokenizer") -> str:
-        r"""Return the ollama modelfile.
-
-        TODO: support function calling.
-        """
-        modelfile = "# ollama modelfile auto-generated by llamafactory\n\n"
-        modelfile += f'FROM .\n\nTEMPLATE """{self._get_ollama_template(tokenizer)}"""\n\n'
-
-        if self.default_system:
-            modelfile += f'SYSTEM """{self.default_system}"""\n\n'
-
-        for stop_token_id in self.get_stop_token_ids(tokenizer):
-            modelfile += f'PARAMETER stop "{tokenizer.convert_ids_to_tokens(stop_token_id)}"\n'
-
-        modelfile += "PARAMETER num_ctx 4096\n"
-        return modelfile
 
 
 @dataclass
