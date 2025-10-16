@@ -305,6 +305,10 @@ class LlmMetaConfig:
         ("using_fake_gate", bool, False, "Whether to fake gate."),
     ]
 
+    mtp_attributes = [
+        ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
+    ]
+
     @classmethod
     def _get_defaults(cls):
         ret = {}
@@ -314,6 +318,7 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
+            cls.mtp_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
