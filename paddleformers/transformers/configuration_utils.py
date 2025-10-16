@@ -1126,7 +1126,10 @@ class PretrainedConfig:
 
             # pop the `_pre_quantization_dtype` as torch.dtypes are not serializable.
             _ = output.pop("_pre_quantization_dtype", None)
-
+        if hasattr(self, "dpo_config") and self.dpo_config is not None:
+            output["dpo_config"] = (
+                self.dpo_config.__dict__ if not isinstance(self.dpo_config, dict) else self.dpo_config
+            )
         return output
 
     def to_json_string(self, use_diff: bool = True, saving_file=False) -> str:
