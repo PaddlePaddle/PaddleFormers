@@ -153,15 +153,15 @@ class SFTTrainTest(unittest.TestCase):
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
-        n_gpus = paddle.device.cuda.device_count()
-        devices = ",".join(str(i) for i in range(n_gpus))
+        # n_gpus = paddle.device.cuda.device_count()
+        # devices = ",".join(str(i) for i in range(n_gpus))
         cmd = [
             "python",
             "-u",
             "-m",
             "paddle.distributed.launch",
             "--devices",
-            devices,
+            "0,1,2,3",
             train_path,
             updated_config_path,
         ]
