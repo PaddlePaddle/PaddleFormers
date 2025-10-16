@@ -25,9 +25,14 @@ from paddleformers.datasets2.reader.mix_datasets import (
 from paddleformers.hparams.data_args import DataArguments
 from paddleformers.transformers import AutoTokenizer
 
+from paddleformers.datasets2.template.template import get_template_and_fix_tokenizer
+
+from transformers import AutoProcessor
 
 class SFTDataSet(IterableDataset):
     def __init__(self, **dataset_config):
+
+        self.tokenizer = dataset_config["tokenizer"]
         # self.reader = dataset_config["data_reader"]
         # self.processor = dataset_config["data_processor"]
 
@@ -47,21 +52,32 @@ class SFTDataSet(IterableDataset):
             break
 
         data_args = DataArguments(
-            max_seq_len=16384,
-            min_pixels=3136,
-            max_pixels=4816896,
-            video_min_frames=4,
-            video_max_frames=768,
-            render_timestamp=True,
+            template="ernie",
+            train_on_prompt=False,
+            tool_format=None,
+            default_system=None,
+            enable_thinking=True,
         )
-        auto_processor = Qwen2VLProcessor(data_args=data_args)
-        vision_processor = Qwen2VLVisionProcessor(data_args=data_args)
-        self.processor = SupervisedDatasetProcessor(
-            auto_processor=auto_processor,
-            tokenizer=dataset_config["tokenizer"],
-            vision_processor=vision_processor,
-            data_args=data_args,
-        )
+
+        # 得到register的template
+        self.template = get_template_and_fix_tokenizer(dataset_config["tokenizer"], data_args)
+
+        # data_args = DataArguments(
+        #     max_seq_len=16384,
+        #     min_pixels=3136,
+        #     max_pixels=4816896,
+        #     video_min_frames=4,
+        #     video_max_frames=768,
+        #     render_timestamp=True,
+        # )
+        # auto_processor = Qwen2VLProcessor(data_args=data_args)
+        # vision_processor = Qwen2VLVisionProcessor(data_args=data_args)
+        # self.processor = SupervisedDatasetProcessor(
+        #     auto_processor=auto_processor,
+        #     tokenizer=dataset_config["tokenizer"],
+        #     vision_processor=vision_processor,
+        #     data_args=data_args,
+        # )
 
     def __len__(self):
         return self.mix_datasets.__len__()
@@ -69,7 +85,43 @@ class SFTDataSet(IterableDataset):
     def __iter__(self):
 
         for item in self.mix_datasets:
-            res = self.processor.preprocess_dataset(item)
+            # res = self.processor.preprocess_dataset(item)
+
+
+            # 使用self.processor处理多模输入，得到拼接后的结果
+            images = []
+            videos = []
+            audios = []
+            try:
+                self.processor = AutoProcessor.from_pretrained(
+                    '/root/paddlejob/workspace/env/output/lrl/PaddleFormers/Qwen3-0.6B-base',
+                    use_fast=True,
+                )
+            except ValueError:  # try another one
+                self.processor = AutoProcessor.from_pretrained(
+                    '/root/paddlejob/workspace/env/output/lrl/PaddleFormers/Qwen3-0.6B-base',
+                    use_fast=False,
+                )
+            except Exception as e:
+                logger.info_rank0(f"Failed to load processor: {e}.")
+                processor = None
+            
+            messages = self.template.mm_plugin.process_messages(item["messages"], images, videos, audios, self.processor)
+
+            input_ids, labels = self.template.mm_plugin.process_token_ids(
+                [], [], images, videos, audios, self.tokenizer, self.processor
+            )
+            
+            # 套template，转ids
+            system = None
+            tools = None
+            encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
+
+            import pdb
+            pdb.set_trace()
+            
+            total_length = len(input_ids) + (1 if self.template.efficient_eos else 0)
+
             # debug
             print(res)
 

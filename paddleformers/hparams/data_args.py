@@ -26,6 +26,26 @@ class DataArguments:
         metadata={"help": "Maximum sequence length."},
     )
 
+    template: Optional[str] = field(
+        default=None,
+        metadata={"help": "Which template to use for constructing prompts in training and inference."},
+    )
+    train_on_prompt: bool = field(
+        default=False,
+        metadata={"help": "Whether or not to disable the mask on the prompt."},
+    )
+    tool_format: Optional[str] = field(
+        default=None,
+        metadata={"help": "Tool format to use for constructing function calling examples."},
+    )
+    default_system: Optional[str] = field(
+        default=None,
+        metadata={"help": "Override the default system message in the template."},
+    )
+    enable_thinking: Optional[bool] = field(
+        default=True,
+        metadata={"help": "Whether or not to enable thinking mode for reasoning models."},
+    )
     # model
     patch_size: int = field(default=14, metadata={"help": "Patch size"})
     merge_size: int = field(default=2, metadata={"help": "Merge size"})
