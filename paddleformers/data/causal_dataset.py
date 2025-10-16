@@ -26,6 +26,51 @@ local_rank = int(os.getenv("PADDLE_RANK_IN_NODE", 0))
 #         return None
 
 
+def get_logits(batch_ids, max_retries=3, timeout=120, retry_delay=5, prob_nums=20):
+    """
+    获取logits，如果超过规定时间没有返回则重试
+
+    参数:
+        batch_ids: 输入的token ids
+        max_retries: 最大重试次数 (默认3次)
+        timeout: 请求超时时间(秒) (默认10秒)
+        retry_delay: 重试间隔时间(秒) (默认1秒)
+
+    返回:
+        tuple: (logits, ids)
+    抛出:
+        Exception: 当所有重试都失败后抛出异常
+    """
+    input_len = len(batch_ids[0])
+    return paddle.randn([input_len, 103424], dtype="bfloat16")
+    # headers = {"Content_Type": "application/json"}
+    # url = "http://10.85.158.107:8118/generate"
+    # payload = {
+    #    "prompt_token_ids": batch_ids,
+    #    "max_tokens": 1,
+    #    "top_p": 1,
+    #    "top_k": -1,
+    #    "temperature": 1,
+    #    "prompt_logprobs": prob_nums,
+    # }
+
+    # for attempt in range(max_retries):
+    #    try:
+    #        response = requests.post(url=url, json=payload, headers=headers, timeout=timeout)
+    #        response.raise_for_status()  # 检查HTTP错误
+
+    #        buffer = io.BytesIO(response.content)
+    #        data = paddle.load(buffer)
+    #        return data["logits"], data["ids"]
+
+    #    except (requests.exceptions.RequestException, IOError) as e:
+    #        if attempt == max_retries - 1:  # 最后一次尝试失败
+    #            raise Exception(f"Failed after {max_retries} attempts. Last error: {str(e)}")
+
+    #        print(f"Attempt {attempt + 1} failed. Retrying in {retry_delay} second(s)... Error: {str(e)}")
+    #        time.sleep(retry_delay)
+
+
 def check_data_split(splits_string, do_train, do_eval, do_predict):
     splits = []
     if splits_string.find(",") != -1:
@@ -146,6 +191,7 @@ def build_train_valid_test_datasets(
     # Blending dataset.
     # Parse the values.
     output = get_datasets_weights_and_num_samples(data_prefix, train_val_test_num_samples)
+    print("TINGLSLS1:", output)
     prefixes, weights, datasets_train_valid_test_num_samples = output
     # NOTE: megatron/gpt_dataset.py has been updated. When creating BlendableDataset, we will use the raw train_val_test_num_samples instead of the expanded ones.
     # Please refer to https://github.com/NVIDIA/NeMo/blob/72f630d087d45655b1a069dc72debf01dfdbdb2d/nemo/collections/nlp/data/language_modeling/megatron/gpt_dataset.py#L74-L80 for more information
@@ -214,6 +260,10 @@ def _build_train_valid_test_datasets(
     need_data=True,
 ):
     """Build train, valid, and test datasets."""
+    CPT = False
+    if data_prefix.endswith("::CPT"):
+        data_prefix = data_prefix[: -len("::CPT")]
+        CPT = True
 
     # Indexed dataset.
     if need_data:
@@ -254,6 +304,7 @@ def _build_train_valid_test_datasets(
             share_folder,
             data_cache_path=data_cache_path,
             need_data=need_data,
+            CPT=CPT,
         )
         if need_data:
             return dataset if splits[index + 1] > splits[index] else None
@@ -295,11 +346,13 @@ class GPTDataset(paddle.io.Dataset):
         *,
         data_cache_path=None,
         need_data=True,
+        CPT=False,
     ):
 
         self.name = name
         self.indexed_dataset = indexed_dataset
         self.return_doc_ids = return_doc_ids
+        self.CPT = CPT
 
         # Build index mappings.
         if need_data and len(documents) > 0:
@@ -398,20 +451,33 @@ class GPTDataset(paddle.io.Dataset):
             if append_mask:
                 mask = np.concatenate(mask_list)
         # print(sample)
+        kl_logits = get_logits([sample])
         if self.return_doc_ids:  # for retro preprocessing
             if mask is None:
-                return {"text": np.array(sample, dtype=np.int64), "doc_ids": np.array(doc_ids, dtype=np.int64)}
+                return {
+                    "text": np.array(sample, dtype=np.int64),
+                    "doc_ids": np.array(doc_ids, dtype=np.int64),
+                    "logits": kl_logits,
+                    "CPT": self.CPT,
+                }
             else:
                 return {
                     "text": np.array(sample, dtype=np.int64),
                     "doc_ids": np.array(doc_ids, dtype=np.int64),
                     "mask": np.array(mask, dtype=np.int64),
+                    "logits": kl_logits,
+                    "CPT": self.CPT,
                 }
         else:
             if mask is None:
-                return {"text": np.array(sample, dtype=np.int64)}
+                return {"text": np.array(sample, dtype=np.int64), "logits": kl_logits, "CPT": self.CPT}
             else:
-                return {"text": np.array(sample, dtype=np.int64), "mask": np.array(mask, dtype=np.int64)}
+                return {
+                    "text": np.array(sample, dtype=np.int64),
+                    "mask": np.array(mask, dtype=np.int64),
+                    "logits": kl_logits,
+                    "CPT": self.CPT,
+                }
 
 
 def _build_index_mappings(
