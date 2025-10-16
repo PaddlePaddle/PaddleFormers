@@ -146,7 +146,12 @@ class SFTTrainTest(unittest.TestCase):
 
     def test_sft_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_tp_pp")
-        update_args = {"model_name_or_path": MODEL_NAME_OR_PATH, "output_dir": output_dir}
+        update_args = {
+            "model_name_or_path": MODEL_NAME_OR_PATH,
+            "train_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+            "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+            "output_dir": output_dir
+        }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
