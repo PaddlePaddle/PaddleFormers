@@ -150,7 +150,7 @@ class SFTTrainTest(unittest.TestCase):
             "model_name_or_path": MODEL_NAME_OR_PATH,
             "train_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
-            "output_dir": output_dir
+            "output_dir": output_dir,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
