@@ -205,7 +205,7 @@ class SFTTrainTest(unittest.TestCase):
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
-        train_path = os.path.join(TRAIN_PATH, "run_finetune.py")gi
+        train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
         cmd = [
             "python",
             "-u",
