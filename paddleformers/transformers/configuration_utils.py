@@ -304,6 +304,10 @@ class LlmMetaConfig:
         ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
     ]
 
+    mtp_attributes = [
+        ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
+    ]
+
     @classmethod
     def _get_defaults(cls):
         ret = {}
@@ -313,6 +317,7 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
+            cls.mtp_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
