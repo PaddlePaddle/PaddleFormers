@@ -52,6 +52,7 @@ if "datasets" in sys.modules.keys():
 
 # module index
 modules = [
+    "cli",
     "data",
     "datasets",
     "generation",
@@ -71,6 +72,7 @@ import_structure["transformers.tokenizer_utils"] = ["PreTrainedTokenizer"]
 
 if TYPE_CHECKING:
     from . import (
+        cli,
         data,
         datasets,
         generation,

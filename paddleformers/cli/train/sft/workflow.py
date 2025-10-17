@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Training Ernie Model."""
+
 import gc
 import os
-import sys
 from functools import partial
 
 import paddle
@@ -29,7 +30,6 @@ from paddleformers.trainer import (
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
     MoEGateSpGradSyncCallBack,
-    PdArgumentParser,
     get_last_checkpoint,
     set_seed,
 )
@@ -42,25 +42,43 @@ from paddleformers.transformers import (
     LlamaTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
-from paddleformers.trl import DataConfig, ModelConfig, SFTConfig, SFTTrainer
+from paddleformers.trl import SFTTrainer
 from paddleformers.trl.llm_utils import compute_metrics, get_lora_target_modules
 from paddleformers.utils.log import logger
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "False"
 
+from paddleformers.cli.hparams import (
+    DataArguments,
+    FinetuningArguments,
+    GeneratingArguments,
+    ModelArguments,
+)
 
-def main():
-    parser = PdArgumentParser((ModelConfig, DataConfig, SFTConfig))
-    if len(sys.argv) >= 2 and sys.argv[1].endswith(".json"):
-        model_args, data_args, training_args = parser.parse_json_file_and_cmd_lines()
-    elif len(sys.argv) >= 2 and sys.argv[1].endswith(".yaml"):
-        model_args, data_args, training_args = parser.parse_yaml_file_and_cmd_lines()
-    elif len(sys.argv) >= 2 and sys.argv[1].endswith(".py"):
-        model_args, data_args, training_args = parser.parse_python_file_and_cmd_lines()
-    else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+def run_sft(
+    model_args: "ModelArguments",
+    data_args: "DataArguments",
+    generating_args: "GeneratingArguments",
+    finetuning_args: "FinetuningArguments",
+):
+    """_summary_
+
+    Args:
+        model_args (ModelArguments): _description_
+        data_args (DataArguments): _description_
+        generating_args (GeneratingArguments): _description_
+        finetuning_args (FinetuningArguments): _description_
+        callbacks (Optional[list[&quot;TrainerCallback&quot;]], optional): _description_. Defaults to None.
+
+    Raises:
+        ValueError: _description_
+        ValueError: _description_
+    """
+
+    training_args = finetuning_args
+    training_args.max_seq_len = data_args.max_seq_len
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
 
@@ -121,9 +139,9 @@ def main():
 
     # Config for model using dropout, such as GPT.
     if hasattr(model_config, "hidden_dropout_prob"):
-        model_config.hidden_dropout_prob = model_args.hidden_dropout_prob
+        model_config.hidden_dropout_prob = finetuning_args.hidden_dropout_prob
     if hasattr(model_config, "attention_probs_dropout_prob"):
-        model_config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
+        model_config.attention_probs_dropout_prob = finetuning_args.attention_probs_dropout_prob
     if hasattr(model_config, "ignore_index"):
         model_config.ignore_index = -100
 
@@ -137,8 +155,8 @@ def main():
         raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
 
     model_config.pp_seg_method = model_args.pp_seg_method
-    model_config.seq_length = training_args.max_seq_len
-    model_config.max_sequence_length = training_args.max_seq_len
+    model_config.seq_length = data_args.max_seq_len
+    model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args.attn_impl
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
@@ -193,7 +211,7 @@ def main():
 
     dataset_config = {
         "tokenizer": tokenizer,
-        "max_seq_len": training_args.max_seq_len,
+        "max_seq_len": data_args.max_seq_len,
         "random_seed": training_args.seed,
         "num_replicas": training_args.dataset_world_size,
         "rank": training_args.dataset_rank,
@@ -229,7 +247,7 @@ def main():
     else:
         metrics = compute_metrics
 
-    max_seq_len = training_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
+    max_seq_len = data_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
     data_collator = partial(
         collate_fn,
         tokenizer=tokenizer,
@@ -361,7 +379,3 @@ def create_peft_model(model_args, training_args, dtype, model):
         model.print_trainable_parameters()
 
     return model
-
-
-if __name__ == "__main__":
-    main()

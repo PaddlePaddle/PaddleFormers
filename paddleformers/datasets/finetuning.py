@@ -109,7 +109,7 @@ def create_indexed_dataset(data_file_prefix):
     return indexed_dataset
 
 
-def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: int):
+def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int):
     """Convert batch of sequences into training tensors.
 
     Args:
@@ -125,7 +125,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: 
             - loss_mask: Mask for computing loss
     """
     input_keys = ["input_ids", "labels", "loss_mask"]
-    if model_args.num_nextn_predict_layers > 0:
+    if training_args.num_nextn_predict_layers > 0:
         input_keys.append("nbatch_pack_offset")
     if model_args.use_attn_mask_startend_row_indices:
         input_keys.append("attn_mask_startend_row_indices")
@@ -152,7 +152,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: 
             ]
         )
 
-        if model_args.num_nextn_predict_layers > 0:
+        if training_args.num_nextn_predict_layers > 0:
             # each sequence end index
             batch_sequence_len = [len(sequence) for sequence in original_token_ids]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)

@@ -131,24 +131,31 @@ class MoEGateMixin:
         return aux_loss
 
     def _cal_seq_aux_loss(self, probs, top_k, routing_map):
-        max_seq_len = self.config.max_sequence_length
+        max_seq_len = self.config.seq_length
+
+        sub_max_seq_len = max_seq_len
+        if self.config.moe_subbatch_token_num > 0:
+            sub_max_seq_len = self.config.moe_subbatch_token_num * self.config.tensor_parallel_degree
+
+        # all_probs and routing_map should be computed using the runtime local sequence length on each worker.
         if self.config.tensor_parallel_degree > 1:
             assert self.config.sequence_parallel and max_seq_len % self.config.tensor_parallel_degree == 0
-            local_seq_len = max_seq_len // self.config.tensor_parallel_degree
+            local_seq_len = sub_max_seq_len // self.config.tensor_parallel_degree
             # [B*S, E]
             all_probs = AllGatherOp.apply(probs)
             # [B, S, E]
-            all_probs = all_probs.reshape([-1, max_seq_len, self.num_experts])
+            all_probs = all_probs.reshape([-1, sub_max_seq_len, self.num_experts])
             batch_size = all_probs.shape[0]
             # [B, S, E]
             routing_map = routing_map.reshape([batch_size, local_seq_len, -1])
         else:
             # [B, S, E]
+            all_probs = probs
             batch_size, local_seq_len, _ = probs.shape
             routing_map = routing_map.reshape([batch_size, local_seq_len, -1])
-            all_probs = probs
 
         seq_axis = 1
+        # Both cost_coeff and seq_aux_loss must be computed with the global sequence length visible to all workers.
         # [B, E]
         cost_coeff = routing_map.sum(axis=seq_axis, dtype="float32") / paddle.to_tensor(
             max_seq_len * top_k / self.num_experts, dtype="float32"

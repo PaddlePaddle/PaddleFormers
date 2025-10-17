@@ -1,0 +1,4 @@
+### model
+fine_tuning: LoRA
+model_name_or_path: Qwen3-0.6B-base
+output_dir: checkpoints/qwen3_hf_0p6b_lora_ckpts
