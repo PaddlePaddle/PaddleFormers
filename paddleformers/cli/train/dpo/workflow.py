@@ -315,7 +315,11 @@ def run_dpo(
         lora=model_args.lora,
     )
 
-    max_seq_len = data_args.max_seq_len if data_args.packing else None
+    max_seq_len = (
+        data_args.max_seq_len + model_config.num_nextn_predict_layers
+        if (data_args.packing or training_args.sequence_parallel)
+        else None
+    )
     trainer = DPOTrainer(
         model=model,
         ref_model=ref_model,
