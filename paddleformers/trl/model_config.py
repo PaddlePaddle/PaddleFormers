@@ -150,7 +150,6 @@ class ModelConfig:
     )
     actscale_moving_rate: float = field(default=0.01, metadata={"help": "EMA moving_rate for activation scale"})
     fp8_format_type: str = field(default="hybrid", metadata={"help": "FP8 Format"})
-    num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
     use_attn_mask_startend_row_indices: bool = field(
         default=True,
         metadata={"help": "Whether to use attn_mask_start_row_indices in flash attention."},

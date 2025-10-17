@@ -105,6 +105,10 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": 5,
             "save_steps": 3,
             "tensor_parallel_degree": 2,
+            "pipeline_parallel_degree": 2,
+            "sequence_parallel": True,
+            "pipeline_parallel_config": "enable_clear_every_step_cache disable_partial_send_recv",
+            "sharding": "stage1",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
