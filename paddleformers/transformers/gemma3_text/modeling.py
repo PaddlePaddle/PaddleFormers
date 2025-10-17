@@ -288,13 +288,13 @@ class Gemma3Attention(nn.Layer):
     def forward(
         self,
         hidden_states: paddle.Tensor,
-        position_ids: Optional[Tuple[paddle.Tensor]] = None,
-        position_embeddings: paddle.Tensor = None,
+        position_embeddings: Tuple[paddle.Tensor, paddle.Tensor],
         attention_mask: Optional[paddle.Tensor] = None,
-        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        position_ids: Optional[Tuple[paddle.Tensor]] = None,
+        output_attentions: bool = False,
         use_cache: bool = False,
-        **kwargs,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     ) -> tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[tuple[paddle.Tensor]]]:
         if self.config.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
@@ -326,15 +326,13 @@ class Gemma3Attention(nn.Layer):
 
         attn_output, attn_weights = attention_interface(
             self,
-            query_states,
-            key_states,
-            value_states,
-            attention_mask,
+            query=query_states,
+            key=key_states,
+            value=value_states,
+            attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             dropout=self.attention_dropout if self.training else 0.0,
             scaling=self.scaling,
-            sliding_window=self.sliding_window,
-            **kwargs,
         )
 
         # if sequence_parallel is true, out shape are [q_len / n, bs, num_head * head_dim]
@@ -343,6 +341,8 @@ class Gemma3Attention(nn.Layer):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
 
         attn_output = self.o_proj(attn_output)
+        if not output_attentions:
+            attn_weights = None
         return attn_output, attn_weights, past_key_value
 
 
@@ -363,13 +363,12 @@ class Gemma3DecoderLayer(nn.Layer):
     def forward(
         self,
         hidden_states: paddle.Tensor,
-        position_ids: Optional[paddle.LongTensor] = None,
+        position_embeddings: Tuple[paddle.Tensor, paddle.Tensor],
         attention_mask: Optional[paddle.Tensor] = None,
-        output_attentions: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        position_ids: Optional[paddle.LongTensor] = None,
+        output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
-        position_embeddings_global: paddle.Tensor = None,
-        position_embeddings_local: paddle.Tensor = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> tuple[paddle.FloatTensor, Optional[tuple[paddle.FloatTensor, paddle.FloatTensor]]]:
@@ -378,22 +377,15 @@ class Gemma3DecoderLayer(nn.Layer):
 
         hidden_states = self.input_layernorm(hidden_states)
 
-        # apply global RoPE to non-sliding layer only
-        if self.self_attn.is_sliding:
-            position_embeddings = position_embeddings_local
-        else:
-            position_embeddings = position_embeddings_global
-
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
             hidden_states=hidden_states,
             position_embeddings=position_embeddings,
             attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            position_ids=position_ids,
             past_key_value=past_key_value,
+            position_ids=position_ids,
             output_attentions=output_attentions,
             use_cache=use_cache,
-            **kwargs,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = residual + hidden_states
@@ -410,8 +402,6 @@ class Gemma3DecoderLayer(nn.Layer):
             outputs += (self_attn_weights,)
         if use_cache:
             outputs += (present_key_value,)
-        if type(outputs) is tuple and len(outputs) == 1:
-            outputs = outputs[0]
 
         return outputs
 
@@ -437,6 +427,8 @@ class Gemma3PreTrainedModel(PretrainedModel):
         "hidden_states": Gemma3DecoderLayer,
         "attentions": Gemma3Attention,
     }
+
+    _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
 
     transpose_weight_keys = [
         "q_proj",
@@ -560,11 +552,10 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor],
         attention_mask: paddle.Tensor,
-        output_attentions: bool,
         past_key_value: paddle.Tensor,
+        output_attentions: bool,
         use_cache: bool,
-        position_embeddings_global: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        position_embeddings_local: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
     ):
         def create_custom_forward(module):
@@ -576,13 +567,12 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         hidden_states = recompute(
             create_custom_forward(layer_module),
             hidden_states,
-            position_ids,
+            position_embeddings,
             attention_mask,
-            output_attentions,
             past_key_value,
+            position_ids,
+            output_attentions,
             use_cache,
-            position_embeddings_global,
-            position_embeddings_local,
             attn_mask_startend_row_indices,
         )
 
@@ -621,13 +611,11 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
         # Compute cache length
-        seq_length_with_past = seq_length
         cache_length = 0
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
         else:
             cache_length = past_key_values[0][0].shape[-2]
-            seq_length_with_past += cache_length
 
         # Get input embeddings
         if inputs_embeds is None:
@@ -678,10 +666,15 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         all_self_attns = () if output_attentions else None
         next_decoder_cache = () if use_cache else None
 
-        for idx, decoder_layer in enumerate(self.layers):
+        for idx, (decoder_layer) in enumerate(self.layers):
+            # apply global RoPE to non-sliding layer only
+            if decoder_layer.self_attn.is_sliding:
+                position_embeddings = position_embeddings_local
+            else:
+                position_embeddings = position_embeddings_global
+
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-
             past_key_value = past_key_values[idx] if past_key_values is not None else None
 
             has_gradient = not hidden_states.stop_gradient
@@ -689,13 +682,12 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
-                    position_ids=position_ids,
+                    position_embeddings=position_embeddings,
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                    output_attentions=output_attentions,
                     past_key_value=past_key_value,
+                    position_ids=position_ids,
+                    output_attentions=output_attentions,
                     use_cache=use_cache,
-                    position_embeddings_global=position_embeddings_global,
-                    position_embeddings_local=position_embeddings_local,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
                         decoder_layer.attention_type
                     ],
@@ -703,13 +695,12 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             else:
                 layer_outputs = decoder_layer(
                     hidden_states,
-                    position_ids=position_ids,
+                    position_embeddings=position_embeddings,
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                    output_attentions=output_attentions,
                     past_key_value=past_key_value,
+                    position_ids=position_ids,
+                    output_attentions=output_attentions,
                     use_cache=use_cache,
-                    position_embeddings_global=position_embeddings_global,
-                    position_embeddings_local=position_embeddings_local,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
                         decoder_layer.attention_type
                     ],
@@ -723,7 +714,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             if use_cache:
                 next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
 
-        # Final RMS Norm
+        # Final Norm
         hidden_states = self.norm(hidden_states)
 
         if output_hidden_states:
@@ -792,7 +783,6 @@ class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
         >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         "What is your favorite condiment?"
         ```"""
-        return_dict = True
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -820,10 +810,7 @@ class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
             **kwargs,
         )
 
-        if not return_dict:
-            hidden_states = outputs[0]
-        else:
-            hidden_states = outputs.last_hidden_state
+        hidden_states = outputs[0]
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
