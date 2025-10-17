@@ -14,7 +14,7 @@ on:
         type: string
 
 concurrency:
-  group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: gpu-lock-${{ github.event.pull_request.number || github.ref || github.run_id }}
   cancel-in-progress: true
 
 env:
