@@ -51,7 +51,7 @@ import_structure = {
         "AutoModelForConditionalGeneration",
     ],
     "factory": [],
-    "image_processing": ["AutoImageProcessor"],
+    "image_processing": ["get_image_processor_config", "AutoImageProcessor"],
     "processing": ["AutoProcessor"],
 }
 

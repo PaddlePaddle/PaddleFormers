@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
+import logging
 import sys
 from contextlib import suppress
 from typing import TYPE_CHECKING
@@ -47,7 +47,7 @@ import_structure = {
     "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
-    "image_processing_utils": ["ImageProcessingMixin"],
+    "image_processing_utils": ["ImageProcessingMixin", "BaseImageProcessor"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": ["_DispatchManager"],
     "moe_layer": ["combining", "_AllToAll", "MoELayer", "dispatching", "MoEFlexTokenLayer"],
@@ -123,11 +123,12 @@ import_structure = {
         "DeepseekV2DynamicNTKScalingRotaryEmbedding",
         "DeepseekV2MLP",
         "yarn_get_mscale",
+        "DeepseekV2LMHead",
         "DeepseekV2DecoderLayer",
+        "DeepseekV2PretrainingCriterion",
         "yarn_find_correction_range",
         "get_triangle_upper_mask",
         "DeepseekV2LinearScalingRotaryEmbedding",
-        "DeepseekV2ForCausalLMPipe",
     ],
     "deepseek_v2.modeling_auto": [
         "DeepseekV2LMHeadAuto",
@@ -135,6 +136,7 @@ import_structure = {
         "DeepseekV2ModelAuto",
         "DeepseekV2PretrainedModelAuto",
     ],
+    "deepseek_v2.modeling_pp": ["DeepseekV2ForCausalLMPipe"],
     "deepseek_v2.mfu_utils": ["DeepSeekProjection"],
     "deepseek_v2.kernel": [
         "act_quant",
@@ -158,7 +160,6 @@ import_structure = {
         "DeepseekV3ForSequenceClassification",
         "DeepseekV3Model",
         "DeepseekV3PretrainedModel",
-        "DeepseekV3ForCausalLMPipe",
     ],
     "deepseek_v3.modeling_auto": [
         "DeepseekV3LMHeadAuto",
@@ -166,6 +167,7 @@ import_structure = {
         "DeepseekV3ModelAuto",
         "DeepseekV3PretrainedModelAuto",
     ],
+    "deepseek_v3.modeling_pp": ["DeepseekV3ForCausalLMPipe"],
     "ernie4_5.configuration": ["Ernie4_5Config"],
     "ernie4_5.modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM", "Ernie4_5ForCausalLMPipe"],
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
@@ -359,7 +361,7 @@ if TYPE_CHECKING:
     from .tokenizer_utils_fast import PretrainedTokenizerFast
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
-    from .image_processing_utils import ImageProcessingMixin
+    from .image_processing_utils import ImageProcessingMixin, BaseImageProcessor
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
     from .tensor_parallel_utils import parallel_matmul, fused_head_and_loss_fn
@@ -410,3 +412,7 @@ else:
         import_structure,
         module_spec=__spec__,
     )
+
+logging.getLogger("transformers").addFilter(
+    lambda record: "None of PyTorch, TensorFlow >= 2.0, or Flax have been found." not in str(record.getMessage())
+)
