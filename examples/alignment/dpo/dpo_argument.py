@@ -180,3 +180,8 @@ class DPOModelArgument:
     pp_seg_method: Optional[str] = field(
         default="layer:DecoderLayer|EmptyLayer", metadata={"help": "PP Segmentation Method"}
     )
+
+    # criterion
+    model_with_dpo_criterion: bool = field(
+        default=False, metadata={"help": "Whether the model contains dpo criterion"}
+    )

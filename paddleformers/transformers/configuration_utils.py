@@ -305,6 +305,10 @@ class LlmMetaConfig:
         ("using_fake_gate", bool, False, "Whether to fake gate."),
     ]
 
+    mtp_attributes = [
+        ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
+    ]
+
     @classmethod
     def _get_defaults(cls):
         ret = {}
@@ -314,6 +318,7 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
+            cls.mtp_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -1121,7 +1126,10 @@ class PretrainedConfig:
 
             # pop the `_pre_quantization_dtype` as torch.dtypes are not serializable.
             _ = output.pop("_pre_quantization_dtype", None)
-
+        if hasattr(self, "dpo_config") and self.dpo_config is not None:
+            output["dpo_config"] = (
+                self.dpo_config.__dict__ if not isinstance(self.dpo_config, dict) else self.dpo_config
+            )
         return output
 
     def to_json_string(self, use_diff: bool = True, saving_file=False) -> str:

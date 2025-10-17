@@ -87,7 +87,7 @@ def main():
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
     if model_args.attn_impl not in avaible_attn_impl:
         raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
-
+    
     if dpo_config.loss_type == "orpo":
         dpo_config.reference_free = True
         dpo_config.sft_loss_ratio = 1.0
@@ -162,11 +162,12 @@ def main():
 
     if training_args.pipeline_parallel_degree > 1:
         model_class = AutoModelForCausalLMPipe
-        if not dpo_config.reference_free and not dpo_config.lora:
-            ref_model_config.dpo_config = dpo_config
-        model_config.dpo_config = dpo_config
     else:
         model_class = AutoModelForCausalLM
+    if not dpo_config.reference_free and not dpo_config.lora:
+        ref_model_config.dpo_config = dpo_config
+    model_config.dpo_config = dpo_config
+
     if not training_args.autotuner_benchmark or model_args.weight_quantize_algo is not None:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
@@ -319,6 +320,7 @@ def main():
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
         ignore_eos_token=True,
+        model_with_dpo_criterion=model_args.model_with_dpo_criterion,
     )
 
     if training_args.do_train:
