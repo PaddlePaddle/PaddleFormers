@@ -60,6 +60,8 @@ class SFTTrainTester(unittest.TestCase):
             avg_loss = round(sum_loss, 6)
         else:
             avg_loss = 0
+        print(f"Current loss : {avg_loss}")
+        print(f"Base loss : {base_loss}")
         self.assertTrue(abs(avg_loss - base_loss) <= 0.0001, f"loss: {avg_loss}, base_loss: {base_loss}, exist diff!")
 
     def assert_result(self, ret_code, log_output):
