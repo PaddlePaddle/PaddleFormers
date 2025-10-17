@@ -87,23 +87,26 @@ class SFTDataSet(IterableDataset):
         for item in self.mix_datasets:
             # res = self.processor.preprocess_dataset(item)
 
+            # import pdb
+            # pdb.set_trace()
+
 
             # 使用self.processor处理多模输入，得到拼接后的结果
-            images = []
+            images = item['images']
             videos = []
             audios = []
             try:
                 self.processor = AutoProcessor.from_pretrained(
-                    '/root/paddlejob/workspace/env/output/lrl/PaddleFormers/Qwen3-0.6B-base',
+                    '/root/paddlejob/workspace/env/output/lrl/PaddleFormers/models/Qwen2.5-VL-3B-Instruct',
                     use_fast=True,
                 )
             except ValueError:  # try another one
                 self.processor = AutoProcessor.from_pretrained(
-                    '/root/paddlejob/workspace/env/output/lrl/PaddleFormers/Qwen3-0.6B-base',
+                    '/root/paddlejob/workspace/env/output/lrl/PaddleFormers/models/Qwen2.5-VL-3B-Instruct',
                     use_fast=False,
                 )
             except Exception as e:
-                logger.info_rank0(f"Failed to load processor: {e}.")
+                logger.info(f"Failed to load processor: {e}.")
                 processor = None
             
             messages = self.template.mm_plugin.process_messages(item["messages"], images, videos, audios, self.processor)
@@ -291,7 +294,7 @@ class SFTPackingDataset(IterableDataset):
 
 if __name__ == "__main__":
     # Load tokenizer & dataset
-    tokenizer = AutoTokenizer.from_pretrained("/root/paddlejob/workspace/env/output/lrl/PaddleFormers/Qwen3-0.6B-base")
+    tokenizer = AutoTokenizer.from_pretrained("/root/paddlejob/workspace/env/output/lrl/PaddleFormers/models/Qwen2.5-VL-3B-Instruct")
 
     dataset_config = {
         "tokenizer": tokenizer,
@@ -307,7 +310,7 @@ if __name__ == "__main__":
         "encode_one_turn": True,
         "use_template": True,
         "reverse": True,
-        "task_group": "/root/paddlejob/workspace/env/output/lrl/PaddleFormers/data/sft/train.jsonl",
+        "task_group": "/root/paddlejob/workspace/env/output/lrl/PaddleFormers/data/vl/sft_vl-train_demo1.jsonl",
         "task_group_prob": "1.0",
         "sub_dataset_type": "erniekit",
     }
