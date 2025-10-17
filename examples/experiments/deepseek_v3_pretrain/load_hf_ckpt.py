@@ -36,7 +36,6 @@ _SHARE_EXPERT_W2_RE = re.compile(r"^mlp\.shared_experts\.w2(?:\.weight)?$")
 
 _EXPERT_W1_RE_v2 = re.compile(r"^mlp\.experts\.(\d+)\.gate_up_fused_proj(?:\.weight)?$")
 _SHARE_EXPERT_W1_RE_v2 = re.compile(r"^mlp\.shared_experts\.gate_up_fused_proj(?:\.weight)?$")
-# _LAYER_RE_v2 = re.compile(r"^deepseek_v2.layers\.(\d+)\.(.*)$")
 
 custom_name_map = {
     "self_attn.input_layernorm.weight": "input_layernorm.weight",
