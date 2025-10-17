@@ -104,7 +104,7 @@ jobs:
             git log --pretty=oneline -10
             '
 
-      - name: Test
+      - name: Unit Test
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
@@ -119,6 +119,11 @@ jobs:
           echo "Check models:"
           ls -l ./models
           timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl}
+          '
+      - name: Model Test
+        run: |
+          docker exec -t $container_name /bin/bash -c '
+          echo "models unit_test"
           '
           
       - name: Upload Products
