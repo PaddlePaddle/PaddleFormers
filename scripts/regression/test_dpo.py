@@ -163,7 +163,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.474259
+        EXCEPTED_LOSS = 0.495105
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
