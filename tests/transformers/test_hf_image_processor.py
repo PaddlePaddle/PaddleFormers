@@ -43,7 +43,7 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
         self.assertEqual(inputs["image_grid_thw"].tolist(), EXPECTED_IMAGE_GRID_THW)
         self.assertTrue(
             paddle.allclose(
-                paddle.to_tensor(inputs["pixel_values"].mean().item()),
+                paddle.to_tensor(paddle.mean(inputs["pixel_values"])),
                 EXPECTED_PIXEL_VALUES_MEAN,
                 atol=1e-5,
                 rtol=1e-5,
@@ -51,7 +51,7 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
         )
         self.assertTrue(
             paddle.allclose(
-                paddle.to_tensor(inputs["pixel_values"].max().item()), EXPECTED_PIXEL_VALUES_MAX, atol=1e-5, rtol=1e-5
+                paddle.to_tensor(paddle.max(inputs["pixel_values"])), EXPECTED_PIXEL_VALUES_MAX, atol=1e-5, rtol=1e-5
             )
         )
 
