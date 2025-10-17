@@ -466,10 +466,10 @@ def _load_part_state_dict(
                 else:
                     weight = py_safe_slice_[:]
 
-                if not return_numpy and device == "expected":
-                    weight = weight._copy_to(paddle.framework._current_expected_place(), False)
                 if not isinstance(weight, paddle.Tensor):
                     weight = paddle.Tensor.__call__(weight, zero_copy=True)
+                if not return_numpy and device == "expected":
+                    weight = weight._copy_to(paddle.framework._current_expected_place(), False)
                 weight = _transpose_hf_weight(key, weight)
                 if return_numpy:
                     weight = weight.numpy()
