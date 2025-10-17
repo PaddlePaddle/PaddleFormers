@@ -111,6 +111,8 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo "Check nvidia-smi"
     nvidia-smi
     python -c "import paddle; print(paddle.device.device_count())"
+    rm -rf ~/.paddlenlp/models/*
+    rm -f /home/paddle-1/actions-runner/proxy_aistudio/*.lock
     python -m pytest -v -n 8 \
         --dist loadgroup \
         --retries 3 --retry-delay 1 \
