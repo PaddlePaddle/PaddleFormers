@@ -19,7 +19,7 @@ from typing import List, Optional, Tuple, Union
 import paddle
 from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 from paddle.nn import functional as F
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -80,6 +80,7 @@ class GptOssExperts(nn.Layer):
         self.num_experts = config.num_experts
         self.hidden_size = config.hidden_size
         self.expert_dim = self.intermediate_size
+        self.sequence_parallel = config.sequence_parallel
         self.gate_up_proj = paddle.create_parameter(
             shape=[self.num_experts, self.hidden_size, 2 * self.expert_dim],
             dtype=paddle.get_default_dtype(),
@@ -115,12 +116,11 @@ class GptOssExperts(nn.Layer):
         Returns:
             paddle.Tensor
         """
-        sequence_parallel = False
-        if len(hidden_states.shape) == 3:
-            batch_size = hidden_states.shape[0]
-        else:
-            sequence_parallel = True
+        batch_size = hidden_states.shape[0]
+        origin_shape = hidden_states.shape
+        if self.sequence_parallel:
             batch_size = 1
+            hidden_states = GatherOp.apply(hidden_states)
         hidden_states = hidden_states.reshape([-1, self.hidden_size])  # (num_tokens, hidden_size)
         num_experts = routing_weights.shape[1]
         if self.training:
@@ -167,9 +167,9 @@ class GptOssExperts(nn.Layer):
                 next_states * routing_weights.transpose([0, 1]).reshape((num_experts, batch_size, -1))[..., None]
             )
             next_states = next_states.sum(axis=0)
-        if sequence_parallel:
-            bs, seq_len, hidden_size = next_states.shape
-            next_states = paddle.reshape_(next_states, [bs * seq_len, hidden_size])
+        if self.sequence_parallel:
+            next_states = ScatterOp.apply(next_states)
+        next_states = paddle.reshape(next_states, origin_shape)
         return next_states
 
 
@@ -184,6 +184,7 @@ class GptOssTopKRouter(nn.Layer):
             dtype=paddle.get_default_dtype(),
             default_initializer=paddle.nn.initializer.Uniform(),
         )
+        self.is_gate = True
         self.bias = paddle.create_parameter(
             shape=[self.num_experts],
             dtype=paddle.get_default_dtype(),
