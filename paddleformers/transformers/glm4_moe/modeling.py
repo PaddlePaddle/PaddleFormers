@@ -209,7 +209,6 @@ class Glm4MoeAttention(nn.Layer):
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
-        output_attentions: bool = False,
         use_cache: bool = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         batch_size: Optional[int] = None,
@@ -283,9 +282,7 @@ class Glm4MoeAttention(nn.Layer):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
 
-        if not output_attentions:
-            attn_weights = None
-        return attn_output, attn_weights, past_key_value
+        return attn_output, past_key_value
 
 
 class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
@@ -554,7 +551,6 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        output_attentions: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
@@ -570,7 +566,6 @@ class Glm4MoeDecoderLayer(nn.Layer):
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_ids=position_ids,
-            output_attentions=output_attentions,
             use_cache=use_cache,
             position_embeddings=position_embeddings,
             **offload_kwargs,
@@ -578,8 +573,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
 
         hidden_states = attn_outputs[0]
         residual = attn_outputs[1]
-        self_attn_weights = attn_outputs[2] if output_attentions else None
-        present_key_value = attn_outputs[3] if use_cache else None
+        present_key_value = attn_outputs[2] if use_cache else None
 
         hidden_size = hidden_states.shape[-1]
         if self.config.sequence_parallel:
@@ -613,9 +607,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
             self.post_process,
             hidden_states,
             residual,
-            output_attentions,
             use_cache,
-            self_attn_weights,
             present_key_value,
             **offload_kwargs,
         )
@@ -626,7 +618,6 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        output_attentions: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
@@ -645,7 +636,6 @@ class Glm4MoeDecoderLayer(nn.Layer):
                 hidden_states=hidden_states,
                 position_ids=position_ids,
                 attention_mask=attention_mask,
-                output_attentions=output_attentions,
                 past_key_value=past_key_value,
                 use_cache=use_cache,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
@@ -657,7 +647,6 @@ class Glm4MoeDecoderLayer(nn.Layer):
                 hidden_states=hidden_states,
                 position_ids=position_ids,
                 attention_mask=attention_mask,
-                output_attentions=output_attentions,
                 past_key_value=past_key_value,
                 use_cache=use_cache,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
@@ -676,12 +665,8 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states = self.post_attention_layernorm(hidden_states)
         attn_outputs = (hidden_states, residual)
 
-        if output_attentions:
-            self_attn_weights = outputs[1]
-            attn_outputs += (self_attn_weights,)
-
         if use_cache:
-            present_key_value = outputs[2 if output_attentions else 1]
+            present_key_value = outputs[1]
             attn_outputs += (present_key_value,)
 
         return attn_outputs
@@ -690,15 +675,11 @@ class Glm4MoeDecoderLayer(nn.Layer):
         self,
         hidden_states,
         residual,
-        output_attentions=False,
         use_cache=False,
-        self_attn_weights=None,
         present_key_value=None,
     ):
         hidden_states = residual + hidden_states
         outputs = (hidden_states,)
-        if output_attentions:
-            outputs += (self_attn_weights,)
         if use_cache:
             outputs += (present_key_value,)
         if type(outputs) is tuple and len(outputs) == 1:
@@ -710,7 +691,6 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        output_attentions: Optional[bool] = False,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -724,21 +704,16 @@ class Glm4MoeDecoderLayer(nn.Layer):
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_ids=position_ids,
-            output_attentions=output_attentions,
             use_cache=use_cache,
             position_embeddings=position_embeddings,
             **kwargs,
         )
         hidden_states = attn_outputs[0]
         residual = attn_outputs[1]
-        attn_idx = 2 if output_attentions else 1
-        self_attn_weights = attn_outputs[2] if output_attentions else None
-        present_key_value = attn_outputs[attn_idx + 1] if use_cache else None
+        present_key_value = attn_outputs[2] if use_cache else None
 
         hidden_states = self.mlp(hidden_states)
-        outputs = self.post_process(
-            hidden_states, residual, output_attentions, use_cache, self_attn_weights, present_key_value
-        )
+        outputs = self.post_process(hidden_states, residual, use_cache, present_key_value)
         return outputs
 
 
@@ -1093,7 +1068,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         hidden_states: Tensor,
         position_ids: Optional[Tensor],
         attention_mask: Tensor,
-        output_attentions: bool,
         past_key_value: Tensor,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -1110,7 +1084,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             hidden_states,
             position_ids,
             attention_mask,
-            output_attentions,
             past_key_value,
             use_cache,
             position_embeddings,
@@ -1127,14 +1100,11 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         past_key_values: Optional[List[paddle.Tensor]] = None,
-        output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
         **kwargs,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
@@ -1192,7 +1162,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
-        all_self_attns = () if output_attentions else None
         next_decoder_cache = () if use_cache else None
 
         moelayer_use_subbatch_recompute = (
@@ -1210,7 +1179,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
                     hidden_states,
                     position_ids,
                     causal_mask,
-                    output_attentions,
                     past_key_value,
                     use_cache,
                     attn_mask_startend_row_indices,
@@ -1223,7 +1191,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
                     attention_mask=causal_mask,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     position_ids=position_ids,
-                    output_attentions=output_attentions,
                     past_key_value=past_key_value,
                     use_cache=use_cache,
                     position_embeddings=position_embeddings,
@@ -1234,7 +1201,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
                     attention_mask=causal_mask,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     position_ids=position_ids,
-                    output_attentions=output_attentions,
                     past_key_value=past_key_value,
                     use_cache=use_cache,
                     position_embeddings=position_embeddings,
@@ -1246,11 +1212,8 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             else:
                 hidden_states = layer_outputs
 
-            if output_attentions:
-                all_self_attns += (layer_outputs[1],)
-
             if use_cache:
-                next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
+                next_decoder_cache += (layer_outputs[1],)
 
         hidden_states = self.norm(hidden_states)
 
@@ -1344,14 +1307,11 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         past_key_values: Optional[List[paddle.Tensor]] = None,
-        output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
         loss_mask: Optional[paddle.Tensor] = None,
     ):
-
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
@@ -1370,7 +1330,6 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
             past_key_values=past_key_values,
-            output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,

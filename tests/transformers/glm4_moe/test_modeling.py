@@ -401,7 +401,6 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
                 ]
             ]
         )
-        print(output[:, 1:4, 1:4])
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
     def test_inference_with_attention(self):
@@ -424,7 +423,6 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
                 ]
             ]
         )
-        print(output[:, 1:4, 1:4])
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
 
