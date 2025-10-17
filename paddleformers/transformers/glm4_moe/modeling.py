@@ -34,6 +34,7 @@ from ...nn.mlp import MLP as Glm4MoeMLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
@@ -1171,19 +1172,18 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
 
         hidden_states = inputs_embeds
 
-        if attention_mask is not None:
-            causal_mask = self._prepare_decoder_attention_mask(
-                attention_mask, hidden_states.shape[:2], cache_length, hidden_states.dtype
-            )
-        elif attn_mask_startend_row_indices is None:
-            # Use all-True mask when there's no attention_mask and no special indices needed
-            attention_mask = paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-            causal_mask = self._prepare_decoder_attention_mask(
-                attention_mask, hidden_states.shape[:2], cache_length, hidden_states.dtype
-            )
-        else:
-            # No causal_mask needed when special indices are present
-            causal_mask = None
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+            "return_mapping": False,
+        }
+        causal_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
