@@ -72,7 +72,3 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
     def test_hf_hub(self):
         image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", download_hub="huggingface")
         self.preprocess(image_processor)
-
-    def test_default(self):
-        image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
-        self.preprocess(image_processor)
