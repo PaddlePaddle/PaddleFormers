@@ -440,17 +440,17 @@ class Glm4MoeMoE(nn.Layer):
         return final_hidden_states.cast(hidden_states.dtype)
 
     def forward(self, hidden_states):
-        residuals = hidden_states
-        orig_shape = hidden_states.shape
         if self.sequence_parallel:
             hidden_states = GatherOp.apply(hidden_states)
+        residuals = hidden_states
+        orig_shape = hidden_states.shape
         topk_indices, topk_weights = self.gate(hidden_states)
         hidden_states = hidden_states.reshape((-1, hidden_states.shape[-1]))
         hidden_states = self.moe(hidden_states, topk_indices, topk_weights)
-        if self.sequence_parallel:
-            hidden_states = ScatterOp.apply(hidden_states)
         hidden_states = paddle.reshape(hidden_states, orig_shape)
         hidden_states = hidden_states + self.shared_experts(residuals)
+        if self.sequence_parallel:
+            hidden_states = ScatterOp.apply(hidden_states)
         return hidden_states
 
 

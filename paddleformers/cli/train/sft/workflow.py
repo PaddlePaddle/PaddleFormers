@@ -139,9 +139,9 @@ def run_sft(
 
     # Config for model using dropout, such as GPT.
     if hasattr(model_config, "hidden_dropout_prob"):
-        model_config.hidden_dropout_prob = model_args.hidden_dropout_prob
+        model_config.hidden_dropout_prob = finetuning_args.hidden_dropout_prob
     if hasattr(model_config, "attention_probs_dropout_prob"):
-        model_config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
+        model_config.attention_probs_dropout_prob = finetuning_args.attention_probs_dropout_prob
     if hasattr(model_config, "ignore_index"):
         model_config.ignore_index = -100
 
