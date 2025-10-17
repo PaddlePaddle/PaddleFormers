@@ -127,6 +127,7 @@ import_structure = {
         "yarn_find_correction_range",
         "get_triangle_upper_mask",
         "DeepseekV2LinearScalingRotaryEmbedding",
+        "DeepseekV2ForCausalLMPipe",
     ],
     "deepseek_v2.modeling_auto": [
         "DeepseekV2LMHeadAuto",
@@ -157,6 +158,7 @@ import_structure = {
         "DeepseekV3ForSequenceClassification",
         "DeepseekV3Model",
         "DeepseekV3PretrainedModel",
+        "DeepseekV3ForCausalLMPipe",
     ],
     "deepseek_v3.modeling_auto": [
         "DeepseekV3LMHeadAuto",
