@@ -26,7 +26,7 @@ from ...transformers.utils import is_safetensors_available
 from ...utils.log import logger
 
 if is_safetensors_available():
-    from safetensors.paddle import save_file as safe_save_file
+    from safetensors.numpy import save_file as safe_save_file
 
 from ...quantization.unified_checkpoint_quantization import quant_unified_optimizer
 from .shared_memory_utils import (
@@ -219,7 +219,7 @@ class AsyncCheckpointHandler:
                     state_dict = quant_unified_optimizer(
                         state_dict, state_dict_type, ckpt_quant_stage, async_save=True
                     )  # ckpt quantization
-                metadata = {"format": "pt"} if save_to_hf else {"format": "paddle"}
+                metadata = {"format": "pt"} if save_to_hf else {"format": "np"}
                 safe_save_file(state_dict, path, metadata=metadata)
                 del state_dict
                 saved_signal_path = os.path.join(signal_path, f".{state_dict_type}.done.{global_rank}")
