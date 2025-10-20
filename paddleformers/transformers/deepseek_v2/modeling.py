@@ -732,6 +732,7 @@ class DeepseekV2Attention(nn.Layer):
         self.fuse_rope = config.use_fused_rope
 
         self.seq_length = config.seq_length
+        self.tensor_parallel = config.tensor_parallel_degree > 1
         self.sequence_parallel = config.sequence_parallel
 
         # Note that we will actually perform a recompute only if both enable_recompute and layerwise_recompute are set to True
@@ -780,6 +781,7 @@ class DeepseekV2Attention(nn.Layer):
             config=config,
             hidden_size=config.q_lora_rank,
             norm_type="rms_norm",
+            input_is_parallel=self.tensor_parallel and self.sequence_parallel,
         )
 
         self.kv_a_proj_with_mqa = GeneralLinear.create(
@@ -817,10 +819,11 @@ class DeepseekV2Attention(nn.Layer):
             config=config,
             hidden_size=config.kv_lora_rank,
             norm_type="rms_norm",
+            input_is_parallel=self.tensor_parallel and self.sequence_parallel,
         )
 
         # fmt: on
-        if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel:
+        if self.tensor_parallel and self.sequence_parallel:
             mark_as_sequence_parallel_parameter(self.kv_a_proj_with_mqa.weight)
             mark_as_sequence_parallel_parameter(self.q_a_proj.weight)
             if config.attention_bias:
@@ -904,7 +907,7 @@ class DeepseekV2Attention(nn.Layer):
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
         ori_shape = hidden_states.shape
-        if self.config.sequence_parallel:
+        if self.sequence_parallel:
             seq_len, bsz, _ = hidden_states.shape
         else:
             bsz, seq_len, _ = hidden_states.shape
@@ -1034,7 +1037,8 @@ class DeepseekV2DecoderLayer(nn.Layer):
         self.enable_recompute = False
         self.layerwise_recompute = layerwise_recompute
         self.recompute_granularity = config.recompute_granularity
-
+        self.tensor_parallel = config.tensor_parallel_degree > 1
+        self.sequence_parallel = config.sequence_parallel
         self.hidden_size = config.hidden_size
 
         self.self_attn = DeepseekV2Attention(config=config, layerwise_recompute=layerwise_recompute)
@@ -1054,10 +1058,12 @@ class DeepseekV2DecoderLayer(nn.Layer):
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
+            input_is_parallel=self.tensor_parallel and self.sequence_parallel,
         )
         self.post_attention_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
+            input_is_parallel=self.tensor_parallel and self.sequence_parallel,
         )
 
     def subbatch_recompute_forward(
@@ -1262,10 +1268,12 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         self.enorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
+            input_is_parallel=self.tensor_parallel and self.sequence_parallel,
         )
         self.hnorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
+            input_is_parallel=self.tensor_parallel and self.sequence_parallel,
         )
         self.eh_proj = nn.Linear(2 * config.hidden_size, config.hidden_size)
 
@@ -1610,6 +1618,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         self.norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
+            input_is_parallel=config.tensor_parallel_degree > 1 and config.sequence_parallel,
         )
 
         self.enable_recompute = False

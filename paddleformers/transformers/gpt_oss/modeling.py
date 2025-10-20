@@ -522,6 +522,7 @@ class GptOssDecoderLayer(nn.Layer):
             hidden_size=config.hidden_size,
             has_bias=config.use_bias,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.post_attention_layernorm = GeneralNorm.create(
             config=config,
@@ -529,6 +530,7 @@ class GptOssDecoderLayer(nn.Layer):
             hidden_size=config.hidden_size,
             has_bias=config.use_bias,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
 
         if config.sequence_parallel:
@@ -696,10 +698,9 @@ class GptOssModel(GptOssPreTrainedModel):
             hidden_size=config.hidden_size,
             has_bias=config.use_bias,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = GptOssRotaryEmbedding(config=config)
-        if config.sequence_parallel:
-            self.norm.enable_sequence_parallel()
 
     @paddle.jit.not_to_static
     def recompute_training_full(
