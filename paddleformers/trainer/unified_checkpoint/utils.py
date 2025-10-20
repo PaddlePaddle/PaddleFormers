@@ -810,7 +810,10 @@ def filter_sync_parameters(
     dp_rank = dp_group.rank if dp_group.nranks > 1 else 0
     sharding_rank = sharding_group.rank if sharding_group.nranks > 1 else 0
     if expert_parallel_degree > 1:
-        ep_group = hcg.get_expert_parallel_group()
+        try:
+            ep_group = hcg.get_expert_parallel_group()
+        except:
+            ep_group = hcg.expert_parallel_group
         ep_rank = ep_group.rank if ep_group.nranks > 1 else 0
     logger.info("Filter sync parameters under expert parallel mode.")
 
