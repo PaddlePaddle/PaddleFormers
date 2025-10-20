@@ -72,11 +72,9 @@ def run_dpo(
     model_args: "ModelArguments",
     data_args: "DataArguments",
     generating_args: "GeneratingArguments",
-    finetuning_args: "FinetuningArguments",
+    training_args: "FinetuningArguments",
 ):
     """main"""
-    training_args = finetuning_args
-
     paddle.set_device(training_args.device)
     set_seed(training_args.seed)
 
@@ -137,6 +135,21 @@ def run_dpo(
 
     logger.info("Start to load model & tokenizer.")
 
+    dpo_config = DPOConfig(
+        beta=training_args.beta,
+        offset_alpha=training_args.offset_alpha,
+        simpo_gamma=training_args.simpo_gamma,
+        normalize_logps=training_args.normalize_logps,
+        label_smoothing=training_args.label_smoothing,
+        loss_type=training_args.loss_type,
+        pref_loss_ratio=training_args.pref_loss_ratio,
+        sft_loss_ratio=training_args.sft_loss_ratio,
+        dpop_lambda=training_args.dpop_lambda,
+        ref_model_update_steps=training_args.ref_model_update_steps,
+        reference_free=training_args.reference_free,
+        lora=model_args.lora,
+    )
+
     model_config = AutoConfig.from_pretrained(
         model_args.model_name_or_path,
         dtype=dtype,
@@ -160,11 +173,11 @@ def run_dpo(
 
     if training_args.pipeline_parallel_degree > 1:
         model_class = AutoModelForCausalLMPipe
-        if not training_args.reference_free and not model_args.lora:
-            ref_model_config.training_args = training_args
-        model_config.training_args = training_args
     else:
         model_class = AutoModelForCausalLM
+    if not training_args.reference_free and not model_args.lora:
+        ref_model_config.dpo_config = dpo_config
+    model_config.dpo_config = dpo_config
     if not training_args.autotuner_benchmark or training_args.weight_quantize_algo is not None:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
@@ -184,7 +197,7 @@ def run_dpo(
         else:
             ref_model = None
     if training_args.pipeline_parallel_degree > 1:
-        model.config.training_args = None
+        model.config.dpo_config = None
 
     if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
         raise NotImplementedError(f"{model.__class__} not support flash mask.")
@@ -300,21 +313,6 @@ def run_dpo(
         eval_dataset = None
     logger.info("Creating dataset successfully ...")
 
-    dpo_config = DPOConfig(
-        beta=training_args.beta,
-        offset_alpha=training_args.offset_alpha,
-        simpo_gamma=training_args.simpo_gamma,
-        normalize_logps=training_args.normalize_logps,
-        label_smoothing=training_args.label_smoothing,
-        loss_type=training_args.loss_type,
-        pref_loss_ratio=training_args.pref_loss_ratio,
-        sft_loss_ratio=training_args.sft_loss_ratio,
-        dpop_lambda=training_args.dpop_lambda,
-        ref_model_update_steps=training_args.ref_model_update_steps,
-        reference_free=training_args.reference_free,
-        lora=model_args.lora,
-    )
-
     max_seq_len = data_args.max_seq_len if data_args.packing else None
     trainer = DPOTrainer(
         model=model,
@@ -332,6 +330,7 @@ def run_dpo(
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
         ignore_eos_token=True,
+        model_with_dpo_criterion=model_args.model_with_dpo_criterion,
     )
 
     if training_args.do_train:
