@@ -1759,9 +1759,9 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
     def __init__(self, config, recompute=False):
         new_initializer_range = math.sqrt(0.3333 / config.text_config.hidden_size)
         logger.info(
-            f"change initializer-range from {config.initializer_range} to {new_initializer_range}"
+            f"change initializer-range from {config.text_config.initializer_range} to {new_initializer_range}"
         )
-        config.initializer_range = new_initializer_range
+        config.text_config.initializer_range = new_initializer_range
         if config.moe_group in {"mp", "model", "tp", "mpdp"}:
             assert config.sequence_parallel
             logger.info(
@@ -1802,13 +1802,10 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
         config.tensor_parallel_degree = tensor_parallel_degree
         config.tensor_parallel_rank = tensor_parallel_rank
 
-        if isinstance(config.vision_config, DFNRopeVisionTransformerConfig):
-            logger.info("variable resolution vision model")
-            config.vision_config.variable_resolution = True
-        else:
-            raise RuntimeError(f"unknown vision_config: {config.vision_config}")
+        logger.info("variable resolution vision model")
+        config.vision_config.variable_resolution = True
 
-        if config.tie_word_embeddings:
+        if config.text_config.tie_word_embeddings:
             self.add_sequential_layer(
                 SharedLayerDesc(
                     key="embed_weight_share",
@@ -1834,7 +1831,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
         def _need_full_recompute(layer_idx):
             return layer_idx not in no_recompute_layers and config.recompute
 
-        for i in range(config.num_hidden_layers):
+        for i in range(config.text_config.num_hidden_layers):
             self.add_sequential_layer(
                 LayerDesc(
                     ErnieDecoderLayerPipe,
@@ -1845,22 +1842,22 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
                 f"ernie.layers.{i}",
             )
 
-        for i in range(config.add_tail_layers):
+        for i in range(config.text_config.add_tail_layers):
             self.add_sequential_layer(
                 LayerDesc(
                     EmptyLayer,
                 ),
-                f"empty.layers.{i+config.num_hidden_layers}",
+                f"empty.layers.{i+config.text_config.num_hidden_layers}",
             )
 
         self.add_sequential_layer(
             LayerDesc(
-                RMSNormPipe if config.use_rmsnorm else LayerNormPipe, config=config
+                RMSNormPipe if config.text_config.use_rmsnorm else LayerNormPipe, config=config
             ),
             "ernie.norm",
         )
 
-        if config.tie_word_embeddings:
+        if config.text_config.tie_word_embeddings:
             self.add_sequential_layer(
                 SharedLayerDesc(
                     key="embed_weight_share",
@@ -1889,7 +1886,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
             pass
         if (
             seg_method == "layer:Ernie4_5_DecoderLayer|ErnieDecoderLayer|EmptyLayer"
-            and (config.num_hidden_layers + config.add_tail_layers)
+            and (config.text_config.num_hidden_layers + config.text_config.add_tail_layers)
             % get_hcg().topology().get_dim_size("pipe")
             != 0
         ):

@@ -909,7 +909,6 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             return final_actions
 
         mappings = get_tensor_parallel_split_mappings(config.text_config.num_hidden_layers)
-        # if isinstance(config.vision_config, DFNRopeVisionTransformerConfig):
         resampler_actions = (
             VariableResolutionResamplerModel._get_tensor_parallel_mappings(
                 config, is_split=is_split
@@ -918,8 +917,6 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         mappings.update(
             {f"resampler_model.{k}": v for k, v in resampler_actions.items()}
         )
-        # else:
-        #     raise RuntimeError(f"unknown vision_config: {config.vision_config}")
 
         if config.mm_vocab_size > 0:
             mappings.update(

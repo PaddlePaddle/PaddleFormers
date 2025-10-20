@@ -289,7 +289,7 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         video_token_id=100296,
         dpo_config=None,
         head_dim=None,
-        moe_capacity=(),
+        moe_capacity=[128, 128, 128],
         moe_use_aux_free=False,
         moe_use_token_type_bias=False,
         moe_gate_act="softmax",
@@ -302,6 +302,7 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         use_recompute_resampler=False,
         use_temporal_conv=True,
         resampler_fuse_rms_norm=False,
+        offload_pp_data_chunk_size=0,
         **kwargs,
     ):
         super().__init__(
@@ -352,6 +353,7 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         self.use_recompute_resampler = use_recompute_resampler
         self.use_temporal_conv = use_temporal_conv
         self.resampler_fuse_rms_norm = resampler_fuse_rms_norm
+        self.offload_pp_data_chunk_size = offload_pp_data_chunk_size
 
         self.register_unsavable_keys(
             [
