@@ -18,6 +18,11 @@ save_path = os.path.join(tempdir, "gpt-oss-test-new-fp4")
 bf16_to_fp4(load_path, save_path)
 
 ```
+### 依赖
+PaddleFormers 跟目录下执行
+```bash
+pip install -r requirements.txt
+```
 
 ### 使用说明
 
