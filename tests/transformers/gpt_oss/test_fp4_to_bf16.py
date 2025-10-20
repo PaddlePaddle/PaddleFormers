@@ -29,6 +29,7 @@ PADDLE_DTYPE_MAP = {
     "paddle.float32": 4,
     "paddle.float16": 2,
     "paddle.uint16": 2,
+    "uint16": 2,
     "paddle.bfloat16": 2,
     "paddle.uint8": 1,
     "paddle.float8_e4m3fn": 1,
