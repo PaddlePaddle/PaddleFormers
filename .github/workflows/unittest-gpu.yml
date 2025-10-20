@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PR_ID: ${{ github.event.pull_request.number || '' }}
+  PR_ID: ${{ github.event.pull_request.number }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-gpu
   CI_UNITTEST_SCRIPTS_PATH: /workspace/PaddleFormers/scripts/ci_unittest.sh
