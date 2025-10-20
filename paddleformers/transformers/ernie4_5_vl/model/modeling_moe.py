@@ -190,7 +190,11 @@ def get_gate(
             - experts: LayerList containing distributed expert networks
                       (each device gets moe_num_experts/moe_world_size experts)
     """
-    moe_num_experts = config.text_config.moe_num_experts
+    moe_num_experts = (
+        sum(config.text_config.moe_num_experts)
+        if config.text_config.multimodel_experts
+        else config.text_config.moe_num_experts
+    )
     assert (
         moe_num_experts >= config.moe_world_size
     ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={config.moe_world_size}"
@@ -261,7 +265,7 @@ def get_gate(
     if config.text_config.multimodel_experts and config.text_config.moe_use_hard_gate and moe_num_experts > 2:
         lm_experts = experts[: config.text_config.moe_num_experts[0]]
         lm_cfg = deepcopy(config)
-        lm_cfg.moe_num_experts = config.text_config.moe_num_experts[0]
+        lm_cfg.text_config.moe_num_experts = config.text_config.moe_num_experts[0]
         lm_gate = gate_class[config.text_config.moe_gate.lower()](
             lm_cfg, layer_idx=layer_idx, group=config.moe_group, gate_weight=gate.weight
         )
@@ -569,17 +573,17 @@ class Ernie4_5_DecoderLayer(nn.Layer):
             _type_: _description_
         """
         cfg = deepcopy(self.config)
-        if cfg.moe_num_shared_experts > 0:
-            if cfg.moe_intermediate_size:
+        if cfg.text_config.moe_num_shared_experts > 0:
+            if cfg.text_config.moe_intermediate_size:
                 inter_size = (
-                    next(iter(cfg.moe_intermediate_size))
-                    if isinstance(cfg.moe_intermediate_size, (tuple, list))
-                    else cfg.moe_intermediate_size
+                    next(iter(cfg.text_config.moe_intermediate_size))
+                    if isinstance(cfg.text_config.moe_intermediate_size, (tuple, list))
+                    else cfg.text_config.moe_intermediate_size
                 )
-                cfg.intermediate_size = inter_size * cfg.moe_num_shared_experts
+                cfg.text_config.intermediate_size = inter_size * cfg.text_config.moe_num_shared_experts
             else:
-                cfg.intermediate_size = (
-                    cfg.intermediate_size * cfg.moe_num_shared_experts
+                cfg.text_config.intermediate_size = (
+                    cfg.text_config.intermediate_size * cfg.text_config.moe_num_shared_experts
                 )
             cfg.disable_ffn_model_parallel = False  # split shared epxert
             shared_experts = Ernie4_5_MoeMLP(cfg, True)
@@ -601,26 +605,27 @@ class Ernie4_5_DecoderLayer(nn.Layer):
         """
         cfg = deepcopy(self.config)
         fc_cls = Ernie4_5_MoeMLP
-        if cfg.moe_intermediate_size:
-            if isinstance(cfg.moe_intermediate_size, (tuple, list)):
-                assert isinstance(cfg.moe_num_experts, (tuple, list)) and len(
-                    cfg.moe_num_experts
-                ) == len(cfg.moe_intermediate_size)
+        if cfg.text_config.moe_intermediate_size:
+            if isinstance(cfg.text_config.moe_intermediate_size, (tuple, list)):
+                cfg.text_config.moe_num_experts = cfg.text_config.moe_num_experts
+                assert isinstance(cfg.text_config.moe_num_experts, (tuple, list)) and len(
+                    cfg.text_config.moe_num_experts
+                ) == len(cfg.text_config.moe_intermediate_size)
                 fc = []
                 for _i, (num_experts, intermediate_size) in enumerate(
-                    zip(cfg.moe_num_experts, cfg.moe_intermediate_size)
+                    zip(cfg.text_config.moe_num_experts, cfg.text_config.moe_intermediate_size)
                 ):
                     ex_cfg = deepcopy(cfg)
-                    ex_cfg.intermediate_size = intermediate_size
+                    ex_cfg.text_config.intermediate_size = intermediate_size
                     cur_modality_start_layer_idx = (
-                        cfg.moe_layer_start_index[_i]
-                        if isinstance(cfg.moe_layer_start_index, (tuple, list))
-                        else cfg.moe_layer_start_index
+                        cfg.text_config.moe_layer_start_index[_i]
+                        if isinstance(cfg.text_config.moe_layer_start_index, (tuple, list))
+                        else cfg.text_config.moe_layer_start_index
                     )
                     cur_modality_end_layer_idx = (
-                        cfg.moe_layer_end_index[_i]
-                        if isinstance(cfg.moe_layer_end_index, (tuple, list))
-                        else cfg.moe_layer_end_index
+                        cfg.text_config.moe_layer_end_index[_i]
+                        if isinstance(cfg.text_config.moe_layer_end_index, (tuple, list))
+                        else cfg.text_config.moe_layer_end_index
                     )
                     if (
                         layer_idx >= cur_modality_start_layer_idx
@@ -639,12 +644,12 @@ class Ernie4_5_DecoderLayer(nn.Layer):
                         )
                         fc.append((num_experts, nn.Identity()))
             else:
-                cfg.intermediate_size = cfg.moe_intermediate_size
-                fc = [(cfg.moe_num_experts, fc_cls(cfg, layer_idx))]
+                cfg.text_config.intermediate_size = cfg.text_config.moe_intermediate_size
+                fc = [(cfg.text_config.moe_num_experts, fc_cls(cfg, layer_idx))]
         else:
-            fc = [(cfg.moe_num_experts, fc_cls(cfg, layer_idx))]
+            fc = [(cfg.text_config.moe_num_experts, fc_cls(cfg, layer_idx))]
 
-        if cfg.multimodel_experts:
+        if cfg.text_config.multimodel_experts:
             gate, experts, lm_gate, lm_experts = get_gate(self.config, fc, layer_idx)
         else:
             gate, experts = get_gate(self.config, fc, layer_idx)

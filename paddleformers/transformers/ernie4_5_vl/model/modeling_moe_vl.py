@@ -131,14 +131,14 @@ def get_backbone_lm_param_regex(config):
     moe_rank = dist.get_rank(config.moe_group)
     moe_world_size = dist.get_world_size(config.moe_group)
     num_local_experts = (
-        sum(config.moe_num_experts) // moe_world_size
-        if config.multimodel_experts
-        else config.moe_num_experts // moe_world_size
+        sum(config.text_config.moe_num_experts) // moe_world_size
+        if config.text_config.moe_num_experts
+        else config.text_config.moe_num_experts // moe_world_size
     )
     num_freeze_expert = (
-        config.moe_num_experts[0]
-        if config.multimodel_experts
-        else config.moe_num_experts
+        config.text_config.moe_num_experts[0]
+        if config.text_config.moe_num_experts
+        else config.text_config.moe_num_experts
     )
 
     freeze_part = [r"ernie\.norm.*", r"ernie\.layers.*norm.*"]  # freeze all norm
@@ -339,9 +339,9 @@ class VariableResolutionResamplerModel(nn.Layer):
             self.mlp = nn.Linear(self.spatial_dim, self.out_dim)
 
             out_config = deepcopy(config)
-            out_config.hidden_size = out_dim
+            out_config.text_config.hidden_size = out_dim
             # Note(GuoxiaWang): fuse can reduce gpu peak memory
-            out_config.fuse_rms_norm = out_config.resampler_fuse_rms_norm
+            out_config.text_config.fuse_rms_norm = out_config.resampler_fuse_rms_norm
             self.after_norm = RMSNorm(out_config)
 
             if config.tensor_parallel_degree > 1:
@@ -519,7 +519,7 @@ class VariableResolutionResamplerModel(nn.Layer):
             is_split=is_split,
             tensor_parallel_degree=config.tensor_parallel_degree,
             tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
+            num_attention_heads=config.text_config.num_attention_heads,
         )
         res = {"spatial_linear.0.weight": partial(fn, is_column=False)}  # row parallel
         return res
@@ -722,8 +722,8 @@ def calc_multimodal_logits(
         parallel_matmul,
         tensor_parallel_degree=config.tensor_parallel_degree,
         tensor_parallel_output=config.tensor_parallel_output,
-        fuse_linear=config.fuse_linear,
-        transpose_y=config.tie_word_embeddings,
+        fuse_linear=config.text_config.fuse_linear,
+        transpose_y=config.text_config.tie_word_embeddings,
     )
 
     if mm_head_weight is None:
@@ -733,7 +733,7 @@ def calc_multimodal_logits(
             last_hidden_state,
             lm_head_weight,
             lm_head_bias,
-            transpose_y=config.tie_word_embeddings,
+            transpose_y=config.text_config.tie_word_embeddings,
         )
         return score_text, None, None
 
@@ -821,10 +821,10 @@ class Ernie4_5_MoeVLHead(Ernie4_5_LMHead):
                     hidden_state[:, -1:, :],
                     self.weight,
                     self.bias,
-                    transpose_y=self.config.tie_word_embeddings,
+                    transpose_y=self.config.text_config.tie_word_embeddings,
                     tensor_parallel_degree=self.config.tensor_parallel_degree,
                     tensor_parallel_output=False,
-                    fuse_linear=self.config.fuse_linear,
+                    fuse_linear=self.config.text_config.fuse_linear,
                 ),
                 None,
             )
@@ -850,18 +850,18 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         if config.mm_vocab_size > 0:
             if config.tensor_parallel_degree > 1:
                 self.mm_embed_tokens = VocabParallelEmbedding(
-                    config.mm_vocab_size, config.hidden_size
+                    config.mm_vocab_size, config.text_config.hidden_size
                 )
             else:
                 self.mm_embed_tokens = nn.Embedding(
-                    config.mm_vocab_size, config.hidden_size
+                    config.mm_vocab_size, config.text_config.hidden_size
                 )
         else:
             self.mm_embed_tokens = None
 
         self.ernie.resampler_model = VariableResolutionResamplerModel(
-            config.pixel_hidden_size,
-            config.hidden_size,
+            config.vision_config.hidden_size,
+            config.text_config.hidden_size,
             config.spatial_conv_size,
             config.temporal_conv_size,
             config=config,
@@ -899,7 +899,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             is_split=is_split,
             tensor_parallel_degree=config.tensor_parallel_degree,
             tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
+            num_attention_heads=config.text_config.num_attention_heads,
         )
 
         def get_tensor_parallel_split_mappings(num_layers):
@@ -908,18 +908,18 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             )
             return final_actions
 
-        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
-        if isinstance(config.vision_config, DFNRopeVisionTransformerConfig):
-            resampler_actions = (
-                VariableResolutionResamplerModel._get_tensor_parallel_mappings(
-                    config, is_split=is_split
-                )
+        mappings = get_tensor_parallel_split_mappings(config.text_config.num_hidden_layers)
+        # if isinstance(config.vision_config, DFNRopeVisionTransformerConfig):
+        resampler_actions = (
+            VariableResolutionResamplerModel._get_tensor_parallel_mappings(
+                config, is_split=is_split
             )
-            mappings.update(
-                {f"resampler_model.{k}": v for k, v in resampler_actions.items()}
-            )
-        else:
-            raise RuntimeError(f"unknown vision_config: {config.vision_config}")
+        )
+        mappings.update(
+            {f"resampler_model.{k}": v for k, v in resampler_actions.items()}
+        )
+        # else:
+        #     raise RuntimeError(f"unknown vision_config: {config.vision_config}")
 
         if config.mm_vocab_size > 0:
             mappings.update(
@@ -1117,7 +1117,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             }
         )
 
-        if self.config.rope_3d:
+        if self.config.text_config.rope_3d:
             model_inputs.update({"position_ids": kwargs["position_ids"]})
 
         return model_inputs

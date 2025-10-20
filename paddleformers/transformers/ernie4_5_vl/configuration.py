@@ -46,6 +46,7 @@ class Ernie4_5_VLVisionConfig(PretrainedConfig):
         rms_norm_eps=1e-5,
         vision_rms_norm_eps=1e-6,
         initializer_range=0.02,
+        attn_sep=True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -67,6 +68,7 @@ class Ernie4_5_VLVisionConfig(PretrainedConfig):
         self.vision_rms_norm_eps = vision_rms_norm_eps
 
         self.initializer_range = initializer_range
+        self.attn_sep = attn_sep
 
 
 class Ernie4_5_VLTextConfig(PretrainedConfig):
@@ -87,6 +89,7 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
         hidden_size=2560,
         intermediate_size=12288,
         num_hidden_layers=28,
+        add_tail_layers=False,
         num_attention_heads=20,
         num_key_value_heads=4,
         hidden_act="silu",
@@ -102,7 +105,6 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
         rope_theta=500_000.0,
         freq_allocation=20,
         rope_scaling=None,
-        multimodel_experts=True,
         moe_gate="topk",
         moe_intermediate_size=[1536, 512],
         moe_k=6,
@@ -127,18 +129,25 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
         fuse_swiglu=False,
         fuse_rope=False,
         fuse_ln=False,
-        cachekv_quantFalse,
+        fuse_gate_detach_matmul=False,
+        cachekv_quant=False,
         attention_probs_dropout_prob=0.0,
         ignored_index=-100,
         weight_share_add_bias=True,
         use_rmsnorm=True,
         multi_token_pred_lambda=0.1,
+        global_aux_loss=False,
+        sinkhorn_2gate=True,
+        sinkhorn_temp=3e-2,
         **kwargs,
     ):
+        super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
+
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
+        self.add_tail_layers = add_tail_layers
         self.num_attention_heads = num_attention_heads
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
@@ -152,11 +161,13 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
         self.use_bias = use_bias
         self.rope_theta = rope_theta
         self.freq_allocation = freq_allocation
-        self.multimodel_experts = multimodel_experts
         self.moe_gate = moe_gate
         self.moe_intermediate_size = moe_intermediate_size
         self.moe_k = moe_k
-        self.moe_num_experts = moe_num_experts
+        if isinstance(moe_num_experts, (list, tuple)):
+            self.moe_num_experts = moe_num_experts
+        else:
+            self.moe_num_experts = [moe_num_experts, moe_num_experts]
         self.moe_num_shared_experts = moe_num_shared_experts
         self.moe_layer_start_index = moe_layer_start_index
         self.moe_layer_end_index = moe_layer_end_index
@@ -177,12 +188,16 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
         self.fuse_swiglu = fuse_swiglu
         self.fuse_rope = fuse_rope
         self.fuse_ln = fuse_ln
+        self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
         self.cachekv_quant = cachekv_quant
         self.attention_probs_dropout_prob = attention_probs_dropout_prob
         self.ignored_index = ignored_index
         self.weight_share_add_bias = weight_share_add_bias
         self.use_rmsnorm = use_rmsnorm
         self.multi_token_pred_lambda = multi_token_pred_lambda
+        self.global_aux_loss = global_aux_loss
+        self.sinkhorn_2gate = sinkhorn_2gate
+        self.sinkhorn_temp = sinkhorn_temp
 
         self.register_unsavable_keys(
             [
@@ -219,7 +234,13 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
             ]
         )
 
-        super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
+    @property
+    def multimodel_experts(self) -> bool:
+        """multimodel experts."""
+        return (
+            isinstance(self.moe_num_experts, (tuple, list))
+            and len(self.moe_num_experts) > 1
+        )
 
     @property
     def use_moe(self) -> bool:
@@ -229,11 +250,12 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
         Returns:
             bool: True if moe_num_experts > 0, False otherwise
         """
-        return (
-            sum(self.moe_num_experts) > 0
-            if self.multimodel_experts
-            else self.moe_num_experts > 0
-        )
+        if self.moe_num_experts is not None:
+            if isinstance(self.moe_num_experts, (tuple, list)):
+                return sum(self.moe_num_experts) > 0
+            else:
+                return self.moe_num_experts > 0
+        return False
 
 class Ernie4_5_VLConfig(PretrainedConfig):
     """
@@ -252,6 +274,10 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         text_config=None,
         vision_config=None,
         im_patch_id=None,
+        max_text_id=None,
+        mm_vocab_size=0, 
+        temporal_conv_size=2,
+        spatial_conv_size=2,
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
@@ -262,8 +288,29 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         video_end_token_id=101307,
         video_token_id=100296,
         dpo_config=None,
+        head_dim=None,
+        moe_capacity=(),
+        moe_use_aux_free=False,
+        moe_use_token_type_bias=False,
+        moe_gate_act="softmax",
+        moe_norm_gate_logits=True,
+        moe_aux_loss_lambda=1e-2,
+        moe_z_loss_lambda=1e-4,
+        moe_orthogonal_loss_lambda=1e-2,
+        refined_recompute=dict(),
+        modality_detach=False,
+        use_recompute_resampler=False,
+        use_temporal_conv=True,
+        resampler_fuse_rms_norm=False,
         **kwargs,
     ):
+        super().__init__(
+            pad_token_id=pad_token_id,
+            bos_token_id=bos_token_id,
+            eos_token_id=eos_token_id,
+            **kwargs,
+        )
+
         if isinstance(vision_config, dict):
             self.vision_config = self.sub_configs["vision_config"](**vision_config)
         elif vision_config is None:
@@ -276,6 +323,10 @@ class Ernie4_5_VLConfig(PretrainedConfig):
             self.text_config = self.sub_configs["text_config"](**kwargs)
 
         self.im_patch_id = im_patch_id
+        self.max_text_id = max_text_id
+        self.mm_vocab_size = mm_vocab_size
+        self.temporal_conv_size = temporal_conv_size
+        self.spatial_conv_size = spatial_conv_size
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
@@ -286,13 +337,21 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         self.video_end_token_id = video_end_token_id
         self.video_token_id = video_token_id
         self.dpo_config = dpo_config
-
-        super().__init__(
-            pad_token_id=pad_token_id,
-            bos_token_id=bos_token_id,
-            eos_token_id=eos_token_id,
-            **kwargs,
-        )
+        self.refined_recompute = refined_recompute
+        self.head_dim = head_dim
+        self.moe_capacity = moe_capacity
+        self.moe_use_aux_free = moe_use_aux_free
+        self.moe_use_token_type_bias = moe_use_token_type_bias
+        self.moe_gate_act = moe_gate_act
+        self.moe_norm_gate_logits = moe_norm_gate_logits
+        self.moe_aux_loss_lambda = moe_aux_loss_lambda
+        self.moe_z_loss_lambda = moe_z_loss_lambda
+        self.moe_orthogonal_loss_lambda = moe_orthogonal_loss_lambda
+        self.skip_recompute_ops = dict()
+        self.modality_detach = modality_detach
+        self.use_recompute_resampler = use_recompute_resampler
+        self.use_temporal_conv = use_temporal_conv
+        self.resampler_fuse_rms_norm = resampler_fuse_rms_norm
 
         self.register_unsavable_keys(
             [

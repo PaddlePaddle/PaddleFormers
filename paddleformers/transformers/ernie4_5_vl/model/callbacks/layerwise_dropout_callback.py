@@ -83,11 +83,11 @@ class LayerwiseDropoutCallback(TrainerCallback):
                 layer_idx = layer.layer_idx
                 hidden_layer_drop_rate = max(
                     0.0,
-                    hidden_step_drop_rate * (layer_idx / layer.config.num_hidden_layers),
+                    hidden_step_drop_rate * (layer_idx / layer.config.text_config.num_hidden_layers),
                 )
                 attention_layer_drop_rate = max(
                     0.0,
-                    attention_step_drop_rate * (layer_idx / layer.config.num_hidden_layers),
+                    attention_step_drop_rate * (layer_idx / layer.config.text_config.num_hidden_layers),
                 )
 
                 if hasattr(layer.residual_add1, "p"):
@@ -97,7 +97,7 @@ class LayerwiseDropoutCallback(TrainerCallback):
                     layer.residual_add1.dropout.p = hidden_layer_drop_rate
                     layer.residual_add2.dropout.p = hidden_layer_drop_rate
                 deep_config = deepcopy(layer.self_attn.config)
-                deep_config.attention_probs_dropout_prob = attention_layer_drop_rate
+                deep_config.text_config.attention_probs_dropout_prob = attention_layer_drop_rate
                 layer.self_attn.config = deep_config
 
         model.apply(update_dropout)

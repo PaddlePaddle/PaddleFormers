@@ -330,13 +330,13 @@ class DFNRopeVisionBlock(nn.Layer):
             attn_implementation (str, optional): attention implementation. Defaults to "sdpa".
         """
         super().__init__()
-        self.norm1 = nn.LayerNorm(config.embed_dim, epsilon=1e-6)
-        self.norm2 = nn.LayerNorm(config.embed_dim, epsilon=1e-6)
-        mlp_hidden_dim = int(config.embed_dim * config.mlp_ratio)
+        self.norm1 = nn.LayerNorm(config.hidden_size, epsilon=1e-6)
+        self.norm2 = nn.LayerNorm(config.hidden_size, epsilon=1e-6)
+        mlp_hidden_dim = config.intermediate_size
 
-        self.attn = VisionFlashAttention2(config.embed_dim, num_heads=config.num_heads)
+        self.attn = VisionFlashAttention2(config.hidden_size, num_heads=config.num_heads)
         self.mlp = VisionMlp(
-            dim=config.embed_dim,
+            dim=config.hidden_size,
             hidden_dim=mlp_hidden_dim,
             hidden_act=config.hidden_act,
         )
@@ -380,14 +380,14 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
         self.patch_embed = PatchEmbed(
             patch_size=config.patch_size,
             in_channels=config.in_channels,
-            embed_dim=config.embed_dim,
+            embed_dim=config.hidden_size,
         )
 
         self.attn_sep = (
             getattr(config, "attn_sep", False) and config.tensor_parallel_degree > 1
         )
 
-        head_dim = config.embed_dim // config.num_heads
+        head_dim = config.hidden_size // config.num_heads
         self.rotary_pos_emb = VisionRotaryEmbedding(head_dim // 2)
 
         self.blocks = nn.LayerList(
@@ -395,8 +395,8 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
         )
 
         assert (
-            config.hidden_size == config.embed_dim
-        ), "in DFNRope, vit's config.hidden must be equal to config.embed_dim"
+            config.hidden_size == config.hidden_size
+        ), "in DFNRope, vit's config.hidden must be equal to config.hidden_size"
         self.ln = nn.LayerNorm(config.hidden_size, epsilon=1e-6)
 
     def get_dtype(self) -> paddle.dtype:

@@ -71,7 +71,7 @@ def initialize_lora_model(
             lora_plus_scale=model_args.lora_plus_scale,
             tensor_parallel_degree=training_args.tensor_parallel_degree,
             dtype=dtype,
-            head_dim=model.config.hidden_size // model.config.num_attention_heads,
+            head_dim=model.config.text_config.hidden_size // model.config.text_config.num_attention_heads,
             base_model_name_or_path=model_args.model_name_or_path,
         )
         model = LoRAModel(model, lora_config)

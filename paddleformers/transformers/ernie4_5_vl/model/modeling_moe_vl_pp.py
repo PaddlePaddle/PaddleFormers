@@ -790,17 +790,17 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         config.sequence_parallel = False  # disable inner`ScatterOp`
         self.use_full_recompute = use_full_recompute
         self.offload_resamler = False  # config.pp_recompute_offload_resampler
-        # out_dim = config.hidden_size
+        # out_dim = config.text_config.hidden_size
         super().__init__(config)
         if config.mm_vocab_size > 0:
             self.mm_embed_tokens = VocabParallelEmbedding(
-                config.mm_vocab_size, config.hidden_size
+                config.mm_vocab_size, config.text_config.hidden_size
             )
         else:
             self.mm_embed_tokens = None
         self.resampler_model = VariableResolutionResamplerModel(
-            config.pixel_hidden_size,
-            config.hidden_size,
+            config.vision_config.hidden_size,
+            config.text_config.hidden_size,
             config.spatial_conv_size,
             config.temporal_conv_size,
             config=config,
@@ -853,7 +853,7 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
                 getattr(
                     self.config.vision_config, "variable_resolution", False
                 ),  # varres
-                self.config.rope_3d,  # position-ids
+                self.config.text_config.rope_3d,  # position-ids
             )
         )
 
@@ -886,7 +886,7 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         def fwd(image_features, _):
             nonlocal input_ids, lm_input_ids, mm_input_ids, token_type_ids_input, image_type_ids, image_mask
             """recompute"""
-            assert lm_input_ids.max() < self.config.vocab_size, lm_input_ids.tolist()
+            assert lm_input_ids.max() < self.config.text_config.vocab_size, lm_input_ids.tolist()
 
             inputs_embeds = super_forward(lm_input_ids)
             if isinstance(inputs_embeds, tuple):
@@ -993,7 +993,7 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
         self.use_full_recompute = use_full_recompute
         self.use_meme_eff_attn = config.use_mem_eff_attn  # fix by liaojincheng
         self.sequence_parallel = config.sequence_parallel
-        self.rope_3d = config.rope_3d
+        self.rope_3d = config.text_config.rope_3d
 
     def forward(self, args):
         """forward"""
@@ -1757,7 +1757,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
         )
 
     def __init__(self, config, recompute=False):
-        new_initializer_range = math.sqrt(0.3333 / config.hidden_size)
+        new_initializer_range = math.sqrt(0.3333 / config.text_config.hidden_size)
         logger.info(
             f"change initializer-range from {config.initializer_range} to {new_initializer_range}"
         )

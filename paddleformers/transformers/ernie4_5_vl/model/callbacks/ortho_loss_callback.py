@@ -66,7 +66,7 @@ class OrthogonalCallback(TrainerCallback):
                         gate.weight.dtype == paddle.float32
                     ), f"got unexpected dtype: {gate.weight.dtype}"
                     oloss = gate._cal_orthogonal_loss_opt_each_weight(
-                        gate.weight, model.config.moe_group_experts
+                        gate.weight, model.config.text_config.moe_group_experts
                     )
                     (oloss_grad,) = paddle.autograd.grad(oloss, gate.weight)
                     with paddle.no_grad():

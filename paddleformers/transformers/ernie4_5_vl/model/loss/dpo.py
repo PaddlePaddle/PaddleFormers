@@ -77,10 +77,10 @@ class ErnieDPOCriterion(DPOCriterion):
                 labels,
                 None,
                 transpose_y,
-                self.config.vocab_size,
+                self.config.text_config.vocab_size,
                 self.config.tensor_parallel_degree,
                 self.config.tensor_parallel_output,
-                self.config.fuse_linear,
+                self.config.text_config.fuse_linear,
                 LOOP_CHUNK_SIZE,
                 return_token_loss=True,
                 ignore_index=0,
@@ -90,9 +90,9 @@ class ErnieDPOCriterion(DPOCriterion):
                 hidden_states,
                 weight,
                 bias=bias,
-                transpose_y=self.config.tie_word_embeddings,
+                transpose_y=self.config.text_config.tie_word_embeddings,
                 tensor_parallel_output=self.config.tensor_parallel_output,
-                fuse_linear=self.config.fuse_linear,
+                fuse_linear=self.config.text_config.fuse_linear,
             )
             logits = logits.astype("float32")
             per_token_logps = -self.logprobs(logits, labels)

@@ -65,18 +65,18 @@ class MoEStatics(nn.Layer):
         self._cast_to_low_precision = False  # 兼容develop分支paddle
         self._cast_to_low_precison = False
         num_experts = (
-            config.moe_num_experts[0]
-            if config.multimodel_experts
-            else config.moe_num_experts
+            config.text_config.moe_num_experts[0]
+            if config.text_config.multimodel_experts
+            else config.text_config.moe_num_experts
         )
-        if config.multimodel_experts:
+        if config.text_config.multimodel_experts:
             assert (
-                len(set(config.moe_num_experts)) == 1
-            ), f"assume expert group has same size, got: {config.moe_num_experts}"
+                len(set(config.text_config.moe_num_experts)) == 1
+            ), f"assume expert group has same size, got: {config.text_config.moe_num_experts}"
 
         with paddle.utils.unique_name.guard(f"mm_layer_{layer_idx}_"):
             num_experts_groups = (
-                len(config.moe_num_experts) if config.multimodel_experts else 1
+                len(config.text_config.moe_num_experts) if config.text_config.multimodel_experts else 1
             )
             p = self.create_parameter(
                 shape=[num_experts_groups, num_experts],
@@ -556,7 +556,7 @@ class MOELayer(nn.Layer):
         """
         k = self.k
         experts_type_ids = self.gate.experts_type_ids
-        use_hard_gate = self.config.moe_use_hard_gate
+        use_hard_gate = self.config.text_config.moe_use_hard_gate
         max_prob = None
 
         if token_type_ids is not None and use_hard_gate:
@@ -668,7 +668,7 @@ class MOELayer(nn.Layer):
 
         dispatch_mask = paddle.diff(F.pad(dispatch_mask, (1, 0)))
         if self.use_correction_bias:
-            if self.gate.config.multimodel_experts:
+            if self.gate.config.text_config.multimodel_experts:
                 for i in range(len(self.moe_statics.expert_usage)):
                     self.moe_statics.expert_usage[i] += dispatch_mask[
                         self.gate.experts_type_mask[i]
@@ -799,7 +799,7 @@ class MOELayer(nn.Layer):
             Tensor: Updated router loss
         """
         assert gate_prob is not None
-        if token_type_ids is not None and self.gate.config.moe_use_hard_gate:  # true
+        if token_type_ids is not None and self.gate.config.text_config.moe_use_hard_gate:  # true
             if not self.gate.weight.stop_gradient:
                 lm_tokens_mask = token_type_ids == 0
                 if offload_helper is not None:

@@ -1313,7 +1313,7 @@ class MOEAllGatherLayerV2(MOELayer):
             logits, capacity, router_loss = self.gate(
                 input, *args, transform_weight=False
             )
-            if self.config.multimodel_experts:
+            if self.config.text_config.multimodel_experts:
                 gate_logits_lm, gate_logits_mm = logits.chunk(2, axis=-1)
             else:
                 gate_logits_lm, gate_logits_mm = logits, None
@@ -1357,9 +1357,9 @@ class MOEAllGatherLayerV2(MOELayer):
         expert_id = expert_id.cast("int32")
         expert_id.stop_gradient = True
         num_experts = (
-            sum(self.config.moe_num_experts)
-            if isinstance(self.config.moe_num_experts, (tuple, list))
-            else self.config.moe_num_experts
+            sum(self.config.text_config.moe_num_experts)
+            if isinstance(self.config.text_config.moe_num_experts, (tuple, list))
+            else self.config.text_config.moe_num_experts
         )  # all-experts = 96
         if global_dense_expert_mask is not None:
             combine_weights_unnorm[global_dense_expert_mask] = 0.0
@@ -1400,7 +1400,7 @@ class MOEAllGatherLayerV2(MOELayer):
             )
 
         if self.use_correction_bias:
-            if self.gate.config.multimodel_experts:
+            if self.gate.config.text_config.multimodel_experts:
                 # MLLM
                 for i in range(len(self.moe_statics.expert_usage)):
                     self.moe_statics.expert_usage[i] += expert_num_local[
@@ -1627,7 +1627,7 @@ class MOEAllGatherLayerV2(MOELayer):
             Tensor: Updated router loss with new auxiliary components
         """
         dispatch_mask_3d = dispatch_mask.reshape([self.config.moe_world_size, -1])
-        if token_type_ids is not None and self.gate.config.moe_use_hard_gate:
+        if token_type_ids is not None and self.gate.config.text_config.moe_use_hard_gate:
             # MLLM
             if not self.gate.weight.stop_gradient:
                 dispatch_tokens_mask = (
