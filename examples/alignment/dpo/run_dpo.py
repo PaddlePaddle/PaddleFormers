@@ -162,11 +162,12 @@ def main():
 
     if training_args.pipeline_parallel_degree > 1:
         model_class = AutoModelForCausalLMPipe
-        if not dpo_config.reference_free and not dpo_config.lora:
-            ref_model_config.dpo_config = dpo_config
-        model_config.dpo_config = dpo_config
     else:
         model_class = AutoModelForCausalLM
+    if not dpo_config.reference_free and not dpo_config.lora:
+        ref_model_config.dpo_config = dpo_config
+    model_config.dpo_config = dpo_config
+
     if not training_args.autotuner_benchmark or model_args.weight_quantize_algo is not None:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
@@ -302,7 +303,7 @@ def main():
         eval_dataset = None
     logger.info("Creating dataset successfully ...")
 
-    max_seq_len = data_args.max_seq_len if data_args.packing else None
+    max_seq_len = data_args.max_seq_len if (data_args.packing or training_args.sequence_parallel) else None
     trainer = DPOTrainer(
         model=model,
         ref_model=ref_model,
@@ -319,6 +320,7 @@ def main():
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
         ignore_eos_token=True,
+        model_with_dpo_criterion=model_args.model_with_dpo_criterion,
     )
 
     if training_args.do_train:

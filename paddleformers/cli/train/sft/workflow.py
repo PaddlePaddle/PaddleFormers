@@ -139,9 +139,9 @@ def run_sft(
 
     # Config for model using dropout, such as GPT.
     if hasattr(model_config, "hidden_dropout_prob"):
-        model_config.hidden_dropout_prob = model_args.hidden_dropout_prob
+        model_config.hidden_dropout_prob = finetuning_args.hidden_dropout_prob
     if hasattr(model_config, "attention_probs_dropout_prob"):
-        model_config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
+        model_config.attention_probs_dropout_prob = finetuning_args.attention_probs_dropout_prob
     if hasattr(model_config, "ignore_index"):
         model_config.ignore_index = -100
 
@@ -157,7 +157,6 @@ def run_sft(
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.seq_length = data_args.max_seq_len
     model_config.max_sequence_length = data_args.max_seq_len
-    model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     model_config._attn_implementation = model_args.attn_impl
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
@@ -248,10 +247,16 @@ def run_sft(
     else:
         metrics = compute_metrics
 
-    max_seq_len = data_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
+    # padding to the maximum seq length in batch data when max_seq_len is None
+    max_seq_len = (
+        data_args.max_seq_len + model_config.num_nextn_predict_layers
+        if (data_args.packing or training_args.sequence_parallel)
+        else None
+    )
     data_collator = partial(
         collate_fn,
         tokenizer=tokenizer,
+        training_args=training_args,
         model_args=model_args,
         max_seq_len=max_seq_len,
     )
