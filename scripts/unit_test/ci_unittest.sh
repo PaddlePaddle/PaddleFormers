@@ -17,12 +17,9 @@
 set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
-export nlp_dir=/workspace/PaddleFormers
-export log_path=/workspace/PaddleFormers/unittest_logs
-cd $nlp_dir
-if [ ! -d "unittest_logs" ];then
-    mkdir unittest_logs
-fi
+export paddleformers_code_path=/workspace/PaddleFormers
+export log_path=${paddleformers_code_path}/unittest_logs
+cd $paddleformers_code_path
 mkdir -p $log_path
 
 install_requirements() {
@@ -32,7 +29,7 @@ install_requirements() {
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
-    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
+    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off --force-reinstall
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python setup.py bdist_wheel > /dev/null
     python -m pip install  dist/p****.whl
@@ -51,7 +48,7 @@ set_env() {
     if [[ ${FLAGS_enable_CE} == "true" ]];then
         export CE_TEST_ENV=1
         export RUN_SLOW_TEST=1
-        export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
+        export PYTHONPATH=${paddleformers_code_path}:${paddleformers_code_path}/llm:${PYTHONPATH}
     fi
 }
 
@@ -77,34 +74,42 @@ print_info() {
 }
 
 get_diff_TO_case(){
-export FLAGS_enable_CI=false
-if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
-    # Scheduled Regression Test
-    FLAGS_enable_CI=true
-else
-    for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
-        ext="${file_name##*.}"
-        echo "file_name: ${file_name}, ext: ${file_name##*.}"
-        
-        if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
-            continue
-        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
-            continue
-        else
-            FLAGS_enable_CI=true
-        fi
-    done
-fi
+    export FLAGS_enable_CI=false
+    if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
+        # Scheduled Regression Test
+        FLAGS_enable_CI=true
+    else
+        for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
+            ext="${file_name##*.}"
+            echo "file_name: ${file_name}, ext: ${file_name##*.}"
+            
+            if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
+                continue
+            elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
+                continue
+            else
+                FLAGS_enable_CI=true
+            fi
+        done
+    fi
 }
 
 get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     install_requirements
-    cd ${nlp_dir}
+    cd ${paddleformers_code_path}
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
     set +e
+    echo "Check paddle Cuda Version"
+    python -c "import paddle; print(paddle.version.cuda()); print(paddle.version.cudnn()); print(paddle.is_compiled_with_cuda())"
+    echo "Check docker Cuda Version"
+    nvcc -V  
+    echo "Check nvidia-smi"
+    nvidia-smi
+    echo "Check paddle GPU count"
+    python -c "import paddle; print(paddle.device.device_count())"
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
@@ -116,18 +121,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
         --cov=paddleformers \
         --cov-report=xml:coverage.xml > ${log_path}/unittest.log 2>&1
     exit_code=$?
-    print_info $exit_code unittest
-
-    if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-        cd ${nlp_dir}
-        echo -e "\033[35m ---- Generate Allure Report  \033[0m"
-        unset http_proxy && unset https_proxy
-        cp scripts/unit_test/gen_allure_report.py ./
-        python gen_allure_report.py > /dev/null
-        echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"
-    else
-        echo "AGILE_JOB_BUILD_ID is empty, skip generate allure report"
-    fi
+    print_info $exit_code 
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
     exit_code=0

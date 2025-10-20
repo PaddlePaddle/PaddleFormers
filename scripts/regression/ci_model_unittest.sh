@@ -17,27 +17,12 @@
 set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
-export nlp_dir=/workspace/PaddleFormers
-export log_path=/workspace/PaddleFormers/model_unittest_logs
+export paddleformers_code_path=/workspace/PaddleFormers
+export log_path=${paddleformers_code_path}/unittest_logs
 export model_unittest_path=/workspace/PaddleFormers/scripts/regression
-cd $nlp_dir
+cd $paddleformers_code_path
 mkdir -p $log_path
 
-install_requirements() {
-    python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-    python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
-    python -m pip install -r requirements.txt
-    python -m pip install -r requirements-dev.txt
-    python -m pip install -r tests/requirements.txt
-    python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
-    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off --force-reinstall
-    python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    python setup.py bdist_wheel > /dev/null
-    python -m pip install  dist/p****.whl
-    python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
-    python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip list >> ${log_path}/commit_info.txt
-}
 
 set_env() {
     export NVIDIA_TF32_OVERRIDE=0 
@@ -49,7 +34,7 @@ set_env() {
     if [[ ${FLAGS_enable_CE} == "true" ]];then
         export CE_TEST_ENV=1
         export RUN_SLOW_TEST=1
-        export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
+        export PYTHONPATH=${paddleformers_code_path}:${paddleformers_code_path}/llm:${PYTHONPATH}
     fi
 }
 
@@ -75,31 +60,30 @@ print_info() {
 }
 
 get_diff_TO_case(){
-export FLAGS_enable_CI=false
-if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
-    # Scheduled Regression Test
-    FLAGS_enable_CI=true
-else
-    for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
-        ext="${file_name##*.}"
-        echo "file_name: ${file_name}, ext: ${file_name##*.}"
-        
-        if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
-            continue
-        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
-            continue
-        else
-            FLAGS_enable_CI=true
-        fi
-    done
-fi
+    export FLAGS_enable_CI=false
+    if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
+        # Scheduled Regression Test
+        FLAGS_enable_CI=true
+    else
+        for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
+            ext="${file_name##*.}"
+            echo "file_name: ${file_name}, ext: ${file_name##*.}"
+            
+            if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
+                continue
+            elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
+                continue
+            else
+                FLAGS_enable_CI=true
+            fi
+        done
+    fi
 }
 
 get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
-    install_requirements
-    cd ${nlp_dir}
+    cd ${paddleformers_code_path}
     echo ' Testing all model unittest cases '
     unset http_proxy && unset https_proxy
     set +e
@@ -107,27 +91,15 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     python -c "import paddle; print(paddle.version.cuda()); print(paddle.version.cudnn()); print(paddle.is_compiled_with_cuda())"
     echo "Check docker Cuda Version"
     nvcc -V  
-    cat /usr/local/cuda/version.txt
     echo "Check nvidia-smi"
     nvidia-smi
+    echo "Check paddle GPU count"
     python -c "import paddle; print(paddle.device.device_count())"
-    export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
-    print_info $exit_code model_unittest
-
-    if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-        cd ${nlp_dir}
-        echo -e "\033[35m ---- Generate Allure Report  \033[0m"
-        unset http_proxy && unset https_proxy
-        cp ${nlp_dir}/scripts/unit_test/gen_allure_report.py ./
-        python gen_allure_report.py > /dev/null
-        echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"
-    else
-        echo "AGILE_JOB_BUILD_ID is empty, skip generate allure report"
-    fi
+    print_info $exit_code 
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
     exit_code=0
