@@ -1597,7 +1597,6 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
-
         # Recompute defaults to False and is controlled by Trainer
         self.enable_recompute = False
         self.recompute_granularity = config.recompute_granularity
