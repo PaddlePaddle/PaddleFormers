@@ -118,7 +118,7 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check models:"
           ls -l ./models
-          timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} true
+          timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl}
           '
           
       - name: Upload Products
