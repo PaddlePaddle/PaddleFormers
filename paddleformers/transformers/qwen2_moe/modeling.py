@@ -245,10 +245,10 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         """ """
-        residuals = hidden_states
-        orig_shape = hidden_states.shape
         if self.sequence_parallel:
             hidden_states = GatherOp.apply(hidden_states)
+        residuals = hidden_states
+        orig_shape = hidden_states.shape
 
         hidden_states = hidden_states.view([-1, hidden_states.shape[-1]])
         # router_logits: (batch * sequence_length, n_experts)
@@ -291,14 +291,15 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
                 final_hidden_states.index_add_(
                     index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
                 )
-        if self.sequence_parallel:
-            final_hidden_states = ScatterOp.apply(final_hidden_states)
         final_hidden_states = paddle.reshape(final_hidden_states, orig_shape)
 
         shared_expert_output = self.shared_expert(residuals)
         shared_expert_output = F.sigmoid(self.shared_expert_gate(residuals)) * shared_expert_output
 
         final_hidden_states = final_hidden_states + shared_expert_output
+
+        if self.sequence_parallel:
+            final_hidden_states = ScatterOp.apply(final_hidden_states)
 
         return final_hidden_states, router_logits
 
