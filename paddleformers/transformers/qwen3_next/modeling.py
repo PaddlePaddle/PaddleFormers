@@ -13,7 +13,8 @@
 # limitations under the License.
 """Paddle Qwen3-Next model."""
 
-from typing import Any, Callable, List, Optional, Union
+from functools import partial
+from typing import Any, Callable, List, Optional
 
 import paddle
 import paddle.nn.functional as F
@@ -22,7 +23,8 @@ from paddle import Tensor, nn
 from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
-from ...nn.general import GeneralInterface
+from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.pp_model import GeneralModelForCausalLMPipe, RMSNormPipe, parse_args
 from ...utils.log import logger
@@ -313,10 +315,12 @@ def sdpa_attention_forward(
 class Qwen3NextAttention(Qwen3MoeAttention):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
-        self.q_proj = nn.Linear(
+        self.q_proj = GeneralLinear.create(
             config.hidden_size,
             config.num_attention_heads * self.head_dim * 2,
-            bias_attr=config.attention_bias
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="colwise",
         )
         self.q_norm = Qwen3NextRMSNorm(
             self.head_dim, eps=config.rms_norm_eps
@@ -714,11 +718,11 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         Derives `query`, `key` and `value` tensors from `mixed_qkvz` and `mixed_ba`.
         """
 
-        new_tensor_shape_qkvz = mixed_qkvz.size()[:-1] + (
+        new_tensor_shape_qkvz = mixed_qkvz.shape[:-1] + [
             self.num_k_heads,
             2 * self.head_k_dim + 2 * self.head_v_dim * self.num_v_heads // self.num_k_heads,
-        )
-        new_tensor_shape_ba = mixed_ba.size()[:-1] + (self.num_k_heads, 2 * self.num_v_heads // self.num_k_heads)
+        ]
+        new_tensor_shape_ba = mixed_ba.shape[:-1] + [self.num_k_heads, 2 * self.num_v_heads // self.num_k_heads]
 
         mixed_qkvz = mixed_qkvz.view(*new_tensor_shape_qkvz)
         mixed_ba = mixed_ba.view(*new_tensor_shape_ba)
@@ -732,10 +736,10 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         query, key, value, z = paddle.split(mixed_qkvz, split_arg_list_qkvz, axis=3)
         b, a = paddle.split(mixed_ba, split_arg_list_ba, axis=3)
         # [b, sq, ng, np/ng * hn] -> [b, sq, np, hn]
-        value = value.reshape(value.size(0), value.size(1), -1, self.head_v_dim)
-        z = z.reshape(z.size(0), z.size(1), -1, self.head_v_dim)
-        b = b.reshape(b.size(0), b.size(1), self.num_v_heads)
-        a = a.reshape(a.size(0), a.size(1), self.num_v_heads)
+        value = value.reshape(value.shape[0], value.shape[1], -1, self.head_v_dim)
+        z = z.reshape(z.shape[0], z.shape[1], -1, self.head_v_dim)
+        b = b.reshape(b.shape[0], b.shape[1], self.num_v_heads)
+        a = a.reshape(a.shape[0], a.shape[1], self.num_v_heads)
         return query, key, value, z, b, a
 
     def forward(
@@ -951,8 +955,98 @@ class Qwen3NextPretrainedModel(PretrainedModel):
         "shared_expert_gate",
     ]
 
+    @classmethod
+    def _get_tensor_parallel_mappings(cls, config: Qwen3NextConfig, is_split=True):
+        """Generate tensor parallel mappings for model conversion."""
+        from ..conversion_utils import split_or_merge_func
+
+        fn = split_or_merge_func(
+            is_split=is_split,
+            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_parallel_rank=config.tensor_parallel_rank,
+            num_attention_heads=config.num_attention_heads,
+        )
+
+        LAYER_COLWISE = [
+            "self_attn.q_proj.weight",
+            "self_attn.k_proj.weight",
+            "self_attn.v_proj.weight",
+        ]
+
+        LAYER_ROWWISE = ["self_attn.o_proj.weight"]
+
+        EXPERT_LAYER_COLWISE = [
+            "up_proj.weight",
+            "gate_proj.weight",
+        ]
+
+        EXPERT_LAYER_ROWWISE = ["down_proj.weight"]
+
+        BIAS_KEYS = [
+            "self_attn.q_proj.bias",
+            "self_attn.k_proj.bias",
+            "self_attn.v_proj.bias",
+        ]
+
+        def make_base_actions():
+            actions = {
+                "lm_head.weight": partial(fn, is_column=False),
+                "embed_tokens.weight": partial(fn, is_column=False),
+            }
+            for layer_idx in range(config.num_hidden_layers):
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                        for k in LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
+                        for k in LAYER_ROWWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=True)
+                        for e in range(config.num_experts)
+                        for k in EXPERT_LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=False)
+                        for e in range(config.num_experts)
+                        for k in EXPERT_LAYER_ROWWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_expert.{k}": partial(fn, is_column=True)
+                        for k in EXPERT_LAYER_COLWISE
+                    }
+                )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_expert.{k}": partial(fn, is_column=False)
+                        for k in EXPERT_LAYER_ROWWISE
+                    }
+                )
+                # bias
+                if config.attention_bias:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                            for b in BIAS_KEYS
+                        }
+                    )
+
+            return actions
+
+        mappings = make_base_actions()
+        return mappings
+
     def _init_weights(self, module):
-        # super()._init_weights(module)
         if isinstance(module, Qwen3NextGatedDeltaNet):
             module.dt_bias.data.fill_(1.0)
             module.A_log.data.uniform_(0, 16).log_()
@@ -962,7 +1056,9 @@ class Qwen3NextPretrainedModel(PretrainedModel):
 class Qwen3NextModel(Qwen3NextPretrainedModel):
     def __init__(self, config: Qwen3NextConfig):
         super().__init__(config)
-        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, config.pad_token_id)
+        self.embed_tokens = GeneralEmbedding.create(
+            config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
+        )
         self.layers = nn.LayerList(
             [Qwen3NextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
@@ -1185,16 +1281,10 @@ class Qwen3NextRMSNormPipe(RMSNormPipe):
 class Qwen3NextForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Qwen3NextConfig
     _rotary_emb_cls = Qwen3NextRotaryEmbedding
+    _rms_norm_pipe_cls = Qwen3NextRMSNormPipe
     _decoder_layer_cls = Qwen3NextDecoderLayer
+    _get_tensor_parallel_mappings = Qwen3NextModel._get_tensor_parallel_mappings
     _init_weights = Qwen3NextModel._init_weights
+    _keep_in_fp32_modules = Qwen3NextModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen3NextModel.transpose_weight_keys
-
-    def __init__(self, *args, **kwargs):
-        # TODO(liangshuhao): Qwen3Next uses a non-standard RMSNorm, so we have
-        # to hack the default RMSNormPipe.
-        from ...nn import pp_model
-        RMSNormPipe = pp_model.RMSNormPipe
-        pp_model.RMSNormPipe = Qwen3NextRMSNormPipe
-        super().__init__(*args, **kwargs)
-        pp_model.RMSNormPipe = RMSNormPipe
