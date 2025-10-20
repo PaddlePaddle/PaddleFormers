@@ -17,6 +17,12 @@
 set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
+export PYTEST_EXECUTE_FLAG_FILE=${3}
+if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
+    rm "${PYTEST_EXECUTE_FLAG_FILE}"
+fi
+dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
+mkdir -p "${dir_name}"
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/unittest_logs
 cd $nlp_dir
@@ -81,6 +87,7 @@ export FLAGS_enable_CI=false
 if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
     # Scheduled Regression Test
     FLAGS_enable_CI=true
+    touch ${PYTEST_EXECUTE_FLAG_FILE}
 else
     for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
         ext="${file_name##*.}"
@@ -92,6 +99,7 @@ else
             continue
         else
             FLAGS_enable_CI=true
+            touch ${PYTEST_EXECUTE_FLAG_FILE}
         fi
     done
 fi
