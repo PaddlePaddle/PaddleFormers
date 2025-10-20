@@ -146,7 +146,11 @@ class GptOssExperts(nn.Layer):
                     0,
                     weighted_output.astype(hidden_states.dtype),
                 )
-            next_states = next_states.reshape([batch_size, -1, self.hidden_size])
+            if self.sequence_parallel:
+                next_states = next_states.reshape([-1, self.hidden_size])
+            else:
+                next_states = next_states.reshape([batch_size, -1, self.hidden_size])
+
         else:
             hidden_states = paddle.tile(hidden_states, repeat_times=[num_experts, 1])
             hidden_states = hidden_states.reshape((num_experts, -1, self.hidden_size))
@@ -157,10 +161,14 @@ class GptOssExperts(nn.Layer):
             glu = gate * F.sigmoid(gate * self.alpha)
             next_states = paddle.bmm(((up + 1) * glu), self.down_proj)
             next_states = next_states + self.down_proj_bias[..., None, :]
-            next_states = next_states.reshape((num_experts, batch_size, -1, self.hidden_size))
-            next_states = (
-                next_states * routing_weights.transpose([0, 1]).reshape((num_experts, batch_size, -1))[..., None]
-            )
+            if self.sequence_parallel:
+                next_states = next_states.reshape((num_experts, -1, self.hidden_size))
+                next_states = next_states * routing_weights.transpose([0, 1]).reshape((num_experts, -1))[..., None]
+            else:
+                next_states = next_states.reshape((num_experts, batch_size, -1, self.hidden_size))
+                next_states = (
+                    next_states * routing_weights.transpose([0, 1]).reshape((num_experts, batch_size, -1))[..., None]
+                )
             next_states = next_states.sum(axis=0)
 
         return next_states
