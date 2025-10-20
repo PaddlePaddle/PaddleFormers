@@ -309,6 +309,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
             hidden_size=config.hidden_size,
             has_bias=config.use_bias,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.post_attention_layernorm = GeneralNorm.create(
             config=config,
@@ -316,12 +317,12 @@ class Ernie4_5DecoderLayer(nn.Layer):
             hidden_size=config.hidden_size,
             has_bias=config.use_bias,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
 
         self.hidden_dropout = nn.Dropout(p=config.hidden_dropout_prob, mode="upscale_in_train")
 
         if config.sequence_parallel:
-            self.post_attention_layernorm.enable_sequence_parallel()
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
                 if config.use_bias:
@@ -492,6 +493,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             hidden_size=config.hidden_size,
             has_bias=config.use_bias,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
 
         self.rotary_emb = Ernie4_5RotaryEmbedding(config)

@@ -40,7 +40,15 @@ __all__ = ["Norm"]
 
 
 class LayerNorm(nn.LayerNorm):
-    def __init__(self, config: PretrainedConfig, hidden_size=None, norm_eps=None, has_bias=None, input_is_parallel=False, **kwargs):
+    def __init__(
+        self,
+        config: PretrainedConfig,
+        hidden_size=None,
+        norm_eps=None,
+        has_bias=None,
+        input_is_parallel=False,
+        **kwargs
+    ):
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.norm_eps = config.get("norm_eps", 1e-5) if norm_eps is None else norm_eps
         super().__init__(self.hidden_size, epsilon=self.norm_eps)
@@ -94,10 +102,14 @@ class Norm(GeneralInterface):
     _global_mapping = {"layer_norm": LayerNorm, "rms_norm": RMSNorm}
 
     @classmethod
-    def create(self, config, hidden_size=None, has_bias=None, norm_eps=None, norm_type=None, input_is_parallel=False, **kwargs):
+    def create(
+        self, config, hidden_size=None, has_bias=None, norm_eps=None, norm_type=None, input_is_parallel=False, **kwargs
+    ):
         if norm_type is None:
             norm_type = "rms_norm"
         if has_bias is None:
             has_bias = config.get("use_bias", False)
         norm_cls = self._global_mapping[norm_type]
-        return norm_cls(config, hidden_size, has_bias=has_bias, norm_eps=norm_eps, input_is_parallel=input_is_parallel, **kwargs)
+        return norm_cls(
+            config, hidden_size, has_bias=has_bias, norm_eps=norm_eps, input_is_parallel=input_is_parallel, **kwargs
+        )
