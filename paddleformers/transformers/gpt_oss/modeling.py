@@ -80,7 +80,6 @@ class GptOssExperts(nn.Layer):
         self.num_experts = config.num_experts
         self.hidden_size = config.hidden_size
         self.expert_dim = self.intermediate_size
-        self.sequence_parallel = config.sequence_parallel
         self.gate_up_proj = paddle.create_parameter(
             shape=[self.num_experts, self.hidden_size, 2 * self.expert_dim],
             dtype=paddle.get_default_dtype(),
@@ -199,6 +198,7 @@ class GptOssMLP(nn.Layer):
         super().__init__()
         self.router = GptOssTopKRouter(config)
         self.experts = GptOssExperts(config)
+        self.sequence_parallel = config.sequence_parallel
 
     def forward(self, hidden_states):
         if self.sequence_parallel:
