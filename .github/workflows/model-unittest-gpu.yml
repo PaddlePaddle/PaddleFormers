@@ -25,7 +25,7 @@ env:
   BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_JOB_NAME: model-unittest-gpu-ci
-  NO_PROXY: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+  no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 defaults:
   run:
@@ -65,7 +65,7 @@ jobs:
             -e "COMMIT_ID=$COMMIT_ID" \
             -e "WORK_DIR=$WORK_DIR" \
             -e "CI_SCRIPTS_PATH=$CI_SCRIPTS_PATH" \
-            -e "NO_PROXY=$NO_PROXY" \
+            -e "no_proxy=$no_proxy" \
             -e "CI_JOB_NAME=$CI_JOB_NAME" \
             -e "PADDLE_WHL=$PADDLE_WHL" \
             -e "FLAGS_DYNAMIC_STATIC_UNIFIED_COMM=$FLAGS_DYNAMIC_STATIC_UNIFIED_COMM" \

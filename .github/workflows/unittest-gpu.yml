@@ -26,6 +26,7 @@ env:
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_name: unittest-gpu-ci
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+  
 
 defaults:
   run:

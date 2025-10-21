@@ -19,6 +19,12 @@ export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/unittest_logs
+export PYTEST_EXECUTE_FLAG_FILE=${3}
+if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
+    rm "${PYTEST_EXECUTE_FLAG_FILE}"
+fi
+dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
+mkdir -p "${dir_name}"
 cd $nlp_dir
 if [ ! -d "unittest_logs" ];then
     mkdir unittest_logs
@@ -77,24 +83,26 @@ print_info() {
 }
 
 get_diff_TO_case(){
-export FLAGS_enable_CI=false
-if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
-    # Scheduled Regression Test
-    FLAGS_enable_CI=true
-else
-    for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
-        ext="${file_name##*.}"
-        echo "file_name: ${file_name}, ext: ${file_name##*.}"
-        
-        if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
-            continue
-        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
-            continue
-        else
-            FLAGS_enable_CI=true
-        fi
-    done
-fi
+    export FLAGS_enable_CI=false
+    if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
+        # Scheduled Regression Test
+        FLAGS_enable_CI=true
+        touch ${PYTEST_EXECUTE_FLAG_FILE}
+    else
+        for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
+            ext="${file_name##*.}"
+            echo "file_name: ${file_name}, ext: ${file_name##*.}"
+            
+            if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
+                continue
+            elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
+                continue
+            else
+                FLAGS_enable_CI=true
+                touch ${PYTEST_EXECUTE_FLAG_FILE}
+            fi
+        done
+    fi
 }
 
 get_diff_TO_case
