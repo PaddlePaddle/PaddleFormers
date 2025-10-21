@@ -145,6 +145,7 @@ from .trainer_callback import (
     DefaultFlowCallback,
     PrinterCallback,
     ProgressCallback,
+    SPGradSyncCallback,
     TrainerCallback,
     TrainerControl,
     TrainerState,
@@ -2262,9 +2263,15 @@ class Trainer:
                 model, self.optimizer = decorated
 
         if self.args.tensor_parallel_degree > 1 and self.args.sequence_parallel:
-            register_sequence_parallel_allreduce_hooks(
-                model, self.args.gradient_accumulation_steps, self.args.fuse_sequence_parallel_allreduce
-            )
+            # use callback for sp grad sync in case of unexpected behaviour (except sharding stage 2&3)
+            if ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.FULL_SHARD in self.args.sharding:
+                # stage 2 or stage 3
+                register_sequence_parallel_allreduce_hooks(
+                    model, self.args.gradient_accumulation_steps, self.args.fuse_sequence_parallel_allreduce
+                )
+            else:
+                # stage 1 or dp
+                self.add_callback(SPGradSyncCallback(model))
 
         if self.args.world_size == 1:
             if self.args.amp_master_grad:
