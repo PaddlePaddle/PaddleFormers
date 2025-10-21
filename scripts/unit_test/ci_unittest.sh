@@ -25,6 +25,7 @@ if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
 fi
 dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
 mkdir -p "${dir_name}"
+echo "PYTEST_EXECUTE_FLAG_FILE is set to ${PYTEST_EXECUTE_FLAG_FILE}"
 cd $nlp_dir
 if [ ! -d "unittest_logs" ];then
     mkdir unittest_logs
