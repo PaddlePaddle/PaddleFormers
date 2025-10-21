@@ -20,12 +20,12 @@ export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/unittest_logs
 export PYTEST_EXECUTE_FLAG_FILE=${3}
+echo "PYTEST_EXECUTE_FLAG_FILE is ${PYTEST_EXECUTE_FLAG_FILE}"
 if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
     rm "${PYTEST_EXECUTE_FLAG_FILE}"
 fi
 dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
 mkdir -p "${dir_name}"
-echo "PYTEST_EXECUTE_FLAG_FILE is set to ${PYTEST_EXECUTE_FLAG_FILE}"
 cd $nlp_dir
 if [ ! -d "unittest_logs" ];then
     mkdir unittest_logs
