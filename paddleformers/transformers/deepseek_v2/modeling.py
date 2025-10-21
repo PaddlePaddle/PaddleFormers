@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import math
+import os
 import warnings
 from copy import deepcopy
 from functools import partial
@@ -57,7 +58,6 @@ from ...utils.tools import get_env_device
 from .. import linear_utils
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..llama import fusion_ops
-from ..llama.modeling import get_use_casual_mask
 from ..model_outputs import (
     BaseModelOutputWithPastAndMTP,
     CausalLMOutputWithPast,
@@ -76,6 +76,11 @@ __all__ = [
     "DeepseekV2PretrainedModel",
     "DeepseekV2ForCausalLMPipe",
 ]
+
+
+def get_use_casual_mask():
+    """Get the value of the 'USE_CASUAL_MASK' environment variable."""
+    return os.getenv("USE_CASUAL_MASK", "False") == "True"
 
 
 def get_triangle_upper_mask(x, mask=None):

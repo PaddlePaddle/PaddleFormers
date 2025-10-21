@@ -266,7 +266,7 @@ class EmbeddingPipe(nn.Layer):
                     dtype="int64",
                 )
                 .unsqueeze(0)
-                .tile(input_ids.shape[0], 1)
+                .tile([input_ids.shape[0], 1])
             )
         if self.config.fuse_rope:
             position_embeddings = None
@@ -610,7 +610,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 LayerDesc(
                     EmptyLayer,
                 ),
-                f"empty.layers.{i+config.num_hidden_layers}",
+                f"empty.layers.{i + config.num_hidden_layers}",
             )
 
         self.add_sequential_layer(
