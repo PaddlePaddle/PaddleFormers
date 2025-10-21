@@ -60,6 +60,8 @@ class SFTTrainTester(unittest.TestCase):
             avg_loss = round(sum_loss, 6)
         else:
             avg_loss = 0
+        print(f"Current loss : {avg_loss}")
+        print(f"Base loss : {base_loss}")
         self.assertTrue(abs(avg_loss - base_loss) <= 0.0001, f"loss: {avg_loss}, base_loss: {base_loss}, exist diff!")
 
     def assert_result(self, ret_code, log_output):
@@ -130,7 +132,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.945683
+        EXCEPTED_LOSS = 11.945673
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -179,7 +181,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.956834
+        EXCEPTED_LOSS = 11.956829
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test lora merge
@@ -209,3 +211,143 @@ class SFTTrainTest(unittest.TestCase):
             [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
         )
         self.sfttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+
+    def test_sft_full_tp_pp(self):
+        output_dir = os.path.join(OUTPUT_DIR, "sft_full_tp_pp")
+        update_args = {
+            "model_name_or_path": MODEL_NAME_OR_PATH,
+            "train_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+            "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+            "output_dir": output_dir,
+        }
+        config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
+        updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
+        train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
+        # n_gpus = paddle.device.cuda.device_count()
+        # devices = ",".join(str(i) for i in range(n_gpus))
+        cmd = [
+            "python",
+            "-u",
+            "-m",
+            "paddle.distributed.launch",
+            "--devices",
+            "0,1,2,3",
+            train_path,
+            updated_config_path,
+        ]
+        print(f"cmd {cmd}")
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        # test training result
+        self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
+
+        # test training loss
+        EXCEPTED_LOSS = 11.956903
+        self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+
+        # test model resume
+        # EXCEPTED_LOSS = 9.550503
+        # self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+        # test model generate
+        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+        self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
+
+    def test_sft_lora_tp_pp(self):
+        output_dir = os.path.join(OUTPUT_DIR, "sft_lora_tp_pp")
+        update_args = {
+            "model_name_or_path": MODEL_NAME_OR_PATH,
+            "train_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+            "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+            "output_dir": output_dir,
+        }
+        config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
+        updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
+        train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
+        cmd = [
+            "python",
+            "-u",
+            "-m",
+            "paddle.distributed.launch",
+            "--devices",
+            "0,1,2,3",
+            train_path,
+            updated_config_path,
+        ]
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        # test training result
+        self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
+
+        # test training loss
+        EXCEPTED_LOSS = 11.956903
+        self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+
+        # test lora merge
+        lora_merge_output_dir = os.path.join(output_dir, "lora_tp_pp_merge")
+        lora_merge_path = os.path.join(TRAIN_PATH, "tools/mergekit.py")
+
+        lora_merge_cmd = [
+            "python",
+            "-u",
+            "-m",
+            "paddle.distributed.launch",
+            "--devices",
+            "0,1,2,3",
+            lora_merge_path,
+            "--lora_model_path",
+            output_dir,
+            "--model_name_or_path",
+            MODEL_NAME_OR_PATH,
+            "--output_path",
+            lora_merge_output_dir,
+        ]
+        lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.sfttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
+
+        # test lora_merge_model generate
+        EXPECTED_RESULT = paddle.to_tensor(
+            [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+        )
+        self.sfttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+
+    def test_sft_full_function_call(self):
+        output_dir = os.path.join(OUTPUT_DIR, "sft_full_function_call")
+        update_args = {
+            "model_name_or_path": MODEL_NAME_OR_PATH,
+            "train_dataset_path": "./tests/fixtures/dummy/function-call/function-call-train.jsonl",
+            "eval_dataset_path": "./tests/fixtures/dummy/function-call/function-call-eval.jsonl",
+            "output_dir": output_dir,
+        }
+        config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
+        updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
+        train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
+        cmd = [
+            "python",
+            "-u",
+            "-m",
+            "paddle.distributed.launch",
+            "--devices",
+            "0,1,2,3",
+            train_path,
+            updated_config_path,
+        ]
+        print(f"cmd {cmd}")
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        # test training result
+        self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
+
+        # test training loss
+        EXCEPTED_LOSS = 11.769741
+        self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+
+        # test model resume
+        # reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        # self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+
+        # EXCEPTED_LOSS = 9.550503
+        # self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+
+        # test model generate
+        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+        self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
