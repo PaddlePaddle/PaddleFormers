@@ -86,6 +86,7 @@ class Qwen3MoeAttention(nn.Layer):
         self.num_key_value_heads = config.num_key_value_heads
         assert config.num_attention_heads // config.num_key_value_heads
 
+        self.tensor_parallel = config.tensor_parallel_degree > 1
         self.sequence_parallel = config.sequence_parallel
 
         if config.tensor_parallel_degree > 1:
@@ -131,15 +132,19 @@ class Qwen3MoeAttention(nn.Layer):
             tp_plan="rowwise",
         )
         self.q_norm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
+            config,
+            norm_type="rms_norm",
+            hidden_size=self.head_dim,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=self.tensor_parallel,
         )  # unlike olmo, only on the head dim!
         self.k_norm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
+            config,
+            norm_type="rms_norm",
+            hidden_size=self.head_dim,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=self.tensor_parallel,
         )  # thus post q_norm does not need reshape
-
-        if config.sequence_parallel:
-            self.q_norm.enable_sequence_parallel()
-            self.k_norm.enable_sequence_parallel()
 
     def forward(
         self,
@@ -329,16 +334,17 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.post_attention_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
 
         if config.sequence_parallel:
-            self.post_attention_layernorm.enable_sequence_parallel()
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
 
