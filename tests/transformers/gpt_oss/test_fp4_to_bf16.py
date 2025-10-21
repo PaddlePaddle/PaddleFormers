@@ -26,17 +26,11 @@ from paddleformers.utils.upcast_downcast_triton import downcast_dict, upcast_dic
 
 PADDLE_DTYPE_MAP = {
     "paddle.float64": 8,
-    "float64": 8,
     "paddle.float32": 4,
-    "float32": 4,
     "paddle.float16": 2,
-    "float16": 2,
     "paddle.uint16": 2,
-    "uint16": 2,
     "paddle.bfloat16": 2,
-    "bfloat16": 2,
     "paddle.uint8": 1,
-    "uint8": 1,
     "paddle.float8_e4m3fn": 1,
     "paddle.float8_e5m2": 1,
 }
