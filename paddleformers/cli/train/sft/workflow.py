@@ -247,7 +247,12 @@ def run_sft(
     else:
         metrics = compute_metrics
 
-    max_seq_len = data_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
+    # padding to the maximum seq length in batch data when max_seq_len is None
+    max_seq_len = (
+        data_args.max_seq_len + model_config.num_nextn_predict_layers
+        if (data_args.packing or training_args.sequence_parallel)
+        else None
+    )
     data_collator = partial(
         collate_fn,
         tokenizer=tokenizer,

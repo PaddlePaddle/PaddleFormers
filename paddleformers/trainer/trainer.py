@@ -2213,7 +2213,7 @@ class Trainer:
             and self.args.expert_parallel_degree > 1
             and self.args.sharding_parallel_degree > 1
         ):
-            from paddleformers.optimizers import MoEHybridParallelOptimizer
+            from ..utils import MoEHybridParallelOptimizer
 
             fleet_env = fleet.fleet
             fleet_env.user_defined_optimizer = optimizer
