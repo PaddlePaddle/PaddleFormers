@@ -93,7 +93,7 @@ jobs:
             git config --global user.email "paddle_ci@example.com"
             git pull
             git submodule update --init --recursive --force
-            if [ -n "${PR_ID}" ]; then
+            if [ "$PR_ID" -ne 0 ]; then
               git fetch origin pull/${PR_ID}/head
               git checkout -b PR_${PR_ID} FETCH_HEAD
               git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
@@ -140,7 +140,7 @@ jobs:
             wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
             unzip -q ${{ env.home_path }}/allure-2.19.0.zip
           fi
-          if [ -n "${PR_ID}" ]; then
+          if [ "$PR_ID" -ne 0 ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
             bos_prefix="schedule/$(date +%Y%m%d)"
@@ -182,7 +182,7 @@ jobs:
 
       - name: Download coverage.xml
         run: |
-          if [ -n "${PR_ID}" ]; then
+          if [ "$PR_ID" -ne 0 ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
             bos_prefix="schedule/$(date +%Y%m%d)"
@@ -228,7 +228,7 @@ jobs:
 
   #     - name: Download report.tar.gz
   #       run: |
-  #         if [ -n "${PR_ID}" ]; then
+  #         if [ "$PR_ID" -ne 0 ]; then
   #           bos_prefix="${PR_ID}/${COMMIT_ID}"
   #         else
   #           bos_prefix="schedule/$(date +%Y%m%d)"
