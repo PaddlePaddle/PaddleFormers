@@ -19,14 +19,14 @@ concurrency:
 
 env:
   PR_ID: ${{ github.event.pull_request.number || '0' }}
-  COMMIT_ID: ${{ github.event.pull_request.head.sha }}
+  COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-gpu
   ci_scripts: /workspace/PaddleFormers/scripts/unit_test
-  BRANCH: ${{ github.event.pull_request.base.ref }}
+  BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_name: unittest-gpu-ci
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-  PYTEST_EXECUTE_FLAG_FILE: ${{ github.workspace }}/PYTEST_EXECUTE_FLAG_FILE/${{ github.event.pull_request.number || '0' }}/pytest_execute.flag
+  PYTEST_EXECUTE_FLAG_FILE: ${{ github.workspace }}/../../../PYTEST_EXECUTE_FLAG_FILE/${{ github.event.pull_request.number || '0' }}/pytest_execute.flag
 
 defaults:
   run:
@@ -76,6 +76,7 @@ jobs:
             -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
+            -e "PYTEST_EXECUTE_FLAG_FILE=${PYTEST_EXECUTE_FLAG_FILE}"
             -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             
       - name: Download Code
