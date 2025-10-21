@@ -101,7 +101,7 @@ jobs:
             git config --global user.email "paddle_ci@example.com"
             git pull
             git submodule update --init --recursive --force
-            if [ "$PR_ID" -ne 0 ]; then
+            if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
               git fetch origin pull/${PR_ID}/head
               git checkout -b PR_${PR_ID} FETCH_HEAD
               git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
@@ -126,7 +126,7 @@ jobs:
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
           echo "work_dir = ${work_dir}"
           cp -r ${work_dir}/../../../models ./models
-          echo "Check models:"
+          echo "Check whether the local model file exists:"
           ls -l ./models
           timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE}
           '
@@ -148,15 +148,19 @@ jobs:
             wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
             unzip -q ${{ env.home_path }}/allure-2.19.0.zip
           fi
-          if [ "$PR_ID" -ne 0 ]; then
+          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
             bos_prefix="schedule/$(date +%Y%m%d)"
           fi
           # coverage.xml
-          cd /workspace/PaddleFormers
-          python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-          echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
+          if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
+            cd /workspace/PaddleFormers
+            python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+            echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
+          else
+            echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml upload."
+          fi
           # logs
           cd /workspace/PaddleFormers/unittest_logs
           for FILE in /workspace/PaddleFormers/unittest_logs/*; do
@@ -190,14 +194,20 @@ jobs:
 
       - name: Download coverage.xml
         run: |
-          if [ "$PR_ID" -ne 0 ]; then
-            bos_prefix="${PR_ID}/${COMMIT_ID}"
-          else
-            bos_prefix="schedule/$(date +%Y%m%d)"
+          if [ -f "${{ env.PYTEST_EXECUTE_FLAG_FILE }}" ]; then
+            rm -rf ${{ env.PYTEST_EXECUTE_FLAG_FILE }}
+            if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+              bos_prefix="${PR_ID}/${COMMIT_ID}"
+            else
+              bos_prefix="schedule/$(date +%Y%m%d)"
+            fi
+            wget -q --no-proxy \
+              https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml \
+              --no-check-certificate -O coverage.xml
+          else    
+            echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml download."
+            exit 0
           fi
-          wget -q --no-proxy \
-            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml \
-            --no-check-certificate -O coverage.xml
 
       - name: Fix coverage.xml paths
         run: |
@@ -236,7 +246,7 @@ jobs:
 
   #     - name: Download report.tar.gz
   #       run: |
-  #         if [ "$PR_ID" -ne 0 ]; then
+  #         if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
   #           bos_prefix="${PR_ID}/${COMMIT_ID}"
   #         else
   #           bos_prefix="schedule/$(date +%Y%m%d)"
