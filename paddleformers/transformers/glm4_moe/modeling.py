@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+import json
+import os
+import re
+from collections.abc import Iterator
 from copy import deepcopy
 from functools import partial
 from typing import List, Optional, Tuple, Union
@@ -23,6 +28,8 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 from paddle.nn import functional as F
+from safetensors.numpy import safe_open
+from safetensors.paddle import save_file
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.attention.utils import repeat_kv
@@ -33,11 +40,23 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Glm4MoeMLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...utils.download import DownloadSource
 from ...utils.log import logger
+from ..configuration_utils import PretrainedConfig
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from ..model_utils import PretrainedModel, register_base_model
+from ..model_utils import (
+    PretrainedModel,
+    clean_model_class_name,
+    dtype_guard,
+    get_parameter_dtype,
+    is_safetensors_available,
+    no_init_weights,
+    register_base_model,
+    unwrap_model,
+)
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
+from ..utils import ContextManagers, is_paddle_support_lazy_init
 from .configuration import Glm4MoeConfig
 
 
@@ -1067,6 +1086,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         self.embed_tokens = GeneralEmbedding.create(
             config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
         )
+
         self.layers = nn.LayerList(
             [Glm4MoeDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
@@ -1388,6 +1408,138 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         )
 
 
+def _parse_size(size_str: str) -> int:
+    """Parses a size string like '100MB', '2GB' into the number of bytes."""
+    size_str = size_str.upper().strip()
+    match = re.match(r"^(\d+\.?\d*)\s*(B|KB|MB|GB|TB)?$", size_str)
+    if not match:
+        raise ValueError(f"Could not parse size string: '{size_str}'")
+
+    num_str, unit = match.groups()
+    num = float(num_str)
+
+    if unit == "B" or unit is None:
+        return int(num)
+    elif unit == "KB":
+        return int(num * 1024)
+    elif unit == "MB":
+        return int(num * 1024**2)
+    elif unit == "GB":
+        return int(num * 1024**3)
+    elif unit == "TB":
+        return int(num * 1024**4)
+    else:
+        # This case should not be reached due to regex
+        raise ValueError(f"Unknown unit: '{unit}'")
+
+
+def save_full_param(
+    itr: Iterator[tuple[str, Tensor]],
+    save_dir: str,
+    rank: int,
+    world_size: int,
+    max_shard_size: str = "2GB",
+    num_saver_ranks: int = 8,
+) -> None:
+    """
+    Saves model weights from an iterator into shards, supporting max shard size
+    and a limited number of saver ranks.
+
+    Only ranks less than `num_saver_ranks` will perform disk I/O. All other ranks
+    will iterate through the data to maintain synchronization but will not save.
+    The parameter distribution logic is based on `num_saver_ranks`, ensuring all
+    parameters are handled by a designated saver rank.
+
+    Args:
+        itr (Iterator): An iterator that yields (param_key, param_tensor).
+        save_dir (str): The directory where shard files will be saved.
+        rank (int): The rank of the current process.
+        world_size (int): The total number of processes.
+        max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
+        num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
+    """
+    # 1. Non-saver ranks simply consume the iterator to stay in sync.
+    if rank >= num_saver_ranks:
+        logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Consuming iterator for synchronization...")
+        for _ in itr:
+            pass
+        logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Iterator consumption complete.")
+        return
+
+    max_shard_size_bytes = _parse_size(max_shard_size)
+    logger.info(
+        f"[Rank {rank}/{world_size}] (Saver) Initializing save. "
+        f"Max shard size set to: {max_shard_size_bytes / 1024**3:.2f} GB"
+    )
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    current_shard_state_dict = {}
+    current_shard_size_bytes = 0
+    sub_shard_index = 0
+
+    def _save_current_shard():
+        nonlocal sub_shard_index, current_shard_state_dict, current_shard_size_bytes
+        if not current_shard_state_dict:
+            return
+
+        # Filename includes the main shard number (rank) and the sub-shard index
+        shard_filename = f"shard_{rank}-{sub_shard_index}.safetensors"
+        save_path = os.path.join(save_dir, shard_filename)
+
+        logger.info(
+            f"[Rank {rank}/{world_size}] Saving sub-shard {sub_shard_index}... "
+            f"Size: {current_shard_size_bytes / 1024**2:.2f} MB, "
+            f"Params: {len(current_shard_state_dict)}, "
+            f"Path: {save_path}"
+        )
+
+        save_file(current_shard_state_dict, save_path)
+
+        # Reset for the next shard
+        sub_shard_index += 1
+        current_shard_state_dict = {}
+        current_shard_size_bytes = 0
+
+    logger.info(f"[Rank {rank}/{world_size}] Starting to process the weight iterator...")
+
+    for i, (param_key, param) in enumerate(itr):
+        if i % num_saver_ranks == rank:
+            param_size_bytes = param.numel() * param.element_size()
+
+            if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
+                _save_current_shard()
+
+            current_shard_state_dict[param_key] = param
+            current_shard_size_bytes += param_size_bytes
+
+            if current_shard_size_bytes >= max_shard_size_bytes:
+                _save_current_shard()
+    _save_current_shard()
+
+    logger.info(f"[Rank {rank}/{world_size}] (Saver) All shards saved successfully.")
+
+
+def replace_name_and_gen_index(path):
+    index_mapping = {}
+    safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
+    total_files_num = len(safetensor_files)
+    cur_file_index = 0
+    for file in safetensor_files:
+        cur_file_index += 1
+        file_path = os.path.join(path, file)
+        new_file_name = f"model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
+        with safe_open(file_path, framework="np") as f:
+            for key in f.keys():
+                index_mapping[key] = new_file_name
+        new_file_path = os.path.join(path, new_file_name)
+        os.rename(file_path, new_file_path)
+    index_file_name = "model.safetensors.index.json"
+    index_mapping["weight_map"] = index_mapping
+    with open(os.path.join(path, index_file_name), "w") as f:
+        json.dump(index_mapping, f)
+
+
 class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
@@ -1398,6 +1550,373 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Glm4MoeModel.transpose_weight_keys
     _rotary_emb_cls = Glm4MoeRotaryEmbedding
+
+    @classmethod
+    def _gen_aoa_config(cls, config: Glm4MoeConfig):
+        aoa_config = {
+            "aoa_statements": [
+                "model.layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                "model.layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+                "model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+                "model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+                "model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+            ]
+        }
+
+        # attention qkv
+        if not config.fuse_attention_qkv:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> model.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> model.layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+            ]
+
+        # FFN
+        if not config.fuse_attention_ffn:
+            aoa_config["aoa_statements"] += (
+                [
+                    f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{p}_proj.weight"
+                    for p in ("gate", "up")
+                ]
+                + [
+                    f"model.layers.$LAYER_ID.mlp.shared_experts.{p}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.{p}_proj.weight"
+                    for p in ("gate", "up")
+                ]
+                + [
+                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight"
+                    for p in ("gate", "up")
+                ]
+            )
+        else:
+            aoa_config["aoa_statements"] += [
+                "model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+                "model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
+                "model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
+            ]
+
+        return aoa_config
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
+        """
+        Creates an instance of `PretrainedModel`. Model weights are loaded
+        by specifying name of a built-in pretrained model, a pretrained model from HF Hub, a community contributed model,
+        or a local file directory path.
+
+        Args:
+            pretrained_model_name_or_path (str): Name of pretrained model or dir path
+                to load from. The string can be:
+
+                - Name of a built-in pretrained model
+                - Name of a pretrained model from HF Hub
+                - Name of a community-contributed pretrained model.
+                - Local directory path which contains model weights file("model_state.pdparams")
+                  and model config file ("model_config.json").
+            download_hub (DownloadSource, optional): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
+            subfolder (str, optional) An optional value corresponding to a folder inside the repo.
+                Only works when loading from Huggingface Hub.
+            *args (tuple): Position arguments for model `__init__`. If provided,
+                use these as position argument values for model initialization.
+            **kwargs (dict): Keyword arguments for model `__init__`. If provided,
+                use these to update pre-defined keyword argument values for model
+                initialization. If the keyword is in `__init__` argument names of
+                base model, update argument values of the base model; else update
+                argument values of derived model.
+            load_state_as_np (bool, optional): The weights read in can be chose
+                to place on CPU or GPU though the model is on the default device.
+                If `True`, load the model weights as `numpy.ndarray` on CPU.
+                Otherwise, weights would be loaded as tensors on the default
+                device. Note that if on GPU, the latter would creates extra
+                temporary tensors in addition to the model weights, which
+                doubles the memory usage . Thus it is suggested to use `True`
+                for big models on GPU. Default to `False`.
+
+        Returns:
+            PretrainedModel: An instance of `PretrainedModel`.
+
+        Example:
+            .. code-block::
+
+                from paddleformers.transformers import BertForSequenceClassification
+
+                # Name of built-in pretrained model
+                model = BertForSequenceClassification.from_pretrained('bert-base-uncased')
+
+                # Name of pretrained model from PaddleHub
+                model = BertForSequenceClassification.from_pretrained('bert-base-uncased')
+
+                # Name of community-contributed pretrained model
+                model = BertForSequenceClassification.from_pretrained('yingyibiao/bert-base-uncased-sst-2-finetuned', num_labels=3)
+
+                # Load from local directory path
+                model = BertForSequenceClassification.from_pretrained('./my_bert/')
+        """
+
+        if not os.getenv("USING_FLEX_CHECKPOINT"):
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+        kwargs.pop("from_hf_hub", None)
+        kwargs.pop("from_aistudio", None)
+        kwargs.pop("convert_from_torch", None)
+        config = kwargs.pop("config", None)
+        cache_dir = kwargs.pop("cache_dir", None)
+        dtype = kwargs.pop("dtype", None)
+        download_hub = kwargs.pop("download_hub", None)
+        subfolder = kwargs.pop("subfolder", None)
+        if subfolder is None:
+            subfolder = ""
+        variant = kwargs.pop("variant", None)
+        use_safetensors = kwargs.pop("use_safetensors", None if is_safetensors_available() else False)
+
+        low_cpu_mem_usage = kwargs.pop("low_cpu_mem_usage", False)
+        convert_from_hf = kwargs.pop("convert_from_hf", None)
+        load_state_as_np = kwargs.pop("load_state_as_np", None)
+        if load_state_as_np is not None:
+            logger.warning("`load_state_as_np` is deprecated,  please delete it!")
+
+        model_kwargs = kwargs
+
+        if convert_from_hf is None and download_hub == DownloadSource.MODELSCOPE:
+
+            logger.warning(
+                "If you are attempting to load weights from ModelScope Hub and want to disable the default behavior of considering torch weights,"
+                " you can set ·convert_from_hf=False·. By default, `convert_from_hf` is set to `True`. "
+            )
+            convert_from_hf = True
+
+        # from_hf_hub default enable convert_from_hf
+        if download_hub == DownloadSource.HUGGINGFACE and convert_from_hf is None:
+            logger.warning(
+                "If you are attempting to load weights from Hugging Face Hub and want to disable the default behavior of considering torch weights,"
+                " you can set ·convert_from_hf=False·. By default, `convert_from_hf` is set to `True`. "
+            )
+            convert_from_hf = True
+        # convert_from_hf default is False
+        if convert_from_hf is None:
+            convert_from_hf = False
+
+        # 1. get the PretrainedConfig to init model
+        if not isinstance(config, PretrainedConfig):
+            config_path = config if config is not None else pretrained_model_name_or_path
+            config, model_kwargs = cls.config_class.from_pretrained(
+                config_path,
+                cache_dir=cache_dir,
+                download_hub=download_hub,
+                subfolder=subfolder,
+                return_unused_kwargs=True,
+                **kwargs,
+            )
+
+        if dtype is None:
+            dtype = config.dtype
+
+        config.dtype = dtype
+
+        init_contexts = []
+        if low_cpu_mem_usage or config.quantization_config.is_weight_quantize():
+            # Instantiate model.
+            init_contexts.append(no_init_weights(_enable=True))
+            if is_paddle_support_lazy_init():
+                init_contexts.append(paddle.LazyGuard())
+
+        if dtype:
+            init_contexts.append(dtype_guard(dtype))
+
+        # Quantization method requires empty init to avoid unnecessary GPU allocation
+        if config.quantization_config.is_weight_quantize():
+            quantization_init_contexts = []
+            quantization_init_contexts.append(no_init_weights(_enable=True))
+            if is_paddle_support_lazy_init():
+                quantization_init_contexts.append(paddle.LazyGuard())
+
+        resolved_archive_file, resolved_sharded_files, sharded_metadata, is_sharded = cls._resolve_model_file_path(
+            pretrained_model_name_or_path,
+            cache_dir=cache_dir,
+            subfolder=subfolder,
+            download_hub=download_hub,
+            config=config,
+            convert_from_hf=convert_from_hf,
+            use_safetensors=use_safetensors,
+            variant=variant,
+        )
+
+        init_args = config["init_args"] or ()
+        with ContextManagers(init_contexts):
+            model = cls(config, *init_args, **model_kwargs)
+
+        aoa_config = cls._gen_aoa_config(config)
+
+        sharded_state_dict = model.sharded_state_dict()
+        dist.load_state_dict(
+            sharded_state_dict,
+            path=pretrained_model_name_or_path,
+            aoa_config=aoa_config,
+            safetensors=True,
+        )
+        return model
+
+    def save_pretrained(
+        self,
+        save_dir: Union[str, os.PathLike],
+        is_main_process: bool = True,
+        state_dict: Optional[dict] = None,
+        max_shard_size: Union[int, str] = "10GB",
+        safe_serialization: bool = False,
+        variant: Optional[str] = None,
+        *args,
+        **kwargs,
+    ):
+        """
+        Saves model configuration and related resources (model state) as files
+        under `save_dir`. The model configuration would be saved into a file named
+        "model_config.json", and model state would be saved into a file
+        named "model_state.pdparams".
+
+        The `save_dir` can be used in `from_pretrained` as argument value
+        of `pretrained_model_name_or_path` to re-load the trained model.
+
+        Args:
+            save_dir (str): Directory to save files into.
+
+        Example:
+            .. code-block::
+
+                from paddleformers.transformers import BertForSequenceClassification
+
+                model = BertForSequenceClassification.from_pretrained('bert-base-uncased')
+                model.save_pretrained('./trained_model/')
+                # reload from save_directory
+                model = BertForSequenceClassification.from_pretrained('./trained_model/')
+        """
+
+        if not os.getenv("USING_FLEX_CHECKPOINT"):
+            return super().save_pretrained(
+                save_dir, is_main_process, state_dict, max_shard_size, safe_serialization, variant, *args, **kwargs
+            )
+
+        assert not os.path.isfile(save_dir), "Saving directory ({}) should be a directory, not a file".format(save_dir)
+        os.makedirs(save_dir, exist_ok=True)
+
+        config_to_save = kwargs.get("config_to_save", None)
+        # variant = kwargs.get("variant", None)
+        # is_main_process = kwargs.get("is_main_process", True)
+        save_to_hf = kwargs.get("save_to_hf", False)
+        safe_serialization = safe_serialization or save_to_hf
+
+        save_directory = save_dir
+
+        if safe_serialization and not is_safetensors_available():
+            raise ImportError("`safe_serialization` requires the `safetensors library: `pip install safetensors`.")
+
+        if os.path.isfile(save_directory):
+            logger.error(f"Provided path ({save_directory}) should be a directory, not a file")
+            return
+
+        os.makedirs(save_directory, exist_ok=True)
+
+        model_to_save = unwrap_model(self)
+
+        # NOTE: These aoa_config items will be removed later. The subsequent AOA parsing module will automatically generate the reverse AOA based on the forward (from_pretrained) AOA.
+        aoa_statements = [
+            # do cast
+            "model.layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
+            # do transpose
+            "model.layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+            "model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+            "model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+            "model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+        ]
+
+        if not config_to_save.fuse_attention_qkv:
+            aoa_statements += [
+                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_statements += [
+                f"model.layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config_to_save.num_attention_heads}, num_key_value_groups = {config_to_save.num_key_value_heads}",
+                f"model.layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config_to_save.num_attention_heads}, num_key_value_groups = {config_to_save.num_key_value_heads}, axis = 0",
+            ]
+            aoa_statements += [
+                f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
+                for layer_id in range(config_to_save.num_hidden_layers)
+                for x in ("q", "k", "v")
+            ]
+
+        if not config_to_save.fuse_attention_ffn:
+            aoa_statements += (
+                [
+                    f"model.layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
+                    for y in ("gate", "up")
+                ]
+                + [
+                    f"model.layers.$LAYER_ID.mlp.shared_experts.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.{y}_proj.weight"
+                    for y in ("gate", "up")
+                ]
+                + [
+                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight"
+                    for y in ("gate", "up")
+                ]
+            )
+        else:
+            aoa_statements += [
+                "model.layers.0.mlp.up_gate_proj.weight -> model.layers.0.mlp.gate_proj.weight, model.layers.0.mlp.up_proj.weight, fused_ffn",
+                "model.layers.0.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
+                "model.layers.0.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
+                "model.layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight, fused_ffn",
+                "model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
+            ]
+            aoa_statements += (
+                [
+                    f"model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight"
+                    for layer_id in range(1, config_to_save.num_hidden_layers)
+                ]
+                + [
+                    f"model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_proj.weight"
+                    for layer_id in range(1, config_to_save.num_hidden_layers)
+                ]
+                + [
+                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight"
+                    for layer_id in range(1, config_to_save.num_hidden_layers)
+                    for expert_id in range(config_to_save.n_routed_experts)
+                ]
+                + [
+                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight"
+                    for layer_id in range(1, config_to_save.num_hidden_layers)
+                    for expert_id in range(config_to_save.n_routed_experts)
+                ]
+            )
+        aoa_config = {"aoa_statements": aoa_statements}
+
+        itr = model_to_save.full(aoa_config=aoa_config)
+        save_full_param(
+            itr=itr,
+            save_dir=save_dir,
+            rank=paddle.distributed.get_rank(),
+            world_size=paddle.distributed.get_world_size(),
+            max_shard_size=max_shard_size,
+            num_saver_ranks=8,
+        )
+
+        dtype = get_parameter_dtype(model_to_save)
+        if dtype is not None:
+            model_to_save.config.dtype = str(dtype).split(".")[1]
+        if config_to_save is None:
+            config_to_save = deepcopy(model_to_save.config)
+
+        # Attach architecture to the config
+        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        # Save the config
+        if is_main_process:
+            config_to_save.save_pretrained(save_directory)
+            if self.can_generate():
+                model_to_save.generation_config.save_pretrained(save_directory)
+            # Organize the files in this directory into the Hugging Face (HF) format.
+            replace_name_and_gen_index(save_directory)
 
 
 __all__ = ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"]
