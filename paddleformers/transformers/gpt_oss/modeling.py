@@ -77,9 +77,11 @@ class GptOssExperts(nn.Layer):
     def __init__(self, config):
         super().__init__()
         self.intermediate_size = config.intermediate_size
+        self.sequence_parallel = config.sequence_parallel
         self.num_experts = config.num_experts
         self.hidden_size = config.hidden_size
         self.expert_dim = self.intermediate_size
+
         self.gate_up_proj = paddle.create_parameter(
             shape=[self.num_experts, self.hidden_size, 2 * self.expert_dim],
             dtype=paddle.get_default_dtype(),
