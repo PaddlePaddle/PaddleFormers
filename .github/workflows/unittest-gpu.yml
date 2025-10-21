@@ -202,6 +202,7 @@ jobs:
       - name: Fix coverage.xml paths
         run: |
           if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
+            rm -f ${PYTEST_EXECUTE_FLAG_FILE}
             echo "Before fix:"
             head -n 10 coverage.xml || true
 
