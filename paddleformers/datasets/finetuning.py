@@ -632,6 +632,7 @@ class SequenceDataset(IterableDataset):
             if hasattr(self, "tokenizer"):
                 print_debug_info(self.tokenizer, tokens, "input")
                 print_debug_info(self.tokenizer, labels, "labels")
+                print("[dataset debug] loss mask: ", loss_mask)
             else:
                 print("[dataset debug] Tokenizer not available")
 
