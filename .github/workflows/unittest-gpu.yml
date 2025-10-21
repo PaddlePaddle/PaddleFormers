@@ -68,6 +68,7 @@ jobs:
             -e work_dir \
             -e ci_scripts \
             -e no_proxy \
+            -e PYTEST_EXECUTE_FLAG_FILE \
             -e CI_name \
             -e paddle_whl \
             -e FLAGS_dynamic_static_unified_comm \
@@ -76,7 +77,6 @@ jobs:
             -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
-            -e "PYTEST_EXECUTE_FLAG_FILE=${PYTEST_EXECUTE_FLAG_FILE}"
             -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             
       - name: Download Code
