@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PR_ID: ${{ github.event.pull_request.number }}
+  PR_ID: ${{ github.event.pull_request.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-gpu
   ci_scripts: /workspace/PaddleFormers/scripts/unit_test
@@ -26,6 +26,7 @@ env:
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_name: unittest-gpu-ci
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+  PYTEST_EXECUTE_FLAG_FILE: ${{ github.workspace }}/PYTEST_EXECUTE_FLAG_FILE/${{ github.event.pull_request.number || '0' }}/pytest_execute.flag
 
 defaults:
   run:
@@ -118,7 +119,7 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check models:"
           ls -l ./models
-          timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl}
+          timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE}
           '
           
       - name: Upload Products

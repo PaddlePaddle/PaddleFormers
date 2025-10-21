@@ -24,6 +24,11 @@ if [ ! -d "unittest_logs" ];then
     mkdir unittest_logs
 fi
 mkdir -p $log_path
+export PYTEST_EXECUTE_FLAG_FILE=${3}
+echo "PYTEST_EXECUTE_FLAG_FILE is ${PYTEST_EXECUTE_FLAG_FILE}"
+if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
+    rm "${PYTEST_EXECUTE_FLAG_FILE}"
+fi
 
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
