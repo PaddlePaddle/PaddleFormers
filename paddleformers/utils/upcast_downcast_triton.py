@@ -520,7 +520,7 @@ def downcast_to_mxfp_paddle(
 
     # For mxfp4 conversion, we assume the contiguous axis length is even.
     if is_fp4:
-        axis_shape = src_tensor.size(axis)
+        axis_shape = src_tensor.shape[axis]
         assert axis_shape % 2 == 0, "For mxfp4 conversion the contiguous axis length must be even."
 
     # Permute the tensor so that the contiguous axis becomes the last dimension.
@@ -532,7 +532,7 @@ def downcast_to_mxfp_paddle(
     pad_amount = next_multiple - axis_shape
     padded_src = F.pad(src, (0, int(pad_amount)))
     valid_mask = F.pad(paddle.ones_like(src), (0, int(pad_amount))).to(paddle.bool)
-    padded_axis_shape = padded_src.size(-1)  # now divisible by 32
+    padded_axis_shape = padded_src.shape[-1]  # now divisible by 32
 
     # --- Compute per-group maximums for scale ---
     # Set padded entries to -1 so they don’t affect the max.
