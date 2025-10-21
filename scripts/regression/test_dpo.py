@@ -189,7 +189,7 @@ class DPOTrainTest(unittest.TestCase):
             [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
         )
         self.dpotrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
-    
+
     def test_dpo_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_full_tp_pp")
         update_args = {
@@ -223,7 +223,7 @@ class DPOTrainTest(unittest.TestCase):
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
         self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
-    
+
     def test_dpo_lora_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_lora_tp_pp")
         update_args = {

@@ -211,7 +211,7 @@ class SFTTrainTest(unittest.TestCase):
             [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
         )
         self.sfttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
-    
+
     def test_sft_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_tp_pp")
         update_args = {
@@ -251,7 +251,7 @@ class SFTTrainTest(unittest.TestCase):
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
-        
+
     def test_sft_lora_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_lora_tp_pp")
         update_args = {
