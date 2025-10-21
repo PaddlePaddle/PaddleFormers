@@ -58,6 +58,8 @@ class QuickAccessMoEFactory:
             norm_topk_prob=pretrained_config.get("norm_topk_prob", True),
             expert_activation=pretrained_config.get("hidden_act", pretrained_config.get("expert_activation", "silu")),
             moe_config=moe_config,
+            pretrained_config=pretrained_config,
         )
+
 
 __all__ = ["QuickAccessMoEFactory"]

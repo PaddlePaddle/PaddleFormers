@@ -17,9 +17,12 @@ from typing import Dict
 
 import paddle
 from paddle import nn
+from paddle.incubate.nn.functional import swiglu as fused_swiglu
 
+from ...nn.mlp import MLP
 from ...transformers import Linear, linear_utils
 from ...transformers.activations import ACT2FN
+from ...transformers.configuration_utils import PretrainedConfig
 from ...transformers.llama import fusion_ops
 from ...transformers.refined_recompute import (
     RRColumnParallelLinear,
@@ -195,12 +198,15 @@ class Qwen2MoeMLP(nn.Layer):
                 self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)  # w3
             self.down_proj = Linear(self.intermediate_size, self.hidden_size, bias_attr=False)  # w2
 
-        if self.expert_activation == "silu":
-            self.act_fn = fusion_ops.swiglu
-            self.fuse_swiglu = True
-        else:
-            self.act_fn = ACT2FN[self.expert_activation]
-            self.fuse_swiglu = False
+        # if self.expert_activation == "silu":
+        #     self.act_fn = fusion_ops.swiglu
+        #     self.fuse_swiglu = True
+        # else:
+        #     self.act_fn = ACT2FN[self.expert_activation]
+        #     self.fuse_swiglu = False
+
+        self.act_fn = ACT2FN[self.expert_activation]
+        self.fuse_swiglu = config.get("fuse_swiglu", False)
 
     def forward(self, x):
         if self.fuse_attention_ffn:
@@ -212,9 +218,20 @@ class Qwen2MoeMLP(nn.Layer):
         else:
             x, y = self.gate_proj(x), self.up_proj(x)
 
+        # if self.fuse_swiglu:
+        #     x = self.act_fn(x, y)
+        # else:
+        #     x = self.act_fn(x) * y
+
         if self.fuse_swiglu:
-            x = self.act_fn(x, y)
+            x = paddle.concat([x, y], axis=-1)
+            x = fused_swiglu(x)
         else:
             x = self.act_fn(x) * y
 
         return self.down_proj(x)
+
+
+class Qwen3MoeMLP(MLP):
+    def __init__(self, config: PretrainedConfig, intermediate_size=None):
+        super().__init__(config, intermediate_size=intermediate_size)

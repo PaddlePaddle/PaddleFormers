@@ -23,32 +23,41 @@ import paddle.distributed as dist
 import paddle.nn as nn
 import paddle.nn.functional as F
 
+from ...nn.linear import Linear as GeneralLinear
 from ...utils.log import logger
 from .moe_loss import LossCombiner, LossConfig, LossFunction, LossRegistry, LossType
+
+
+def print_hook_fn(grad):
+    print("register hook grad:", grad)
+
+
+def check_tensor(tensor):
+    if paddle.any(paddle.isnan(tensor)):
+        raise ValueError("NaN detected in tensor.")
+    if paddle.any(paddle.isinf(tensor)):
+        raise ValueError("Inf detected in tensor.")
 
 
 class MoEGateMixin:
     def gate_score_func(self, logits: paddle.Tensor) -> paddle.Tensor:
         # [..., hidden_dim] -> [..., num_experts]
-        with paddle.amp.auto_cast(False):
-            scoring_func = getattr(self, "scoring_func", None)
-            if scoring_func == "softmax":
-                scores = F.softmax(logits.cast("float32"), axis=-1)
-            elif scoring_func == "sigmoid":
-                scores = F.sigmoid(logits.cast("float32"))
-            elif scoring_func == "tanh":
-                scores = F.tanh(logits.cast("float32"))
-            elif scoring_func == "relu":
-                scores = F.relu(logits.cast("float32"))
-            elif scoring_func == "gelu":
-                scores = F.gelu(logits.cast("float32"))
-            elif scoring_func == "leaky_relu":
-                scores = F.leaky_relu(logits.cast("float32"))
-            else:
-                logger.warning_once(
-                    f"insupportable scoring function for MoE gating: {scoring_func}, use softmax instead"
-                )
-                scores = F.softmax(logits.cast("float32"), axis=-1)
+        scoring_func = getattr(self, "scoring_func", None)
+        if scoring_func == "softmax":
+            scores = F.softmax(logits, axis=-1)
+        elif scoring_func == "sigmoid":
+            scores = F.sigmoid(logits)
+        elif scoring_func == "tanh":
+            scores = F.tanh(logits)
+        elif scoring_func == "relu":
+            scores = F.relu(logits)
+        elif scoring_func == "gelu":
+            scores = F.gelu(logits)
+        elif scoring_func == "leaky_relu":
+            scores = F.leaky_relu(logits)
+        else:
+            logger.warning_once(f"insupportable scoring function for MoE gating: {scoring_func}, use softmax instead")
+            scores = F.softmax(logits, axis=-1)
         return scores
 
     def gumbel_rsample(self, logits: paddle.Tensor) -> paddle.Tensor:
@@ -197,8 +206,8 @@ class MoEGateMixin:
 
     def _probs_drop_policy(
         self,
-        scores: torch.Tensor, 
-        capacity: int, 
+        scores: torch.Tensor,
+        capacity: int,
     ) -> torch.Tensor:
         """
         Implements the Probability-based (Probs) drop policy to enforce expert capacity.
@@ -219,25 +228,22 @@ class MoEGateMixin:
                         1.0 = Assigned and within capacity. 0.0 = Dropped or unassigned.
         """
         num_tokens, num_experts = scores.shape
-        
+
         # --- Step 1: Find the 'capacity' best tokens for *each* expert ---
-        
-        # Use torch.topk along dim=0 (the token dimension) to find the indices 
+
+        # Use torch.topk along dim=0 (the token dimension) to find the indices
         # of the tokens that have the highest scores for each expert (column).
         # Since 'scores' has shape [Tokens, Experts], dim=0 returns the token indices.
-        
+
         # topk_token_indices has shape [capacity, num_total_experts]
         # It tells us WHICH tokens (row indices) are prioritized by capacity.
-        
+
         # We use min(num_tokens, capacity) just in case there are fewer tokens than capacity.
         k_to_use = min(num_tokens, capacity)
-        
+
         # We only care about the indices of the selected tokens
         _, topk_token_indices = paddle.topk(
-            scores, 
-            k=k_to_use, 
-            dim=0, 
-            sorted=True  # Sorted=True is usually faster, but we only use the indices.
+            scores, k=k_to_use, dim=0, sorted=True  # Sorted=True is usually faster, but we only use the indices.
         )
 
         # --- Step 2: Create the final assignment mask using scatter ---
@@ -245,11 +251,11 @@ class MoEGateMixin:
         # Initialize the mask to all zeros (tokens are initially dropped/unassigned).
         # We use boolean type for efficient scattering, then convert to float later.
         final_mask = paddle.zeros(num_tokens, num_experts, dtype=paddle.bool)
-        
+
         # 2a. Create the column indices for the assignment.
         # We need a tensor of shape [k_to_use, num_experts] where each row is [0, 1, 2, ..., num_experts-1].
         col_indices = paddle.arange(num_experts).unsqueeze(0).expand_as(topk_token_indices)
-        
+
         # 2b. Flatten the row (token) and column (expert) indices for advanced indexing.
         token_indices_flat = topk_token_indices.flatten()
         col_indices_flat = col_indices.flatten()
@@ -259,11 +265,11 @@ class MoEGateMixin:
         final_mask[token_indices_flat, col_indices_flat] = True
 
         # --- Step 3: Ensure only originally selected tokens are kept ---
-        
-        # Since torch.topk can pick up tokens with score 0 if num_tokens < capacity, 
+
+        # Since torch.topk can pick up tokens with score 0 if num_tokens < capacity,
         # we must ensure that we only keep tokens that had a positive score initially.
         # This step implicitly cleans up any spurious assignments made by topk on zero scores.
-        
+
         token_priority_mask = final_mask.float() * (scores > 0).float()
 
         return token_priority_mask
@@ -378,7 +384,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         # force keep in float32 when using amp
         self._cast_to_low_precision = False
 
-        self.scoring_func = moe_config.get("scoring_func", "sigmoid")
+        self.scoring_func = moe_config.get("scoring_func", "softmax")
         self.capacity_factor = moe_config.get("capacity_factor", 1.0)
         self.eval_capacity_factor = moe_config.get("eval_capacity_factor", 1.0)
         self.min_capacity = moe_config.get("min_capacity", 1)
@@ -396,12 +402,14 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         if self.global_aux_loss:
             assert self.group is not None, "group is required when global_aux_loss is True"
             self.rank = dist.get_rank(self.group)
+        # self.weight = paddle.create_parameter(
+        #     shape=[self.expert_hidden_size, self.num_experts],
+        #     dtype="bfloat16",
+        #     default_initializer=paddle.nn.initializer.Uniform(),
+        # )
 
-        # weight of hidden_state -> score
-        self.weight = paddle.create_parameter(
-            shape=[self.expert_hidden_size, self.num_experts],
-            dtype="bfloat16",
-            default_initializer=paddle.nn.initializer.Uniform(),
+        self.gate = GeneralLinear.create(
+            self.expert_hidden_size, self.num_experts, has_bias=False, linear_type="default"
         )
 
     def forward(
@@ -415,17 +423,19 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         gates: paddle.Tensor,
     ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """Implements TopKGating on logits."""
-        # print("forward input gates: ", gates.shape, gates.dtype)  # [8, 97, 2048] paddle.bfloat16
 
         batch_size, seq_len, d_model = gates.shape
         gates_ori = gates
         gates = gates.reshape([-1, d_model])
 
         # 将 hidden_state 转换成 score（每个 token 对每个专家的偏好分数）
-        with paddle.amp.auto_cast(False):
-            hidden_states = gates.cast(self.weight.dtype)
-            logits = F.linear(hidden_states.cast("float32"), self.weight.cast("float32"))
-            gates = self.gate_score_func(logits=logits)
+        # 如果使用 self.weight 那么使用下面两行
+        # hidden_states = gates
+        # logits = F.linear(hidden_states, self.weight)
+        # 如果使用 GeneralLinear 那么使用下面一行
+        logits = self.gate(gates)
+
+        gates = self.gate_score_func(logits=logits)
 
         l_zloss = self._cal_z_loss(gates)
 
@@ -504,18 +514,24 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         denom_s = paddle.clip(gates_s, min=paddle.finfo(gates_masked.dtype).eps)
         if self.norm_topk_prob:
             gates_masked = gates_masked / denom_s
+        gates_masked = gates_masked.to(gates.dtype)
         gates_masked *= self.routed_scaling_factor
+        # topk_weight = gates_masked.take_along_axis(top_idx, axis=-1)
+        # assert paddle.allclose(topk_weight, top_gate, equal_nan=False), "topk_weight != top_gate"
 
         return (
             capacity,
-            gates_masked.take_along_axis(top_idx, axis=-1),
+            top_gate,
             top_idx,
+            gates_masked.to(paddle.float32),
+            mask,
             token_priority.take_along_axis(top_idx, axis=-1),
             l_aux,
             l_zloss,
         )
 
 
+# TODO: 暂未实现
 class FlexibleMoEGate(nn.Layer, MoEGateMixin):
     """自定义损失函数的 MoE Gate"""
 

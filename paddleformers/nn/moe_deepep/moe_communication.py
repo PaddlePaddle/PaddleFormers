@@ -21,7 +21,18 @@ import paddle.distributed as dist
 from paddle import Tensor, nn
 from paddle.distributed.communication.group import Group
 
-from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
+from .token_dispatcher import MoEFlexTokenDispatcher
+
+
+def print_hook_fn(grad):
+    print("register hook grad:", grad)
+
+
+def check_tensor(tensor):
+    if paddle.any(paddle.isnan(tensor)):
+        raise ValueError("NaN detected in tensor.")
+    if paddle.any(paddle.isinf(tensor)):
+        raise ValueError("Inf detected in tensor.")
 
 
 class MoECommunicationInterface(ABC):
@@ -37,6 +48,8 @@ class MoECommunicationInterface(ABC):
         hidden_states: paddle.Tensor,
         topk_indices: paddle.Tensor,
         topk_weights: paddle.Tensor,
+        mask: paddle.Tensor,
+        hidden_states_masked: paddle.Tensor,
         expert_parallel_degree: int,
         moe_group: Group,
         experts: nn.LayerList,
@@ -75,6 +88,8 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         hidden_states: paddle.Tensor,
         topk_indices: paddle.Tensor,
         topk_weights: paddle.Tensor,
+        mask: paddle.Tensor,
+        hidden_states_masked: paddle.Tensor,
         expert_parallel_degree: int,
         moe_group: Group,
         experts: nn.LayerList,
@@ -101,29 +116,50 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         if expert_parallel_degree <= 1:
             # 无需EP并行，直接返回
             return hidden_states
+        print("--------StandardMoECommunication.moe_group", moe_group)
 
         # 计算每个专家的token数量
-        cnts = paddle.zeros([topk_indices.shape[0], topk_indices.shape[1]], dtype=topk_indices.dtype)
-        cnts = cnts.put_along_axis(topk_indices, 1, axis=1)
-        tokens_per_expert = cnts.sum(axis=0)
+        # cnts = paddle.zeros([topk_indices.shape[0], num_experts], dtype=topk_indices.dtype)
+        # cnts = cnts.put_along_axis(topk_indices, 1, axis=1)
+        # tokens_per_expert = cnts.sum(axis=0)
+
+        print("class StandardMoECommunication(nn.Layer, MoECommunicationInterface):")
+        # 1. Reshape topk_indices to a single list of all expert assignments
+        #    Shape: [T * K]
+        print("topk_indices: ", topk_indices)
+        # Check topk_indices validity
+        if paddle.any(topk_indices < 0):
+            raise ValueError("Invalid topk_indices found < 0.")
+        if paddle.any(topk_indices >= num_experts):
+            raise ValueError("Invalid topk_indices found >= num_experts.")
+        if topk_indices.shape != topk_weights.shape:
+            raise ValueError("topk_indices shape must match topk_weights shape.")
+        if paddle.any(paddle.isnan(topk_indices)):
+            raise ValueError("Invalid topk_indices found NaN.")
+        if paddle.any(paddle.isinf(topk_indices)):
+            raise ValueError("Invalid topk_indices found Inf.")
+
+        flat_expert_indices = paddle.flatten(topk_indices)
+        print("flat_expert_indices: ", flat_expert_indices)
+
+        tokens_per_expert = paddle.bincount(x=flat_expert_indices, minlength=num_experts)
+        tokens_per_expert = tokens_per_expert.detach()
 
         # 排序token
         idxs = topk_indices.reshape([topk_indices.shape[0] * topk_indices.shape[1]]).argsort()
         sorted_tokens = hidden_states[idxs // topk_indices.shape[1]]
-        tokens_per_expert = tokens_per_expert.detach()
         sorted_tokens_shape = sorted_tokens.shape
 
         # EP并行通信
         # 计算每个EP rank的token数量
         tokens_per_ep_rank = tokens_per_expert.reshape([expert_parallel_degree, -1]).sum(axis=1)
-
         # 第一次All-to-All：交换token数量信息
         tokens_per_expert_group = _AllToAll.apply([tokens_per_expert.shape[0]], tokens_per_expert, group=moe_group)
 
         # 计算输出分割大小
-        output_splits = tokens_per_expert_group.reshape([expert_parallel_degree, -1]).sum(axis=1).cpu().tolist()
+        tokens_per_expert_group_sum = tokens_per_expert_group.reshape([expert_parallel_degree, -1])
+        output_splits = tokens_per_expert_group_sum.sum(axis=1).cpu().tolist()
         input_split_sizes = tokens_per_ep_rank.cpu().tolist()
-
         # 第二次All-to-All：交换token数据
         gathered_tokens = _AllToAll.apply(
             [tokens_per_expert_group.sum(axis=0).cpu().item(), sorted_tokens.shape[1]],
@@ -134,13 +170,14 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         )
 
         # 计算聚合后的每个专家token数量
-        tokens_per_expert_post_gather = tokens_per_expert_group.reshape([expert_parallel_degree, -1]).sum(axis=0)
-
+        tokens_per_expert_post_gather = tokens_per_expert_group.reshape(
+            [expert_parallel_degree, num_experts_per_device]
+        ).sum(axis=0)
         # 创建聚合索引
         gatherd_idxs = np.zeros(shape=(gathered_tokens.shape[0],), dtype=np.int32)
         s = 0
         for i, k in enumerate(tokens_per_expert_group.cpu().numpy()):
-            gatherd_idxs[s : s + k] = i % (tokens_per_expert_post_gather.shape[0] // expert_parallel_degree)
+            gatherd_idxs[s : s + k] = i % num_experts_per_device
             s += k
         gatherd_idxs = gatherd_idxs.argsort()
         sorted_tokens = gathered_tokens[gatherd_idxs]
@@ -163,6 +200,9 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         # 第三次All-to-All：将专家输出分发回原始位置
         new_x = paddle.empty_like(outs)
         new_x[gatherd_idxs] = outs
+        # print(f"new_x shape: {new_x.shape}, gatherd_idxs: {gatherd_idxs}, outs shape: {outs.shape}")
+        # assert paddle.max(paddle.to_tensor(gatherd_idxs)) < new_x.shape[0], "Index out of bounds"
+
         gathered_tokens = _AllToAll.apply(
             sorted_tokens_shape,
             new_x,
@@ -203,7 +243,8 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         for i, chunk in enumerate(chunks):
             chunk = chunk.contiguous()
             # assert chunk.shape[0] != 0, "Cannot dispatch empty input"
-            expert = experts[i + moe_rank * num_experts_per_device]
+            current_expert_idx = i + moe_rank * num_experts_per_device
+            expert = experts[current_expert_idx]
             outputs += [expert(chunk)]
 
         return paddle.concat(outputs, axis=0)
@@ -213,6 +254,8 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         hidden_states: paddle.Tensor,
         topk_indices: paddle.Tensor,
         topk_weights: paddle.Tensor,
+        mask: paddle.Tensor,
+        hidden_states_masked: paddle.Tensor,
         expert_parallel_degree: int,
         moe_group: Group,
         experts: nn.LayerList,
@@ -226,9 +269,13 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
             return hidden_states
         token_dispatcher = MoEFlexTokenDispatcher(num_experts_per_device, topk, num_experts, moe_group)
         (dispatched_input, tokens_per_expert) = token_dispatcher.token_permutation(
-            hidden_states, topk_indices, topk_weights
+            hidden_states,
+            hidden_states_masked,
+            mask,
         )
-        expert_output = self.expert_forward(dispatched_input, tokens_per_expert)
+        expert_output = self.expert_forward(
+            dispatched_input, tokens_per_expert, experts, moe_rank, num_experts_per_device
+        )
         output, _ = token_dispatcher.token_unpermutation(expert_output, None)
         return output
 
