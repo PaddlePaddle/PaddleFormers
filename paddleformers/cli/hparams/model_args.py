@@ -224,7 +224,7 @@ class ModelArguments:
         metadata={"help": "Strengthen lora performance"},
     )
     use_quick_lora: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "Whether to use quick lora, The use of Quick LoRa will only take effect when lora_dropout is set to 0."
         },
