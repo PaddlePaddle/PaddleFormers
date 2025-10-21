@@ -19,7 +19,7 @@ from typing import List, Optional, Tuple, Union
 import paddle
 from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 from paddle.nn import functional as F
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -77,9 +77,11 @@ class GptOssExperts(nn.Layer):
     def __init__(self, config):
         super().__init__()
         self.intermediate_size = config.intermediate_size
+        self.sequence_parallel = config.sequence_parallel
         self.num_experts = config.num_experts
         self.hidden_size = config.hidden_size
         self.expert_dim = self.intermediate_size
+
         self.gate_up_proj = paddle.create_parameter(
             shape=[self.num_experts, self.hidden_size, 2 * self.expert_dim],
             dtype=paddle.get_default_dtype(),
@@ -146,7 +148,11 @@ class GptOssExperts(nn.Layer):
                     0,
                     weighted_output.astype(hidden_states.dtype),
                 )
-            next_states = next_states.reshape([batch_size, -1, self.hidden_size])
+            if self.sequence_parallel:
+                next_states = next_states.reshape([-1, self.hidden_size])
+            else:
+                next_states = next_states.reshape([batch_size, -1, self.hidden_size])
+
         else:
             hidden_states = paddle.tile(hidden_states, repeat_times=[num_experts, 1])
             hidden_states = hidden_states.reshape((num_experts, -1, self.hidden_size))
@@ -157,11 +163,16 @@ class GptOssExperts(nn.Layer):
             glu = gate * F.sigmoid(gate * self.alpha)
             next_states = paddle.bmm(((up + 1) * glu), self.down_proj)
             next_states = next_states + self.down_proj_bias[..., None, :]
-            next_states = next_states.reshape((num_experts, batch_size, -1, self.hidden_size))
-            next_states = (
-                next_states * routing_weights.transpose([0, 1]).reshape((num_experts, batch_size, -1))[..., None]
-            )
+            if self.sequence_parallel:
+                next_states = next_states.reshape((num_experts, -1, self.hidden_size))
+                next_states = next_states * routing_weights.transpose([0, 1]).reshape((num_experts, -1))[..., None]
+            else:
+                next_states = next_states.reshape((num_experts, batch_size, -1, self.hidden_size))
+                next_states = (
+                    next_states * routing_weights.transpose([0, 1]).reshape((num_experts, batch_size, -1))[..., None]
+                )
             next_states = next_states.sum(axis=0)
+
         return next_states
 
 
@@ -197,10 +208,15 @@ class GptOssMLP(nn.Layer):
         super().__init__()
         self.router = GptOssTopKRouter(config)
         self.experts = GptOssExperts(config)
+        self.sequence_parallel = config.sequence_parallel
 
     def forward(self, hidden_states):
+        if self.sequence_parallel:
+            hidden_states = GatherOp.apply(hidden_states)
         router_scores, router_indices = self.router(hidden_states)  # (num_experts, seq_len)
         routed_out = self.experts(hidden_states, router_indices=router_indices, routing_weights=router_scores)
+        if self.sequence_parallel:
+            routed_out = ScatterOp.apply(routed_out)
         return routed_out, router_scores
 
 
@@ -468,15 +484,19 @@ class GptOssAttention(nn.Layer):
         value_states = self.v_proj(hidden_states)
 
         if self.sequence_parallel:
-            target_query_shape = [batch_size, -1, self.num_heads, self.head_dim]
-            target_key_value_shape = [batch_size, -1, self.num_key_value_heads, self.head_dim]
+            if batch_size is None:
+                batch_size = (
+                    hidden_states.shape[0] * self.config.tensor_parallel_degree // self.config.max_sequence_length
+                )
+            q_len = self.config.max_sequence_length
+            target_query_shape = [batch_size, q_len, self.num_heads, self.head_dim]
+            target_key_value_shape = [batch_size, q_len, self.num_key_value_heads, self.head_dim]
         else:
             target_query_shape = [0, 0, self.num_heads, self.head_dim]
             target_key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
         query_states = query_states.reshape(target_query_shape)
         key_states = key_states.reshape(target_key_value_shape)
         value_states = value_states.reshape(target_key_value_shape)
-
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
@@ -1113,32 +1133,13 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
         hidden_states = outputs[0]  # [bs, seq_len, dim]
-        # if labels is None，means we need full output, instead of tensor_parallel_output
-        # tensor_parallel_output is together with ParallelCrossEntropy
-        tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1
-        if labels is not None and self.config.use_fused_linear_cross_entropy:
-            from paddlenlp_kernel.triton.cut_cross_entropy import linear_cross_entropy
 
-            assert (
-                self.config.tensor_parallel_degree <= 1
-            ), "The argument `use_fused_linear_cross_entropy` is imcompatiable with tensor parallel "
-            # todo :hidden_states[:, slice_indices, :]
-            masked_lm_loss = linear_cross_entropy(hidden_states, self.lm_head.weight, targets=labels)
-            binary_sequence = paddle.where(
-                masked_lm_loss > 0, paddle.ones_like(masked_lm_loss), paddle.zeros_like(masked_lm_loss)
-            )
-            count = paddle.sum(binary_sequence)
-            if count == 0:
-                loss = paddle.sum(masked_lm_loss * binary_sequence)
-            else:
-                loss = paddle.sum(masked_lm_loss * binary_sequence) / count
-            logits = None
-        else:
-            slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-            logits = self.lm_head(hidden_states[:, slice_indices, :], tensor_parallel_output=tensor_parallel_output)
-            loss = None
-            if labels is not None:
-                loss, _ = self.criterion(logits, labels)
+        logits = self.lm_head(hidden_states)
+
+        loss = None
+        if labels is not None:
+            loss, _ = self.criterion(logits, labels)
+
         aux_loss = None
         if output_router_logits:
             aux_loss = load_balancing_loss_func(
