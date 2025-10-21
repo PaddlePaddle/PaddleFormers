@@ -30,8 +30,9 @@ from paddle.distributed.fleet.utils.mix_precision_utils import MixPrecisionOptim
 from paddle.framework import core
 from paddle.nn import ClipGradByGlobalNorm, clip
 
-__all__ = []
-
+__all__ = [
+    "MoEHybridParallelOptimizer",
+]
 
 class MoEHybridParallelClipGrad:
     def __init__(self, clip, hcg, timers=None):
