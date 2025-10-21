@@ -2,6 +2,7 @@ name: Unittest GPU CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
   schedule:
     - cron: "0 18 * * *"
   workflow_call:
