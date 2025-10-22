@@ -47,25 +47,23 @@ fi
 export PYTHONPATH=../:$PYTHONPATH
 export CUDA_PATH=/usr/local/cuda-12.9
 
-# Flags for best performance
-export DSV3_USE_FP8_GEMM=true
-export DSV3_USE_ATTEN_RECOMPUTE=true
-export FA_VERSION=3
-export FLAGS_share_tensor_for_grad_tensor_holder=1
-export FLAGS_use_default_stream=false
-export DSV3_USE_FP8_DISPATCH=true
-export USE_DS_GEMM=true
-
-# Flags for allocator
-export FLAGS_large_pool_auto_growth_chunk_size_in_mb=500
-export FLAGS_small_pool_auto_growth_chunk_size_in_mb=20
-export FLAGS_small_pool_size_in_mb=10
-export FLAGS_samll_pool_pre_alloc_in_mb=500
-export FLAGS_large_pool_pre_alloc_in_mb=61440
-export FLAGS_deep_ep_comm_prealloc_in_mb=1000
+export USE_DEEPEP=1
 
 
 # bash script/kill_process.sh 
+
+export LD_LIBRARY_PATH=/usr/local/nccl:/usr/local/cuda/compat:/usr/local/lib:/home/opt/nvidia_lib:/usr/local/cuda/lib64:/usr/lib64:/usr/local/lib:/usr/lib/x86_64-linux-gnu
+# source /root/paddlejob/workspace/env_run/hushenwei/hushenwei_env/bin/activate
+
+
+# debug
+# export CUDA_VISIBLE_DEVICES=1,2,3,4
+# export FLAGS_benchmark=1
+# export FLAGS_call_stack_level=3
+# export GLOG_v=6
+# export GLOG_vmodule=process_group_nccl=3
+# export FLAGS_use_system_allocator=1
+# export FLAGS_check_cuda_error=1
 
 export TRAINER_INSTANCES=$(hostname -I | awk '{print $1}')
 python3.10 -m paddle.distributed.launch \
