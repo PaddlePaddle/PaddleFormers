@@ -323,6 +323,42 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
 
         return capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss
 
+    def _cal_seq_aux_loss(self, gates, top_k, topk_idx) -> paddle.Tensor:
+        """
+        Calculate sequence auxiliary loss.
+        Args:
+            logits (paddle.Tensor): Model output.
+        Returns:
+            paddle.Tensor: The value of sequence auxiliary loss.
+        """
+        if self.config.sequence_parallel:
+            # [bs * seq_len, dim]
+            # Todo: Temporary measure to be compatible with SP input dimensions:
+            # this function affects loss_aux, but the glm4moe model does not actually use this result.
+            # Correctness unvalidated; to be verified later.
+            max_sequence_length = self.config.max_sequence_length
+            local_total_tokens, local_num_experts = gates.shape
+            batch_size = local_total_tokens * self.config.tensor_parallel_degree // max_sequence_length
+            seq_len = max_sequence_length
+            ce = paddle.zeros([local_total_tokens, local_num_experts])
+            ce.put_along_axis_(
+                indices=topk_idx, values=paddle.ones_like(topk_idx, dtype=ce.dtype), axis=1, reduce="add"
+            )
+            ce = ce / (top_k / local_num_experts)
+            gates_mean = paddle.mean(gates, axis=tuple(range(len(gates.shape) - 1))).unsqueeze(0)
+            aux_loss = (ce * gates_mean).sum(axis=1).mean()
+        else:
+            # [bs, seq_len, dim]
+            batch_size, seq_len, num_experts = gates.shape
+            ce = paddle.zeros([batch_size, self.num_experts])
+            topk_idx = topk_idx.reshape([batch_size, -1])
+            ce.put_along_axis_(
+                indices=topk_idx, values=paddle.ones([batch_size, seq_len * top_k]), axis=1, reduce="add"
+            )
+            ce = ce / (seq_len * top_k / self.num_experts)
+            aux_loss = (ce * paddle.mean(gates, axis=1)).sum(axis=1).mean()
+        return aux_loss
+
     def topkgating(
         self,
         gates: paddle.Tensor,
