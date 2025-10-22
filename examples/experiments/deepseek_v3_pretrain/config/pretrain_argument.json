@@ -1,6 +1,6 @@
 {
     "model_name_or_path": "./config/",
-    "tokenizer_name_or_path": "deepseek-ai/DeepSeek-V3",
+    "tokenizer_name_or_path": "./config/",
     "input_dir": "./data",
     "output_dir": "./checkpoints/pretrain_ckpts",
     "per_device_train_batch_size": 1,
@@ -8,7 +8,7 @@
     "per_device_eval_batch_size": 1,
     "tensor_parallel_degree": 1,
     "pipeline_parallel_degree": 4,
-    "pipeline_parallel_config": "use_dualpipev enable_overlap_p2p_comm",
+    "pipeline_parallel_config": "use_dualpipev",
     "sharding_parallel_degree": 2,
     "sharding_parallel_config": "split_param",
     "sharding_comm_buffer_size_MB": 2048,
