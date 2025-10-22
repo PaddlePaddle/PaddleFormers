@@ -192,24 +192,30 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download coverage.xml
+      - name: Check if should upload coverage
+        id: flag_check
         run: |
           if [ -f "${{ env.PYTEST_EXECUTE_FLAG_FILE }}" ]; then
-            rm -rf ${{ env.PYTEST_EXECUTE_FLAG_FILE }}
-            if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-              bos_prefix="${PR_ID}/${COMMIT_ID}"
-            else
-              bos_prefix="schedule/$(date +%Y%m%d)"
-            fi
-            wget -q --no-proxy \
-              https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml \
-              --no-check-certificate -O coverage.xml
-          else    
-            echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml download."
-            exit 0
+            echo "should_upload=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_upload=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Download coverage.xml
+        if: steps.flag_check.outputs.should_upload == 'true'
+        run: |
+          rm -rf ${{ env.PYTEST_EXECUTE_FLAG_FILE }}
+          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          else
+            bos_prefix="schedule/$(date +%Y%m%d)"
+          fi
+          wget -q --no-proxy \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml \
+            --no-check-certificate -O coverage.xml
+
       - name: Fix coverage.xml paths
+        if: steps.flag_check.outputs.should_upload == 'true'
         run: |
           echo "Before fix:"
           head -n 10 coverage.xml || true
@@ -227,6 +233,7 @@ jobs:
           head -n 10 coverage.xml || true
 
       - name: Upload coverage to Codecov
+        if: steps.flag_check.outputs.should_upload == 'true'
         uses: codecov/codecov-action@v4
         with:
           files: coverage.xml
