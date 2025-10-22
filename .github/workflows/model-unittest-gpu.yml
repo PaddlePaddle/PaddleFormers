@@ -135,10 +135,10 @@ jobs:
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
         run: |
           docker exec -t $container_name /bin/bash -c '
-          if [ ! -f "${bos_file}" ]; then
-            wget -q --no-proxy -O ${home_path}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
-            mkdir ${home_path}/bos
-            tar xf ${home_path}/bos_new.tar.gz -C ${home_path}/bos
+          if [ ! -f "${{ env.bos_file }}" ]; then
+            wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+            mkdir ${{ env.home_path }}/bos
+            tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
           fi
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
@@ -149,7 +149,7 @@ jobs:
           cd /workspace/PaddleFormers/model_unittest_logs
           for FILE in /workspace/PaddleFormers/model_unittest_logs/*; do
             file=$(basename "$FILE")
-            python ${bos_file} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
+            python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
           done
           '
