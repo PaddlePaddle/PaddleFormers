@@ -3347,7 +3347,7 @@ class PipelinePretrainedModel(PretrainedModel):
 
         for k in list(sharded_state_dict.keys()):
             v = sharded_state_dict.pop(k)
-            v.tensor_key = self._pp_to_single_mapping[k]
+            v.key = self._pp_to_single_mapping[k]
             sharded_state_dict[self._pp_to_single_mapping[k]] = v
 
         import re
@@ -3365,7 +3365,7 @@ class PipelinePretrainedModel(PretrainedModel):
             global_expert_id_offset = getattr(v, "global_expert_id_offset", None)
             if global_expert_id_offset is not None:
                 new_key = increment_expert_number(k, global_expert_id_offset)
-                v.tensor_key = new_key
+                v.key = new_key
                 delattr(v, "global_expert_id_offset")
                 renamed_sharded_state_dict[new_key] = v
             else:
