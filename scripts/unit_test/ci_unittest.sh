@@ -86,17 +86,18 @@ export FLAGS_enable_CI=false
 if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
     # Scheduled Regression Test
     FLAGS_enable_CI=true
+    touch ${PYTEST_EXECUTE_FLAG_FILE}
 else
     for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
         ext="${file_name##*.}"
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
-        
         if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
             continue
         elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
             continue
         else
             FLAGS_enable_CI=true
+            touch ${PYTEST_EXECUTE_FLAG_FILE}
         fi
     done
 fi
