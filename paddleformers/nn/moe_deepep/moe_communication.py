@@ -21,18 +21,9 @@ import paddle.distributed as dist
 from paddle import Tensor, nn
 from paddle.distributed.communication.group import Group
 
-from .token_dispatcher import MoEFlexTokenDispatcher
+from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
 
 
-def print_hook_fn(grad):
-    print("register hook grad:", grad)
-
-
-def check_tensor(tensor):
-    if paddle.any(paddle.isnan(tensor)):
-        raise ValueError("NaN detected in tensor.")
-    if paddle.any(paddle.isinf(tensor)):
-        raise ValueError("Inf detected in tensor.")
 
 
 class MoECommunicationInterface(ABC):
@@ -232,7 +223,7 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
 
     基于 DeepEP 通信的 EP 并行实现
     """
-
+        
     def expert_forward(self, dispatched_input, tokens_per_expert, experts, moe_rank, num_experts_per_device):
         outputs = []
         tokens_per_expert = (
@@ -254,8 +245,8 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         hidden_states: paddle.Tensor,
         topk_indices: paddle.Tensor,
         topk_weights: paddle.Tensor,
+        gates_masked: paddle.Tensor,
         mask: paddle.Tensor,
-        hidden_states_masked: paddle.Tensor,
         expert_parallel_degree: int,
         moe_group: Group,
         experts: nn.LayerList,
@@ -263,14 +254,13 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         num_experts_per_device: int,
         num_experts: int,
         topk: int,
+        token_dispatcher
     ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         if expert_parallel_degree <= 1:
-            # 无需EP并行，直接返回
             return hidden_states
-        token_dispatcher = MoEFlexTokenDispatcher(num_experts_per_device, topk, num_experts, moe_group)
         (dispatched_input, tokens_per_expert) = token_dispatcher.token_permutation(
             hidden_states,
-            hidden_states_masked,
+            gates_masked,
             mask,
         )
         expert_output = self.expert_forward(

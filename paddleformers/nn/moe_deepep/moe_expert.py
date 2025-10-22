@@ -32,6 +32,7 @@ from ...transformers.refined_recompute import (
 )
 
 
+
 class MoEExpertInterface(ABC):
     """
     MoE专家网络接口
@@ -231,7 +232,7 @@ class Qwen2MoeMLP(nn.Layer):
 
         return self.down_proj(x)
 
-
-class Qwen3MoeMLP(MLP):
-    def __init__(self, config: PretrainedConfig, intermediate_size=None):
-        super().__init__(config, intermediate_size=intermediate_size)
+expert_class_mapping = {
+    "StandardMoEExpert": StandardMoEExpert,
+    "Qwen2MoeMLP": Qwen2MoeMLP
+}

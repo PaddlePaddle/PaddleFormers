@@ -23,6 +23,7 @@ unset PADDLE_ELASTIC_TIMEOUT
 nnodes=$PADDLE_TRAINERS_NUM
 rank=$PADDLE_TRAINER_ID
 
+LOG_DIR=output/trainer_$rank/paddle_distributed_logs
 for name in `env | grep -E 'PADDLE|ENDPOINT' | awk -F'=' '{print $1}'`; do
   unset ${name}
 done
@@ -51,8 +52,20 @@ export USE_DEEPEP=1
 
 
 # bash script/kill_process.sh 
+# export LD_LIBRARY_PATH=/usr/local/nccl:/usr/local/cuda/compat:/usr/local/lib:/home/opt/nvidia_lib:/usr/local/cuda/lib64:/usr/lib64:/usr/local/lib:/usr/lib/x86_64-linux-gnu
+# export FLAGS_benchmark=1
+# export FLAGS_call_stack_level=3
+# export GLOG_v=6
+# export GLOG_vmodule=process_group_nccl=3
+# export FLAGS_use_system_allocator=1
+# export FLAGS_check_cuda_error=1
+export USE_DEEPEP=1
+# export CUDA_VISIBLE_DEVICES=0,1,2,3
+# source /root/paddlejob/gpfs/hushenwei/hushenwei_env/bin/activate
+# export http_proxy=agent.baidu.com:8188
+# export https_proxy=agent.baidu.com:8188
+# export TRAINER_INSTANCES=$(hostname -I | awk '{print $1}')
 
-export LD_LIBRARY_PATH=/usr/local/nccl:/usr/local/cuda/compat:/usr/local/lib:/home/opt/nvidia_lib:/usr/local/cuda/lib64:/usr/lib64:/usr/local/lib:/usr/lib/x86_64-linux-gnu
 # source /root/paddlejob/workspace/env_run/hushenwei/hushenwei_env/bin/activate
 
 
@@ -65,7 +78,8 @@ export LD_LIBRARY_PATH=/usr/local/nccl:/usr/local/cuda/compat:/usr/local/lib:/ho
 # export FLAGS_use_system_allocator=1
 # export FLAGS_check_cuda_error=1
 
-export TRAINER_INSTANCES=$(hostname -I | awk '{print $1}')
+# export TRAINER_INSTANCES=$(hostname -I | awk '{print $1}')
+
 python3.10 -m paddle.distributed.launch \
     --log_dir output/paddle_distributed_logs \
     $LAUNCH_CMD \

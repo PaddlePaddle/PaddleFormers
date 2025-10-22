@@ -256,8 +256,8 @@ def create_pretrained_dataset(
     def print_dataset(data, mode="train"):
         logger.info(f"Sample data for {mode} mode.")
         # input_ids, loss_mask, attention_mask, position_ids, labels = data
-        input_ids = data["text"]
-        logger.info(tokenizer._decode(list(input_ids)))
+        # input_ids = data["text"]
+        # logger.info(tokenizer._decode(list(input_ids)))
 
     from paddleformers.data import Stack
 
@@ -595,7 +595,7 @@ def main():
         * data_args.max_seq_length
     )
 
-    callbacks = [StepFlexToken(), FP8QuantWeightCallback()]
+    callbacks = []
 
     def resume_from_custom_func(model):
         if training_args.resume_from_huggingface_ckpt:

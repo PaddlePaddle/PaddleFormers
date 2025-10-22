@@ -1,6 +1,6 @@
 {
     "qwen3_moe": {
-        "expert_parallel_degree": 4,
+        "expert_parallel_degree": 32,
         "gate_activation": "softmax",
         "expert_activation": "silu",
         "train_topk_method": "greedy",
@@ -8,7 +8,10 @@
         "aux_loss_weight": 0.01,
         "z_loss_weight": 0.0,
         "expert_dropout": 0.0,
-        "use_flexible_loss": false
+        "use_flexible_loss": false,
+        "moe_group": "expert",
+        "drop_tokens": false,
+        "custom_expert": "Qwen2MoeMLP"
     },
     "deepdeek_v3": {
         "expert_parallel_degree": 4,
