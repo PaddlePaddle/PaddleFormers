@@ -29,6 +29,9 @@ echo "PYTEST_EXECUTE_FLAG_FILE is ${PYTEST_EXECUTE_FLAG_FILE}"
 if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
     rm "${PYTEST_EXECUTE_FLAG_FILE}"
 fi
+dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
+mkdir -p "${dir_name}"
+
 
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
