@@ -127,6 +127,7 @@ class SFTTrainTest(unittest.TestCase):
         ]
         print(f"cmd {cmd}")
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(training_p.stdout)
 
         # test training result
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
