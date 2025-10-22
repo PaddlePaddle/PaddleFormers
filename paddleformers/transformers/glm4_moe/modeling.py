@@ -39,9 +39,8 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Glm4MoeMLP
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
-from ...utils.download import DownloadSource
 from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
+from ...utils.download import DownloadSource
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
@@ -1549,6 +1548,8 @@ def replace_name_and_gen_index(path):
     index_mapping["weight_map"] = deepcopy(index_mapping)
     with open(os.path.join(path, index_file_name), "w") as f:
         json.dump(index_mapping, f)
+
+
 class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
     def forward(self, args):
         hidden_states, attention_mask, position_ids, position_embeddings, _ = parse_args(args)
