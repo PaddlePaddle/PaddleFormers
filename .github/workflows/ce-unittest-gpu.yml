@@ -2,7 +2,7 @@ name: Unittest GPU CE
 
 on:
   schedule:
-    - cron: "0 2 * * 6"     # every Saturday at 10:00
+    - cron: "0 1 * * *"     # every day at 09:00 Beijing time (UTC+8)
   workflow_dispatch:        # allow to manually trigger the workflow
     inputs:
       paddle_whl:
