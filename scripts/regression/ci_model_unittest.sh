@@ -106,10 +106,10 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo "Check paddle Cuda Version"
     python -c "import paddle; print(paddle.version.cuda()); print(paddle.version.cudnn()); print(paddle.is_compiled_with_cuda())"
     echo "Check docker Cuda Version"
-    nvcc -V  
-    cat /usr/local/cuda/version.txt
+    nvcc -V 
     echo "Check nvidia-smi"
     nvidia-smi
+    echo "Check paddle device count"
     python -c "import paddle; print(paddle.device.device_count())"
     export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     PYTHONPATH=$(pwd) \
