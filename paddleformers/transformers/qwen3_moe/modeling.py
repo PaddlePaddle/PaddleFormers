@@ -15,6 +15,7 @@
 """Paddle Qwen3Moe model."""
 from __future__ import annotations
 
+import copy
 from functools import partial
 from typing import List, Optional, Tuple, Union
 
@@ -22,7 +23,7 @@ import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
 from paddle.distributed.fleet.utils import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -33,48 +34,37 @@ from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
-from ..moe_layer import MoELayer
 from .configuration import Qwen3MoeConfig
-
-
-def prepare_sliding_window_startend_row_indices(startend_row_indices, window_size=5):
-    if startend_row_indices is None:
-        return None
-    batch_size, num_head, seq_length, bound_num = startend_row_indices.shape
-    assert bound_num <= 2, f"bound_num should be less than or equal to 2 when use sling window, but got {bound_num}"
-    sliding_window_startend_row_indices = startend_row_indices.clone()
-    for bi in range(batch_size):
-        for hi in range(num_head):
-            for j in range(seq_length):
-                sliding_window_startend_row_indices[bi, hi, j, 0] = min(
-                    startend_row_indices[bi, hi, j, 0], window_size + j
-                )
-    return sliding_window_startend_row_indices
 
 
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.cat([-x2, x1], axis=-1)  # shape is the same as x
+    return paddle.cat([-x2, x1], axis=-1)
 
 
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
-    if position_ids is None:
-        # Note: Only for Qwen3MoEForCausalLMPipe model pretraining
-        cos = cos[:, : q.shape[1], :, :]  # [bs, seq_len, 1, dim]
-        sin = sin[:, : q.shape[1], :, :]  # [bs, seq_len, 1, dim]
-    else:
-        cos = cos.squeeze(axis=[0, 2])  # [seq_len, dim]
-        sin = sin.squeeze(axis=[0, 2])  # [seq_len, dim]
-        cos = cos[position_ids].unsqueeze(2)  # [bs, seq_len, 1, dim]
-        sin = sin[position_ids].unsqueeze(2)  # [bs, seq_len, 1, dim]
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed.astype(q.dtype), k_embed.astype(q.dtype)
+def _apply_rotary_emb(
+    x: paddle.Tensor,
+    cos: paddle.Tensor,
+    sin: paddle.Tensor,
+) -> paddle.Tensor:
+    x = x.transpose([0, 2, 1, 3])
+    x_embed = (x * cos) + (rotate_half(x) * sin)
+    return x_embed.transpose([0, 2, 1, 3])
+
+
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+    """Applies Rotary Position Embedding to the query and key tensors."""
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = _apply_rotary_emb(q, cos, sin)
+    k_embed = _apply_rotary_emb(k, cos, sin)
+    return q_embed.astype(q.dtype), k_embed.astype(k.dtype)
 
 
 class Qwen3MoeAttention(nn.Layer):
@@ -85,22 +75,19 @@ class Qwen3MoeAttention(nn.Layer):
 
     def __init__(self, config: Qwen3MoeConfig, layer_idx: int = 0):
         super().__init__()
-        self.layer_idx = layer_idx
         self.config = config
-        self.hidden_size = config.hidden_size
-        self.num_heads = config.num_attention_heads
-        self.num_attention_heads = config.num_attention_heads
+        self.layer_idx = layer_idx
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-        self.scaling = self.head_dim**-0.5
-        self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
-
-        self.num_key_value_heads = config.num_key_value_heads
-        assert config.num_attention_heads // config.num_key_value_heads
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
+        self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
 
+        self.num_heads = config.num_attention_heads
+        self.num_key_value_heads = config.num_key_value_heads
+        assert config.num_attention_heads // config.num_key_value_heads
+
+        self.tensor_parallel = config.tensor_parallel_degree > 1
         self.sequence_parallel = config.sequence_parallel
-        self.fuse_attention_qkv = config.fuse_attention_qkv
 
         if config.tensor_parallel_degree > 1:
             assert (
@@ -114,24 +101,24 @@ class Qwen3MoeAttention(nn.Layer):
             self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
-        q_hidden_size = self.num_attention_heads * self.head_dim
+        q_hidden_size = self.config.num_attention_heads * self.head_dim
 
         self.q_proj = GeneralLinear.create(
-            self.hidden_size,
+            config.hidden_size,
             q_hidden_size,
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
         )
         self.k_proj = GeneralLinear.create(
-            self.hidden_size,
+            config.hidden_size,
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
         )
         self.v_proj = GeneralLinear.create(
-            self.hidden_size,
+            config.hidden_size,
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
@@ -139,31 +126,33 @@ class Qwen3MoeAttention(nn.Layer):
         )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
-            self.hidden_size,
+            config.hidden_size,
             has_bias=config.attention_bias,
             config=config,
             tp_plan="rowwise",
         )
         self.q_norm = GeneralNorm.create(
-            config, hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
+            config,
+            norm_type="rms_norm",
+            hidden_size=self.head_dim,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=self.tensor_parallel,
         )  # unlike olmo, only on the head dim!
         self.k_norm = GeneralNorm.create(
-            config, hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
+            config,
+            norm_type="rms_norm",
+            hidden_size=self.head_dim,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=self.tensor_parallel,
         )  # thus post q_norm does not need reshape
-        self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
-
-        if config.sequence_parallel:
-            self.q_norm.enable_sequence_parallel()
-            self.k_norm.enable_sequence_parallel()
 
     def forward(
         self,
         hidden_states,
-        position_ids: Optional[Tuple[paddle.Tensor]] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: bool = False,
-        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
@@ -180,21 +169,21 @@ class Qwen3MoeAttention(nn.Layer):
             q_len = max_sequence_length
         else:
             bsz, q_len, _ = hidden_states.shape
-        # Add qk norm for Qwen3 model.
+        # Add qk norm for Qwen3MoE model.
         query_states = self.q_norm(query_states.reshape([bsz, q_len, -1, self.head_dim]))
         key_states = self.k_norm(key_states.reshape([bsz, q_len, -1, self.head_dim]))
         value_states = value_states.reshape([bsz, q_len, -1, self.head_dim])
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         # [bs, seq_len, num_head, head_dim]
         if past_key_value is not None:
             key_states = paddle.cat([past_key_value[0], key_states], axis=1)
             value_states = paddle.cat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
+
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, _ = attention_interface(
             self,
@@ -203,7 +192,7 @@ class Qwen3MoeAttention(nn.Layer):
             value=value_states,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
+            dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
         )
 
@@ -249,34 +238,6 @@ class Qwen3MoeGate(PretrainedMoEGate):
         return capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss
 
 
-class ExpertParallelQwen3MoeSparseMoeBlock(MoELayer):
-    def __init__(self, config: Qwen3MoeConfig):
-        gate = Qwen3MoeGate(
-            config,
-            config.num_experts,
-            config.hidden_size,
-            top_k=config.num_experts_per_tok,
-            drop_tokens=False,
-            norm_topk_prob=config.norm_topk_prob,
-        )
-
-        super().__init__(
-            config,
-            moe_num_experts=config.num_experts,
-            expert_class=Qwen3MoeMLP,
-            expert_kwargs={"config": config, "intermediate_size": config.moe_intermediate_size},
-            gate=gate,
-            capacity=2.0,
-        )
-        self.top_k = config.num_experts_per_tok
-        self.norm_topk_prob = config.norm_topk_prob
-
-    def forward(self, hidden_states):
-        final_hidden_states, l_aux, _ = super().forward(hidden_states)
-
-        return final_hidden_states, l_aux
-
-
 class Qwen3MoeSparseMoeBlock(nn.Layer):
     def __init__(self, config):
         super().__init__()
@@ -284,6 +245,10 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
         self.num_experts = config.num_experts
         self.top_k = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
+        self.sequence_parallel = config.sequence_parallel
+        if self.sequence_parallel and config.tensor_parallel_degree > 1:
+            config = copy.deepcopy(config)
+            config.sequence_parallel = False
 
         # gating
         self.gate = GeneralLinear.create(config.hidden_size, config.num_experts, has_bias=False, linear_type="default")
@@ -293,15 +258,11 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         """ """
+        if self.sequence_parallel:
+            hidden_states = GatherOp.apply(hidden_states)
+        orig_shape = hidden_states.shape
 
-        if self.config.sequence_parallel:
-            max_sequence_length = self.config.max_sequence_length
-            batch_size = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
-            sequence_length = max_sequence_length
-            hidden_dim = hidden_states.shape[1]
-        else:
-            batch_size, sequence_length, hidden_dim = hidden_states.shape
-        hidden_states = hidden_states.view([-1, hidden_dim])
+        hidden_states = hidden_states.view([-1, hidden_states.shape[-1]])
         # router_logits: (batch * sequence_length, n_experts)
         router_logits = self.gate(hidden_states)
 
@@ -313,7 +274,9 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
         # we cast back to the input dtype
         routing_weights = routing_weights.to(hidden_states.dtype)
 
-        final_hidden_states = paddle.zeros((batch_size * sequence_length, hidden_dim), dtype=hidden_states.dtype)
+        final_hidden_states = paddle.zeros(
+            (hidden_states.shape[-2], hidden_states.shape[-1]), dtype=hidden_states.dtype
+        )
 
         # One hot encode the selected experts to create an expert mask
         # this will be used to easily index which expert is going to be sollicitated
@@ -328,14 +291,25 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
             # the current expert. We need to make sure to multiply the output hidden
             # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
             if tokens_per_expert[expert_idx] <= 0.1:
-                continue
-            current_state = hidden_states[idx, None].reshape([-1, hidden_dim])
-            current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
-            final_hidden_states.index_add_(
-                index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
-            )
+                if self.training and paddle.is_grad_enabled():
+                    fake_top_x = paddle.zeros(1, dtype=paddle.int64)
+                    fakse_current_state = hidden_states[fake_top_x, None].reshape([-1, hidden_states.shape[-1]])
+                    fake_state = expert_layer(fakse_current_state * 0)
+                    final_hidden_states.index_add_(index=fake_top_x, axis=0, value=fake_state.to(hidden_states.dtype))
+                else:
+                    continue
+            else:
+                current_state = hidden_states[idx, None].reshape([-1, hidden_states.shape[-1]])
+                current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
+                final_hidden_states.index_add_(
+                    index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
+                )
 
-        final_hidden_states = final_hidden_states.reshape([batch_size, sequence_length, hidden_dim])
+        final_hidden_states = paddle.reshape(final_hidden_states, orig_shape)
+
+        if self.sequence_parallel:
+            final_hidden_states = ScatterOp.apply(final_hidden_states)
+
         return final_hidden_states, router_logits
 
 
@@ -343,10 +317,13 @@ class Qwen3MoeDecoderLayer(nn.Layer):
     def __init__(self, config: Qwen3MoeConfig, layer_idx: int):
         super().__init__()
         self.config = config
-        self.attention_type = config.layer_types[layer_idx]
+        self.hidden_size = config.hidden_size
+
         self.self_attn = Qwen3MoeAttention(config, layer_idx)
 
-        if config.num_experts > 0:
+        if (layer_idx not in config.mlp_only_layers) and (
+            config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
+        ):
             self.mlp = Qwen3MoeSparseMoeBlock(config)
         else:
             # num_experts == 0 or this layer is not sparse layer
@@ -354,17 +331,20 @@ class Qwen3MoeDecoderLayer(nn.Layer):
 
         self.input_layernorm = GeneralNorm.create(
             config=config,
+            norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.post_attention_layernorm = GeneralNorm.create(
             config=config,
+            norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
 
         if config.sequence_parallel:
-            self.post_attention_layernorm.enable_sequence_parallel()
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
 
@@ -372,7 +352,6 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         self,
         hidden_states: paddle.Tensor,
         attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -382,21 +361,19 @@ class Qwen3MoeDecoderLayer(nn.Layer):
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         """
         Args:
-            hidden_states (`paddle.Tensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
-            attention_mask (`paddle.Tensor`, *optional*): attention mask of size
+            hidden_states (`paddle.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
+            attention_mask (`paddle.FloatTensor`, *optional*): attention mask of size
                 `(batch, sequence_length)` where padding elements are indicated by 0.
-            output_attentions (`bool`, *optional*):
-                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
-                returned tensors for more detail.
-            output_router_logits (`bool`, *optional*):
-                Whether or not to return the logits of all the routers. They are useful for computing the router loss, and
-                should not be returned during inference.
             use_cache (`bool`, *optional*):
                 If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
                 (see `past_key_values`).
-            past_key_value (`Tuple(paddle.Tensor)`, *optional*): cached past key and value projection states
+            position_embeddings (`tuple[paddle.FloatTensor, paddle.FloatTensor]`, *optional*):
+                Tuple containing the cosine and sine positional embeddings of shape `(batch_size, seq_len, head_dim)`,
+                with `head_dim` being the embedding dimension of each attention head.
+            kwargs (`dict`, *optional*):
+                Arbitrary kwargs to be ignored, used for FSDP and other methods that injects code
+                into the model
         """
-
         # [bs * seq_len, embed_dim] -> [seq_len * bs / n, embed_dim] (sequence_parallel)
         residual = hidden_states
 
@@ -405,11 +382,10 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         # Self Attention
         hidden_states, present_key_value = self.self_attn(
             hidden_states=hidden_states,
+            position_embeddings=position_embeddings,
             attention_mask=attention_mask,
-            position_ids=position_ids,
             past_key_value=past_key_value,
             use_cache=use_cache,
-            position_embeddings=position_embeddings,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             batch_size=batch_size,
             **kwargs,
@@ -435,44 +411,40 @@ class Qwen3MoeDecoderLayer(nn.Layer):
 
 
 class Qwen3MoeRotaryEmbedding(nn.Layer):
-    def __init__(self, head_dim, max_position_embeddings=2048, base=10000):
+    def __init__(self, config: Qwen3MoeConfig):
         super().__init__()
-        self.head_dim = head_dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
+        self.config = config
+        base = config.rope_theta
+        partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
+        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        dim = int(head_dim * partial_rotary_factor)
 
-        self.inv_freq = 1.0 / (
-            self.base ** (paddle.cast(paddle.arange(0, self.head_dim, 2), dtype="float32") / self.head_dim)
-        )
-        self._set_cos_sin_cache(seq_len=max_position_embeddings)
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        self.attention_scaling = 1.0
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = self.inv_freq
 
-    def _set_cos_sin_cache(self, seq_len):
-        self.max_seq_len_cached = seq_len
-        if self.inv_freq.dtype != paddle.float32:
-            self.inv_freq = 1.0 / (
-                self.base ** (paddle.cast(paddle.arange(0, self.head_dim, 2), dtype="float32") / self.head_dim)
+    def forward(self, x, position_ids):
+        # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
+        # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
+        # numerical stability is critical (e.g., RoPE init/compute), this conversion can lead to precision loss.
+        # Disabling auto_cast here ensures the matmul operation runs in the original precision (FP32) as intended.
+        with paddle.amp.auto_cast(False):
+            inv_freq_expanded = (
+                self.inv_freq.unsqueeze(0)
+                .unsqueeze(-1)
+                .cast(paddle.float32)
+                .expand([position_ids.shape[0], -1, 1])
+                .to(x.place)
             )
-        # [seq_len]
-        t = paddle.arange(seq_len, dtype="float32")
-        # [seq_len, dim/2]
-        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        # [seq_len, dim]
-        emb = paddle.cat([freqs, freqs], axis=-1)
-        # [1, seqlen, 1, dim]
-        self.cos_cached = emb.cos()[None, :, None, :]
-        self.sin_cached = emb.sin()[None, :, None, :]
+            position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
 
-    def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        if seq_len > self.max_seq_len_cached:
-            self._set_cos_sin_cache(seq_len)
-        cos = self.cos_cached[:, :seq_len, :, :]
-        sin = self.sin_cached[:, :seq_len, :, :]
-        return (
-            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
-            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
-        )
+            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
+            emb = paddle.cat((freqs, freqs), axis=-1)
+            cos = paddle.cos(emb) * self.attention_scaling
+            sin = paddle.sin(emb) * self.attention_scaling
+
+        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
 
 
 class Qwen3MoePretrainedModel(PretrainedModel):
@@ -580,8 +552,6 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
 
     def __init__(self, config: Qwen3MoeConfig):
         super().__init__(config)
-        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-
         self.embed_tokens = GeneralEmbedding.create(
             config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
         )
@@ -590,14 +560,11 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         )
         self.norm = GeneralNorm.create(
             config=config,
+            norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=self.config.rms_norm_eps,
         )
-        self.rotary_emb = Qwen3MoeRotaryEmbedding(
-            self.head_dim,
-            max_position_embeddings=config.max_position_embeddings,
-            base=config.rope_theta,
-        )
+        self.rotary_emb = Qwen3MoeRotaryEmbedding(config=config)
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -605,7 +572,6 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         layer_module: nn.Layer,
         hidden_states: Tensor,
         attention_mask: Tensor,
-        position_ids: Optional[Tensor],
         past_key_value: Tensor,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -622,7 +588,6 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
             create_custom_forward(layer_module),
             hidden_states,
             attention_mask,
-            position_ids,
             past_key_value,
             use_cache,
             position_embeddings,
@@ -658,17 +623,18 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        seq_length_with_past = seq_length
+        if inputs_embeds is None:
+            # [bs, seq_len, dim]
+            inputs_embeds = self.embed_tokens(input_ids)
+
         cache_length = 0
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
         else:
             cache_length = past_key_values[0][0].shape[1]
-            seq_length_with_past += cache_length
 
-        if inputs_embeds is None:
-            # [bs, seq_len, dim]
-            inputs_embeds = self.embed_tokens(input_ids)
+        if position_ids is None:
+            position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
 
         if self.config.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
@@ -676,56 +642,25 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        if attn_mask_startend_row_indices is not None:
-            attention_mask = None
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            causal_mask_mapping["full_attention"] = None
-            causal_mask_mapping["sliding_attention"] = None
-
-            attn_mask_startend_row_indices_mapping["full_attention"] = attn_mask_startend_row_indices
-
-            if self.config.use_sliding_window:
-                attn_mask_startend_row_indices_mapping[
-                    "sliding_attention"
-                ] = prepare_sliding_window_startend_row_indices(
-                    attn_mask_startend_row_indices, window_size=self.config.sliding_window
-                )
-            else:
-                attn_mask_startend_row_indices_mapping["sliding_attention"] = None
-        else:
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            attn_mask_startend_row_indices_mapping["full_attention"] = None
-            attn_mask_startend_row_indices_mapping["sliding_attention"] = None
-
-            causal_mask_mapping["full_attention"] = self._prepare_decoder_attention_mask(
-                attention_mask=attention_mask,
-                input_shape=(batch_size, seq_length),
-                past_key_values_length=cache_length,
-                dtype=inputs_embeds.dtype,
-            )
-
-            if self.config.use_sliding_window:
-                causal_mask_mapping["sliding_attention"] = self._prepare_decoder_attention_mask(
-                    attention_mask=attention_mask,
-                    input_shape=(batch_size, seq_length),
-                    past_key_values_length=cache_length,
-                    dtype=inputs_embeds.dtype,
-                    sliding_window_size=self.config.sliding_window,
-                )
-            else:
-                causal_mask_mapping["sliding_attention"] = None
+        # Prepare mask arguments
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+            "return_mapping": False,
+        }
+        # Create the causal mask and row indices
+        causal_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
 
         hidden_states = inputs_embeds
 
         # create position embeddings to be shared across the decoder layers
-        position_embeddings = self.rotary_emb(hidden_states, seq_length_with_past)
+        position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
         # decoder layers
         next_cache = () if use_cache else None
@@ -737,27 +672,21 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
-                    causal_mask_mapping[decoder_layer.attention_type],
-                    position_ids,
+                    causal_mask,
                     past_key_value,
                     use_cache,
                     position_embeddings,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
-                        decoder_layer.attention_type
-                    ],
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     batch_size=batch_size,
                 )
             else:
                 layer_outputs = decoder_layer(
                     hidden_states,
-                    causal_mask_mapping[decoder_layer.attention_type],
-                    position_ids,
+                    causal_mask,
                     past_key_value,
                     use_cache,
                     position_embeddings,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
-                        decoder_layer.attention_type
-                    ],
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     batch_size=batch_size,
                 )
 
@@ -768,7 +697,6 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
                 hidden_states = layer_outputs
 
         hidden_states = self.norm(hidden_states)
-
         if not return_dict:
             return tuple(v for v in [hidden_states, next_cache] if v is not None)
         return MoEModelOutputWithPast(

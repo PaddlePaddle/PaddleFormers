@@ -1246,13 +1246,15 @@ class ConversionMixin:
             dict: the converted state_dict
         """
         if isinstance(transpose_weight_keys, list):
-            state_dict_keys = list(state_dict.keys())
-            for key in state_dict_keys:
-                if "lora" in key:
+            for key, value in state_dict.items():
+                if "lora" in key or value.ndim != 2:
                     continue
                 for trans_key in transpose_weight_keys:
                     if re.search(f"\.{trans_key}\.weight$", key) or re.fullmatch(f"^{trans_key}\.weight$", key):
-                        state_dict[key] = state_dict.pop(key).transpose([-1, -2])
+                        if isinstance(value, np.ndarray):
+                            state_dict[key] = value.transpose([-1, -2])
+                        elif isinstance(value, paddle.Tensor):
+                            state_dict[key] = value.transpose([-1, -2]).contiguous()
         return state_dict
 
     @classmethod

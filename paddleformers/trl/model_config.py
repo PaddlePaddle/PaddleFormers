@@ -47,8 +47,13 @@ class ModelConfig:
             "help": "Whether to train from existing paddleformers model weights. If set True, the model_name_or_path argument must exist in the paddleformers models."
         },
     )
+    stage: str = field(
+        default="SFT",
+        metadata={"help": "The type of training, including SFT, DPO, VL-SFT."},
+    )
 
     # LoRA related parameters
+    fine_tuning: str = field(default="LoRA", metadata={"help": "The checkpoint type."})
     lora: bool = field(default=False, metadata={"help": "Whether to use LoRA technique"})
     lora_path: str = field(default=None, metadata={"help": "Initialize lora state dict."})
     lora_rank: int = field(default=8, metadata={"help": "Lora attention dimension"})
@@ -145,7 +150,6 @@ class ModelConfig:
     )
     actscale_moving_rate: float = field(default=0.01, metadata={"help": "EMA moving_rate for activation scale"})
     fp8_format_type: str = field(default="hybrid", metadata={"help": "FP8 Format"})
-    num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
     use_attn_mask_startend_row_indices: bool = field(
         default=True,
         metadata={"help": "Whether to use attn_mask_start_row_indices in flash attention."},

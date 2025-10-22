@@ -24,9 +24,9 @@ import paddle
 import yaml
 
 TRAIN_PATH = "./examples"
-CONFIG_PATH = "./examples/config"
+CONFIG_PATH = "./examples/config/dpo"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "PaddleFormers/tiny-random-qwen3"
+MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
@@ -105,8 +105,12 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": 5,
             "save_steps": 3,
             "tensor_parallel_degree": 2,
+            "pipeline_parallel_degree": 2,
+            "sequence_parallel": True,
+            "pipeline_parallel_config": "enable_clear_every_step_cache disable_partial_send_recv",
+            "sharding": "stage1",
         }
-        config_path = os.path.join(CONFIG_PATH, "dpo_full.yaml")
+        config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "alignment/dpo/run_dpo.py")
         cmd = [
@@ -125,7 +129,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.439819
+        EXCEPTED_LOSS = 0.474242
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
@@ -144,7 +148,7 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": 5,
             "save_steps": 3,
         }
-        config_path = os.path.join(CONFIG_PATH, "dpo_lora.yaml")
+        config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
         train_path = os.path.join(TRAIN_PATH, "alignment/dpo/run_dpo.py")
         cmd = [
@@ -159,11 +163,95 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.474284
+        EXCEPTED_LOSS = 0.474235
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test lora  merge
         lora_merge_output_dir = os.path.join(output_dir, "lora_merge")
+        lora_merge_path = os.path.join(TRAIN_PATH, "tools/mergekit.py")
+
+        lora_merge_cmd = [
+            "python",
+            "-u",
+            lora_merge_path,
+            "--lora_model_path",
+            output_dir,
+            "--model_name_or_path",
+            MODEL_NAME_OR_PATH,
+            "--output_path",
+            lora_merge_output_dir,
+        ]
+        lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.dpotrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
+
+        # test lora_merge_model generate
+        EXPECTED_RESULT = paddle.to_tensor(
+            [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+        )
+        self.dpotrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+
+    def test_dpo_full_tp_pp(self):
+        output_dir = os.path.join(OUTPUT_DIR, "dpo_full_tp_pp")
+        update_args = {
+            "model_name_or_path": MODEL_NAME_OR_PATH,
+            "train_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
+            "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
+            "output_dir": output_dir,
+        }
+        config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
+        updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
+        train_path = os.path.join(TRAIN_PATH, "alignment/dpo/run_dpo.py")
+        cmd = [
+            "python",
+            "-u",
+            "-m",
+            "paddle.distributed.launch",
+            "--devices",
+            "0,1,2,3",
+            train_path,
+            updated_config_path,
+        ]
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        # test training result
+        self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
+
+        # test training loss
+        EXCEPTED_LOSS = 0.495105
+        self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+
+        # test model generate
+        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+        self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
+
+    def test_dpo_lora_tp_pp(self):
+        output_dir = os.path.join(OUTPUT_DIR, "dpo_lora_tp_pp")
+        update_args = {
+            "model_name_or_path": MODEL_NAME_OR_PATH,
+            "train_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
+            "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
+            "output_dir": output_dir,
+        }
+        config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
+        updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
+        train_path = os.path.join(TRAIN_PATH, "alignment/dpo/run_dpo.py")
+        cmd = [
+            "python",
+            "-u",
+            train_path,
+            updated_config_path,
+        ]
+        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        # test training result
+        self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
+
+        # test training loss
+        EXCEPTED_LOSS = 0.495105
+        self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+
+        # test lora  merge
+        lora_merge_output_dir = os.path.join(output_dir, "lora_tp_pp_merge")
         lora_merge_path = os.path.join(TRAIN_PATH, "tools/mergekit.py")
 
         lora_merge_cmd = [

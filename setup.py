@@ -168,6 +168,17 @@ def get_package_data_files(package, data, package_dir=None):
     return all_files
 
 
+def get_console_scripts() -> list[str]:
+    """_summary_
+
+    Returns:
+        list[str]: _description_
+    """
+    console_scripts = ["paddleformers-cli = paddleformers.cli.cli:main"]
+
+    return console_scripts
+
+
 if commit != "unknown":
     write_version_py(filename="paddleformers/version/__init__.py")
 
@@ -191,7 +202,7 @@ try:
         },
         setup_requires=["cython", "numpy"],
         install_requires=REQUIRED_PACKAGES,
-        entry_points={"console_scripts": ["paddleformers = paddleformers.cli:main"]},
+        entry_points={"console_scripts": get_console_scripts()},
         extras_require=extras,
         python_requires=">=3.8",
         classifiers=[

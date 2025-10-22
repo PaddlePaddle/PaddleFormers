@@ -123,12 +123,11 @@ import_structure = {
         "DeepseekV2DynamicNTKScalingRotaryEmbedding",
         "DeepseekV2MLP",
         "yarn_get_mscale",
-        "DeepseekV2LMHead",
         "DeepseekV2DecoderLayer",
-        "DeepseekV2PretrainingCriterion",
         "yarn_find_correction_range",
         "get_triangle_upper_mask",
         "DeepseekV2LinearScalingRotaryEmbedding",
+        "DeepseekV2ForCausalLMPipe",
     ],
     "deepseek_v2.modeling_auto": [
         "DeepseekV2LMHeadAuto",
@@ -136,7 +135,6 @@ import_structure = {
         "DeepseekV2ModelAuto",
         "DeepseekV2PretrainedModelAuto",
     ],
-    "deepseek_v2.modeling_pp": ["DeepseekV2ForCausalLMPipe"],
     "deepseek_v2.mfu_utils": ["DeepSeekProjection"],
     "deepseek_v2.kernel": [
         "act_quant",
@@ -160,6 +158,7 @@ import_structure = {
         "DeepseekV3ForSequenceClassification",
         "DeepseekV3Model",
         "DeepseekV3PretrainedModel",
+        "DeepseekV3ForCausalLMPipe",
     ],
     "deepseek_v3.modeling_auto": [
         "DeepseekV3LMHeadAuto",
@@ -167,7 +166,6 @@ import_structure = {
         "DeepseekV3ModelAuto",
         "DeepseekV3PretrainedModelAuto",
     ],
-    "deepseek_v3.modeling_pp": ["DeepseekV3ForCausalLMPipe"],
     "ernie4_5.configuration": ["Ernie4_5Config"],
     "ernie4_5.modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM", "Ernie4_5ForCausalLMPipe"],
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],

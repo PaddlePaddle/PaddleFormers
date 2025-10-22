@@ -28,6 +28,7 @@ from paddleformers.trainer import (
     IntervalStrategy,
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
+    MoEGateSpGradSyncCallBack,
     PdArgumentParser,
     get_last_checkpoint,
     set_seed,
@@ -138,7 +139,6 @@ def main():
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.seq_length = training_args.max_seq_len
     model_config.max_sequence_length = training_args.max_seq_len
-    model_config.num_nextn_predict_layers = model_args.num_nextn_predict_layers
     model_config._attn_implementation = model_args.attn_impl
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
@@ -229,10 +229,15 @@ def main():
     else:
         metrics = compute_metrics
 
-    max_seq_len = training_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
+    max_seq_len = (
+        training_args.max_seq_len + model_config.num_nextn_predict_layers
+        if (data_args.packing or training_args.sequence_parallel)
+        else None
+    )
     data_collator = partial(
         collate_fn,
         tokenizer=tokenizer,
+        training_args=training_args,
         model_args=model_args,
         max_seq_len=max_seq_len,
     )
@@ -284,6 +289,9 @@ def main():
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
 
+    if training_args.sequence_parallel:
+        callbacks += [MoEGateSpGradSyncCallBack()]
+
     print("callbacks:", callbacks, flush=True)
     trainer = SFTTrainer(
         model=model,
@@ -295,6 +303,7 @@ def main():
         data_collator=data_collator,
         do_generation=data_args.eval_with_do_generation,
         data_args=data_args,
+        callbacks=callbacks,
     )
     trainable_parameters = [
         p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)

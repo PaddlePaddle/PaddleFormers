@@ -24,6 +24,7 @@ import_structure = {
         "DeepseekV3ForSequenceClassification",
         "DeepseekV3Model",
         "DeepseekV3PretrainedModel",
+        "DeepseekV3ForCausalLMPipe",
     ],
     "modeling_auto": [
         "DeepseekV3LMHeadAuto",
@@ -31,13 +32,11 @@ import_structure = {
         "DeepseekV3ModelAuto",
         "DeepseekV3PretrainedModelAuto",
     ],
-    "modeling_pp": ["DeepseekV3ForCausalLMPipe"],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
     from .modeling import *
-    from .modeling_auto import *
     from .modeling_pp import *
 else:
     sys.modules[__name__] = _LazyModule(

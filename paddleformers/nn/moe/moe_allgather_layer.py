@@ -27,15 +27,24 @@ from paddle.autograd import PyLayer
 from paddle.distributed import fleet
 from paddle.distributed.communication.group import Group
 from paddle.distributed.fleet.utils import recompute
-from paddle.incubate.nn.functional import (
-    build_src_rank_and_local_expert_id,
-    expand_modality_expert_id,
-    moe_gate_dispatch_partial_nosoftmaxtopk,
-)
 from paddle.incubate.tensor.manipulation import async_offload
 
 from paddleformers.peft.lora.lora_quantization_layers import QuantizationLoRALinear
 from paddleformers.utils.log import logger
+
+try:
+    from paddle.incubate.nn.functional import (
+        build_src_rank_and_local_expert_id,
+        expand_modality_expert_id,
+        moe_gate_dispatch_partial_nosoftmaxtopk,
+    )
+except ImportError:
+    logger.warning_once(
+        "Fail to import build_src_rank_and_local_expert_id, expand_modality_expert_id and moe_gate_dispatch_partial_nosoftmaxtopk"
+    )
+    build_src_rank_and_local_expert_id = None
+    expand_modality_expert_id = None
+    moe_gate_dispatch_partial_nosoftmaxtopk = None
 
 from .all_gather import AllGatherAsync, AlltoAllSmart, allgather_async
 from .moe_alltoall_layer import MOEAlltoAllLayer
@@ -714,9 +723,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 else:
                     input_shape = [
                         1,
-                        true_experts[iexpert].down_proj.lora_A.shape[1],
+                        true_experts[iexpert].down_proj.lora_B.shape[1],
                     ]
-                    input_dtype = true_experts[iexpert].down_proj.lora_A.dtype
+                    input_dtype = true_experts[iexpert].down_proj.lora_B.dtype
 
                 chunk = paddle.zeros(
                     input_shape,

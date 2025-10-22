@@ -321,6 +321,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
             hidden_size=config.hidden_size,
             has_bias=config.use_bias,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.post_attention_layernorm = GeneralNorm.create(
             config=config,
@@ -328,12 +329,12 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
             hidden_size=config.hidden_size,
             has_bias=config.use_bias,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
 
         self.hidden_dropout = nn.Dropout(p=config.hidden_dropout_prob, mode="upscale_in_train")
 
         if config.sequence_parallel:
-            self.post_attention_layernorm.enable_sequence_parallel()
             # There is no Column/RowLinear in bias and expert in mp-moe. No hook is needed.
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
@@ -636,6 +637,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             hidden_size=config.hidden_size,
             has_bias=config.use_bias,
             norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
 
         self.rotary_emb = Ernie4_5_MoeRotaryEmbedding(config)
@@ -656,6 +658,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                         hidden_size=config.hidden_size,
                         has_bias=config.use_bias,
                         norm_eps=self.config.rms_norm_eps,
+                        input_is_parallel=config.sequence_parallel,
                     )
                     for _ in range(self.config.num_nextn_predict_layers)
                 ]
@@ -668,6 +671,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                         hidden_size=config.hidden_size,
                         has_bias=config.use_bias,
                         norm_eps=self.config.rms_norm_eps,
+                        input_is_parallel=config.sequence_parallel,
                     )
                     for _ in range(self.config.num_nextn_predict_layers)
                 ]

@@ -224,6 +224,20 @@ def get_lora_target_modules(model):
             ".*mlp.up_proj.*",
             ".*mlp.down_proj.*",
         ]
+    elif model.config.model_type == "ernie4_5":
+        target_modules = [
+                ".*q_proj.*",
+                ".*k_proj.*",
+                ".*v_proj.*",
+                ".*o_proj.*",
+                ".*up_proj.*",
+                ".*gate_proj.*",
+                ".*down_proj.*",
+                ".*spatial_linear.0.*",
+                ".*spatial_linear.2.*",
+                ".*temporal_linear.0.*",
+                ".*temporal_linear.2.*",
+        ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")
     return target_modules

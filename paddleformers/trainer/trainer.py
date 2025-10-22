@@ -150,6 +150,7 @@ from .trainer_callback import (
     DefaultFlowCallback,
     PrinterCallback,
     ProgressCallback,
+    SPGradSyncCallback,
     TrainerCallback,
     TrainerControl,
     TrainerState,
@@ -172,6 +173,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     get_scheduler,
     has_length,
     init_optimizer,
+    mock_offload_optimizer,
     set_seed,
     should_skip_data,
     speed_metrics,
@@ -2167,6 +2169,9 @@ class Trainer:
                 **optimizer_kwargs,
             )
 
+            if self.args.tensorwise_offload_optimizer:
+                mock_offload_optimizer()
+
         return self.optimizer
 
     def _apply_to_optimizer(self, action):
@@ -2366,6 +2371,31 @@ class Trainer:
         exclude_layers = []
         return exclude_layers
 
+    def _wrap_distributed_optimizer(self, optimizer):
+        """
+        In hybrid expert parallel, use customized optimizer and grad clip
+        """
+        if (
+            self.args.use_expert_parallel
+            and self.args.moe_sharding_parallel_degree >= 1
+            and self.args.expert_parallel_degree > 1
+            and self.args.sharding_parallel_degree > 1
+        ):
+            from ..utils import MoEHybridParallelOptimizer
+
+            fleet_env = fleet.fleet
+            fleet_env.user_defined_optimizer = optimizer
+            hp_optim = MoEHybridParallelOptimizer(optimizer, fleet_env._hcg, fleet_env._user_defined_strategy)
+
+            if fleet_env._user_defined_strategy.hybrid_configs["pp_configs"].dp_comm_overlap:
+                hp_optim._dp_enable = False
+
+            if fleet_env._user_defined_strategy.hybrid_configs["pp_configs"].sharding_comm_overlap:
+                hp_optim._sharding_enable = False
+            return hp_optim
+        else:
+            return fleet.distributed_optimizer(optimizer)
+
     def _wrap_model(self, model, training=True):
 
         # train/eval could be run multiple-times - if already wrapped, don't re-wrap it again
@@ -2400,9 +2430,15 @@ class Trainer:
                 model, self.optimizer = decorated
 
         if self.args.tensor_parallel_degree > 1 and self.args.sequence_parallel:
-            register_sequence_parallel_allreduce_hooks(
-                model, self.args.gradient_accumulation_steps, self.args.fuse_sequence_parallel_allreduce
-            )
+            # use callback for sp grad sync in case of unexpected behaviour (except sharding stage 2&3)
+            if ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.FULL_SHARD in self.args.sharding:
+                # stage 2 or stage 3
+                register_sequence_parallel_allreduce_hooks(
+                    model, self.args.gradient_accumulation_steps, self.args.fuse_sequence_parallel_allreduce
+                )
+            else:
+                # stage 1 or dp
+                self.add_callback(SPGradSyncCallback(model))
 
         if self.args.world_size == 1:
             if self.args.amp_master_grad:
@@ -2486,7 +2522,7 @@ class Trainer:
             assert self.optimizer is not None, "Pipeline mode need decorate optimizer, pelease init optimizer."
             if self.args.amp_master_grad:
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
-            self.optimizer = fleet.distributed_optimizer(self.optimizer)
+            self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
 
             if (
                 hasattr(self.args, "enable_sharding_comm_overlap")
@@ -2520,7 +2556,7 @@ class Trainer:
 
                 if self.args.amp_master_grad:
                     self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
-                self.optimizer = fleet.distributed_optimizer(self.optimizer)
+                self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
             else:
                 cpu_offload = ShardingOption.OFFLOAD in self.args.sharding
                 assert self.optimizer is not None, "optimizer is empty!"
@@ -2578,7 +2614,7 @@ class Trainer:
             assert self.optimizer is not None, "Tensor parallel mode need decorate optimizer, pelease init optimizer."
             if self.args.amp_master_grad:
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
-            self.optimizer = fleet.distributed_optimizer(self.optimizer)
+            self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
 
         # stage1 has v1 and v2 version
         if in_sharding_parallel_mode and ShardingOption.SHARD_OP in self.args.sharding:

@@ -1,0 +1,153 @@
+name: Model Unittest GPU CI
+
+on:
+  pull_request:
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_call:
+    inputs:
+      runner:
+        required: false
+        type: string
+      image_name:
+        required: false
+        type: string
+
+concurrency:
+  group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  PR_ID: ${{ github.event.pull_request.number || '' }}
+  COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
+  TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-model-unittest-gpu
+  CI_SCRIPTS_PATH: /workspace/PaddleFormers/scripts/ci_model_unittest.sh
+  BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
+  AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
+  CI_JOB_NAME: model-unittest-gpu-ci
+  NO_PROXY: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  model-unittest-gpu-ci:
+    name: model-unittest-gpu-ci
+    runs-on: ${{ inputs.runner || 'ernie-8gpu' }}
+    steps:
+      - name: Determine Image Name
+        env:
+          IMAGE_NAME: ${{ inputs.image_name }}
+        run: |
+          if [[ -n "${IMAGE_NAME}" ]]; then
+            echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
+          else
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
+          fi
+      
+      - name: Run Container
+        env:
+          WORK_DIR: ${{ github.workspace }}
+          FLAGS_DYNAMIC_STATIC_UNIFIED_COMM: "True"
+          PYTHON_VERSION: "3.10"
+          PADDLE_WHL: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+        run: |
+          CONTAINER_NAME=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "CONTAINER_NAME=${CONTAINER_NAME}" >> "$GITHUB_ENV"
+          docker run -d -t --gpus all --name ${CONTAINER_NAME} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+            -v ${WORK_DIR}/../../..:${WORK_DIR}/../../.. \
+            -v ${WORK_DIR}:/workspace \
+            -v /home/.cache/pip:/home/.cache/pip \
+            -e "BRANCH=$BRANCH" \
+            -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
+            -e "PR_ID=$PR_ID" \
+            -e "COMMIT_ID=$COMMIT_ID" \
+            -e "WORK_DIR=$WORK_DIR" \
+            -e "CI_SCRIPTS_PATH=$CI_SCRIPTS_PATH" \
+            -e "NO_PROXY=$NO_PROXY" \
+            -e "CI_JOB_NAME=$CI_JOB_NAME" \
+            -e "PADDLE_WHL=$PADDLE_WHL" \
+            -e "FLAGS_DYNAMIC_STATIC_UNIFIED_COMM=$FLAGS_DYNAMIC_STATIC_UNIFIED_COMM" \
+            -e "PYTHON_VERSION=$PYTHON_VERSION" \
+            -e HF_PROXY_PATH=${WORK_DIR}/../../../proxy_huggingface \
+            -e AISTUDIO_PROXY_PATH=${WORK_DIR}/../../../proxy_aistudio \
+            -w /workspace --privileged ${IMAGE_NAME}
+            
+      - name: Download Code
+        run: |
+          docker exec -t $CONTAINER_NAME /bin/bash -c '
+            rm -rf * .[^.]*
+            echo "Downloading PaddleFormers.tar"
+            wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+            echo "Extracting PaddleFormers.tar"
+            tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+            echo "WORK_DIR = ${WORK_DIR}"
+            source ${WORK_DIR}/../../../proxy
+            cat ${WORK_DIR}/../../../proxy
+            cd PaddleFormers
+            git config --global user.name "PaddleCI"
+            git config --global user.email "paddle_ci@example.com"
+            git pull
+            git submodule update --init --recursive --force
+            if [ -n "${PR_ID}" ]; then
+              git fetch origin pull/${PR_ID}/head
+              git checkout -b PR_${PR_ID} FETCH_HEAD
+              git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
+              echo "Checking out ${BRANCH}..."
+              git fetch upstream ${BRANCH}:${BRANCH}
+              git merge ${BRANCH} --no-edit
+              git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
+            else
+              echo "Not in a pull_request event. Skipping PR-specific operations."
+            fi
+            git log --pretty=oneline -10
+            '
+
+      - name: Test
+        run: |
+          docker exec -t $CONTAINER_NAME /bin/bash -c '
+          ldconfig
+          pip config set global.cache-dir "/home/.cache/pip"
+          set -e
+          rm -rf /root/.cache/aistudio/
+          cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
+          echo "WORK_DIR = ${WORK_DIR}"
+          cp -r ${WORK_DIR}/../../../models ./models
+          echo "Check models:"
+          ls -l ./models
+          echo "Test Start"
+          hostname
+          timeout 30m bash scripts/regression/ci_model_unittest.sh ${PADDLE_WHL}
+          '
+          
+      - name: Upload Products
+        if: always()
+        env:
+          HOME_PATH: ${{ github.workspace }}/../../..
+          BOS_UPLOAD_SCRIPT: ${{ github.workspace }}/../../../bos/BosClient.py
+        run: |
+          docker exec -t $CONTAINER_NAME /bin/bash -c '
+          if [ ! -f "${BOS_UPLOAD_SCRIPT}" ]; then
+            wget -q --no-proxy -O ${HOME_PATH}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+            mkdir ${HOME_PATH}/bos
+            tar xf ${HOME_PATH}/bos_new.tar.gz -C ${HOME_PATH}/bos
+          fi
+          if [ -n "${PR_ID}" ]; then
+            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          else
+            bos_prefix="schedule/$(date +%Y%m%d)"
+          fi
+          # logs
+          cd /workspace/PaddleFormers/model_unittest_logs
+          for FILE in /workspace/PaddleFormers/model_unittest_logs/*; do
+            file=$(basename "$FILE")
+            python ${BOS_UPLOAD_SCRIPT} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
+            echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
+          done
+          '
+
+      - name: Terminate And Delete the Container
+        if: always()
+        run: |
+          docker rm -f $CONTAINER_NAME 2>/dev/null || true

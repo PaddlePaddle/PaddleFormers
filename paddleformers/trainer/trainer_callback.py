@@ -21,6 +21,7 @@ Callbacks to use with the Trainer class and customize the training loop.
 import dataclasses
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
@@ -28,6 +29,12 @@ import numpy as np
 import paddle
 import paddle.distributed as dist
 from paddle.distributed.fleet import fleet
+from paddle.distributed.fleet.utils.hybrid_parallel_util import (
+    fused_allreduce_gradients_with_group,
+)
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    is_sequence_parallel_parameter,
+)
 from tqdm.auto import tqdm
 
 from ..transformers.moe_gate import PretrainedMoEGate
@@ -49,6 +56,8 @@ __all__ = [
     "FP8QuantWeightCallback",
     "MoECorrectionBiasAdjustCallback",
     "MoeExpertsGradScaleCallback",
+    "MoEGateSpGradSyncCallBack",
+    "SPGradSyncCallback",
 ]
 
 
@@ -690,7 +699,9 @@ class FP8QuantWeightCallback(TrainerCallback):
 
 
 class MoECorrectionBiasAdjustCallback(TrainerCallback):
-    """used for moe aux loss free balance"""
+    """
+    used for moe aux loss free balance
+    """
 
     def __init__(self, lr=0.001, use_mp=False):
         super().__init__()
@@ -750,7 +761,7 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
 
 class MoeExpertsGradScaleCallback(TrainerCallback):
     """
-    此 hook 用于修正专家参数的梯度被放大N倍的问题
+    This hook is used to correct the issue where the gradients of expert parameters are amplified by a factor of N.
     """
 
     def __init__(self, args):
@@ -783,3 +794,58 @@ class MoeExpertsGradScaleCallback(TrainerCallback):
                         p.grad.scale_(self.expert_gradient_scaling_factor)
                         param_count += 1
         logger.info("correct ep grad count:{}".format(param_count))
+
+
+class MoEGateSpGradSyncCallBack(TrainerCallback):
+    """
+    用于绕过sp allreduce hook被错误调用多次的bug，此bug是框架内部机制的问题，将来会进行修复。
+    目前仅gate的梯度在开启moe_subbatch_token_num存在这个问题，因此这里只添加gate的梯度聚合。
+    但保险起见mark_as_sequence_parallel_parameter的参数最好都通过类似的hook处理。
+    """
+
+    def __init__(self):
+        logger.info("MoEGateSpGradSyncCallBack Created")
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        if args.tensor_parallel_degree > 1 and args.sequence_parallel:
+            model = kwargs["model"]
+            hcg = fleet.get_hybrid_communicate_group()
+            pg = hcg.get_model_parallel_group().process_group
+            for param in model.parameters():
+                if getattr(param, "is_gate", False):
+                    if hasattr(param, "main_grad"):
+                        pg.allreduce(param.main_grad).wait()
+                    else:
+                        pg.allreduce(param.grad).wait()
+
+            logger.info("MoEGate grad allreduced done")
+
+
+class SPGradSyncCallback(TrainerCallback):
+    """
+    SPGradSyncCallback
+    只能在非 sharding stage2 的情况下使用。
+    开启sharding stage2 时，在 `on_optimizer_begin` 的时候 grad 已经被清空了
+    """
+
+    def __init__(self, model):
+        assert hasattr(fleet, "_hcg"), "must use MP when calling this Callback"
+        logger.info("using sp callback")
+        params = []
+        self.model = model
+        for n, p in model.named_parameters():
+            if is_sequence_parallel_parameter(p):
+                logger.info(f"register bw hook for:{n}")
+                params.append(p)
+
+        logger.info(f"#-sp-sync param:{len(params)}")
+        self._sp_params = params
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        """on_optimizer_begin"""
+        if self._sp_params:
+            now = time.time()
+            mp_group = fleet.get_hybrid_communicate_group().get_model_parallel_group()
+            fused_allreduce_gradients_with_group(self._sp_params, group=mp_group, scale=1.0)  # sum not mean
+            another_time = time.time()
+            logger.info(f"sync gradients takes {another_time - now} time")

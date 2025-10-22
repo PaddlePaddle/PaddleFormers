@@ -1107,6 +1107,7 @@ class TrainingArguments:
         default=0,
         metadata={"help": "pre allocate memory size GB"},
     )
+    num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
 
     save_checkpoint_format: Optional[str] = field(
         default=None,

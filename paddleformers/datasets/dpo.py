@@ -26,6 +26,7 @@ from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 
 from ..utils.log import logger
 from .base import MultiSourceDataset
+from .data_utils import postprocess_fc_sequence
 from .mix_datasets import create_dataset_instance
 
 LOGGER_COUNT = 0
@@ -40,6 +41,7 @@ class Example:
     source: str
     session_start_index: int
     score_delta: float
+    is_function_call: bool
 
 
 @dataclass
@@ -100,6 +102,7 @@ def create_dataset(**dataset_config):
         task_dataset_prob=task_dataset_prob,
         sub_dataset_type=sub_dataset_type,
         process_fn=process_session_example,
+        process_fn_fc=process_fc,
     )
     sequence_dataset = SequenceDataset(
         dataset=example_dataset,
@@ -119,6 +122,44 @@ def create_dataset(**dataset_config):
         encode_one_turn=dataset_config["encode_one_turn"],
     )
     return sequence_dataset
+
+
+def process_fc(data, input_file):
+    multi_turns_messages = data["messages"]
+    tools_list = data["tools"]
+    label = data["label"] if "label" in data else None
+
+    # be default, all assistant output should be learned, labels are all 1
+    if label is None:
+        label = []
+        for index, turn in enumerate(multi_turns_messages):
+            # if "assistant" in turn["role"]:
+            if index % 2 == 1:
+                label.append(1)
+
+    def split_dpo_messages(full_messages):
+        chosen_m, rejected_m = deepcopy(full_messages), deepcopy(full_messages)
+        chosen_m[-1] = full_messages[-1]["preferred_output"]
+        rejected_m[-1] = full_messages[-1]["non_preferred_output"]
+        return chosen_m, rejected_m
+
+    assistant_index = 0
+    for index, turn in enumerate(multi_turns_messages):
+        is_assistant_turn = turn["role"] == "assistant" if "role" in turn else "non_preferred_output" in turn
+        if is_assistant_turn:
+            if label[assistant_index]:
+                chosen_m, rejected_m = split_dpo_messages(multi_turns_messages[: index + 1])
+                ex = Example(
+                    chosen={"messages": chosen_m, "tools": tools_list},
+                    rejected={"messages": rejected_m, "tools": tools_list},
+                    session_start_index=0,  # single turn
+                    score_delta=1.0,
+                    source=input_file,
+                    is_function_call=True,
+                )
+                yield ex
+
+            assistant_index += 1
 
 
 def collate_fn(
@@ -353,6 +394,7 @@ def process_session_example(data, input_file):
         session_start_index=session_start_index,
         source=input_file,
         score_delta=1.0,
+        is_function_call=False,
     )
 
 
@@ -597,12 +639,12 @@ class SequenceDataset(IterableDataset):
         # encoded_messages: List[List[int]]
         if not self.tokenizer.chat_template:
             self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
-        chosen_encoded_messages = self.tokenizer.encode_chat_inputs(
-            example.chosen, encode_one_turn=self.encode_one_turn
-        )
-        rejected_encoded_messages = self.tokenizer.encode_chat_inputs(
-            example.rejected, encode_one_turn=self.encode_one_turn
-        )
+        if example.is_function_call:
+            chosen_encoded_messages = postprocess_fc_sequence(self.tokenizer, example.chosen)
+            rejected_encoded_messages = postprocess_fc_sequence(self.tokenizer, example.rejected)
+        else:
+            chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example.chosen)
+            rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example.rejected)
 
         # chosen/rejected response
         response_token_ids_list = []
