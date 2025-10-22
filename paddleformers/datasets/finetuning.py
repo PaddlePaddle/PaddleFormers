@@ -619,24 +619,25 @@ class SequenceDataset(IterableDataset):
             """Helper function to print tokenized data debug info"""
             try:
                 decoded = tokenizer.decode(data)
-                print(f"[dataset debug] {label}: {decoded}")
-            except (TypeError, ValueError) as e:
-                print(f"[dataset debug] tokenizer decode {label} error: {str(e)}")
+                logger.info(f"[dataset debug] {label}: {decoded}")
+            except (TypeError, ValueError, OverflowError) as e:
+                logger.info(f"[dataset debug] tokenizer decode {label} error: {str(e)}")
 
         enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
 
         if enable_dataset_debug:
-            print("\n" + "=" * 50)
-            print("[dataset debug] Debug mode enabled")
+            logger.info("\n" + "=" * 50)
+            logger.info("[dataset debug] Debug mode enabled")
 
             if hasattr(self, "tokenizer"):
                 print_debug_info(self.tokenizer, tokens, "input")
+                labels = [x for x in labels if x != -100] # remove -100
                 print_debug_info(self.tokenizer, labels, "labels")
-                print("[dataset debug] loss mask: ", loss_mask)
+                logger.info(f"[dataset debug] loss mask: {loss_mask}")
             else:
-                print("[dataset debug] Tokenizer not available")
+                logger.info("[dataset debug] Tokenizer not available")
 
-            print("=" * 50 + "\n")
+            logger.info("=" * 50 + "\n")
         return Sequence(
             token_ids=tokens,
             position_ids=pos_ids,
