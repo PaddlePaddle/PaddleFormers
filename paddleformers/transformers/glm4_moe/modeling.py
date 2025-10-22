@@ -1535,7 +1535,7 @@ def replace_name_and_gen_index(path):
         new_file_path = os.path.join(path, new_file_name)
         os.rename(file_path, new_file_path)
     index_file_name = "model.safetensors.index.json"
-    index_mapping["weight_map"] = index_mapping
+    index_mapping["weight_map"] = deepcopy(index_mapping)
     with open(os.path.join(path, index_file_name), "w") as f:
         json.dump(index_mapping, f)
 
