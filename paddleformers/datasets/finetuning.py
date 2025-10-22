@@ -631,7 +631,7 @@ class SequenceDataset(IterableDataset):
 
             if hasattr(self, "tokenizer"):
                 print_debug_info(self.tokenizer, tokens, "input")
-                labels = [x for x in labels if x != -100] # remove -100
+                labels = [x for x in labels if x != -100]  # remove -100
                 print_debug_info(self.tokenizer, labels, "labels")
                 logger.info(f"[dataset debug] loss mask: {loss_mask}")
             else:
