@@ -420,6 +420,9 @@ class AdamWCustom(AdamW):
         return
 
     def offload_optim(self, p):
+        is_offload_opt = getattr(p, "is_offload_opt", True)
+        if not is_offload_opt:
+            return
         find_master = self._multi_precision and self._is_dtype_fp16_or_bf16(p.dtype)
         if find_master:
             self._master_weights[p.name] = self._master_weights[p.name].pin_memory()
@@ -432,6 +435,9 @@ class AdamWCustom(AdamW):
             self._accumulators[name][target_name] = self._accumulators[name][target_name].pin_memory()
 
     def reload_optim(self, p):
+        is_offload_opt = getattr(p, "is_offload_opt", True)
+        if not is_offload_opt:
+            return
         find_master = self._multi_precision and self._is_dtype_fp16_or_bf16(p.dtype)
         if find_master:
             self._master_weights[p.name] = self._master_weights[p.name].cuda()
