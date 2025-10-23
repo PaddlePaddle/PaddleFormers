@@ -1,9 +1,8 @@
 name: Build CI Images
 
 on:
-  pull_request:
   schedule:
-    - cron: "0 18 * * 5"   # UTC 18:00 = Beijing 周六 02:00
+    - cron: "0 22 * * *"     # every day at 06:00 Beijing time (UTC+8)
   workflow_dispatch:
 
 concurrency:
