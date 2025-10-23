@@ -883,3 +883,14 @@ register_model_group(
         },
     }
 )
+
+
+register_model_group(
+    models={
+        "Phi-4": {
+            DownloadSource.HUGGINGFACE: "microsoft/phi-4",
+            DownloadSource.AISTUDIO: "microsoft/phi-4",
+            DownloadSource.MODELSCOPE: "microsoft/phi-4",
+        },
+    }
+)

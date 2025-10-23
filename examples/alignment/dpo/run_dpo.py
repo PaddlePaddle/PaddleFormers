@@ -43,6 +43,8 @@ from paddleformers.transformers import (
     AutoTokenizer,
     LlamaForCausalLM,
     LlamaForCausalLMPipe,
+    Phi3ForCausalLM,
+    Phi3ForCausalLMPipe,
     Qwen2ForCausalLM,
     Qwen2ForCausalLMPipe,
     Qwen2MoeForCausalLM,
@@ -68,6 +70,8 @@ flash_mask_support_list = [
     Qwen3ForCausalLMPipe,
     Qwen3MoeForCausalLM,
     Qwen3MoeForCausalLMPipe,
+    Phi3ForCausalLM,
+    Phi3ForCausalLMPipe,
 ]
 
 
