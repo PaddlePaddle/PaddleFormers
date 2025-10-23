@@ -5,12 +5,6 @@ on:
   schedule:
     - cron: "0 18 * * 5"   # UTC 18:00 = Beijing 周六 02:00
   workflow_dispatch:
-  push:
-    branches-ignore:
-      - '**'
-  pull_request:
-    branches-ignore:
-      - '**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
