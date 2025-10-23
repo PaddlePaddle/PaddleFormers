@@ -73,7 +73,9 @@ def get_logits(batch_ids, max_retries=1, timeout=1200, retry_delay=1, prob_nums=
             all_ids = paddle.to_tensor(all_ids, dtype="int64")
             return all_token, all_ids
 
-        except (requests.exceptions.RequestException, IOError):
+        except (requests.exceptions.RequestException, IOError) as e:
+            if attempt == max_retries - 1:
+                raise Exception(f"Failed after {max_retries} attempts. Last error: {str(e)}")
             time.sleep(retry_delay)
 
 
