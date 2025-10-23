@@ -111,6 +111,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     nvidia-smi
     echo "Check paddle device count"
     python -c "import paddle; print(paddle.device.device_count())"
+    export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export FLAGS_tcp_store_using_libuv=0
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
