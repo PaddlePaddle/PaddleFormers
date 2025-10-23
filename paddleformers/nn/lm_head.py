@@ -92,7 +92,7 @@ class LMHead(nn.Layer):
                 hidden_states,
                 self.weight,
                 self.bias,
-                self.config.tie_word_embeddings,
+                True,
             )
 
         return calc_lm_head_logits(
