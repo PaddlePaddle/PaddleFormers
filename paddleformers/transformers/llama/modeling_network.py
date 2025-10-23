@@ -23,9 +23,6 @@ from typing import Optional, Tuple
 import paddle
 import paddle.nn.functional as F
 from paddle import nn
-from paddle.distributed.auto_parallel.intermediate.tensor_parallel import (
-    PrepareLayerInput,
-)
 from paddle.distributed.fleet.utils import recompute
 
 try:
@@ -43,13 +40,12 @@ except ImportError:
         return F.silu(x) * y
 
 
-import paddle.distributed as dist
-
 from ..model_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     CausalLMOutputWithCrossAttentions,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from .auto_dist_config import get_dist_config
 from .configuration import (
     LLAMA_PRETRAINED_INIT_CONFIGURATION,
     LLAMA_PRETRAINED_RESOURCE_FILES_MAP,
@@ -965,48 +961,6 @@ class LlamaLMHeadNet(nn.Layer):
         return logits
 
 
-def layer_input_parallel_row_hook(process_mesh):
-    def hook(layer, inputs, output=None):
-        res_inputs = []
-        for input in inputs:
-            if not input.is_dist():
-                x = dist.shard_tensor(input, process_mesh, [dist.Shard(0), dist.Replicate()])
-                res_inputs.append(dist.reshard(x, process_mesh, [dist.Shard(0), dist.Replicate()]))
-            else:
-                res_inputs.append(dist.reshard(input, process_mesh, [dist.Shard(0), dist.Replicate()]))
-        return tuple(res_inputs)
-
-    return hook
-
-
-def layer_input_parallel_row_and_col_hook(process_mesh):
-    def hook(layer, inputs, output=None):
-        res_inputs = []
-        for input in inputs:
-            if not input.is_dist():
-                x = dist.shard_tensor(input, process_mesh, [dist.Shard(0), dist.Shard(1)])
-                res_inputs.append(dist.reshard(x, process_mesh, [dist.Shard(0), dist.Shard(1)]))
-            else:
-                res_inputs.append(dist.reshard(input, process_mesh, [dist.Shard(0), dist.Shard(1)]))
-        return tuple(res_inputs)
-
-    return hook
-
-
-def layer_input_replicate_hook(process_mesh):
-    def hook(layer, inputs, output=None):
-        res_inputs = []
-        for input in inputs:
-            if not input.is_dist():
-                x = dist.shard_tensor(input, process_mesh, [dist.Replicate(), dist.Replicate()])
-                res_inputs.append(dist.reshard(x, process_mesh, [dist.Replicate(), dist.Replicate()]))
-            else:
-                res_inputs.append(dist.reshard(input, process_mesh, [dist.Replicate(), dist.Replicate()]))
-        return tuple(res_inputs)
-
-    return hook
-
-
 class LlamaForCausalLMNet(LlamaPretrainedModelNet):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
@@ -1137,55 +1091,7 @@ class LlamaForCausalLMNet(LlamaPretrainedModelNet):
         return logits
 
     def auto_dist_config(self, prefix=""):
-        if prefix != "":
-            assert prefix.endswith(".")
-        config = {
-            "sp_config": {
-                "parallelize_plan": {
-                    f"{prefix}llama.embed_tokens": [
-                        dist.ColWiseParallel(),
-                        dist.SequenceParallelBegin(),
-                    ],
-                    f"{prefix}llama.reshard_row": PrepareLayerInput(layer_input_parallel_row_hook),
-                    f"{prefix}llama.reshard_row_and_col": PrepareLayerInput(layer_input_parallel_row_and_col_hook),
-                    f"{prefix}llama.global_layer.reshard_replicate": PrepareLayerInput(layer_input_replicate_hook),
-                    f"{prefix}llama.layers.*.self_attn.qkv_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.self_attn.q_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.self_attn.k_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.self_attn.v_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.self_attn.o_proj": dist.RowWiseParallel(),
-                    f"{prefix}llama.layers.*.self_attn": dist.SequenceParallelDisable(),
-                    f"{prefix}llama.layers.*.mlp.gate_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.mlp.up_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.mlp.gate_up_fused_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.mlp.down_proj": dist.RowWiseParallel(),
-                    f"{prefix}llama.layers.*.mlp": dist.SequenceParallelDisable(need_transpose=False),
-                    f"{prefix}lm_head.weight": dist.ColWiseParallel(),
-                    f"{prefix}lm_head": dist.SequenceParallelEnd(),
-                }
-            },
-            "mp_config": {
-                "parallelize_plan": {
-                    f"{prefix}llama.embed_tokens": dist.ColWiseParallel(gather_output=True),
-                    f"{prefix}llama.reshard_row": PrepareLayerInput(layer_input_parallel_row_hook),
-                    f"{prefix}llama.reshard_row_and_col": PrepareLayerInput(layer_input_parallel_row_and_col_hook),
-                    f"{prefix}llama.global_layer.reshard_replicate": PrepareLayerInput(layer_input_replicate_hook),
-                    f"{prefix}llama.layers.*.self_attn.qkv_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.self_attn.q_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.self_attn.k_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.self_attn.v_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.self_attn.o_proj": dist.RowWiseParallel(),
-                    f"{prefix}llama.layers.*.mlp.gate_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.mlp.up_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.mlp.gate_up_fused_proj": dist.ColWiseParallel(),
-                    f"{prefix}llama.layers.*.mlp.down_proj": dist.RowWiseParallel(),
-                    f"{prefix}lm_head.weight": dist.ColWiseParallel(),
-                }
-            },
-            "pp_config": {"split_spec": f"{prefix}llama.layers", "global_spec": f"{prefix}llama.global_layer"},
-        }
-
-        return config
+        return get_dist_config(self, prefix)
 
 
 class LlamaForCausalLMNetDPO(LlamaForCausalLMNet):

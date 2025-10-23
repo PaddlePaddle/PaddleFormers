@@ -17,7 +17,6 @@ import os
 import warnings
 
 import paddle
-import paddle.distributed as dist
 import paddle.nn.functional as F
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
@@ -25,6 +24,7 @@ from paddle.distributed.fleet.utils import recompute
 from ...utils.log import logger
 from ..model_outputs import BaseModelOutputWithPast
 from ..model_utils import PretrainedModel
+from .auto_dist_config import get_dist_config
 from .configuration import QWenConfig
 
 __all__ = [
@@ -659,46 +659,7 @@ class QWenForCausalLMNet(QWenPretrainedModelNet):
         return lm_logits
 
     def auto_dist_config(self, prefix=""):
-        if prefix != "":
-            assert prefix.endswith(".")
-        config = {
-            "sp_config": {
-                "parallelize_plan": {
-                    f"{prefix}qwen.wte": [
-                        dist.RowWiseParallel(),
-                        dist.SequenceParallelBegin(),
-                    ],
-                    f"{prefix}qwen.h.*.attn.c_attn": dist.ColWiseParallel(),
-                    f"{prefix}qwen.h.*.attn.c_proj": dist.RowWiseParallel(),
-                    f"{prefix}qwen.h.*.attn": dist.SequenceParallelDisable(),
-                    f"{prefix}qwen.h.*.mlp.gate_up_fused_proj": dist.ColWiseParallel(),
-                    f"{prefix}qwen.h.*.mlp.w1": dist.ColWiseParallel(),
-                    f"{prefix}qwen.h.*.mlp.w2": dist.ColWiseParallel(),
-                    f"{prefix}qwen.h.*.mlp.c_proj": dist.RowWiseParallel(),
-                    f"{prefix}qwen.h.*.mlp": dist.SequenceParallelDisable(need_transpose=False),
-                    f"{prefix}lm_head.weight": dist.ColWiseParallel(),
-                    f"{prefix}lm_head": dist.SequenceParallelEnd(),
-                }
-            },
-            "mp_config": {
-                "parallelize_plan": {
-                    f"{prefix}qwen.wte": dist.RowWiseParallel(),
-                    f"{prefix}qwen.h.*.attn.c_attn": dist.ColWiseParallel(),
-                    f"{prefix}qwen.h.*.attn.c_proj": dist.RowWiseParallel(),
-                    f"{prefix}qwen.h.*.mlp.gate_up_fused_proj": dist.ColWiseParallel(),
-                    f"{prefix}qwen.h.*.mlp.w1": dist.ColWiseParallel(),
-                    f"{prefix}qwen.h.*.mlp.w2": dist.ColWiseParallel(),
-                    f"{prefix}qwen.h.*.mlp.c_proj": dist.RowWiseParallel(),
-                    f"{prefix}lm_head.weight": dist.ColWiseParallel(),
-                }
-            },
-            "pp_config": {
-                "split_spec": f"{prefix}qwen.h",
-                "global_spec": f"{prefix}qwen.global_layer",
-            },
-        }
-
-        return config
+        return get_dist_config(self, prefix)
 
 
 class GlobalNet(nn.Layer):
