@@ -114,7 +114,7 @@ class SFTTrainTest(unittest.TestCase):
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
-        #launch mode
+        # launch mode
         # train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
         # cmd = [
         #     "python",
@@ -172,7 +172,7 @@ class SFTTrainTest(unittest.TestCase):
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
-        #launch mode
+        # launch mode
         # train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
         # cmd = [
         #     "python",
@@ -184,7 +184,7 @@ class SFTTrainTest(unittest.TestCase):
         #     train_path,
         #     updated_config_path,
         # ]
-        #cli mode
+        # cli mode
         cmd = [
             "paddleformers-cli",
             "train",
@@ -201,7 +201,7 @@ class SFTTrainTest(unittest.TestCase):
 
         # test lora merge
         lora_merge_output_dir = os.path.join(output_dir, "export")
-        #launch mode
+        # launch mode
         # lora_merge_path = os.path.join(TRAIN_PATH, "tools/mergekit.py")
         # lora_merge_cmd = [
         #     "python",
@@ -218,12 +218,8 @@ class SFTTrainTest(unittest.TestCase):
         #     "--output_path",
         #     lora_merge_output_dir,
         # ]
-        #cli mode
-        lora_merge_cmd = [
-            "paddleformers-cli",
-            "export",
-            updated_config_path
-        ]
+        # cli mode
+        lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.sfttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
@@ -288,7 +284,7 @@ class SFTTrainTest(unittest.TestCase):
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
-        #launch mode
+        # launch mode
         # train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
         # cmd = [
         #     "python",
@@ -300,7 +296,7 @@ class SFTTrainTest(unittest.TestCase):
         #     train_path,
         #     updated_config_path,
         # ]
-        #cli mode
+        # cli mode
         cmd = [
             "paddleformers-cli",
             "train",
@@ -317,7 +313,7 @@ class SFTTrainTest(unittest.TestCase):
 
         # test lora merge
         lora_merge_output_dir = os.path.join(output_dir, "export")
-        #launch mode
+        # launch mode
         # lora_merge_path = os.path.join(TRAIN_PATH, "tools/mergekit.py")
 
         # lora_merge_cmd = [
@@ -335,12 +331,8 @@ class SFTTrainTest(unittest.TestCase):
         #     "--output_path",
         #     lora_merge_output_dir,
         # ]
-        #cli mode
-        lora_merge_cmd = [
-            "paddleformers-cli",
-            "export",
-            updated_config_path
-        ]
+        # cli mode
+        lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.sfttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
@@ -360,7 +352,7 @@ class SFTTrainTest(unittest.TestCase):
         }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
-        #launch mode
+        # launch mode
         # train_path = os.path.join(TRAIN_PATH, "run_finetune.py")
         # cmd = [
         #     "python",
@@ -372,7 +364,7 @@ class SFTTrainTest(unittest.TestCase):
         #     train_path,
         #     updated_config_path,
         # ]
-        #cli mode
+        # cli mode
         cmd = [
             "paddleformers-cli",
             "train",
