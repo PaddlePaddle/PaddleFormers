@@ -197,7 +197,7 @@ import_structure = {
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
-    "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3TextForCausalLMPipe"],
+    "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
     "llama.configuration": [
         "LlamaConfig",
     ],

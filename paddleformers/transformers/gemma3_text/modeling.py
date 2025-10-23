@@ -155,8 +155,6 @@ def _compute_default_rope_parameters(
 
 
 class Gemma3RotaryEmbedding(nn.Layer):
-    inv_freq: paddle.Tensor  # fix linting for `register_buffer`
-
     def __init__(self, config: Gemma3TextConfig, device=None):
         super().__init__()
         # BC: "rope_type" was originally "type"
@@ -177,15 +175,22 @@ class Gemma3RotaryEmbedding(nn.Layer):
 
     @paddle.no_grad()
     def forward(self, x, position_ids):
-        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.place)
-        position_ids_expanded = position_ids[:, None, :].float()
+        with paddle.amp.auto_cast(False):
+            inv_freq_expanded = (
+                self.inv_freq.unsqueeze(0)
+                .unsqueeze(-1)
+                .cast(paddle.float32)
+                .expand([position_ids.shape[0], -1, 1])
+                .to(x.place)
+            )
+            position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
 
-        freqs = paddle.matmul(inv_freq_expanded.float(), position_ids_expanded.float()).transpose(1, 2)
-        emb = paddle.cat((freqs, freqs), dim=-1)
-        cos = emb.cos() * self.attention_scaling
-        sin = emb.sin() * self.attention_scaling
+            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
+            emb = paddle.cat((freqs, freqs), axis=-1)
+            cos = paddle.cos(emb) * self.attention_scaling
+            sin = paddle.sin(emb) * self.attention_scaling
 
-        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
 
 
 def rotate_half(x):
@@ -223,24 +228,16 @@ class Gemma3Attention(nn.Layer):
         self.num_attention_heads = config.num_attention_heads
         assert config.num_attention_heads // config.num_key_value_heads
 
-        kv_tp_plan = "default"
         if config.tensor_parallel_degree > 1:
             assert (
                 self.num_heads % config.tensor_parallel_degree == 0
             ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
             self.num_heads = self.num_heads // config.tensor_parallel_degree
 
-            # assert (
-            #     self.num_key_value_heads % config.tensor_parallel_degree == 0
-            # ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            if self.num_key_value_heads % config.tensor_parallel_degree != 0:
-                logger.warning_once(
-                    f"num_key_value_heads={self.num_key_value_heads} cannot be divided by "
-                    f"tensor_parallel_degree={config.tensor_parallel_degree}, tp cannot be enabled for K/V"
-                )
-            else:
-                self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
-                kv_tp_plan = "colwise"
+            assert (
+                self.num_key_value_heads % config.tensor_parallel_degree == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
 
         kv_hidden_size = config.num_key_value_heads * self.head_dim
         q_hidden_size = config.num_attention_heads * self.head_dim
@@ -257,16 +254,14 @@ class Gemma3Attention(nn.Layer):
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            # tp_plan="colwise",
-            tp_plan=kv_tp_plan,
+            tp_plan="colwise",
         )
         self.v_proj = GeneralLinear.create(
             config.hidden_size,
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            # tp_plan="colwise",
-            tp_plan=kv_tp_plan,
+            tp_plan="colwise",
         )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
@@ -402,6 +397,8 @@ class Gemma3DecoderLayer(nn.Layer):
             outputs += (self_attn_weights,)
         if use_cache:
             outputs += (present_key_value,)
+        if type(outputs) is tuple and len(outputs) == 1:
+            outputs = outputs[0]
 
         return outputs
 
@@ -546,7 +543,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             self.norm.enable_sequence_parallel()
 
     @paddle.jit.not_to_static
-    def recompute_training_full(
+    def recompute_training(
         self,
         layer_module: nn.Layer,
         hidden_states: paddle.Tensor,
@@ -556,7 +553,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         output_attentions: bool,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
-        attn_mask_startend_row_indices=None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -679,7 +676,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
 
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
-                layer_outputs = self.recompute_training_full(
+                layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,
                     position_embeddings=position_embeddings,
@@ -705,8 +702,13 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
                         decoder_layer.attention_type
                     ],
                 )
+                # print("layer_outputs",type(layer_outputs))
+                # exit()
 
-            hidden_states = layer_outputs[0]
+            if isinstance(layer_outputs, (tuple, list)):
+                hidden_states = layer_outputs[0]
+            else:
+                hidden_states = layer_outputs
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
@@ -762,7 +764,7 @@ class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        attn_mask_startend_row_indices=None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         logits_to_keep: Union[int, paddle.Tensor] = 0,
         **kwargs,
     ) -> CausalLMOutputWithPast:
@@ -883,7 +885,7 @@ class Gemma3TextForSequenceClassification(Gemma3PreTrainedModel):
     # TODO: implement the class refer to deepseekv2 & QWen3
 
 
-class Gemma3TextForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Gemma3ForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Gemma3TextConfig
     _decoder_layer_cls = Gemma3DecoderLayer
     _get_tensor_parallel_mappings = Gemma3TextModel._get_tensor_parallel_mappings
@@ -898,5 +900,5 @@ __all__ = [
     "Gemma3PreTrainedModel",
     "Gemma3TextModel",
     "Gemma3ForCausalLM",
-    "Gemma3TextForCausalLMPipe",
+    "Gemma3ForCausalLMPipe",
 ]

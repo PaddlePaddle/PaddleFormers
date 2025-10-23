@@ -226,11 +226,13 @@ class Gemma3TextConfig(PretrainedConfig):
         self.rope_scaling = rope_scaling
         # rope_config_validation(self)
         self._sliding_window_pattern = kwargs.get("sliding_window_pattern", 6)
+        # if self.layer_types is None:
+        #     self.layer_types = [
+        #         ("sliding_attention" if bool((i + 1) % self._sliding_window_pattern) else "full_attention")
+        #         for i in range(self.num_hidden_layers)
+        #     ]
         if self.layer_types is None:
-            self.layer_types = [
-                ("sliding_attention" if bool((i + 1) % self._sliding_window_pattern) else "full_attention")
-                for i in range(self.num_hidden_layers)
-            ]
+            self.layer_types = ["full_attention" for i in range(self.num_hidden_layers)]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
 
 
