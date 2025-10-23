@@ -30,6 +30,7 @@ from ...nn.mlp import MLP as Phi3MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import Phi3Config
@@ -71,21 +72,6 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     k_embed = paddle.cat([k_embed, k_pass], axis=-1)
 
     return q_embed, k_embed
-
-
-def prepare_sliding_window_startend_row_indices(startend_row_indices, window_size=5):
-    if startend_row_indices is None:
-        return None
-    batch_size, num_head, seq_length, bound_num = startend_row_indices.shape
-    assert bound_num <= 2, f"bound_num should be less than or equal to 2 when use sling window, but got {bound_num}"
-    sliding_window_startend_row_indices = startend_row_indices.clone()
-    for bi in range(batch_size):
-        for hi in range(num_head):
-            for j in range(seq_length):
-                sliding_window_startend_row_indices[bi, hi, j, 0] = min(
-                    startend_row_indices[bi, hi, j, 0], window_size + j
-                )
-    return sliding_window_startend_row_indices
 
 
 class Phi3Attention(nn.Layer):
@@ -227,6 +213,8 @@ class Phi3DecoderLayer(nn.Layer):
             self.post_attention_layernorm.enable_sequence_parallel()
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
+
+        self.attention_type = config.layer_types[layer_idx]
 
     def forward(
         self,
@@ -455,37 +443,21 @@ class Phi3Model(Phi3PreTrainedModel):
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
 
-        if attn_mask_startend_row_indices is not None:
-            attention_mask = None
-            causal_mask = None
-            if self.config.sliding_window is None:
-                attn_mask_startend_row_indices = attn_mask_startend_row_indices
-            else:
-                attn_mask_startend_row_indices = prepare_sliding_window_startend_row_indices(
-                    attn_mask_startend_row_indices, window_size=self.config.sliding_window
-                )
-        else:
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-
-            if self.config.sliding_window is None:
-                causal_mask = self._prepare_decoder_attention_mask(
-                    attention_mask=attention_mask,
-                    input_shape=(batch_size, seq_length),
-                    past_key_values_length=cache_length,
-                    dtype=inputs_embeds.dtype,
-                )
-            else:
-                causal_mask = self._prepare_decoder_attention_mask(
-                    attention_mask=attention_mask,
-                    input_shape=(batch_size, seq_length),
-                    past_key_values_length=cache_length,
-                    dtype=inputs_embeds.dtype,
-                    sliding_window_size=self.config.sliding_window,
-                )
+        # Prepare mask arguments
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+        }
+        # Create the causal mask and row indices
+        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
+            **mask_kwargs
+        )
 
         hidden_states = inputs_embeds
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
@@ -504,8 +476,10 @@ class Phi3Model(Phi3PreTrainedModel):
                 layer_outputs = self.recompute_training_full(
                     layer_module=decoder_layer,
                     hidden_states=hidden_states,
-                    attention_mask=causal_mask,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    attention_mask=causal_mask_mapping[decoder_layer.attention_type],
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
+                        decoder_layer.attention_type
+                    ],
                     position_ids=position_ids,
                     output_attentions=output_attentions,
                     past_key_value=past_key_value,
@@ -516,8 +490,10 @@ class Phi3Model(Phi3PreTrainedModel):
             else:
                 layer_outputs = decoder_layer(
                     hidden_states=hidden_states,
-                    attention_mask=causal_mask,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    attention_mask=causal_mask_mapping[decoder_layer.attention_type],
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
+                        decoder_layer.attention_type
+                    ],
                     position_ids=position_ids,
                     output_attentions=output_attentions,
                     past_key_value=past_key_value,
