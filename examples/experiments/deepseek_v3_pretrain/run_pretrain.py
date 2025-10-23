@@ -411,6 +411,7 @@ def main():
     config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
     config.seq_length = data_args.max_seq_length
+    config.max_sequence_length = data_args.max_seq_length
     # There are some technique extend RotaryEmbedding context. so don't change max_position_embeddings
     if not model_args.continue_training:
         config.max_position_embeddings = max(config.max_position_embeddings, data_args.max_seq_length)
