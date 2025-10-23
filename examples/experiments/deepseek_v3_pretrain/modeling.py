@@ -350,6 +350,12 @@ class MoEGate(PretrainedMoEGate):
             )
             self.e_score_correction_bias.is_distributed = True
 
+            self.expert_usage = paddle.zeros(
+                shape=[num_experts],
+                dtype=paddle.int64,
+            )
+            self.expert_usage.stop_gradient = True
+
         if self.using_post_norm_recompute:
             assert norm_weight is not None and norm_eps is not None
             self.norm_weight = norm_weight
@@ -392,6 +398,8 @@ class MoEGate(PretrainedMoEGate):
         # Compute all possible return values
         if self.using_flex_token:
             scores, routing_map, exp_counts, l_aux, l_zloss = self.topkgating_nodrop(scores)
+            with paddle.no_grad():
+                self.expert_usage += exp_counts
             ret = (scores, routing_map, l_aux, l_zloss)
         else:
             ret = self.topkgating(scores)  # (capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss)

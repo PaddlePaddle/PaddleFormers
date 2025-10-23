@@ -9,7 +9,8 @@
       "AutoModel": "DeepseekV2ModelFast",
       "AutoModelForCausalLM": "DeepseekV2ForCausalLM"
     },
-    "aux_loss_alpha": 0.001,
+    "aux_loss_alpha": 0.0001,
+    "aux_loss_free_gamma": 0.001,
     "bos_token_id": 0,
     "eos_token_id": 1,
     "ep_size": 1,
