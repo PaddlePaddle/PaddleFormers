@@ -2643,7 +2643,6 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                     )
 
                     dout = d_attn_out
-
                     dout = dout.reshape(attn_out.shape)
 
             with paddle.no_grad():
