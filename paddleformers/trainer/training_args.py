@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional
 import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
+from paddle.distributed.fleet.base.topology import message2nccl_config
 
 from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.log import logger
@@ -39,11 +40,10 @@ from .trainer_utils import (
     OptimizerNames,
     SchedulerType,
     ShardingOption,
-    split_parallel_config,
     init_nccl_config,
+    split_parallel_config,
 )
 
-from paddle.distributed.fleet.base.topology import message2nccl_config
 try:
     from paddle.distributed import in_auto_parallel_align_mode
 except Exception:
@@ -1099,14 +1099,15 @@ class TrainingArguments:
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
     nccl_comm_group_config: Optional[str] = field(
-        default=None, metadata={
+        default=None,
+        metadata={
             "help": (
                 "supporting fine-grained control of communication groups in NCCL. "
                 "The default value is None, indicating that this configuration is not enabled"
             )
         },
     )
-    
+
     reorder_pipeline_priority: Optional[bool] = field(
         default=False,
         metadata={"help": "Controls the parallel execution order. False (pp first), True (sharding first)."},
@@ -1591,7 +1592,7 @@ class TrainingArguments:
                         assert (
                             self.amp_master_grad
                         ), "If `split_param` in sharding_parallel_config, `amp_master_grad` must be True."
-                
+
                 if self.nccl_comm_group_config is not None:
                     strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
 

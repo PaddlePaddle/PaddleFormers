@@ -30,9 +30,9 @@ import os
 import random
 import threading
 import time
-from pathlib import Path
 from contextlib import contextmanager
 from enum import Enum
+from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
@@ -1297,6 +1297,7 @@ def _insert_sync(self, sync_var, src, mp_group, sync_mode):
     # Move it back to pin memory
     if original_device == "pin_memory":
         sync_var = paddle.to_tensor(sync_var, place=paddle.CUDAPinnedPlace())
+
 
 def parse_nccl_config_file(config_dir):
     json_file = Path(config_dir)
