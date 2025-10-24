@@ -226,17 +226,17 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "ernie4_5":
         target_modules = [
-            ".*q_proj.*",
-            ".*k_proj.*",
-            ".*v_proj.*",
-            ".*o_proj.*",
-            ".*up_proj.*",
-            ".*gate_proj.*",
-            ".*down_proj.*",
-            ".*spatial_linear.0.*",
-            ".*spatial_linear.2.*",
-            ".*temporal_linear.0.*",
-            ".*temporal_linear.2.*",
+                ".*q_proj.*",
+                ".*k_proj.*",
+                ".*v_proj.*",
+                ".*o_proj.*",
+                ".*up_proj.*",
+                ".*gate_proj.*",
+                ".*down_proj.*",
+                ".*spatial_linear.0.*",
+                ".*spatial_linear.2.*",
+                ".*temporal_linear.0.*",
+                ".*temporal_linear.2.*",
         ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")
@@ -426,9 +426,9 @@ def dybatch_preprocess(
             position_ids = paddle.zeros(shape=[bs, max_length + src_length], dtype="int64")
 
             for i in range(bs):
-                position_ids[i, pre_caches_length + max_len - seq_len[i] : pre_caches_length + max_len] = (
-                    paddle.arange(seq_len[i]).unsqueeze(axis=0)
-                )
+                position_ids[
+                    i, pre_caches_length + max_len - seq_len[i] : pre_caches_length + max_len
+                ] = paddle.arange(seq_len[i]).unsqueeze(axis=0)
                 seq_len[i] = max_len
             inputs["position_ids"] = position_ids
         else:
@@ -440,7 +440,7 @@ def dybatch_preprocess(
                     max_length=src_length,
                     return_attention_mask=False,
                     return_token_type_ids=False,
-                    add_special_tokens=tokenizer.chat_template is None,
+                    add_special_tokens=tokenizer.chat_template is None
                     # add_special_tokens=tokenizer.chat_template is None or isinstance(tokenizer, ChatGLMv2Tokenizer),
                 )
                 input_ids.append(tokens["input_ids"][0])
@@ -500,9 +500,10 @@ def dybatch_preprocess(
     inputs["min_length"] = (
         np.array(
             [
-                (
-                    1 if not benchmark else max_length - pre_caches_length
-                ),  # Note(Zhengzekang): When in benchmark mode, we need to set a fixed decode length.
+                1
+                if not benchmark
+                else max_length
+                - pre_caches_length,  # Note(Zhengzekang): When in benchmark mode, we need to set a fixed decode length.
             ]
             * bs
         )
