@@ -156,7 +156,7 @@ jobs:
           fi
           # coverage.xml
           if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
-            ${{ env.PYTEST_EXECUTE_FLAG }}=true
+            echo "PYTEST_EXECUTE_FLAG=true" >> $GITHUB_ENV
             echo "env.PYTEST_EXECUTE_FLAG = ${{ env.PYTEST_EXECUTE_FLAG }}"
             rm -rf ${{ env.PYTEST_EXECUTE_FLAG_FILE }}
             echo "PYTEST_EXECUTE_FLAG_FILE found, uploading coverage.xml."
@@ -164,7 +164,7 @@ jobs:
             python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
             echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
           else
-            ${{ env.PYTEST_EXECUTE_FLAG }}=false
+            echo "PYTEST_EXECUTE_FLAG=false" >> $GITHUB_ENV
             echo "env.PYTEST_EXECUTE_FLAG = ${{ env.PYTEST_EXECUTE_FLAG }}"
             echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml upload."
           fi
