@@ -455,6 +455,27 @@ class Glm4MoeMoE(nn.Layer):
         return hidden_states
 
 
+class AddAuxiliaryLoss(paddle.autograd.PyLayer):
+    """
+    The trick function of adding auxiliary (aux) loss,
+    which includes the gradient of the aux loss during backpropagation.
+    """
+
+    @staticmethod
+    def forward(ctx, x, loss):
+        assert paddle.numel(loss) == 1
+        ctx.dtype = loss.dtype
+        ctx.required_aux_loss = not loss.stop_gradient
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        grad_loss = None
+        if ctx.required_aux_loss:
+            grad_loss = paddle.ones(1, dtype=ctx.dtype)
+        return grad_output, grad_loss
+
+
 class Glm4MoeFlexMoE(MoEFlexTokenLayer):
     """
     A mixed expert module containing shared experts for expert_parallel_degree > 1 with deepep mode
@@ -519,7 +540,10 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
         )
 
     def forward(self, hidden_states):
-        final_hidden_states, _, _ = super().forward(hidden_states)
+        final_hidden_states, l_aux, _ = super().forward(hidden_states)
+        if self.training and self.config.aux_loss_alpha > 0.0:
+            l_aux = l_aux * self.config.aux_loss_alpha
+            final_hidden_states = AddAuxiliaryLoss.apply(final_hidden_states, l_aux)
         final_hidden_states = final_hidden_states + self.shared_experts(hidden_states)
         return final_hidden_states
 
