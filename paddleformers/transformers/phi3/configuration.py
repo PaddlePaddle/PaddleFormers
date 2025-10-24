@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """ Phi-3 model configuration."""
-from ..configuration_utils import PretrainedConfig, layer_type_validation
+from ..configuration_utils import PretrainedConfig
 
 
 class Phi3Config(PretrainedConfig):
@@ -56,7 +56,6 @@ class Phi3Config(PretrainedConfig):
         use_flash_attention=False,
         recompute=False,
         recompute_granularity="core_attn",
-        layer_types=None,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -89,13 +88,6 @@ class Phi3Config(PretrainedConfig):
         self.use_flash_attention = use_flash_attention
         self.recompute = recompute
         self.recompute_granularity = recompute_granularity
-
-        self.layer_types = layer_types
-        if self.layer_types is None:
-            self.layer_types = [
-                "sliding_attention" if self.sliding_window else "full_attention" for i in range(self.num_hidden_layers)
-            ]
-        layer_type_validation(self.layer_types, self.num_hidden_layers)
 
         super().__init__(
             bos_token_id=bos_token_id,
