@@ -89,7 +89,6 @@ export FLAGS_enable_CI=false
 if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
     # Scheduled Regression Test
     FLAGS_enable_CI=true
-    touch ${PYTEST_EXECUTE_FLAG_FILE}
 else
     for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
         ext="${file_name##*.}"
@@ -100,7 +99,6 @@ else
             continue
         else
             FLAGS_enable_CI=true
-            touch ${PYTEST_EXECUTE_FLAG_FILE}
         fi
     done
 fi
@@ -126,7 +124,8 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
         --cov-report=xml:coverage.xml > ${log_path}/unittest.log 2>&1
     exit_code=$?
     print_info $exit_code unittest
-
+    echo -e "\033[35m ---- Set PYTEST_EXECUTE_FLAG_FILE  \033[0m"
+    touch ${PYTEST_EXECUTE_FLAG_FILE}
     if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
         cd ${nlp_dir}
         echo -e "\033[35m ---- Generate Allure Report  \033[0m"

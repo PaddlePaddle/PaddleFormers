@@ -155,6 +155,7 @@ jobs:
           fi
           # coverage.xml
           if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
+            echo "PYTEST_EXECUTE_FLAG_FILE found, uploading coverage.xml."
             cd /workspace/PaddleFormers
             python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
             echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
@@ -195,16 +196,19 @@ jobs:
       - name: Check if should upload coverage
         id: flag_check
         run: |
+          echo "Checking for PYTEST_EXECUTE_FLAG_FILE at path: ${{ env.PYTEST_EXECUTE_FLAG_FILE }}"
           if [ -f "${{ env.PYTEST_EXECUTE_FLAG_FILE }}" ]; then
+            echo "PYTEST_EXECUTE_FLAG_FILE found, should upload coverage."
+            rm -rf ${{ env.PYTEST_EXECUTE_FLAG_FILE }}
             echo "should_upload=true" >> $GITHUB_OUTPUT
           else
+            echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage upload."
             echo "should_upload=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Download coverage.xml
         if: steps.flag_check.outputs.should_upload == 'true'
         run: |
-          rm -rf ${{ env.PYTEST_EXECUTE_FLAG_FILE }}
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
