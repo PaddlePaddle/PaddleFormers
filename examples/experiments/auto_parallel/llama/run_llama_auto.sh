@@ -1,4 +1,4 @@
-export PYTHONPATH=../../../:$PYTHONPATH
+export PYTHONPATH=../../../../:$PYTHONPATH
 
 set -x
 unset CUDA_VISIBLE_DEVICES
