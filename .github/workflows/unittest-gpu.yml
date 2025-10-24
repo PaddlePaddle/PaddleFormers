@@ -27,6 +27,7 @@ env:
   CI_name: unittest-gpu-ci
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
   PYTEST_EXECUTE_FLAG_FILE: ${{ github.workspace }}/../../../PYTEST_EXECUTE_FLAG_FILE/${{ github.event.pull_request.number || '0' }}/pytest_execute.flag
+  PYTEST_EXECUTE_FLAG: false
 
 defaults:
   run:
@@ -155,11 +156,16 @@ jobs:
           fi
           # coverage.xml
           if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
+            ${{ env.PYTEST_EXECUTE_FLAG }}=true
+            echo "env.PYTEST_EXECUTE_FLAG = ${{ env.PYTEST_EXECUTE_FLAG }}"
+            rm -rf ${{ env.PYTEST_EXECUTE_FLAG_FILE }}
             echo "PYTEST_EXECUTE_FLAG_FILE found, uploading coverage.xml."
             cd /workspace/PaddleFormers
             python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
             echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
           else
+            ${{ env.PYTEST_EXECUTE_FLAG }}=false
+            echo "env.PYTEST_EXECUTE_FLAG = ${{ env.PYTEST_EXECUTE_FLAG }}"
             echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml upload."
           fi
           # logs
@@ -196,13 +202,12 @@ jobs:
       - name: Check if should upload coverage
         id: flag_check
         run: |
-          echo "Checking for PYTEST_EXECUTE_FLAG_FILE at path: ${{ env.PYTEST_EXECUTE_FLAG_FILE }}"
-          if [ -f "${{ env.PYTEST_EXECUTE_FLAG_FILE }}" ]; then
-            echo "PYTEST_EXECUTE_FLAG_FILE found, should upload coverage."
-            rm -rf ${{ env.PYTEST_EXECUTE_FLAG_FILE }}
+          echo "env.PYTEST_EXECUTE_FLAG = ${{ env.PYTEST_EXECUTE_FLAG }}"
+          if [ "$PYTEST_EXECUTE_FLAG" = "true" ]; then
+            echo "PYTEST_EXECUTE_FLAG is true, proceeding to upload coverage."
             echo "should_upload=true" >> $GITHUB_OUTPUT
           else
-            echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage upload."
+            echo "PYTEST_EXECUTE_FLAG is false, skipping coverage upload."
             echo "should_upload=false" >> $GITHUB_OUTPUT
           fi
 
