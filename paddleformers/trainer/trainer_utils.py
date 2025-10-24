@@ -30,7 +30,7 @@ import os
 import random
 import threading
 import time
-import pathlib
+from pathlib import Path
 from contextlib import contextmanager
 from enum import Enum
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
