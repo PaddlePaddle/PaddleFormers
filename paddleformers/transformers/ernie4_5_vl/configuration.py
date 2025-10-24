@@ -211,7 +211,6 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
                 "skip_recompute_ops",
                 "use_sparse_flash_attn",
                 "use_var_len_flash_attn",
-                "use_sparse_head_and_loss_fn",
                 "loss_subbatch_seqlen",
                 "micro_batch_size",
                 "fuse_softmax_mask",
@@ -289,22 +288,55 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         video_token_id=100296,
         dpo_config=None,
         head_dim=None,
+        num_acc_steps=1,
         moe_capacity=[128, 128, 128],
-        moe_use_aux_free=False,
+        moe_use_aux_free=True,
         moe_use_token_type_bias=False,
         moe_gate_act="softmax",
         moe_norm_gate_logits=True,
         moe_aux_loss_lambda=1e-2,
         moe_z_loss_lambda=1e-4,
         moe_orthogonal_loss_lambda=1e-2,
+        moe_group="world",
+        moe_group_orthogonal_loss=True,
+        moe_multimodal_dispatch_use_allgather="",
+        moe_fuse_experts=False,
+        moe_use_size_all2all=False,
+        moe_layer_feed_fake_token=False,
+        max_sequence_length=None,
+        hidden_dropout_prob=0.0,
+        moe_dropout_prob=0.0,
+        recompute=False,
+        recompute_granularity="core_attn",
+        recompute_use_reentrant=False,
+        use_recompute_lm_head=False,
+        use_recompute_loss_fn=False,
+        use_recompute_moe=False,
+        use_sparse_head_and_loss_fn=False,
+        use_fused_head_and_loss_fn=False,
         refined_recompute=dict(),
         modality_detach=False,
         use_recompute_resampler=False,
         use_temporal_conv=True,
         resampler_fuse_rms_norm=False,
         offload_pp_data_chunk_size=0,
+        fuse_softmax_mask=False,
+        micro_batch_size=-1,
+        token_balance_loss=False,
+        token_balance_seqlen=False,
+        loss_subbatch_seqlen=32768,
+        pp_seg_method="layer:Ernie4_5_DecoderLayer|EmptyLayer",
+        enable_delay_scale_loss=True,
+        enable_mtp_magic_send=False,
+        use_recompute_mtp=False,
         **kwargs,
     ):
+        if use_recompute_moe:
+            logger.warning(
+                "set `use_recompute_moe`=True, disabling `recompute_granularity=full`, change to full_attn."
+            )
+            if kwargs["recompute"] and kwargs["recompute_granularity"] == "full":
+                kwargs["recompute_granularity"] = "full_attn"
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
@@ -340,6 +372,7 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         self.dpo_config = dpo_config
         self.refined_recompute = refined_recompute
         self.head_dim = head_dim
+        self.num_acc_steps = num_acc_steps
         self.moe_capacity = moe_capacity
         self.moe_use_aux_free = moe_use_aux_free
         self.moe_use_token_type_bias = moe_use_token_type_bias
@@ -348,12 +381,40 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         self.moe_aux_loss_lambda = moe_aux_loss_lambda
         self.moe_z_loss_lambda = moe_z_loss_lambda
         self.moe_orthogonal_loss_lambda = moe_orthogonal_loss_lambda
+        self.moe_group = moe_group
+        self.moe_group_orthogonal_loss = moe_group_orthogonal_loss
+        self.moe_multimodal_dispatch_use_allgather = (
+            moe_multimodal_dispatch_use_allgather
+        )
+        self.moe_fuse_experts = moe_fuse_experts
+        self.moe_use_size_all2all = moe_use_size_all2all
+        self.moe_layer_feed_fake_token = moe_layer_feed_fake_token
+        self.max_sequence_length = max_sequence_length
+        self.hidden_dropout_prob = hidden_dropout_prob
+        self.moe_dropout_prob = moe_dropout_prob
+        self.recompute = recompute
+        self.recompute_granularity = recompute_granularity
+        self.recompute_use_reentrant = recompute_use_reentrant
+        self.use_recompute_lm_head = use_recompute_lm_head
+        self.use_recompute_loss_fn = use_recompute_loss_fn
+        self.use_recompute_moe = use_recompute_moe
+        self.use_sparse_head_and_loss_fn = use_sparse_head_and_loss_fn
+        self.use_fused_head_and_loss_fn = use_fused_head_and_loss_fn
         self.skip_recompute_ops = dict()
         self.modality_detach = modality_detach
         self.use_recompute_resampler = use_recompute_resampler
         self.use_temporal_conv = use_temporal_conv
         self.resampler_fuse_rms_norm = resampler_fuse_rms_norm
         self.offload_pp_data_chunk_size = offload_pp_data_chunk_size
+        self.fuse_softmax_mask = fuse_softmax_mask
+        self.micro_batch_size = micro_batch_size
+        self.token_balance_loss = token_balance_loss
+        self.token_balance_seqlen = token_balance_seqlen
+        self.loss_subbatch_seqlen = loss_subbatch_seqlen
+        self.pp_seg_method = pp_seg_method
+        self.enable_delay_scale_loss = enable_delay_scale_loss
+        self.enable_mtp_magic_send = enable_mtp_magic_send
+        self.use_recompute_mtp = use_recompute_mtp
 
         self.register_unsavable_keys(
             [

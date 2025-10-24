@@ -367,12 +367,23 @@ class Ernie4_5_MoeMLP(Ernie4_5_MLP):
         Returns:
             paddle.Tensor: Output tensor with same shape as input
         """
+        gate = self.gate_proj(x)
+        up = self.up_proj(x)
         if self.fuse_swiglu:
-            x = self.up_gate_proj(x)
+            # x = self.up_gate_proj(x)
+            x = paddle.concat([gate, up], axis=-1)
             x = fused_swiglu(x)
         else:
-            x, gate = self.up_gate_proj(x).chunk(2, axis=-1)
-            x = F.silu(x) * gate
+            # gate, x = self.up_gate_proj(x).chunk(2, axis=-1)
+            x = F.silu(gate) * up
+        # up_gate_weight = paddle.concat([self.gate_proj.weight, self.up_proj.weight], axis=1)
+        # paddle.assign(up_gate_weight, self.up_gate_proj.weight) 
+        # if self.fuse_swiglu:
+        #     x = self.up_gate_proj(x)
+        #     x = fused_swiglu(x)
+        # else:
+        #     x, gate = self.up_gate_proj(x).chunk(2, axis=-1)
+        #     x = F.silu(x) * gate
         if self.moe_dropout_prob > 0:
             with get_rng_state_tracker().rng_state("local_seed"):
                 x = F.dropout(x=x, p=self.moe_dropout_prob)
@@ -750,6 +761,7 @@ class Ernie4_5_DecoderLayer(nn.Layer):
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
+        # print("before mlp hidden_states: ", hidden_states)
 
         if isinstance(self.mlp, MOELayer):
             if is_multimodel_token_task is not None:
@@ -762,16 +774,19 @@ class Ernie4_5_DecoderLayer(nn.Layer):
                 and token_type_ids is not None
                 and not is_multimodel_token_cpu
             ):
+                # print("---------run mlp text-------")
                 hidden_states, _, router_loss, gate_logits = self.mlp_text()(
                     hidden_states, None
                 )  # run this
             else:
+                # print("---------run mlp-------")
                 hidden_states, _, router_loss, gate_logits = self.mlp(
                     hidden_states, token_type_ids
                 )
         else:
             hidden_states = self.mlp(hidden_states)
             gate_logits, router_loss = None, None
+        # print("after mlp hidden_states: ", hidden_states)
 
         with self.model_parallel_dropout():
             hidden_states = self.residual_add2(hidden_states, residual)
@@ -838,24 +853,324 @@ class Ernie4_5_PretrainedModel(PretrainedModel):
     """Base class for ERNIE pretrained models."""
 
     config_class = Ernie4_5_MoeConfig
-    base_model_prefix = "ernie"
-    _keep_in_fp32_modules = ["mlp.gate", "e_score_correction_bias"]
+    base_model_prefix = "model.language_model"
+    # _keep_in_fp32_modules = ["mlp.gate", "e_score_correction_bias"]
+    _keep_in_fp32_modules = ["mlp.text_moe.gate", "mlp.vision_moe.gate", "e_score_correction_bias"]
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "gate",
+    ]
+
+    # @classmethod
+    # def _get_tensor_parallel_mappings(cls, config, is_split=True):
+    #     """Generate tensor parallel mappings for model conversion.
+
+    #     Args:
+    #         config (Ernie4_5_MoeConfig): Model configuration.
+    #         is_split (bool): Whether to generate split mappings (True)
+    #                         or merge mappings (False). Defaults to True.
+
+    #     Returns:
+    #         Dict[str, Callable[[Any], Any]]: Dictionary mapping parameter names
+    #             to their corresponding split/merge functions for tensor parallelism.
+    #     """
+
+    #     from paddleformers.transformers.conversion_utils import split_or_merge_func
+
+    #     fn = split_or_merge_func(
+    #         is_split=is_split,
+    #         tensor_parallel_degree=config.tensor_parallel_degree,
+    #         tensor_parallel_rank=config.tensor_parallel_rank,
+    #         num_attention_heads=config.text_config.num_attention_heads,
+    #     )
+
+    #     def gqa_qkv_split_func(
+    #         weight,
+    #         tensor_parallel_degree,
+    #         tensor_parallel_rank,
+    #         num_attention_heads,
+    #         num_key_value_heads,
+    #         head_dim,
+    #         is_quant=False,
+    #         is_split=True,
+    #     ):
+    #         if is_quant:
+    #             weight = weight.T
+
+    #         def get_shape(tensor):
+    #             return (
+    #                 tensor.get_shape() if hasattr(tensor, "get_shape") else tensor.shape
+    #             )
+
+    #         def slice_tensor(tensor, start, end):
+    #             shape = get_shape(tensor)
+    #             if len(shape) == 1:
+    #                 return tensor[start:end]
+    #             else:
+    #                 return tensor[..., start:end]
+
+    #         q_end = num_attention_heads * head_dim
+    #         k_end = q_end + num_key_value_heads * head_dim
+    #         v_end = k_end + num_key_value_heads * head_dim
+
+    #         q = slice_tensor(weight, 0, q_end)
+    #         k = slice_tensor(weight, q_end, k_end)
+    #         v = slice_tensor(weight, k_end, v_end)
+
+    #         def split_tensor(tensor, degree):
+    #             shape = get_shape(tensor)
+    #             size = shape[-1]
+    #             block_size = size // degree
+    #             if hasattr(tensor, "get_shape"):
+    #                 return [
+    #                     slice_tensor(tensor, i * block_size, (i + 1) * block_size)
+    #                     for i in range(degree)
+    #                 ]
+    #             else:
+    #                 return np.split(tensor, degree, axis=-1)
+
+    #         q_list = split_tensor(q, tensor_parallel_degree)
+    #         k_list = split_tensor(k, tensor_parallel_degree)
+    #         v_list = split_tensor(v, tensor_parallel_degree)
+
+    #         if tensor_parallel_rank is None:
+    #             out = [
+    #                 np.concatenate([q_i, k_i, v_i], axis=-1)
+    #                 for q_i, k_i, v_i in zip(q_list, k_list, v_list)
+    #             ]
+    #         else:
+    #             out = np.concatenate(
+    #                 [
+    #                     q_list[tensor_parallel_rank],
+    #                     k_list[tensor_parallel_rank],
+    #                     v_list[tensor_parallel_rank],
+    #                 ],
+    #                 axis=-1,
+    #             )
+    #         if is_quant:
+    #             out = out.T
+    #         return out
+
+    #     def gqa_qkv_merge_func(
+    #         weight_list,
+    #         num_attention_heads,
+    #         num_key_value_heads,
+    #         head_dim,
+    #         is_quant=False,
+    #         is_split=False,
+    #     ):
+    #         tensor_parallel_degree = len(weight_list)
+    #         num_attention_heads = num_attention_heads // tensor_parallel_degree
+    #         num_key_value_heads = num_key_value_heads // tensor_parallel_degree
+
+    #         is_paddle_tensor = not isinstance(weight_list[0], np.ndarray)
+
+    #         def get_shape(tensor):
+    #             return (
+    #                 tensor.get_shape() if hasattr(tensor, "get_shape") else tensor.shape
+    #             )
+
+    #         def slice_tensor(tensor, start, end):
+    #             if len(get_shape(tensor)) == 1:
+    #                 return tensor[start:end]
+    #             else:
+    #                 return tensor[..., start:end]
+
+    #         q_list, k_list, v_list = [], [], []
+
+    #         for weight in weight_list:
+    #             if is_quant:
+    #                 weight = weight.T
+    #             q_end = num_attention_heads * head_dim
+    #             k_end = q_end + num_key_value_heads * head_dim
+    #             v_end = k_end + num_key_value_heads * head_dim
+
+    #             q = slice_tensor(weight, 0, q_end)
+    #             k = slice_tensor(weight, q_end, k_end)
+    #             v = slice_tensor(weight, k_end, v_end)
+
+    #             q_list.append(q)
+    #             k_list.append(k)
+    #             v_list.append(v)
+
+    #         merged = q_list + k_list + v_list
+
+    #         if is_paddle_tensor:
+    #             tensor = paddle.concat(merged, axis=-1)
+    #             if tensor.place.is_gpu_place():
+    #                 tensor = tensor._copy_to(paddle.CUDAPinnedPlace(), False)
+
+    #         else:
+    #             tensor = np.concatenate(merged, axis=-1)
+    #         if is_quant:
+    #             tensor = tensor.T
+    #         return tensor
+
+    #     if (
+    #         config.text_config.num_key_value_heads is not None
+    #         and config.text_config.num_key_value_heads != config.text_config.num_attention_heads
+    #     ):
+    #         if is_split:
+    #             qkv_fn = partial(
+    #                 gqa_qkv_split_func,
+    #                 tensor_parallel_degree=config.tensor_parallel_degree,
+    #                 tensor_parallel_rank=config.tensor_parallel_rank,
+    #                 num_attention_heads=config.text_config.num_attention_heads,
+    #                 num_key_value_heads=config.text_config.num_key_value_heads,
+    #                 head_dim=(
+    #                     config.text_config.hidden_size // config.text_config.num_attention_heads
+    #                     if getattr(config, "head_dim", None) is None
+    #                     else config.head_dim
+    #                 ),
+    #                 is_quant=False,
+    #                 is_split=True,
+    #             )
+    #         else:
+    #             qkv_fn = partial(
+    #                 gqa_qkv_merge_func,
+    #                 num_attention_heads=config.text_config.num_attention_heads,
+    #                 num_key_value_heads=config.text_config.num_key_value_heads,
+    #                 head_dim=(
+    #                     config.text_config.hidden_size // config.text_config.num_attention_heads
+    #                     if getattr(config, "head_dim", None) is None
+    #                     else config.head_dim
+    #                 ),
+    #                 is_quant=False,
+    #                 is_split=False,
+    #             )
+    #     else:
+    #         qkv_fn = partial(fn, is_column=True)
+
+    #     moe_layer_start_index = (
+    #         min(config.text_config.moe_layer_start_index)
+    #         if isinstance(config.text_config.moe_layer_start_index, (tuple, list))
+    #         else config.text_config.moe_layer_start_index
+    #     )
+    #     moe_layer_end_index = (
+    #         max(config.text_config.moe_layer_end_index)
+    #         if isinstance(config.text_config.moe_layer_end_index, (tuple, list))
+    #         else config.text_config.moe_layer_end_index
+    #     )
+
+    #     def get_tensor_parallel_split_mappings(num_hidden_layers):
+    #         final_actions = {}
+
+    #         base_actions = {
+    #             # Column Linear
+    #             "layers.0.self_attn.qkv_proj.weight": qkv_fn,
+    #             "layers.0.mlp.up_gate_proj.weight": partial(
+    #                 fn, is_column=True, is_naive_2fuse=True
+    #             ),
+    #             "lm_head.weight": partial(fn, is_column=not config.text_config.tie_word_embeddings),
+    #             # Row Linear
+    #             "embed_tokens.weight": partial(fn, is_column=False),
+    #             "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
+    #             "layers.0.mlp.down_proj.weight": partial(fn, is_column=False),
+    #         }
+    #         if config.text_config.moe_num_shared_experts > 0:
+    #             base_actions.update(
+    #                 {
+    #                     "layers.0.mlp.shared_experts.up_gate_proj.weight": partial(
+    #                         fn, is_column=True, is_naive_2fuse=True
+    #                     ),
+    #                     "layers.0.mlp.shared_experts.down_proj.weight": partial(
+    #                         fn, is_column=False
+    #                     ),
+    #                 }
+    #             )
+    #         if config.text_config.num_nextn_predict_layers > 0:
+    #             base_actions.update(
+    #                 {
+    #                     "mtp_block.0.mlp.up_gate_proj.weight": partial(
+    #                         fn, is_column=True, is_naive_2fuse=True
+    #                     ),
+    #                     "mtp_block.0.self_attn.qkv_proj.weight": qkv_fn,
+    #                     "mtp_block.0.mlp.down_proj.weight": partial(
+    #                         fn, is_column=False
+    #                     ),
+    #                     "mtp_block.0.self_attn.o_proj.weight": partial(
+    #                         fn, is_column=False
+    #                     ),
+    #                 }
+    #             )
+    #         if config.text_config.use_bias:
+    #             base_actions.update(
+    #                 {
+    #                     # Column Linear
+    #                     "layers.0.self_attn.qkv_proj.bias": qkv_fn,
+    #                     "layers.0.mlp.up_gate_proj.bias": partial(
+    #                         fn, is_column=True, is_naive_2fuse=True
+    #                     ),
+    #                     "layers.0.mlp.down_proj.bias": lambda x: x[
+    #                         :
+    #                     ],  # convert PySafeSlice to ndarray.
+    #                     "lm_head.bias": partial(fn, is_column=True),
+    #                 }
+    #             )
+
+    #         moe_group = (
+    #             config.moe_group
+    #             if isinstance(config.moe_group, str)
+    #             else config.moe_group_origin
+    #         )
+    #         moe_in_mp = moe_group in {"mp", "model", "tp"}
+    #         for key, action in base_actions.items():
+    #             if "layers.0." in key:
+    #                 for i in range(num_hidden_layers):
+    #                     newkey = key.replace("layers.0.", f"layers.{i}.")
+    #                     if (
+    #                         "mlp" in key
+    #                         and (i + 1) % config.text_config.moe_layer_interval == 0
+    #                         and i >= moe_layer_start_index
+    #                         and i <= moe_layer_end_index
+    #                     ):
+    #                         moe_num_experts = (
+    #                             sum(config.text_config.moe_num_experts)
+    #                             if config.text_config.multimodel_experts
+    #                             else config.text_config.moe_num_experts
+    #                         )
+    #                         if (
+    #                             moe_num_experts
+    #                             and moe_num_experts > 0
+    #                             and "shared_experts" not in key
+    #                         ):
+    #                             for expert_id in range(moe_num_experts):
+    #                                 _key = key.replace(
+    #                                     "layers.0.mlp",
+    #                                     f"layers.{i}.mlp.experts.{expert_id}",
+    #                                 )
+    #                                 if not moe_in_mp:
+    #                                     final_actions[_key] = action
+    #                         else:
+    #                             final_actions[
+    #                                 key.replace("layers.0.", f"layers.{i}.")
+    #                             ] = action
+    #                     else:
+    #                         final_actions[key.replace("layers.0.", f"layers.{i}.")] = (
+    #                             action
+    #                         )
+    #             elif "mtp_block.0." in key:
+    #                 for i in range(config.text_config.num_nextn_predict_layers):
+    #                     newkey = key.replace("mtp_block.0.", f"mtp_block.{i}.")
+    #                     final_actions[newkey] = action
+    #             else:
+    #                 final_actions[key] = action
+    #         return final_actions
+
+    #     mappings = get_tensor_parallel_split_mappings(config.text_config.num_hidden_layers)
+    #     return mappings
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):
-        """Generate tensor parallel mappings for model conversion.
+        """Generate tensor parallel mappings for model conversion."""
 
-        Args:
-            config (Ernie4_5_MoeConfig): Model configuration.
-            is_split (bool): Whether to generate split mappings (True)
-                            or merge mappings (False). Defaults to True.
-
-        Returns:
-            Dict[str, Callable[[Any], Any]]: Dictionary mapping parameter names
-                to their corresponding split/merge functions for tensor parallelism.
-        """
-
-        from paddleformers.transformers.conversion_utils import split_or_merge_func
+        from ...conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
             is_split=is_split,
@@ -864,280 +1179,111 @@ class Ernie4_5_PretrainedModel(PretrainedModel):
             num_attention_heads=config.text_config.num_attention_heads,
         )
 
-        def gqa_qkv_split_func(
-            weight,
-            tensor_parallel_degree,
-            tensor_parallel_rank,
-            num_attention_heads,
-            num_key_value_heads,
-            head_dim,
-            is_quant=False,
-            is_split=True,
-        ):
-            if is_quant:
-                weight = weight.T
+        LAYER_COLWISE = [
+            "self_attn.q_proj.weight",
+            "self_attn.k_proj.weight",
+            "self_attn.v_proj.weight",
+            "mlp.up_proj.weight",
+            "mlp.gate_proj.weight",
+        ]
+        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
 
-            def get_shape(tensor):
-                return (
-                    tensor.get_shape() if hasattr(tensor, "get_shape") else tensor.shape
-                )
+        BIAS_KEYS = [
+            "self_attn.q_proj.bias",
+            "self_attn.k_proj.bias",
+            "self_attn.v_proj.bias",
+            "mlp.gate_proj.bias",
+            "mlp.up_proj.bias",
+            "self_attn.o_proj.bias",
+            "mlp.down_proj.bias",
+            "lm_head.bias",
+        ]
+        SHARED_EXPERTS_COLWISE_KEYS = ["up_proj.weight", "gate_proj.weight"]
+        SHARED_EXPERTS_ROWWISE_KEYS = ["down_proj.weight"]
 
-            def slice_tensor(tensor, start, end):
-                shape = get_shape(tensor)
-                if len(shape) == 1:
-                    return tensor[start:end]
-                else:
-                    return tensor[..., start:end]
-
-            q_end = num_attention_heads * head_dim
-            k_end = q_end + num_key_value_heads * head_dim
-            v_end = k_end + num_key_value_heads * head_dim
-
-            q = slice_tensor(weight, 0, q_end)
-            k = slice_tensor(weight, q_end, k_end)
-            v = slice_tensor(weight, k_end, v_end)
-
-            def split_tensor(tensor, degree):
-                shape = get_shape(tensor)
-                size = shape[-1]
-                block_size = size // degree
-                if hasattr(tensor, "get_shape"):
-                    return [
-                        slice_tensor(tensor, i * block_size, (i + 1) * block_size)
-                        for i in range(degree)
-                    ]
-                else:
-                    return np.split(tensor, degree, axis=-1)
-
-            q_list = split_tensor(q, tensor_parallel_degree)
-            k_list = split_tensor(k, tensor_parallel_degree)
-            v_list = split_tensor(v, tensor_parallel_degree)
-
-            if tensor_parallel_rank is None:
-                out = [
-                    np.concatenate([q_i, k_i, v_i], axis=-1)
-                    for q_i, k_i, v_i in zip(q_list, k_list, v_list)
-                ]
-            else:
-                out = np.concatenate(
-                    [
-                        q_list[tensor_parallel_rank],
-                        k_list[tensor_parallel_rank],
-                        v_list[tensor_parallel_rank],
-                    ],
-                    axis=-1,
-                )
-            if is_quant:
-                out = out.T
-            return out
-
-        def gqa_qkv_merge_func(
-            weight_list,
-            num_attention_heads,
-            num_key_value_heads,
-            head_dim,
-            is_quant=False,
-            is_split=False,
-        ):
-            tensor_parallel_degree = len(weight_list)
-            num_attention_heads = num_attention_heads // tensor_parallel_degree
-            num_key_value_heads = num_key_value_heads // tensor_parallel_degree
-
-            is_paddle_tensor = not isinstance(weight_list[0], np.ndarray)
-
-            def get_shape(tensor):
-                return (
-                    tensor.get_shape() if hasattr(tensor, "get_shape") else tensor.shape
-                )
-
-            def slice_tensor(tensor, start, end):
-                if len(get_shape(tensor)) == 1:
-                    return tensor[start:end]
-                else:
-                    return tensor[..., start:end]
-
-            q_list, k_list, v_list = [], [], []
-
-            for weight in weight_list:
-                if is_quant:
-                    weight = weight.T
-                q_end = num_attention_heads * head_dim
-                k_end = q_end + num_key_value_heads * head_dim
-                v_end = k_end + num_key_value_heads * head_dim
-
-                q = slice_tensor(weight, 0, q_end)
-                k = slice_tensor(weight, q_end, k_end)
-                v = slice_tensor(weight, k_end, v_end)
-
-                q_list.append(q)
-                k_list.append(k)
-                v_list.append(v)
-
-            merged = q_list + k_list + v_list
-
-            if is_paddle_tensor:
-                tensor = paddle.concat(merged, axis=-1)
-                if tensor.place.is_gpu_place():
-                    tensor = tensor._copy_to(paddle.CUDAPinnedPlace(), False)
-
-            else:
-                tensor = np.concatenate(merged, axis=-1)
-            if is_quant:
-                tensor = tensor.T
-            return tensor
-
-        if (
-            config.text_config.num_key_value_heads is not None
-            and config.text_config.num_key_value_heads != config.text_config.num_attention_heads
-        ):
-            if is_split:
-                qkv_fn = partial(
-                    gqa_qkv_split_func,
-                    tensor_parallel_degree=config.tensor_parallel_degree,
-                    tensor_parallel_rank=config.tensor_parallel_rank,
-                    num_attention_heads=config.text_config.num_attention_heads,
-                    num_key_value_heads=config.text_config.num_key_value_heads,
-                    head_dim=(
-                        config.text_config.hidden_size // config.text_config.num_attention_heads
-                        if getattr(config, "head_dim", None) is None
-                        else config.head_dim
-                    ),
-                    is_quant=False,
-                    is_split=True,
-                )
-            else:
-                qkv_fn = partial(
-                    gqa_qkv_merge_func,
-                    num_attention_heads=config.text_config.num_attention_heads,
-                    num_key_value_heads=config.text_config.num_key_value_heads,
-                    head_dim=(
-                        config.text_config.hidden_size // config.text_config.num_attention_heads
-                        if getattr(config, "head_dim", None) is None
-                        else config.head_dim
-                    ),
-                    is_quant=False,
-                    is_split=False,
-                )
-        else:
-            qkv_fn = partial(fn, is_column=True)
-
-        moe_layer_start_index = (
-            min(config.text_config.moe_layer_start_index)
-            if isinstance(config.text_config.moe_layer_start_index, (tuple, list))
-            else config.text_config.moe_layer_start_index
-        )
-        moe_layer_end_index = (
-            max(config.text_config.moe_layer_end_index)
-            if isinstance(config.text_config.moe_layer_end_index, (tuple, list))
-            else config.text_config.moe_layer_end_index
-        )
-
-        def get_tensor_parallel_split_mappings(num_hidden_layers):
-            final_actions = {}
-
-            base_actions = {
-                # Column Linear
-                "layers.0.self_attn.qkv_proj.weight": qkv_fn,
-                "layers.0.mlp.up_gate_proj.weight": partial(
-                    fn, is_column=True, is_naive_2fuse=True
-                ),
-                "lm_head.weight": partial(fn, is_column=not config.text_config.tie_word_embeddings),
-                # Row Linear
+        def make_base_actions():
+            actions = {
+                "lm_head.weight": partial(fn, is_column=False),
                 "embed_tokens.weight": partial(fn, is_column=False),
-                "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
-                "layers.0.mlp.down_proj.weight": partial(fn, is_column=False),
             }
-            if config.text_config.moe_num_shared_experts > 0:
-                base_actions.update(
+            for layer_idx in range(config.text_config.num_hidden_layers):
+                actions.update(
                     {
-                        "layers.0.mlp.shared_experts.up_gate_proj.weight": partial(
-                            fn, is_column=True, is_naive_2fuse=True
-                        ),
-                        "layers.0.mlp.shared_experts.down_proj.weight": partial(
-                            fn, is_column=False
-                        ),
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                        for k in LAYER_COLWISE
                     }
                 )
-            if config.text_config.num_nextn_predict_layers > 0:
-                base_actions.update(
+                actions.update(
                     {
-                        "mtp_block.0.mlp.up_gate_proj.weight": partial(
-                            fn, is_column=True, is_naive_2fuse=True
-                        ),
-                        "mtp_block.0.self_attn.qkv_proj.weight": qkv_fn,
-                        "mtp_block.0.mlp.down_proj.weight": partial(
-                            fn, is_column=False
-                        ),
-                        "mtp_block.0.self_attn.o_proj.weight": partial(
-                            fn, is_column=False
-                        ),
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
+                        for k in LAYER_ROWWISE
                     }
                 )
-            if config.text_config.use_bias:
-                base_actions.update(
-                    {
-                        # Column Linear
-                        "layers.0.self_attn.qkv_proj.bias": qkv_fn,
-                        "layers.0.mlp.up_gate_proj.bias": partial(
-                            fn, is_column=True, is_naive_2fuse=True
-                        ),
-                        "layers.0.mlp.down_proj.bias": lambda x: x[
-                            :
-                        ],  # convert PySafeSlice to ndarray.
-                        "lm_head.bias": partial(fn, is_column=True),
-                    }
-                )
+                # bias
+                if config.text_config.use_bias:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                            for b in BIAS_KEYS
+                        }
+                    )
+            return actions
 
-            moe_group = (
-                config.moe_group
-                if isinstance(config.moe_group, str)
-                else config.moe_group_origin
-            )
+        def expand_actions(base_actions, num_layers):
+            extend_action = {}
+            moe_group = config.moe_group if isinstance(config.moe_group, str) else config.moe_group_origin
             moe_in_mp = moe_group in {"mp", "model", "tp"}
-            for key, action in base_actions.items():
-                if "layers.0." in key:
-                    for i in range(num_hidden_layers):
-                        newkey = key.replace("layers.0.", f"layers.{i}.")
-                        if (
-                            "mlp" in key
-                            and (i + 1) % config.text_config.moe_layer_interval == 0
-                            and i >= moe_layer_start_index
-                            and i <= moe_layer_end_index
-                        ):
-                            moe_num_experts = (
-                                sum(config.text_config.moe_num_experts)
-                                if config.text_config.multimodel_experts
-                                else config.text_config.moe_num_experts
-                            )
-                            if (
-                                moe_num_experts
-                                and moe_num_experts > 0
-                                and "shared_experts" not in key
-                            ):
-                                for expert_id in range(moe_num_experts):
-                                    _key = key.replace(
-                                        "layers.0.mlp",
-                                        f"layers.{i}.mlp.experts.{expert_id}",
-                                    )
-                                    if not moe_in_mp:
-                                        final_actions[_key] = action
-                            else:
-                                final_actions[
-                                    key.replace("layers.0.", f"layers.{i}.")
-                                ] = action
-                        else:
-                            final_actions[key.replace("layers.0.", f"layers.{i}.")] = (
-                                action
-                            )
-                elif "mtp_block.0." in key:
-                    for i in range(config.text_config.num_nextn_predict_layers):
-                        newkey = key.replace("mtp_block.0.", f"mtp_block.{i}.")
-                        final_actions[newkey] = action
-                else:
-                    final_actions[key] = action
-            return final_actions
 
-        mappings = get_tensor_parallel_split_mappings(config.text_config.num_hidden_layers)
+            extend_key_prefix = f"{cls.base_model_prefix}.layers.0"
+
+            for i in range(num_layers):
+                # skip non-moe layers
+                if (
+                    ((i + 1) % config.text_config.moe_layer_interval != 0)
+                    or i < config.text_config.moe_layer_start_index
+                    or i > config.text_config.moe_layer_end_index
+                ):
+                    continue
+                experts_newkey = extend_key_prefix.replace("layers.0", f"layers.{i}.mlp.experts")
+                expert_type = ["text_moe.experts", "vision_moe.experts"]
+
+                if isinstance(config.text_config.moe_num_experts, int):
+                    moe_num_experts = [config.text_config.moe_num_experts, config.text_config.moe_num_experts]
+                else:
+                    moe_num_experts = config.text_config.moe_num_experts
+                assert len(moe_num_experts) == 2, "moe_num_experts should be a list of length 2"
+                for j in range(2):
+                    if moe_num_experts[j] > 0:
+                        moe_expert_newkey = experts_newkey.replace("experts", expert_type[j])
+                        for eid in range(moe_num_experts[j]):
+                            for key in LAYER_COLWISE:
+                                exp_key = f"{moe_expert_newkey}.{eid}.{key}"
+                                action = partial(fn, is_column=True)
+                                if not moe_in_mp:
+                                    extend_action[exp_key] = action
+
+                            for key in LAYER_ROWWISE:
+                                exp_key = f"{moe_expert_newkey}.{eid}.{key}"
+                                action = partial(fn, is_column=False)
+                                if not moe_in_mp:
+                                    extend_action[exp_key] = action
+
+                if config.text_config.moe_num_shared_experts > 0:
+                    shared_expert_newkey = extend_key_prefix.replace("layers.0", f"layers.{i}.mlp.shared_experts")
+                    for key in SHARED_EXPERTS_COLWISE_KEYS:
+                        exp_key = f"{shared_expert_newkey}.{key}"
+                        action = partial(fn, is_column=True)
+                        extend_action[exp_key] = action
+
+                    for key in SHARED_EXPERTS_ROWWISE_KEYS:
+                        exp_key = f"{shared_expert_newkey}.{key}"
+                        action = partial(fn, is_column=False)
+                        extend_action[exp_key] = action
+            extend_action.update(base_actions)
+            return extend_action
+
+        base_actions = make_base_actions()
+        mappings = expand_actions(base_actions, config.text_config.num_hidden_layers)
         return mappings
 
 
@@ -1742,6 +1888,21 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
         return loss, loss_sum
 
 
+class Ernie4_5_VLModel(Ernie4_5_PretrainedModel):
+    """Ernie4_5_VLModel"""
+
+    def __init__(self, config):
+        """
+        Initialize the ERNIE VL model.
+
+        Args:
+            config (dict): Model configuration.
+        """
+        super().__init__(config)
+
+        self.language_model = Ernie4_5_Model(config)
+
+
 class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
     """ERNIE Mixture of Experts (MoE) model for causal language modeling."""
 
@@ -1764,7 +1925,8 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
         )
         config.text_config.initializer_range = new_initializer_range
         self.config = config
-        self.ernie = Ernie4_5_Model(config)
+        # self.model.language_model = Ernie4_5_Model(config)
+        self.model = Ernie4_5_VLModel(config)
         self.lm_head = Ernie4_5_MoeLMHead(config)
         if self.config.dpo_config is not None:
             self.criterion = ErnieDPOCriterion(config)
@@ -1797,11 +1959,11 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
 
     def get_input_embeddings(self):
         """Returns the input embeddings layer."""
-        return self.ernie.embed_tokens
+        return self.model.language_model.embed_tokens
 
     def set_input_embeddings(self, value):
         """Sets the input embeddings layer."""
-        self.ernie.embed_tokens = value
+        self.model.language_model.embed_tokens = value
 
     def get_output_embeddings(self):
         """Returns the output embeddings (LM head)."""
@@ -1813,7 +1975,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
 
     def set_decoder(self, decoder):
         """Sets the ERNIE decoder model."""
-        self.ernie = decoder
+        self.model.language_model = decoder
 
     def get_decoder(self):
         """Get the transformer decoder.
@@ -1821,7 +1983,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
         Returns:
             nn.Layer: The decoder module
         """
-        return self.ernie
+        return self.model.language_model
 
     def prepare_attention_mask_for_generation(
         self, input_ids, pad_token_id, eos_token_id
@@ -2026,7 +2188,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
 
-        outputs = self.ernie(
+        outputs = self.model.language_model(
             input_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,

@@ -933,6 +933,11 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
                 #     f"found vistual token in ids, but `mm_vocab_size` == 0, "
                 #     f"ids:{input_ids}, max_text_id={self.config.max_text_id} "
                 # )
+                # paddle.save(image_features, 
+                #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/after_reample_image_features_{}.pdtensor".format(self.config.tensor_parallel_rank))
+                # paddle.save(inputs_embeds, 
+                #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/before_inputs_embeds_{}.pdtensor".format(self.config.tensor_parallel_rank))
+                
                 image_indices = paddle.nonzero(image_mask.flatten()).flatten()
                 image_features = image_features.reshape([-1, image_features.shape[-1]])
                 inputs_embeds = paddle.scatter_(
@@ -966,7 +971,13 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         fake_tensor = paddle.zeros([])
         fake_tensor.stop_gradient = False
 
+        # paddle.save(image_features, 
+        #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/before_reample_image_features_{}.pdtensor".format(self.config.tensor_parallel_rank))
+        
         inputs_embeds = fwd(image_features, fake_tensor)
+        # paddle.save(inputs_embeds, 
+        #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/after_inputs_embeds_{}.pdtensor".format(self.config.tensor_parallel_rank))
+        
 
         # modify video token type to image token type for expert gating
         token_type_ids[token_type_ids == TokenType.video] = TokenType.image
@@ -1057,6 +1068,7 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
                 False,  # output_gate_logits
             )
         else:
+            # print("before decode hidden_states: ", hidden_states)
             hidden_states = super().forward(
                 hidden_states,
                 None,  # attention_mask,
@@ -1068,6 +1080,13 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
                 False,  # use-cache
                 False,  # output_gate_logits
             )
+        # print("ErnieDecoderLayer hidden_states: ", hidden_states)
+        # paddle.save(hidden_states, 
+        #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/hidden_states_{}.pdtensor".format(self.config.tensor_parallel_rank))
+        
+        # import time
+        # time.sleep(10)
+        # exit()
         ret = (token_type_ids, hidden_states)
         if position_ids is not None:
             ret += (position_ids.clone(),)
@@ -1091,6 +1110,7 @@ class LayerNormPipe(LayerNorm):
         token_type_ids, hidden_states, *_ = args
         hidden_states = super().forward(hidden_states)
         token_type_ids.stop_gradient = True
+        # print("LayerNormPipe hidden_states: ", hidden_states)
         return token_type_ids, hidden_states
 
 
@@ -1108,6 +1128,13 @@ class RMSNormPipe(RMSNorm):
         token_type_ids, hidden_states, *_ = args
         hidden_states = super().forward(hidden_states)
         token_type_ids.stop_gradient = True
+        # print("RMSNormPipe hidden_states: ", hidden_states)
+        # paddle.save(hidden_states, 
+        #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/rms_hidden_states_{}.pdtensor".format(self.config.tensor_parallel_rank))
+        
+        # import time
+        # time.sleep(10)
+        # exit()
         return token_type_ids, hidden_states
 
 
@@ -1312,6 +1339,13 @@ def get_len_and_offset(input_len, group):
     return length_list, offset_list
 
 
+class Ernie4_5_VLModel(nn.Layer):
+    """Ernie4_5_VLModel"""
+
+    def __init__(self, config):
+        super(Ernie4_5_VLModel, self).__init__()
+
+
 class Ernie4_5_VLMoeForConditionalGenerationPipe(
     PipelinePretrainedModel, PipelineLayer
 ):
@@ -1324,6 +1358,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
     _resolve_prefix_keys = Ernie4_5_VLMoeForConditionalGeneration._resolve_prefix_keys
     _init_weights = Ernie4_5_VLMoeForConditionalGeneration._init_weights
     _keep_in_fp32_modules = Ernie4_5_VLMoeForConditionalGeneration._keep_in_fp32_modules
+    transpose_weight_keys = Ernie4_5_VLMoeForConditionalGeneration.transpose_weight_keys
 
     def _prepare_pipeline_inputs_func(self, data: Union[List, Dict]):
         """
@@ -1433,7 +1468,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
                 token_type_ids_shifted
             ) = labels = audio_labels = inbatch_pack_offset = None
 
-        if self.vision_model is None:
+        if self.model.vision_tower is None:
             images = None
             global_grid_thw = None
             return multimodal_data_provider(
@@ -1487,7 +1522,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
         grid_thw = paddle.concat(grid_thw) if len(grid_thw) else None  # list -> tensor
 
         # start pp data balance
-        pp_data_balance = getattr(self.vision_model, "pp_data_balance", False)
+        pp_data_balance = getattr(self.model.vision_tower, "pp_data_balance", False)
 
         if (
             self.balanced_image_preprocess
@@ -1506,7 +1541,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
         if pp_data_balance:
             # step1: get some infos, like seqlen, grid_thw, for current sort and later restore
             seq_list, seq_idx_list = get_len_and_offset(images.shape[0], dp_group)
-            self.vision_model.seq_list = seq_idx_list
+            self.model.vision_tower.seq_list = seq_idx_list
 
             grid_thw = grid_thw[grid_thw > 0].reshape([-1, 3])
             grid_thw = F.pad(
@@ -1563,8 +1598,8 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
             sorted_idx = paddle.to_tensor(sorted_idx, dtype=img_idx.dtype)
 
             assert sorted_thw.shape[1] == 5, f"{sorted_thw.shape}"
-            self.vision_model.sorted_thw = sorted_thw.clone()
-            self.vision_model.sorted_idx = sorted_idx.clone()
+            self.model.vision_tower.sorted_thw = sorted_thw.clone()
+            self.model.vision_tower.sorted_idx = sorted_idx.clone()
             # data exchange
             new_images, new_thw, new_idx, old_idx = exchange_pp_imgs_with_thw(
                 images,
@@ -1613,7 +1648,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
                 images = images.astype("bfloat16")
             else:
                 assert images.dtype == paddle.bfloat16, images.dtype
-            image_fea = self.vision_model.extract_feature(images, grid_thw)
+            image_fea = self.model.vision_tower.extract_feature(images, grid_thw)
             if self.config.tensor_parallel_degree > 1:
                 if getattr(self.config.vision_config, "variable_resolution", False):
                     S, C = image_fea.shape
@@ -1814,7 +1849,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
                     use_full_recompute=config.recompute,
                     config=config,
                 ),
-                "ernie",
+                "model",
             )
         else:
             self.add_sequential_layer(
@@ -1823,7 +1858,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
                     config=config,
                     use_full_recompute=config.recompute,
                 ),
-                "ernie",
+                "model",
             )
 
         no_recompute_layers = get_pp_vp_split_layers(config)
@@ -1839,7 +1874,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
                     layer_idx=i,
                     use_full_recompute=_need_full_recompute(i),
                 ),
-                f"ernie.layers.{i}",
+                f"model.language_model.layers.{i}",
             )
 
         for i in range(config.text_config.add_tail_layers):
@@ -1847,14 +1882,14 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
                 LayerDesc(
                     EmptyLayer,
                 ),
-                f"empty.layers.{i+config.text_config.num_hidden_layers}",
+                f"model.empty.layers.{i+config.text_config.num_hidden_layers}",
             )
 
         self.add_sequential_layer(
             LayerDesc(
                 RMSNormPipe if config.text_config.use_rmsnorm else LayerNormPipe, config=config
             ),
-            "ernie.norm",
+            "model.language_model.norm",
         )
 
         if config.text_config.tie_word_embeddings:
@@ -1909,16 +1944,25 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
             },
             num_virtual_pipeline_stages=config.virtual_pp_degree,
         )
+        self.model = Ernie4_5_VLModel(self.config)
         self._modality_param_mapping = None
-        vision_model = DFNRopeVisionTransformerPipe(self.config)
-        self.add_vision_model(encoder=vision_model)
+        self.model.vision_tower = DFNRopeVisionTransformerPipe(self.config)
+        # vision_model = DFNRopeVisionTransformerPipe(self.config)
+        # self.add_vision_model(encoder=vision_model)
+        # self.add_sequential_layer(
+        #         LayerDesc(
+        #             DFNRopeVisionTransformerPipe,
+        #             config=self.config,
+        #         ),
+        #         f"model.vision_tower",
+        #     )
 
     def add_vision_model(
         self,
         encoder: nn.Layer,
     ):
         """add_vision_model"""
-        self.vision_model = encoder
+        self.model.vision_tower = encoder
 
     def add_image_preprocess(self, preprocess):
         """add image_preprocess"""
@@ -2003,7 +2047,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
         for name, param in self._modality_param_mapping.get("vit", []):
             logger.info(f"Freezing vision parameter: {name}")
             param.stop_gradient = True
-        self.vision_model.config.freeze_vision = True
+        self.model.vision_tower.config.freeze_vision = True
 
     # Rewrite state dict
     def state_dict(self, *args, **kwargs):

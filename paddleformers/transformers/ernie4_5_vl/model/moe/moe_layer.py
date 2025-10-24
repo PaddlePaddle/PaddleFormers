@@ -78,17 +78,33 @@ class MoEStatics(nn.Layer):
             num_experts_groups = (
                 len(config.text_config.moe_num_experts) if config.text_config.multimodel_experts else 1
             )
-            p = self.create_parameter(
-                shape=[num_experts_groups, num_experts],
-                dtype="float32",
-                is_bias=True,
-                attr=paddle.ParamAttr(
-                    name=paddle.utils.unique_name.generate("corr_bias")
-                ),
-            )
-            p.stop_gradient = True
-            self.e_score_correction_bias = p
-            self.e_score_correction_bias.is_distributed = True
+            # p = self.create_parameter(
+            #     shape=[num_experts_groups, num_experts],
+            #     dtype="float32",
+            #     is_bias=True,
+            #     attr=paddle.ParamAttr(
+            #         name=paddle.utils.unique_name.generate("corr_bias")
+            #     ),
+            # )
+            # p.stop_gradient = True
+            # self.e_score_correction_bias = p
+            p_list = []
+            for i in range(num_experts_groups):
+                p = self.create_parameter(
+                    shape=[1, num_experts],
+                    dtype="float32",
+                    is_bias=True,
+                    attr=paddle.ParamAttr(
+                        name=paddle.utils.unique_name.generate("corr_bias")
+                    ),
+                )
+                p.stop_gradient = True
+                p.is_distributed = True
+                p_list.append(p)
+            self.e_score_correction_bias_list = (lambda: p_list)
+            # self.e_score_correction_bias = paddle.concat(p_list, axis=0)
+            self.e_score_correction_bias = p_list
+            # self.e_score_correction_bias.is_distributed = True
             p = paddle.zeros(
                 shape=[num_experts_groups, num_experts],
                 dtype="int64",
@@ -394,6 +410,78 @@ def manual_backward(f: Callable, is_first_fwd: bool, *args: List[Any]):
     return bwd_f, out
 
 
+class ModuleGate(nn.Layer):
+    """
+    Gate for different module.
+    """
+
+    def __init__(self, gate_weight):
+        super().__init__()
+        self.weight = gate_weight
+        # use fp32 pecison in amp
+        self._cast_to_low_precision = False
+        self._cast_to_low_precison = False
+        # p = self.create_parameter(
+        #     shape=gate_weight.shape,
+        #     dtype=gate_weight.dtype,
+        # )
+        # self.add_parameter(
+        #     "weight",
+        #     p,
+        # )
+
+
+class ModuleMOESTATICS(nn.Layer):
+    """
+    Statistics for different module.
+    """
+
+    def __init__(self, e_score_correction_bias):
+        super().__init__()
+        self.e_score_correction_bias = e_score_correction_bias
+        # use fp32 pecison in amp
+        self._cast_to_low_precision = False
+        self._cast_to_low_precison = False
+        # p = self.create_parameter(
+        #     shape=e_score_correction_bias.shape,
+        #     dtype=e_score_correction_bias.dtype,
+        # )
+        # self.add_parameter(
+        #     "e_score_correction_bias",
+        #     p,
+        # )
+
+
+class ModuleMOELayer(nn.Layer):
+    """
+    Mixture of Experts layer for different module.
+    """
+
+    def __init__(
+        self, 
+        gate_weight,
+        experts: List[nn.Layer],
+        e_score_correction_bias=None,
+        ):
+        super().__init__()
+        self.gate = ModuleGate(gate_weight)
+        # gate_weight = paddle.create_parameter(
+        #     shape=gate_weight.shape,
+        #     dtype=gate_weight.dtype,
+        #     default_initializer=nn.initializer.Assign(gate_weight)
+        # )
+        # self.gate.weight = gate_weight
+        self.experts = experts
+        if e_score_correction_bias is not None:
+            self.moe_statics = ModuleMOESTATICS(e_score_correction_bias)
+            # e_score_correction_bias = paddle.create_parameter(
+            #     shape=e_score_correction_bias.shape,
+            #     dtype=e_score_correction_bias.dtype,
+            #     default_initializer=nn.initializer.Assign(e_score_correction_bias)
+            # )
+            # self.moe_statics.e_score_correction_bias = e_score_correction_bias
+
+
 class MOELayer(nn.Layer):
     """
     Mixture of Experts layer implementation based on GShard paper.
@@ -428,28 +516,32 @@ class MOELayer(nn.Layer):
             moe_statics: MoE statistics tracking object
         """
         super().__init__()
-        self.gate = gate
+        # self.gate = gate
+        self.gate = (lambda: gate)
         self.layer_idx = layer_idx
         self.recompute = recompute
-        for p in self.gate.parameters():
+        for p in self.gate().parameters():
             p.is_gate = True
         if isinstance(experts, nn.LayerList):
-            self.experts = experts
+            # self.experts = experts
+            self.experts = (lambda: experts)
         else:
             logger.info(f"using fused experts, type={type(experts)}")
-            self.experts = experts
+            # self.experts = experts
+            self.experts = (lambda: experts)
         self.shared_experts = shared_experts
 
         self.group = group
         self.k = k
         self.all_to_all_dropout = all_to_all_dropout
         self.use_correction_bias = moe_statics is not None
-        self.moe_statics = moe_statics
+        # self.moe_statics = moe_statics
+        self.moe_statics = (lambda: moe_statics)
         if self.use_correction_bias:
             logger.info(
-                f"using correction bias, aux-coef:{self.gate.config.moe_aux_loss_lambda}"
+                f"using correction bias, aux-coef:{self.gate().config.moe_aux_loss_lambda}"
             )
-            assert self.gate.config.moe_use_aux_free
+            assert self.gate().config.moe_use_aux_free
 
         self.is_mp_moe = (
             hasattr(fleet.fleet, "_hcg")
@@ -475,7 +567,7 @@ class MOELayer(nn.Layer):
         self.multimodal_experts = (
             isinstance(moe_num_experts, (tuple, list)) and len(moe_num_experts) > 1
         )
-        self.num_local_experts = len(self.experts) // self.world_size
+        self.num_local_experts = len(self.experts()) // self.world_size
         if self.multimodal_experts:
             self.num_local_multimodal_experts = [
                 num // self.world_size for num in moe_num_experts
@@ -483,10 +575,26 @@ class MOELayer(nn.Layer):
             self.multimodal_expert_index = [0] + list(
                 itertools.accumulate(moe_num_experts)
             )
+            if len(self.experts()) == sum(moe_num_experts):
+                if moe_statics:
+                    text_e_score_correction_bias = moe_statics.e_score_correction_bias_list()[0]#.reshape(1, -1)
+                    vision_e_score_correction_bias = moe_statics.e_score_correction_bias_list()[1]#.reshape(1, -1)
+                else:
+                    text_e_score_correction_bias = vision_e_score_correction_bias = None
+                self.text_moe = ModuleMOELayer(
+                    gate_weight=gate.weight,
+                    experts=experts[:moe_num_experts[0]],
+                    e_score_correction_bias=text_e_score_correction_bias,
+                )
+                self.vision_moe = ModuleMOELayer(
+                    gate_weight=gate.weight_1,
+                    experts=experts[moe_num_experts[0]:],
+                    e_score_correction_bias=vision_e_score_correction_bias,
+                )
 
         self.input_preprocess = self.output_postprocess = None
         self.group_experts = group_experts
-        self.config = self.gate.config
+        self.config = self.gate().config
         self.zero = paddle.to_tensor(0, dtype=paddle.float32)
 
     def forward_experts(self, dispatched_input):
@@ -501,7 +609,7 @@ class MOELayer(nn.Layer):
         """
 
         if not self.multimodal_experts:
-            true_experts = self.experts[
+            true_experts = self.experts()[
                 self.rank
                 * self.num_local_experts : (self.rank + 1)
                 * self.num_local_experts
@@ -509,7 +617,7 @@ class MOELayer(nn.Layer):
         else:
             true_experts = []
             for i, num in enumerate(self.num_local_multimodal_experts):
-                current_modal_experts = self.experts[
+                current_modal_experts = self.experts()[
                     self.multimodal_expert_index[i] : self.multimodal_expert_index[
                         i + 1
                     ]
@@ -522,7 +630,7 @@ class MOELayer(nn.Layer):
             [self.world_size, self.num_local_experts, -1, dispatched_input.shape[-1]]
         )  # [e,1,c,m]
         expert_outputs = []
-        if isinstance(self.experts, nn.LayerList):
+        if isinstance(self.experts(), nn.LayerList):
             chunks = dispatched_input.transpose([1, 0, 2, 3]).contiguous().unbind(0)
             assert len(chunks) == len(true_experts), (len(chunks), len(true_experts))
             for chunk, expert in zip(chunks, true_experts):
@@ -536,7 +644,7 @@ class MOELayer(nn.Layer):
             dispatched_input.contiguous()
             orig_shape = dispatched_input.shape
             chunks = dispatched_input.reshape([orig_shape[0], -1, orig_shape[-1]])
-            chunks = self.experts(chunks)
+            chunks = self.experts()(chunks)
             chunks = chunks.reshape(orig_shape[:-1] + [chunks.shape[-1]]).unbind(0)
             expert_outputs += chunks
         expert_output = paddle.stack(expert_outputs, axis=1)  # [ecm]
@@ -555,7 +663,7 @@ class MOELayer(nn.Layer):
             tuple: (processed probabilities, max probabilities)
         """
         k = self.k
-        experts_type_ids = self.gate.experts_type_ids
+        experts_type_ids = self.gate().experts_type_ids
         use_hard_gate = self.config.text_config.moe_use_hard_gate
         max_prob = None
 
@@ -584,7 +692,7 @@ class MOELayer(nn.Layer):
                     [seq_lm_cpu, -1]
                 )
                 if self.group_experts:
-                    lm_prob = self.gate.act(
+                    lm_prob = self.gate().act(
                         lm_partial_gate_logits.reshape(
                             [lm_partial_gate_logits.shape[0], k, -1]
                         )
@@ -592,7 +700,7 @@ class MOELayer(nn.Layer):
                     max_prob = lm_prob.max(-1, keepdim=True)  # [s_l, k, 1]
                     lm_prob /= max_prob
                 else:
-                    lm_prob = self.gate.act(lm_partial_gate_logits)
+                    lm_prob = self.gate().act(lm_partial_gate_logits)
                 prob = paddle.scatter_nd_add(prob, lm_mask_nonzero, lm_prob.flatten())
             # 处理 mm_prob
             is_mm = offload_helper["mm_mask"][1]
@@ -603,17 +711,17 @@ class MOELayer(nn.Layer):
                 mm_partial_gate_logits = gate_logits.gather_nd(mm_mask_nonzero).reshape(
                     [seq_mm_cpu, -1]
                 )
-                mm_prob = self.gate.act(mm_partial_gate_logits)
+                mm_prob = self.gate().act(mm_partial_gate_logits)
                 prob = paddle.scatter_nd_add(prob, mm_mask_nonzero, mm_prob.flatten())
         else:
             # 处理非硬门和不需要token_type_ids的情况
             if self.group_experts:
-                prob = self.gate.act(gate_logits.reshape([gate_logits.shape[0], k, -1]))
+                prob = self.gate().act(gate_logits.reshape([gate_logits.shape[0], k, -1]))
                 max_prob = prob.max(-1, keepdim=True)
                 prob /= max_prob
                 prob = prob.reshape([prob.shape[0], -1])
             else:
-                prob = self.gate.act(gate_logits)
+                prob = self.gate().act(gate_logits)
         return prob, max_prob
 
     def gate_and_dispatch(self, input, token_type_ids=None):
@@ -637,7 +745,7 @@ class MOELayer(nn.Layer):
             gate_logits,
             capacity,
             router_loss,
-        ) = self.gate(input, *args)
+        ) = self.gate()(input, *args)
         if self.input_preprocess is not None:
             input, gate_logits = self.input_preprocess(input, gate_logits, capacity)
         # capacity no use
@@ -646,7 +754,7 @@ class MOELayer(nn.Layer):
 
         if "corr_bias" in inspect.signature(moe_gate_dispatch).parameters:
             if self.use_correction_bias:
-                compat_args = (self.moe_statics.e_score_correction_bias[0],)
+                compat_args = (self.moe_statics().e_score_correction_bias[0],)
             else:
                 compat_args = (None,)
         else:
@@ -668,13 +776,13 @@ class MOELayer(nn.Layer):
 
         dispatch_mask = paddle.diff(F.pad(dispatch_mask, (1, 0)))
         if self.use_correction_bias:
-            if self.gate.config.text_config.multimodel_experts:
-                for i in range(len(self.moe_statics.expert_usage)):
-                    self.moe_statics.expert_usage[i] += dispatch_mask[
-                        self.gate.experts_type_mask[i]
+            if self.gate().config.text_config.multimodel_experts:
+                for i in range(len(self.moe_statics().expert_usage)):
+                    self.moe_statics().expert_usage[i] += dispatch_mask[
+                        self.gate().experts_type_mask[i]
                     ].detach()
             else:
-                self.moe_statics.expert_usage[0] += dispatch_mask.detach()
+                self.moe_statics().expert_usage[0] += dispatch_mask.detach()
         dispatched_input.stop_gradient = False
         combine_weights_unnorm.stop_gradient = False
         scatter_index.stop_gradient = True
@@ -695,7 +803,7 @@ class MOELayer(nn.Layer):
                 ).squeeze(-1)
                 # gate_prob 进行还原
                 prob = (prob.reshape([p.shape[0], k, -1]) * p).reshape([p.shape[0], -1])
-        if self.gate.norm_gate_logits:
+        if self.gate().norm_gate_logits:
             combine_weights = combine_weights_unnorm / paddle.clip(
                 combine_weights_unnorm.sum(-1, keepdim=True), min=1e-12
             )
@@ -750,8 +858,8 @@ class MOELayer(nn.Layer):
             Tensor: Total router loss
         """
         router_loss, l_aux, orthogonal_loss, zloss = 0.0, None, None, None
-        if self.gate.config.moe_aux_loss_lambda:
-            l_aux = self.gate._cal_aux_loss(
+        if self.gate().config.moe_aux_loss_lambda:
+            l_aux = self.gate()._cal_aux_loss(
                 gate_prob,
                 dispatch_mask,
                 num_experts,
@@ -759,19 +867,19 @@ class MOELayer(nn.Layer):
                 tokens_type_mask,
                 dispatch_tokens_mask,
             )
-            router_loss += self.gate.moe_aux_loss_lambda[token_type or 0] * l_aux
+            router_loss += self.gate().moe_aux_loss_lambda[token_type or 0] * l_aux
         else:
             router_loss += (
                 self.zero * gate_prob[0, 0]
             )  # must use gate prob to avoid zero pointer
-        if self.gate.config.moe_orthogonal_loss_lambda:
-            orthogonal_loss = self.gate._cal_orthogonal_loss(token_type, use_group)
+        if self.gate().config.moe_orthogonal_loss_lambda:
+            orthogonal_loss = self.gate()._cal_orthogonal_loss(token_type, use_group)
             router_loss += (
-                self.gate.moe_orthogonal_loss_lambda[token_type or 0] * orthogonal_loss
+                self.gate().moe_orthogonal_loss_lambda[token_type or 0] * orthogonal_loss
             )
-        if self.gate.config.moe_z_loss_lambda:
-            zloss = self.gate._cal_z_loss(gate_logits, tokens_type_mask)
-            router_loss += self.gate.moe_z_loss_lambda[token_type or 0] * zloss
+        if self.gate().config.moe_z_loss_lambda:
+            zloss = self.gate()._cal_z_loss(gate_logits, tokens_type_mask)
+            router_loss += self.gate().moe_z_loss_lambda[token_type or 0] * zloss
         return router_loss
 
     def calc_router_loss_and_logging(
@@ -799,8 +907,8 @@ class MOELayer(nn.Layer):
             Tensor: Updated router loss
         """
         assert gate_prob is not None
-        if token_type_ids is not None and self.gate.config.text_config.moe_use_hard_gate:  # true
-            if not self.gate.weight.stop_gradient:
+        if token_type_ids is not None and self.gate().config.text_config.moe_use_hard_gate:  # true
+            if not self.gate().weight.stop_gradient:
                 lm_tokens_mask = token_type_ids == 0
                 if offload_helper is not None:
                     is_lm = offload_helper["lm_mask"][1]
@@ -814,24 +922,24 @@ class MOELayer(nn.Layer):
                     )
                     router_loss += self._calc_router_loss(
                         (
-                            dispatch_mask[self.gate.experts_type_mask[0]]
-                            if hasattr(self.gate, "experts_type_mask")
+                            dispatch_mask[self.gate().experts_type_mask[0]]
+                            if hasattr(self.gate(), "experts_type_mask")
                             else dispatch_mask
                         ),
                         (
-                            gate_logits[:, self.gate.experts_type_mask[0]]
-                            if hasattr(self.gate, "experts_type_mask")
+                            gate_logits[:, self.gate().experts_type_mask[0]]
+                            if hasattr(self.gate(), "experts_type_mask")
                             else gate_logits
                         ),
                         (
-                            gate_prob[:, self.gate.experts_type_mask[0]]
-                            if hasattr(self.gate, "experts_type_mask")
+                            gate_prob[:, self.gate().experts_type_mask[0]]
+                            if hasattr(self.gate(), "experts_type_mask")
                             else gate_prob
                         ),
                         (
-                            self.gate.num_experts_list[0]
-                            if hasattr(self.gate, "num_experts_list")
-                            else self.gate.num_experts_tensor
+                            self.gate().num_experts_list[0]
+                            if hasattr(self.gate(), "num_experts_list")
+                            else self.gate().num_experts_tensor
                         ),
                         self.group_experts,
                         self.layer_idx,
@@ -852,10 +960,10 @@ class MOELayer(nn.Layer):
                     else None
                 )
                 router_loss += self._calc_router_loss(
-                    dispatch_mask[self.gate.experts_type_mask[1]],
-                    gate_logits[:, self.gate.experts_type_mask[1]],
-                    gate_prob[:, self.gate.experts_type_mask[1]],
-                    self.gate.num_experts_list[1],
+                    dispatch_mask[self.gate().experts_type_mask[1]],
+                    gate_logits[:, self.gate().experts_type_mask[1]],
+                    gate_prob[:, self.gate().experts_type_mask[1]],
+                    self.gate().num_experts_list[1],
                     False,
                     self.layer_idx,
                     1,
@@ -869,7 +977,7 @@ class MOELayer(nn.Layer):
                 dispatch_mask,
                 gate_logits,
                 gate_prob,
-                self.gate.num_experts_tensor,
+                self.gate().num_experts_tensor,
                 self.group_experts,
                 self.layer_idx,
             )
@@ -909,8 +1017,8 @@ class MOELayer(nn.Layer):
         Returns:
             Tensor: Expert output
         """
-        assert isinstance(self.experts, nn.LayerList)
-        return self.experts[stage_id](dispatched_input)
+        assert isinstance(self.experts(), nn.LayerList)
+        return self.experts()[stage_id](dispatched_input)
 
     def all2all_expert_overlap(self, x, group):
         """all2all_expert_overlap"""
@@ -972,11 +1080,11 @@ class MOELayer(nn.Layer):
                 token_type_ids = ScatterOp.apply(token_type_ids)
                 token_type_ids.stop_gradient = True
 
-        assert self.gate is not None
+        assert self.gate() is not None
         if hasattr(self, "rng") and self.rng.random() < self.all_to_all_dropout:
             orig_shape_2 = input.shape
             output = self.forward_experts(input)
-            output += self.gate.weight.sum() * 0.0  # hack for grad
+            output += self.gate().weight.sum() * 0.0  # hack for grad
             output = output.reshape(orig_shape or orig_shape_2)  # [e*1,c,m]
             return output, None, 0
 

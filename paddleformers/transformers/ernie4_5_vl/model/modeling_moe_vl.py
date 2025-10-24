@@ -835,6 +835,25 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
 
     config_class = Ernie4_5_VLMoeConfig
     main_input_name = "pixel_values"
+    transpose_weight_keys = [
+        "spatial_linear.0",
+        "temporal_linear.0",
+        "spatial_linear.2",
+        "temporal_linear.2",
+        "mlp",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "gate",
+        "proj",
+        "qkv",
+        "fc1",
+        "fc2",
+    ]
 
     def __init__(self, config: Ernie4_5_VLMoeConfig):
         """
@@ -859,7 +878,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         else:
             self.mm_embed_tokens = None
 
-        self.ernie.resampler_model = VariableResolutionResamplerModel(
+        self.model.resampler_model = VariableResolutionResamplerModel(
             config.vision_config.hidden_size,
             config.text_config.hidden_size,
             config.spatial_conv_size,
@@ -870,10 +889,13 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         self._modality_param_mapping = None
         self.image_preprocess = None
         self.lm_head = Ernie4_5_MoeVLHead(config)
-        vision_model = DFNRopeVisionTransformerPretrainedModel(
+        # vision_model = DFNRopeVisionTransformerPretrainedModel(
+        #     config=config.vision_config
+        # )
+        # self.add_vision_model(vision_model)
+        self.model.vision_tower = DFNRopeVisionTransformerPretrainedModel(
             config=config.vision_config
         )
-        self.add_vision_model(vision_model)
 
         self.tie_weights()  # maybe weight share
 
@@ -882,7 +904,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         encoder: nn.Layer,
     ):
         """add_vision_model"""
-        self.vision_model = encoder
+        self.model.vision_tower = encoder
         self._set_modality_param_mapping()
 
     def add_image_preprocess(self, preprocess):
@@ -915,7 +937,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             )
         )
         mappings.update(
-            {f"resampler_model.{k}": v for k, v in resampler_actions.items()}
+            {f"model.resampler_model.{k}": v for k, v in resampler_actions.items()}
         )
 
         if config.mm_vocab_size > 0:
@@ -978,7 +1000,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         for name, param, _ in self._modality_param_mapping.get("vit", []):
             logger.info(f"Freezing vision parameter: {name}")
             param.stop_gradient = True
-        self.vision_model.config.freeze_vision = True
+        self.model.vision_tower.config.freeze_vision = True
 
     def vision_forward(
         self,
@@ -1005,7 +1027,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                 [0, 0, 1, 0],
                 value=1,
             )
-        image_features = self.vision_model.extract_feature(images, grid_thw)
+        image_features = self.model.vision_tower.extract_feature(images, grid_thw)
         return image_features
 
     def vision_mapping_forward(
@@ -1028,7 +1050,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                 token_type_ids == TokenType.image
             ]
         image_mask = input_ids == self.config.im_patch_id
-        image_features = self.ernie.resampler_model(
+        image_features = self.model.resampler_model(
             image_features,
             image_mask,
             token_type_ids_w_video,
@@ -1253,7 +1275,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             ):
                 nonlocal input_ids, token_type_ids_labels, mm_input_ids, image_type_ids
                 """During the backward of this function, the stop_graident attribute of param is reset"""
-                inputs_embeds = self.ernie.embed_tokens(lm_input_ids).astype(
+                inputs_embeds = self.model.language_model.embed_tokens(lm_input_ids).astype(
                     self.embed_tokens.weight.dtype
                 )
                 token_type_ids_w_video = token_type_ids[..., :-1].clone()
@@ -1272,7 +1294,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                 else:
                     pass  # do nothing, should not hang under DygraphShardingOptimizerV2
 
-                outputs = self.ernie(
+                outputs = self.model.language_model(
                     position_ids=position_ids,
                     attention_mask=attention_mask,
                     token_type_ids=token_type_ids,
@@ -1317,7 +1339,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                 freeze_context=freeze_context,
             )
         else:
-            inputs_embeds = self.ernie.embed_tokens(lm_input_ids)
+            inputs_embeds = self.model.language_model.embed_tokens(lm_input_ids)
             token_type_ids_w_video = token_type_ids[..., :-1].clone()
             token_type_ids[token_type_ids == TokenType.video] = TokenType.image
 
@@ -1335,7 +1357,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             else:
                 pass  # do nothing, should not hang under DygraphShardingOptimizerV2
 
-            outputs = self.ernie(
+            outputs = self.model.language_model(
                 position_ids=position_ids,
                 attention_mask=attention_mask,
                 token_type_ids=token_type_ids,  #

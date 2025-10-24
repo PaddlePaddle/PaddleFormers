@@ -278,6 +278,20 @@ def create_skip_config_for_refined_recompute(layer_idx, config):
     return config
 
 
+class Ernie4_5_Embedding(nn.Layer):
+    """Embedding"""
+
+    def __init__(self, config):
+        super(Ernie4_5_Embedding, self).__init__()
+        if config.tensor_parallel_degree > 1:
+            self.embed_tokens = VocabParallelEmbedding(
+                config.text_config.vocab_size,
+                config.text_config.hidden_size,
+            )
+        else:
+            self.embed_tokens = nn.Embedding(config.text_config.vocab_size, config.text_config.hidden_size)
+
+
 class Ernie4_5_EmbeddingPipe(nn.Layer):
     """Extends Ernie4_5_EmbeddingPipe to forward attention_mask through the pipeline."""
 
@@ -293,13 +307,14 @@ class Ernie4_5_EmbeddingPipe(nn.Layer):
 
         super(Ernie4_5_EmbeddingPipe, self).__init__()
         self.use_moe = config.text_config.use_moe
-        if config.tensor_parallel_degree > 1:
-            self.embed_tokens = VocabParallelEmbedding(
-                config.text_config.vocab_size,
-                config.text_config.hidden_size,
-            )
-        else:
-            self.embed_tokens = nn.Embedding(config.text_config.vocab_size, config.text_config.hidden_size)
+        self.language_model = Ernie4_5_Embedding(self.config)
+        # if config.tensor_parallel_degree > 1:
+        #     self.embed_tokens = VocabParallelEmbedding(
+        #         config.text_config.vocab_size,
+        #         config.text_config.hidden_size,
+        #     )
+        # else:
+        #     self.embed_tokens = nn.Embedding(config.text_config.vocab_size, config.text_config.hidden_size)
 
     @property
     def embedding_weight(self):
@@ -309,7 +324,7 @@ class Ernie4_5_EmbeddingPipe(nn.Layer):
         Returns:
             paddle.Tensor: The weight matrix of shape [vocab_size, hidden_size]
         """
-        return self.embed_tokens.weight
+        return self.language_model.embed_tokens.weight
 
     def forward(self, args):
         """
@@ -333,7 +348,7 @@ class Ernie4_5_EmbeddingPipe(nn.Layer):
             args, self.config.text_config.num_nextn_predict_layers > 0
         )
         input_ids.stop_gradient = True
-        emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
+        emb = self.language_model.embed_tokens(input_ids).astype(self.language_model.embed_tokens.weight.dtype)
         if self.config.text_config.num_nextn_predict_layers > 0:
             if self.config.enable_mtp_magic_send:
                 emb = emb[:, : -self.config.text_config.num_nextn_predict_layers, :]
@@ -1096,11 +1111,11 @@ class Ernie4_5_MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     shared_weight_attr="embedding_weight",
                     config=config,
                 ),
-                "ernie",
+                "model",
             )
         else:
             self.add_sequential_layer(
-                LayerDesc(Ernie4_5_EmbeddingPipe, config=config), "ernie"
+                LayerDesc(Ernie4_5_EmbeddingPipe, config=config), "model"
             )
 
         for i in range(config.text_config.num_hidden_layers):
@@ -1110,14 +1125,14 @@ class Ernie4_5_MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     config=create_skip_config_for_refined_recompute(i, config),
                     layer_idx=i,
                 ),
-                f"ernie.layers.{i}",
+                f"model.language_model.layers.{i}",
             )
         for i in range(config.text_config.add_tail_layers):
             self.add_sequential_layer(
                 LayerDesc(
                     EmptyLayer,
                 ),
-                f"empty.layers.{i+config.text_config.num_hidden_layers}",
+                f"model.empty.layers.{i+config.text_config.num_hidden_layers}",
             )
 
         if config.text_config.num_nextn_predict_layers > 0:
@@ -1129,15 +1144,15 @@ class Ernie4_5_MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                         shared_weight_attr="embedding_weight",
                         config=config,
                     ),
-                    "embed_share",
+                    "model.language_model.embed_share",
                 )
-            self.add_sequential_layer(LayerDesc(MTPLayer, config=config), "ernie")
+            self.add_sequential_layer(LayerDesc(MTPLayer, config=config), "model.language_model")
 
         self.add_sequential_layer(
             LayerDesc(
                 RMSNormPipe if config.text_config.use_rmsnorm else LayerNormPipe, config=config
             ),
-            "ernie.norm",
+            "model.language_model.norm",
         )
 
         if config.text_config.tie_word_embeddings:
