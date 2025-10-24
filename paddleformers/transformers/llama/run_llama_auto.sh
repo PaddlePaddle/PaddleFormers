@@ -39,7 +39,7 @@ python -u -m paddle.distributed.launch \
     --virtual_pp_degree 1 \
     --sequence_parallel 0 \
     --use_flash_attention true \
-    --use_fused_rms_norm true \
+    --use_fused_rms_norm false \
     --fuse_attention_ffn true \
     --fuse_attention_qkv true \
     --use_fused_rope true \
@@ -74,6 +74,5 @@ python -u -m paddle.distributed.launch \
     --save_total_limit 2 \
     --device "gpu" \
     --enable_auto_parallel true \
-    --num_hidden_layers 4 \
     --model_type "llama_network" \
     --use_intermediate_api true
