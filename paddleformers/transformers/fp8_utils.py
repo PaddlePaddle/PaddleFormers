@@ -519,7 +519,6 @@ class FP8LinearFunctionBase:
 
         # ===== compute norm grad =====
         dx, d_rms_norm_weight = fused_ln.fused_rms_norm_grad_func(x, norm_w, invar, d_norm_output, norm_eps)
-
         if hasattr(norm_w, "main_grad"):
             if norm_w.main_grad is None:
                 norm_w.main_grad = paddle.zeros(shape=norm_w.shape, dtype=paddle.float32)
