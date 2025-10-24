@@ -375,8 +375,8 @@ class QWenAttention(nn.Layer):
 
         if layer_past is not None:
             past_key, past_value = layer_past[0], layer_past[1]
-            key = paddle.concat([past_key, key], axis=1)
-            value = paddle.concat([past_value, value], axis=1)
+            key = paddle.cat([past_key, key], axis=1)
+            value = paddle.cat([past_value, value], axis=1)
 
         if use_cache:
             present = (key, value)
@@ -552,7 +552,7 @@ class QWenBlock(nn.Layer):
 
 class QWenPretrainedModel(PretrainedModel):
     config_class = QWenConfig
-    base_model_prefix = "qwen"
+    base_model_prefix = "model"
 
     def __init__(self, *inputs, **kwargs):
         super().__init__(*inputs, **kwargs)
@@ -605,12 +605,12 @@ class QWenPretrainedModel(PretrainedModel):
             base_actions = {
                 # Column Linear
                 "lm_head.weight": partial(fn, is_column=True),
-                "qwen.h.0.attn.c_attn.weight": partial(fn, is_column=True, is_naive_3fuse=True),
-                "qwen.h.0.attn.c_attn.bias": partial(fn, is_column=True, is_naive_3fuse=True),
+                "model.h.0.attn.c_attn.weight": partial(fn, is_column=True, is_naive_3fuse=True),
+                "model.h.0.attn.c_attn.bias": partial(fn, is_column=True, is_naive_3fuse=True),
                 # Row Linear
-                "qwen.wte.weight": partial(fn, is_column=False),
-                "qwen.h.0.mlp.c_proj.weight": partial(fn, is_column=False),
-                "qwen.h.0.attn.c_proj.weight": partial(fn, is_column=False),
+                "model.wte.weight": partial(fn, is_column=False),
+                "model.h.0.mlp.c_proj.weight": partial(fn, is_column=False),
+                "model.h.0.attn.c_proj.weight": partial(fn, is_column=False),
             }
 
             if config.fuse_attention_ffn:
@@ -618,8 +618,8 @@ class QWenPretrainedModel(PretrainedModel):
                     fn, is_column=True, is_naive_2fuse=True
                 )
             else:
-                base_actions["qwen.h.0.mlp.w2.weight"] = partial(fn, is_column=True)
-                base_actions["qwen.h.0.mlp.w1.weight"] = partial(fn, is_column=True)
+                base_actions["model.h.0.mlp.w2.weight"] = partial(fn, is_column=True)
+                base_actions["model.h.0.mlp.w1.weight"] = partial(fn, is_column=True)
 
             for key, action in base_actions.items():
                 if "h.0." in key:
@@ -686,7 +686,7 @@ class QWenPretrainedModel(PretrainedModel):
         for mapping in mappings:
             mapping[0] = "transformer." + mapping[0]
             if len(mapping) > 1 and mapping[1] is not None:
-                mapping[1] = "qwen." + mapping[1]
+                mapping[1] = "model." + mapping[1]
 
         if config.architectures is not None:
             if "QWenForCausalLM" in config.architectures or "QWenLMHeadModel" in config.architectures:
@@ -821,7 +821,7 @@ class QWenModel(QWenPretrainedModel):
         # casual mask
         casual_mask = paddle.tril(paddle.ones([batch_size, 1, seq_length, seq_length], dtype="bool"))
         if past_length > 0:
-            casual_mask = paddle.concat(
+            casual_mask = paddle.cat(
                 [paddle.ones([batch_size, 1, seq_length, past_length], dtype="bool"), casual_mask], axis=-1
             )
 
@@ -1055,7 +1055,7 @@ class QWenForCausalLM(QWenPretrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.qwen = QWenModel(config)
+        self.model = QWenModel(config)
         self.lm_head = QWenLMHead(config)
         self.criterion = QWenPretrainingCriterion(config)
 
@@ -1084,13 +1084,13 @@ class QWenForCausalLM(QWenPretrainedModel):
 
         if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
             position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
+            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
 
         # update attention_mask
         if not is_encoder_decoder and "attention_mask" in model_kwargs:
             attention_mask = model_kwargs["attention_mask"]
             if attention_mask is not None and len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.concat(
+                model_kwargs["attention_mask"] = paddle.cat(
                     [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)], axis=-1
                 )
             else:
@@ -1152,7 +1152,7 @@ class QWenForCausalLM(QWenPretrainedModel):
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        transformer_outputs = self.qwen(
+        transformer_outputs = self.model(
             input_ids,
             past_key_values=past_key_values,
             attention_mask=attention_mask,
@@ -1224,7 +1224,7 @@ class RotaryEmbedding(nn.Layer):
             seq = paddle.arange(self._seq_len_cached)
             with paddle.amp.auto_cast(enable=False):
                 freqs = paddle.outer(seq.astype(self.inv_freq.dtype), self.inv_freq)
-            emb = paddle.concat([freqs, freqs], axis=-1)
+            emb = paddle.cat([freqs, freqs], axis=-1)
             self.cos_cached = emb.cos()[None, :, None, :]
             self.sin_cached = emb.sin()[None, :, None, :]
 
@@ -1242,7 +1242,7 @@ def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.concat([-x2, x1], axis=-1)
+    return paddle.cat([-x2, x1], axis=-1)
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None):

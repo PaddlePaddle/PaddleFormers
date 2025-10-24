@@ -20,13 +20,11 @@ from typing import Optional, Union
 
 import paddle
 import paddle.distributed as dist
-import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle import Tensor
-from paddle.common_ops_import import convert_dtype
 from paddle.utils import map_structure
 
-from ..transformers.model_outputs import ModelOutput
+from ..transformers.model_outputs import CausalLMOutputWithPast, ModelOutput
 from ..transformers.utils import get_scale_by_dtype
 from ..utils.log import logger
 from ..utils.masking_utils import _expand_2d_mask, _make_causal_mask
@@ -63,6 +61,35 @@ __all__ = [
     "TopPProcess",
     "get_unfinished_flag",
 ]
+
+
+def _make_sliding_window_mask(input_shape, past_key_values_length=0, window_size=5):
+    """
+    Generate a sliding window mask that restricts each position to only attend to historical positions within the window.
+    Format: [bsz, 1, tgt_seq_len, src_seq_len], where True indicates allowed attention and False indicates masking.
+    """
+    batch_size, seq_length = input_shape
+    # Total sequence length = historical sequence length + current sequence length (for generating complete mask)
+    total_length = past_key_values_length + seq_length
+
+    # Initialize mask with all False values
+    mask = paddle.zeros((seq_length, total_length), dtype=paddle.bool)
+
+    for i in range(seq_length):
+        # Absolute position of current location in the total sequence (including historical sequence)
+        current_pos = past_key_values_length + i
+        # Window start position: max(0, current position - window size + 1)
+        start = max(0, current_pos - window_size + 1)
+        # Window end position: current position (causal mask restriction, cannot exceed self)
+        end = current_pos + 1  # Slice is left closed and right open, so+1
+        # Mark window range as True (allow attention)
+        mask[i, start:end] = True
+
+    # Expand dimensions to [bsz, 1, tgt_seq_len, src_seq_len]
+    mask = mask.unsqueeze(0).unsqueeze(0)
+    # Copy to each sample in batch_size
+    mask = paddle.tile(mask, repeat_times=[batch_size, 1, 1, 1])
+    return mask
 
 
 def get_unfinished_flag(
@@ -356,16 +383,31 @@ class GenerationMixin(object):
         return attention_mask
 
     @staticmethod
-    def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
+    def _prepare_decoder_attention_mask(
+        attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None
+    ):
+        # Step 1: Process input mask to generate basic expanded mask
         if attention_mask is not None:
             # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
             if len(attention_mask.shape) == 2:
                 expanded_attn_mask = _expand_2d_mask(attention_mask, dtype, tgt_length=input_shape[-1])
-                # For decoding phase in generation, seq_length = 1, we don't need to add causal mask
+                # When not generating in single step, need to combine causal mask and sliding window mask
                 if input_shape[-1] > 1:
-                    combined_attention_mask = _make_causal_mask(
-                        input_shape, past_key_values_length=past_key_values_length
-                    )
+                    # Generate basic causal mask (prevent future information leakage)
+                    causal_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
+                    # Generate sliding window mask (limit historical attention range)
+                    if sliding_window_size is not None and sliding_window_size > 0:
+                        window_mask = _make_sliding_window_mask(
+                            input_shape, past_key_values_length=past_key_values_length, window_size=sliding_window_size
+                        )
+                        # Take intersection of sliding window mask and causal mask (satisfy both restrictions)
+                        combined_attention_mask = causal_mask & window_mask
+                    else:
+                        combined_attention_mask = (
+                            causal_mask  # Use causal mask directly when sliding window is disabled
+                        )
+
+                    # Combine with user-provided mask (e.g., padding mask)
                     if get_env_device() in ["npu", "mlu", "intel_hpu"]:
                         expanded_attn_mask = expanded_attn_mask.astype("bool") & combined_attention_mask.astype("bool")
                     else:
@@ -373,12 +415,21 @@ class GenerationMixin(object):
             # [bsz, seq_len, seq_len] -> [bsz, 1, seq_len, seq_len]
             elif len(attention_mask.shape) == 3:
                 expanded_attn_mask = attention_mask.unsqueeze(1).astype("bool")
-            # if attention_mask is already 4-D, do nothing
+            # 4D mask is used directly
             else:
                 expanded_attn_mask = attention_mask
         else:
-            expanded_attn_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
-        # Convert bool attention_mask to float attention mask, which will be added to attention_scores later
+            # When no input mask, generate causal mask + sliding window mask (if enabled)
+            causal_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
+            if sliding_window_size is not None and sliding_window_size > 0:
+                window_mask = _make_sliding_window_mask(
+                    input_shape, past_key_values_length=past_key_values_length, window_size=sliding_window_size
+                )
+                expanded_attn_mask = causal_mask & window_mask
+            else:
+                expanded_attn_mask = causal_mask  # Use causal mask directly when sliding window is disabled
+
+        # Step 2: Convert boolean mask to numerical mask (adapt to different devices)
         if get_env_device() in ["npu", "mlu", "intel_hpu"]:
             x = paddle.to_tensor(0.0, dtype="float32")
             y = paddle.to_tensor(paddle.finfo(dtype).min, dtype="float32")
@@ -493,65 +544,42 @@ class GenerationMixin(object):
 
     @staticmethod
     def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
-        # Update the model inputs during generation.
-        # Note that If `token_type_ids` and `attention_mask` in `model_kwargs`
-        # and they contain pad value, the result vectors updated by this method
-        # may be different from expected. In this case, you need to rewrite the
-        # method.
+        """
+        Updates model kwargs for generation.
 
+        Args:
+            outputs (Any): Model outputs.
+            model_kwargs (dict): Current model kwargs.
+            is_encoder_decoder (bool): Whether using encoder-decoder architecture.
+
+        Returns:
+            dict: Updated model kwargs.
+        """
         # update cache
         if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
-            model_kwargs["cache"] = outputs[1]
             model_kwargs["past_key_values"] = outputs[1]
 
-        if isinstance(outputs, ModelOutput) and "past_key_values" in outputs:
-            model_kwargs["cache"] = outputs.past_key_values
+        if isinstance(outputs, CausalLMOutputWithPast) and "past_key_values" in outputs:
             model_kwargs["past_key_values"] = outputs.past_key_values
 
         # update token_type_ids with last value
         if "token_type_ids" in model_kwargs and model_kwargs["token_type_ids"] is not None:
             token_type_ids = model_kwargs["token_type_ids"]
-            model_kwargs["token_type_ids"] = paddle.concat([token_type_ids, token_type_ids[:, -1:]], axis=-1)
-
-        # update position_ids
-        if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
-            position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.concat([position_ids, position_ids[..., -1:] + 1], axis=-1)
-
-        # update attention_mask
-        if not is_encoder_decoder and "attention_mask" in model_kwargs:
+            model_kwargs["token_type_ids"] = paddle.cat([token_type_ids, token_type_ids[:, -1:]], axis=-1)
+        if not is_encoder_decoder and model_kwargs.get("attention_mask", None) is not None:
+            # update attention mask
             attention_mask = model_kwargs["attention_mask"]
-            # nn.Pad2D don't support the data type `bool`
-            if convert_dtype(attention_mask.dtype) == "bool":
-                attention_mask = paddle.cast(attention_mask, "int64")
-            if len(attention_mask.shape) == 4:
-                cur_device = paddle.get_device()
-                if cur_device.split(":")[0] == "npu":
-                    attention_mask = nn.Pad2D([0, 0, 0, 1], mode="constant")(attention_mask)
-                    attention_mask = nn.Pad2D([0, 1, 0, 0], value=0)(attention_mask)
-                else:
-                    attention_mask = nn.Pad2D([0, 0, 0, 1], mode="replicate")(attention_mask)
-                    attention_mask = nn.Pad2D([0, 1, 0, 0], value=get_scale_by_dtype(return_positive=False))(
-                        attention_mask
-                    )
-
-                dtype = convert_dtype(attention_mask.dtype)
-                if "int" in dtype:
-                    attention_mask[:, :, -1, -1] = 1
-                elif "float" in dtype:
-                    attention_mask[:, :, -1, -1] = 0.0
-                else:
-                    raise ValueError("The data type of input `attention_mask` must " "be bool, int or float")
-            else:
-                attention_mask = paddle.concat(
-                    [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype="int64")], axis=-1
-                )
-            model_kwargs["attention_mask"] = attention_mask
-
+            model_kwargs["attention_mask"] = paddle.cat(
+                [
+                    attention_mask,
+                    paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype),
+                ],
+                axis=-1,
+            )
         # update role_ids
         if "role_ids" in model_kwargs and model_kwargs["role_ids"] is not None:
             role_ids = model_kwargs["role_ids"]
-            model_kwargs["role_ids"] = paddle.concat([role_ids, role_ids[:, -1:]], axis=-1)
+            model_kwargs["role_ids"] = paddle.cat([role_ids, role_ids[:, -1:]], axis=-1)
 
         return model_kwargs
 
@@ -611,11 +639,63 @@ class GenerationMixin(object):
             "`decoder_start_token_id` or `bos_token_id` has to be defined for encoder-decoder generation."
         )
 
-    def prepare_inputs_for_generation(self, input_ids, **kwargs):
-        # Implement in subclasses for custom behavior to prepare inputs in the
-        # generate method.
+    def prepare_inputs_for_generation(
+        self,
+        input_ids,
+        use_cache=True,
+        past_key_values=None,
+        inputs_embeds=None,
+        **kwargs,
+    ):
+        """Prepares model inputs for generation in PaddlePaddle models.
 
-        return {"input_ids": input_ids}
+        Args:
+            input_ids (paddle.Tensor):
+                The input token IDs with shape [batch_size, sequence_length].
+            use_cache (bool, optional):
+                Whether to use cached key-value states for faster generation.
+                Defaults to False.
+            past_key_values (Optional[Tuple[paddle.Tensor]]):
+                Cached past key-value states from previous generation steps.
+                If provided, the input_ids will be truncated to only keep the last token.
+            inputs_embeds (Optional[paddle.Tensor]):
+                Precomputed embeddings instead of token IDs.
+                Only used in the first generation step when past_key_values is None.
+            **kwargs:
+                Additional keyword arguments including:
+                - attention_mask (paddle.Tensor): Attention mask tensor
+
+        Returns:
+            Dict[str, Union[paddle.Tensor, bool, Dict]]:
+            A dictionary containing:
+                - "input_ids" or "inputs_embeds": The main input tensors
+                - "past_key_values": The cached key-value states
+                - "use_cache": Flag indicating whether to use caching
+                - "attention_mask": The attention mask tensor (if provided)
+                - "return_dict": Always set to True for consistent output format
+
+        """
+        if past_key_values:
+            input_ids = input_ids[:, -1:]
+
+        attention_mask = kwargs.get("attention_mask", None)
+
+        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
+        if inputs_embeds is not None and past_key_values is None:
+            model_inputs = {"inputs_embeds": inputs_embeds}
+        else:
+            model_inputs = {"input_ids": input_ids}
+
+        model_inputs.update(
+            {
+                "past_key_values": past_key_values,
+                "use_cache": use_cache,
+                "attention_mask": attention_mask,
+                "return_dict": True,
+            }
+        )
+
+        return model_inputs
 
     def adjust_logits_during_generation(self, logits):
         # Implement in subclasses for custom behavior to adjust the logits in
@@ -1155,7 +1235,7 @@ class GenerationMixin(object):
             scores = self.update_scores_for_generation(scores, next_scores, cur_len - origin_len, unfinished_flag)
             cur_len += 1
 
-            input_ids = paddle.concat([input_ids, next_tokens], axis=1)
+            input_ids = paddle.cat([input_ids, next_tokens], axis=1)
             if streamer is not None:
                 if self.config.tensor_parallel_rank == 0:
                     streamer.put(next_tokens.cpu())
@@ -1299,7 +1379,7 @@ class GenerationMixin(object):
             scores = self.update_scores_for_generation(scores, next_scores, cur_len - origin_len, unfinished_flag)
 
             cur_len += 1
-            input_ids = paddle.concat([input_ids, next_tokens], axis=1)
+            input_ids = paddle.cat([input_ids, next_tokens], axis=1)
             if streamer is not None:
                 if self.config.tensor_parallel_rank == 0:
                     streamer.put(next_tokens.cpu())
@@ -1470,7 +1550,7 @@ class GenerationMixin(object):
             if eos_token_id is not None:
                 next_tokens = paddle.where(unfinished_flag, next_tokens, paddle.full_like(next_tokens, pad_token_id))
 
-            input_ids = paddle.concat([input_ids, next_tokens], axis=1)
+            input_ids = paddle.cat([input_ids, next_tokens], axis=1)
 
             if eos_token_id is not None:
                 unfinished_flag = get_unfinished_flag(input_ids, unfinished_flag, eos_token_id)
@@ -1649,9 +1729,7 @@ class GenerationMixin(object):
             beam_idx = paddle.maximum(beam_idx, paddle.full_like(beam_idx, 0))
 
             cur_len += 1
-            input_ids = paddle.concat(
-                [paddle.index_select(input_ids, beam_idx), beam_next_tokens.unsqueeze(-1)], axis=-1
-            )
+            input_ids = paddle.cat([paddle.index_select(input_ids, beam_idx), beam_next_tokens.unsqueeze(-1)], axis=-1)
 
             if beam_scorer.is_done or stopping_criteria(input_ids, beam_scores):
                 if not synced_gpus:
@@ -1813,7 +1891,7 @@ class GenerationMixin(object):
                 beam_idx = paddle.maximum(beam_idx, paddle.full_like(beam_idx, 0))
 
                 input_ids[batch_group_indices] = group_input_ids[beam_idx]
-                group_input_ids = paddle.concat(
+                group_input_ids = paddle.cat(
                     [paddle.index_select(group_input_ids, index=beam_idx), beam_next_tokens.unsqueeze(-1)], axis=-1
                 )
                 current_tokens[batch_group_indices] = beam_next_tokens
@@ -1822,7 +1900,7 @@ class GenerationMixin(object):
                     num_beams * (beam_idx // group_size) + group_start_idx + (beam_idx % group_size)
                 )
 
-            input_ids = paddle.concat([input_ids, current_tokens.unsqueeze(-1)], axis=-1)
+            input_ids = paddle.cat([input_ids, current_tokens.unsqueeze(-1)], axis=-1)
 
             cur_len += 1
 

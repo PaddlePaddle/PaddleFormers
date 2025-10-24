@@ -20,12 +20,25 @@ Callbacks to use with the Trainer class and customize the training loop.
 """
 import dataclasses
 import json
+import os
+import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 import numpy as np
+import paddle
+import paddle.distributed as dist
+from paddle.distributed.fleet import fleet
+from paddle.distributed.fleet.utils.hybrid_parallel_util import (
+    fused_allreduce_gradients_with_group,
+)
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    is_sequence_parallel_parameter,
+)
 from tqdm.auto import tqdm
 
+from ..transformers.moe_gate import PretrainedMoEGate
+from ..transformers.moe_utils import offload, reload
 from ..utils.log import logger
 from .trainer_utils import IntervalStrategy, has_length
 from .training_args import TrainingArguments
@@ -39,6 +52,12 @@ __all__ = [
     "ProgressCallback",
     "PrinterCallback",
     "EarlyStoppingCallback",
+    "StepFlexToken",
+    "FP8QuantWeightCallback",
+    "MoECorrectionBiasAdjustCallback",
+    "MoeExpertsGradScaleCallback",
+    "MoEGateSpGradSyncCallBack",
+    "SPGradSyncCallback",
 ]
 
 
@@ -608,3 +627,225 @@ class EarlyStoppingCallback(TrainerCallback):
         self.check_metric_value(args, state, control, metric_value)
         if self.early_stopping_patience_counter >= self.early_stopping_patience:
             control.should_training_stop = True
+
+
+class StepFlexToken(TrainerCallback):
+    def on_step_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        model = kwargs.pop("model")
+        if hasattr(model, "step_flex_token"):
+            model.step_flex_token(state.global_step)
+
+
+g_shard_bypass_dygraph_optimizer = int(os.environ.get("FLAGS_shard_bypass_dygraph_optimizer", 0))
+
+
+def enable_in_dict_config(config, key):
+    """enable_in_dict_config"""
+    return key in config and config[key]
+
+
+skip_count = 0
+
+
+class FP8QuantWeightCallback(TrainerCallback):
+    """
+    Callback for FP8 weight quantization during training
+    """
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        """
+        Quantize expert weights to FP8 before each training step
+        """
+        model = kwargs["model"]
+        optimizer = kwargs["optimizer"]
+        global skip_count
+
+        if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
+            model.fp8_quant_weight(True, quant_transpose=True)
+            optimizer.clear_param_storage("moe_expert")
+            optimizer.clear_param_storage("rms_linear")
+            optimizer.clear_param_storage("memory_attn")
+            optimizer.clear_param_storage("attn_out_project")
+            optimizer.clear_param_storage("shared_expert")
+
+            self.moe_weights_name = []
+            for param in optimizer._inner_opt._parameter_list:
+                color = getattr(param, "color", -1)
+                if isinstance(color, dict) and color["color"] == "moe_expert":
+                    self.moe_weights_name.append(param.name)
+
+            for name in self.moe_weights_name:
+                offload(optimizer._master_weights[name])
+
+        skip_count += 1
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        """
+        Reload weights before optimizer step
+        """
+        model = kwargs["model"]
+        optimizer = kwargs["optimizer"]
+        global skip_count
+
+        if (not g_shard_bypass_dygraph_optimizer) and hasattr(model, "fp8_quant_weight"):
+            for name in self.moe_weights_name:
+                reload(optimizer._master_weights[name])
+
+
+class MoECorrectionBiasAdjustCallback(TrainerCallback):
+    """
+    used for moe aux loss free balance
+    """
+
+    def __init__(self, lr=0.001, use_mp=False):
+        super().__init__()
+        self.update_lr = lr
+        self.use_mp = use_mp
+
+    def on_optimizer_end(self, args, state, control, **kwargs):
+        model = kwargs["model"]
+
+        biases = []
+        usages = []
+
+        def get_stat(layer):
+            if isinstance(layer, PretrainedMoEGate) and layer.topk_method == "noaux_tc":
+                biases.append(layer.e_score_correction_bias)
+                usages.append(layer.expert_usage)
+
+        model.apply(get_stat)
+
+        if not usages:
+            return
+        usages_tensor = paddle.stack(usages, 0)  # [num_layers, num_local_experts]
+        if not hasattr(fleet, "_hcg"):
+            dist.all_reduce(usages_tensor)
+            return
+
+        hcg = fleet.get_hybrid_communicate_group()
+        mp_group = hcg.get_model_parallel_group()
+        dp_group = hcg.get_data_parallel_group()
+        sd_group = hcg.get_sharding_parallel_group()
+
+        if self.use_mp and mp_group.nranks > 1:
+            dist.all_reduce(usages_tensor, group=mp_group)
+        if dp_group.nranks > 1:
+            dist.all_reduce(usages_tensor, group=dp_group)
+        if sd_group.nranks > 1:
+            dist.all_reduce(usages_tensor, group=sd_group)
+
+        usages_mean = usages_tensor.mean(-1, keepdim=True)
+        update = paddle.sign(usages_mean - usages_tensor) * self.update_lr
+        update = update.astype(paddle.float32)
+        update_list = list(update)
+
+        # print('on_optimizer_end bias:', [bias.tolist() for bias in biases])
+        # print('on_optimizer_end usage:', usages_tensor.tolist())
+        # print('on_optimizer_end update:', update.tolist())
+
+        def update_bias(layer):
+            if isinstance(layer, PretrainedMoEGate) and layer.topk_method == "noaux_tc":
+                with paddle.no_grad():
+                    if not layer.weight.stop_gradient:
+                        biases.pop(0).add_(update_list.pop(0))
+                    usages.pop(0).zero_()
+
+        model.apply(update_bias)
+
+
+class MoeExpertsGradScaleCallback(TrainerCallback):
+    """
+    This hook is used to correct the issue where the gradients of expert parameters are amplified by a factor of N.
+    """
+
+    def __init__(self, args):
+        """_summary_
+        Args:
+            args (_type_): _description_
+        """
+        if not args.use_expert_parallel:
+            raise ValueError("This callback should be used with expert parallel")
+        if args.expert_parallel_degree > 1:
+            self.expert_gradient_scaling_factor = 1.0 / args.expert_parallel_degree
+            if args.tensor_parallel_degree > 1:
+                self.expert_gradient_scaling_factor *= args.tensor_parallel_degree
+            logger.info(
+                f"EP-MoE is used, expert gradient scaling factor is set to {self.expert_gradient_scaling_factor}"
+            )
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        model = kwargs["model"]
+        param_count = 0
+        for p in model.parameters():
+            if not getattr(p, "no_sync", False):
+                continue
+            if hasattr(p, "is_moe_param") and p.is_moe_param:
+                with paddle.no_grad():
+                    if hasattr(p, "main_grad") and p.main_grad is not None:
+                        p.main_grad.scale_(self.expert_gradient_scaling_factor)
+                        param_count += 1
+                    elif p.grad is not None:
+                        p.grad.scale_(self.expert_gradient_scaling_factor)
+                        param_count += 1
+        logger.info("correct ep grad count:{}".format(param_count))
+
+
+class MoEGateSpGradSyncCallBack(TrainerCallback):
+    """
+    用于绕过sp allreduce hook被错误调用多次的bug，此bug是框架内部机制的问题，将来会进行修复。
+    目前仅gate的梯度在开启moe_subbatch_token_num存在这个问题，因此这里只添加gate的梯度聚合。
+    但保险起见mark_as_sequence_parallel_parameter的参数最好都通过类似的hook处理。
+    """
+
+    def __init__(self):
+        logger.info("MoEGateSpGradSyncCallBack Created")
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        if args.tensor_parallel_degree > 1 and args.sequence_parallel:
+            model = kwargs["model"]
+            hcg = fleet.get_hybrid_communicate_group()
+            pg = hcg.get_model_parallel_group().process_group
+            for param in model.parameters():
+                if getattr(param, "is_gate", False):
+                    if hasattr(param, "main_grad"):
+                        pg.allreduce(param.main_grad).wait()
+                    else:
+                        pg.allreduce(param.grad).wait()
+
+            logger.info("MoEGate grad allreduced done")
+
+
+class SPGradSyncCallback(TrainerCallback):
+    """
+    SPGradSyncCallback
+    只能在非 sharding stage2 的情况下使用。
+    开启sharding stage2 时，在 `on_optimizer_begin` 的时候 grad 已经被清空了
+    """
+
+    def __init__(self, model):
+        assert hasattr(fleet, "_hcg"), "must use MP when calling this Callback"
+        logger.info("using sp callback")
+        params = []
+        self.model = model
+        for n, p in model.named_parameters():
+            if is_sequence_parallel_parameter(p):
+                logger.info(f"register bw hook for:{n}")
+                params.append(p)
+
+        logger.info(f"#-sp-sync param:{len(params)}")
+        self._sp_params = params
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        """on_optimizer_begin"""
+        if self._sp_params:
+            now = time.time()
+            mp_group = fleet.get_hybrid_communicate_group().get_model_parallel_group()
+            fused_allreduce_gradients_with_group(self._sp_params, group=mp_group, scale=1.0)  # sum not mean
+            another_time = time.time()
+            logger.info(f"sync gradients takes {another_time - now} time")

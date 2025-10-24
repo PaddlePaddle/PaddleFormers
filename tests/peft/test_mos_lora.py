@@ -104,7 +104,7 @@ class TestMosLoraModel(unittest.TestCase):
             head_dim=2,
             lora_use_mixer=True,
         )
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
         model.eval()
         original_results_1 = model(input_ids)
@@ -127,7 +127,7 @@ class TestMosLoraModel(unittest.TestCase):
             lora_use_mixer=True,
             tensor_parallel_degree=2,
         )
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         model.eval()
         with self.assertRaises(NotImplementedError):
             LoRAModel(model, lora_config)
@@ -145,7 +145,7 @@ class TestMosLoraModel(unittest.TestCase):
         )
         # turn off plm dropout for to test train vs test
         model = AutoModel.from_pretrained(
-            "test_paddleformers/tiny-random-bert",
+            "Paddleformers/tiny-random-bert",
             hidden_dropout_prob=0,
             attention_probs_dropout_prob=0,
         )
@@ -179,7 +179,7 @@ class TestMosLoraModel(unittest.TestCase):
             lora_config = LoRAConfig(
                 target_modules=[".*q_proj.*", ".*v_proj.*"], r=4, lora_alpha=8, lora_use_mixer=True
             )
-            model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()
             original_results = lora_model(input_ids)
@@ -199,7 +199,7 @@ class TestMosLoraModel(unittest.TestCase):
         lora_config = LoRAConfig(
             target_modules=[".*norm1.*"], r=4, lora_alpha=8, enable_lora_list=None, lora_use_mixer=True
         )
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-bert")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         with self.assertRaises(ValueError):
             LoRAModel(model, lora_config)
 

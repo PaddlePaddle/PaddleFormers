@@ -55,6 +55,7 @@ import_structure = {
     "initializer": ["to"],
     "infohub": ["infohub", "InfoHub"],
     "memory_utils": ["empty_device_cache"],
+    "moe_hybrid_parallel_optimizer": ["MoEHybridParallelOptimizer"],
     "paddle_patch": ["enhance_set_value", "new_repr", "_numel", "_numpy", "enhance_init", "enhance_to_tensor"],
     "serialization": [
         "seek_by_string",
@@ -113,6 +114,7 @@ if TYPE_CHECKING:
     from .initializer import to
     from .log import logger
     from .memory_utils import empty_device_cache
+    from .moe_hybrid_parallel_optimizer import MoEHybridParallelOptimizer
 
     try:
         from .optimizer import *

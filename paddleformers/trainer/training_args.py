@@ -903,6 +903,10 @@ class TrainingArguments:
         default=None,
         metadata={"help": "The path to a folder with a valid checkpoint for your model."},
     )
+    resume_from_huggingface_ckpt: Optional[str] = field(
+        default=None,
+        metadata={"help": "The path to a folder with a valid huggingface checkpoint for your model."},
+    )
     auto_parallel_resume_form_hybrid_parallel: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether hybrid parallel checkpoints be loaded in auto parallel mode."},
@@ -987,6 +991,10 @@ class TrainingArguments:
     use_expert_parallel: Optional[bool] = field(
         default=False,
         metadata={"help": "Enable MoE (Mixture of Experts) expert parallel training"},
+    )
+    aux_loss_alpha: Optional[float] = field(
+        default=0.0001,
+        metadata={"help": "MoE (Mixture of Experts) Auxiliary loss weight coefficient"},
     )
     expert_max_capacity: Optional[int] = field(
         default=pow(2, 32),
@@ -1083,11 +1091,11 @@ class TrainingArguments:
         metadata={"help": "是否开启单路sharding时global norm通信拆分全局通信组为pp通信和mp通信分别做"},
     )
     convert_from_hf: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={"help": "Load model from HuggingFace safetensors."},
     )
     save_to_hf: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
     nccl_comm_group_config: Optional[str] = field(
@@ -1099,6 +1107,15 @@ class TrainingArguments:
         },
     )
     
+    reorder_pipeline_priority: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Controls the parallel execution order. False (pp first), True (sharding first)."},
+    )
+    pre_alloc_memory: int = field(
+        default=0,
+        metadata={"help": "pre allocate memory size GB"},
+    )
+    num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1416,12 +1433,15 @@ class TrainingArguments:
                     else:
                         order = ["dp", "sharding", "pp", "mp"]
                 if self.use_expert_parallel:
-                    if self.moe_sharding_parallel_degree >= 1 and self.expert_parallel_degree > 1:
-                        order.insert(-1, "ep")
-                        sd_idx = order.index("sharding")
-                        # if pp_first, the order = ["dp", "pp", "moe_sharding", "sharding", "sep", "ep", "mp"]
-                        # if sharding_first, the order is ["dp", "moe_sharding", "sharding", "pp", "sep", "ep", "mp"]
-                        order.insert(sd_idx, "moe_sharding")
+                    if not self.reorder_pipeline_priority:
+                        if self.moe_sharding_parallel_degree >= 1 and self.expert_parallel_degree > 1:
+                            order.insert(-1, "ep")
+                            sd_idx = order.index("sharding")
+                            # if pp_first, the order = ["dp", "pp", "moe_sharding", "sharding", "sep", "ep", "mp"]
+                            # if sharding_first, the order is ["dp", "moe_sharding", "sharding", "pp", "sep", "ep", "mp"]
+                            order.insert(sd_idx, "moe_sharding")
+                    else:
+                        order = order[1:-1] + ["dp", "mp"]
 
                 if is_segment_parallel_supported():
                     hybrid_configs = {
@@ -1577,6 +1597,10 @@ class TrainingArguments:
 
                 fleet.init(is_collective=True, strategy=strategy)
                 logger.info(strategy)
+
+                if self.reorder_pipeline_priority:
+                    if self.expert_parallel_degree > 1:
+                        self.add_moe_comm_group()
 
         elif self.enable_auto_parallel:
             self.tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
@@ -2242,6 +2266,17 @@ class TrainingArguments:
         else:
             return 0
 
+    @property
+    def moe_sharding_parallel_rank(self):
+        if self.use_hybrid_parallel:
+            hcg = fleet.get_hybrid_communicate_group()
+            if hasattr(hcg, "get_moe_sharding_parallel_group"):
+                return max(hcg.get_moe_sharding_parallel_group().rank, 0)
+            else:
+                return 0
+        else:
+            return 0
+
     def _format_name(self, prefix, rank, degree):
         size = 2
         return f"{prefix}{rank:0>{size}d}"
@@ -2401,7 +2436,9 @@ class TrainingArguments:
                 return True
             elif self.use_hybrid_parallel:
                 # save on dataset rank 0
-                return self.sharding_parallel_rank == 0 and (self.data_parallel_rank == 0 or self.use_expert_parallel)
+                return (
+                    self.sharding_parallel_rank == 0 and (self.data_parallel_rank == 0 or self.use_expert_parallel)
+                ) or (self.expert_parallel_degree > 1 and self.moe_sharding_parallel_rank == 0)
             else:
                 return self.process_index == 0 or self.use_expert_parallel
 

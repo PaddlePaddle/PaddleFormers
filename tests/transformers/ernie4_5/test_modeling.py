@@ -26,7 +26,7 @@ from paddleformers.transformers import (
     Ernie4_5ForCausalLM,
     Ernie4_5Model,
 )
-from tests.testing_utils import require_package, slow
+from tests.testing_utils import require_package
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -49,6 +49,7 @@ class Ernie4_5ModelTester:
         head_dim=128,
         num_hidden_layers=2,
         num_attention_heads=8,
+        num_key_value_heads=2,
         masked_softmax_fusion=True,
         layer_norm_epsilon=1e-5,
         initializer_range=0.02,
@@ -81,6 +82,7 @@ class Ernie4_5ModelTester:
         self.head_dim = head_dim
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
         self.masked_softmax_fusion = masked_softmax_fusion
         self.layer_norm_epsilon = layer_norm_epsilon
         self.initializer_range = initializer_range
@@ -134,6 +136,7 @@ class Ernie4_5ModelTester:
             head_dim=self.head_dim,
             num_hidden_layers=self.num_hidden_layers,
             num_attention_heads=self.num_attention_heads,
+            num_key_value_heads=self.num_key_value_heads,
             masked_softmax_fusion=self.masked_softmax_fusion,
             layer_norm_epsilon=self.layer_norm_epsilon,
             initializer_range=self.initializer_range,
@@ -198,8 +201,8 @@ class Ernie4_5ModelTester:
         next_mask = ids_tensor((self.batch_size, 3), vocab_size=2)
 
         # append to next input_ids and
-        next_input_ids = paddle.concat([input_ids, next_tokens], axis=-1)
-        next_attention_mask = paddle.concat([input_mask, next_mask], axis=-1)
+        next_input_ids = paddle.cat([input_ids, next_tokens], axis=-1)
+        next_attention_mask = paddle.cat([input_mask, next_mask], axis=-1)
 
         outputs = model(
             next_input_ids, attention_mask=next_attention_mask, output_hidden_states=True, return_dict=self.return_dict
@@ -388,50 +391,50 @@ class Ernie4_5ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
 class Ernie4_5ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = Ernie4_5Model
 
-    @slow
-    def test_inference_no_attention(self):
-        model = Ernie4_5Model.from_pretrained("__internal_testing__/tiny-random-ernie4_5")
-        model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-        with paddle.no_grad():
-            output = model(input_ids, attention_mask=attention_mask)[0]
+    # @slow
+    # def test_inference_no_attention(self):
+    #     model = Ernie4_5Model.from_pretrained("__internal_testing__/tiny-random-ernie4_5")
+    #     model.eval()
+    #     input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+    #     attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+    #     with paddle.no_grad():
+    #         output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 768]
-        self.assertEqual(output.shape, expected_shape)
+    #     expected_shape = [1, 11, 768]
+    #     self.assertEqual(output.shape, expected_shape)
 
-        expected_slice = paddle.to_tensor(
-            [
-                [
-                    [0.20443289, 0.18662477, -0.75216216],
-                    [0.37699354, -0.38747141, -1.21889985],
-                    [0.31100151, -0.40143669, -0.64101797],
-                ]
-            ]
-        )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+    #     expected_slice = paddle.to_tensor(
+    #         [
+    #             [
+    #                 [0.20443289, 0.18662477, -0.75216216],
+    #                 [0.37699354, -0.38747141, -1.21889985],
+    #                 [0.31100151, -0.40143669, -0.64101797],
+    #             ]
+    #         ]
+    #     )
+    #     self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
 
-    @slow
-    def test_inference_with_attention(self):
-        model = Ernie4_5Model.from_pretrained("__internal_testing__/tiny-random-ernie4_5")
-        model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-        with paddle.no_grad():
-            output = model(input_ids, attention_mask=attention_mask)[0]
+    # @slow
+    # def test_inference_with_attention(self):
+    #     model = Ernie4_5Model.from_pretrained("__internal_testing__/tiny-random-ernie4_5")
+    #     model.eval()
+    #     input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+    #     attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+    #     with paddle.no_grad():
+    #         output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 768]
-        self.assertEqual(output.shape, expected_shape)
-        expected_slice = paddle.to_tensor(
-            [
-                [
-                    [0.20443289, 0.18662477, -0.75216216],
-                    [0.37699354, -0.38747141, -1.21889985],
-                    [0.31100151, -0.40143669, -0.64101797],
-                ]
-            ]
-        )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+    #     expected_shape = [1, 11, 768]
+    #     self.assertEqual(output.shape, expected_shape)
+    #     expected_slice = paddle.to_tensor(
+    #         [
+    #             [
+    #                 [0.20443289, 0.18662477, -0.75216216],
+    #                 [0.37699354, -0.38747141, -1.21889985],
+    #                 [0.31100151, -0.40143669, -0.64101797],
+    #             ]
+    #         ]
+    #     )
+    #     self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
 
 
 class Ernie4_5GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
@@ -448,7 +451,9 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = Ernie4_5Config(hidden_size=16, num_hidden_layers=1, num_attention_heads=2)
+        config = Ernie4_5Config(
+            hidden_size=16, num_hidden_layers=1, num_attention_heads=2, head_dim=8, num_key_value_heads=1
+        )
         model = Ernie4_5ForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
 

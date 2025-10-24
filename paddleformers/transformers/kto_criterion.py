@@ -74,7 +74,7 @@ class KTOCriterion(nn.Layer):
             paddle.distributed.all_gather(
                 output_tensors, paddle.tile(tensors, repeat_times=[1, 1]), group=self.comm_group
             )
-            tensors = paddle.concat(output_tensors, axis=0)
+            tensors = paddle.cat(output_tensors, axis=0)
         return tensors
 
     def kto_logps(self, logits, response_labels, response_kl_labels, response_indexs):
@@ -201,7 +201,7 @@ class KTOCriterion(nn.Layer):
         else:
             rejected_logratios = policy_rejected_logps - reference_rejected_logps
             rejected_losses = 1 - F.sigmoid(self.kto_config.beta * (kl - rejected_logratios))
-        losses = paddle.concat(
+        losses = paddle.cat(
             (
                 self.kto_config.desirable_weight * chosen_losses,
                 self.kto_config.undesirable_weight * rejected_losses,

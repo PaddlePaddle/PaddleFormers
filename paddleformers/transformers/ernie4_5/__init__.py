@@ -18,10 +18,9 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "tokenizer": ["copyfile", "Ernie4_5Tokenizer"],
-    "tokenizer_utils": ["PretrainedTokenizer"],
+    "tokenizer": ["Ernie4_5Tokenizer"],
     "configuration": ["Ernie4_5Config"],
-    "modeling": ["Ernie4_5Model", "Ernie4_5ForCausalLM"],
+    "modeling": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5ForCausalLM", "Ernie4_5ForCausalLMPipe"],
 }
 
 if TYPE_CHECKING:

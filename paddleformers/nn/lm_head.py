@@ -16,7 +16,6 @@ import paddle
 import paddle.nn as nn
 
 from ..generation.configuration_utils import PretrainedConfig
-from ..utils.log import logger
 from .criterion.loss_utils import calc_lm_head_logits
 
 __all__ = ["LMHead"]
@@ -24,42 +23,32 @@ __all__ = ["LMHead"]
 
 class LMHead(nn.Layer):
     def __init__(self, config: PretrainedConfig):
-        """
-        transpose_y (bool): Whether to transpose the lm_head weight matrix before matrix multiplication.
-        """
         super().__init__()
         self.config = config
         self.use_bias = config.get("lm_head_bias", False)
-        self.transpose_y = config.get("tie_word_embeddings", False)
         self.vocab_parallel = False
 
         # apply vocab tensor parallel
+        if config.vocab_size % config.tensor_parallel_degree != 0:
+            raise ValueError(
+                f"lm_head can not activate vocab parallelism "
+                f"(vocab_size={config.vocab_size} % tp_degree={config.tensor_parallel_degree} != 0)."
+            )
+
         if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
             vocab_size = config.vocab_size // config.tensor_parallel_degree
             self.vocab_parallel = True
         else:
             vocab_size = config.vocab_size
-            if config.tensor_parallel_degree > 1:
-                logger.warning_once(
-                    "lm_head vocab parallelism is disabled (vocab_size=%d %% tp_degree=%d != 0).",
-                    vocab_size,
-                    config.tensor_parallel_degree,
-                )
-        self.lm_head_shape = (
-            [config.hidden_size, vocab_size] if not self.transpose_y else [vocab_size, config.hidden_size]
-        )
 
         self.weight = self.create_parameter(
-            shape=self.lm_head_shape,
+            shape=[vocab_size, config.hidden_size],
             dtype=paddle.get_default_dtype(),
             default_initializer=nn.initializer.XavierNormal(1.0),
         )
 
         # setting distributed attr for tensor parallel
-        self.weight.is_distributed = self.vocab_parallel
-
-        if self.weight.is_distributed:
-            self.weight.split_axis = 0 if self.transpose_y else 1
+        self._set_distributed_attr(self.weight)
 
         if self.use_bias:
             self.bias = self.create_parameter(
@@ -69,11 +58,14 @@ class LMHead(nn.Layer):
             )
 
             # setting distributed attr for tensor parallel
-            self.bias.is_distributed = self.vocab_parallel
-            if self.bias.is_distributed:
-                self.bias.split_axis = 0
+            self._set_distributed_attr(self.bias)
         else:
             self.bias = None
+
+    def _set_distributed_attr(self, param):
+        param.is_distributed = self.vocab_parallel
+        if param.is_distributed:
+            param.split_axis = 0
 
     def forward(self, hidden_states, tensor_parallel_output=None):
         """Project hidden states to vocabulary logits.
@@ -100,7 +92,7 @@ class LMHead(nn.Layer):
                 hidden_states,
                 self.weight,
                 self.bias,
-                self.config.tie_word_embeddings,
+                True,
             )
 
         return calc_lm_head_logits(
@@ -114,5 +106,4 @@ class LMHead(nn.Layer):
         )
 
     def extra_repr(self):
-        hidden_size, vocab_size = self.lm_head_shape if not self.transpose_y else self.lm_head_shape[::-1]
-        return f"hidden_size={hidden_size}, vocab_size={vocab_size}, dtype={self.weight.dtype}, vocab_parallel={self.vocab_parallel}"
+        return f"hidden_size={self.weight.shape[1]}, vocab_size={self.weight.shape[0]}, dtype={self.weight.dtype}, vocab_parallel={self.vocab_parallel}"

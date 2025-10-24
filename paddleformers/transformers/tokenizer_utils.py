@@ -21,6 +21,7 @@ import re
 from functools import wraps
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from tokenizers import AddedToken  # noqa: F401
 from transformers import BatchEncoding
 from transformers.tokenization_utils import (
     PreTrainedTokenizer as PreTrainedTokenizer_tf,
@@ -376,6 +377,49 @@ class PaddleTokenizerMixin:
 
         return conversation_ids
 
+    def _encode_chat_inputs_oneturn(
+        self,
+        conversations: Dict[str, Any],
+        add_generation_prompt=True,
+    ):
+        conversation_dict = {} if "tools" not in conversations else {"tools": conversations["tools"]}
+        conversation_dict["messages"] = (
+            [conversations["messages"][0]] if conversations["messages"][0]["role"] == "system" else []
+        )
+
+        if conversations["messages"][0]["role"] == "system":
+            conversations["messages"] = conversations["messages"][1:]
+
+        cur_str = ""
+        conversation_ids = []
+        for idx in range(0, len(conversations["messages"]), 2):
+            conversation_id = []
+            conversation_dict["messages"].append(conversations["messages"][idx])
+            round_str = self.apply_chat_template(
+                conversation_dict["messages"], add_generation_prompt=True, tokenize=False
+            )
+            # query: user prefix + user content + assist prefix
+            query = round_str[len(cur_str) :]
+            input_ids = self.convert_tokens_to_ids(self.tokenize(query))
+            conversation_id.append(input_ids)
+            cur_str = round_str
+
+            if idx + 1 < len(conversations["messages"]):
+                conversation_dict["messages"].append(conversations["messages"][idx + 1])
+                round_str = self.apply_chat_template(
+                    conversation_dict["messages"], add_generation_prompt=False, tokenize=False
+                )
+                # answer: assistant content
+                answer = round_str[len(cur_str) :]
+                output_ids = self.convert_tokens_to_ids(self.tokenize(answer))
+                conversation_id.append(output_ids)
+
+            conversation_ids.append(conversation_id)
+            conversation_dict["messages"] = []
+            cur_str = ""
+
+        return conversation_ids
+
     def _extract_non_learnable_parts(self, origin_msg: List[Dict[str, str]], split_s: List[str]):
         """Split the entire chat by specified words. Extract the non-learnable parts."""
         # TODO：We will upgrade this feature later
@@ -457,6 +501,7 @@ class PaddleTokenizerMixin:
         if not self.chat_template:
             raise ValueError("chat_template is not set, please set chat_template first.")
         else:
+            encode_one_turn = kwargs.pop("encode_one_turn", True)
             add_generation_prompt = kwargs.pop("add_generation_prompt", True)
             if not isinstance(conversations, dict):
                 query = self._encode_chat_inputs(
@@ -464,8 +509,59 @@ class PaddleTokenizerMixin:
                 )
             else:
                 conversations.update(add_generation_prompt=add_generation_prompt)
-                query = self._encode_chat_inputs_openai_format(conversations)
+                if encode_one_turn:
+                    query = self._encode_chat_inputs_oneturn(conversations)
+                else:
+                    query = self._encode_chat_inputs_openai_format(conversations)
         return query
+
+    def encode_chat_inputs_with_no_template(
+        self, conversations: List[List[str, str]] | Dict[str, Any], context_data: Dict[str, Any] = {}, **kwargs
+    ):
+        """
+        Args:
+            conversation (List[List[str, str]]): the conversation of data
+            context_data (Dict[str, Any]): the context data of conversation
+
+        Returns:
+            List[list[int], list[int]]: the pair of input_ids and target_ids
+        """
+        assert isinstance(conversations, dict)
+
+        conversation_dict = {} if "tools" not in conversations else {"tools": conversations["tools"]}
+        conversation_dict["messages"] = (
+            [conversations["messages"][0]] if conversations["messages"][0]["role"] == "system" else []
+        )
+
+        if conversations["messages"][0]["role"] == "system":
+            conversations["messages"] = conversations["messages"][1:]
+
+        cur_str = ""
+        conversation_ids = []
+        for idx in range(0, len(conversations["messages"]), 2):
+            conversation_id = []
+            conversation_dict["messages"].append(conversations["messages"][idx])
+            round_str = conversation_dict["messages"]
+            # fake template
+            tokenize_input = "".join(item["content"] for item in round_str)
+            tokenize_input = tokenize_input[len(cur_str) :]
+            input_ids = self.convert_tokens_to_ids(self.tokenize(tokenize_input))
+            conversation_id.append(input_ids)
+            cur_str = tokenize_input
+
+            if idx + 1 < len(conversations["messages"]):
+                conversation_dict["messages"].append(conversations["messages"][idx + 1])
+                round_str = conversation_dict["messages"]
+                # fake template
+                tokenize_input = "".join(item["content"] for item in round_str)
+                tokenize_input = tokenize_input[len(cur_str) :]
+                output_ids = self.convert_tokens_to_ids(self.tokenize(tokenize_input))
+                conversation_id.append(output_ids)
+
+            conversation_ids.append(conversation_id)
+            conversation_dict["messages"] = []
+            cur_str = ""
+        return conversation_ids
 
     def decode_token(
         self,
@@ -486,14 +582,17 @@ class PaddleTokenizerMixin:
             all_input_ids[prefix_offset:], skip_special_tokens=skip_special_tokens, clean_up_tokenization_spaces=False
         )
 
-        if len(new_text) > len(prefix_text) and not prefix_text.endswith("�") and not new_text.endswith("�"):
+        if len(new_text) > len(prefix_text) and not new_text.endswith("�") and not new_text[:-1].endswith("�"):
             # utf-8 char at the end means it's a potential unfinished byte sequence
             # from byte fallback tokenization.
             # If it's in the middle, it's probably a real invalid id generated
             # by the model
-            prefix_index = new_text.index(prefix_text)
-            new_text = new_text[prefix_index + len(prefix_text) :]
-            return new_text, read_offset, len(all_input_ids)
+            if new_text.startswith(prefix_text):
+                prefix_index = new_text.index(prefix_text)
+                new_text = new_text[prefix_index + len(prefix_text) :]
+                return new_text, read_offset, len(all_input_ids)
+            else:
+                return "", prefix_offset, len(all_input_ids)
         else:
             return "", prefix_offset, read_offset
 

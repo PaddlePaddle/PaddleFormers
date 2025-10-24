@@ -31,7 +31,7 @@ with suppress(Exception):
 
 # this version is used for develop and test.
 # release version will be added fixed version by setup.py.
-__version__ = "0.1.2.post"
+__version__ = "0.3.0.post"
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
 else:
@@ -52,8 +52,10 @@ if "datasets" in sys.modules.keys():
 
 # module index
 modules = [
+    "cli",
     "data",
     "datasets",
+    "generation",
     "nn",
     "mergekit",
     "ops",
@@ -70,8 +72,10 @@ import_structure["transformers.tokenizer_utils"] = ["PreTrainedTokenizer"]
 
 if TYPE_CHECKING:
     from . import (
+        cli,
         data,
         datasets,
+        generation,
         mergekit,
         nn,
         ops,

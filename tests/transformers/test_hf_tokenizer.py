@@ -18,7 +18,7 @@ import paddle
 
 from paddleformers.transformers import AutoTokenizer, Qwen2Tokenizer
 from paddleformers.utils.download import DownloadSource
-from tests.testing_utils import set_proxy
+from tests.testing_utils import set_proxy, skip_for_none_ce_case
 
 
 class TestHFMultiSourceTokenizer(unittest.TestCase):
@@ -30,9 +30,9 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
 
     @set_proxy(DownloadSource.AISTUDIO)
     def test_ai_studio(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B-Instruct", download_hub="aistudio")
+        tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio")
         self.encode(tokenizer)
-        tokenizer = Qwen2Tokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B-Instruct", download_hub="aistudio")
+        tokenizer = Qwen2Tokenizer.from_pretrained("ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio")
         self.encode(tokenizer)
 
     @set_proxy(DownloadSource.MODELSCOPE)
@@ -42,6 +42,7 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope")
         self.encode(tokenizer)
 
+    @skip_for_none_ce_case
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_hf_hub(self):
         tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface")
@@ -55,6 +56,7 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct")
         self.encode(tokenizer)
 
+    @skip_for_none_ce_case
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_ernie_4_5_tokenizer(self):
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT", download_hub="huggingface")
@@ -64,7 +66,7 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         self.assertEqual(output_ids, true_ids)
 
     def test_auto_tokenizer(self):
-        tokenizer = AutoTokenizer.from_pretrained("test_paddleformers/tiny-random-llama")
+        tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
         input_text = "hello world, 你好"
         output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input_text))
         true_ids = [12199, 3186, 29892, 29871, 30919, 31076]
@@ -128,17 +130,16 @@ class TestHFTokenizer(unittest.TestCase):
 
 
 class TestPaddleTokenizerMethod(unittest.TestCase):
-    def test_encode_chat_inputs(self):
+    def test_tokenizer_decode_token(self) -> None:
         tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B", download_hub="aistudio")
-        query = [["你好", "您好，我是个人人工智能助手"], ["今天吃啥", "你可以选择不同的菜系"]]
-        encode_text = tokenizer.encode_chat_inputs(query)
-        dict_query = {
-            "messages": [
-                {"role": "user", "content": "你好"},
-                {"role": "assistant", "content": "您好，我是个人人工智能助手"},
-                {"role": "user", "content": "今天吃啥"},
-                {"role": "assistant", "content": "你可以选择不同的菜系"},
-            ]
-        }
-        encode_dict_text = tokenizer.encode_chat_inputs(dict_query)
-        self.assertListEqual(encode_text["conversations"], encode_dict_text)
+        test_cases = ["1. 百度 2. 腾讯", "hello world! I like eating banana", "🤓😖", "🤓😖testtest"]
+        for test_case in test_cases:
+            input_ids = tokenizer(test_case)["input_ids"]
+            decoded_text = tokenizer.decode(input_ids)
+            stream_decoded_text = ""
+            offset = 0
+            token_offset = 0
+            for i in range(len(input_ids)):
+                token_text, offset, token_offset = tokenizer.decode_token(input_ids[: i + 1], offset, token_offset)
+                stream_decoded_text += token_text
+            self.assertEqual(decoded_text, stream_decoded_text)

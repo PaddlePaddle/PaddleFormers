@@ -27,11 +27,10 @@ class TestLMHead(unittest.TestCase):
         lm_head = LMHead(config)
 
         # Check weight shape and attributes
-        self.assertEqual(lm_head.weight.shape, [config.hidden_size, config.vocab_size])
+        self.assertEqual(lm_head.weight.shape, [config.vocab_size, config.hidden_size])
         self.assertFalse(lm_head.weight.is_distributed)
         self.assertIsNone(lm_head.bias)
         self.assertFalse(lm_head.vocab_parallel)
-        self.assertFalse(lm_head.transpose_y)
 
     def test_initialization_with_tie_word_embeddings(self):
         # Test initialization with tied embeddings
@@ -40,7 +39,6 @@ class TestLMHead(unittest.TestCase):
         lm_head = LMHead(config)
 
         self.assertEqual(lm_head.weight.shape, [config.vocab_size, config.hidden_size])
-        self.assertTrue(lm_head.transpose_y)
 
     def test_forward_normal(self):
         # Test normal forward pass
@@ -62,7 +60,7 @@ class TestLMHead(unittest.TestCase):
         self.assertEqual(output[0].shape, test_input.shape)
         self.assertEqual(output[1].shape, lm_head.weight.shape)
         self.assertIs(output[2], lm_head.bias)
-        self.assertEqual(output[3], config.tie_word_embeddings)
+        self.assertEqual(output[3], True)
 
 
 if __name__ == "__main__":

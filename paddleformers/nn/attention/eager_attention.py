@@ -27,6 +27,7 @@ def eager_attention_forward(
     value: paddle.Tensor,
     attention_mask: Optional[paddle.Tensor] = None,
     dropout: float = 0.0,
+    sink: Optional[paddle.Tensor] = None,
     scaling: Optional[float] = None,
     is_causal: Optional[bool] = None,
     **kwargs,
@@ -45,8 +46,16 @@ def eager_attention_forward(
     if attention_mask is not None:
         causal_mask = attention_mask[:, :, :, : key.shape[-2]]
         attn_weights = attn_weights + causal_mask
-    attn_weights = nn.functional.softmax(attn_weights, axis=-1, dtype=paddle.float32).astype(query.dtype)
-    attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
+
+    if sink is not None:
+        sink = sink.reshape([1, -1, 1, 1]).expand([query.shape[0], -1, query.shape[-2], -1])
+        combined_logits = paddle.cat([attn_weights, sink], axis=-1)
+        probs = nn.functional.softmax(combined_logits, axis=-1, dtype=combined_logits.dtype)
+        scores = probs[..., :-1]  # we drop the sink here
+        attn_weights = nn.functional.dropout(scores, p=dropout, training=module.training)
+    else:
+        attn_weights = nn.functional.softmax(attn_weights, axis=-1, dtype=paddle.float32).astype(query.dtype)
+        attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
 
     attn_output = paddle.matmul(attn_weights, value)  # b h l l @ b h l d -> b h l d
     attn_output = attn_output.transpose([0, 2, 1, 3])  # b h l d -> b l h d

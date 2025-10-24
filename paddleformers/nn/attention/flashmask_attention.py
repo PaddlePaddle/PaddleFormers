@@ -26,7 +26,7 @@ def flashmask_attention_forward(
     query: paddle.Tensor,
     key: paddle.Tensor,
     value: paddle.Tensor,
-    attn_mask_start_row_indices: paddle.Tensor,
+    attn_mask_startend_row_indices: paddle.Tensor,
     dropout: float = 0.0,
     sink: Optional[paddle.Tensor] = None,
     scaling: Optional[float] = None,
@@ -34,12 +34,16 @@ def flashmask_attention_forward(
     **kwargs
 ):
     # b,l,h,d
+    if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.ndim == 3:
+        attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
+    if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
+        is_causal = True
     if sink is None:
         out = flashmask_attention(
             query,
             key,
             value,
-            startend_row_indices=attn_mask_start_row_indices,
+            startend_row_indices=attn_mask_startend_row_indices,
             causal=True,
         )
     else:
@@ -48,10 +52,10 @@ def flashmask_attention_forward(
             key,
             value,
             sink,
-            startend_row_indices=attn_mask_start_row_indices,
+            startend_row_indices=attn_mask_startend_row_indices,
             dropout_p=dropout,
             softmax_scale=scaling,
-            causal=is_causal,
+            causal=is_causal if is_causal is not None else False,
         )
     out = paddle.reshape(x=out, shape=[0, 0, out.shape[2] * out.shape[3]])
 

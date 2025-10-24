@@ -112,12 +112,12 @@ class SFTTrainer(Trainer):
             if getattr(tokenizer, "pad_token", None) is None:
                 tokenizer.pad_token = tokenizer.eos_token
 
-        if args.max_seq_length is None:
+        if args.max_seq_len is None:
             # to overcome some issues with broken tokenizers
-            args.max_seq_length = min(tokenizer.model_max_length, 1024)
+            args.max_seq_len = min(tokenizer.model_max_length, 1024)
 
             warnings.warn(
-                f"You didn't pass a `max_seq_length` argument to the SFTTrainer, this will default to {args.max_seq_length}"
+                f"You didn't pass a `max_seq_len` argument to the SFTTrainer, this will default to {args.max_seq_len}"
             )
 
         self.dataset_num_proc = args.dataset_num_proc
@@ -141,7 +141,7 @@ class SFTTrainer(Trainer):
                     train_dataset,
                     tokenizer,
                     args.dataset_text_field,
-                    args.max_seq_length,
+                    args.max_seq_len,
                     formatting_func,
                     remove_unused_columns=args.remove_unused_columns if args is not None else True,
                     **args.dataset_kwargs,
@@ -155,7 +155,7 @@ class SFTTrainer(Trainer):
                         _eval_dataset,
                         tokenizer,
                         args.dataset_text_field,
-                        args.max_seq_length,
+                        args.max_seq_len,
                         formatting_func,
                         remove_unused_columns=args.remove_unused_columns if args is not None else True,
                         **args.dataset_kwargs,
@@ -183,7 +183,7 @@ class SFTTrainer(Trainer):
         dataset,
         tokenizer,
         dataset_text_field: str,
-        max_seq_length,
+        max_seq_len,
         formatting_func: Optional[Callable],
         remove_unused_columns=True,
         add_special_tokens=True,
@@ -223,7 +223,7 @@ class SFTTrainer(Trainer):
             tokenizer,
             dataset,
             dataset_text_field,
-            max_seq_length,
+            max_seq_len,
             formatting_func,
             add_special_tokens,
             remove_unused_columns,
@@ -234,7 +234,7 @@ class SFTTrainer(Trainer):
         tokenizer,
         dataset,
         dataset_text_field: str,
-        max_seq_length,
+        max_seq_len,
         formatting_func: Optional[Callable] = None,
         add_special_tokens=True,
         remove_unused_columns=True,
@@ -247,7 +247,7 @@ class SFTTrainer(Trainer):
                 add_special_tokens=add_special_tokens,
                 truncation=True,
                 padding=False,
-                max_length=max_seq_length,
+                max_length=max_seq_len,
                 return_overflowing_tokens=False,
                 return_length=False,
             )
@@ -321,7 +321,7 @@ class SFTTrainer(Trainer):
                 model_parallel_group = hcg.get_model_parallel_group()
                 gathered_logits = []
                 dist.all_gather(gathered_logits, logits, group=model_parallel_group)
-                logits = paddle.concat(gathered_logits, axis=-1)
+                logits = paddle.cat(gathered_logits, axis=-1)
             return (loss, logits.argmax(axis=-1, keepdim=True), labels)
 
         loss = None
