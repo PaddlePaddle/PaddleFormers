@@ -37,6 +37,8 @@ jobs:
   unittest-gpu-ci:
     name: unittest-gpu-ci
     runs-on: ${{ inputs.runner || 'ernie-8gpu' }}
+    outputs:  
+      pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}
     steps:
       - name: Determine Image Name
         env:
@@ -226,12 +228,16 @@ jobs:
 
       - name: Download coverage.xml
         if: steps.flag_check.outputs.should_upload == 'true'
+        env:
+          PR_ID: ${{ github.event.pull_request.number || '0' }}
+          COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
             bos_prefix="schedule/$(date +%Y%m%d)"
           fi
+          echo "bos_prefix=${bos_prefix}"
           wget -q --no-proxy \
             https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml \
             --no-check-certificate -O coverage.xml
