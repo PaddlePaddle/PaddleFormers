@@ -22,6 +22,7 @@ export log_path=/workspace/PaddleFormers/model_unittest_logs
 export model_unittest_path=/workspace/PaddleFormers/scripts/regression
 cd $nlp_dir
 mkdir -p $log_path
+AGILE_COMPILE_BRANCH = $3
 
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple

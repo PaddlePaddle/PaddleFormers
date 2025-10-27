@@ -72,20 +72,20 @@ jobs:
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
-            -e BRANCH \
-            -e AGILE_COMPILE_BRANCH \
-            -e PR_ID \
-            -e COMMIT_ID \
-            -e work_dir \
-            -e ci_scripts \
-            -e no_proxy \
-            -e PYTEST_EXECUTE_FLAG_FILE \
-            -e CI_name \
-            -e paddle_whl \
-            -e FLAGS_dynamic_static_unified_comm \
-            -e python_version \
-            -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
-            -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
+            -e "BRANCH=$BRANCH" \
+            -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
+            -e "PR_ID=$PR_ID" \
+            -e "COMMIT_ID=$COMMIT_ID" \
+            -e "work_dir=$work_dir" \
+            -e "ci_scripts=$ci_scripts" \
+            -e "PYTEST_EXECUTE_FLAG_FILE=$PYTEST_EXECUTE_FLAG_FILE" \
+            -e "no_proxy=$no_proxy" \
+            -e "CI_JOB_NAME=$CI_JOB_NAME" \
+            -e "paddle_whl=$paddle_whl" \\
+            -e "FLAGS_dynamic_static_unified_comm=$FLAGS_dynamic_static_unified_comm" \
+            -e "python_version=$python_version" \
+            -e "HF_PROXY_PATH=$work_dir/../../../proxy_huggingface" \
+            -e "AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio" \
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
             -w /workspace ${GPU_OPTION} --privileged $IMAGE_NAME
@@ -131,7 +131,7 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
-          timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE}
+          timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
           
       - name: Upload Products
