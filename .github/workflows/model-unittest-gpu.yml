@@ -18,14 +18,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PR_ID: ${{ github.event.pull_request.number || '' }}
+  PR_ID: ${{ github.event.pull_request.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-model-unittest-gpu
   CI_SCRIPTS_PATH: /workspace/PaddleFormers/scripts/ci_model_unittest.sh
   BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_JOB_NAME: model-unittest-gpu-ci
-  NO_PROXY: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+  no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 defaults:
   run:
@@ -48,49 +48,58 @@ jobs:
       
       - name: Run Container
         env:
-          WORK_DIR: ${{ github.workspace }}
-          FLAGS_DYNAMIC_STATIC_UNIFIED_COMM: "True"
-          PYTHON_VERSION: "3.10"
-          PADDLE_WHL: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          work_dir: ${{ github.workspace }}
+          FLAGS_dynamic_static_unified_comm: "True"
+          python_version: "3.10"
+          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
-          CONTAINER_NAME=${TASK}-$(date +%Y%m%d-%H%M%S)
-          echo "CONTAINER_NAME=${CONTAINER_NAME}" >> "$GITHUB_ENV"
-          docker run -d -t --gpus all --name ${CONTAINER_NAME} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
-            -v ${WORK_DIR}/../../..:${WORK_DIR}/../../.. \
-            -v ${WORK_DIR}:/workspace \
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> "$GITHUB_ENV"
+          echo "Workspace path: ${{ github.workspace }}"
+          DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
+          if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
+            GPU_OPTION="--runtime=nvidia"
+          else
+            GPU_OPTION="--gpus all"
+          fi
+          echo "DOCKER_VER=${DOCKER_VER}"
+          echo "GPU_OPTION=${GPU_OPTION}"
+          docker run -d -t ${GPU_OPTION} --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+            -v ${work_dir}/../../..:${work_dir}/../../.. \
+            -v ${work_dir}:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
             -e "BRANCH=$BRANCH" \
             -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
             -e "PR_ID=$PR_ID" \
             -e "COMMIT_ID=$COMMIT_ID" \
-            -e "WORK_DIR=$WORK_DIR" \
+            -e "work_dir=$work_dir" \
             -e "CI_SCRIPTS_PATH=$CI_SCRIPTS_PATH" \
-            -e "NO_PROXY=$NO_PROXY" \
+            -e "no_proxy=$no_proxy" \
             -e "CI_JOB_NAME=$CI_JOB_NAME" \
-            -e "PADDLE_WHL=$PADDLE_WHL" \
-            -e "FLAGS_DYNAMIC_STATIC_UNIFIED_COMM=$FLAGS_DYNAMIC_STATIC_UNIFIED_COMM" \
-            -e "PYTHON_VERSION=$PYTHON_VERSION" \
-            -e HF_PROXY_PATH=${WORK_DIR}/../../../proxy_huggingface \
-            -e AISTUDIO_PROXY_PATH=${WORK_DIR}/../../../proxy_aistudio \
+            -e "paddle_whl=$paddle_whl" \
+            -e "FLAGS_dynamic_static_unified_comm=$FLAGS_dynamic_static_unified_comm" \
+            -e "python_version=$python_version" \
+            -e HF_PROXY_PATH=${work_dir}/../../../proxy_huggingface \
+            -e AISTUDIO_PROXY_PATH=${work_dir}/../../../proxy_aistudio \
             -w /workspace --privileged ${IMAGE_NAME}
             
       - name: Download Code
         run: |
-          docker exec -t $CONTAINER_NAME /bin/bash -c '
+          docker exec -t $container_name /bin/bash -c '
             rm -rf * .[^.]*
             echo "Downloading PaddleFormers.tar"
             wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
             echo "Extracting PaddleFormers.tar"
             tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
-            echo "WORK_DIR = ${WORK_DIR}"
-            source ${WORK_DIR}/../../../proxy
-            cat ${WORK_DIR}/../../../proxy
+            echo "work_dir = ${work_dir}"
+            source ${work_dir}/../../../proxy
+            cat ${work_dir}/../../../proxy
             cd PaddleFormers
             git config --global user.name "PaddleCI"
             git config --global user.email "paddle_ci@example.com"
             git pull
             git submodule update --init --recursive --force
-            if [ -n "${PR_ID}" ]; then
+            if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
               git fetch origin pull/${PR_ID}/head
               git checkout -b PR_${PR_ID} FETCH_HEAD
               git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
@@ -106,34 +115,32 @@ jobs:
 
       - name: Test
         run: |
-          docker exec -t $CONTAINER_NAME /bin/bash -c '
+          docker exec -t $container_name /bin/bash -c '
           ldconfig
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-          echo "WORK_DIR = ${WORK_DIR}"
-          cp -r ${WORK_DIR}/../../../models ./models
-          echo "Check models:"
+          echo "work_dir = ${work_dir}"
+          cp -r ${work_dir}/../../../models ./models
+          echo "Check whether the local model file exists:"
           ls -l ./models
-          echo "Test Start"
-          hostname
-          timeout 30m bash scripts/regression/ci_model_unittest.sh ${PADDLE_WHL}
+          timeout 30m bash scripts/regression/ci_model_unittest.sh ${paddle_whl} ${AGILE_COMPILE_BRANCH}
           '
           
       - name: Upload Products
         if: always()
         env:
-          HOME_PATH: ${{ github.workspace }}/../../..
-          BOS_UPLOAD_SCRIPT: ${{ github.workspace }}/../../../bos/BosClient.py
+          home_path: ${{ github.workspace }}/../../..
+          bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
         run: |
-          docker exec -t $CONTAINER_NAME /bin/bash -c '
-          if [ ! -f "${BOS_UPLOAD_SCRIPT}" ]; then
-            wget -q --no-proxy -O ${HOME_PATH}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
-            mkdir ${HOME_PATH}/bos
-            tar xf ${HOME_PATH}/bos_new.tar.gz -C ${HOME_PATH}/bos
+          docker exec -t $container_name /bin/bash -c '
+          if [ ! -f "${{ env.bos_file }}" ]; then
+            wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+            mkdir ${{ env.home_path }}/bos
+            tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
           fi
-          if [ -n "${PR_ID}" ]; then
+          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
             bos_prefix="schedule/$(date +%Y%m%d)"
@@ -142,7 +149,7 @@ jobs:
           cd /workspace/PaddleFormers/model_unittest_logs
           for FILE in /workspace/PaddleFormers/model_unittest_logs/*; do
             file=$(basename "$FILE")
-            python ${BOS_UPLOAD_SCRIPT} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
+            python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
           done
           '
@@ -150,4 +157,4 @@ jobs:
       - name: Terminate And Delete the Container
         if: always()
         run: |
-          docker rm -f $CONTAINER_NAME 2>/dev/null || true
+          docker rm -f $container_name 2>/dev/null || true
