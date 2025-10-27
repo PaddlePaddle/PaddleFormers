@@ -158,16 +158,11 @@ jobs:
           fi
           # coverage.xml
           if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
-            echo "PYTEST_EXECUTE_FLAG=true" >> $GITHUB_ENV
-            echo "env.PYTEST_EXECUTE_FLAG = ${{ env.PYTEST_EXECUTE_FLAG }}"
-            rm -rf ${{ env.PYTEST_EXECUTE_FLAG_FILE }}
             echo "PYTEST_EXECUTE_FLAG_FILE found, uploading coverage.xml."
             cd /workspace/PaddleFormers
             python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
             echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
           else
-            echo "PYTEST_EXECUTE_FLAG=false" >> $GITHUB_ENV
-            echo "env.PYTEST_EXECUTE_FLAG = ${{ env.PYTEST_EXECUTE_FLAG }}"
             echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml upload."
           fi
           # logs
@@ -190,13 +185,13 @@ jobs:
         run: |
           # 检查标志文件是否存在，并设置作业输出
           if [ -f "${{ env.PYTEST_EXECUTE_FLAG_FILE }}" ]; then
+            rm -rf ${{ env.PYTEST_EXECUTE_FLAG_FILE }}
             echo "pytest_execute_flag=true" >> $GITHUB_OUTPUT
             echo "PYTEST_EXECUTE_FLAG_FILE exists, setting flag to true"
           else
             echo "pytest_execute_flag=false" >> $GITHUB_OUTPUT
             echo "PYTEST_EXECUTE_FLAG_FILE does not exist, setting flag to false"
           fi
-          echo "env.PYTEST_EXECUTE_FLAG = ${{ env.PYTEST_EXECUTE_FLAG }}"
 
       - name: Terminate And Delete the Container
         if: always()
@@ -219,10 +214,10 @@ jobs:
         run: |
           echo "needs.unittest-gpu-ci.outputs.pytest_execute_flag = ${{ needs.unittest-gpu-ci.outputs.pytest_execute_flag }}"
           if [ "${{ needs.unittest-gpu-ci.outputs.pytest_execute_flag }}" = "true" ]; then
-            echo "PYTEST_EXECUTE_FLAG is true, proceeding to upload coverage."
+            echo "pytest_execute_flag is true, proceeding to upload coverage."
             echo "should_upload=true" >> $GITHUB_OUTPUT
           else
-            echo "PYTEST_EXECUTE_FLAG is false, skipping coverage upload."
+            echo "pytest_execute_flag is false, skipping coverage upload."
             echo "should_upload=false" >> $GITHUB_OUTPUT
           fi
 
