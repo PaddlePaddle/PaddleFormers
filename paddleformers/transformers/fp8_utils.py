@@ -517,10 +517,21 @@ class FP8LinearFunctionBase:
         # compute fp8_mlp_fwd
         d_norm_output = FP8LinearFunctionBase.fp8_mlp_bwd(do3, norm_output, w1, w2, True)
 
+        # ===== compute norm grad =====
+        dx, d_rms_norm_weight = fused_ln.fused_rms_norm_grad_func(x, norm_w, invar, d_norm_output, norm_eps)
+        if hasattr(norm_w, "main_grad"):
+            if norm_w.main_grad is None:
+                norm_w.main_grad = paddle.zeros(shape=norm_w.shape, dtype=paddle.float32)
+            norm_w.main_grad += d_rms_norm_weight
+        else:
+            if norm_w.grad is None:
+                norm_w.grad = paddle.zeros(shape=norm_w.shape, dtype=paddle.float32)
+            norm_w.grad += d_rms_norm_weight
+
         if hasattr(norm_w, "_apply_backward_hook"):
             norm_w._apply_backward_hook()
 
-        return d_norm_output, norm_output, invar
+        return dx, norm_output, invar
 
 
 class FP8LinearFunction(paddle.autograd.PyLayer):
