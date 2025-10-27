@@ -24,7 +24,6 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 from ...generation import GenerationMixin
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
-from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.pp_model import GeneralModelForCausalLMPipe
@@ -52,7 +51,14 @@ class Gemma3TextScaledWordEmbedding(nn.Embedding):
     This module overrides nn.Embeddings' forward by multiplying with embeddings scale.
     """
 
-    def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: int, embed_scale: float = 1.0):
+    def __init__(self, config):
+        num_embeddings = config.vocab_size
+        embedding_dim = config.hidden_size
+        padding_idx = config.pad_token_id
+
+        # TODO: config cannot be updated when pp!=1, temporarily hard-coded
+        embed_scale = config.hidden_size**0.5  # getattr(config, "embed_scale", 1.0)
+
         super().__init__(num_embeddings, embedding_dim, padding_idx)
         self.register_buffer("embed_scale", paddle.tensor(embed_scale), persistable=False)
 
@@ -95,7 +101,7 @@ class Gemma3MLP(nn.Layer):
 
 
 class Gemma3RMSNorm(nn.Layer):
-    def __init__(self, hidden_size: int, eps: float = 1e-6):
+    def __init__(self, hidden_size: int, eps: float = 1e-6, input_is_parallel=False):
         super().__init__()
         self.eps = eps
         self.weight = paddle.create_parameter(
@@ -103,6 +109,9 @@ class Gemma3RMSNorm(nn.Layer):
             dtype=paddle.get_default_dtype(),
             default_initializer=nn.initializer.Constant(0.0),
         )
+
+        if input_is_parallel:
+            self.enable_sequence_parallel()
 
     def _norm(self, x):
         if paddle.in_dynamic_mode():
@@ -120,6 +129,19 @@ class Gemma3RMSNorm(nn.Layer):
 
     def enable_sequence_parallel(self):
         mark_as_sequence_parallel_parameter(self.weight)
+
+
+class Gemma3RMSNormPipe(Gemma3RMSNorm):
+    def __init__(self, config):
+        hidden_size = config.hidden_size
+        eps = getattr(config, "rms_norm_eps", 1e-6)
+        input_is_parallel = getattr(config, "sequence_parallel", False)
+        super().__init__(hidden_size, eps, input_is_parallel)
+
+    def forward(self, x):
+        if isinstance(x, tuple):
+            x = x[0]
+        return super().forward(x)
 
 
 def _compute_default_rope_parameters(
@@ -371,7 +393,6 @@ class Gemma3DecoderLayer(nn.Layer):
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
-
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
             hidden_states=hidden_states,
             position_embeddings=position_embeddings,
@@ -382,6 +403,7 @@ class Gemma3DecoderLayer(nn.Layer):
             use_cache=use_cache,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
+
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = residual + hidden_states
 
@@ -406,27 +428,13 @@ class Gemma3DecoderLayer(nn.Layer):
 class Gemma3PreTrainedModel(PretrainedModel):
     config_class = Gemma3Config
     base_model_prefix = "model"
-    supports_gradient_checkpointing = True
     _no_split_modules = [
         "Gemma3DecoderLayer",
         # "SiglipVisionEmbeddings",
         # "SiglipEncoderLayer",
         # "SiglipMultiheadAttentionPoolingHead",
     ]
-    _skip_keys_device_placement = ["past_key_values"]
-    _supports_flash_attn = True
-    _supports_sdpa = True
-    _supports_flex_attn = True
-
-    _can_compile_fullgraph = True
-    _supports_attention_backend = True
-    _can_record_outputs = {
-        "hidden_states": Gemma3DecoderLayer,
-        "attentions": Gemma3Attention,
-    }
-
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
-
     transpose_weight_keys = [
         "q_proj",
         "k_proj",
@@ -513,23 +521,14 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
         self.sequence_parallel = config.sequence_parallel
-        if self._supports_sdpa:
-            config._attn_implementation = "sdpa"
 
-        # Gemma3 downcasts the below to bfloat16, causing sqrt(3072)=55.4256 to become 55.5. See https://github.com/huggingface/transformers/pull/29402
-        # self.embed_tokens = Gemma3TextScaledWordEmbedding(
-        #     config.vocab_size, config.hidden_size, self.padding_idx, embed_scale=self.config.hidden_size**0.5
-        # )
-        self.embed_tokens = GeneralEmbedding.create(
-            config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
-        )
-        self.embed_tokens.register_buffer(
-            "embed_scale", paddle.to_tensor(config.hidden_size**0.5), persistable=False
-        )
+        # Gemma3 downcasts the below to bfloat16, causing sqrt(3072)=55.4256 to become 55.5.
+        # See https://github.com/huggingface/transformers/pull/29402
+        self.embed_tokens = Gemma3TextScaledWordEmbedding(config)
         self.layers = nn.LayerList(
             [Gemma3DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = Gemma3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = Gemma3RMSNormPipe(config)
         self.rotary_emb = Gemma3RotaryEmbedding(config=config)
 
         # TODO: raushan fix this after RoPE refactor. For now we hack it by reassigning thetas
@@ -617,7 +616,6 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         # Get input embeddings
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
-            inputs_embeds = inputs_embeds * self.embed_tokens.embed_scale.to(inputs_embeds.dtype)
 
         if self.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
@@ -702,8 +700,6 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
                         decoder_layer.attention_type
                     ],
                 )
-                # print("layer_outputs",type(layer_outputs))
-                # exit()
 
             if isinstance(layer_outputs, (tuple, list)):
                 hidden_states = layer_outputs[0]
@@ -737,9 +733,8 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
 
 
 class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
+    enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
-    _tp_plan = {"lm_head": "colwise_rep"}
-    _pp_plan = {"lm_head": (["hidden_states"], ["logits"])}
     config_class = Gemma3TextConfig
     # TODO: base_model_prefix should be same with submodel variable name
     # base_model_prefix = "language_model"
@@ -839,42 +834,6 @@ class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
         )
 
 
-class Gemma3MultiModalProjector(nn.Layer):
-    def __init__(self, config: Gemma3Config):
-        super().__init__()
-
-        self.mm_input_projection_weight = nn.Parameter(
-            paddle.zeros(config.vision_config.hidden_size, config.text_config.hidden_size)
-        )
-
-        self.mm_soft_emb_norm = Gemma3RMSNorm(
-            config.vision_config.hidden_size, eps=config.vision_config.layer_norm_eps
-        )
-
-        self.patches_per_image = int(config.vision_config.image_size // config.vision_config.patch_size)
-        self.tokens_per_side = int(config.mm_tokens_per_image**0.5)
-        self.kernel_size = self.patches_per_image // self.tokens_per_side
-        self.avg_pool = nn.AvgPool2d(kernel_size=self.kernel_size, stride=self.kernel_size)
-
-    def forward(self, vision_outputs: paddle.Tensor):
-        batch_size, _, seq_length = vision_outputs.shape
-
-        reshaped_vision_outputs = vision_outputs.transpose(1, 2)
-        reshaped_vision_outputs = reshaped_vision_outputs.reshape(
-            batch_size, seq_length, self.patches_per_image, self.patches_per_image
-        )
-        reshaped_vision_outputs = reshaped_vision_outputs.contiguous()
-
-        pooled_vision_outputs = self.avg_pool(reshaped_vision_outputs)
-        pooled_vision_outputs = pooled_vision_outputs.flatten(2)
-        pooled_vision_outputs = pooled_vision_outputs.transpose(1, 2)
-
-        normed_vision_outputs = self.mm_soft_emb_norm(pooled_vision_outputs)
-
-        projected_vision_outputs = paddle.matmul(normed_vision_outputs, self.mm_input_projection_weight)
-        return projected_vision_outputs.type_as(vision_outputs)
-
-
 class Gemma3TextForSequenceClassification(Gemma3PreTrainedModel):
     """
     Gemma3TextForSequenceClassification is a text-only sequence classification model that works with Gemma3TextConfig.
@@ -891,6 +850,8 @@ class Gemma3ForCausalLMPipe(GeneralModelForCausalLMPipe):
     _get_tensor_parallel_mappings = Gemma3TextModel._get_tensor_parallel_mappings
     _init_weights = Gemma3TextModel._init_weights
     _rotary_emb_cls = Gemma3RotaryEmbedding
+    _embed_cls = Gemma3TextScaledWordEmbedding
+    _rms_norm_pipe_cls = Gemma3RMSNormPipe
     _keep_in_fp32_modules = Gemma3TextModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Gemma3TextModel.transpose_weight_keys
