@@ -2213,6 +2213,7 @@ class Trainer:
             and self.args.moe_sharding_parallel_degree >= 1
             and self.args.expert_parallel_degree > 1
             and self.args.sharding_parallel_degree > 1
+            and not self.args.reorder_pipeline_priority
         ):
             from ..utils import MoEHybridParallelOptimizer
 

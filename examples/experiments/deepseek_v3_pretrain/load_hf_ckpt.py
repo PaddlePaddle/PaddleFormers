@@ -28,7 +28,7 @@ try:
 except:
     safe_open = None
 
-_LAYER_RE = re.compile(r"^_layers\.(\d+)\.(\d+)(?:\.(.*))?$")
+_LAYER_RE = re.compile(r"^deepseek_v2.layers\.(\d+)\.(.*)$")
 _EXPERT_W1_RE = re.compile(r"^mlp\.experts\.(\d+)\.w1(?:\.weight)?$")
 _EXPERT_W2_RE = re.compile(r"^mlp\.experts\.(\d+)\.w2(?:\.weight)?$")
 _SHARE_EXPERT_W1_RE = re.compile(r"^mlp\.shared_experts\.w1(?:\.weight)?$")
@@ -36,7 +36,6 @@ _SHARE_EXPERT_W2_RE = re.compile(r"^mlp\.shared_experts\.w2(?:\.weight)?$")
 
 _EXPERT_W1_RE_v2 = re.compile(r"^mlp\.experts\.(\d+)\.gate_up_fused_proj(?:\.weight)?$")
 _SHARE_EXPERT_W1_RE_v2 = re.compile(r"^mlp\.shared_experts\.gate_up_fused_proj(?:\.weight)?$")
-_LAYER_RE_v2 = re.compile(r"_layers.deepseek_v2.layers\.(\d+)\.(.*)$")
 
 custom_name_map = {
     "self_attn.input_layernorm.weight": "input_layernorm.weight",
@@ -47,81 +46,13 @@ custom_name_map = {
     "self_attn.memory_recompute_att.q_ln_weight": "self_attn.q_a_layernorm.weight",
     "self_attn.fused_rms_norm_linear.q_down_weight": "self_attn.q_a_proj.weight",
     "self_attn.memory_recompute_att.q_up_weight": "self_attn.q_b_proj.weight",
+    "self_attn.input_layernorm.weight": "input_layernorm.weight",
+    "mlp.gate.norm_weight": "post_attention_layernorm.weight",
+    "mlp.router.weight": "mlp.gate.weight",
+    "mlp.router.e_score_correction_bias": "mlp.gate.e_score_correction_bias",
+    "mlp.router.norm_weight": "post_attention_layernorm.weight",
+    "mlp.shared_experts.norm_weight": "post_attention_layernorm.weight",
 }
-
-
-def paddle_name_to_hf_names_ds_v2(paddle_name: str) -> List[str]:
-    """
-    Convert Paddle model parameter names to Hugging Face format name lists
-
-    Args:
-        paddle_name: Parameter name in Paddle format
-
-    Returns:
-        List of parameter names in Hugging Face format (may be split into multiple parameters)
-    """
-    if paddle_name == "_layers.deepseek_v2.embed_tokens.weight":
-        return ["model.embed_tokens.weight"]
-
-    if paddle_name == "_layers.deepseek_v2.norm.weight":
-        return ["model.norm.weight"]
-
-    if paddle_name == "_layers.lm_head.weight":
-        return ["lm_head.weight"]
-
-    m = _LAYER_RE_v2.match(paddle_name)
-    if not m:
-        return []
-
-    rest = m.group(2) or ""
-    layer_id = m.group(1)
-    if rest in custom_name_map:
-        rest = custom_name_map[rest]
-    out_name = "model.layers." + layer_id + "." + rest
-
-    if rest == "mlp.gate_up_fused_proj.weight" or rest == "mlp.w1":
-        return [
-            "model.layers." + layer_id + ".mlp.gate_proj.weight",
-            "model.layers." + layer_id + ".mlp.up_proj.weight",
-        ]
-
-    if rest == "mlp.w2":
-        return ["model.layers." + layer_id + ".mlp.down_proj.weight"]
-
-    if rest == "mlp.shared_experts.gate_up_fused_proj.weight":
-        return [
-            "model.layers." + layer_id + ".mlp.shared_experts.gate_proj.weight",
-            "model.layers." + layer_id + ".mlp.shared_experts.up_proj.weight",
-        ]
-
-    if m := _EXPERT_W1_RE_v2.match(rest):
-        expert_id = m.group(1)
-        return [
-            "model.layers." + layer_id + ".mlp.experts." + expert_id + ".gate_proj.weight",
-            "model.layers." + layer_id + ".mlp.experts." + expert_id + ".up_proj.weight",
-        ]
-
-    if m := _EXPERT_W1_RE.match(rest):
-        expert_id = m.group(1)
-        return [
-            "model.layers." + layer_id + ".mlp.experts." + expert_id + ".gate_proj.weight",
-            "model.layers." + layer_id + ".mlp.experts." + expert_id + ".up_proj.weight",
-        ]
-
-    if m := _EXPERT_W2_RE.match(rest):
-        expert_id = m.group(1)
-        return ["model.layers." + layer_id + ".mlp.experts." + expert_id + ".down_proj.weight"]
-
-    if m := _SHARE_EXPERT_W1_RE.match(rest):
-        return [
-            "model.layers." + layer_id + ".mlp.shared_experts.gate_proj.weight",
-            "model.layers." + layer_id + ".mlp.shared_experts.up_proj.weight",
-        ]
-
-    if m := _SHARE_EXPERT_W2_RE.match(rest):
-        return ["model.layers." + layer_id + ".mlp.shared_experts.down_proj.weight"]
-
-    return [out_name]
 
 
 def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
@@ -134,23 +65,24 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
     Returns:
         List of parameter names in Hugging Face format (may be split into multiple parameters)
     """
-    if paddle_name == "_layers.local_shared_layers.DeepseekV2_shared_weight.embed_tokens.weight":
+
+    if paddle_name == "deepseek_v2.embed_tokens.weight":
         return ["model.embed_tokens.weight"]
 
-    if paddle_name == "_layers.deepseek_v2.embed_tokens.weight":
-        return ["model.embed_tokens.weight"]
+    if paddle_name == "deepseek_v2.norm.weight":
+        return ["model.norm.weight"]
+
+    if paddle_name == "lm_head.weight":
+        return ["lm_head.weight"]
 
     m = _LAYER_RE.match(paddle_name)
 
     if not m:
         return []
     else:
-        rest = m.group(3) or ""
+        rest = m.group(2) or ""
 
-    segment_id = int(m.group(1))
-    id_in_segment = int(m.group(2))
-
-    hf_prefix = _get_hf_prefix(segment_id, id_in_segment)
+    hf_prefix = "model" + ".layers." + m.group(1)
 
     if rest in custom_name_map:
         return [f"{hf_prefix}.{custom_name_map[rest]}"]
@@ -197,24 +129,7 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
     if m := _SHARE_EXPERT_W2_RE.match(rest):
         return [hf_prefix + ".mlp.shared_experts.down_proj.weight"]
 
-    return [f"{hf_prefix}.{rest}"] if rest else [hf_prefix]
-
-
-def _get_hf_prefix(segment_id: int, id_in_segment: int) -> str:
-    """Generate hierarchical prefix in Hugging Face format"""
-    # Special layer mappings
-    # special_cases = {(0, 0): "model", (60, 2): "model.layers.61", (60, 3): "model"}
-    # special_cases = {(0, 0): "model", (28, 2): "model.layers.61", (28, 3): "model"}
-    # special_cases = {(0, 0): "model", (28, 2): "model.layers.61", (4, 1): "model"}
-    # special_cases = {(0, 0): "model",  (28, 2): "model", (28,3): "lm_head"}
-    special_cases = {(0, 0): "model", (60, 2): "model.layers.61", (60, 3): "model", (60, 4): "lm_head"}
-
-    if (segment_id, id_in_segment) in special_cases:
-        return special_cases[(segment_id, id_in_segment)]
-
-    # General layer calculation
-    layer_idx = segment_id + id_in_segment - 1
-    return f"model.layers.{layer_idx}"
+    return [paddle_name.replace("deepseek_v2", "model")]
 
 
 def _handle_expert_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
@@ -253,6 +168,25 @@ def _handle_mlp_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
         return [f"{hf_prefix}.mlp.down_proj.weight"]
 
     return None
+
+
+def _is_need_transpose(key):
+    transpose_weight_keys = [
+        "fused_rms_norm_linear.kv_down_weight",
+        "memory_recompute_att.kv_up_weight",
+        "o_proj.weight",
+        "fused_rms_norm_linear.q_down_weight",
+        "memory_recompute_att.q_up_weight",
+        "w1",
+        "w2",
+        "gate.weight",
+        "eh_proj.weight",
+        "lm_head.weight",
+    ]
+    for trans_key in transpose_weight_keys:
+        if key.endswith(trans_key):
+            return True
+    return False
 
 
 def prepare_tensor(tensor, dst_shape, *, force_transpose=False):
@@ -300,18 +234,17 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
     required_files = set()
     file_to_pd_param_name = defaultdict(list)
     pd_param_name_to_file = defaultdict(list)
-    for pd_name, p in model.named_parameters():
+    for pd_name, p in model.state_dict().items():
         hf_name = paddle_name_to_hf_names(pd_name)
-        if hf_name[0] in weight_map:
+        if len(hf_name) == 0:
+            logger.warning(f"the weight {pd_name} does not need to be loaded")
+        elif hf_name[0] in weight_map:
             filename = weight_map[hf_name[0]]
             required_files.add(filename)
             file_to_pd_param_name[filename].append(pd_name)
             pd_param_name_to_file[pd_name].append(filename)
         else:
             logger.warning(f"Warning: {pd_name} -> {hf_name[0]} not found in weight map")
-            import sys
-
-            sys.exit()
 
         if len(hf_name) > 1:
             if hf_name[1] in weight_map:
@@ -339,7 +272,7 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
                     if len(hf_name) == 1:
                         tensor = f.get_tensor(hf_name[0])
 
-                        force_transpose = False
+                        force_transpose = _is_need_transpose(hf_name[0])
 
                         model.state_dict()[pd_param].set_value(
                             paddle.cast(
