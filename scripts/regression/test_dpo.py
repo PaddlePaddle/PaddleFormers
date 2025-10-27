@@ -112,18 +112,6 @@ class DPOTrainTest(unittest.TestCase):
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
-        # launch mode
-        # train_path = os.path.join(TRAIN_PATH, "alignment/dpo/run_dpo.py")
-        # cmd = [
-        #     "python",
-        #     "-u",
-        #     "-m",
-        #     "paddle.distributed.launch",
-        #     "--devices",
-        #     "0,1,2,3",
-        #     train_path,
-        #     updated_config_path,
-        # ]
         # cli mode
         cmd = [
             "paddleformers-cli",
@@ -157,14 +145,6 @@ class DPOTrainTest(unittest.TestCase):
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
-        # launch mode
-        # train_path = os.path.join(TRAIN_PATH, "alignment/dpo/run_dpo.py")
-        # cmd = [
-        #     "python",
-        #     "-u",
-        #     train_path,
-        #     updated_config_path,
-        # ]
         # cli mode
         cmd = [
             "paddleformers-cli",
@@ -182,20 +162,6 @@ class DPOTrainTest(unittest.TestCase):
 
         # test lora  merge
         lora_merge_output_dir = os.path.join(output_dir, "export")
-        # launch mode
-        # lora_merge_path = os.path.join(TRAIN_PATH, "tools/mergekit.py")
-
-        # lora_merge_cmd = [
-        #     "python",
-        #     "-u",
-        #     lora_merge_path,
-        #     "--lora_model_path",
-        #     output_dir,
-        #     "--model_name_or_path",
-        #     MODEL_NAME_OR_PATH,
-        #     "--output_path",
-        #     lora_merge_output_dir,
-        # ]
         # cli mode
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -217,18 +183,6 @@ class DPOTrainTest(unittest.TestCase):
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
-        # launch mode
-        # train_path = os.path.join(TRAIN_PATH, "alignment/dpo/run_dpo.py")
-        # cmd = [
-        #     "python",
-        #     "-u",
-        #     "-m",
-        #     "paddle.distributed.launch",
-        #     "--devices",
-        #     "0,1,2,3",
-        #     train_path,
-        #     updated_config_path,
-        # ]
         # cli mode
         cmd = [
             "paddleformers-cli",
@@ -258,14 +212,6 @@ class DPOTrainTest(unittest.TestCase):
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
-        # launch mode
-        # train_path = os.path.join(TRAIN_PATH, "alignment/dpo/run_dpo.py")
-        # cmd = [
-        #     "python",
-        #     "-u",
-        #     train_path,
-        #     updated_config_path,
-        # ]
         # cli mode
         cmd = [
             "paddleformers-cli",
@@ -283,19 +229,6 @@ class DPOTrainTest(unittest.TestCase):
 
         # test lora  merge
         lora_merge_output_dir = os.path.join(output_dir, "export")
-        # lora_merge_path = os.path.join(TRAIN_PATH, "tools/mergekit.py")
-
-        # lora_merge_cmd = [
-        #     "python",
-        #     "-u",
-        #     lora_merge_path,
-        #     "--lora_model_path",
-        #     output_dir,
-        #     "--model_name_or_path",
-        #     MODEL_NAME_OR_PATH,
-        #     "--output_path",
-        #     lora_merge_output_dir,
-        # ]
         # cli mode
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
