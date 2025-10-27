@@ -990,6 +990,10 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Enable MoE (Mixture of Experts) expert parallel training"},
     )
+    aux_loss_alpha: Optional[float] = field(
+        default=0.0001,
+        metadata={"help": "MoE (Mixture of Experts) Auxiliary loss weight coefficient"},
+    )
     expert_max_capacity: Optional[int] = field(
         default=pow(2, 32),
         metadata={"help": "Enable MoE (Mixture of Experts) expert max token capacity"},

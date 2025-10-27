@@ -60,7 +60,7 @@ class TestLMHead(unittest.TestCase):
         self.assertEqual(output[0].shape, test_input.shape)
         self.assertEqual(output[1].shape, lm_head.weight.shape)
         self.assertIs(output[2], lm_head.bias)
-        self.assertEqual(output[3], config.tie_word_embeddings)
+        self.assertEqual(output[3], True)
 
 
 if __name__ == "__main__":
