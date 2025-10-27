@@ -2435,7 +2435,6 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
 
         if recompute_fa3:
             attn_out_reshape_shape = [bsz, custom_map.q_lens, -1]
-
             # deep_gemm only support 2D
             attn_out_reshape = attn_out.reshape([bsz * custom_map.q_lens, -1]).contiguous()
             out = FP8LinearFunctionBase.compute_fp8_linear(
