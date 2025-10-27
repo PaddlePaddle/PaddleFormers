@@ -132,11 +132,11 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
-        # reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        # self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        # EXCEPTED_LOSS = 9.550503
-        # self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+        EXCEPTED_LOSS = 9.550503
+        self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
@@ -214,8 +214,11 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
-        # EXCEPTED_LOSS = 9.550503
-        # self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+
+        EXCEPTED_LOSS = 11.956924
+        self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
@@ -285,11 +288,11 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
-        # reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        # self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        # EXCEPTED_LOSS = 9.550503
-        # self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+        EXCEPTED_LOSS = 11.871344
+        self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
