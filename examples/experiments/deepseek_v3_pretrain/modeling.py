@@ -769,6 +769,7 @@ class DeepseekV2Attention(nn.Layer):
             q_t1, compressed_kv = self.fused_rms_norm_linear(hidden_states)
 
             outputs = self.memory_recompute_att(q_t1, compressed_kv, position_ids)
+
             if not self.recompute_fa3:
                 if self.v_head_dim * self.num_heads != outputs.shape[-1]:
                     outputs = outputs.reshape([bsz, q_len, self.num_heads, -1])
