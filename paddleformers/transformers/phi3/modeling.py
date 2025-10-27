@@ -229,9 +229,7 @@ class Phi3DecoderLayer(nn.Layer):
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         residual = hidden_states
-
         hidden_states = self.input_layernorm(hidden_states)
-
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
             hidden_states=hidden_states,
             position_embeddings=position_embeddings,
@@ -354,8 +352,6 @@ class Phi3Model(Phi3PreTrainedModel):
             norm_eps=self.config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
-        print(f"config.tensor_parallel_degree={config.tensor_parallel_degree}")
-        print(f"config.sequence_parallel={config.sequence_parallel}")
         self.rotary_emb = Phi3RotaryEmbedding(config)
 
     @paddle.jit.not_to_static
