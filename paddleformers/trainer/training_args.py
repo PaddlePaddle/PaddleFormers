@@ -1109,6 +1109,12 @@ class TrainingArguments:
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
+            # self.max_grad_norm = 0.0
+            # The current auto_hybrid_pp has aligned the handling of ClipGradByGlobalNorm with the original dygraph semi-auto parallel and dynamic manual-parallel modes and can correctly handle grad_clip, so it is no longer necessary to set max_grad_norm=0.0.
+            if self.max_grad_norm != 0.0:
+                warnings.warn(
+                    "max_grad_norm is not 0.0,We will execute ClipGradByGlobalNorm,if you want to disable it,please set max_grad_norm=0.0"
+                )
             self.max_grad_norm = 0.0
             os.environ["FLAGS_max_inplace_grad_add"] = "65536"
             os.environ["FLAGS_embedding_deterministic"] = "1"
