@@ -2622,7 +2622,6 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                         input_transpose=True,
                         return_transpose_only=True,
                     )
-
                     dout_2d = dout.reshape([-1, dout.shape[-1]])
 
                     # ===== dx = deep_gemm(dout_fp8, w_fp8)
