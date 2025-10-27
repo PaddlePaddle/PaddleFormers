@@ -154,8 +154,6 @@ class StandardConfigMappingTest(unittest.TestCase):
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
 
-    @skip_for_none_ce_case
-    @set_proxy(DownloadSource.HUGGINGFACE)
     def test_load_from_hf(self):
         """test load config from hf"""
         config = BertConfig.from_pretrained("Baicai003/tiny-bert", download_hub="huggingface")
