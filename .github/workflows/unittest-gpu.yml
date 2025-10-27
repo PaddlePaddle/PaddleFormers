@@ -81,7 +81,7 @@ jobs:
             -e "PYTEST_EXECUTE_FLAG_FILE=$PYTEST_EXECUTE_FLAG_FILE" \
             -e "no_proxy=$no_proxy" \
             -e "CI_JOB_NAME=$CI_JOB_NAME" \
-            -e "paddle_whl=$paddle_whl" \\
+            -e "paddle_whl=$paddle_whl" \
             -e "FLAGS_dynamic_static_unified_comm=$FLAGS_dynamic_static_unified_comm" \
             -e "python_version=$python_version" \
             -e "HF_PROXY_PATH=$work_dir/../../../proxy_huggingface" \

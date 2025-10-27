@@ -31,7 +31,7 @@ if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
 fi
 dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
 mkdir -p "${dir_name}"
-AGILE_COMPILE_BRANCH = $4
+AGILE_COMPILE_BRANCH=$4
 
 
 install_requirements() {
