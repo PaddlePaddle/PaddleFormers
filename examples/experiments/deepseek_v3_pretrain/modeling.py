@@ -349,6 +349,7 @@ class MoEGate(PretrainedMoEGate):
                 default_initializer=nn.initializer.Constant(0.0),
             )
             self.e_score_correction_bias.is_distributed = True
+
             self.expert_usage = paddle.zeros(
                 shape=[num_experts],
                 dtype=paddle.int64,
