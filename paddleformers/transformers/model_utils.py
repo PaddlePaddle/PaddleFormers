@@ -460,7 +460,6 @@ def _load_part_state_dict(
             else:
                 if key in tensor_parallel_split_mapping:
                     tp_fn = tensor_parallel_split_mapping[key]
-                    # tp_fn = partial(tp_fn.func, *tp_fn.args, **{**tp_fn.keywords, "is_old_qkv": False})
                     if _is_need_transpose(key):
                         assert isinstance(tp_fn, partial)
                         is_column = True

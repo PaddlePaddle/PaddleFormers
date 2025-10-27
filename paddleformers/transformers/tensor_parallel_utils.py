@@ -29,7 +29,6 @@ except:
 from ..utils.tools import get_env_device
 
 
-@paddle.jit.marker.unified
 def parallel_matmul(
     lm_output,
     logit_weights,
