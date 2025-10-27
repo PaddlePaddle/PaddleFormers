@@ -2643,8 +2643,8 @@ class Trainer:
 
         # for v in self._pp_data_buffer[0].values():
         #     assert isinstance(v, paddle.Tensor), f"Only support tensor as pipeline mode input, got type {type(v)}"
-
-        inputs = model._prepare_pipeline_inputs_func(self._pp_data_buffer)
+        with self.autocast_smart_context_manager():
+            inputs = model._prepare_pipeline_inputs_func(self._pp_data_buffer)
         self._pp_data_buffer = []
 
         model.train()
