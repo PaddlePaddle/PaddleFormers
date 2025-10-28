@@ -15,11 +15,6 @@
 """Paddle Ernie4_5_VL model"""
 
 from .model.modeling_moe_vl import (
-    # Ernie4_5_VLForConditionalGeneration,
-    # Ernie4_5_VLModel,
-    # Ernie4_5_VLTextModel,
-    # Ernie4_5_VLVisionTransformerPretrainedModel,
-    # Ernie4_5_VLVariableResolutionResamplerModel,
     Ernie4_5_VLMoeForConditionalGeneration
 )
 from .model.modeling_moe_vl_pp import (
@@ -29,9 +24,4 @@ from .model.modeling_moe_vl_pp import (
 __all__ = [
     "Ernie4_5_VLMoeForConditionalGeneration",
     "Ernie4_5_VLMoeForConditionalGenerationPipe",
-    # "Ernie4_5_VLForConditionalGeneration",
-    # "Ernie4_5_VLModel",
-    # "Ernie4_5_VLTextModel",
-    # "Ernie4_5_VLVisionTransformerPretrainedModel",
-    # "Ernie4_5_VLVariableResolutionResamplerModel",
 ]

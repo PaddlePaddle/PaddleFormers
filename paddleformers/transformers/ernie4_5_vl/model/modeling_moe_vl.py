@@ -889,10 +889,6 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         self._modality_param_mapping = None
         self.image_preprocess = None
         self.lm_head = Ernie4_5_MoeVLHead(config)
-        # vision_model = DFNRopeVisionTransformerPretrainedModel(
-        #     config=config.vision_config
-        # )
-        # self.add_vision_model(vision_model)
         self.model.vision_tower = DFNRopeVisionTransformerPretrainedModel(
             config=config.vision_config
         )

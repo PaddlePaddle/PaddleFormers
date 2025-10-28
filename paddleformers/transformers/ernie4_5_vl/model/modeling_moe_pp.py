@@ -308,13 +308,6 @@ class Ernie4_5_EmbeddingPipe(nn.Layer):
         super(Ernie4_5_EmbeddingPipe, self).__init__()
         self.use_moe = config.text_config.use_moe
         self.language_model = Ernie4_5_Embedding(self.config)
-        # if config.tensor_parallel_degree > 1:
-        #     self.embed_tokens = VocabParallelEmbedding(
-        #         config.text_config.vocab_size,
-        #         config.text_config.hidden_size,
-        #     )
-        # else:
-        #     self.embed_tokens = nn.Embedding(config.text_config.vocab_size, config.text_config.hidden_size)
 
     @property
     def embedding_weight(self):

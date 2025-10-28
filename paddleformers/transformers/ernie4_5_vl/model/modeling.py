@@ -561,14 +561,6 @@ class Ernie4_5_MLP(nn.Layer):
             ):
                 ColumnLN = RRColumnSequenceParallelLinear
                 column_ln_configs = {"use_rr": True}
-            # self.up_gate_proj = ColumnLN(
-            #     self.hidden_size,
-            #     self.intermediate_size * 2,
-            #     gather_output=False,
-            #     has_bias=config.text_config.use_bias,
-            #     fuse_matmul_bias=config.text_config.fuse_linear,
-            #     **column_ln_configs,
-            # )
             self.up_proj = ColumnLN(
                 self.hidden_size,
                 self.intermediate_size,
@@ -587,9 +579,6 @@ class Ernie4_5_MLP(nn.Layer):
             )
         else:
             LinearFN = paddle.incubate.nn.FusedLinear if config.text_config.fuse_linear else Linear
-            # self.up_gate_proj = LinearFN(
-            #     self.hidden_size, self.intermediate_size * 2, bias_attr=config.text_config.use_bias
-            # )
             self.up_proj = LinearFN(
                 self.hidden_size, self.intermediate_size, bias_attr=config.text_config.use_bias
             )
@@ -641,11 +630,9 @@ class Ernie4_5_MLP(nn.Layer):
         gate = self.gate_proj(x)
         up = self.up_proj(x)
         if self.fuse_swiglu:
-            # x = self.up_gate_proj(x)
             x = paddle.concat([gate, up], axis=-1)
             x = fused_swiglu(x)
         else:
-            # gate, x = self.up_gate_proj(x).chunk(2, axis=-1)
             x = F.silu(gate) * up
         return self.down_proj(x)
 
@@ -739,22 +726,6 @@ class Ernie4_5_Attention(nn.Layer):
                 ColumnLN = RRColumnSequenceParallelLinear
                 column_ln_configs = {"use_rr": True}
 
-            # if getattr(config, "head_dim", None) is None:
-            #     qkv_hidden_size = (
-            #         self.hidden_size * 3
-            #         if not self.is_gqa
-            #         else self.hidden_size + kv_hidden_size * 2
-            #     )
-            # else:
-            #     qkv_hidden_size = q_hidden_size + kv_hidden_size * 2
-            # self.qkv_proj = ColumnLN(
-            #     self.hidden_size,
-            #     qkv_hidden_size,
-            #     has_bias=config.text_config.use_bias,
-            #     gather_output=False,
-            #     fuse_matmul_bias=config.text_config.fuse_linear,
-            #     **column_ln_configs,
-            # )
             self.q_proj = ColumnLN(
                 self.hidden_size,
                 q_hidden_size,
@@ -781,19 +752,6 @@ class Ernie4_5_Attention(nn.Layer):
             )
         else:
             LinearFN = paddle.incubate.nn.FusedLinear if config.text_config.fuse_linear else Linear
-            # if getattr(config, "head_dim", None) is None:
-            #     qkv_hidden_size = (
-            #         self.hidden_size * 3
-            #         if not self.is_gqa
-            #         else self.hidden_size + kv_hidden_size * 2
-            #     )
-            # else:
-            #     qkv_hidden_size = q_hidden_size + kv_hidden_size * 2
-            # self.qkv_proj = LinearFN(
-            #     self.hidden_size,
-            #     qkv_hidden_size,
-            #     bias_attr=config.text_config.use_bias,
-            # )
             self.q_proj = LinearFN(
                 self.hidden_size,
                 q_hidden_size,
@@ -918,19 +876,6 @@ class Ernie4_5_Attention(nn.Layer):
         query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
         key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
         value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-        
-        # mix_layer = self.qkv_proj(hidden_states)
-        # if self.is_gqa:
-        #     query_states, key_states, value_states = paddle.split(
-        #         mix_layer.reshape([bsz, q_len, -1, self.head_dim]),
-        #         [self.num_heads, self.num_key_value_heads, self.num_key_value_heads],
-        #         axis=2,
-        #     )
-        #     mix_layer = None
-        # else:
-        #     mix_layer = mix_layer.reshape(
-        #         [bsz, q_len, self.num_heads, 3 * self.head_dim]
-        #     )
 
         if mix_layer is not None:
             has_gradient = not mix_layer.stop_gradient

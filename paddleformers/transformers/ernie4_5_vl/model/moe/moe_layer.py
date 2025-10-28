@@ -78,16 +78,6 @@ class MoEStatics(nn.Layer):
             num_experts_groups = (
                 len(config.text_config.moe_num_experts) if config.text_config.multimodel_experts else 1
             )
-            # p = self.create_parameter(
-            #     shape=[num_experts_groups, num_experts],
-            #     dtype="float32",
-            #     is_bias=True,
-            #     attr=paddle.ParamAttr(
-            #         name=paddle.utils.unique_name.generate("corr_bias")
-            #     ),
-            # )
-            # p.stop_gradient = True
-            # self.e_score_correction_bias = p
             p_list = []
             for i in range(num_experts_groups):
                 p = self.create_parameter(
@@ -102,9 +92,7 @@ class MoEStatics(nn.Layer):
                 p.is_distributed = True
                 p_list.append(p)
             self.e_score_correction_bias_list = (lambda: p_list)
-            # self.e_score_correction_bias = paddle.concat(p_list, axis=0)
             self.e_score_correction_bias = p_list
-            # self.e_score_correction_bias.is_distributed = True
             p = paddle.zeros(
                 shape=[num_experts_groups, num_experts],
                 dtype="int64",
@@ -421,14 +409,6 @@ class ModuleGate(nn.Layer):
         # use fp32 pecison in amp
         self._cast_to_low_precision = False
         self._cast_to_low_precison = False
-        # p = self.create_parameter(
-        #     shape=gate_weight.shape,
-        #     dtype=gate_weight.dtype,
-        # )
-        # self.add_parameter(
-        #     "weight",
-        #     p,
-        # )
 
 
 class ModuleMOESTATICS(nn.Layer):
@@ -442,14 +422,6 @@ class ModuleMOESTATICS(nn.Layer):
         # use fp32 pecison in amp
         self._cast_to_low_precision = False
         self._cast_to_low_precison = False
-        # p = self.create_parameter(
-        #     shape=e_score_correction_bias.shape,
-        #     dtype=e_score_correction_bias.dtype,
-        # )
-        # self.add_parameter(
-        #     "e_score_correction_bias",
-        #     p,
-        # )
 
 
 class ModuleMOELayer(nn.Layer):
@@ -465,21 +437,9 @@ class ModuleMOELayer(nn.Layer):
         ):
         super().__init__()
         self.gate = ModuleGate(gate_weight)
-        # gate_weight = paddle.create_parameter(
-        #     shape=gate_weight.shape,
-        #     dtype=gate_weight.dtype,
-        #     default_initializer=nn.initializer.Assign(gate_weight)
-        # )
-        # self.gate.weight = gate_weight
         self.experts = experts
         if e_score_correction_bias is not None:
             self.moe_statics = ModuleMOESTATICS(e_score_correction_bias)
-            # e_score_correction_bias = paddle.create_parameter(
-            #     shape=e_score_correction_bias.shape,
-            #     dtype=e_score_correction_bias.dtype,
-            #     default_initializer=nn.initializer.Assign(e_score_correction_bias)
-            # )
-            # self.moe_statics.e_score_correction_bias = e_score_correction_bias
 
 
 class MOELayer(nn.Layer):
@@ -516,18 +476,15 @@ class MOELayer(nn.Layer):
             moe_statics: MoE statistics tracking object
         """
         super().__init__()
-        # self.gate = gate
         self.gate = (lambda: gate)
         self.layer_idx = layer_idx
         self.recompute = recompute
         for p in self.gate().parameters():
             p.is_gate = True
         if isinstance(experts, nn.LayerList):
-            # self.experts = experts
             self.experts = (lambda: experts)
         else:
             logger.info(f"using fused experts, type={type(experts)}")
-            # self.experts = experts
             self.experts = (lambda: experts)
         self.shared_experts = shared_experts
 
@@ -535,7 +492,6 @@ class MOELayer(nn.Layer):
         self.k = k
         self.all_to_all_dropout = all_to_all_dropout
         self.use_correction_bias = moe_statics is not None
-        # self.moe_statics = moe_statics
         self.moe_statics = (lambda: moe_statics)
         if self.use_correction_bias:
             logger.info(

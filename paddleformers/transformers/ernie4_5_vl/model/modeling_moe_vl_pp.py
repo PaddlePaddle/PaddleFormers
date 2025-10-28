@@ -933,10 +933,6 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
                 #     f"found vistual token in ids, but `mm_vocab_size` == 0, "
                 #     f"ids:{input_ids}, max_text_id={self.config.max_text_id} "
                 # )
-                # paddle.save(image_features, 
-                #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/after_reample_image_features_{}.pdtensor".format(self.config.tensor_parallel_rank))
-                # paddle.save(inputs_embeds, 
-                #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/before_inputs_embeds_{}.pdtensor".format(self.config.tensor_parallel_rank))
                 
                 image_indices = paddle.nonzero(image_mask.flatten()).flatten()
                 image_features = image_features.reshape([-1, image_features.shape[-1]])
@@ -971,14 +967,8 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         fake_tensor = paddle.zeros([])
         fake_tensor.stop_gradient = False
 
-        # paddle.save(image_features, 
-        #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/before_reample_image_features_{}.pdtensor".format(self.config.tensor_parallel_rank))
-        
         inputs_embeds = fwd(image_features, fake_tensor)
-        # paddle.save(inputs_embeds, 
-        #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/after_inputs_embeds_{}.pdtensor".format(self.config.tensor_parallel_rank))
         
-
         # modify video token type to image token type for expert gating
         token_type_ids[token_type_ids == TokenType.video] = TokenType.image
         ret = (token_type_ids, inputs_embeds)
@@ -1068,7 +1058,6 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
                 False,  # output_gate_logits
             )
         else:
-            # print("before decode hidden_states: ", hidden_states)
             hidden_states = super().forward(
                 hidden_states,
                 None,  # attention_mask,
@@ -1080,13 +1069,6 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
                 False,  # use-cache
                 False,  # output_gate_logits
             )
-        # print("ErnieDecoderLayer hidden_states: ", hidden_states)
-        # paddle.save(hidden_states, 
-        #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/hidden_states_{}.pdtensor".format(self.config.tensor_parallel_rank))
-        
-        # import time
-        # time.sleep(10)
-        # exit()
         ret = (token_type_ids, hidden_states)
         if position_ids is not None:
             ret += (position_ids.clone(),)
@@ -1110,7 +1092,6 @@ class LayerNormPipe(LayerNorm):
         token_type_ids, hidden_states, *_ = args
         hidden_states = super().forward(hidden_states)
         token_type_ids.stop_gradient = True
-        # print("LayerNormPipe hidden_states: ", hidden_states)
         return token_type_ids, hidden_states
 
 
@@ -1128,13 +1109,6 @@ class RMSNormPipe(RMSNorm):
         token_type_ids, hidden_states, *_ = args
         hidden_states = super().forward(hidden_states)
         token_type_ids.stop_gradient = True
-        # print("RMSNormPipe hidden_states: ", hidden_states)
-        # paddle.save(hidden_states, 
-        #     "/root/paddlejob/workspace/env_run/peiziliang/paddle_tensor/rms_hidden_states_{}.pdtensor".format(self.config.tensor_parallel_rank))
-        
-        # import time
-        # time.sleep(10)
-        # exit()
         return token_type_ids, hidden_states
 
 
@@ -1947,15 +1921,6 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(
         self.model = Ernie4_5_VLModel(self.config)
         self._modality_param_mapping = None
         self.model.vision_tower = DFNRopeVisionTransformerPipe(self.config)
-        # vision_model = DFNRopeVisionTransformerPipe(self.config)
-        # self.add_vision_model(encoder=vision_model)
-        # self.add_sequential_layer(
-        #         LayerDesc(
-        #             DFNRopeVisionTransformerPipe,
-        #             config=self.config,
-        #         ),
-        #         f"model.vision_tower",
-        #     )
 
     def add_vision_model(
         self,

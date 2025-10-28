@@ -170,11 +170,18 @@ class LoRAModel(nn.Layer):
 
         from ...transformers.conversion_utils import split_or_merge_func
 
+        num_attention_heads = None
+        if config.get("num_attention_heads", None) is not None:
+            num_attention_heads = config.num_attention_heads
+        elif config.get("text_config", None) is not None and \
+            config.text_config.get("num_attention_heads", None) is not None:
+            num_attention_heads = config.text_config.num_attention_heads
+
         fn = split_or_merge_func(
             is_split=is_split,
             tensor_parallel_degree=config.tensor_parallel_degree,
             tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
+            num_attention_heads=num_attention_heads,
         )
 
         rename_lora_split_mapping = {}
