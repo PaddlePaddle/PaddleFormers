@@ -26,7 +26,7 @@ import yaml
 TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/sft"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
+MODEL_NAME_OR_PATH = "./models/Qwen3-0.6B-base"
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
