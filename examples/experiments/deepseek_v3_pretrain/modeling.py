@@ -636,6 +636,14 @@ class DeepseekV2Attention(nn.Layer):
 
         self._init_rope()
         self.softmax_scale = self.q_head_dim ** (-0.5)
+        if self.config.rope_scaling is not None:
+            mscale_all_dim = self.config.rope_scaling.get("mscale_all_dim", 0)
+            scaling_factor = self.config.rope_scaling["factor"]
+
+            if mscale_all_dim:
+                mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
+                self.softmax_scale = self.softmax_scale * mscale * mscale
+
         Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
         # fmt: off
@@ -687,14 +695,6 @@ class DeepseekV2Attention(nn.Layer):
                 self.kv_a_layernorm = DeepseekV2RMSNorm(config=config, hidden_size=config.kv_lora_rank)
 
         # fmt: on
-        self.softmax_scale = self.q_head_dim ** (-0.5)
-        if self.config.rope_scaling is not None:
-            mscale_all_dim = self.config.rope_scaling.get("mscale_all_dim", 0)
-            scaling_factor = self.config.rope_scaling["factor"]
-            if mscale_all_dim:
-                mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
-                self.softmax_scale = self.softmax_scale * mscale * mscale
-
         self.attn_func = scaled_dot_product_attention
 
     def fp8_quant_weight(self, quant_transpose=None):
@@ -3039,7 +3039,7 @@ class FastCrossEntropyFunction(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, preds, labels):
         softmax_val, loss = paddle._C_ops.cross_entropy_with_softmax(preds, labels, False, True, False, -100, -1)
-
+        loss = loss.cast(paddle.float32)
         ctx.save_for_backward(labels, softmax_val)
         return loss
 
