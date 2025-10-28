@@ -113,6 +113,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
     set +e
+    export FLAGS_use_stride_compute_kernel=1
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
