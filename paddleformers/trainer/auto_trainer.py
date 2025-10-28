@@ -16,6 +16,7 @@ import copy
 import os
 import random
 import time
+import types
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
@@ -24,6 +25,7 @@ import paddle.distributed as dist
 import paddle.distributed.auto_parallel.intermediate.parallelize as parallelize
 import paddle.nn as nn
 from paddle.distributed import fleet
+from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.profiler.utils import switch_job_schedule_profiler
 from tqdm.auto import tqdm
 
@@ -492,6 +494,17 @@ class AutoTrainer(Trainer):
             npu_accelerate_plugin(self.optimizer)
 
         model, dist_loader = self._wrap_for_auto(model, train_dataloader)
+        if (
+            dist.in_auto_parallel_align_mode()
+        ):  # When in auto parallel align mode, patching the optimizer step function
+
+            orig_step = (
+                self.optimizer.step.__func__ if hasattr(self.optimizer.step, "__func__") else self.optimizer.step
+            )
+            decorator = _patch_grads_for_step(amp_master_grad=self.args.amp_master_grad)
+            new_step = decorator(orig_step)
+            self.optimizer.__dict__["step"] = types.MethodType(new_step, self.optimizer)
+
         train_dataloader = dist_loader()
         if resume_from_checkpoint is not None:
             self._load_from_checkpoint(resume_from_checkpoint)
@@ -916,8 +929,12 @@ class AutoTrainer(Trainer):
                 model_to_save.generation_config.save_pretrained(output_dir)
 
         if self.args.should_save_model_state:
-            self._save_ckpt_func(self.model.state_dict(), output_dir)
-            logger.info(f"Model weights and optimizer states saved in {output_dir}")
+            if state_dict is None:
+                self._save_ckpt_func(self.model.state_dict(), output_dir)
+                logger.info(f"Model weights saved in {output_dir}")
+            else:
+                self._save_ckpt_func(state_dict, output_dir)
+                logger.info(f"Model weights and optimizer states saved in {output_dir}")
 
     def _load_from_checkpoint(self, resume_from_checkpoint=None):
 
