@@ -60,6 +60,7 @@ jobs:
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
+            -v /home/paddle-1/models/:/home/models/ \
             -e BRANCH \
             -e AGILE_COMPILE_BRANCH \
             -e PR_ID \
@@ -74,6 +75,7 @@ jobs:
             -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
             -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
+            -e PF_HOME=/home/models/ \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
             -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             

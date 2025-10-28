@@ -55,6 +55,7 @@ jobs:
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
+            -v /home/paddle-1/models/:/home/models/ \
             -e BRANCH \
             -e AGILE_COMPILE_BRANCH \
             -e COMMIT_ID \
@@ -68,6 +69,7 @@ jobs:
             -e python_version \
             -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
             -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
+            -e PF_HOME=/home/models/ \
             -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
             
       - name: Download Code
