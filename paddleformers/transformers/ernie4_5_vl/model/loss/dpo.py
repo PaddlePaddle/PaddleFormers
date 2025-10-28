@@ -16,6 +16,7 @@
 
 import paddle
 import paddle.nn.functional as F
+
 from paddleformers.transformers import fused_head_and_loss_fn
 from paddleformers.trl import DPOCriterion
 from paddleformers.utils import infohub

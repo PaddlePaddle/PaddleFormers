@@ -20,11 +20,11 @@ import logging
 
 import paddle
 import paddle.distributed as dist
-from paddle.distributed.fleet import fleet
-from paddleformers.trainer.trainer_callback import TrainerCallback
-
 from ernie.modeling_moe import Ernie4_5_DecoderLayer
 from ernie.moe.moe_layer import MOELayer
+from paddle.distributed.fleet import fleet
+
+from paddleformers.trainer.trainer_callback import TrainerCallback
 
 logger = logging.getLogger(__name__)
 
@@ -67,16 +67,12 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
                 assert hasattr(
                     layer.mlp, "moe_statics"
                 ), "make sure update to latest ernie-core, too use AuxFree Balance"
-                usages[layer.layer_idx] = (
-                    layer.mlp.moe_statics.expert_usage
-                )  # usage list
+                usages[layer.layer_idx] = layer.mlp.moe_statics.expert_usage  # usage list
                 biases[layer.layer_idx] = layer.mlp.moe_statics.e_score_correction_bias
 
         model.apply(get_stat)
         keys, tensor_list = zip(*sorted(usages.items(), key=lambda x: x[0]))
-        usages_tensor = paddle.stack(
-            tensor_list, 0
-        )  # [num_layers, 2, num_experts_per_modality]
+        usages_tensor = paddle.stack(tensor_list, 0)  # [num_layers, 2, num_experts_per_modality]
         if not hasattr(fleet, "_hcg"):
             dist.all_reduce(usages_tensor)
             return

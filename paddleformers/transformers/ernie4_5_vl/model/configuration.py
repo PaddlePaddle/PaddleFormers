@@ -403,19 +403,13 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
         self.enable_delay_scale_loss = enable_delay_scale_loss
         self.num_acc_steps = num_acc_steps
         self.moe_layer_start_index = moe_layer_start_index
-        self.moe_layer_end_index = (
-            self.num_hidden_layers - 1
-            if moe_layer_end_index == -1
-            else moe_layer_end_index
-        )
+        self.moe_layer_end_index = self.num_hidden_layers - 1 if moe_layer_end_index == -1 else moe_layer_end_index
         self.moe_gate_act = moe_gate_act
         self.moe_norm_gate_logits = moe_norm_gate_logits
         self.moe_use_aux_free = moe_use_aux_free
         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
         self.dpo_config = dpo_config
-        self.moe_multimodal_dispatch_use_allgather = (
-            moe_multimodal_dispatch_use_allgather
-        )
+        self.moe_multimodal_dispatch_use_allgather = moe_multimodal_dispatch_use_allgather
         self.moe_use_hard_gate = moe_use_hard_gate
         self.moe_dense_experts_token_type_id = moe_dense_experts_token_type_id
         self.num_nextn_predict_layers = num_nextn_predict_layers
@@ -442,10 +436,7 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
     @property
     def multimodel_experts(self) -> bool:
         """multimodel experts."""
-        return (
-            isinstance(self.moe_num_experts, (tuple, list))
-            and len(self.moe_num_experts) > 1
-        )
+        return isinstance(self.moe_num_experts, (tuple, list)) and len(self.moe_num_experts) > 1
 
     @property
     def use_moe(self) -> bool:
@@ -570,9 +561,7 @@ class Ernie4_5_VLMoeConfig(Ernie4_5_MoeConfig):
     ):
         super().__init__(**kwargs)
 
-        self.vision_config = (
-            DFNRopeVisionTransformerConfig(**vision_config) if vision_config else None
-        )
+        self.vision_config = DFNRopeVisionTransformerConfig(**vision_config) if vision_config else None
         self.im_patch_id = im_patch_id
         self.pixel_hidden_size = pixel_hidden_size
         self.modality_detach = modality_detach
@@ -603,10 +592,7 @@ class Ernie4_5_VLMoeConfig(Ernie4_5_MoeConfig):
     @property
     def multimodel_experts(self) -> bool:
         """multimodel experts."""
-        return (
-            isinstance(self.moe_num_experts, (tuple, list))
-            and len(self.moe_num_experts) > 1
-        )
+        return isinstance(self.moe_num_experts, (tuple, list)) and len(self.moe_num_experts) > 1
 
     @property
     def use_moe(self) -> bool:
@@ -616,11 +602,7 @@ class Ernie4_5_VLMoeConfig(Ernie4_5_MoeConfig):
         Returns:
             bool: True if moe_num_experts > 0, False otherwise
         """
-        return (
-            sum(self.moe_num_experts) > 0
-            if self.multimodel_experts
-            else self.moe_num_experts > 0
-        )
+        return sum(self.moe_num_experts) > 0 if self.multimodel_experts else self.moe_num_experts > 0
 
     def to_dict(self, saving_file=False):
         """to_dict"""

@@ -58,9 +58,7 @@ def set_seed(seed):
     # 无论是否启用混合并行，都设置 model_parallel_rng 用于同步初始化参数
     model_parallel_rng = seed + 1 + mp_rank * pp_size + pp_rank
 
-    seed += (
-        1 * dp_rank
-    )  # EB4框架中数据流并不需要全局seed，。此处操作对数据没什么影响，对组网也没什么影响。只是为了兼容 fleet 传统而设置。
+    seed += 1 * dp_rank  # EB4框架中数据流并不需要全局seed，。此处操作对数据没什么影响，对组网也没什么影响。只是为了兼容 fleet 传统而设置。
     random.seed(seed)
     np.random.seed(seed)
 

@@ -21,6 +21,7 @@ import logging
 import os
 
 import paddle
+
 from paddleformers.trainer.trainer_callback import TrainerCallback
 from paddleformers.trainer.trainer_utils import (
     PREFIX_CHECKPOINT_DIR,
@@ -52,16 +53,12 @@ class ClipGradByAdaptiveNormCallback(TrainerCallback):
             logger.info("force clear ClipGradByAdaptiveNorm state dict.")
             return
 
-        resume_from_checkpoint = (
-            None if not args.resume_from_checkpoint else args.resume_from_checkpoint
-        )
+        resume_from_checkpoint = None if not args.resume_from_checkpoint else args.resume_from_checkpoint
         # Load potential model checkpoint
         if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
             resume_from_checkpoint = get_last_checkpoint(args.output_dir)
             if resume_from_checkpoint is None:
-                raise ValueError(
-                    f"No valid checkpoint found in output directory ({args.output_dir})"
-                )
+                raise ValueError(f"No valid checkpoint found in output directory ({args.output_dir})")
 
         if resume_from_checkpoint is None:
             return
@@ -69,9 +66,7 @@ class ClipGradByAdaptiveNormCallback(TrainerCallback):
         # if use distributed training
         if args.world_size > 1:
             process_index = args.process_index
-            path = os.path.join(
-                resume_from_checkpoint, f"adaptivenorm_clip_state_{process_index}.pth"
-            )
+            path = os.path.join(resume_from_checkpoint, f"adaptivenorm_clip_state_{process_index}.pth")
             if not os.path.isfile(path):
                 logger.info(
                     f"Didn't find an adaptivenorm clip state file for process {process_index}, if you are resuming "
@@ -100,9 +95,7 @@ class ClipGradByAdaptiveNormCallback(TrainerCallback):
         optimizer = kwargs.get("optimizer", None)
         assert optimizer is not None
 
-        if optimizer._grad_clip is None or not hasattr(
-            optimizer._grad_clip, "state_dict"
-        ):
+        if optimizer._grad_clip is None or not hasattr(optimizer._grad_clip, "state_dict"):
             return
 
         # Save model checkpoint
@@ -117,9 +110,7 @@ class ClipGradByAdaptiveNormCallback(TrainerCallback):
         if args.world_size > 1:
             # use global process_index to save
             process_index = args.process_index
-            path = os.path.join(
-                output_dir, f"adaptivenorm_clip_state_{process_index}.pth"
-            )
+            path = os.path.join(output_dir, f"adaptivenorm_clip_state_{process_index}.pth")
         else:
             path = os.path.join(output_dir, "adaptivenorm_clip_state.pth")
         logger.info(f"Saving randompos rng state to {path}")

@@ -106,7 +106,6 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
                 "or ensure it's available in the model directory."
             )
 
-
         # Initialize SentencePiece model first, as parent __init__ might call get_vocab()
         self.vocab_file = vocab_file
         self.sp_model = spm.SentencePieceProcessor()

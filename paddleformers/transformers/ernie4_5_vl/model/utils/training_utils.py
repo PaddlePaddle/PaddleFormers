@@ -23,9 +23,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def reset_per_device_batch_size(
-    global_batch_size, per_device_train_batch_size, dataset_world_size
-):
+def reset_per_device_batch_size(global_batch_size, per_device_train_batch_size, dataset_world_size):
     """
     Adjust `gradient_accumulation_steps` and `per_device_train_batch_size`
     based on `global_batch_size` and `per_device_train_batch_size`.
@@ -61,9 +59,7 @@ def reset_per_device_batch_size(
     return per_device_train_batch_size, gradient_accumulation_steps
 
 
-def progressive_accumulate_steps(
-    acc_step_begin, acc_step_end, warmup_global_steps, increment, step
-):
+def progressive_accumulate_steps(acc_step_begin, acc_step_end, warmup_global_steps, increment, step):
     """
     Calculate the number of accumulation steps during
     Progressive Batch Size Warmup at global step `step`.

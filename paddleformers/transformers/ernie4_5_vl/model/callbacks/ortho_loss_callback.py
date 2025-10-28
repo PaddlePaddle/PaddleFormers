@@ -19,9 +19,9 @@ optimizer callback
 """
 
 import paddle
-from paddleformers.trainer.trainer_callback import TrainerCallback
-
 from ernie.modeling_moe import Ernie4_5_DecoderLayer
+
+from paddleformers.trainer.trainer_callback import TrainerCallback
 
 try:
     from ernie.utils.misc import global_training_logs
@@ -59,12 +59,8 @@ class OrthogonalCallback(TrainerCallback):
 
                 log = {}
                 gate = layer.mlp.gate
-                if (
-                    hasattr(gate, "weight") and not gate.weight.stop_gradient
-                ):  # 文本gate
-                    assert (
-                        gate.weight.dtype == paddle.float32
-                    ), f"got unexpected dtype: {gate.weight.dtype}"
+                if hasattr(gate, "weight") and not gate.weight.stop_gradient:  # 文本gate
+                    assert gate.weight.dtype == paddle.float32, f"got unexpected dtype: {gate.weight.dtype}"
                     oloss = gate._cal_orthogonal_loss_opt_each_weight(
                         gate.weight, model.config.text_config.moe_group_experts
                     )
@@ -78,45 +74,27 @@ class OrthogonalCallback(TrainerCallback):
 
                     global_training_logs.update(
                         **log,
-                        **{
-                            k.replace(f"_layer_{layer.layer_idx}", ""): v
-                            for k, v in log.items()
-                        },
+                        **{k.replace(f"_layer_{layer.layer_idx}", ""): v for k, v in log.items()},
                     )
                     global_training_logs.update(
-                        **{
-                            prefix + "_" + k.replace(f"_layer_{layer.layer_idx}", ""): v
-                            for k, v in log.items()
-                        }
+                        **{prefix + "_" + k.replace(f"_layer_{layer.layer_idx}", ""): v for k, v in log.items()}
                     )
                 if hasattr(gate, "weight_1") and not gate.weight_1.stop_gradient:
-                    assert (
-                        gate.weight_1.dtype == paddle.float32
-                    ), f"got unexpected dtype: {gate.weight_1.dtype}"
-                    oloss = gate._cal_orthogonal_loss_opt_each_weight(
-                        gate.weight_1, False
-                    )
+                    assert gate.weight_1.dtype == paddle.float32, f"got unexpected dtype: {gate.weight_1.dtype}"
+                    oloss = gate._cal_orthogonal_loss_opt_each_weight(gate.weight_1, False)
                     (oloss_grad,) = paddle.autograd.grad(oloss, gate.weight_1)
                     with paddle.no_grad():
-                        gate.weight_1.data.add_(
-                            -oloss_grad * lr * self.ortho_loss_lambda
-                        )
+                        gate.weight_1.data.add_(-oloss_grad * lr * self.ortho_loss_lambda)
                     gate.weight_1.stop_gradient = False
                     log[f"orthogonal_loss_layer_{layer.layer_idx}"] = oloss
                     prefix = "mm"
 
                     global_training_logs.update(
                         **log,
-                        **{
-                            k.replace(f"_layer_{layer.layer_idx}", ""): v
-                            for k, v in log.items()
-                        },
+                        **{k.replace(f"_layer_{layer.layer_idx}", ""): v for k, v in log.items()},
                     )
                     global_training_logs.update(
-                        **{
-                            prefix + "_" + k.replace(f"_layer_{layer.layer_idx}", ""): v
-                            for k, v in log.items()
-                        }
+                        **{prefix + "_" + k.replace(f"_layer_{layer.layer_idx}", ""): v for k, v in log.items()}
                     )
 
         model.apply(update_)

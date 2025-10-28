@@ -17,4 +17,4 @@ from .configuration import DFNRopeVisionTransformerConfig
 from .modeling import DFNRopeVisionTransformerPretrainedModel
 from .modeling_pp import DFNRopeVisionTransformerPipe
 
-__all__ = ['DFNRopeVisionTransformerConfig', 'DFNRopeVisionTransformerPretrainedModel', 'DFNRopeVisionTransformerPipe']
+__all__ = ["DFNRopeVisionTransformerConfig", "DFNRopeVisionTransformerPretrainedModel", "DFNRopeVisionTransformerPipe"]

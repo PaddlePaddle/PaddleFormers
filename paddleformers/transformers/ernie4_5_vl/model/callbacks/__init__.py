@@ -13,9 +13,9 @@
 # limitations under the License.
 """ Trainer Callback functions """
 
-from .layerwise_dropout_callback import LayerwiseDropoutCallback
 from .adaptivegradclip_callback import ClipGradByAdaptiveNormCallback
 from .gc_callback import GCCallback
+from .layerwise_dropout_callback import LayerwiseDropoutCallback
 from .logging_callback import LoggingCallback
 from .moe_correction_bias_adjust_callback import MoECorrectionBiasAdjustCallback
 from .moe_logging_callback import GlobalRNGCallback

@@ -23,6 +23,7 @@ import importlib.util
 import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
+
 from paddleformers.trainer.trainer_callback import TrainerCallback
 
 
@@ -30,10 +31,7 @@ def is_tensorboard_available():
     """
     Check if tensorboard is available.
     """
-    return (
-        importlib.util.find_spec("tensorboard") is not None
-        or importlib.util.find_spec("tensorboardX") is not None
-    )
+    return importlib.util.find_spec("tensorboard") is not None or importlib.util.find_spec("tensorboardX") is not None
 
 
 @paddle.no_grad()
@@ -109,13 +107,11 @@ def gather_sharding_optimizer_state_stat(args, optimizer, scaler=None):
             abs_clipped_grad = abs_clipped_grad / scale_coef
         badcases = paddle.logical_and(
             abs_clipped_grad > 100 * eps,
-            abs_clipped_grad
-            > 50 * paddle.abs(optimizer._inner_opt._accumulators["moment1"][m_name]),
+            abs_clipped_grad > 50 * paddle.abs(optimizer._inner_opt._accumulators["moment1"][m_name]),
         )
         badcases = paddle.logical_and(
             badcases,
-            abs_clipped_grad
-            > 10 * paddle.sqrt(optimizer._inner_opt._accumulators["moment2"][m_name]),
+            abs_clipped_grad > 10 * paddle.sqrt(optimizer._inner_opt._accumulators["moment2"][m_name]),
         )
         if "ernie_lm_head" in m_name:
             outlinear_num_badcases += badcases.sum()
@@ -220,13 +216,11 @@ def gather_optimizer_state_stat(args, optimizer, scaler=None):
             abs_clipped_grad = abs_clipped_grad / scale_coef
         badcases = paddle.logical_and(
             abs_clipped_grad > 100 * eps,
-            abs_clipped_grad
-            > 50 * paddle.abs(optimizer._accumulators["moment1"][m_name]),
+            abs_clipped_grad > 50 * paddle.abs(optimizer._accumulators["moment1"][m_name]),
         )
         badcases = paddle.logical_and(
             badcases,
-            abs_clipped_grad
-            > 10 * paddle.sqrt(optimizer._accumulators["moment2"][m_name]),
+            abs_clipped_grad > 10 * paddle.sqrt(optimizer._accumulators["moment2"][m_name]),
         )
         if "ernie_lm_head" in m_name:
             outlinear_num_badcases += badcases.sum()
@@ -291,9 +285,7 @@ class OptimizerCallback(TrainerCallback):
             return
 
         if args.sharding_parallel_degree > 1:
-            stat = gather_sharding_optimizer_state_stat(
-                args, self.optimizer, kwargs["scaler"]
-            )
+            stat = gather_sharding_optimizer_state_stat(args, self.optimizer, kwargs["scaler"])
         else:
             stat = gather_optimizer_state_stat(args, self.optimizer, kwargs["scaler"])
         self.stat = stat
@@ -308,22 +300,16 @@ class OptimizerCallback(TrainerCallback):
             scale_ratio = min(1e-4 / (badcase_ratio + 1e-8), 1.0)
             if args.sharding_parallel_degree > 1:
                 if isinstance(self.optimizer._inner_opt._learning_rate, float):
-                    self.optimizer._inner_opt._learning_rate = (
-                        scale_ratio * self.optimizer._inner_opt._learning_rate
-                    )
+                    self.optimizer._inner_opt._learning_rate = scale_ratio * self.optimizer._inner_opt._learning_rate
                 else:
                     self.optimizer._inner_opt._learning_rate.base_lr = (
                         scale_ratio * self.optimizer._inner_opt._learning_rate.base_lr
                     )
             else:
                 if isinstance(self.optimizer._learning_rate, float):
-                    self.optimizer._learning_rate = (
-                        scale_ratio * self.optimizer._learning_rate
-                    )
+                    self.optimizer._learning_rate = scale_ratio * self.optimizer._learning_rate
                 else:
-                    self.optimizer._learning_rate.base_lr = (
-                        scale_ratio * self.optimizer._learning_rate.base_lr
-                    )
+                    self.optimizer._learning_rate.base_lr = scale_ratio * self.optimizer._learning_rate.base_lr
         self.stat["skip_step"] = int(self.skip_step)
 
     def on_optimizer_end(self, args, state, control, **kwargs):

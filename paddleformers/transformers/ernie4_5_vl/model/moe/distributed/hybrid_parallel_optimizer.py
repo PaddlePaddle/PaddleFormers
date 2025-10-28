@@ -28,13 +28,12 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_
     HybridParallelOptimizer as HPBase,
 )
 from paddle.distributed.fleet.utils import timer_helper as timer
-from paddle.distributed.fleet.utils.hybrid_parallel_util import (
-    unwrap_optimizer,
-)
+from paddle.distributed.fleet.utils.hybrid_parallel_util import unwrap_optimizer
 from paddle.distributed.fleet.utils.log_util import get_sync_logger
 from paddle.distributed.fleet.utils.mix_precision_utils import MixPrecisionOptimizer
 from paddle.framework import core
 from paddle.nn import ClipGradByGlobalNorm, clip
+
 from paddleformers.utils.log import logger
 
 g_profile_optimizer_details_steps = int(os.getenv("FLAGS_profile_optimizer_details_steps", "0"))

@@ -22,6 +22,7 @@ from paddle.distributed.fleet.utils.hybrid_parallel_util import (
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     is_sequence_parallel_parameter,
 )
+
 from paddleformers.trainer.trainer_callback import TrainerCallback
 from paddleformers.utils.log import logger
 

@@ -21,6 +21,7 @@ import logging
 import time
 
 from paddle import _C_ops
+
 from paddleformers.trainer.trainer_callback import TrainerCallback
 
 logger = logging.getLogger(__name__)
@@ -71,8 +72,6 @@ class ReshardSaveExitCallback(TrainerCallback):
         self.trainer.state.global_step = int(args.resume_from_checkpoint.split("-")[-1])
         self.trainer._save_checkpoint(self.trainer.model, metrics=None)
 
-        logger.info(
-            "In ReshardSaveExitCallback, finishing saving reshared model, will exit after 20s..."
-        )
+        logger.info("In ReshardSaveExitCallback, finishing saving reshared model, will exit after 20s...")
         time.sleep(10)
         exit(0)

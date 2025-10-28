@@ -236,10 +236,7 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
     @property
     def multimodel_experts(self) -> bool:
         """multimodel experts."""
-        return (
-            isinstance(self.moe_num_experts, (tuple, list))
-            and len(self.moe_num_experts) > 1
-        )
+        return isinstance(self.moe_num_experts, (tuple, list)) and len(self.moe_num_experts) > 1
 
     @property
     def use_moe(self) -> bool:
@@ -255,6 +252,7 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
             else:
                 return self.moe_num_experts > 0
         return False
+
 
 class Ernie4_5_VLConfig(PretrainedConfig):
     """
@@ -274,7 +272,7 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         vision_config=None,
         im_patch_id=None,
         max_text_id=None,
-        mm_vocab_size=0, 
+        mm_vocab_size=0,
         temporal_conv_size=2,
         spatial_conv_size=2,
         pad_token_id=0,
@@ -383,9 +381,7 @@ class Ernie4_5_VLConfig(PretrainedConfig):
         self.moe_orthogonal_loss_lambda = moe_orthogonal_loss_lambda
         self.moe_group = moe_group
         self.moe_group_orthogonal_loss = moe_group_orthogonal_loss
-        self.moe_multimodal_dispatch_use_allgather = (
-            moe_multimodal_dispatch_use_allgather
-        )
+        self.moe_multimodal_dispatch_use_allgather = moe_multimodal_dispatch_use_allgather
         self.moe_fuse_experts = moe_fuse_experts
         self.moe_use_size_all2all = moe_use_size_all2all
         self.moe_layer_feed_fake_token = moe_layer_feed_fake_token
@@ -450,6 +446,7 @@ class Ernie4_5_VLConfig(PretrainedConfig):
                 "sequence_parallel",
             ]
         )
+
 
 __all__ = [
     "Ernie4_5_VLConfig",

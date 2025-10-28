@@ -17,6 +17,7 @@ import os
 
 import numpy as np
 import paddle
+
 from paddleformers.utils.log import logger
 
 MODEL_LIB_NAMES = [
@@ -85,7 +86,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
     train_dataset.estimate = True
     logger.info("Start to estimate max training steps...")
 
-    train_dataset_path_list = [path for path in str(data_args.train_dataset_path).replace(" ", "").split(',')]
+    train_dataset_path_list = [path for path in str(data_args.train_dataset_path).replace(" ", "").split(",")]
     if len(train_dataset_path_list) > 1:
         logger.warning("Suggest to use max_steps instead of num_train_epochs for multi source dataset.")
         logger.info(
@@ -252,7 +253,7 @@ def save_stop_info(args, stop_step, outside_eval, outside_predict):
     }
     os.makedirs(output_path, exist_ok=True)
     file_path = os.path.join(output_path, "stop_step.json")
-    with open(file_path, 'w') as json_file:
+    with open(file_path, "w") as json_file:
         json.dump(data, json_file)
     logger.info(f"Saving stop info into {file_path}")
     return

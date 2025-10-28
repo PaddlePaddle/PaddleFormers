@@ -12,18 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import json
+import os
 
 try:
-    from paddleformers.utils.download import (
-        MODEL_MAPPINGS,
-        check_repo,
-    )
+    from paddleformers.utils.download import MODEL_MAPPINGS, check_repo
 except ImportError:
     # for old paddleformers
-    from paddleformers.utils.log import logger
     import re
+
+    from paddleformers.utils.log import logger
 
     check_repo = None
 

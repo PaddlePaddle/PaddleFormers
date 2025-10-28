@@ -29,8 +29,8 @@ import_structure = {
 
 if TYPE_CHECKING:
     from .configuration import *
-    from .tokenizer import Ernie4_5_VLTokenizer
     from .modeling import *
+    from .tokenizer import Ernie4_5_VLTokenizer
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

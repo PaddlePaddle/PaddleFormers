@@ -17,9 +17,7 @@ from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.utils.log import logger
 
 
-def initialize_lora_model(
-    model, training_args, model_args, resume_from_checkpoint, dtype
-):
+def initialize_lora_model(model, training_args, model_args, resume_from_checkpoint, dtype):
     """Initialize LoRAModel"""
 
     logger.info("Start to wrap model with LoRA config ...")

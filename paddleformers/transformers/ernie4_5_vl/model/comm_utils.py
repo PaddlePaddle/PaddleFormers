@@ -28,6 +28,7 @@ from paddle.distributed.communication.batch_isend_irecv import (
     _coalescing_manager as batch_isend_irecv_coalescing_manager,
 )
 from paddle.nn import functional as F
+
 from paddleformers.trainer.plugins.timer import get_timers
 
 logger = logging.getLogger(__name__)

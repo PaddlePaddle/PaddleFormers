@@ -16,23 +16,19 @@
 Ernie4_5_VLTokenizer
 """
 
-import random
 import os
+import random
 import re
 from shutil import copyfile
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
+import paddle
 import sentencepiece as spm
 
-import paddle
-
-
-from paddleformers.utils.log import logger
 from paddleformers.transformers import PretrainedTokenizer
-from paddleformers.transformers.tokenizer_utils_base import (
-    PaddingStrategy,
-    TextInput,
-)
+from paddleformers.transformers.tokenizer_utils_base import PaddingStrategy, TextInput
+from paddleformers.utils.log import logger
 
 coor_num = 1001
 NOT_FOUND_TOKEN_ID = -101
@@ -225,9 +221,7 @@ class Ernie4_5_VLTokenizer(PretrainedTokenizer):
             # logger.warning(f'ErnieBotTokenizer v2 does not support `add_special_tokens`')
         return super().prepare_for_model(*args, **kwargs)
 
-    def save_vocabulary(
-        self, save_directory, filename_prefix: Optional[str] = None
-    ) -> Tuple[str]:
+    def save_vocabulary(self, save_directory, filename_prefix: Optional[str] = None) -> Tuple[str]:
         """
         Save the vocabulary and special tokens file to a directory.
         Args:
@@ -241,12 +235,9 @@ class Ernie4_5_VLTokenizer(PretrainedTokenizer):
             return
         out_vocab_file = os.path.join(
             save_directory,
-            (filename_prefix + "-" if filename_prefix else "")
-            + self.resource_files_names["vocab_file"],
+            (filename_prefix + "-" if filename_prefix else "") + self.resource_files_names["vocab_file"],
         )
-        if os.path.abspath(self.vocab_file) != os.path.abspath(
-            out_vocab_file
-        ) and os.path.isfile(self.vocab_file):
+        if os.path.abspath(self.vocab_file) != os.path.abspath(out_vocab_file) and os.path.isfile(self.vocab_file):
             copyfile(self.vocab_file, out_vocab_file)
         elif not os.path.isfile(self.vocab_file):
             with open(out_vocab_file, "wb") as fi:
@@ -277,13 +268,10 @@ class Ernie4_5_VLTokenizer(PretrainedTokenizer):
         if hasattr(self, "do_lower_case") and self.do_lower_case:
             # convert non-special tokens to lowercase
             escaped_special_toks = [
-                re.escape(s_tok)
-                for s_tok in (self.unique_no_split_tokens + self.all_special_tokens)
+                re.escape(s_tok) for s_tok in (self.unique_no_split_tokens + self.all_special_tokens)
             ]
             pattern = r"(" + r"|".join(escaped_special_toks) + r")|" + r"(.+?)"
-            text = re.sub(
-                pattern, lambda m: m.groups()[0] or m.groups()[1].lower(), text
-            )
+            text = re.sub(pattern, lambda m: m.groups()[0] or m.groups()[1].lower(), text)
 
         no_split_token = set(self.unique_no_split_tokens)
         tokens = self.tokens_trie.split(text)
@@ -326,35 +314,19 @@ class Ernie4_5_VLTokenizer(PretrainedTokenizer):
             required_input = encoded_inputs[self.model_input_names[0]]
             if padding_strategy == PaddingStrategy.LONGEST:
                 max_length = len(required_input)
-            if (
-                max_length is not None
-                and pad_to_multiple_of is not None
-                and (max_length % pad_to_multiple_of != 0)
-            ):
-                max_length = (
-                    (max_length // pad_to_multiple_of) + 1
-                ) * pad_to_multiple_of
-            needs_to_be_padded = (
-                padding_strategy != PaddingStrategy.DO_NOT_PAD
-                and len(required_input) != max_length
-            )
-            if (
-                "attention_mask" in encoded_inputs
-                and encoded_inputs["attention_mask"] is not None
-            ):
+            if max_length is not None and pad_to_multiple_of is not None and (max_length % pad_to_multiple_of != 0):
+                max_length = ((max_length // pad_to_multiple_of) + 1) * pad_to_multiple_of
+            needs_to_be_padded = padding_strategy != PaddingStrategy.DO_NOT_PAD and len(required_input) != max_length
+            if "attention_mask" in encoded_inputs and encoded_inputs["attention_mask"] is not None:
                 attention_mask = encoded_inputs.pop("attention_mask")
                 if isinstance(attention_mask, paddle.Tensor):
                     attention_mask = attention_mask.numpy()
                 elif isinstance(attention_mask, list):
                     attention_mask = np.array(attention_mask)
                 elif not isinstance(attention_mask, np.ndarray):
-                    raise ValueError(
-                        f"Unexpected type {type(attention_mask)} of attention_mask, "
-                    )
+                    raise ValueError(f"Unexpected type {type(attention_mask)} of attention_mask, ")
             else:
-                attention_mask = np.tril(
-                    np.ones((len(required_input), len(required_input)), dtype=np.int64)
-                )
+                attention_mask = np.tril(np.ones((len(required_input), len(required_input)), dtype=np.int64))
                 attention_mask = np.expand_dims(attention_mask, axis=0)
             if needs_to_be_padded:
                 difference = max_length - len(required_input)
@@ -369,9 +341,7 @@ class Ernie4_5_VLTokenizer(PretrainedTokenizer):
                     else:
                         pad_width = [(0, 0), (difference, 0), (difference, 0)]
                 else:
-                    raise ValueError(
-                        "Invalid padding strategy:" + str(self.padding_side)
-                    )
+                    raise ValueError("Invalid padding strategy:" + str(self.padding_side))
                 attention_mask = np.pad(
                     attention_mask,
                     pad_width=pad_width,
@@ -464,28 +434,21 @@ def get_tokenizer(args):
             special_tokens_info=special_tokens_info,
         )
         # check vocab_size
-        expect_final_vocab_size = (
-            origin_vocab_size + NUM_IMAGE_SPECIAL_TOKEN + NUM_AUDIO_SPECIAL_TOKEN
-        )
+        expect_final_vocab_size = origin_vocab_size + NUM_IMAGE_SPECIAL_TOKEN + NUM_AUDIO_SPECIAL_TOKEN
         real_final_vocab_size = len(tokenizer.get_vocab())
         assert (
             real_final_vocab_size == expect_final_vocab_size
         ), f"[ERROR] vocab_size = {real_final_vocab_size} != {expect_final_vocab_size} add too many special tokens!"
 
         # check image
-        image_first_special_tokens = tokenizer.encode(image_special_tokens[0])[
-            "input_ids"
-        ]
-        image_last_special_tokens = tokenizer.encode(image_special_tokens[-1])[
-            "input_ids"
-        ]
+        image_first_special_tokens = tokenizer.encode(image_special_tokens[0])["input_ids"]
+        image_last_special_tokens = tokenizer.encode(image_special_tokens[-1])["input_ids"]
 
         assert (
             image_first_special_tokens[0] == origin_vocab_size
         ), f"[ERROR] image_first_special_tokens={image_first_special_tokens}"
         assert (
-            image_last_special_tokens[0]
-            == origin_vocab_size + NUM_IMAGE_SPECIAL_TOKEN - 1
+            image_last_special_tokens[0] == origin_vocab_size + NUM_IMAGE_SPECIAL_TOKEN - 1
         ), f"[ERROR] image_last_special_tokens={image_last_special_tokens}"
 
     tokenizer.ignored_index = -100

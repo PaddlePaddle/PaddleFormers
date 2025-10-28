@@ -22,14 +22,14 @@ from typing import Tuple
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
+from ernie.fusion_ops import cal_aux_loss
 from paddle import Tensor, _C_ops, nn
 from paddle.distributed import fleet
 from paddle.incubate.nn.functional import int_bincount
 from paddle.nn.clip import _squared_l2_norm
 from paddle.utils import unique_name
-from paddleformers.utils.log import logger
 
-from ernie.fusion_ops import cal_aux_loss
+from paddleformers.utils.log import logger
 
 
 def masked_fill(x, mask, value):
@@ -180,7 +180,11 @@ class TopKGate(nn.Layer):
 
         self.model_dim = config.text_config.hidden_size
         self.num_experts = config.text_config.moe_num_experts
-        self.num_experts_tensor = config.text_config.moe_num_experts if config.text_config.multimodel_experts else config.text_config.moe_num_experts
+        self.num_experts_tensor = (
+            config.text_config.moe_num_experts
+            if config.text_config.multimodel_experts
+            else config.text_config.moe_num_experts
+        )
 
         self.cap = config.moe_capacity
         self.group = group

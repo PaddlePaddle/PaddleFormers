@@ -17,9 +17,9 @@ Layerwise dropout callback.
 
 from copy import deepcopy
 
-from paddleformers.trainer.trainer_callback import TrainerCallback
-
 from ernie.modeling_moe import Ernie4_5_DecoderLayer
+
+from paddleformers.trainer.trainer_callback import TrainerCallback
 
 
 class LayerwiseDropoutCallback(TrainerCallback):
@@ -48,7 +48,7 @@ class LayerwiseDropoutCallback(TrainerCallback):
             AssertionError: If the model instance is not provided in kwargs.
         """
 
-        model = kwargs.get('model', None)
+        model = kwargs.get("model", None)
         assert model is not None
 
         dropout_warmup_steps = args.dropout_warmup_steps
