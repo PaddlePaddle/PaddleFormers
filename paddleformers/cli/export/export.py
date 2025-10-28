@@ -20,12 +20,10 @@ from typing import Any, Optional
 
 import paddle
 
-from paddleformers import __version__ as paddleformers_version
 from paddleformers.mergekit import MergeConfig, MergeModel
 from paddleformers.trainer import get_last_checkpoint
-from paddleformers.utils.env import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME
+from paddleformers.utils.download import check_repo
 from paddleformers.utils.log import logger
-from paddleformers.utils.download import MODEL_MAPPINGS, check_repo
 
 from ..hparams import get_export_args, read_args
 from ..utils.process import is_valid_model_dir
@@ -112,7 +110,7 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
         )
 
         config = {}
-        config["base_model_path"] = resolve_path
+        config["base_model_path"] = model_args.model_name_or_path
         config["lora_model_path"] = last_checkpoint
         config["output_path"] = os.path.join(finetuning_args.output_dir, "export")
         config["convert_from_hf"] = model_args.convert_from_hf
