@@ -33,9 +33,7 @@ from paddleformers.transformers import (
 )
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.auto.modeling import MODEL_MAPPING
-from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
-from tests.testing_utils import set_proxy, skip_for_none_ce_case
 
 from ...utils.test_module.custom_configuration import CustomConfig
 from ...utils.test_module.custom_model import CustomModel
@@ -75,13 +73,11 @@ class AutoModelTest(unittest.TestCase):
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_name, model_name)))
 
-
     def test_from_hf_hub(self):
         model = AutoModel.from_pretrained(
             "dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface", convert_from_hf=False
         )
         self.assertIsInstance(model, LlamaModel)
-
 
     def test_from_aistudio(self):
         model = AutoModel.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
