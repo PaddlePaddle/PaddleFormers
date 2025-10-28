@@ -95,7 +95,7 @@ class AutoVideoProcessorTest(unittest.TestCase):
             self.assertIsInstance(config, Qwen2VLVideoProcessor)
 
     @set_proxy(DownloadSource.HUGGINGFACE)
-    def test_video_procesor_save_pretrained(self):
+    def test_video_processor_save_pretrained(self):
         config_dict = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct").to_dict()
         config_dict.pop("video_processor_type")
         config = Qwen2VLVideoProcessor(**config_dict)
