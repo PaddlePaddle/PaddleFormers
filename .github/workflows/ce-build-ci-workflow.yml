@@ -2,15 +2,12 @@ name: Build CI Images
 
 on:
   schedule:
-    - cron: "0 18 * * 5"   # UTC 18:00 = Beijing 周六 02:00
-  workflow_dispatch:        # allow to manually trigger the workflow
+    - cron: "0 22 * * *"     # every day at 06:00 Beijing time (UTC+8)
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  image_base: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev"
 
 jobs:
   build-ci-images-test:
@@ -20,7 +17,7 @@ jobs:
     with:
       flag_build: test
       runner: ernie-8gpu-2
-      image_base: ${{env.image_base}}
+      image_base: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev
 
   test-ci-images:
     name: test-ci-images
@@ -38,9 +35,7 @@ jobs:
     runs-on: [self-hosted, ernie-8gpu-2]
     steps:
       - name: Remove Dangling Image
-        run: |
-          # Safely remove dangling images (skip if no dangling images exist)
-          docker images -f "dangling=true" -q | xargs -r docker rmi -f
+        run: docker images -f "dangling=true" -q | xargs -r docker rmi -f
 
   update-ci-images-1:
     name: update-ci-images-1
@@ -49,7 +44,7 @@ jobs:
     with:
       flag_build: update
       runner: ernie-8gpu-1
-      image_base: ${{env.image_base}}
+      image_base: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev
 
   update-ci-images-2:
     name: update-ci-images-2
@@ -58,4 +53,4 @@ jobs:
     with:
       flag_build: update
       runner: ernie-8gpu-2
-      image_base: ${{env.image_base}}
+      image_base: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev
