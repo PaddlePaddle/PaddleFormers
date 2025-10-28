@@ -43,6 +43,7 @@ class TestSFTDataset(unittest.TestCase):
             "mix_strategy": "random",
             "encode_one_turn": True,
             "use_template": True,
+            "is_pretraing": False,
         }
 
         train_dataset = create_dataset_sft(
@@ -73,6 +74,7 @@ class TestSFTDataset(unittest.TestCase):
             "mix_strategy": "concat",
             "encode_one_turn": True,
             "use_template": True,
+            "is_pretraing": False,
         }
 
         train_dataset = create_dataset_sft(
@@ -103,6 +105,7 @@ class TestSFTDataset(unittest.TestCase):
             "mix_strategy": "interleave_under",
             "encode_one_turn": True,
             "use_template": True,
+            "is_pretraing": False,
         }
 
         train_dataset = create_dataset_sft(
@@ -133,6 +136,7 @@ class TestSFTDataset(unittest.TestCase):
             "mix_strategy": "interleave_over",
             "encode_one_turn": True,
             "use_template": True,
+            "is_pretraing": False,
         }
 
         train_dataset = create_dataset_sft(
