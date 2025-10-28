@@ -2,7 +2,7 @@ name: Unittest GPU CE
 
 on:
   schedule:
-    - cron: "0 2 * * 6"     # every Saturday at 10:00
+    - cron: "0 1 * * *"     # every day at 09:00 Beijing time (UTC+8)
   workflow_dispatch:        # allow to manually trigger the workflow
     inputs:
       paddle_whl:
@@ -16,7 +16,7 @@ on:
         type: string
 
 concurrency:
-  group: unittest-${{ github.workflow }}
+  group: unittest-ce-${{ github.workflow }}
   cancel-in-progress: true
 
 env:
@@ -51,6 +51,15 @@ jobs:
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
+          echo "Workspace path: ${{ github.workspace }}"
+          DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
+          if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
+            GPU_OPTION="--runtime=nvidia"
+          else
+            GPU_OPTION="--gpus all"
+          fi
+          echo "DOCKER_VER=${DOCKER_VER}"
+          echo "GPU_OPTION=${GPU_OPTION}"
           docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
@@ -68,7 +77,9 @@ jobs:
             -e python_version \
             -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
             -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
-            -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
+            -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
+            -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
+            -w /workspace ${GPU_OPTION} --privileged $IMAGE_NAME
             
       - name: Download Code
         run: |
@@ -101,7 +112,14 @@ jobs:
           ldconfig
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
+          rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
+          source $work_dir/../../../proxy
+          source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
+          echo "work_dir = ${work_dir}"
+          cp -r ${work_dir}/../../../models ./models
+          echo "Check whether the local model file exists:"
+          ls -l ./models
           timeout 40m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} true
           '
           
@@ -118,22 +136,27 @@ jobs:
             mkdir ${{ env.home_path }}/bos
             tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
           fi
-          if [ ! -f "${{ env.allure_file }}" ]; then
-            wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
-            unzip -q ${{ env.home_path }}/allure-2.19.0.zip
-          fi
-          bos_prefix="schedule/$(date +%Y%m%d)"
+          # if [ ! -f "${{ env.allure_file }}" ]; then
+          #   wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
+          #   unzip -q ${{ env.home_path }}/allure-2.19.0.zip
+          # fi
+          bos_prefix="schedule/github-ce-$(date +%Y%m%d)"
+          # # coverage.xml
+          # cd /workspace/PaddleFormers
+          # python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+          # echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
+          # logs
           cd /workspace/PaddleFormers/unittest_logs
           for FILE in /workspace/PaddleFormers/unittest_logs/*; do
             file=$(basename "$FILE")
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
           done
-          cd /workspace/PaddleFormers/
-          ${{ env.allure_file }} generate result -o report
-          tar -czf products.tar.gz report unittest_logs
-          python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-          echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz"
+          # cd /workspace/PaddleFormers/
+          # ${{ env.allure_file }} generate result -o report
+          # tar -czf products.tar.gz report unittest_logs
+          # python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+          # echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz"
           '
 
       - name: Terminate And Delete the Container

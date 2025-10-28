@@ -313,7 +313,8 @@ def run_dpo(
         eval_dataset = None
     logger.info("Creating dataset successfully ...")
 
-    max_seq_len = data_args.max_seq_len if data_args.packing else None
+    # padding to the maximum seq length in batch data when max_seq_len is None
+    max_seq_len = data_args.max_seq_len if (data_args.packing or training_args.sequence_parallel) else None
     trainer = DPOTrainer(
         model=model,
         ref_model=ref_model,

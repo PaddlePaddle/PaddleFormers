@@ -159,7 +159,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         assert n_experts % n_group == 0, "n_experts must be divisible by n_groups"
 
         assert self.e_score_correction_bias is not None, "e_score_correction_bias is None"
-        scores_for_choice = scores.reshape([bsz_seq_len, -1]) + self.e_score_correction_bias.unsqueeze(0)
+        scores_for_choice = scores.reshape([bsz_seq_len, -1]) + self.e_score_correction_bias.detach().unsqueeze(0)
         reshape_tmp_rst = scores_for_choice.reshape([bsz_seq_len, self.n_group, -1])
         top_k = min(reshape_tmp_rst.shape[2], 2)
         group_scores = reshape_tmp_rst.topk(top_k, axis=-1)[0].sum(axis=-1)  # fmt:skip [n, n_group]
@@ -322,6 +322,42 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         dispatch_mask = combine_weights.cast(paddle.bool)
 
         return capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss
+
+    def _cal_seq_aux_loss(self, gates, top_k, topk_idx) -> paddle.Tensor:
+        """
+        Calculate sequence auxiliary loss.
+        Args:
+            logits (paddle.Tensor): Model output.
+        Returns:
+            paddle.Tensor: The value of sequence auxiliary loss.
+        """
+        if self.config.sequence_parallel:
+            # [bs * seq_len, dim]
+            # Todo: Temporary measure to be compatible with SP input dimensions:
+            # this function affects loss_aux, but the glm4moe model does not actually use this result.
+            # Correctness unvalidated; to be verified later.
+            max_sequence_length = self.config.max_sequence_length
+            local_total_tokens, local_num_experts = gates.shape
+            batch_size = local_total_tokens * self.config.tensor_parallel_degree // max_sequence_length
+            seq_len = max_sequence_length
+            ce = paddle.zeros([local_total_tokens, local_num_experts])
+            ce.put_along_axis_(
+                indices=topk_idx, values=paddle.ones_like(topk_idx, dtype=ce.dtype), axis=1, reduce="add"
+            )
+            ce = ce / (top_k / local_num_experts)
+            gates_mean = paddle.mean(gates, axis=tuple(range(len(gates.shape) - 1))).unsqueeze(0)
+            aux_loss = (ce * gates_mean).sum(axis=1).mean()
+        else:
+            # [bs, seq_len, dim]
+            batch_size, seq_len, num_experts = gates.shape
+            ce = paddle.zeros([batch_size, self.num_experts])
+            topk_idx = topk_idx.reshape([batch_size, -1])
+            ce.put_along_axis_(
+                indices=topk_idx, values=paddle.ones([batch_size, seq_len * top_k]), axis=1, reduce="add"
+            )
+            ce = ce / (seq_len * top_k / self.num_experts)
+            aux_loss = (ce * paddle.mean(gates, axis=1)).sum(axis=1).mean()
+        return aux_loss
 
     def topkgating(
         self,

@@ -139,6 +139,7 @@ def main():
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.seq_length = training_args.max_seq_len
     model_config.max_sequence_length = training_args.max_seq_len
+    model_config.aux_loss_alpha = training_args.aux_loss_alpha
     model_config._attn_implementation = model_args.attn_impl
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
@@ -229,7 +230,11 @@ def main():
     else:
         metrics = compute_metrics
 
-    max_seq_len = training_args.max_seq_len + model_config.num_nextn_predict_layers if data_args.packing else None
+    max_seq_len = (
+        training_args.max_seq_len + model_config.num_nextn_predict_layers
+        if (data_args.packing or training_args.sequence_parallel)
+        else None
+    )
     data_collator = partial(
         collate_fn,
         tokenizer=tokenizer,

@@ -87,7 +87,7 @@ def main():
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
     if model_args.attn_impl not in avaible_attn_impl:
         raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
-    
+
     if dpo_config.loss_type == "orpo":
         dpo_config.reference_free = True
         dpo_config.sft_loss_ratio = 1.0
@@ -303,7 +303,7 @@ def main():
         eval_dataset = None
     logger.info("Creating dataset successfully ...")
 
-    max_seq_len = data_args.max_seq_len if data_args.packing else None
+    max_seq_len = data_args.max_seq_len if (data_args.packing or training_args.sequence_parallel) else None
     trainer = DPOTrainer(
         model=model,
         ref_model=ref_model,

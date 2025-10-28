@@ -128,6 +128,7 @@ class Glm4MoeAttention(nn.Layer):
         self.rope_scaling = config.rope_scaling
         self.attention_dropout = config.attention_dropout
 
+        self.tensor_parallel = config.tensor_parallel_degree > 1
         self.sequence_parallel = config.sequence_parallel
         self.attention_bias = config.attention_bias
         self.fuse_attention_qkv = config.fuse_attention_qkv
@@ -191,15 +192,15 @@ class Glm4MoeAttention(nn.Layer):
                 norm_type="rms_norm",
                 hidden_size=config.hidden_size,
                 norm_eps=config.rms_norm_eps,
+                input_is_parallel=self.tensor_parallel,
             )
             self.k_norm = GeneralNorm.create(
                 config=config,
                 norm_type="rms_norm",
                 hidden_size=config.hidden_size,
                 norm_eps=config.rms_norm_eps,
+                input_is_parallel=self.tensor_parallel,
             )
-            self.q_norm.enable_sequence_parallel()
-            self.k_norm.enable_sequence_parallel()
 
     def forward(
         self,
@@ -454,6 +455,27 @@ class Glm4MoeMoE(nn.Layer):
         return hidden_states
 
 
+class AddAuxiliaryLoss(paddle.autograd.PyLayer):
+    """
+    The trick function of adding auxiliary (aux) loss,
+    which includes the gradient of the aux loss during backpropagation.
+    """
+
+    @staticmethod
+    def forward(ctx, x, loss):
+        assert paddle.numel(loss) == 1
+        ctx.dtype = loss.dtype
+        ctx.required_aux_loss = not loss.stop_gradient
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        grad_loss = None
+        if ctx.required_aux_loss:
+            grad_loss = paddle.ones(1, dtype=ctx.dtype)
+        return grad_output, grad_loss
+
+
 class Glm4MoeFlexMoE(MoEFlexTokenLayer):
     """
     A mixed expert module containing shared experts for expert_parallel_degree > 1 with deepep mode
@@ -518,7 +540,10 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
         )
 
     def forward(self, hidden_states):
-        final_hidden_states, _, _ = super().forward(hidden_states)
+        final_hidden_states, l_aux, _ = super().forward(hidden_states)
+        if self.training and self.config.aux_loss_alpha > 0.0:
+            l_aux = l_aux * self.config.aux_loss_alpha
+            final_hidden_states = AddAuxiliaryLoss.apply(final_hidden_states, l_aux)
         final_hidden_states = final_hidden_states + self.shared_experts(hidden_states)
         return final_hidden_states
 
@@ -546,15 +571,16 @@ class Glm4MoeDecoderLayer(nn.Layer):
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.post_attention_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         if config.sequence_parallel:
-            self.post_attention_layernorm.enable_sequence_parallel()
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
 
@@ -1087,12 +1113,10 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = Glm4MoeRotaryEmbedding(config=config)
         self.gradient_checkpointing = False
-
-        if config.sequence_parallel:
-            self.norm.enable_sequence_parallel()
 
     @paddle.jit.not_to_static
     def recompute_training_full(

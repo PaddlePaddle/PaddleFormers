@@ -22,6 +22,7 @@ export log_path=/workspace/PaddleFormers/model_unittest_logs
 export model_unittest_path=/workspace/PaddleFormers/scripts/regression
 cd $nlp_dir
 mkdir -p $log_path
+AGILE_COMPILE_BRANCH=$3
 
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -106,12 +107,13 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo "Check paddle Cuda Version"
     python -c "import paddle; print(paddle.version.cuda()); print(paddle.version.cudnn()); print(paddle.is_compiled_with_cuda())"
     echo "Check docker Cuda Version"
-    nvcc -V  
-    cat /usr/local/cuda/version.txt
+    nvcc -V 
     echo "Check nvidia-smi"
     nvidia-smi
+    echo "Check paddle device count"
     python -c "import paddle; print(paddle.device.device_count())"
     export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+    export FLAGS_tcp_store_using_libuv=0
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1

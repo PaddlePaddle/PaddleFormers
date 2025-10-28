@@ -112,23 +112,33 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "qwen2":
         target_modules = [
+            # fused
+            ".*qkv_proj.*",
+            ".*gate_up_fused_proj.*",
+            # independent
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
-            ".*o_proj.*",
             ".*gate_proj.*",
-            ".*down_proj.*",
             ".*up_proj.*",
+            # always exist
+            ".*o_proj.*",
+            ".*down_proj.*",
         ]
     elif model.config.model_type == "qwen3":
         target_modules = [
+            # fused
+            ".*qkv_proj.*",
+            ".*gate_up_fused_proj.*",
+            # independent
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
-            ".*o_proj.*",
             ".*gate_proj.*",
-            ".*down_proj.*",
             ".*up_proj.*",
+            # always exist
+            ".*o_proj.*",
+            ".*down_proj.*",
         ]
     elif model.config.model_type == "mixtral":
         target_modules = [
@@ -220,23 +230,20 @@ def get_lora_target_modules(model):
             ".*mlp.gate_proj.*",
             ".*mlp.up_proj.*",
             ".*mlp.down_proj.*",
-            ".*mlp.gate_proj.*",
-            ".*mlp.up_proj.*",
-            ".*mlp.down_proj.*",
         ]
     elif model.config.model_type == "ernie4_5":
         target_modules = [
-                ".*q_proj.*",
-                ".*k_proj.*",
-                ".*v_proj.*",
-                ".*o_proj.*",
-                ".*up_proj.*",
-                ".*gate_proj.*",
-                ".*down_proj.*",
-                ".*spatial_linear.0.*",
-                ".*spatial_linear.2.*",
-                ".*temporal_linear.0.*",
-                ".*temporal_linear.2.*",
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*up_proj.*",
+            ".*gate_proj.*",
+            ".*down_proj.*",
+            ".*spatial_linear.0.*",
+            ".*spatial_linear.2.*",
+            ".*temporal_linear.0.*",
+            ".*temporal_linear.2.*",
         ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")

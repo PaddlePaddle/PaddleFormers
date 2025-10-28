@@ -14,6 +14,7 @@
 
 
 import copy
+import os
 from dataclasses import dataclass
 from typing import List
 
@@ -613,6 +614,30 @@ class SequenceDataset(IterableDataset):
 
         assert len(tokens) == len(loss_mask), f"{len(tokens)}-{len(loss_mask)}"
         assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
+
+        def print_debug_info(tokenizer, data, label):
+            """Helper function to print tokenized data debug info"""
+            try:
+                decoded = tokenizer.decode(data)
+                logger.info(f"[dataset debug] {label}: {decoded}")
+            except (TypeError, ValueError, OverflowError) as e:
+                logger.info(f"[dataset debug] tokenizer decode {label} error: {str(e)}")
+
+        enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
+
+        if enable_dataset_debug:
+            logger.info("\n" + "=" * 50)
+            logger.info("[dataset debug] Debug mode enabled")
+
+            if hasattr(self, "tokenizer"):
+                print_debug_info(self.tokenizer, tokens, "input")
+                labels = [x for x in labels if x != -100]  # remove -100
+                print_debug_info(self.tokenizer, labels, "labels")
+                logger.info(f"[dataset debug] loss mask: {loss_mask}")
+            else:
+                logger.info("[dataset debug] Tokenizer not available")
+
+            logger.info("=" * 50 + "\n")
         return Sequence(
             token_ids=tokens,
             position_ids=pos_ids,
