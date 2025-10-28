@@ -49,6 +49,8 @@ class ModelArguments:
     tokenizer_name_or_path: Optional[str] = field(
         default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
     )
+    convert_from_hf: bool = field(default=True, metadata={"help": "Load base model from HuggingFace safetensors."})
+    save_to_hf: bool = field(default=True, metadata={"help": "Save model to HuggingFace safetensors."})
     continue_training: bool = field(
         default=True,
         metadata={
