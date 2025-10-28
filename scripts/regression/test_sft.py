@@ -52,7 +52,7 @@ class SFTTrainTester(unittest.TestCase):
         Calculate the average loss from the log file, and compare it with the expected value.
         """
 
-        loss_pattern = re.compile(r"loss:\s*([0-9]+\.[0-9]+)")
+        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+)")
         losses = [float(m.group(1)) for m in loss_pattern.finditer(output)]
 
         if losses:
@@ -135,7 +135,7 @@ class SFTTrainTest(unittest.TestCase):
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 9.550503
+        EXCEPTED_LOSS = 11.945673
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate

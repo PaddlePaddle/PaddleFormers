@@ -52,7 +52,7 @@ class DPOTrainTester(unittest.TestCase):
         Calculate the average loss from the log file, and compare it with the expected value.
         """
 
-        loss_pattern = re.compile(r"loss:\s*([0-9]+\.[0-9]+)")
+        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+)")
         losses = [float(m.group(1)) for m in loss_pattern.finditer(output)]
 
         if losses:
