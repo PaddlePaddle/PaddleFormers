@@ -667,8 +667,8 @@ class DeepseekV2Attention(nn.Layer):
             if self.config.dsv3_use_atten_recompute:
                 self.fused_rms_norm_linear = FusedRMSLinear(self.hidden_size, config.q_lora_rank, config.kv_lora_rank + config.qk_rope_head_dim, 1e-6)
                 kv_up_dim = self.num_heads * (self.q_head_dim - self.qk_rope_head_dim + self.v_head_dim)
-                self.memory_recompute_att = MemroyRecomputeAttn(config.q_lora_rank, config.kv_lora_rank, config.q_lora_rank, self.num_heads * self.q_head_dim, config.kv_lora_rank, kv_up_dim, self.rotary_emb, self.num_heads, self.q_head_dim, self.qk_nope_head_dim, self.v_head_dim, self.qk_rope_head_dim, 1e-6, self.kv_lora_rank, self.softmax_scale, recompute_fa3=self.recompute_fa3, fa_version=self.fa_version)
                 self.o_proj = FP8KeepXLinear(self.num_heads * self.v_head_dim, self.hidden_size, bias_attr=config.attention_bias)
+                self.memory_recompute_att = MemroyRecomputeAttn(config.q_lora_rank, config.kv_lora_rank, config.q_lora_rank, self.num_heads * self.q_head_dim, config.kv_lora_rank, kv_up_dim, self.rotary_emb, self.num_heads, self.q_head_dim, self.qk_nope_head_dim, self.v_head_dim, self.qk_rope_head_dim, 1e-6, self.seq_length, self.o_proj.weight, self.kv_lora_rank, self.softmax_scale, recompute_fa3=self.recompute_fa3, fa_version=self.fa_version)
             else:
 
                 if self.q_lora_rank is None:
@@ -778,11 +778,13 @@ class DeepseekV2Attention(nn.Layer):
 
             outputs = self.memory_recompute_att(q_t1, compressed_kv, position_ids)
 
-            if self.v_head_dim * self.num_heads != outputs.shape[-1]:
-                outputs = outputs.reshape([bsz, q_len, self.num_heads, -1])
-                outputs = outputs[..., : self.v_head_dim]
-                outputs = outputs.reshape([bsz, q_len, -1])
+            if not self.recompute_fa3:
+                if self.v_head_dim * self.num_heads != outputs.shape[-1]:
+                    outputs = outputs.reshape([bsz, q_len, self.num_heads, -1])
+                    outputs = outputs[..., : self.v_head_dim]
+                    outputs = outputs.reshape([bsz, q_len, -1])
         else:
+            assert self.recompute_fa3 is False
             hidden_states = self.input_layernorm(hidden_states)
             if self.q_lora_rank is None:
                 q = self.q_proj(hidden_states)
@@ -866,13 +868,16 @@ class DeepseekV2Attention(nn.Layer):
                     sequence_parallel=self.sequence_parallel,
                 )
         if output_attentions:
+            assert self.recompute_fa3 is False
             attn_output, attn_weights = outputs
         else:
             attn_output = outputs
 
         # if sequence_parallel is true, out shape are [q_len / n, bs, num_head * head_dim]
         # else their shape are [bs, q_len, num_head * head_dim], n is mp parallelism.
-        attn_output = self.o_proj(attn_output)
+
+        if not self.recompute_fa3:
+            attn_output = self.o_proj(attn_output)
 
         if not output_attentions:
             attn_weights = None
@@ -2276,6 +2281,7 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
         eps,
         kv_lora_rank,
         softmax_scale,
+        custom_map,
         recompute_fa3=False,
         fa_version=3,
     ):
@@ -2401,6 +2407,8 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                     qk_rope_head_dim,
                     position_ids,
                     eps,
+                    custom_map.q_lens,
+                    custom_map.out_proj_weight,
                     kv_lora_rank,
                     softmax_scale,
                     recompute_fa3,
@@ -2423,6 +2431,8 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                     qk_rope_head_dim,
                     position_ids,
                     eps,
+                    custom_map.q_lens,
+                    custom_map.out_proj_weight,
                     kv_lora_rank,
                     softmax_scale,
                     recompute_fa3,
@@ -2431,6 +2441,19 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
             assert False, f"invalid {fa_version=}"
 
         ctx.fa_version = fa_version
+
+        if recompute_fa3:
+            attn_out_reshape_shape = [bsz, custom_map.q_lens, -1]
+            # deep_gemm only support 2D
+            attn_out_reshape = attn_out.reshape([bsz * custom_map.q_lens, -1]).contiguous()
+            out = FP8LinearFunctionBase.compute_fp8_linear(
+                attn_out_reshape,
+                custom_map.out_proj_weight,
+                weight_transpose=True,
+                return_transpose_only=True,
+            )
+            out = out.reshape([attn_out_reshape_shape[0], -1, custom_map.out_proj_weight.shape[-1]])
+            return out
 
         return attn_out
 
@@ -2477,6 +2500,8 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                 qk_rope_head_dim,
                 position_ids,
                 eps,
+                q_lens,
+                out_proj_weight,
                 kv_lora_rank,
                 softmax_scale,
                 recompute_fa3,
@@ -2590,6 +2615,43 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                         False,  # pack_gqa_
                         0,  # sm_margin
                     )
+
+                    # padding x and quant
+                    bsz = value_states.shape[0]
+                    attn_out_reshape = attn_out.reshape([bsz * q_lens, -1]).contiguous()
+                    d_attn_out_reshape_shape = attn_out_reshape.shape
+                    attn_out_reshape = FP8LinearFunctionBase.padding(attn_out_reshape, 0)
+                    (
+                        attn_out_reshape_t_fp8,
+                        attn_out_reshape_t_scale,
+                    ) = paddle.incubate.nn.functional.fp8_quant_blockwise(
+                        attn_out_reshape,
+                        output_scale_transpose=True,
+                        quant_method="1x128",
+                        input_transpose=True,
+                        return_transpose_only=True,
+                    )
+                    dout_2d = dout.reshape([-1, dout.shape[-1]])
+
+                    # ===== dx = deep_gemm(dout_fp8, w_fp8)
+                    d_attn_out, dout_t_fp8, dout_t_scale = FP8LinearFunctionBase.compute_fp8_linear(
+                        dout_2d, out_proj_weight, weight_transpose=False, return_mode="with_input_transpose_quant"
+                    )
+                    d_attn_out = d_attn_out.reshape(d_attn_out_reshape_shape)
+                    FP8LinearFunctionBase.compute_expert_w_grad(
+                        attn_out_reshape_t_fp8,
+                        attn_out_reshape_t_scale,
+                        dout_t_fp8,
+                        dout_t_scale,
+                        True,
+                        True,
+                        out_proj_weight,
+                        paddle.float32,
+                    )
+
+                    dout = d_attn_out
+                    dout = dout.reshape(attn_out.shape)
+
             with paddle.no_grad():
                 q_grad, k_grad, v_grad = _C_ops.flash_attn_v3_grad(
                     query_states,
@@ -2725,6 +2787,8 @@ class MemroyRecomputeAttn(paddle.nn.Layer):
         v_head_dim,
         qk_rope_head_dim,
         eps,
+        q_lens,
+        out_proj_weight,
         kv_lora_rank,
         softmax_scale,
         recompute_fa3=False,
@@ -2763,6 +2827,8 @@ class MemroyRecomputeAttn(paddle.nn.Layer):
             self.v_head_dim,
             self.qk_rope_head_dim,
             self.eps,
+            self.q_lens,
+            self.out_proj_weight,
             self.kv_lora_rank,
             self.softmax_scale,
             self.recompute_fa3,
@@ -2775,6 +2841,8 @@ class MemroyRecomputeAttn(paddle.nn.Layer):
             v_head_dim,
             qk_rope_head_dim,
             eps,
+            q_lens,
+            out_proj_weight,
             kv_lora_rank,
             softmax_scale,
             recompute_fa3,
@@ -2810,6 +2878,7 @@ class MemroyRecomputeAttn(paddle.nn.Layer):
             self.eps,
             self.kv_lora_rank,
             self.softmax_scale,
+            self,
             recompute_fa3=self.recompute_fa3,
             fa_version=self.fa_version,
         )
