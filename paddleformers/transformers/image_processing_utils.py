@@ -20,7 +20,8 @@ from functools import wraps
 from typing import Any, Union
 
 import numpy as np
-from transformers import BatchFeature
+import paddle
+from transformers.feature_extraction_utils import BatchFeature as BatchFeature_hf
 from transformers.image_processing_base import IMAGE_PROCESSOR_NAME
 from transformers.image_processing_base import (
     ImageProcessingMixin as ImageProcessingMixin_hf,
@@ -30,20 +31,10 @@ from transformers.image_processing_utils import (
 )
 from transformers.image_processing_utils import get_size_dict  # noqa: F401
 from transformers.utils import PROCESSOR_NAME
-from transformers.utils.generic import ExplicitEnum
 
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.log import logger
-
-
-class TensorType(ExplicitEnum):
-    """
-    Possible values for the `return_tensors` argument in [`ImageProcessingMixin.__call__`]. Useful for
-    tab-completion in an IDE.
-    """
-
-    PADDLE = "pd"
-    NUMPY = "np"
+from .feature_extraction_utils import BatchFeature
 
 
 class PaddleImageProcessorMixin:
@@ -126,7 +117,6 @@ class PaddleImageProcessorMixin:
             Returns:
                 The converted Paddle tensor or the original input if no conversion was needed
             """
-            import paddle
 
             if isinstance(inputs, list):
                 if isinstance(inputs[0], int):
@@ -155,6 +145,10 @@ class PaddleImageProcessorMixin:
             return result
 
         setattr(self, method_name, wrapper)
+
+    def __call__(self, images, *args, **kwargs) -> BatchFeature:
+        original_output: BatchFeature_hf = super().__call__(images, *args, **kwargs)
+        return BatchFeature(data=original_output.data, tensor_type=kwargs["return_tensors"])
 
     @classmethod
     def from_pretrained(
@@ -273,6 +267,7 @@ class PaddleImageProcessorMixin:
         output = super().to_dict()
         for method_name in self.methods_to_wrap:
             output.pop(method_name, None)
+
         return output
 
 

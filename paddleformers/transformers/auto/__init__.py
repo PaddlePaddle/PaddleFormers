@@ -53,10 +53,13 @@ import_structure = {
     "factory": [],
     "image_processing": ["get_image_processor_config", "AutoImageProcessor"],
     "processing": ["AutoProcessor"],
+    "video_processing": ["AutoVideoProcessor"],
 }
 
 if TYPE_CHECKING:
+    from .image_processing import *
     from .modeling import *
+    from .video_processing import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

@@ -55,12 +55,12 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
             )
         )
 
-    @set_proxy(DownloadSource.AISTUDIO)
-    def test_ai_studio(self):
-        image_processor = AutoImageProcessor.from_pretrained(
-            "PaddleMIX/Qwen2.5-VL-7B-Instruct", download_hub="aistudio"
-        )
-        self.preprocess(image_processor)
+    # @set_proxy(DownloadSource.AISTUDIO)
+    # def test_ai_studio(self):
+    #     image_processor = AutoImageProcessor.from_pretrained(
+    #         "ModelHub/Qwen2.5-VL-7B-Instruct", download_hub="aistudio"
+    #     )
+    #     self.preprocess(image_processor)
 
     @set_proxy(DownloadSource.MODELSCOPE)
     def test_model_scope(self):

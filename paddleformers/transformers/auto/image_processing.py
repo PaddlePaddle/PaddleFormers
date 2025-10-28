@@ -116,15 +116,6 @@ def get_image_processor_config(
     if download_hub is None:
         download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
 
-    use_auth_token = kwargs.pop("use_auth_token", None)
-    if use_auth_token is not None:
-        logger.warning(
-            "The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers. Please use `token` instead.",
-        )
-        if token is not None:
-            raise ValueError("`token` and `use_auth_token` are both specified. Please set only the argument `token`.")
-        token = use_auth_token
-
     if download_hub == DownloadSource.HUGGINGFACE:
         return get_image_processor_config_hf(
             pretrained_model_name_or_path=pretrained_model_name_or_path,
@@ -216,16 +207,6 @@ class AutoImageProcessor(hf.AutoImageProcessor):
         if download_hub is None:
             download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
             kwargs["download_hub"] = download_hub
-        use_auth_token = kwargs.pop("use_auth_token", None)
-        if use_auth_token is not None:
-            logger.warning(
-                "The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers. Please use `token` instead.",
-            )
-            if kwargs.get("token") is not None:
-                raise ValueError(
-                    "`token` and `use_auth_token` are both specified. Please set only the argument `token`."
-                )
-            kwargs["token"] = use_auth_token
 
         config = kwargs.pop("config", None)
         use_fast = kwargs.pop("use_fast", True)

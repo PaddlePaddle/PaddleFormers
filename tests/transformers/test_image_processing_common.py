@@ -20,13 +20,7 @@ import numpy as np
 import paddle
 from PIL import Image
 
-
-def check_json_file_has_correct_format(file_path):
-    with open(file_path, "r") as f:
-        try:
-            json.load(f)
-        except Exception as e:
-            raise Exception(f"{e}: the json file should be a valid json")
+from .test_utils import check_json_file_has_correct_format
 
 
 def prepare_image_inputs(image_processor_tester, equal_resolution=False, numpify=False, paddlefy=False):

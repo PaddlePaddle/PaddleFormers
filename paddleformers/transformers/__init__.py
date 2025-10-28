@@ -89,9 +89,11 @@ import_structure = {
         "PaddingStrategy",
         "TextInput",
         "TensorType",
+        "TruncationStrategy",
     ],
     "auto.processing": ["AutoProcessor"],
     "auto.tokenizer": ["AutoTokenizer"],
+    "auto.video_processing": ["AutoVideoProcessor"],
     "deepseek_v2.configuration": ["DeepseekV2Config"],
     "deepseek_v2.modeling": [
         "masked_fill",
@@ -305,6 +307,7 @@ import_structure = {
         "Qwen2MoeForCausalLMPipe",
         "Qwen2MoePretrainingCriterion",
     ],
+    "qwen2_vl.video_processor": ["Qwen2VLVideoProcessor"],
     "qwen3.configuration": ["Qwen3Config"],
     "qwen3.modeling": [
         "Qwen3Model",
@@ -336,6 +339,7 @@ import_structure = {
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "qwen2_moe": [],
+    "qwen2_vl": [],
     "qwen3_moe": [],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"],
     "auto": ["AutoModelForCausalLM"],
@@ -360,6 +364,7 @@ if TYPE_CHECKING:
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
     from .image_processing_utils import ImageProcessingMixin, BaseImageProcessor
+    from .video_processing_utils import BaseVideoProcessor
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
     from .tensor_parallel_utils import parallel_matmul, fused_head_and_loss_fn
@@ -390,6 +395,7 @@ if TYPE_CHECKING:
     from .auto.modeling import *
     from .auto.processing import *
     from .auto.tokenizer import *
+    from .auto.video_processing import *
     from .deepseek_v2 import *
     from .deepseek_v3 import *
     from .ernie4_5 import *
@@ -399,6 +405,7 @@ if TYPE_CHECKING:
     from .qwen import *
     from .qwen2 import *
     from .qwen2_moe import *
+    from .qwen2_vl import *
     from .qwen3 import *
     from .qwen3_moe import *
     from .glm4_moe import *

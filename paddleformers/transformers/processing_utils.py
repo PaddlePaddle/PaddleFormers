@@ -18,8 +18,99 @@
 """
 
 import os
+from typing import Annotated, Optional, TypedDict, Union
 
 import paddleformers
+
+from ..utils.type_validators import (
+    device_validator,
+    image_size_validator,
+    positive_any_number,
+    positive_int,
+    resampling_validator,
+    tensor_type_validator,
+    video_metadata_validator,
+)
+from .image_utils import ChannelDimension
+from .tokenization_utils import TensorType
+from .video_utils import VideoMetadataType
+
+
+class VideosKwargs(TypedDict, total=False):
+    """
+    Keyword arguments for video processing.
+
+    Attributes:
+        do_convert_rgb (`bool`):
+            Whether to convert the video to RGB format.
+        do_resize (`bool`):
+            Whether to resize the video.
+        size (`dict[str, int]`, *optional*):
+            Resize the shorter side of the input to `size["shortest_edge"]`.
+        default_to_square (`bool`, *optional*, defaults to `self.default_to_square`):
+            Whether to default to a square when resizing, if size is an int.
+        resample (`PILImageResampling`, *optional*):
+            Resampling filter to use if resizing the video.
+        do_rescale (`bool`, *optional*):
+            Whether to rescale the video by the specified scale `rescale_factor`.
+        rescale_factor (`int` or `float`, *optional*):
+            Scale factor to use if rescaling the video.
+        do_normalize (`bool`, *optional*):
+            Whether to normalize the video.
+        image_mean (`float` or `list[float] or tuple[float, float, float]`, *optional*):
+            Mean to use if normalizing the video.
+        image_std (`float` or `list[float] or tuple[float, float, float]`, *optional*):
+            Standard deviation to use if normalizing the video.
+        do_center_crop (`bool`, *optional*):
+            Whether to center crop the video.
+        do_pad (`bool`, *optional*):
+            Whether to pad the images in the batch.
+        do_sample_frames (`bool`, *optional*):
+            Whether to sample frames from the video before processing or to process the whole video.
+        video_metadata (`Union[VideoMetadata, dict]`, *optional*):
+            Metadata of the video containing information about total duration, fps and total number of frames.
+        num_frames (`int`, *optional*):
+            Maximum number of frames to sample when `do_sample_frames=True`.
+        fps (`int` or `float`, *optional*):
+            Target frames to sample per second when `do_sample_frames=True`.
+        crop_size (`dict[str, int]`, *optional*):
+            Desired output size when applying center-cropping.
+        data_format (`ChannelDimension` or `str`, *optional*):
+            The channel dimension format for the output video.
+        input_data_format (`ChannelDimension` or `str`, *optional*):
+            The channel dimension format for the input video.
+        device (`Union[str, torch.Tensor]`, *optional*):
+            The device to use for processing (e.g. "cpu", "cuda"), only relevant for fast image processing.
+        return_metadata (`bool`, *optional*):
+            Whether to return video metadata or not.
+        return_tensors (`str` or [`~utils.TensorType`], *optional*):
+            If set, will return tensors of a particular framework. Acceptable values are:
+            - `'pt'`: Return PyTorch `torch.Tensor` objects.
+            - `'np'`: Return NumPy `np.ndarray` objects.
+    """
+
+    do_convert_rgb: Optional[bool]
+    do_resize: Optional[bool]
+    size: Annotated[Optional[Union[int, list[int], tuple[int, ...], dict[str, int]]], image_size_validator()]
+    default_to_square: Optional[bool]
+    resample: Annotated[int, resampling_validator()]
+    do_rescale: Optional[bool]
+    rescale_factor: Optional[float]
+    do_normalize: Optional[bool]
+    image_mean: Optional[Union[float, list[float], tuple[float, ...]]]
+    image_std: Optional[Union[float, list[float], tuple[float, ...]]]
+    do_center_crop: Optional[bool]
+    do_pad: Optional[bool]
+    crop_size: Annotated[Optional[Union[int, list[int], tuple[int, ...], dict[str, int]]], image_size_validator()]
+    data_format: Optional[Union[str, ChannelDimension]]
+    input_data_format: Optional[Union[str, ChannelDimension]]
+    device: Annotated[Optional[str], device_validator()]
+    do_sample_frames: Optional[bool]
+    video_metadata: Annotated[Optional[VideoMetadataType], video_metadata_validator()]
+    fps: Annotated[Optional[Union[int, float]], positive_any_number()]
+    num_frames: Annotated[Optional[int], positive_int()]
+    return_metadata: Optional[bool]
+    return_tensors: Annotated[Optional[Union[str, TensorType]], tensor_type_validator()]
 
 
 class ProcessorMixin(object):

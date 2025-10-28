@@ -31,6 +31,7 @@ import_structure = {
     ],
     "import_utils": [
         "is_torch_available",
+        "is_decord_available",
         "is_paddlenlp_ops_available",
         "auto_dynamic_graph_pybind",
         "is_paddle_cuda_available",
@@ -88,6 +89,17 @@ import_structure = {
     ],
     "tools": ["device_guard"],
     "downloader": ["get_weights_path_from_url"],
+    "type_validators": [
+        "positive_any_number",
+        "positive_int",
+        "padding_validator",
+        "truncation_validator",
+        "image_size_validator",
+        "device_validator",
+        "resampling_validator",
+        "video_metadata_validator",
+        "tensor_type_validator",
+    ],
 }
 
 
@@ -120,6 +132,8 @@ if TYPE_CHECKING:
         from .optimizer import *
     except:
         logger.info("Not support custom optimizer")
+
+    from type_validators import *
 
     from .serialization import load_torch
 
