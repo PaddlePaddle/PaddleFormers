@@ -42,6 +42,10 @@ class SFTConfig(TrainingArguments):
         default=False,
         metadata={"help": "whether to output logits in distributed status"},
     )
+    max_estimate_samples: int = field(
+        default=1e5,
+        metadata={"help": "Maximum number of samples used in estimation."},
+    )
     unified_checkpoint: bool = field(
         default=False,
         metadata={"help": "Unify hybrid parallel checkpoint."},
@@ -52,7 +56,7 @@ class SFTConfig(TrainingArguments):
     )
     dataset_text_field: str = "text"
     learning_rate: float = 2.0e-5
-    max_seq_length: int = field(
+    max_seq_len: int = field(
         default=2048,
         metadata={
             "help": "The maximum length that model input tokens can have. When Zero Padding is set to True, it's also the maximum length for Zero Padding data stream"

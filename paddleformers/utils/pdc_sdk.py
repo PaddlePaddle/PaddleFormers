@@ -19,7 +19,6 @@ import shutil
 import subprocess
 import threading
 import time
-from distutils.dir_util import copy_tree
 from enum import Enum
 from typing import List
 
@@ -533,7 +532,7 @@ class PDCTools:
 
         # step 2: copy persistent data to flash device
         try:
-            copy_tree(persistent_path, flash_device_path)
+            shutil.copy_tree(persistent_path, flash_device_path)
             logger.info(f"backup {persistent_path} to {flash_device_path} successed.")
         except Exception as e:
             logger.error(f"[Error] [pdc_sdk] copy tree {persistent_path} to {flash_device_path} failed, error: {e}")

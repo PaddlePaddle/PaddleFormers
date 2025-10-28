@@ -243,10 +243,10 @@ class ConfigTestUtils:
         response_mock.raise_for_status.side_effect = HTTPError
 
         # Download this model to make sure it's in the cache.
-        _ = BertConfig.from_pretrained("test_paddleformers/tiny-random-bert")
+        _ = BertConfig.from_pretrained("Paddleformers/tiny-random-bert")
 
         # Under the mock environment we get a 500 error when trying to reach the model.
         with mock.patch("transformers.utils.hub.requests.head", return_value=response_mock) as mock_head:
-            _ = BertConfig.from_pretrained("test_paddleformers/tiny-random-bert")
+            _ = BertConfig.from_pretrained("Paddleformers/tiny-random-bert")
             # This check we did call the fake head request
             mock_head.assert_called()

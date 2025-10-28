@@ -21,23 +21,69 @@ __all__ = ["DataConfig"]
 class DataConfig:
 
     dataset_name_or_path: str = field(default=None, metadata={"help": "Name or path for dataset"})
-    task_name: str = field(default=None, metadata={"help": "Additional name to select a more specific task."})
-    zero_padding: bool = field(default=False, metadata={"help": "Whether to use Zero Padding data stream"})
-    greedy_zero_padding: bool = field(
-        default=False,
+    train_dataset_type: str = field(
+        default=None,
         metadata={
-            "help": "Whether to use Greedy Zero Padding data stream, should be used together with `zero_padding=True`."
+            "help": "type of training datasets. \
+        Multi-source dataset is supported, e.g., erniekit,erniekit."
         },
     )
+    train_dataset_path: str = field(
+        default=None,
+        metadata={
+            "help": "path of training datasets. \
+        Multi-source dataset is supported, e.g., ./sft-1.jsonl,./sft-2.jsonl."
+        },
+    )
+    train_dataset_prob: str = field(
+        default=None,
+        metadata={
+            "help": "probabilities of training datasets. \
+        Multi-source dataset is supported, e.g., 0.8,0.2."
+        },
+    )
+    eval_dataset_type: str = field(default="erniekit", metadata={"help": "type of eval datasets."})
+    eval_dataset_path: str = field(
+        default="examples/data/sft-eval.jsonl",
+        metadata={"help": "path of eval datasets."},
+    )
+    eval_dataset_prob: str = field(
+        default="1.0",
+        metadata={"help": "probabilities of eval datasets."},
+    )
+    mix_strategy: str = field(
+        default="concat",
+        metadata={
+            "help": "Strategy to use in dataset mixing (random/concat/interleave) (undersampling/oversampling)."
+        },
+    )
+    use_template: bool = field(
+        default=True,
+        metadata={"help": "Whether to use template in data processing."},
+    )
+    encode_one_turn: bool = field(
+        default=True,
+        metadata={"help": "Whether encode each round independently in a multi-round dialogue."},
+    )
+    packing: bool = field(
+        default=False,
+        metadata={"help": "Enable sequences packing in training."},
+    )
+    greedy_intokens: bool = field(
+        default=True,
+        metadata={"help": "Whether to use greedy_intokens packing method."},
+    )
+    random_shuffle: bool = field(
+        default=True,
+        metadata={"help": "Whether to enable authorize code for privatization. Defaults to False."},
+    )
+    num_samples_each_epoch: int = field(
+        default=6000000,
+        metadata={"help": "Number of samples per epoch. Used for SFT."},
+    )
+    task_name: str = field(default=None, metadata={"help": "Additional name to select a more specific task."})
     pad_to_multiple_of: int = field(
         default=None, metadata={"help": "If set will pad the sequence to a multiple of the provided value."}
-    )
-    src_length: int = field(default=1024, metadata={"help": "The maximum length of source(context) tokens."})
-    max_length: int = field(
-        default=2048,
-        metadata={
-            "help": "The maximum length that model input tokens can have. When Zero Padding is set to True, it's also the maximum length for Zero Padding data stream"
-        },
     )
     eval_with_do_generation: bool = field(default=False, metadata={"help": "Whether to do generation for evaluation"})
     save_generation_output: bool = field(

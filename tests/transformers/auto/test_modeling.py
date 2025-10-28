@@ -35,7 +35,7 @@ from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.auto.modeling import MODEL_MAPPING
 from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
-from tests.testing_utils import set_proxy
+from tests.testing_utils import set_proxy, skip_for_none_ce_case
 
 from ...utils.test_module.custom_configuration import CustomConfig
 from ...utils.test_module.custom_model import CustomModel
@@ -45,7 +45,7 @@ from ..llama.test_modeling import LlamaModelTester
 class AutoModelTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.model = AutoModel.from_pretrained("test_paddleformers/tiny-random-llama")
+        cls.model = AutoModel.from_pretrained("Paddleformers/tiny-random-llama")
 
     def test_from_pretrained_local(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -67,7 +67,7 @@ class AutoModelTest(unittest.TestCase):
             self.assertIsInstance(reloaded_model, LlamaModel)
 
     def test_model_from_pretrained_cache_dir(self):
-        model_name = "test_paddleformers/tiny-random-llama"
+        model_name = "Paddleformers/tiny-random-llama"
         with tempfile.TemporaryDirectory() as tempdir:
             AutoModel.from_pretrained(model_name, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))
@@ -75,16 +75,19 @@ class AutoModelTest(unittest.TestCase):
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_name, model_name)))
 
-    @unittest.skip("skipping due to connection error!")
-    # @set_proxy(DownloadSource.HUGGINGFACE)
+    # @unittest.skip("skipping due to connection error!")
+    @skip_for_none_ce_case
+    @set_proxy(DownloadSource.HUGGINGFACE)
     def test_from_hf_hub(self):
-        model = AutoModel.from_pretrained("dfargveazd/tiny-random-llama-paddle", download_hub="huggingface")
+        model = AutoModel.from_pretrained(
+            "dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface", convert_from_hf=False
+        )
         self.assertIsInstance(model, LlamaModel)
 
     # @unittest.skip("skipping due to connection error!")
     @set_proxy(DownloadSource.AISTUDIO)
     def test_from_aistudio(self):
-        model = AutoModel.from_pretrained("test_paddleformers/tiny-random-llama", download_hub="aistudio")
+        model = AutoModel.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
         self.assertIsInstance(model, LlamaModel)
 
     # @unittest.skip("skipping due to connection error!")

@@ -47,8 +47,13 @@ class ModelConfig:
             "help": "Whether to train from existing paddleformers model weights. If set True, the model_name_or_path argument must exist in the paddleformers models."
         },
     )
+    stage: str = field(
+        default="SFT",
+        metadata={"help": "The type of training, including SFT, DPO, VL-SFT."},
+    )
 
     # LoRA related parameters
+    fine_tuning: str = field(default="LoRA", metadata={"help": "The checkpoint type."})
     lora: bool = field(default=False, metadata={"help": "Whether to use LoRA technique"})
     lora_path: str = field(default=None, metadata={"help": "Initialize lora state dict."})
     lora_rank: int = field(default=8, metadata={"help": "Lora attention dimension"})
@@ -98,12 +103,6 @@ class ModelConfig:
     # reft related parameter
     reft: bool = field(default=False, metadata={"help": "Whether using reft method"})
 
-    download_hub: str = field(
-        default="aistudio",
-        metadata={
-            "help": "The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`"
-        },
-    )
     save_to_aistudio: bool = field(default=False, metadata={"help": "Whether to save model to aistudio"})
     aistudio_repo_id: str = field(default=None, metadata={"help": "The id of aistudio repo"})
     aistudio_repo_private: bool = field(default=True, metadata={"help": "Whether to create a private repo"})
@@ -112,6 +111,7 @@ class ModelConfig:
     neftune: bool = field(default=False, metadata={"help": "Whether to apply NEFT"})
     neftune_noise_alpha: float = field(default=5.0, metadata={"help": "NEFT noise alpha"})
     flash_mask: bool = field(default=False, metadata={"help": "Whether to use flash_mask in flash attention."})
+    attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
 
     # long sequence strategy
     use_long_sequence_strategies: bool = field(
@@ -150,3 +150,10 @@ class ModelConfig:
     )
     actscale_moving_rate: float = field(default=0.01, metadata={"help": "EMA moving_rate for activation scale"})
     fp8_format_type: str = field(default="hybrid", metadata={"help": "FP8 Format"})
+    use_attn_mask_startend_row_indices: bool = field(
+        default=True,
+        metadata={"help": "Whether to use attn_mask_start_row_indices in flash attention."},
+    )
+    pp_seg_method: Optional[str] = field(
+        default="layer:DecoderLayer|EmptyLayer", metadata={"help": "PP Segmentation Method"}
+    )

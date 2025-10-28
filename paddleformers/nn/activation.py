@@ -25,6 +25,7 @@ class ClassInstantier(OrderedDict):
 
 
 ACT2CLS = {
+    "gelu": nn.GELU,
     "relu": nn.ReLU,
     "relu6": nn.ReLU6,
     "sigmoid": nn.Sigmoid,

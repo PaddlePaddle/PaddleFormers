@@ -112,7 +112,9 @@ def show():
 
 
 # only use this file to contral the version
-__version__ = "0.1.2.post"
+
+__version__ = "0.3.0.post"
+
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
 else:
@@ -166,6 +168,17 @@ def get_package_data_files(package, data, package_dir=None):
     return all_files
 
 
+def get_console_scripts() -> list[str]:
+    """_summary_
+
+    Returns:
+        list[str]: _description_
+    """
+    console_scripts = ["paddleformers-cli = paddleformers.cli.cli:main"]
+
+    return console_scripts
+
+
 if commit != "unknown":
     write_version_py(filename="paddleformers/version/__init__.py")
 
@@ -184,10 +197,12 @@ try:
             where=".",
             exclude=("examples*", "tests*", "applications*", "fast_generation*", "model_zoo*"),
         ),
-        package_data={},
+        package_data={
+            "paddleformers": ["datasets/hf/data_info.json"],
+        },
         setup_requires=["cython", "numpy"],
         install_requires=REQUIRED_PACKAGES,
-        entry_points={"console_scripts": ["paddleformers = paddleformers.cli:main"]},
+        entry_points={"console_scripts": get_console_scripts()},
         extras_require=extras,
         python_requires=">=3.8",
         classifiers=[

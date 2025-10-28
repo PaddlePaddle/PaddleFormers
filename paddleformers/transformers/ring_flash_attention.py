@@ -90,7 +90,7 @@ def get_chunk_id(rank, cp_size):
 def concat_masks(attn_masks_list, rank, cp_size):
     assert len(attn_masks_list) == 2 * cp_size
     first_chunk_id, second_chunk_id = get_chunk_id(rank, cp_size)
-    return paddle.concat([attn_masks_list[first_chunk_id], attn_masks_list[second_chunk_id]], axis=3)
+    return paddle.cat([attn_masks_list[first_chunk_id], attn_masks_list[second_chunk_id]], axis=3)
 
 
 def balanced_ring_flash_attention_fwd_func(

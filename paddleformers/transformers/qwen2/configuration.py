@@ -14,11 +14,7 @@
 # limitations under the License.
 """Qwen2 model configuration"""
 
-from ..configuration_utils import PretrainedConfig
-
-__all__ = [
-    "Qwen2Config",
-]
+from ..configuration_utils import PretrainedConfig, layer_type_validation
 
 
 class Qwen2Config(PretrainedConfig):
@@ -47,10 +43,10 @@ class Qwen2Config(PretrainedConfig):
         num_key_value_heads (`int`, *optional*, defaults to 32):
             This is the number of key_value heads that should be used to implement Grouped Query Attention. If
             `num_key_value_heads=num_attention_heads`, the model will use Multi Head Attention (MHA), if
-            `num_key_value_heads=1 the model will use Multi Query Attention (MQA) otherwise GQA is used. When
+            `num_key_value_heads=1` the model will use Multi Query Attention (MQA) otherwise GQA is used. When
             converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed
-            by meanpooling all the original heads within that group. For more details checkout [this
-            paper](https://arxiv.org/pdf/2305.13245.pdf). If it is not specified, will default to `32`.
+            by meanpooling all the original heads within that group. For more details, check out [this
+            paper](https://huggingface.co/papers/2305.13245). If it is not specified, will default to `32`.
         hidden_act (`str` or `function`, *optional*, defaults to `"silu"`):
             The non-linear activation function (function or string) in the decoder.
         max_position_embeddings (`int`, *optional*, defaults to 32768):
@@ -66,17 +62,57 @@ class Qwen2Config(PretrainedConfig):
             Whether the model's input and output word embeddings should be tied.
         rope_theta (`float`, *optional*, defaults to 10000.0):
             The base period of the RoPE embeddings.
+        rope_scaling (`Dict`, *optional*):
+            Dictionary containing the scaling configuration for the RoPE embeddings. NOTE: if you apply new rope type
+            and you expect the model to work on longer `max_position_embeddings`, we recommend you to update this value
+            accordingly.
+            Expected contents:
+                `rope_type` (`str`):
+                    The sub-variant of RoPE to use. Can be one of ['default', 'linear', 'dynamic', 'yarn', 'longrope',
+                    'llama3'], with 'default' being the original RoPE implementation.
+                `factor` (`float`, *optional*):
+                    Used with all rope types except 'default'. The scaling factor to apply to the RoPE embeddings. In
+                    most scaling types, a `factor` of x will enable the model to handle sequences of length x *
+                    original maximum pre-trained length.
+                `original_max_position_embeddings` (`int`, *optional*):
+                    Used with 'dynamic', 'longrope' and 'llama3'. The original max position embeddings used during
+                    pretraining.
+                `attention_factor` (`float`, *optional*):
+                    Used with 'yarn' and 'longrope'. The scaling factor to be applied on the attention
+                    computation. If unspecified, it defaults to value recommended by the implementation, using the
+                    `factor` field to infer the suggested value.
+                `beta_fast` (`float`, *optional*):
+                    Only used with 'yarn'. Parameter to set the boundary for extrapolation (only) in the linear
+                    ramp function. If unspecified, it defaults to 32.
+                `beta_slow` (`float`, *optional*):
+                    Only used with 'yarn'. Parameter to set the boundary for interpolation (only) in the linear
+                    ramp function. If unspecified, it defaults to 1.
+                `short_factor` (`list[float]`, *optional*):
+                    Only used with 'longrope'. The scaling factor to be applied to short contexts (<
+                    `original_max_position_embeddings`). Must be a list of numbers with the same length as the hidden
+                    size divided by the number of attention heads divided by 2
+                `long_factor` (`list[float]`, *optional*):
+                    Only used with 'longrope'. The scaling factor to be applied to long contexts (<
+                    `original_max_position_embeddings`). Must be a list of numbers with the same length as the hidden
+                    size divided by the number of attention heads divided by 2
+                `low_freq_factor` (`float`, *optional*):
+                    Only used with 'llama3'. Scaling factor applied to low frequency components of the RoPE
+                `high_freq_factor` (`float`, *optional*):
+                    Only used with 'llama3'. Scaling factor applied to high frequency components of the RoPE
         use_sliding_window (`bool`, *optional*, defaults to `False`):
             Whether to use sliding window attention.
         sliding_window (`int`, *optional*, defaults to 4096):
             Sliding window attention (SWA) window size. If not specified, will default to `4096`.
         max_window_layers (`int`, *optional*, defaults to 28):
-            The number of layers that use SWA (Sliding Window Attention). The bottom layers use SWA while the top use full attention.
+            The number of layers using full attention. The first `max_window_layers` layers will use full attention, while any
+            additional layer afterwards will use SWA (Sliding Window Attention).
+        layer_types (`list`, *optional*):
+            Attention pattern for each layer.
         attention_dropout (`float`, *optional*, defaults to 0.0):
             The dropout ratio for the attention probabilities.
 
     ```python
-    >>> from transformers import Qwen2Model, Qwen2Config
+    >>> from paddleformers.transformers import Qwen2Model, Qwen2Config
 
     >>> # Initializing a Qwen2 style configuration
     >>> configuration = Qwen2Config()
@@ -101,35 +137,27 @@ class Qwen2Config(PretrainedConfig):
         num_key_value_heads=32,
         hidden_act="silu",
         max_position_embeddings=32768,
-        # seq_length=32768,
         initializer_range=0.02,
         rms_norm_eps=1e-6,
         use_cache=True,
         tie_word_embeddings=False,
         rope_theta=10000.0,
-        pad_token_id=151643,
-        bos_token_id=151643,
-        eos_token_id=151643,
+        rope_scaling=None,
         use_sliding_window=False,
         sliding_window=4096,
         max_window_layers=28,
-        attention_bias=True,
+        layer_types=None,
         attention_dropout=0.0,
-        rope_scaling_factor=1.0,
-        rope_scaling_type=None,
-        dpo_config=None,
-        use_fused_head_and_loss_fn=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
-        # self.seq_length = seq_length
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.use_sliding_window = use_sliding_window
-        self.sliding_window = sliding_window
+        self.sliding_window = sliding_window if self.use_sliding_window else None
         self.max_window_layers = max_window_layers
 
         # for backward compatibility
@@ -142,23 +170,28 @@ class Qwen2Config(PretrainedConfig):
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
         self.rope_theta = rope_theta
-        self.attention_bias = attention_bias
+        self.rope_scaling = rope_scaling
         self.attention_dropout = attention_dropout
+        # Validate the correctness of rotary position embeddings parameters
+        # BC: if there is a 'type' field, move it to 'rope_type'.
+        if self.rope_scaling is not None and "type" in self.rope_scaling:
+            self.rope_scaling["rope_type"] = self.rope_scaling["type"]
+        # rope_config_validation(self)
 
-        self.use_cache = use_cache
-        self.rope_scaling_factor = rope_scaling_factor
-        self.rope_scaling_type = rope_scaling_type
-
-        self.pad_token_id = pad_token_id
-        self.bos_token_id = bos_token_id
-        self.eos_token_id = eos_token_id
-        self.dpo_config = dpo_config
-        self.use_fused_head_and_loss_fn = use_fused_head_and_loss_fn
+        self.layer_types = layer_types
+        if self.layer_types is None:
+            self.layer_types = [
+                "sliding_attention"
+                if self.sliding_window is not None and i >= self.max_window_layers
+                else "full_attention"
+                for i in range(self.num_hidden_layers)
+            ]
+        layer_type_validation(self.layer_types, self.num_hidden_layers)
 
         super().__init__(
-            pad_token_id=pad_token_id,
-            bos_token_id=bos_token_id,
-            eos_token_id=eos_token_id,
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
+
+
+__all__ = ["Qwen2Config"]

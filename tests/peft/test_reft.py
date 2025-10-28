@@ -37,7 +37,7 @@ from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
 
 class TestReftDataCollator(unittest.TestCase):
     def test_call(self):
-        model_name = "test_paddleformers/tiny-random-llama"
+        model_name = "Paddleformers/tiny-random-llama"
         tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             model_max_length=512,
@@ -79,7 +79,7 @@ class TestBasicUtils(unittest.TestCase):
         set_seed(66)
 
     def test_count_param(self):
-        model = AutoModelForCausalLM.from_pretrained("test_paddleformers/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
         count_parameters(model)
 
 
@@ -191,7 +191,7 @@ class TestTinyIntervention(unittest.TestCase):
 
 class TestReftModel(unittest.TestCase):
     def test_get_reft_model(self):
-        model = AutoModelForCausalLM.from_pretrained("test_paddleformers/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
         layers = [0]
         representations = [
             {
@@ -216,7 +216,7 @@ class TestReftModel(unittest.TestCase):
         self.assertTrue(type(reft_model), ReFTModel)
 
     def test_reft_model_forward(self):
-        model = AutoModelForCausalLM.from_pretrained("test_paddleformers/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
 
         layers = [0]
         representations = [

@@ -235,6 +235,9 @@ class LlmMetaConfig:
         ("use_fused_linear", bool, False, "GPT3 model, use fused linear layer"),
         ("use_fused_dropout_add", bool, False, "GPT3 model, use fused `dropout + residual add` op."),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
+        ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
+        ("fuse_rope", bool, False, "Whether to fuse RoPE operation"),
+        ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
     ]
 
     hybrid_parallel_attributes = [
@@ -253,12 +256,14 @@ class LlmMetaConfig:
             1,
             "The interval for the number of layers at which recomputation occurs. A value of 0 indicates no recomputation. Default is 0.",
         ),
+        ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
         ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
         ("context_parallel_degree", int, 1, "context_parallel_degree"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
     ]
+
     recompute_attributes = [
         ("recompute", bool, False, "recompute"),
         (
@@ -278,6 +283,32 @@ class LlmMetaConfig:
         ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
     ]
 
+    loss_attributes = [
+        ("use_fused_head_and_loss_fn", bool, False, "Whether to use fused head and loss function."),
+        ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
+        (
+            "use_sparse_head_and_loss_fn",
+            bool,
+            False,
+            "Maintained for compatibility, recommend using use_filtered_label_loss instead. (Legacy params)",
+        ),
+        (
+            "loss_subbatch_sequence_length",
+            int,
+            -1,
+            "Sequence length larger than loss_subbatch_sequence_length will be divided into multiple subbatches during loss computation (-1 means disable subbatch).",
+        ),
+    ]
+
+    moe_attributes = [
+        ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
+        ("using_fake_gate", bool, False, "Whether to fake gate."),
+    ]
+
+    mtp_attributes = [
+        ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
+    ]
+
     @classmethod
     def _get_defaults(cls):
         ret = {}
@@ -285,6 +316,9 @@ class LlmMetaConfig:
             cls.op_fusion_attributes,
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
+            cls.loss_attributes,
+            cls.moe_attributes,
+            cls.mtp_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -298,6 +332,8 @@ class LlmMetaConfig:
             cls.op_fusion_attributes,
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
+            cls.loss_attributes,
+            cls.moe_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -311,6 +347,8 @@ class LlmMetaConfig:
             cls.op_fusion_attributes,
             cls.hybrid_parallel_attributes,
             cls.recompute_attributes,
+            cls.loss_attributes,
+            cls.moe_attributes,
         ]:
             for attr in attrs:
                 ret.add(attr[0])
@@ -469,13 +507,12 @@ class PretrainedConfig:
         problem_type (`str`, *optional*):
             Problem type for `XxxForSequenceClassification` models. Can be one of `"regression"`,
             `"single_label_classification"` or `"multi_label_classification"`.
+        moe_subbatch_token_num (`int`, *optional*, defaults to 0):
+            The number of tokens in a subbatch for MoE.
 
         > Parameters for general components
 
         _attn_implementation (`str`, defaults to `eager`)
-        use_fused_head_loss_fn (`bool`, defaults to `False`): Whether to use fused head and loss function
-        use_filtered_label_loss (`bool`, defaults to `False`): Whether to use filtered label loss
-        loss_subbatch_seqlen (`int`, defaults to `-1`): Sequence length large than loss_subbatch_seqlen will be divided into multiple subbatches during loss computation (-1 means disable subbatch)
 
         > Parameters linked to the tokenizer
 
@@ -494,6 +531,7 @@ class PretrainedConfig:
         tie_word_embeddings (`bool`, *optional*, defaults to `True`):
             Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
             model has a output word embedding layer.
+
         dtype (`str`, *optional*):
             The `dtype` of the weights. This attribute can be used to initialize the model to a non-default `dtype`
             (which is normally `float32`) and thus allow for optimal storage allocation. For example, if the saved
@@ -556,25 +594,21 @@ class PretrainedConfig:
         self.output_hidden_states = kwargs.pop("output_hidden_states", False)
         self.output_attentions = kwargs.pop("output_attentions", False)
         self.use_cache = kwargs.pop("use_cache", False)
+        self.tie_word_embeddings = kwargs.pop("tie_word_embeddings", True)
 
         # for transformers fuse
+        self.fuse_linear = kwargs.pop("fuse_linear", False)
         self.fuse_attention_qkv = kwargs.pop("fuse_attention_qkv", False)
         self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
 
         # for general components
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
-        self.use_fused_head_and_loss_fn = kwargs.pop("use_fused_head_and_loss_fn", False)
-        self.use_filtered_label_loss = kwargs.pop("use_filtered_label_loss", False)
-        self.loss_subbatch_seqlen = kwargs.pop("loss_subbatch_seqlen", -1)
 
         if "quantization_config" in kwargs and isinstance(kwargs["quantization_config"], Dict):
             kwargs["quantization_config"] = QuantizationConfig.from_dict(kwargs["quantization_config"])
         self.quantization_config = kwargs.pop("quantization_config", QuantizationConfig())
 
         self.pruned_heads = kwargs.pop("pruned_heads", {})
-        self.tie_word_embeddings = kwargs.pop(
-            "tie_word_embeddings", True
-        )  # Whether input and output word embeddings should be tied for all MLM, LM and Seq2Seq models.
 
         # parameter for model dtype
         if "torch_dtype" in kwargs:
@@ -616,6 +650,12 @@ class PretrainedConfig:
 
         self.classifier_dropout = kwargs.pop("classifier_dropout", None)
 
+        self.dpo_config = kwargs.pop("dpo_config", None)
+        self.kto_config = kwargs.pop("kto_config", None)
+
+        self.moe_subbatch_token_num = kwargs.pop("moe_subbatch_token_num", 0)
+        self.using_fake_gate = kwargs.pop("using_fake_gate", False)
+
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config
         self.tokenizer_class = kwargs.pop("tokenizer_class", None)
         self.prefix = kwargs.pop("prefix", None)
@@ -651,6 +691,8 @@ class PretrainedConfig:
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
             )
+        self._save_to_hf = kwargs.pop("save_to_hf", False)
+        self._unsavable_keys.add("_save_to_hf")
 
         # Additional attributes without default values
         for key, value in kwargs.items():
@@ -742,6 +784,8 @@ class PretrainedConfig:
             raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
 
         os.makedirs(save_directory, exist_ok=True)
+
+        self._save_to_hf = kwargs.pop("save_to_hf", False)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be
         # loaded from the Hub.
@@ -1052,6 +1096,9 @@ class PretrainedConfig:
             del output["_auto_class"]
         if "moe_group" in output:
             del output["moe_group"]
+        if self._save_to_hf and "dtype" in output:
+            output["torch_dtype"] = str(output["dtype"])
+            del output["dtype"]
 
         # PaddleFormers version when serializing the model
         output["paddleformers_version"] = __version__
@@ -1079,7 +1126,10 @@ class PretrainedConfig:
 
             # pop the `_pre_quantization_dtype` as torch.dtypes are not serializable.
             _ = output.pop("_pre_quantization_dtype", None)
-
+        if hasattr(self, "dpo_config") and self.dpo_config is not None:
+            output["dpo_config"] = (
+                self.dpo_config.__dict__ if not isinstance(self.dpo_config, dict) else self.dpo_config
+            )
         return output
 
     def to_json_string(self, use_diff: bool = True, saving_file=False) -> str:
@@ -1246,3 +1296,20 @@ def get_configuration_file(configuration_files: List[str]) -> str:
             break
 
     return configuration_file
+
+
+ALLOWED_LAYER_TYPES = (
+    "full_attention",
+    "sliding_attention",
+)
+
+
+def layer_type_validation(layer_types: List[str], num_hidden_layers: Optional[int] = None):
+    """Check that `layer_types` is correctly defined."""
+    if not all(layer_type in ALLOWED_LAYER_TYPES for layer_type in layer_types):
+        raise ValueError(f"The `layer_types` entries must be in {ALLOWED_LAYER_TYPES}")
+    if num_hidden_layers is not None and num_hidden_layers != len(layer_types):
+        raise ValueError(
+            f"`num_hidden_layers` ({num_hidden_layers}) must be equal to the number of layer types "
+            f"({len(layer_types)})"
+        )
