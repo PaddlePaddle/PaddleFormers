@@ -59,6 +59,7 @@ jobs:
             -v ${WORK_DIR}/../../..:${WORK_DIR}/../../.. \
             -v ${WORK_DIR}:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
+            -v /home/paddle-1/models/:/home/models/ \
             -e "BRANCH=$BRANCH" \
             -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
             -e "PR_ID=$PR_ID" \
@@ -71,6 +72,7 @@ jobs:
             -e "FLAGS_DYNAMIC_STATIC_UNIFIED_COMM=$FLAGS_DYNAMIC_STATIC_UNIFIED_COMM" \
             -e "PYTHON_VERSION=$PYTHON_VERSION" \
             -e HF_PROXY_PATH=${WORK_DIR}/../../../proxy_huggingface \
+            -e PF_HOME=/home/models/
             -e AISTUDIO_PROXY_PATH=${WORK_DIR}/../../../proxy_aistudio \
             -w /workspace --privileged ${IMAGE_NAME}
             

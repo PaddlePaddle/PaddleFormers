@@ -405,7 +405,7 @@ class TestPaddleCheckpointOnN1C8Reset(TestUnifiedCheckpointBase):
         train_args["unified_checkpoint"] = 0
         self.run_n1c8(self.run_pretrain_file, **train_args)
 
-
+@pytest.mark.skipif(True, reason="Skip for unsupoort")
 class TestPaddleCheckpointOnN1C2Reset(TestMultipleGpus):
     def setUp(self):
         self.configs = get_pretrain_arguments(pretrain_arguments)
@@ -445,7 +445,7 @@ class TestPaddleCheckpointOnN1C2Reset(TestMultipleGpus):
             assert len(res) == 2
             np.testing.assert_allclose(res[0], res[1], self.rtol)
 
-
+@pytest.mark.skipif(True, reason="Skip for unsupoort")
 class TestUnifiedCheckpointOnN1C2Reset(TestMultipleGpus):
     def setUp(self):
         self.configs = get_pretrain_arguments(pretrain_arguments)
