@@ -32,7 +32,7 @@ from ..utils.type_validators import (
     video_metadata_validator,
 )
 from .image_utils import ChannelDimension
-from .tokenization_utils import TensorType
+from .tokenizer_utils import TensorType
 from .video_utils import VideoMetadataType
 
 
