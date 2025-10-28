@@ -67,6 +67,7 @@ class MergeModel:
 
     def reset_merge_model(self, merge_config=None, merge_param_dict=None):
         self.is_cpu = "cpu" in paddle.device.get_device()
+        self.is_xpu = "xpu" in paddle.device.get_device()
         if not self.is_cpu:
             if dist.get_world_size() > 1 and not paddle.distributed.is_initialized():
                 dist.init_parallel_env()
@@ -595,6 +596,14 @@ class MergeModel:
                 if lora_state_dict is not None and lora_A_key in lora_state_dict.keys():
                     lora_A_tensor, lora_B_tensor = lora_state_dict.pop(lora_A_key), lora_state_dict.pop(lora_B_key)
                     is_bf16 = str(tensor.dtype) in ["uint16", "bfloat16"]
+                    if self.is_xpu:
+                        if str(tensor.dtype) == "bfloat16":
+                            tensor = tensor.astype("uint16")
+                        if str(lora_A_tensor.dtype) == "bfloat16":
+                            lora_A_tensor = lora_A_tensor.astype("uint16")
+                        if str(lora_B_tensor.dtype) == "bfloat16":
+                            lora_B_tensor = lora_B_tensor.astype("uint16")
+
                     tensor = paddle.Tensor.__call__(tensor, zero_copy=True)
                     lora_A_tensor = paddle.Tensor.__call__(lora_A_tensor, zero_copy=True)
                     lora_B_tensor = paddle.Tensor.__call__(lora_B_tensor, zero_copy=True)
@@ -751,6 +760,13 @@ class MergeModel:
                     lora_A_tensor = lora_state_dict[lora_A_key]
                     lora_B_tensor = lora_state_dict[lora_B_key]
                     is_bf16 = str(tensor.dtype) in ["uint16", "bfloat16"]
+                    if self.is_xpu:
+                        if str(tensor.dtype) == "bfloat16":
+                            tensor = tensor.astype("uint16")
+                        if str(lora_A_tensor.dtype) == "bfloat16":
+                            lora_A_tensor = lora_A_tensor.astype("uint16")
+                        if str(lora_B_tensor.dtype) == "bfloat16":
+                            lora_B_tensor = lora_B_tensor.astype("uint16")
 
                     tensor = paddle.Tensor.__call__(tensor, zero_copy=True)
                     lora_A_tensor = paddle.Tensor.__call__(lora_A_tensor, zero_copy=True)
