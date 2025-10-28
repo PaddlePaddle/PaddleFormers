@@ -96,7 +96,9 @@ class AutoVideoProcessorTest(unittest.TestCase):
 
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_video_processor_save_pretrained(self):
-        config_dict = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct").to_dict()
+        config_dict = AutoVideoProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface"
+        ).to_dict()
         config_dict.pop("video_processor_type")
         config = Qwen2VLVideoProcessor(**config_dict)
         with tempfile.TemporaryDirectory() as tmpdir:
