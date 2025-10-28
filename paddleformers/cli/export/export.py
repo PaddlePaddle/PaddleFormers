@@ -22,7 +22,8 @@ import paddle
 
 from paddleformers.mergekit import MergeConfig, MergeModel
 from paddleformers.trainer import get_last_checkpoint
-from paddleformers.utils.download import check_repo
+from paddleformers.utils.download import check_repo, resolve_file_path
+from paddleformers.utils.env import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME
 from paddleformers.utils.log import logger
 
 from ..hparams import get_export_args, read_args
@@ -39,8 +40,8 @@ def check_download_repo(model_name_or_path, download_hub=None):
             if "torch_dtype" in config_dict:
                 print("Loading local model which contains torch dtype.")
     else:
-        # check remote repo
         model_name_or_path = check_repo(model_name_or_path, download_hub)
+
     return model_name_or_path
 
 
@@ -109,12 +110,27 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
             download_hub=model_args.download_hub,
         )
 
+        download_source_kwargs = {}
+        download_source_kwargs["download_hub"] = model_args.download_hub
+
+        resolve_result = resolve_file_path(
+            model_args.model_name_or_path,
+            [SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME],
+            **download_source_kwargs,
+        )
+
+        if resolve_result is not None:
+            resolve_path = os.path.dirname(resolve_result)
+            logger.info(f"base model path parsed:{resolve_path}")
+        else:
+            logger.error(f"{model_args.model_name_or_path} does not found.")
+
         config = {}
-        config["base_model_path"] = model_args.model_name_or_path
+        config["base_model_path"] = resolve_path
         config["lora_model_path"] = last_checkpoint
         config["output_path"] = os.path.join(finetuning_args.output_dir, "export")
-        config["convert_from_hf"] = model_args.convert_from_hf
-        config["save_to_hf"] = model_args.save_to_hf
+        config["convert_from_hf"] = finetuning_args.convert_from_hf
+        config["save_to_hf"] = finetuning_args.save_to_hf
 
         if export_args.copy_tokenizer:
             config["copy_file_list"] = [

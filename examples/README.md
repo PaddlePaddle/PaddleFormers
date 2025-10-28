@@ -1,3 +1,6 @@
+## 安装 CLI
+paddleformers 推荐使用 `CLI` (command line, 命令行工具) 进行模型微调、导出等，安装和使用方式请参考 [cli使用教程](../paddleformers/cli/README.md)
+
 ## 0. 环境变量
 
 在运行前，可以通过设置环境变量 `DOWNLOAD_SOURCE` 来指定模型的下载源，默认使用 **huggingface**。
@@ -55,19 +58,19 @@ mkdir -p data/sft && tar -xf alpaca_demo.gz -C data/sft/ --strip-components=1
 
 单卡
 ```bash
-python -u run_finetune.py ./config/sft/full.yaml
+paddleformers-cli train ./config/sft/full.yaml
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/sft/full_tp_pp.yaml
+paddleformers-cli train ./config/sft/full_tp_pp.yaml
 ```
 
 ### 1.3 LoRA SFT
 
 LoRA SFT 启动命令参考
 ```bash
-python -u run_finetune.py ./config/sft/lora.yaml
+paddleformers-cli train ./config/sft/lora.yaml
 ```
 
 
@@ -109,64 +112,44 @@ mkdir -p data/dpo && tar -zxf ultrafeedback_binarized.tar.gz -C data/dpo/ --stri
 
 单卡
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/dpo/full.yaml
+paddleformers-cli train ./config/dpo/full.yaml
 ```
 
 多卡
 ```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/dpo/full_tp_pp.yaml
+paddleformers-cli train ./config/dpo/full_tp_pp.yaml
 ```
 
 ### 2.3 LoRA DPO
 
 LoRA DPO 启动命令参考
 ```bash
-python -u ./alignment/dpo/run_dpo.py ./config/dpo/lora.yaml
+paddleformers-cli train ./config/dpo/lora.yaml
 ```
 
 
 ## 3. LoRA 参数合并
 
-使用 LoRA 方式训练模型后，为了方便推理，我们提供将 LoRA 参数合并到模型主权重中的脚本`tools/mergekit.py`。
+使用 LoRA 方式训练模型后，为了方便推理，我们提供将 LoRA 参数合并到模型主权重中的命令：
 
 运行示例（默认加载和保存 **HuggingFace** 权重参数）：
 
-单卡
+单卡 / 多卡
 ```bash
-python -u ./tools/mergekit.py \
-    --lora_model_path ${lora_model_path} \
-    --model_name_or_path ${base_model_path} \
-    --output_path ${merged_output_path}
-```
-
-多卡
-```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./tools/mergekit.py \
-    --lora_model_path ${lora_model_path} \
-    --model_name_or_path ${base_model_path} \
-    --output_path ${merged_output_path}
+paddleformers-cli export examples/config/run_export.yaml \
+    model_name_or_path=${base_model_path} \
+    output_dir=${lora_model_path}
 ```
 
 ### Paddle 权重使用说明
 
-如需使用 **Paddle** 格式权重，需要在启动脚本中添加 `--convert_from_hf False` 和 `--save_to_hf False` 参数。
+如需使用 **Paddle** 格式权重，需要在配置文件中添加 `convert_from_hf: False` 和 `save_to_hf: False` 参数。
 
-单卡
+单卡 / 多卡
 ```bash
-python -u ./tools/mergekit.py \
-    --lora_model_path ${lora_model_path} \
-    --model_name_or_path ${base_model_path} \
-    --output_path ${merged_output_path} \
-    --convert_from_hf False \
-    --save_to_hf False
-```
-
-多卡
-```bash
-python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./tools/mergekit.py \
-    --lora_model_path ${lora_model_path} \
-    --model_name_or_path ${base_model_path} \
-    --output_path ${merged_output_path} \
-    --convert_from_hf False \
-    --save_to_hf False
+paddleformers-cli export examples/config/run_export.yaml \
+    model_name_or_path=${base_model_path} \
+    output_dir=${lora_model_path} \
+    convert_from_hf=False \
+    save_to_hf=False
 ```
