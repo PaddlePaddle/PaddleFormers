@@ -48,8 +48,6 @@ export FLAGS_samll_pool_pre_alloc_in_mb=250
 export FLAGS_large_pool_pre_alloc_in_mb=61440
 export FLAGS_deep_ep_comm_prealloc_in_mb=3500
 
-master_ip=$(hostname -I | awk '{print $1}')
-port=36677
 python3.10 -m paddle.distributed.launch \
     --log_dir output/paddle_distributed_logs \
     --master <master_ip>:<port> \

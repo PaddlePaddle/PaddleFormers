@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional
 
 import paddle
 import paddle.distributed as dist
+from paddle.distributed import fleet
 from paddle import nn
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 
@@ -113,7 +114,11 @@ class ModularMoELayer(nn.Layer):
         self.tensor_parallel_degree = pretrained_config.get("tensor_parallel_degree", 1)
         self.seq_length = pretrained_config.get("seq_length", pretrained_config.get("max_seq_len", 1024))
 
-        self.expert_parallel_degree = moe_config.get("expert_parallel_degree", 1)
+        try:
+            moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+        except:
+            moe_group = None
+        self.expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
 
         self.moe_group = moe_config.get("moe_group", "data")
         self.custom_gate = moe_config.get("custom_gate", None)

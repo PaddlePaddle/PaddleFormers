@@ -552,7 +552,6 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 except:
                     moe_group = None
                 expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
-                print("in modeling, expert_parallel_degree: ", expert_parallel_degree)
                 # TODO: merge disable_ffn_model_parallel and expert_parallel_degree
                 if expert_parallel_degree <= 1:
                     # # if disable_ffn_model_parallel is True, disable expert layer tp plan
