@@ -54,6 +54,14 @@ class DPOTrainingArguments(TrainingArguments):
         metadata={"help": "Flag indicating whether to use the intermediate API for model."},
     )
     num_hidden_layers: int = field(default=2, metadata={"help": "The number of hidden layers in the network model."})
+    use_sparse_head_and_loss_fn: bool = field(
+        default=False,
+        metadata={"help": "Whether to use sparse indexing for loss calculation."},
+    )
+    use_fused_head_and_loss_fn: bool = field(
+        default=False,
+        metadata={"help": "Whether to use fused kernel to calculate lm head and loss."},
+    )
 
     def __post_init__(self):
         super().__post_init__()
@@ -146,20 +154,17 @@ class DPOModelArgument:
         default=None,
         metadata={"help": "whether to fuse first up and gate proj in mlp block"},
     )
-    use_sparse_head_and_loss_fn: bool = field(
-        default=True,
-        metadata={"help": "Whether to use sparse indexing for loss calculation."},
-    )
-    use_fused_head_and_loss_fn: bool = field(
-        default=True,
-        metadata={"help": "Whether to use fused kernel to calculate lm head and loss."},
-    )
     use_attn_mask_startend_row_indices: bool = field(
         default=True,
         metadata={"help": "Sparse attention mode."},
     )
+    stage: str = field(
+        default="SFT",
+        metadata={"help": "The type of training, including SFT, DPO, VL-SFT."},
+    )
 
     # LoRA
+    fine_tuning: str = field(default="LoRA", metadata={"help": "The checkpoint type."})
     lora_rank: int = field(default=8, metadata={"help": "Lora rank."})
     lora_path: str = field(default=None, metadata={"help": "Initialize lora state dict."})
     rslora: bool = field(default=False, metadata={"help": "Whether to use RsLoRA"})
@@ -170,3 +175,13 @@ class DPOModelArgument:
 
     # Attention
     attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
+
+    # pp
+    pp_seg_method: Optional[str] = field(
+        default="layer:DecoderLayer|EmptyLayer", metadata={"help": "PP Segmentation Method"}
+    )
+
+    # criterion
+    model_with_dpo_criterion: bool = field(
+        default=False, metadata={"help": "Whether the model contains dpo criterion"}
+    )

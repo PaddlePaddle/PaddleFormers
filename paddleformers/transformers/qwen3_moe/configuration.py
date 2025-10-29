@@ -15,18 +15,14 @@
 # limitations under the License.
 """Qwen3MoE model configuration"""
 
-from ..configuration_utils import PretrainedConfig, layer_type_validation
-
-__all__ = [
-    "Qwen3MoeConfig",
-]
+from ..configuration_utils import PretrainedConfig
 
 
 class Qwen3MoeConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`Qwen3MoeModel`]. It is used to instantiate a
     Qwen3MoE model according to the specified arguments, defining the model architecture. Instantiating a configuration
-    with the defaults will yield a similar configuration to that of [Qwen/Qwen3-MoE-15B-A2B](https://huggingface.co/Qwen/Qwen3-15B-A2B).
+    with the defaults will yield a similar configuration to that of [Qwen/Qwen3-15B-A2B](https://huggingface.co/Qwen/Qwen3-15B-A2B).
 
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
@@ -49,16 +45,15 @@ class Qwen3MoeConfig(PretrainedConfig):
             `num_key_value_heads=num_attention_heads`, the model will use Multi Head Attention (MHA), if
             `num_key_value_heads=1` the model will use Multi Query Attention (MQA) otherwise GQA is used. When
             converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed
-            by meanpooling all the original heads within that group. For more details checkout [this
-            paper](https://arxiv.org/pdf/2305.13245.pdf). If it is not specified, will default to `32`.
+            by meanpooling all the original heads within that group. For more details, check out [this
+            paper](https://huggingface.co/papers/2305.13245). If it is not specified, will default to `32`.
+
         hidden_act (`str` or `function`, *optional*, defaults to `"silu"`):
             The non-linear activation function (function or string) in the decoder.
         max_position_embeddings (`int`, *optional*, defaults to 32768):
             The maximum sequence length that this model might ever be used with.
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        use_rmsnorm (`bool`, *optional*, defaults to `True`):
-            Whether to use RMSNorm instead of LayerNorm.
         rms_norm_eps (`float`, *optional*, defaults to 1e-06):
             The epsilon used by the rms normalization layers.
         use_cache (`bool`, *optional*, defaults to `True`):
@@ -93,11 +88,11 @@ class Qwen3MoeConfig(PretrainedConfig):
                 `beta_slow` (`float`, *optional*):
                     Only used with 'yarn'. Parameter to set the boundary for interpolation (only) in the linear
                     ramp function. If unspecified, it defaults to 1.
-                `short_factor` (`List[float]`, *optional*):
+                `short_factor` (`list[float]`, *optional*):
                     Only used with 'longrope'. The scaling factor to be applied to short contexts (<
                     `original_max_position_embeddings`). Must be a list of numbers with the same length as the hidden
                     size divided by the number of attention heads divided by 2
-                `long_factor` (`List[float]`, *optional*):
+                `long_factor` (`list[float]`, *optional*):
                     Only used with 'longrope'. The scaling factor to be applied to long contexts (<
                     `original_max_position_embeddings`). Must be a list of numbers with the same length as the hidden
                     size divided by the number of attention heads divided by 2
@@ -107,16 +102,10 @@ class Qwen3MoeConfig(PretrainedConfig):
                     Only used with 'llama3'. Scaling factor applied to high frequency components of the RoPE
         attention_bias (`bool`, defaults to `False`, *optional*, defaults to `False`):
             Whether to use a bias in the query, key, value and output projection layers during self-attention.
-        use_swiglu (`bool`, *optional*, defaults to `False`):
-            Whether to use SwiGLU activation function.
         use_sliding_window (`bool`, *optional*, defaults to `False`):
             Whether to use sliding window attention.
         sliding_window (`int`, *optional*, defaults to 4096):
             Sliding window attention (SWA) window size. If not specified, will default to `4096`.
-        max_window_layers (`int`, *optional*, defaults to 28):
-            The number of layers that use SWA (Sliding Window Attention). The bottom layers use SWA while the top use full attention.
-        ignored_index (`int`, *optional*, defaults to -100):
-            Target value that is ignored during loss computation.
         attention_dropout (`float`, *optional*, defaults to 0.0):
             The dropout ratio for the attention probabilities.
         decoder_sparse_step (`int`, *optional*, defaults to 1):
@@ -134,15 +123,13 @@ class Qwen3MoeConfig(PretrainedConfig):
             allow the model to output the auxiliary loss, including load balancing loss and router z-loss.
         router_aux_loss_coef (`float`, *optional*, defaults to 0.001):
             The aux loss factor for the total loss.
-        mlp_only_layers (`List[int]`, *optional*, defaults to `[]`):
+        mlp_only_layers (`list[int]`, *optional*, defaults to `[]`):
             Indicate which layers use Qwen3MoeMLP rather than Qwen3MoeSparseMoeBlock
             The list contains layer index, from 0 to num_layers-1 if we have num_layers layers
             If `mlp_only_layers` is empty, `decoder_sparse_step` is used to determine the sparsity.
-        pp_seg_method (`str`, *optional*, defaults to `"layer:Qwen3MoeDecoderLayer"`):
-            Method for pipeline parallel segmentation.
 
     ```python
-    >>> from transformers import Qwen3MoeModel, Qwen3MoeConfig
+    >>> from paddleformers.transformers import Qwen3MoeModel, Qwen3MoeConfig
 
     >>> # Initializing a Qwen3MoE style configuration
     >>> configuration = Qwen3MoeConfig()
@@ -168,14 +155,12 @@ class Qwen3MoeConfig(PretrainedConfig):
         hidden_act="silu",
         max_position_embeddings=32768,
         initializer_range=0.02,
-        use_rmsnorm=True,
         rms_norm_eps=1e-6,
         use_cache=True,
         tie_word_embeddings=False,
         rope_theta=10000.0,
         rope_scaling=None,
         attention_bias=False,
-        use_swiglu=False,
         use_sliding_window=False,
         sliding_window=4096,
         attention_dropout=0.0,
@@ -187,8 +172,6 @@ class Qwen3MoeConfig(PretrainedConfig):
         output_router_logits=False,
         router_aux_loss_coef=0.001,
         mlp_only_layers=None,
-        layer_types=None,
-        pp_seg_method="layer:Qwen3MoeDecoderLayer",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -198,16 +181,13 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.use_sliding_window = use_sliding_window
-        self.sliding_window = sliding_window
+        self.sliding_window = sliding_window if self.use_sliding_window else None
 
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
-        self.use_swiglu = use_swiglu
-        self.use_rmsnorm = use_rmsnorm
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
         self.attention_bias = attention_bias
@@ -216,6 +196,7 @@ class Qwen3MoeConfig(PretrainedConfig):
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
+        # rope_config_validation(self)
 
         # MoE arguments
         self.decoder_sparse_step = decoder_sparse_step
@@ -227,32 +208,10 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.router_aux_loss_coef = router_aux_loss_coef
         self.mlp_only_layers = [] if mlp_only_layers is None else mlp_only_layers
 
-        self.pp_seg_method = pp_seg_method
-
-        self.layer_types = layer_types
-        if self.layer_types is None:
-            self.layer_types = [
-                "sliding_attention" if self.use_sliding_window and i >= self.max_window_layers else "full_attention"
-                for i in range(self.num_hidden_layers)
-            ]
-        layer_type_validation(self.layer_types, self.num_hidden_layers)
-
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
 
-        self.register_unsavable_keys(
-            [
-                "rope_scaling",
-                "use_rmsnorm",
-                "use_swiglu",
-                "recompute",
-                "recompute_use_reentrant",
-                "recompute_granularity",
-                "pp_seg_method",
-                "dpo_config",
-                "kto_config",
-                "layer_types",
-            ]
-        )
+
+__all__ = ["Qwen3MoeConfig"]

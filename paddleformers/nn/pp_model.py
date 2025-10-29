@@ -499,6 +499,7 @@ class CriterionLayerPipe(CriterionLayer):
 
 class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     _decoder_layer_cls = None
+    _decoder_layer_pipe_cls = None
     _get_tensor_parallel_mappings = None
     _init_weights = None
     _keep_in_fp32_modules = None
@@ -507,12 +508,37 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
     transpose_weight_keys = None
     _embed_cls = None
     _rotary_emb_cls = None
+    _norm_cls = "rms_norm"
+    _mtp_layer_pipe_cls = None
+    _embedding_pipe_cls = None
+    _decoder_layer_pipe_cls = None
+    _criterion_pipe_cls = None
+    _lmhead_pipe_cls = None
+    _rms_norm_pipe_cls = None
 
     def __init__(self, config: PretrainedConfig, **kwargs):
+        if getattr(config, "sliding_window", None) is not None and "sliding_attention" in getattr(
+            config, "layer_types", []
+        ):
+            logger.error(
+                "Pipeline Parallelism (PP) does not support sliding window attention. "
+                "To prevent issues during training, please set use_sliding_window=False."
+            )
+
         # dynamic inherit DecoderLayer
         if self._decoder_layer_cls is None:
             raise ValueError("_decoder_layer_cls must be set before init.")
-        DecoderLayerPipe = make_decoder_layer_pipe(self._decoder_layer_cls)
+
+        EmbeddingPipeCls = self._embedding_pipe_cls if self._embedding_pipe_cls is not None else EmbeddingPipe
+
+        if self._decoder_layer_pipe_cls is None:
+            DecoderLayerPipe = make_decoder_layer_pipe(self._decoder_layer_cls)
+        else:
+            DecoderLayerPipe = self._decoder_layer_pipe_cls
+
+        LMHeadPipeCls = self._lmhead_pipe_cls if self._lmhead_pipe_cls is not None else LMHeadPipe
+        MTPLayerPipeCls = self._mtp_layer_pipe_cls if self._mtp_layer_pipe_cls is not None else None
+        RMSNormPipeCls = self._rms_norm_pipe_cls if self._rms_norm_pipe_cls is not None else RMSNormPipe
 
         new_initializer_range = math.sqrt(0.3333 / config.hidden_size)
         logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")
@@ -559,7 +585,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         else:
             self.add_sequential_layer(
                 LayerDesc(
-                    EmbeddingPipe, config=config, embed_cls=self._embed_cls, rotary_emb_cls=self._rotary_emb_cls
+                    EmbeddingPipeCls, config=config, embed_cls=self._embed_cls, rotary_emb_cls=self._rotary_emb_cls
                 ),
                 "model",
             )
@@ -573,6 +599,12 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 ),
                 f"model.layers.{i}",
             )
+        for i in range(config.num_nextn_predict_layers):
+            if MTPLayerPipeCls is not None:
+                self.add_sequential_layer(
+                    LayerDesc(MTPLayerPipeCls, config=config, layer_idx=config.num_hidden_layers + i),
+                    f"model.layers.{config.num_hidden_layers + i}",
+                )
         for i in range(config.add_tail_layers):
             self.add_sequential_layer(
                 LayerDesc(
@@ -582,7 +614,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             )
 
         self.add_sequential_layer(
-            LayerDesc(RMSNormPipe if config.use_rmsnorm else LayerNormPipe, config=config),
+            LayerDesc(RMSNormPipeCls if self._norm_cls == "rms_norm" else LayerNormPipe, config=config),
             "model.norm",
         )
 
@@ -590,14 +622,14 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self.add_sequential_layer(
                 SharedLayerDesc(
                     "model_shared_weight",
-                    LMHeadPipe,
+                    LMHeadPipeCls,
                     shared_weight_attr="embedding_weight",
                     config=config,
                 ),
                 "lm_head",
             )
         else:
-            self.add_sequential_layer(LayerDesc(LMHeadPipe, config=config), "lm_head")
+            self.add_sequential_layer(LayerDesc(LMHeadPipeCls, config=config), "lm_head")
         recompute_interval = 0
 
         seg_method = config.pp_seg_method if hasattr(config, "pp_seg_method") else "layer:DecoderLayer|EmptyLayer"
@@ -630,10 +662,12 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         )
 
     def get_loss_fn(self, config):
+        CriterionPipeCls = self._criterion_pipe_cls if self._criterion_pipe_cls is not None else CriterionLayerPipe
+
         if config.get("dpo_config", None) is not None:
-            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+            loss_fn = CriterionPipeCls(config, use_infohub=True)
         else:
-            loss_fn = CriterionLayerPipe(config)
+            loss_fn = CriterionPipeCls(config)
 
         return loss_fn
 

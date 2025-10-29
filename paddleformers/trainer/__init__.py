@@ -79,6 +79,7 @@ import_structure = {
         "FP8QuantWeightCallback",
         "MoECorrectionBiasAdjustCallback",
         "MoeExpertsGradScaleCallback",
+        "MoEGateSpGradSyncCallBack",
     ],
     "trainer_utils": [
         "get_last_checkpoint",

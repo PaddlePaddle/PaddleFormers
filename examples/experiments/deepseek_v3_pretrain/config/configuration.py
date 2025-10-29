@@ -198,8 +198,16 @@ class DeepseekV2FastConfig(PretrainedConfig):
         use_ds_gemm=False,
         dsv3_use_fp8_dispatch=True,
         fa_version=3,
+        max_sequence_length=None,
         **kwargs,
     ):
+        super().__init__(
+            pad_token_id=pad_token_id,
+            bos_token_id=bos_token_id,
+            eos_token_id=eos_token_id,
+            tie_word_embeddings=tie_word_embeddings,
+            **kwargs,
+        )
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
         self.seq_length = seq_length
@@ -265,11 +273,4 @@ class DeepseekV2FastConfig(PretrainedConfig):
         self.use_ds_gemm = use_ds_gemm
         self.dsv3_use_fp8_dispatch = dsv3_use_fp8_dispatch
         self.fa_version = fa_version
-
-        super().__init__(
-            pad_token_id=pad_token_id,
-            bos_token_id=bos_token_id,
-            eos_token_id=eos_token_id,
-            tie_word_embeddings=tie_word_embeddings,
-            **kwargs,
-        )
+        self.max_sequence_length = max_sequence_length

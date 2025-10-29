@@ -16,10 +16,6 @@
 
 from ..configuration_utils import PretrainedConfig, layer_type_validation
 
-__all__ = [
-    "Qwen3Config",
-]
-
 
 class Qwen3Config(PretrainedConfig):
     r"""
@@ -49,8 +45,8 @@ class Qwen3Config(PretrainedConfig):
             `num_key_value_heads=num_attention_heads`, the model will use Multi Head Attention (MHA), if
             `num_key_value_heads=1` the model will use Multi Query Attention (MQA) otherwise GQA is used. When
             converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed
-            by meanpooling all the original heads within that group. For more details checkout [this
-            paper](https://arxiv.org/pdf/2305.13245.pdf). If it is not specified, will default to `32`.
+            by meanpooling all the original heads within that group. For more details, check out [this
+            paper](https://huggingface.co/papers/2305.13245). If it is not specified, will default to `32`.
         head_dim (`int`, *optional*, defaults to 128):
             The attention head dimension.
         hidden_act (`str` or `function`, *optional*, defaults to `"silu"`):
@@ -59,8 +55,6 @@ class Qwen3Config(PretrainedConfig):
             The maximum sequence length that this model might ever be used with.
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        use_rmsnorm (`bool`, *optional*, defaults to `True`):
-            Whether to use RMSNorm instead of LayerNorm.
         rms_norm_eps (`float`, *optional*, defaults to 1e-06):
             The epsilon used by the rms normalization layers.
         use_cache (`bool`, *optional*, defaults to `True`):
@@ -95,11 +89,11 @@ class Qwen3Config(PretrainedConfig):
                 `beta_slow` (`float`, *optional*):
                     Only used with 'yarn'. Parameter to set the boundary for interpolation (only) in the linear
                     ramp function. If unspecified, it defaults to 1.
-                `short_factor` (`List[float]`, *optional*):
+                `short_factor` (`list[float]`, *optional*):
                     Only used with 'longrope'. The scaling factor to be applied to short contexts (<
                     `original_max_position_embeddings`). Must be a list of numbers with the same length as the hidden
                     size divided by the number of attention heads divided by 2
-                `long_factor` (`List[float]`, *optional*):
+                `long_factor` (`list[float]`, *optional*):
                     Only used with 'longrope'. The scaling factor to be applied to long contexts (<
                     `original_max_position_embeddings`). Must be a list of numbers with the same length as the hidden
                     size divided by the number of attention heads divided by 2
@@ -109,25 +103,20 @@ class Qwen3Config(PretrainedConfig):
                     Only used with 'llama3'. Scaling factor applied to high frequency components of the RoPE
         attention_bias (`bool`, defaults to `False`, *optional*, defaults to `False`):
             Whether to use a bias in the query, key, value and output projection layers during self-attention.
-        use_swiglu (`bool`, *optional*, defaults to `False`):
-            Whether to use SwiGLU activation function.
         use_sliding_window (`bool`, *optional*, defaults to `False`):
             Whether to use sliding window attention.
         sliding_window (`int`, *optional*, defaults to 4096):
             Sliding window attention (SWA) window size. If not specified, will default to `4096`.
         max_window_layers (`int`, *optional*, defaults to 28):
-            The number of layers that use SWA (Sliding Window Attention). The bottom layers use SWA while the top use full attention.
-        ignored_index (`int`, *optional*, defaults to -100):
-            Target value that is ignored during loss computation.
+            The number of layers using full attention. The first `max_window_layers` layers will use full attention, while any
+            additional layer afterwards will use SWA (Sliding Window Attention).
+        layer_types (`list`, *optional*):
+            Attention pattern for each layer.
         attention_dropout (`float`, *optional*, defaults to 0.0):
             The dropout ratio for the attention probabilities.
-        attention_bias (`bool`, *optional*, defaults to `True`):
-            Whether to use a bias in the query, key, value and output projection layers during self-attention.
-        pp_seg_method (`str`, *optional*, defaults to `"layer:Qwen3DecoderLayer"`):
-            Method for pipeline parallel segmentation.
 
     ```python
-    >>> from transformers import Qwen3Model, Qwen3Config
+    >>> from paddleformers.transformers import Qwen3Model, Qwen3Config
 
     >>> # Initializing a Qwen3 style configuration
     >>> configuration = Qwen3Config()
@@ -154,20 +143,17 @@ class Qwen3Config(PretrainedConfig):
         hidden_act="silu",
         max_position_embeddings=32768,
         initializer_range=0.02,
-        use_rmsnorm=True,
         rms_norm_eps=1e-6,
         use_cache=True,
         tie_word_embeddings=False,
         rope_theta=10000.0,
         rope_scaling=None,
         attention_bias=False,
-        use_swiglu=False,
         use_sliding_window=False,
         sliding_window=4096,
         max_window_layers=28,
-        attention_dropout=0.0,
         layer_types=None,
-        pp_seg_method="layer:Qwen3DecoderLayer",
+        attention_dropout=0.0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -177,7 +163,7 @@ class Qwen3Config(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.use_sliding_window = use_sliding_window
-        self.sliding_window = sliding_window  # we check `use_sliding_window` in the modeling code
+        self.sliding_window = sliding_window if self.use_sliding_window else None
         self.max_window_layers = max_window_layers
 
         # for backward compatibility
@@ -188,28 +174,24 @@ class Qwen3Config(PretrainedConfig):
         self.head_dim = head_dim
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
-        self.use_swiglu = use_swiglu
-        self.use_rmsnorm = use_rmsnorm
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
-
         # Validate the correctness of rotary position embeddings parameters
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
         # rope_config_validation(self)
 
-        self.pp_seg_method = pp_seg_method
-
         self.layer_types = layer_types
         if self.layer_types is None:
             self.layer_types = [
-                "sliding_attention" if self.use_sliding_window and i >= self.max_window_layers else "full_attention"
+                "sliding_attention"
+                if self.sliding_window is not None and i >= self.max_window_layers
+                else "full_attention"
                 for i in range(self.num_hidden_layers)
             ]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
@@ -219,18 +201,5 @@ class Qwen3Config(PretrainedConfig):
             **kwargs,
         )
 
-        self.register_unsavable_keys(
-            [
-                "ignored_index",
-                "pad_token_id",
-                "use_rmsnorm",
-                "use_swiglu",
-                "recompute",
-                "recompute_use_reentrant",
-                "recompute_granularity",
-                "pp_seg_method",
-                "dpo_config",
-                "kto_config",
-                "layer_types",
-            ]
-        )
+
+__all__ = ["Qwen3Config"]

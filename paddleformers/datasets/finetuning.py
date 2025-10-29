@@ -14,6 +14,7 @@
 
 
 import copy
+import os
 from dataclasses import dataclass
 from typing import List
 
@@ -25,7 +26,7 @@ from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 
 from ..utils.log import logger
 from .base import MultiSourceDataset
-from .data_utils import Example, pad_batch_data
+from .data_utils import Example, pad_batch_data, postprocess_fc_sequence
 from .mix_datasets import create_dataset_instance
 
 LOGGER_COUNT = 0
@@ -109,7 +110,7 @@ def create_indexed_dataset(data_file_prefix):
     return indexed_dataset
 
 
-def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: int):
+def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int):
     """Convert batch of sequences into training tensors.
 
     Args:
@@ -125,7 +126,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: 
             - loss_mask: Mask for computing loss
     """
     input_keys = ["input_ids", "labels", "loss_mask"]
-    if model_args.num_nextn_predict_layers > 0:
+    if training_args.num_nextn_predict_layers > 0:
         input_keys.append("nbatch_pack_offset")
     if model_args.use_attn_mask_startend_row_indices:
         input_keys.append("attn_mask_startend_row_indices")
@@ -152,7 +153,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, model_args, max_seq_len: 
             ]
         )
 
-        if model_args.num_nextn_predict_layers > 0:
+        if training_args.num_nextn_predict_layers > 0:
             # each sequence end index
             batch_sequence_len = [len(sequence) for sequence in original_token_ids]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)
@@ -506,39 +507,6 @@ class SequenceDataset(IterableDataset):
             while True:
                 yield from self.__iter_func()
 
-    def function_call_chat_template(self, messages, tools):
-        history = messages[:-1]
-        input_dict = dict()
-        input_dict["messages"] = history
-        if tools is not None:
-            input_dict["tools"] = tools
-        history_str = self.tokenizer.apply_chat_template(
-            input_dict,
-            add_generation_prompt=True,
-            tokenize=False,
-        )
-        history_len = len(history_str)
-        input_dict["messages"] = messages
-        all_str = self.tokenizer.apply_chat_template(
-            input_dict,
-            add_generation_prompt=False,
-            tokenize=False,
-        )
-        # (21b think model) remove generation content
-        s = "<|im_end|>\n\n<|im_start|>assistant\n<think>\n"
-        if all_str.endswith(s):
-            all_str = all_str[: -len(s)]
-        response_str = all_str[history_len:]
-        history_id = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(history_str))
-        response_id = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(response_str))
-        return [history_id, response_id]
-
-    def _postprocess_fc_sequence(self, example):
-        messages = example.request["messages"]
-        tools = example.request["tools"]
-        encoded_messages = [self.function_call_chat_template(messages, tools)]
-        return encoded_messages
-
     def _postprocess_sequence(self, example, actual_example_num):
         """Process code completion examples into token sequences.
 
@@ -553,7 +521,7 @@ class SequenceDataset(IterableDataset):
             if not self.tokenizer.chat_template:
                 self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
             if example.is_function_call:
-                encoded_messages = self._postprocess_fc_sequence(example)
+                encoded_messages = postprocess_fc_sequence(self.tokenizer, example.request)
             else:
                 encoded_messages = self.tokenizer.encode_chat_inputs(
                     example.request, encode_one_turn=self.encode_one_turn
@@ -646,6 +614,30 @@ class SequenceDataset(IterableDataset):
 
         assert len(tokens) == len(loss_mask), f"{len(tokens)}-{len(loss_mask)}"
         assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
+
+        def print_debug_info(tokenizer, data, label):
+            """Helper function to print tokenized data debug info"""
+            try:
+                decoded = tokenizer.decode(data)
+                logger.info(f"[dataset debug] {label}: {decoded}")
+            except (TypeError, ValueError, OverflowError) as e:
+                logger.info(f"[dataset debug] tokenizer decode {label} error: {str(e)}")
+
+        enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
+
+        if enable_dataset_debug:
+            logger.info("\n" + "=" * 50)
+            logger.info("[dataset debug] Debug mode enabled")
+
+            if hasattr(self, "tokenizer"):
+                print_debug_info(self.tokenizer, tokens, "input")
+                labels = [x for x in labels if x != -100]  # remove -100
+                print_debug_info(self.tokenizer, labels, "labels")
+                logger.info(f"[dataset debug] loss mask: {loss_mask}")
+            else:
+                logger.info("[dataset debug] Tokenizer not available")
+
+            logger.info("=" * 50 + "\n")
         return Sequence(
             token_ids=tokens,
             position_ids=pos_ids,

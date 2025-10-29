@@ -1,9 +1,9 @@
 ### data
-train_dataset_type: erniekit
-eval_dataset_type: erniekit
-train_dataset_path: ./data/sft/train.json
+train_dataset_type: chatml
+eval_dataset_type: chatml
+train_dataset_path: ./data/fc/function-call-train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./data/sft/dev.json
+eval_dataset_path: ./data/fc/function-call-eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 num_samples_each_epoch: 6000000
@@ -13,11 +13,13 @@ mix_strategy: concat
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
 attn_impl: flashmask
-lora: true
-lora_rank: 8
+use_fused_head_and_loss_fn: True
+loss_subbatch_sequence_length: 8192
 
 ### finetuning
 # base
+stage: DPO
+fine_tuning: full
 seed: 23
 do_train: true
 do_eval: true
@@ -33,13 +35,13 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3_hf_0p6b_lora_ckpts
+output_dir: ./checkpoints/qwen3_hf_0p6b_dpo_ckpts
 disable_tqdm: true
 eval_accumulation_steps: 16
 
 # train
 warmup_steps: 20
-learning_rate: 1.0e-4
+learning_rate: 1.0e-6
 
 # performance
 tensor_parallel_degree: 1

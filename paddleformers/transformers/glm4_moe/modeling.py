@@ -21,7 +21,7 @@ import paddle.distributed as dist
 from paddle import Tensor, nn
 from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 from paddle.nn import functional as F
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -32,7 +32,7 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Glm4MoeMLP
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -128,6 +128,7 @@ class Glm4MoeAttention(nn.Layer):
         self.rope_scaling = config.rope_scaling
         self.attention_dropout = config.attention_dropout
 
+        self.tensor_parallel = config.tensor_parallel_degree > 1
         self.sequence_parallel = config.sequence_parallel
         self.attention_bias = config.attention_bias
         self.fuse_attention_qkv = config.fuse_attention_qkv
@@ -191,15 +192,15 @@ class Glm4MoeAttention(nn.Layer):
                 norm_type="rms_norm",
                 hidden_size=config.hidden_size,
                 norm_eps=config.rms_norm_eps,
+                input_is_parallel=self.tensor_parallel,
             )
             self.k_norm = GeneralNorm.create(
                 config=config,
                 norm_type="rms_norm",
                 hidden_size=config.hidden_size,
                 norm_eps=config.rms_norm_eps,
+                input_is_parallel=self.tensor_parallel,
             )
-            self.q_norm.enable_sequence_parallel()
-            self.k_norm.enable_sequence_parallel()
 
     def forward(
         self,
@@ -231,6 +232,9 @@ class Glm4MoeAttention(nn.Layer):
         else:
             mix_layer = self.qkv_proj(hidden_states)
             if self.sequence_parallel:
+                max_sequence_length = self.config.max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                q_len = max_sequence_length
                 target_shape = [
                     bsz,
                     q_len,
@@ -311,13 +315,10 @@ class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
         Args:
             hidden_states (_type_): [batch_size * seq_len, hidden_size]
         """
-
         # compute gating score
         with paddle.amp.auto_cast(False):
             hidden_states = hidden_states.cast(self.weight.dtype)
-
             logits = F.linear(hidden_states.cast("float32"), self.weight.cast("float32").t())
-
             scores = self.gate_score_func(logits=logits)
             scores = scores.cast(paddle.float32)
 
@@ -393,6 +394,11 @@ class Glm4MoeMoE(nn.Layer):
             config.tensor_parallel_degree = 1
         super().__init__()
         self.config = config
+        self.sequence_parallel = config.sequence_parallel
+        # if sequence_parallel is True, expert Linear will call ColumnParallelLinear instead of ColumnSequenceParallelLinear
+        if self.sequence_parallel and config.tensor_parallel_degree > 1:
+            config = deepcopy(config)
+            config.sequence_parallel = False
         self.experts = nn.LayerList(
             [
                 Glm4MoeMLP(
@@ -435,6 +441,8 @@ class Glm4MoeMoE(nn.Layer):
         return final_hidden_states.cast(hidden_states.dtype)
 
     def forward(self, hidden_states):
+        if self.sequence_parallel:
+            hidden_states = GatherOp.apply(hidden_states)
         residuals = hidden_states
         orig_shape = hidden_states.shape
         topk_indices, topk_weights = self.gate(hidden_states)
@@ -442,7 +450,30 @@ class Glm4MoeMoE(nn.Layer):
         hidden_states = self.moe(hidden_states, topk_indices, topk_weights)
         hidden_states = paddle.reshape(hidden_states, orig_shape)
         hidden_states = hidden_states + self.shared_experts(residuals)
+        if self.sequence_parallel:
+            hidden_states = ScatterOp.apply(hidden_states)
         return hidden_states
+
+
+class AddAuxiliaryLoss(paddle.autograd.PyLayer):
+    """
+    The trick function of adding auxiliary (aux) loss,
+    which includes the gradient of the aux loss during backpropagation.
+    """
+
+    @staticmethod
+    def forward(ctx, x, loss):
+        assert paddle.numel(loss) == 1
+        ctx.dtype = loss.dtype
+        ctx.required_aux_loss = not loss.stop_gradient
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        grad_loss = None
+        if ctx.required_aux_loss:
+            grad_loss = paddle.ones(1, dtype=ctx.dtype)
+        return grad_output, grad_loss
 
 
 class Glm4MoeFlexMoE(MoEFlexTokenLayer):
@@ -509,7 +540,10 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
         )
 
     def forward(self, hidden_states):
-        final_hidden_states, _, _ = super().forward(hidden_states)
+        final_hidden_states, l_aux, _ = super().forward(hidden_states)
+        if self.training and self.config.aux_loss_alpha > 0.0:
+            l_aux = l_aux * self.config.aux_loss_alpha
+            final_hidden_states = AddAuxiliaryLoss.apply(final_hidden_states, l_aux)
         final_hidden_states = final_hidden_states + self.shared_experts(hidden_states)
         return final_hidden_states
 
@@ -537,23 +571,22 @@ class Glm4MoeDecoderLayer(nn.Layer):
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.post_attention_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         if config.sequence_parallel:
-            self.post_attention_layernorm.enable_sequence_parallel()
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
 
     def subbatch_recompute_forward(
         self,
         hidden_states: paddle.Tensor,
-        batch_size: int,
-        hidden_size: int,
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
@@ -583,11 +616,15 @@ class Glm4MoeDecoderLayer(nn.Layer):
         self_attn_weights = attn_outputs[2] if output_attentions else None
         present_key_value = attn_outputs[3] if use_cache else None
 
-        if len(hidden_states.shape) != 3:
-            if self.config.sequence_parallel:
-                hidden_states = hidden_states.reshape([-1, batch_size, hidden_size])
-            else:
-                hidden_states = hidden_states.reshape([batch_size, -1, hidden_size])
+        hidden_size = hidden_states.shape[-1]
+        if self.config.sequence_parallel:
+            # hidden_states shape:[b*s,h]
+            seq_len = self.config.max_sequence_length // self.config.tensor_parallel_degree
+            batch_size = hidden_states.shape[0] // seq_len
+            assert (
+                batch_size > 0
+            ), f"batch_size must larger than 0, but calulate batch_size:{batch_size}, hidden_states shape:{hidden_states.shape}"
+            hidden_states = hidden_states.reshape([-1, batch_size, hidden_size])
         sub_seq_len = self.config.moe_subbatch_token_num
         seq_axis = 0 if self.config.sequence_parallel else 1
         seq_len = hidden_states.shape[seq_axis]
@@ -598,7 +635,8 @@ class Glm4MoeDecoderLayer(nn.Layer):
         output_list = []
 
         for chunk in input_list:
-            chunk = chunk.reshape([-1, hidden_size])
+            if self.config.sequence_parallel:
+                chunk = chunk.reshape([-1, hidden_size])
             out = recompute(
                 self.mlp.forward,
                 chunk,
@@ -1075,12 +1113,10 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
             norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = Glm4MoeRotaryEmbedding(config=config)
         self.gradient_checkpointing = False
-
-        if config.sequence_parallel:
-            self.norm.enable_sequence_parallel()
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -1198,8 +1234,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             if moelayer_use_subbatch_recompute:
                 layer_outputs = decoder_layer.subbatch_recompute_forward(
                     hidden_states,
-                    bs,
-                    hidden_size,
                     position_ids,
                     causal_mask,
                     output_attentions,
@@ -1388,9 +1422,83 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         )
 
 
+class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
+    def forward(self, args):
+        hidden_states, attention_mask, position_ids, position_embeddings, _ = parse_args(args)
+
+        max_seq_len = hidden_states.shape[1]
+        if self.config.sequence_parallel:
+            # hidden_states shape:[b*s,h]
+            max_seq_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
+        if attention_mask is None:
+            attn_mask = None
+            attn_mask_startend_row_indices = None
+        elif attention_mask.dtype == paddle.int32:
+            attn_mask = None
+            attn_mask_startend_row_indices = attention_mask
+        else:
+            attn_mask = attention_mask
+            attn_mask_startend_row_indices = None
+            assert len(attn_mask.shape) == 4, f"Attention mask should be 4D tensor, but got {attn_mask.shape}."
+
+        position_ids_decoder = None
+        if position_ids is not None:
+            position_ids_decoder = position_ids[:, :max_seq_len]
+
+        if position_embeddings is not None:
+            position_embeddings = position_embeddings[..., :max_seq_len, :]
+            tuple_position_embeddings = (position_embeddings[0], position_embeddings[1])
+        else:
+            tuple_position_embeddings = None
+
+        has_gradient = not hidden_states.stop_gradient
+        moelayer_use_subbatch_recompute = (
+            self.config.moe_subbatch_token_num > 0 if hasattr(self.config, "moe_subbatch_token_num") else False
+        )
+        if moelayer_use_subbatch_recompute:
+            hidden_states = super().subbatch_recompute_forward(
+                hidden_states,
+                position_ids=position_ids_decoder,
+                attention_mask=attn_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=tuple_position_embeddings,
+            )
+        elif self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            hidden_states = recompute(
+                super().forward,
+                hidden_states,
+                position_ids=position_ids_decoder,
+                attention_mask=attn_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=tuple_position_embeddings,
+                use_reentrant=self.config.recompute_use_reentrant,
+            )
+        else:
+            hidden_states = super().forward(
+                hidden_states,
+                position_ids=position_ids,
+                attention_mask=attn_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=tuple_position_embeddings,
+            )
+
+        if isinstance(hidden_states, paddle.Tensor):
+            ret = (hidden_states,)
+        if attention_mask is not None:
+            ret += (attention_mask.clone(),)
+        if position_ids is not None:
+            ret += (position_ids.clone(),)
+        if position_embeddings is not None:
+            ret += (position_embeddings.clone(),)
+        if len(ret) == 1:
+            (ret,) = ret
+        return ret
+
+
 class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
+    _decoder_layer_pipe_cls = Glm4MoeDecoderLayerPipe
     _get_tensor_parallel_mappings = Glm4MoeModel._get_tensor_parallel_mappings
     _get_fuse_or_split_param_mappings = Glm4MoeModel._get_fuse_or_split_param_mappings
     _init_weights = Glm4MoeModel._init_weights
