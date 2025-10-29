@@ -24,8 +24,6 @@ from paddle.distributed.communication.group import Group
 from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
 
 
-
-
 class MoECommunicationInterface(ABC):
     """
     MoE通信接口
@@ -107,17 +105,14 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         if expert_parallel_degree <= 1:
             # 无需EP并行，直接返回
             return hidden_states
-        print("--------StandardMoECommunication.moe_group", moe_group)
 
         # 计算每个专家的token数量
         # cnts = paddle.zeros([topk_indices.shape[0], num_experts], dtype=topk_indices.dtype)
         # cnts = cnts.put_along_axis(topk_indices, 1, axis=1)
         # tokens_per_expert = cnts.sum(axis=0)
 
-        print("class StandardMoECommunication(nn.Layer, MoECommunicationInterface):")
         # 1. Reshape topk_indices to a single list of all expert assignments
         #    Shape: [T * K]
-        print("topk_indices: ", topk_indices)
         # Check topk_indices validity
         if paddle.any(topk_indices < 0):
             raise ValueError("Invalid topk_indices found < 0.")
@@ -131,7 +126,6 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
             raise ValueError("Invalid topk_indices found Inf.")
 
         flat_expert_indices = paddle.flatten(topk_indices)
-        print("flat_expert_indices: ", flat_expert_indices)
 
         tokens_per_expert = paddle.bincount(x=flat_expert_indices, minlength=num_experts)
         tokens_per_expert = tokens_per_expert.detach()
@@ -191,7 +185,6 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         # 第三次All-to-All：将专家输出分发回原始位置
         new_x = paddle.empty_like(outs)
         new_x[gatherd_idxs] = outs
-        # print(f"new_x shape: {new_x.shape}, gatherd_idxs: {gatherd_idxs}, outs shape: {outs.shape}")
         # assert paddle.max(paddle.to_tensor(gatherd_idxs)) < new_x.shape[0], "Index out of bounds"
 
         gathered_tokens = _AllToAll.apply(
@@ -223,13 +216,12 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
 
     基于 DeepEP 通信的 EP 并行实现
     """
-        
+
     def expert_forward(self, dispatched_input, tokens_per_expert, experts, moe_rank, num_experts_per_device):
         outputs = []
         tokens_per_expert = (
             tokens_per_expert.tolist() if not isinstance(tokens_per_expert, list) else tokens_per_expert
         )
-        # print(f"all tokens: {sum(tokens_per_expert)}, detail: {tokens_per_expert}")
         chunks = paddle.split(dispatched_input, num_or_sections=tokens_per_expert, axis=0)
         for i, chunk in enumerate(chunks):
             chunk = chunk.contiguous()
@@ -254,7 +246,7 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         num_experts_per_device: int,
         num_experts: int,
         topk: int,
-        token_dispatcher
+        token_dispatcher,
     ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         if expert_parallel_degree <= 1:
             return hidden_states

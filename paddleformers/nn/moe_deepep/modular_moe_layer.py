@@ -16,27 +16,35 @@ from __future__ import annotations
 
 import logging
 import os
+from copy import deepcopy
 from typing import Any, Dict, Optional
 
 import paddle
 import paddle.distributed as dist
 from paddle import nn
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 
+from ...nn.mlp import MLP
 from ...transformers.configuration_utils import PretrainedConfig
+from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
 from .moe_communication import (
     DeepEPMoECommunication,
     MoECommunicationInterface,
     StandardMoECommunication,
 )
-from .moe_expert import MoEExpertInterface, Qwen2MoeMLP, StandardMoEExpert, expert_class_mapping
+from .moe_expert import (
+    MoEExpertInterface,
+    Qwen2MoeMLP,
+    StandardMoEExpert,
+    expert_class_mapping,
+)
 from .moe_gate import FlexibleMoEGate, StandardMoEGate
 from .moe_loss import LossCombiner, LossConfig, LossFunction, LossRegistry, LossType
 from .moe_loss_instance import get_global_loss_registry
-from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
-
 
 logger = logging.getLogger(__name__)
 global_loss_registry = get_global_loss_registry()
+
 
 class ModularMoELayer(nn.Layer):
     """
@@ -57,6 +65,7 @@ class ModularMoELayer(nn.Layer):
         norm_topk_prob: int,
         expert_activation: str,
         moe_config: Dict,
+        model_type: str,
         pretrained_config: Optional[PretrainedConfig] = None,
     ):
         """
@@ -98,12 +107,18 @@ class ModularMoELayer(nn.Layer):
         self.moe_intermediate_size = moe_intermediate_size
         self.expert_activation = expert_activation
         self.norm_topk_prob = norm_topk_prob
+        self.model_type = model_type
+
+        self.sequence_parallel = pretrained_config.get("sequence_parallel", False)
+        self.tensor_parallel_degree = pretrained_config.get("tensor_parallel_degree", 1)
+        self.seq_length = pretrained_config.get("seq_length", pretrained_config.get("max_seq_len", 1024))
+
+        self.expert_parallel_degree = moe_config.get("expert_parallel_degree", 1)
 
         self.moe_group = moe_config.get("moe_group", "data")
         self.custom_gate = moe_config.get("custom_gate", None)
         self.custom_expert = moe_config.get("custom_expert", None)
         self.custom_communication = moe_config.get("custom_communication", None)
-        self.expert_parallel_degree = moe_config.get("expert_parallel_degree", 1)
         self.gate_activation = moe_config.get("gate_activation", "softmax")
         self.aux_loss_weight = moe_config.get("aux_loss_weight", 0.01)
         self.z_loss_weight = moe_config.get("z_loss_weight", 0.0)
@@ -124,7 +139,7 @@ class ModularMoELayer(nn.Layer):
         if self.custom_gate is not None:
             self.gate = self.custom_gate
         elif self.use_flexible_loss:
-            # 使用灵活损失系统
+            # TODO: 使用灵活损失系统，暂未实现
             if self.loss_configs is None:
                 self.loss_configs = [
                     LossConfig("auxiliary", LossType.AUXILIARY, weight=self.aux_loss_weight),
@@ -151,28 +166,41 @@ class ModularMoELayer(nn.Layer):
                 num_experts_per_tok=self.num_experts_per_tok,
                 norm_topk_prob=self.norm_topk_prob,
                 moe_config=moe_config,
+                seq_length=self.seq_length,
             )
 
         # 创建专家网络
         if self.custom_expert is not None:
-            expert_class = class_mapping.get(self.custom_expert, StandardMoEExpert)
+            expert_class = expert_class_mapping.get(self.custom_expert, StandardMoEExpert)
         else:
             expert_class = StandardMoEExpert
-        
-        self.experts = nn.LayerList([])
-        for i in range(self.num_experts):
-            if i // self.num_experts_per_device == self.moe_rank:
-                expert = expert_class(
-                    hidden_size=self.hidden_size,
-                    intermediate_size=self.moe_intermediate_size,
-                    expert_activation=self.expert_activation,
-                    expert_dropout=self.expert_dropout,
-                    config={},
-                )
-                self.experts.append(expert)
-            else:
-                self.experts.append(None)
-        if self.expert_parallel_degree >  1:
+
+        routed_expert_pretrained_config = deepcopy(pretrained_config)
+        shared_expert_pretrained_config = deepcopy(pretrained_config)
+        if self.expert_parallel_degree <= 1 and self.sequence_parallel and self.tensor_parallel_degree > 1:
+            routed_expert_pretrained_config.sequence_parallel = False
+            shared_expert_pretrained_config.sequence_parallel = False
+        elif self.expert_parallel_degree > 1 and self.tensor_parallel_degree >= 1:
+            routed_expert_pretrained_config.tensor_parallel_degree = 1
+
+        # self.experts = nn.LayerList(
+        #     [expert_class(
+        #             hidden_size=self.hidden_size,
+        #             intermediate_size=self.moe_intermediate_size,
+        #             expert_activation=self.expert_activation,
+        #             expert_dropout=self.expert_dropout,
+        #             config={},
+        #         )
+        #     for _ in range(self.num_experts)]
+        # )
+
+        self.experts = nn.LayerList(
+            [
+                MLP(config=routed_expert_pretrained_config, intermediate_size=pretrained_config.moe_intermediate_size)
+                for _ in range(self.num_experts)
+            ]
+        )
+        if self.expert_parallel_degree > 1:
             self.token_dispatcher = MoEFlexTokenDispatcher(
                 self.num_experts_per_device, self.num_experts_per_tok, self.num_experts, self.moe_group
             )
@@ -181,12 +209,15 @@ class ModularMoELayer(nn.Layer):
 
         # 创建共享专家
         if self.num_shared_experts > 0:
-            self.shared_experts = expert_class(
-                hidden_size=self.hidden_size,
-                intermediate_size=self.moe_intermediate_size * self.num_shared_experts,
-                expert_activation=self.expert_activation,
-                expert_dropout=self.expert_dropout,
-                config={},
+            # self.shared_experts = expert_class(
+            #     hidden_size=self.hidden_size,
+            #     intermediate_size=self.moe_intermediate_size * self.num_shared_experts,
+            #     expert_activation=self.expert_activation,
+            #     expert_dropout=self.expert_dropout,
+            #     config={},
+            # )
+            self.shared_experts = MLP(
+                config=shared_expert_pretrained_config, intermediate_size=pretrained_config.moe_intermediate_size
             )
         else:
             self.shared_experts = None
@@ -199,13 +230,13 @@ class ModularMoELayer(nn.Layer):
                 self.communication = DeepEPMoECommunication()
             else:
                 self.communication = StandardMoECommunication()
-        
-        self.is_dummy_moe = False if self.expert_parallel_degree > 1 else True
-        for k in self.experts:
-            if k is not None:
-                for p in k.parameters():
-                    p.expert = not self.is_dummy_moe
-                    p.no_sync = not self.is_dummy_moe
+
+        # self.is_dummy_moe = False if self.expert_parallel_degree > 1 else True
+        # for k in self.experts:
+        #     if k is not None:
+        #         for p in k.parameters():
+        #             p.expert = not self.is_dummy_moe
+        #             p.no_sync = not self.is_dummy_moe
 
         if hasattr(dist, "fleet") and dist.is_initialized() and self.expert_parallel_degree > 1:
             self.is_mp_moe = False
@@ -218,7 +249,6 @@ class ModularMoELayer(nn.Layer):
                 logger.info(f"expert no-sync={p.no_sync}-{p.name}")
                 if self.is_mp_moe or self.is_ep_moe:
                     p.is_distributed = True
-        
 
     def _init_expert_parallel(self):
         """
@@ -260,8 +290,8 @@ class ModularMoELayer(nn.Layer):
             if self.moe_group == "data":
                 self.moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
             elif self.moe_group == "expert":
-                self.moe_group = dist.fleet.get_hybrid_communicate_group().expert_parallel_group
-                self.moe_grad_group = dist.fleet.get_hybrid_communicate_group().expert_grad_comm_group
+                self.moe_group = dist.fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+                self.moe_grad_group = dist.fleet.get_hybrid_communicate_group().get_moe_sharding_parallel_group()
             self.moe_rank = dist.get_rank(self.moe_group)
             self.moe_rank = 0 if self.moe_rank < 0 else self.moe_rank
             new_expert_parallel_degree = dist.get_world_size(self.moe_group)
@@ -286,31 +316,36 @@ class ModularMoELayer(nn.Layer):
         Returns:
             output: 输出隐藏状态，形状: [batch_size, seq_len, hidden_size]
         """
-
-        batch_size, seq_len, d_model = hidden_states.shape
-
-        capacity, topk_weights, topk_indices, gates_masked, mask, priorities, aux_loss, z_loss = self.gate(hidden_states)
-
+        if self.expert_parallel_degree <= 1 and self.sequence_parallel:
+            hidden_states = GatherOp.apply(hidden_states)
+        orig_shape = hidden_states.shape
+        residuals = hidden_states
+        capacity, topk_weights, topk_indices, gates_masked, mask, priorities, aux_loss, z_loss = self.gate(
+            hidden_states
+        )
         # 重塑输入
 
         # MoE前向传播
         if self.expert_parallel_degree > 1:
-            output = self._forward_with_ep_parallel(
-                hidden_states, topk_indices, topk_weights, gates_masked, mask
-            )
+            output = self._forward_with_ep_parallel(hidden_states, topk_indices, topk_weights, gates_masked, mask)
         else:
-            reshaped_input = hidden_states.reshape([-1, d_model])
+            if len(hidden_states.shape) == 3:
+                batch_size, seq_len, d_model = hidden_states.shape
+                reshaped_input = hidden_states.reshape([-1, d_model])
+            else:
+                reshaped_input = hidden_states
             output = self._forward_traditional_moe(reshaped_input, topk_indices, topk_weights)
 
-
         # 恢复原始形状
-        output = output.reshape([batch_size, seq_len, d_model])
+        output = output.reshape(orig_shape)
 
         # 添加共享专家输出
         if self.shared_experts is not None:
-            shared_output = self.shared_experts(hidden_states)
+            shared_output = self.shared_experts(residuals)
             output = output + shared_output
 
+        if self.expert_parallel_degree <= 1 and self.sequence_parallel:
+            output = ScatterOp.apply(output)
         # currently no need return aux_loss and z_loss
         return output, aux_loss
 
@@ -328,7 +363,7 @@ class ModularMoELayer(nn.Layer):
         Returns:
             output: 输出隐藏状态，形状: [seq_len, hidden_size]
         """
-        
+
         _, d_model = hidden_states.shape
         final_hidden_states = paddle.zeros_like(hidden_states, dtype=hidden_states.dtype)
 
