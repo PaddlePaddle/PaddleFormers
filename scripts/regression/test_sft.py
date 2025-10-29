@@ -106,7 +106,7 @@ class SFTTrainTest(unittest.TestCase):
             "max_seq_len": 1024,
             "warmup_steps": -1,
             "max_steps": 5,
-            "save_steps": 3
+            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -118,7 +118,7 @@ class SFTTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_full cmd is : {cmd}")
-        #print(training_p.stdout)
+        # print(training_p.stdout)
         sft_full_output = training_p.stdout
         sft_full_log_file = os.path.join(LOG_PATH, "sft_full.log")
         if sft_full_output and sft_full_output.strip():
@@ -134,7 +134,7 @@ class SFTTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_full reusme cmd is : {cmd}")
-        #print(reusme_p.stdout)
+        # print(reusme_p.stdout)
         sft_full_reusme_output = reusme_p.stdout
         sft_full_reusme_log_file = os.path.join(LOG_PATH, "sft_full_reusme.log")
         if sft_full_reusme_output and sft_full_reusme_output.strip():
@@ -157,7 +157,7 @@ class SFTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_seq_len": 1024,
             "max_steps": 5,
-            "save_steps": 3
+            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -169,7 +169,7 @@ class SFTTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_lora cmd is : {cmd}")
-        #print(training_p.stdout)
+        # print(training_p.stdout)
         sft_lora_output = training_p.stdout
         sft_lora_log_file = os.path.join(LOG_PATH, "sft_lora.log")
         if sft_lora_output and sft_lora_output.strip():
@@ -186,7 +186,7 @@ class SFTTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_lora reusme cmd is : {cmd}")
-        #print(reusme_p.stdout)
+        # print(reusme_p.stdout)
         sft_lora_reusme_output = reusme_p.stdout
         sft_lora_reusme_log_file = os.path.join(LOG_PATH, "sft_lora_reusme.log")
         if sft_lora_reusme_output and sft_lora_reusme_output.strip():
@@ -220,7 +220,7 @@ class SFTTrainTest(unittest.TestCase):
             "max_seq_len": 1024,
             "warmup_steps": -1,
             "max_steps": 5,
-            "save_steps": 3
+            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -231,7 +231,7 @@ class SFTTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_full_tp_pp cmd is : {cmd}")
-        #print(training_p.stdout)
+        # print(training_p.stdout)
         sft_full_tp_pp_output = training_p.stdout
         sft_full_tp_pp_log_file = os.path.join(LOG_PATH, "sft_full_tp_pp.log")
         if sft_full_tp_pp_output and sft_full_tp_pp_output.strip():
@@ -247,7 +247,7 @@ class SFTTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_full_tp_pp reusme cmd is : {cmd}")
-        #print(reusme_p.stdout)
+        # print(reusme_p.stdout)
         sft_full_tp_pp_reusme_output = reusme_p.stdout
         sft_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "sft_full_tp_pp_reusme.log")
         if sft_full_tp_pp_reusme_output and sft_full_tp_pp_reusme_output.strip():
@@ -271,7 +271,7 @@ class SFTTrainTest(unittest.TestCase):
             "max_seq_len": 1024,
             "warmup_steps": -1,
             "max_steps": 5,
-            "save_steps": 3
+            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -283,7 +283,7 @@ class SFTTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_lora_tp_pp cmd is : {cmd}")
-        #print(training_p.stdout)
+        # print(training_p.stdout)
         sft_lora_tp_pp_output = training_p.stdout
         sft_lora_tp_pp_log_file = os.path.join(LOG_PATH, "sft_lora_tp_pp.log")
         if sft_lora_tp_pp_output and sft_lora_tp_pp_output.strip():
@@ -299,7 +299,7 @@ class SFTTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_lora_tp_pp reusme cmd is : {cmd}")
-        #print(reusme_p.stdout)
+        # print(reusme_p.stdout)
         sft_lora_tp_pp_reusme_output = reusme_p.stdout
         sft_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "sft_lora_tp_pp_reusme.log")
         if sft_lora_tp_pp_reusme_output and sft_lora_tp_pp_reusme_output.strip():
@@ -333,7 +333,7 @@ class SFTTrainTest(unittest.TestCase):
             "max_seq_len": 1024,
             "warmup_steps": -1,
             "max_steps": 5,
-            "save_steps": 3
+            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -346,7 +346,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"cmd {cmd}")
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_full_function_call cmd is : {cmd}")
-        #print(training_p.stdout)
+        # print(training_p.stdout)
         sft_full_function_call_output = training_p.stdout
         sft_full_function_call_log_file = os.path.join(LOG_PATH, "sft_full_function_call.log")
         if sft_full_function_call_output and sft_full_function_call_output.strip():
@@ -362,7 +362,7 @@ class SFTTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_full_function_call reusme cmd is : {cmd}")
-        #print(reusme_p.stdout)
+        # print(reusme_p.stdout)
         sft_full_function_call_reusme_output = reusme_p.stdout
         sft_full_function_call_reusme_log_file = os.path.join(LOG_PATH, "sft_full_function_call_reusme.log")
         if sft_full_function_call_reusme_output and sft_full_function_call_reusme_output.strip():
