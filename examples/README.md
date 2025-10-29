@@ -103,7 +103,7 @@ paddleformers-cli train ./config/pt/full_tp_pp.yaml
 
 `input_dir`指定数据集的前缀，例如：数据集 `data-1-part0.bin` 需要设置为 `input_dir: "1.0 ./data-1-part0"`，`1.0` 为数据配比；
 
-`split` 字段为 `train/eval/test` 的分配比例，如：`split: "998,1,1"`, 其中`train`为训练集，`eval`为评估集，`test`为测试集，用于训练完的效果验证
+`split` 字段为 `train/eval` 的分配比例，如：`split: "998,2"`, 其中`train`为训练集，`eval`为评估集
 
 `dataset_type` 指定为 `pretrain`，例如：`dataset_type: "pretrain"`
 
