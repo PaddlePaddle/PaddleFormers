@@ -62,7 +62,7 @@ save_to_hf: false
 运行`examples/tools/create_pretraining_data.py`，生成数据将会保存在当前目录下的`./pretrain_data.bin`和`./pretrain_data.idx`
 ```text
 python -u examples/tools/create_pretraining_data.py \
-    --model_name "/path/to/your/Qwen3-0.6B-base" \
+    --model_name_or_path "/path/to/your/Qwen3-0.6B-base" \
     --data_format "JSON" \
     --input_path "/path/to/your/BazingaLyn/mini_pretrain_dataset/pretrain_hq_v7.jsonl" \
     --append_eos \
@@ -72,7 +72,20 @@ python -u examples/tools/create_pretraining_data.py \
     --data_impl "mmap"
 ```
 
-### 1.2 全参 PT
+- 参数说明
+ 
+| 参数名              | 类型        | 说明                 |
+|--------------------|----------- |-----------------|
+| `--model_name_or_path`     | string     | 模型路径  |
+| `--data_format`    | string     | 支持的文件格式，之前只支持 json |
+| `--input_path`     | string     | 输入的json文件的路径  |
+| `--append_eos`     | store_true | 是否在document的结尾添加eos token  |
+| `--output_prefix`  | str        | 输出文件的前缀    |
+| `--workers`        | int        | 运行的进程数     |
+| `--log_interval`   | int        | 打印日志间隔   |
+| `--data_impl`      | str        | 制作的数据集类型，默认为mmap，也可以选择lazy |
+
+### 1.2. 全参 PT
 
 预训练需要在配置文件中指定 `stage: PT`
 
@@ -90,12 +103,22 @@ paddleformers-cli train ./config/pt/full_tp_pp.yaml
 
 `input_dir`指定数据集的前缀，例如：数据集 `data-1-part0.bin` 需要设置为 `input_dir: "1.0 ./data-1-part0"`，`1.0` 为数据配比；
 
-`split` 字段为 `train/val/test` 的分配比例，如：`split: "998,1,1"`
+`split` 字段为 `train/val/test` 的分配比例，如：`split: "998,1,1"`, 其中`train`为训练集，`val`为评估集，`test`为测试集，用于训练完的效果验证
 
 `dataset_type` 指定为 `pretrain`，例如：`dataset_type: "pretrain"`
 
 ```bash
 paddleformers-cli train ./config/pt/full_offline_data.yaml
+```
+
+### 1.3. LoRA PT
+
+LoRA SFT 启动命令参考
+```bash
+# 单卡
+paddleformers-cli train ./config/pt/lora.yaml
+# 多卡
+paddleformers-cli train ./config/pt/lora_tp_pp.yaml
 ```
 
 ## 2. 精调
