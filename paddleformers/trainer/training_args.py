@@ -1462,8 +1462,6 @@ class TrainingArguments:
                                 sd_idx = order.index("sharding")
                                 order.insert(sd_idx, "cp")
                     else:
-                        if is_context_parallel_supported():
-                            order = order[1:-1] + ["cp", "dp", "mp"]
                         order = order[1:-1] + ["dp", "mp"]
 
                 if is_context_parallel_supported():
