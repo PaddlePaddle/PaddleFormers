@@ -1,9 +1,8 @@
 ### data
 dataset_type: "pretrain"
-input_dir: "0.4 ./data/pre-training/demo_data/data-1-part0 0.6 ./data/pre-training/demo_data/data-1-part1"
+input_dir: "1.0 ./data/pre-training/demo_data/data-1-part0"
 split: "998,1,1"
 max_seq_len: 8192
-num_samples_each_epoch: 6000000
 mix_strategy: concat
 
 ### model
@@ -25,7 +24,6 @@ eval_iters: 10
 eval_steps: 100
 evaluation_strategy: steps
 save_steps: 100
-save_total_limit: 1
 save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
