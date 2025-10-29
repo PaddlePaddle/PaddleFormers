@@ -52,8 +52,8 @@ master_ip=$(hostname -I | awk '{print $1}')
 port=36677
 python3.10 -m paddle.distributed.launch \
     --log_dir output/paddle_distributed_logs \
-    --master $master_ip:$port \
-    --nnodes 1 \
+    --master <master_ip>:<port> \
+    --nnodes 8 \
     --run_mode=collective \
     ${script:-run_pretrain.py}  \
     $@
