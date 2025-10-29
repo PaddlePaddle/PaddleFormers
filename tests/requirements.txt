@@ -1,7 +1,9 @@
 parameterized
+pyav
 sentencepiece
 regex
 torch>=2.1
+torchvision
 fast_dataindex
 sacremoses
 pydantic

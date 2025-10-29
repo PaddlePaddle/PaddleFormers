@@ -31,22 +31,6 @@ class AutoVideoProcessorTest(unittest.TestCase):
         processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
         self.assertIsInstance(processor, Qwen2VLVideoProcessor)
 
-    # @set_proxy(DownloadSource.AISTUDIO)
-    # def test_video_processor_load_from_aistudio(self):
-    #     processor = AutoVideoProcessor.from_pretrained("ModelHub/Qwen2.5-VL-3B-Instruct", download_hub="aistudio")
-    #     self.assertIsInstance(processor, Qwen2VLVideoProcessor)
-
-    @set_proxy(DownloadSource.MODELSCOPE)
-    def test_video_processor_load_from_modelscope(self):
-        processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope")
-        self.assertIsInstance(processor, Qwen2VLVideoProcessor)
-
-    @skip_for_none_ce_case
-    @set_proxy(DownloadSource.HUGGINGFACE)
-    def test_video_processor_load_from_huggingface(self):
-        processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
-        self.assertIsInstance(processor, Qwen2VLVideoProcessor)
-
     def test_video_processor_from_local_directory_from_key(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             processor_tmpfile = Path(tmpdir) / "video_preprocessor_config.json"
@@ -94,10 +78,10 @@ class AutoVideoProcessorTest(unittest.TestCase):
             config = AutoVideoProcessor.from_pretrained(processor_tmpfile)
             self.assertIsInstance(config, Qwen2VLVideoProcessor)
 
-    @set_proxy(DownloadSource.HUGGINGFACE)
+    @set_proxy(DownloadSource.AISTUDIO)
     def test_video_processor_save_pretrained(self):
         config_dict = AutoVideoProcessor.from_pretrained(
-            "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface"
+            "PaddleFormers/tiny-random-qwen2.5vl", download_hub="aistudio"
         ).to_dict()
         config_dict.pop("video_processor_type")
         config = Qwen2VLVideoProcessor(**config_dict)

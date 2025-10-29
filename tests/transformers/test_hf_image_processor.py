@@ -1,3 +1,4 @@
+# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,3 +73,19 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
     def test_hf_hub(self):
         image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", download_hub="huggingface")
         self.preprocess(image_processor)
+
+    @skip_for_none_ce_case
+    @set_proxy(DownloadSource.HUGGINGFACE)
+    def test_preprocess_consistency_with_hf(self):
+        from transformers import AutoImageProcessor as AutoImageProcessor_hf
+
+        image_processor_pd = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+        image_processor_hf = AutoImageProcessor_hf.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", use_fast=False)
+        inputs_pd = image_processor_pd(self.image, return_tensors="pd")
+        inputs_hf = image_processor_hf(self.image, return_tensors="pt")
+
+        self.assertTrue(
+            paddle.allclose(
+                paddle.to_tensor(inputs_hf["pixel_values"].numpy()), inputs_pd["pixel_values"], atol=1e-5, rtol=1e-5
+            )
+        )
