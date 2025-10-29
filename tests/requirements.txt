@@ -2,7 +2,6 @@ parameterized
 sentencepiece
 regex
 torch>=2.1
-torchvision
 fast_dataindex
 sacremoses
 pydantic
@@ -20,7 +19,6 @@ pytest-retry
 gradio
 paddleslim
 codecov-cli
-pyav
 allure-pytest
 bce-python-sdk==0.8.74
 pytest==8.1.1
