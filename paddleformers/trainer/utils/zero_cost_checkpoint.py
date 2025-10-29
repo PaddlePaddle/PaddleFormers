@@ -212,36 +212,34 @@ class ZeroCostCheckpointEMAProcessor:
                 ema_state_dict[k] = tensor
             ema_state_dict_master_weights = {}
             for k, meta in self.optimizer_fusion_storage_helper.master_weights_meta.items():
-                t = self.ema_buffer._slice(
-                    meta["start"] - self.master_min_offset, meta["end"] - self.master_min_offset
-                ).clone()
+                s = meta["start"] - self.master_min_offset
+                e = meta["end"] - self.master_min_offset
+                t = self.ema_buffer._slice(s, e).clone()
                 t.get_tensor()._set_dims(meta["shape"])
                 t.name = meta["name"]
                 ema_state_dict_master_weights[k] = t
             ema_state_dict["master_weights"] = ema_state_dict_master_weights
         return ema_state_dict
 
-    def load_ema_state_dict(self, path):
-        with device_guard("cpu"):
-            logger.info(f"[ZCC EMA] load state dict from {path}")
-            state_dict = paddle.load(path)
-            for k, tensor_meta in self.param_fusion_storage_helper.model_weights_metas.items():
-                logger.info(f"[ZCC EMA] load model weight key={k}")
-                start = tensor_meta["start"]
-                end = tensor_meta["end"]
-                if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
-                    continue  # non fp32 has no `self.ema_buffer_model_params`
+    def load_ema_state_dict(self, state_dict):
+        for k, tensor_meta in self.param_fusion_storage_helper.model_weights_metas.items():
+            logger.info(f"[ZCC EMA] load model weight key={k}")
+            start = tensor_meta["start"]
+            end = tensor_meta["end"]
+            if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
+                continue  # non fp32 has no `self.ema_buffer_model_params`
+            if k in state_dict:
                 cpu_buffer = self.ema_buffer_model_params[tensor_meta["buffer_index"]]
                 tensor = state_dict[k].flatten()
                 cpu_buffer[start:end] = tensor
 
-            ema_master = state_dict["master_weights"]
-            for k, meta in self.optimizer_fusion_storage_helper.master_weights_meta.items():
-                logger.info(f"[ZCC EMA] load optimizer weight key={k}")
-                s = meta["start"] - self.master_min_offset
-                e = meta["end"] - self.master_min_offset
-                self.ema_buffer[s:e] = ema_master[k]
-            logger.info("[ZCC EMA] done loading")
+        ema_master = state_dict["master_weights"]
+        for k, meta in self.optimizer_fusion_storage_helper.master_weights_meta.items():
+            logger.info(f"[ZCC EMA] load optimizer weight key={k}")
+            s = meta["start"] - self.master_min_offset
+            e = meta["end"] - self.master_min_offset
+            if k in ema_master:  # state-dict is filtered
+                self.ema_buffer[s:e] = ema_master[k].flatten()
 
 
 class ParamFusionStorageHelper:
@@ -400,11 +398,6 @@ class ZeroCostCheckpointCallback(TrainerCallback):
             logger.info("[ZCC manager] Synced checkpoints.")
 
     def on_step_end(self, args, state, control, model, lr_scheduler, optimizer, **kwargs):
-        if not isinstance(model, PipelineLayer):
-            self.manager.zcc_pipeline_hook(0)
-        # logger.info(
-        #     f"check coef: {args.zcc_save_ema_coef} {control.should_save}, {state.global_step}, {self.zcc_ema_interval}"
-        # )
         if not control.should_save:
             if args.zcc_save_ema_coef is not None and state.global_step % self.zcc_ema_interval == 0:
                 self.maybe_update_zcc_worker(args, model, optimizer, state.global_step)
@@ -417,6 +410,8 @@ class ZeroCostCheckpointCallback(TrainerCallback):
             non_cached_objects = (lr_scheduler.state_dict(), copy.deepcopy(state))
             self.manager.get_idle_worker_for_saving((save_infos, non_cached_objects))
             self.runtime_timer.stop()
+            if not isinstance(model, PipelineLayer):
+                self.manager.zcc_pipeline_hook(0)
 
     def _get_save_infos_based_on_steps(self, state, args, checkpoint_folder):
         flash_device_checkpoint_dir = None
@@ -925,7 +920,15 @@ class ZeroCostCheckpointWorker:
                             self.optimizer_fusion_storage_helper, self.param_fusion_storage_helper, self.ema_coef
                         )
                         if ema_ckpt_path is not None:  # update ema if needed
-                            self.zcc_ema_processor.load_ema_state_dict(ema_ckpt_path)
+                            logger.info(f"[ZCC EMA] load state dict from {ema_ckpt_path}")
+                            with device_guard("cpu"):
+                                state_dict = paddle.load(ema_ckpt_path)
+                                if self.use_expert_parallel and self.dp_rank > 0:
+                                    state_dict = self._filter_moe_no_sync_optimizer_params(
+                                        self.model_meta_content, state_dict
+                                    )
+                                self.zcc_ema_processor.load_ema_state_dict(state_dict)
+                            logger.info("[ZCC EMA] done loading")
                         ema_ckpt_path = None
                 elif task_type == ZCCTaskType.PREPARE:
                     start_time = time.time()
