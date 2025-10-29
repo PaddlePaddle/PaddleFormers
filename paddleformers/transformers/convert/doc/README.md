@@ -259,7 +259,7 @@ python main.py
 
 ###  **自动化处理流水线**
 
-<img src="../images/process.png" style="zoom:33%;" />
+<img src="https://raw.githubusercontent.com/hsz06/hsz/refs/heads/main/process.png" style="zoom:33%;" />
 
 ### 最终输出
 
