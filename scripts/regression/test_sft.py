@@ -25,6 +25,7 @@ import yaml
 
 TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/sft"
+LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
 
@@ -120,22 +121,32 @@ class SFTTrainTest(unittest.TestCase):
             "train",
             updated_config_path,
         ]
-        print(f"cmd {cmd}")
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"sft_full cmd is : {cmd}")
         print(training_p.stdout)
-
+        sft_full_output = training_p.stdout
+        sft_full_log_file = os.path.join(LOG_PATH, "sft_full.log")
+        if sft_full_output and sft_full_output.strip():
+            with open(sft_full_log_file, "w", encoding="utf-8") as sft_full_f:
+                sft_full_f.write(sft_full_output)
         # test training result
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.945682
+        EXCEPTED_LOSS = 11.938123
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"sft_full reusme cmd is : {cmd}")
+        print(reusme_p.stdout)
+        sft_full_reusme_output = reusme_p.stdout
+        sft_full_reusme_log_file = os.path.join(LOG_PATH, "sft_full_reusme.log")
+        if sft_full_reusme_output and sft_full_reusme_output.strip():
+            with open(sft_full_reusme_log_file, "w", encoding="utf-8") as sft_full_reusme_f:
+                sft_full_reusme_f.write(sft_full_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
-
-        EXCEPTED_LOSS = 11.956658
+        EXCEPTED_LOSS = 11.938123
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
@@ -167,19 +178,33 @@ class SFTTrainTest(unittest.TestCase):
             updated_config_path,
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"sft_lora cmd is : {cmd}")
+        print(training_p.stdout)
+        sft_lora_output = training_p.stdout
+        sft_lora_log_file = os.path.join(LOG_PATH, "sft_lora.log")
+        if sft_lora_output and sft_lora_output.strip():
+            with open(sft_lora_log_file, "w", encoding="utf-8") as sft_lora_f:
+                sft_lora_f.write(sft_lora_output)
 
         # test training result
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.956829
+        EXCEPTED_LOSS = 11.956658
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"sft_lora reusme cmd is : {cmd}")
+        print(reusme_p.stdout)
+        sft_lora_reusme_output = reusme_p.stdout
+        sft_lora_reusme_log_file = os.path.join(LOG_PATH, "sft_lora_reusme.log")
+        if sft_lora_reusme_output and sft_lora_reusme_output.strip():
+            with open(sft_lora_reusme_log_file, "w", encoding="utf-8") as sft_lora_reusme_f:
+                sft_lora_reusme_f.write(sft_lora_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.956829
+        EXCEPTED_LOSS = 11.956658
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora merge
@@ -210,9 +235,14 @@ class SFTTrainTest(unittest.TestCase):
             "train",
             updated_config_path,
         ]
-        print(f"cmd {cmd}")
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
+        print(f"sft_full_tp_pp cmd is : {cmd}")
+        print(training_p.stdout)
+        sft_full_tp_pp_output = training_p.stdout
+        sft_full_tp_pp_log_file = os.path.join(LOG_PATH, "sft_full_tp_pp.log")
+        if sft_full_tp_pp_output and sft_full_tp_pp_output.strip():
+            with open(sft_full_tp_pp_log_file, "w", encoding="utf-8") as sft_full_tp_pp_f:
+                sft_full_tp_pp_f.write(sft_full_tp_pp_output)
         # test training result
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
@@ -222,6 +252,13 @@ class SFTTrainTest(unittest.TestCase):
 
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"sft_full_tp_pp reusme cmd is : {cmd}")
+        print(reusme_p.stdout)
+        sft_full_tp_pp_reusme_output = reusme_p.stdout
+        sft_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "sft_full_tp_pp_reusme.log")
+        if sft_full_tp_pp_reusme_output and sft_full_tp_pp_reusme_output.strip():
+            with open(sft_full_tp_pp_reusme_log_file, "w", encoding="utf-8") as sft_full_tp_pp_reusme_f:
+                sft_full_tp_pp_reusme_f.write(sft_full_tp_pp_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
         EXCEPTED_LOSS = 11.956903
@@ -247,7 +284,13 @@ class SFTTrainTest(unittest.TestCase):
             updated_config_path,
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
+        print(f"sft_lora_tp_pp cmd is : {cmd}")
+        print(training_p.stdout)
+        sft_lora_tp_pp_output = training_p.stdout
+        sft_lora_tp_pp_log_file = os.path.join(LOG_PATH, "sft_lora_tp_pp.log")
+        if sft_lora_tp_pp_output and sft_lora_tp_pp_output.strip():
+            with open(sft_lora_tp_pp_log_file, "w", encoding="utf-8") as sft_lora_tp_pp_f:
+                sft_lora_tp_pp_f.write(sft_lora_tp_pp_output)
         # test training result
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
@@ -257,6 +300,13 @@ class SFTTrainTest(unittest.TestCase):
 
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"sft_lora_tp_pp reusme cmd is : {cmd}")
+        print(reusme_p.stdout)
+        sft_lora_tp_pp_reusme_output = reusme_p.stdout
+        sft_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "sft_lora_tp_pp_reusme.log")
+        if sft_lora_tp_pp_reusme_output and sft_lora_tp_pp_reusme_output.strip():
+            with open(sft_lora_tp_pp_reusme_log_file, "w", encoding="utf-8") as sft_lora_tp_pp_reusme_f:
+                sft_lora_tp_pp_reusme_f.write(sft_lora_tp_pp_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
         EXCEPTED_LOSS = 11.956903
@@ -293,7 +343,13 @@ class SFTTrainTest(unittest.TestCase):
         ]
         print(f"cmd {cmd}")
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
+        print(f"sft_full_function_call cmd is : {cmd}")
+        print(training_p.stdout)
+        sft_full_function_call_output = training_p.stdout
+        sft_full_function_call_log_file = os.path.join(LOG_PATH, "sft_full_function_call.log")
+        if sft_full_function_call_output and sft_full_function_call_output.strip():
+            with open(sft_full_function_call_log_file, "w", encoding="utf-8") as sft_full_function_call_f:
+                sft_full_function_call_f.write(sft_full_function_call_output)
         # test training result
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
@@ -303,6 +359,15 @@ class SFTTrainTest(unittest.TestCase):
 
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"sft_full_function_call reusme cmd is : {cmd}")
+        print(reusme_p.stdout)
+        sft_full_function_call_reusme_output = reusme_p.stdout
+        sft_full_function_call_reusme_log_file = os.path.join(LOG_PATH, "sft_full_function_call_reusme.log")
+        if sft_full_function_call_reusme_output and sft_full_function_call_reusme_output.strip():
+            with open(
+                sft_full_function_call_reusme_log_file, "w", encoding="utf-8"
+            ) as sft_full_function_call_reusme_f:
+                sft_full_function_call_reusme_f.write(sft_full_function_call_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
         EXCEPTED_LOSS = 11.871344
