@@ -55,12 +55,14 @@ class DPOTrainTester(unittest.TestCase):
 
         loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+)")
         losses = [float(m.group(1)) for m in loss_pattern.finditer(output)]
-
+        print(f"losses list : {losses}")
         if losses:
             sum_loss = sum(losses) / len(losses)
             avg_loss = round(sum_loss, 6)
         else:
             avg_loss = 0
+        print(f"Current loss : {avg_loss}")
+        print(f"Base loss : {base_loss}")
         self.assertTrue(abs(avg_loss - base_loss) <= 0.0001, f"loss: {avg_loss}, base_loss: {base_loss}, exist diff!")
 
     def assert_result(self, ret_code, log_output):
@@ -101,15 +103,10 @@ class DPOTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "output_dir": output_dir,
-            "packing": True,
             "max_seq_len": 2048,
+            "warmup_steps": -1,
             "max_steps": 5,
-            "save_steps": 3,
-            "tensor_parallel_degree": 2,
-            "pipeline_parallel_degree": 2,
-            "sequence_parallel": True,
-            "pipeline_parallel_config": "enable_clear_every_step_cache disable_partial_send_recv",
-            "sharding": "stage1",
+            "save_steps": 3
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -121,7 +118,7 @@ class DPOTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full cmd is : {cmd}")
-        print(training_p.stdout)
+        #print(training_p.stdout)
         dop_full_output = training_p.stdout
         dop_full_log_file = os.path.join(LOG_PATH, "dop_full.log")
         if dop_full_output and dop_full_output.strip():
@@ -138,7 +135,7 @@ class DPOTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
+        #print(reusme_p.stdout)
         dop_full_reusme_output = reusme_p.stdout
         dop_full_reusme_log_file = os.path.join(LOG_PATH, "dop_full_reusme.log")
         if dop_full_reusme_output and dop_full_reusme_output.strip():
@@ -160,7 +157,7 @@ class DPOTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "output_dir": output_dir,
-            "packing": True,
+            "warmup_steps": -1,
             "max_seq_len": 2048,
             "max_steps": 5,
             "save_steps": 3,
@@ -175,7 +172,7 @@ class DPOTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_lora cmd is : {cmd}")
-        print(training_p.stdout)
+        #print(training_p.stdout)
         dop_lora_output = training_p.stdout
         dop_lora_log_file = os.path.join(LOG_PATH, "dop_lora.log")
         if dop_lora_output and dop_lora_output.strip():
@@ -191,7 +188,7 @@ class DPOTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_lora reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
+        #print(reusme_p.stdout)
         dop_lora_reusme_output = reusme_p.stdout
         dop_lora_reusme_log_file = os.path.join(LOG_PATH, "dop_lora_reusme.log")
         if dop_lora_reusme_output and dop_lora_reusme_output.strip():
@@ -222,6 +219,10 @@ class DPOTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "output_dir": output_dir,
+            "max_seq_len": 2048,
+            "max_steps": 5,
+            "warmup_steps": -1,
+            "save_steps": 3
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -233,7 +234,7 @@ class DPOTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full_tp_pp cmd is : {cmd}")
-        print(training_p.stdout)
+        #print(training_p.stdout)
         dop_full_tp_pp_output = training_p.stdout
         dop_full_tp_pp_log_file = os.path.join(LOG_PATH, "dop_full_tp_pp.log")
         if dop_full_tp_pp_output and dop_full_tp_pp_output.strip():
@@ -248,7 +249,7 @@ class DPOTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full_tp_pp reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
+        #print(reusme_p.stdout)
         dop_full_tp_pp_reusme_output = reusme_p.stdout
         dop_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "dop_full_tp_pp_reusme.log")
         if dop_full_tp_pp_reusme_output and dop_full_tp_pp_reusme_output.strip():
@@ -270,6 +271,10 @@ class DPOTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "output_dir": output_dir,
+            "max_seq_len": 2048,
+            "warmup_steps": -1,
+            "max_steps": 5,
+            "save_steps": 3
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -281,7 +286,7 @@ class DPOTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_lora_tp_pp cmd is : {cmd}")
-        print(training_p.stdout)
+        #print(training_p.stdout)
         dop_lora_tp_pp_output = training_p.stdout
         dop_lora_tp_pp_log_file = os.path.join(LOG_PATH, "dop_lora_tp_pp.log")
         if dop_lora_tp_pp_output and dop_lora_tp_pp_output.strip():
@@ -297,7 +302,7 @@ class DPOTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_lora_tp_pp reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
+        #print(reusme_p.stdout)
         dop_lora_tp_pp_reusme_output = reusme_p.stdout
         dop_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "dop_lora_tp_pp_reusme.log")
         if dop_lora_tp_pp_reusme_output and dop_lora_tp_pp_reusme_output.strip():
