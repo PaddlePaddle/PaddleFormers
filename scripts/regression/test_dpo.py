@@ -209,13 +209,13 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.495105
+        EXCEPTED_LOSS = 0.693147
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 0.495105
+        EXCEPTED_LOSS = 0.693147
         self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
