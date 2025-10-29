@@ -61,10 +61,12 @@ def hack_offload_optimizer(mode=None):
                     reload(arg)
 
             ret = origin_op(*args)
-            
+
             is_offload_opt = getattr(args[0], "is_offload_opt", False)
             for i, arg in enumerate(args):
-                if i >= 2 and isinstance(arg, paddle.Tensor) and is_offload_opt:  # do not offload parameter and gradient
+                if (
+                    i >= 2 and isinstance(arg, paddle.Tensor) and is_offload_opt
+                ):  # do not offload parameter and gradient
                     offload(arg)
             return ret
 
@@ -82,7 +84,7 @@ def hack_offload_optimizer(mode=None):
         if is_offload_opt:
             new_sync_var = to_device(sync_var, origin_place)
         else:
-            new_sync_var = sync_var 
+            new_sync_var = sync_var
         assert new_sync_var is sync_var, "to_device must be inplace operation"
         return ret
 
