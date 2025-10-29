@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+paddleformers/transformers/qwen3_moe# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2025 The Qwen team, Alibaba Group and the HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,22 +24,24 @@ import paddle.nn.functional as F
 from paddle import Tensor, nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
-
+import paddle.distributed as dist
+from paddle.distributed import fleet
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
-from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen3MoeConfig
+from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
+from ..glm4_moe.modeling import Glm4MoeFlexMoE
 
 
 def rotate_half(x):
@@ -325,7 +327,16 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         if (layer_idx not in config.mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
         ):
-            self.mlp = Qwen3MoeSparseMoeBlock(config)
+            # self.mlp = Qwen3MoeSparseMoeBlock(config)
+
+            # config.n_routed_experts = config.num_experts
+            # config.n_group = 1
+            # config.topk_group = 1
+            # config.routed_scaling_factor = 1
+            # config.n_shared_experts = 0
+            # self.mlp = Glm4MoeFlexMoE(config)
+            
+            self.mlp = QuickAccessMoEFactory.create_from_model_name(config)
         else:
             # num_experts == 0 or this layer is not sparse layer
             self.mlp = Qwen3MoeMLP(config)
@@ -411,6 +422,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             return hidden_states
 
 
+
 class Qwen3MoeRotaryEmbedding(nn.Layer):
     def __init__(self, config: Qwen3MoeConfig):
         super().__init__()
@@ -483,9 +495,17 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
         LAYER_ROWWISE = ["self_attn.o_proj.weight"]
 
+        FUSE_LAYER_COLWISE = [
+            "self_attn.qkv_proj.weight",
+        ]
+
         EXPERT_LAYER_COLWISE = [
             "up_proj.weight",
             "gate_proj.weight",
+        ]
+
+        FUSE_EXPERT_LAYER_COLWISE = [
+            "up_gate_proj.weight",
         ]
 
         EXPERT_LAYER_ROWWISE = ["down_proj.weight"]
@@ -496,47 +516,111 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             "self_attn.v_proj.bias",
         ]
 
+        FUSE_BIAS_KEYS = [
+            "self_attn.qkv_proj.bias",
+        ]
+
         def make_base_actions():
             actions = {
                 "lm_head.weight": partial(fn, is_column=False),
                 "embed_tokens.weight": partial(fn, is_column=False),
             }
             for layer_idx in range(config.num_hidden_layers):
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                        for k in LAYER_COLWISE
-                    }
-                )
+                if not config.fuse_attention_qkv:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                            for k in LAYER_COLWISE
+                        }
+                    )
+                else:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                            for k in FUSE_LAYER_COLWISE
+                        }
+                    )
+
                 actions.update(
                     {
                         f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
                         for k in LAYER_ROWWISE
                     }
                 )
+                try:
+                    moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+                except:
+                    moe_group = None
+                expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+                print("in modeling, expert_parallel_degree: ", expert_parallel_degree)
+                # TODO: merge disable_ffn_model_parallel and expert_parallel_degree
+                if expert_parallel_degree <= 1:
+                    # # if disable_ffn_model_parallel is True, disable expert layer tp plan
+                    # if not config.disable_ffn_model_parallel:
+                    if not config.fuse_attention_ffn:
+                        actions.update(
+                            {
+                                f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=True)
+                                for e in range(config.num_experts)
+                                for k in EXPERT_LAYER_COLWISE
+                            }
+                        )
+                    else:
+                        actions.update(
+                            {
+                                f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=True, is_naive_2fuse=True)
+                                for e in range(config.n_routed_experts)
+                                for k in FUSE_EXPERT_LAYER_COLWISE
+                            }
+                        )
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
+                                fn, is_column=False
+                            )
+                            for e in range(config.num_experts)
+                            for k in EXPERT_LAYER_ROWWISE
+                        }
+                    )
                 actions.update(
                     {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=True)
-                        for e in range(config.num_experts)
-                        for k in EXPERT_LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=False)
-                        for e in range(config.num_experts)
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=False)
                         for k in EXPERT_LAYER_ROWWISE
                     }
                 )
-                # bias
-                if config.attention_bias:
+                if not config.fuse_attention_ffn:
                     actions.update(
                         {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
-                            for b in BIAS_KEYS
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=True)
+                            for k in EXPERT_LAYER_COLWISE
+                        }
+                    )
+                else:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(
+                                fn, is_column=True, is_naive_2fuse=True
+                            )
+                            for k in FUSE_EXPERT_LAYER_COLWISE
                         }
                     )
 
+                # bias
+                if config.attention_bias:
+                    if not config.fuse_attention_qkv:
+                        actions.update(
+                            {
+                                f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                                for b in BIAS_KEYS
+                            }
+                        )
+                    else:
+                        actions.update(
+                            {
+                                f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                                for b in FUSE_BIAS_KEYS
+                            }
+                        )
             return actions
 
         mappings = make_base_actions()
@@ -787,8 +871,6 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
 
     def __init__(self, config: Qwen3MoeConfig):
         super().__init__(config)
-        # config.num_hidden_layers = 4
-        # config.num_experts = 4
         self.model = Qwen3MoeModel(config)
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
@@ -949,6 +1031,7 @@ class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = Qwen3MoeModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen3MoeModel.transpose_weight_keys
+    # _decoder_layer_pipe_cls = Qwen3MoeDecoderLayerPipe
 
 
 __all__ = [
