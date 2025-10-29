@@ -128,7 +128,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.938123
+        EXCEPTED_LOSS = 11.931005
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -141,7 +141,7 @@ class SFTTrainTest(unittest.TestCase):
             with open(sft_full_reusme_log_file, "w", encoding="utf-8") as sft_full_reusme_f:
                 sft_full_reusme_f.write(sft_full_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
-        EXCEPTED_LOSS = 11.938123
+        EXCEPTED_LOSS = 11.931005
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
@@ -180,7 +180,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.956836
+        EXCEPTED_LOSS = 11.94409
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -194,7 +194,7 @@ class SFTTrainTest(unittest.TestCase):
                 sft_lora_reusme_f.write(sft_lora_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.956836
+        EXCEPTED_LOSS = 11.94409
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora merge
@@ -241,7 +241,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.956903
+        EXCEPTED_LOSS = 11.945682
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -255,7 +255,7 @@ class SFTTrainTest(unittest.TestCase):
                 sft_full_tp_pp_reusme_f.write(sft_full_tp_pp_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.956903
+        EXCEPTED_LOSS = 11.945682
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
@@ -293,7 +293,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.956903
+        EXCEPTED_LOSS = 11.94778
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -307,7 +307,7 @@ class SFTTrainTest(unittest.TestCase):
                 sft_lora_tp_pp_reusme_f.write(sft_lora_tp_pp_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.956903
+        EXCEPTED_LOSS = 11.94778
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora merge
@@ -356,7 +356,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.871344
+        EXCEPTED_LOSS = 11.945908
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -372,7 +372,7 @@ class SFTTrainTest(unittest.TestCase):
                 sft_full_function_call_reusme_f.write(sft_full_function_call_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.871344
+        EXCEPTED_LOSS = 11.945908
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate

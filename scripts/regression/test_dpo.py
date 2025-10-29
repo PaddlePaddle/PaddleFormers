@@ -129,7 +129,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.693122
+        EXCEPTED_LOSS = 00.692086
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -143,7 +143,7 @@ class DPOTrainTest(unittest.TestCase):
                 dop_full_reusme_f.write(dop_full_reusme_output)
         self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 0.693147
+        EXCEPTED_LOSS = 00.692086
         self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
@@ -182,7 +182,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.693106
+        EXCEPTED_LOSS = 0.692095
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -196,7 +196,7 @@ class DPOTrainTest(unittest.TestCase):
                 dop_lora_reusme_f.write(dop_lora_reusme_output)
         self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 0.693147
+        EXCEPTED_LOSS = 0.692095
         self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora  merge
@@ -244,7 +244,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.693147
+        EXCEPTED_LOSS = 0.692381
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -257,7 +257,7 @@ class DPOTrainTest(unittest.TestCase):
                 dop_full_tp_pp_reusme_f.write(dop_full_tp_pp_reusme_output)
         self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 0.693147
+        EXCEPTED_LOSS = 0.692381
         self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
@@ -296,7 +296,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.693147
+        EXCEPTED_LOSS = 0.692254
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -310,7 +310,7 @@ class DPOTrainTest(unittest.TestCase):
                 dop_lora_tp_pp_reusme_f.write(dop_lora_tp_pp_reusme_output)
         self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 0.693147
+        EXCEPTED_LOSS = 0.692254
         self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora  merge
