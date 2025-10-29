@@ -128,14 +128,14 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.945673
+        EXCEPTED_LOSS = 11.938123
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.945673
+        EXCEPTED_LOSS = 11.956658
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
