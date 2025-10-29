@@ -36,7 +36,7 @@ class DataArguments:
     )
     split: str = field(
         default="950,50",
-        metadata={"help": "Train/valid/test data split ratio (only valid in offline pretrain dataset)"},
+        metadata={"help": "Train/Eval data split ratio (only valid in offline pretrain dataset)"},
     )
     train_dataset_type: str = field(
         default=None,
