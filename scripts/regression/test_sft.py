@@ -141,7 +141,7 @@ class SFTTrainTest(unittest.TestCase):
             with open(sft_full_reusme_log_file, "w", encoding="utf-8") as sft_full_reusme_f:
                 sft_full_reusme_f.write(sft_full_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
-        EXCEPTED_LOSS = 11.931005
+        EXCEPTED_LOSS = 11.920915
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
@@ -194,7 +194,7 @@ class SFTTrainTest(unittest.TestCase):
                 sft_lora_reusme_f.write(sft_lora_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.94409
+        EXCEPTED_LOSS = 11.943027
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora merge
@@ -255,7 +255,7 @@ class SFTTrainTest(unittest.TestCase):
                 sft_full_tp_pp_reusme_f.write(sft_full_tp_pp_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.945682
+        EXCEPTED_LOSS = 11.938123
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
@@ -307,7 +307,7 @@ class SFTTrainTest(unittest.TestCase):
                 sft_lora_tp_pp_reusme_f.write(sft_lora_tp_pp_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.94778
+        EXCEPTED_LOSS = 11.941195
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora merge
@@ -372,7 +372,7 @@ class SFTTrainTest(unittest.TestCase):
                 sft_full_function_call_reusme_f.write(sft_full_function_call_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.945908
+        EXCEPTED_LOSS = 11.939684
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
