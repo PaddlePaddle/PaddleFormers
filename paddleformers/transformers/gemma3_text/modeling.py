@@ -742,7 +742,6 @@ class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
     def __init__(self, config: Gemma3TextConfig):
         super().__init__(config)
         self.model = Gemma3TextModel(config)
-        self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
         self.tie_weights()
@@ -878,7 +877,6 @@ class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
-        print("### logits", logits.shape)
 
         if self.config.final_logit_softcapping is not None:
             logits = logits / self.config.final_logit_softcapping
