@@ -118,7 +118,7 @@ class DPOTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full cmd is : {cmd}")
-        # print(training_p.stdout)
+        print(training_p.stdout)
         dop_full_output = training_p.stdout
         dop_full_log_file = os.path.join(LOG_PATH, "dop_full.log")
         if dop_full_output and dop_full_output.strip():
@@ -135,7 +135,7 @@ class DPOTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full reusme cmd is : {cmd}")
-        # print(reusme_p.stdout)
+        print(reusme_p.stdout)
         dop_full_reusme_output = reusme_p.stdout
         dop_full_reusme_log_file = os.path.join(LOG_PATH, "dop_full_reusme.log")
         if dop_full_reusme_output and dop_full_reusme_output.strip():
@@ -172,7 +172,7 @@ class DPOTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_lora cmd is : {cmd}")
-        # print(training_p.stdout)
+        print(training_p.stdout)
         dop_lora_output = training_p.stdout
         dop_lora_log_file = os.path.join(LOG_PATH, "dop_lora.log")
         if dop_lora_output and dop_lora_output.strip():
@@ -188,7 +188,7 @@ class DPOTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_lora reusme cmd is : {cmd}")
-        # print(reusme_p.stdout)
+        print(reusme_p.stdout)
         dop_lora_reusme_output = reusme_p.stdout
         dop_lora_reusme_log_file = os.path.join(LOG_PATH, "dop_lora_reusme.log")
         if dop_lora_reusme_output and dop_lora_reusme_output.strip():
@@ -234,7 +234,7 @@ class DPOTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full_tp_pp cmd is : {cmd}")
-        # print(training_p.stdout)
+        print(training_p.stdout)
         dop_full_tp_pp_output = training_p.stdout
         dop_full_tp_pp_log_file = os.path.join(LOG_PATH, "dop_full_tp_pp.log")
         if dop_full_tp_pp_output and dop_full_tp_pp_output.strip():
@@ -249,7 +249,7 @@ class DPOTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full_tp_pp reusme cmd is : {cmd}")
-        # print(reusme_p.stdout)
+        print(reusme_p.stdout)
         dop_full_tp_pp_reusme_output = reusme_p.stdout
         dop_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "dop_full_tp_pp_reusme.log")
         if dop_full_tp_pp_reusme_output and dop_full_tp_pp_reusme_output.strip():
@@ -286,7 +286,7 @@ class DPOTrainTest(unittest.TestCase):
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_lora_tp_pp cmd is : {cmd}")
-        # print(training_p.stdout)
+        print(training_p.stdout)
         dop_lora_tp_pp_output = training_p.stdout
         dop_lora_tp_pp_log_file = os.path.join(LOG_PATH, "dop_lora_tp_pp.log")
         if dop_lora_tp_pp_output and dop_lora_tp_pp_output.strip():
@@ -302,7 +302,7 @@ class DPOTrainTest(unittest.TestCase):
         # test model resume
         reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_lora_tp_pp reusme cmd is : {cmd}")
-        # print(reusme_p.stdout)
+        print(reusme_p.stdout)
         dop_lora_tp_pp_reusme_output = reusme_p.stdout
         dop_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "dop_lora_tp_pp_reusme.log")
         if dop_lora_tp_pp_reusme_output and dop_lora_tp_pp_reusme_output.strip():
