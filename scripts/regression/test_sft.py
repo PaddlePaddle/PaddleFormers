@@ -318,7 +318,7 @@ class SFTTrainTest(unittest.TestCase):
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.sfttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
-        
+
         # test lora_merge_model generate
         EXPECTED_RESULT = paddle.to_tensor(
             [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 11806]]
