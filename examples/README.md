@@ -36,12 +36,12 @@ save_to_hf: false
 
 我们支持的精调数据格式是每行包含一个字典的 json 文件，每个字典包含以下字段：
 
-- `tgt` : `str, List(str)`, 预训练文本。
+- `text` : `str, List(str)`, 预训练文本。
 
 样例数据：
 
 ```text
-{"tgt": ["一个需要连续输入值的分类问题的示例是房屋价格预测。房屋的价格通常基于诸如平方英尺、位置、卧室和浴室数量以及像后院或车库等功能这样的因素定价。为了准确预测房屋价格，这些标准必须作为连续输入值输入到分类模型中。"]}
+{"text": ["一个需要连续输入值的分类问题的示例是房屋价格预测。房屋的价格通常基于诸如平方英尺、位置、卧室和浴室数量以及像后院或车库等功能这样的因素定价。为了准确预测房屋价格，这些标准必须作为连续输入值输入到分类模型中。"]}
 ...
 ```
 
@@ -103,7 +103,7 @@ paddleformers-cli train ./config/pt/full_tp_pp.yaml
 
 `input_dir`指定数据集的前缀，例如：数据集 `data-1-part0.bin` 需要设置为 `input_dir: "1.0 ./data-1-part0"`，`1.0` 为数据配比；
 
-`split` 字段为 `train/val/test` 的分配比例，如：`split: "998,1,1"`, 其中`train`为训练集，`val`为评估集，`test`为测试集，用于训练完的效果验证
+`split` 字段为 `train/eval/test` 的分配比例，如：`split: "998,1,1"`, 其中`train`为训练集，`eval`为评估集，`test`为测试集，用于训练完的效果验证
 
 `dataset_type` 指定为 `pretrain`，例如：`dataset_type: "pretrain"`
 

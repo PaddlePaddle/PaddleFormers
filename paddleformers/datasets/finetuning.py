@@ -285,22 +285,22 @@ def process_pretraining_example(data, input_file):
         Example: Processed example for sequence generation
     """
     # We have the code completion dataset, which has the following fields
-    if isinstance(data["tgt"], str):
-        data["tgt"] = [data["tgt"]]
+    if isinstance(data["text"], str):
+        data["text"] = [data["text"]]
 
-    if len(data["tgt"]) == 0:
+    if len(data["text"]) == 0:
         raise ValueError("Ignore example with empty src or empty tgt.")
 
-    for item in data["tgt"]:
+    for item in data["text"]:
         if len(item.strip()) == 0:
             raise ValueError("Ignore example with empty string in str / tgt field.")
 
     if "label" not in data:
-        data["label"] = [1] * len(data["tgt"])
+        data["label"] = [1] * len(data["text"])
 
     # convert to OpenAI format
     data["messages"] = []
-    for a in data["tgt"]:
+    for a in data["text"]:
         data["messages"].append({"role": "assistant", "content": a.strip()})
 
     return Example(
