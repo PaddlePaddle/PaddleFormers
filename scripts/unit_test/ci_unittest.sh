@@ -113,8 +113,8 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
     set +e
+    export PF_HOME=$PF_HOME &
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
-    export PF_HOME=$PF_HOME \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     python -m pytest -v -n 8 \
