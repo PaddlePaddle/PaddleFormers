@@ -144,6 +144,7 @@ class StandardConfigMappingTest(unittest.TestCase):
         fake_field = loaded_config.fake_field
         self.assertEqual(fake_field, hidden_size)
 
+    @slow
     def test_from_pretrained_cache_dir(self):
         model_id = "Paddleformers/tiny-random-bert"
         with tempfile.TemporaryDirectory() as tempdir:

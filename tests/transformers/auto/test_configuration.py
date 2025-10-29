@@ -106,6 +106,7 @@ class AutoConfigTest(unittest.TestCase):
             if "custom" in CONFIG_MAPPING._extra_content:
                 del CONFIG_MAPPING._extra_content["custom"]
 
+    @slow
     def test_from_pretrained_cache_dir(self):
         model_id = "Paddleformers/tiny-random-bert"
         with tempfile.TemporaryDirectory() as tempdir:
