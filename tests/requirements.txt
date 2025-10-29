@@ -1,5 +1,4 @@
 parameterized
-pyav
 sentencepiece
 regex
 torch>=2.1
@@ -21,6 +20,7 @@ pytest-retry
 gradio
 paddleslim
 codecov-cli
+pyav
 allure-pytest
 bce-python-sdk==0.8.74
 pytest==8.1.1
