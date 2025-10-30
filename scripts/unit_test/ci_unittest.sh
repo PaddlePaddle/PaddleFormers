@@ -24,6 +24,15 @@ if [ ! -d "unittest_logs" ];then
     mkdir unittest_logs
 fi
 mkdir -p $log_path
+export PYTEST_EXECUTE_FLAG_FILE=${3}
+echo "PYTEST_EXECUTE_FLAG_FILE is ${PYTEST_EXECUTE_FLAG_FILE}"
+if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
+    rm "${PYTEST_EXECUTE_FLAG_FILE}"
+fi
+dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
+mkdir -p "${dir_name}"
+AGILE_COMPILE_BRANCH=$4
+
 
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -85,7 +94,6 @@ else
     for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
         ext="${file_name##*.}"
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
-        
         if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
             continue
         elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
@@ -117,7 +125,8 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
         --cov-report=xml:coverage.xml > ${log_path}/unittest.log 2>&1
     exit_code=$?
     print_info $exit_code unittest
-
+    echo -e "\033[35m ---- Set PYTEST_EXECUTE_FLAG_FILE  \033[0m"
+    touch ${PYTEST_EXECUTE_FLAG_FILE}
     if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
         cd ${nlp_dir}
         echo -e "\033[35m ---- Generate Allure Report  \033[0m"

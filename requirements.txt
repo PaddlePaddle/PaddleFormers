@@ -23,3 +23,4 @@ modelscope
 transformers>=4.55.1
 triton >= 3.1
 use_triton_in_paddle
+GPUtil

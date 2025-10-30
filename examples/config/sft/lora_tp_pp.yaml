@@ -6,7 +6,6 @@ train_dataset_prob: "1.0"
 eval_dataset_path: ./data/sft/dev.json
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
-num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
 
@@ -30,7 +29,6 @@ max_steps: -1
 eval_steps: 100
 evaluation_strategy: steps
 save_steps: 100
-save_total_limit: 1
 save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4

@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional
 import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
+from paddle.distributed.fleet.base.topology import message2nccl_config
 
 from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.log import logger
@@ -39,6 +40,7 @@ from .trainer_utils import (
     OptimizerNames,
     SchedulerType,
     ShardingOption,
+    init_nccl_config,
     split_parallel_config,
 )
 
@@ -997,6 +999,10 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Enable MoE (Mixture of Experts) expert parallel training"},
     )
+    aux_loss_alpha: Optional[float] = field(
+        default=0.0001,
+        metadata={"help": "MoE (Mixture of Experts) Auxiliary loss weight coefficient"},
+    )
     expert_max_capacity: Optional[int] = field(
         default=pow(2, 32),
         metadata={"help": "Enable MoE (Mixture of Experts) expert max token capacity"},
@@ -1099,6 +1105,16 @@ class TrainingArguments:
         default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
+    nccl_comm_group_config: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "supporting fine-grained control of communication groups in NCCL. "
+                "The default value is None, indicating that this configuration is not enabled"
+            )
+        },
+    )
+
     reorder_pipeline_priority: Optional[bool] = field(
         default=False,
         metadata={"help": "Controls the parallel execution order. False (pp first), True (sharding first)."},
@@ -1143,6 +1159,12 @@ class TrainingArguments:
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
+            # self.max_grad_norm = 0.0
+            # The current auto_hybrid_pp has aligned the handling of ClipGradByGlobalNorm with the original dygraph semi-auto parallel and dynamic manual-parallel modes and can correctly handle grad_clip, so it is no longer necessary to set max_grad_norm=0.0.
+            if self.max_grad_norm != 0.0:
+                warnings.warn(
+                    "max_grad_norm is not 0.0,We will execute ClipGradByGlobalNorm,if you want to disable it,please set max_grad_norm=0.0"
+                )
             self.max_grad_norm = 0.0
             os.environ["FLAGS_max_inplace_grad_add"] = "65536"
             os.environ["FLAGS_embedding_deterministic"] = "1"
@@ -1448,6 +1470,17 @@ class TrainingArguments:
                         logger.warning("segment parallel is not supported!!!, Ignore it.")
                     return support_sep
 
+                def is_context_parallel_supported():
+                    import inspect
+
+                    members = [
+                        name for (name, date) in inspect.getmembers(fleet.base.topology.EPHybridCommunicateGroup)
+                    ]
+                    support_cp = "get_context_parallel_world_size" in members
+                    if not support_cp:
+                        logger.warning("context parallel is not supported!!! Ignore it.")
+                    return support_cp
+
                 if self.hybrid_parallel_topo_order == "pp_first":
                     if is_segment_parallel_supported():
                         order = ["dp", "pp", "sharding", "sep", "mp"]
@@ -1466,10 +1499,26 @@ class TrainingArguments:
                             # if pp_first, the order = ["dp", "pp", "moe_sharding", "sharding", "sep", "ep", "mp"]
                             # if sharding_first, the order is ["dp", "moe_sharding", "sharding", "pp", "sep", "ep", "mp"]
                             order.insert(sd_idx, "moe_sharding")
+                            if is_context_parallel_supported():
+                                sd_idx = order.index("sharding")
+                                order.insert(sd_idx, "cp")
                     else:
-                        order = order[1:-1] + ["dp", "mp"]
+                        if is_context_parallel_supported():
+                            order = order[1:-1] + ["cp", "dp", "mp"]
+                        else:
+                            order = order[1:-1] + ["dp", "mp"]
 
-                if is_segment_parallel_supported():
+                if is_context_parallel_supported():
+                    hybrid_configs = {
+                        "dp_degree": self.data_parallel_degree,
+                        "mp_degree": self.tensor_parallel_degree,
+                        "pp_degree": self.pipeline_parallel_degree,
+                        "sharding_degree": self.sharding_parallel_degree,
+                        "sep_degree": self.sep_parallel_degree,
+                        "cp_degree": self.context_parallel_degree,
+                        "order": order,
+                    }
+                elif is_segment_parallel_supported():
                     hybrid_configs = {
                         "dp_degree": self.data_parallel_degree,
                         "mp_degree": self.tensor_parallel_degree,
@@ -1596,12 +1645,7 @@ class TrainingArguments:
                         assert (
                             "split_param" not in sharding_parallel_config
                         ), "split_param should not be set when enable_stage1_broadcast_overlap."
-                        use_casual_mask = os.getenv("USE_CASUAL_MASK", "False")
-                        assert use_casual_mask, "enable_stage1_broadcast_overlap requires USE_CASUAL_MASK=True."
-                        assert self.logging_steps > 1, (
-                            "The logging_steps should be greater than 1 for stage1_broadcast_overlap, "
-                            f"but got logging_steps={self.logging_steps}."
-                        )
+
                     if "enable_stage1_allgather_overlap" in sharding_parallel_config:
                         assert (
                             ShardingOption.SHARD_OP in self.sharding
@@ -1617,6 +1661,9 @@ class TrainingArguments:
                         assert (
                             self.amp_master_grad
                         ), "If `split_param` in sharding_parallel_config, `amp_master_grad` must be True."
+
+                if self.nccl_comm_group_config is not None:
+                    strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
 
                 fleet.init(is_collective=True, strategy=strategy)
                 logger.info(strategy)
@@ -1638,10 +1685,7 @@ class TrainingArguments:
             if self.sharding_parallel_degree == -1:
                 if len(self.sharding) > 0:
                     self.sharding_parallel_degree = world_size // (
-                        self.tensor_parallel_degree
-                        * self.sep_parallel_degree
-                        * self.context_parallel_degree
-                        * self.pipeline_parallel_degree
+                        self.tensor_parallel_degree * self.sep_parallel_degree * self.pipeline_parallel_degree
                     )
 
             self.sharding_parallel_degree = max(self.sharding_parallel_degree, 1)
@@ -1653,7 +1697,6 @@ class TrainingArguments:
                 self.sharding_parallel_degree
                 * self.tensor_parallel_degree
                 * self.sep_parallel_degree
-                * self.context_parallel_degree
                 * self.pipeline_parallel_degree
             )
 
@@ -2059,10 +2102,7 @@ class TrainingArguments:
             if self.sharding_parallel_degree == -1:
                 if len(self.sharding) > 0:
                     self.sharding_parallel_degree = world_size // (
-                        tensor_parallel_degree
-                        * sep_parallel_degree
-                        * context_parallel_degree
-                        * pipeline_parallel_degree
+                        tensor_parallel_degree * sep_parallel_degree * pipeline_parallel_degree
                     )
 
             sharding_parallel_degree = max(self.sharding_parallel_degree, 1)
@@ -2071,11 +2111,7 @@ class TrainingArguments:
                 self.sharding = []
 
             self.data_parallel_degree = world_size // (
-                sharding_parallel_degree
-                * tensor_parallel_degree
-                * sep_parallel_degree
-                * context_parallel_degree
-                * pipeline_parallel_degree
+                sharding_parallel_degree * tensor_parallel_degree * sep_parallel_degree * pipeline_parallel_degree
             )
 
             if expert_parallel_degree > 1:
@@ -2161,6 +2197,7 @@ class TrainingArguments:
                 self.load_checkpoint_format = "sharding_io"
 
     def add_moe_comm_group(self):
+        hybrid_configs = fleet.fleet._user_defined_strategy.hybrid_configs
         hcg = fleet.get_hybrid_communicate_group()
         topo = hcg._topo
         sharding_parallel_groups = topo.get_comm_list("sharding")
@@ -2172,7 +2209,12 @@ class TrainingArguments:
             for i in range(experts_replicas):
                 rank_indices = list(range(i * self.expert_parallel_degree, (i + 1) * self.expert_parallel_degree))
                 ranks = [ranks_in_current_sharding_group[i] for i in rank_indices]
-                group = dist.new_group(ranks=ranks)
+                if message2nccl_config is not None and hybrid_configs.get("ep_configs", None) is not None:
+                    group = dist.new_group(
+                        ranks=ranks, nccl_config=message2nccl_config(hybrid_configs["ep_configs"].nccl_config, "ep")
+                    )
+                else:
+                    group = dist.new_group(ranks=ranks)
                 if dist.get_rank() in ranks:
                     assert not hasattr(hcg, "expert_parallel_group"), "expert_parallel_group can not be set repeate"
                     setattr(hcg, "expert_parallel_group", group)
@@ -2181,7 +2223,13 @@ class TrainingArguments:
             for i in range(self.expert_parallel_degree):
                 rank_indices = list(range(i, self.sharding_parallel_degree, self.expert_parallel_degree))
                 ranks = [ranks_in_current_sharding_group[i] for i in rank_indices]
-                group = dist.new_group(ranks=ranks)
+                if message2nccl_config is not None and hybrid_configs.get("ep_configs", None) is not None:
+                    group = dist.new_group(
+                        ranks=ranks,
+                        nccl_config=message2nccl_config(hybrid_configs["ep_configs"].grad_nccl_config, "ep_grad"),
+                    )
+                else:
+                    group = dist.new_group(ranks=ranks)
                 if dist.get_rank() in ranks:
                     assert not hasattr(hcg, "expert_grad_comm_group"), "expert_grad_comm_group can not be set repeate"
                     setattr(hcg, "expert_grad_comm_group", group)
@@ -2314,6 +2362,17 @@ class TrainingArguments:
             hcg = fleet.get_hybrid_communicate_group()
             if hasattr(hcg, "get_moe_sharding_parallel_group"):
                 return max(hcg.get_moe_sharding_parallel_group().rank, 0)
+            else:
+                return 0
+        else:
+            return 0
+
+    @property
+    def context_parallel_rank(self):
+        if self.use_hybrid_parallel:
+            hcg = fleet.get_hybrid_communicate_group()
+            if hasattr(hcg, "get_context_parallel_rank"):
+                return max(hcg.get_context_parallel_rank(), 0)
             else:
                 return 0
         else:

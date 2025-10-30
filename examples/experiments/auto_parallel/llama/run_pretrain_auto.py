@@ -11,57 +11,54 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
-import math
+"""
+GPT/Llama auto parallel pretraining scripts.
+"""
 import os
+import random
 import sys
-import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
+import numpy as np
 import paddle
-from config.configuration import DeepseekV2FastConfig
-from load_hf_ckpt import load_huggingface_ckpt
-from modeling_pp import DeepseekV2ForCausalLMPipe
-from moe_utils import get_env_device
+import paddle.distributed as dist
+
+from paddleformers.ops import Topology
+from paddleformers.trainer import PdArgumentParser, get_last_checkpoint
+from paddleformers.trainer.auto_trainer import AutoTrainer
+from paddleformers.trainer.auto_training_args import AutoTrainingArguments
+from paddleformers.trainer.trainer_utils import IntervalStrategy, _get_distributed_seeds
+from paddleformers.transformers import (
+    AutoTokenizer,
+    CosineAnnealingWithWarmupDecay,
+    LinearAnnealingWithWarmupDecay,
+    LlamaConfig,
+    LlamaForCausalLM3DAuto,
+    LlamaForCausalLMNet,
+    LlamaPretrainingCriterion3DAuto,
+    LlamaPretrainingCriterionNet,
+)
+from paddleformers.utils.log import logger
+
+MODEL_CLASSES = {
+    "llama": (LlamaConfig, LlamaForCausalLM3DAuto, LlamaPretrainingCriterion3DAuto),
+    "llama_network": (LlamaConfig, LlamaForCausalLMNet, LlamaPretrainingCriterionNet),
+}
+
 
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
     print_rank_0,
 )
-from paddleformers.trainer import (
-    FP8QuantWeightCallback,
-    MoECorrectionBiasAdjustCallback,
-    PdArgumentParser,
-    StepFlexToken,
-    Trainer,
-    TrainingArguments,
-    get_last_checkpoint,
-    set_seed,
-    speed_metrics,
-)
-from paddleformers.transformers import (
-    AutoTokenizer,
-    CosineAnnealingWithWarmupDecay,
-    LinearAnnealingWithWarmupDecay,
-)
-from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
-from paddleformers.transformers.deepseek_v2 import DeepseekV2ForCausalLM
-from paddleformers.utils.batch_sampler import DistributedBatchSampler
-from paddleformers.utils.log import logger
-
-# Pretaining Environment Variables to support sharding stage1 overlap optimization.
-os.environ["USE_CASUAL_MASK"] = "True"
-
-
 from paddleformers.trainer.utils.doc import add_start_docstrings
+from paddleformers.utils.tools import get_env_device
 
 
 @dataclass
-@llmmetaclass
-@add_start_docstrings(TrainingArguments.__doc__)
-class PreTrainingArguments(TrainingArguments):
+@add_start_docstrings(AutoTrainingArguments.__doc__)
+class PreTrainingArguments(AutoTrainingArguments):
     min_learning_rate: float = field(
         default=1e-5,
         metadata={"help": "Minimum learning rate deacyed to."},
@@ -78,21 +75,29 @@ class PreTrainingArguments(TrainingArguments):
             "help": "Enable fused linear grad add strategy, which will reduce elementwise add for grad accumulation in the backward of nn.Linear ."
         },
     )
+    pipeline_schedule_mode: str = field(
+        default="1F1B", metadata={"help": "The pipeline schedule mode, support FThenB, 1F1B, VPP and Eager-1F1B."}
+    )
+    sr: Optional[int] = field(default=0, metadata={"help": "The count of chunks without recompute."})
+    virtual_pipeline_seg_method: str = field(
+        default="LlamaDecoderLayerAuto",
+        metadata={"help": "The seg method of splitting pp layer for virtual pipeline."},
+    )
     # NOTE(gongenlei): new add autotuner_benchmark
     autotuner_benchmark: bool = field(
         default=False,
         metadata={"help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."},
     )
-    unified_checkpoint: bool = field(
-        default=True,
-        metadata={"help": "Enable fused linear grad add strategy."},
+    n_microbatches: int = field(
+        default=1,
+        metadata={"help": "Control the num of microbatches in one pp step."},
     )
 
     def __post_init__(self):
         super().__post_init__()
-        # NOTE(gongenlei): new add autotuner_benchmark
-        from paddleformers.trainer.trainer_utils import IntervalStrategy
+        assert self.enable_auto_parallel
 
+        # NOTE(gongenlei): new add autotuner_benchmark
         if self.autotuner_benchmark:
             self.max_steps = 5
             self.do_train = True
@@ -104,7 +109,8 @@ class PreTrainingArguments(TrainingArguments):
             self.report_to = []
             self.save_strategy = IntervalStrategy.NO
             self.evaluation_strategy = IntervalStrategy.NO
-            self.unified_checkpoint = False
+
+        logger.info(self.strategy)
 
 
 @dataclass
@@ -146,10 +152,13 @@ class ModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to pre-train from.
     """
 
+    model_type: Optional[str] = field(
+        default="llama", metadata={"help": "Only support for llama pre-training for now."}
+    )
     model_name_or_path: str = field(
         default="__internal_testing__/tiny-random-llama",
         metadata={
-            "help": "Path to pretrained model or model identifier from https://paddleformers.readthedocs.io/zh/latest/model_zoo/transformers.html"
+            "help": "Path to pretrained model or model identifier from https://paddlenlp.readthedocs.io/zh/latest/model_zoo/transformers.html"
         },
     )
     tokenizer_name_or_path: Optional[str] = field(
@@ -161,27 +170,71 @@ class ModelArguments:
         metadata={"help": "GPT3 model, use fast layernorm"},
     )
 
-    hidden_dropout_prob: float = field(default=0.1, metadata={"help": "The hidden dropout prob."})
-    attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "The attention hidden dropout prob."})
-
-    fuse_attention_qkv: bool = field(
+    config_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+    )
+    vocab_size: Optional[int] = field(
         default=None,
+        metadata={
+            "help": ".Vocabulary size of the Llama model. Defines the number of different tokens that can be represented by the `inputs_ids`"
+        },
+    )
+    hidden_size: Optional[int] = field(default=None, metadata={"help": "Dimension of the hidden representations."})
+    intermediate_size: Optional[int] = field(default=None, metadata={"help": "Dimension of the MLP representations."})
+    num_hidden_layers: Optional[int] = field(
+        default=None, metadata={"help": "Number of hidden layers in the Transformer encoder."}
+    )
+    num_attention_heads: Optional[int] = field(
+        default=None,
+        metadata={"help": "Number of attention heads for each attention layer in the Transformer encoder."},
+    )
+    use_flash_attention: bool = field(
+        default=False,
+        metadata={"help": "use_flash_attention"},
+    )
+    use_fused_rms_norm: bool = field(
+        default=False,
+        metadata={"help": "llama, use_fused_rms_norm"},
+    )
+    fuse_attention_qkv: bool = field(
+        default=False,
         metadata={"help": "whether to fuse attention qkv"},
     )
     fuse_attention_ffn: bool = field(
-        default=None,
+        default=False,
         metadata={"help": "whether to fuse first up and gate proj in mlp block"},
     )
-
+    recompute_granularity: str = field(
+        default="full",
+        metadata={"help": "Choose among ['full', 'core_attn', 'full_attn']"},
+    )
+    virtual_pp_degree: int = field(
+        default=1,
+        metadata={"help": "virtual_pp_degree"},
+    )
     continue_training: bool = field(
         default=False,
         metadata={
-            "help": "Pre-training from existing paddleformers model weights. Default False and model will train from scratch. If set True, the model_name_or_path argument must exist in the paddleformers models."
+            "help": "Pre-training from existing paddlenlp model weights. Default False and model will train from scratch. If set True, the model_name_or_path argument must exist in the paddlenlp models."
         },
     )
-    num_hidden_layers: Optional[int] = field(
+    use_fused_rope: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Enable rope fusion or not."},
+    )
+    no_recompute_layers: Optional[List[int]] = field(
         default=None,
-        metadata={"help": "num_hidden_layers."},
+        metadata={"help": "Specify the full transformer layers that should not be recomputed."},
+    )
+    pp_recompute_interval: int = field(
+        default=1,
+        metadata={
+            "help": "The interval for the number of layers at which recomputation occurs. A value of 0 indicates no recomputation. Default is 0."
+        },
+    )
+    recompute_use_reentrant: bool = field(
+        default=False,
+        metadata={"help": "recompute_use_reentrant"},
     )
 
 
@@ -233,14 +286,15 @@ def create_pretrained_dataset(
         logger.info(f"Sample data for {mode} mode.")
         # input_ids, loss_mask, attention_mask, position_ids, labels = data
         input_ids = data["text"]
-        logger.info(tokenizer._decode(list(input_ids)))
+
+        logger.info(tokenizer._decode(input_ids))
 
     from paddleformers.data import Stack
 
     def _collate_data(data, stack_fn=Stack()):
         tokens_ = stack_fn([x["text"] for x in data])
 
-        labels = copy.deepcopy(tokens_)[:, 1:]
+        labels = tokens_[:, 1:]
         tokens = tokens_[:, :-1]
 
         return {
@@ -284,88 +338,107 @@ def get_train_data_file(args):
     return files
 
 
-class PretrainingTrainer(Trainer):
+class PretrainingTrainer(AutoTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.is_pretraining = True
 
-    def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix: str = "eval"):
-        # keep eval_dataloader
-        eval_dataloader = getattr(self, "eval_dataloader", None)
-        if eval_dataloader is None:
-            eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
-            eval_dataloader = self.get_eval_dataloader(eval_dataset)
-            # must call data loader, otherwise, it will init many times, cause OOM error.
-            self.eval_dataloader = eval_dataloader()
-
-        start_time = time.time()
-        # Temporarily disable metric computation, we will do it in the loop here.
-        compute_metrics = self.compute_metrics
-        eval_loop = self.evaluation_loop
-
-        output = eval_loop(
-            eval_dataloader,
-            description="Evaluation",
-            # No point gathering the predictions if there are no metrics, otherwise we defer to
-            # self.args.prediction_loss_only
-            prediction_loss_only=True if compute_metrics is None else None,
-            ignore_keys=ignore_keys,
-            # Only evaluate max_eval_iters
-            max_eval_iters=self.args.eval_iters,
-        )
-
-        total_batch_size = self.args.eval_batch_size * self.args.world_size
-        output.metrics.update(
-            speed_metrics(
-                metric_key_prefix,
-                start_time,
-                num_samples=output.num_samples,
-                num_steps=math.ceil(output.num_samples / total_batch_size),
-            )
-        )
-
-        self.log(output.metrics)
-
-        self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, output.metrics)
-        return output.metrics
-
-    def _get_eval_sampler(self, eval_dataset) -> Optional[paddle.io.Sampler]:
-        return DistributedBatchSampler(
-            eval_dataset,
-            batch_size=self.args.per_device_eval_batch_size,
-            shuffle=False,
-            num_replicas=self.args.dataset_world_size,
-            rank=self.args.dataset_rank,
-            drop_last=self.args.dataloader_drop_last,
-        )
+    def _wrap_for_dist_loader(self, train_dataloader):
+        dist_loader = super()._wrap_for_dist_loader(train_dataloader)
+        dist_loader._input_keys = ["input_ids", "labels"]
+        return dist_loader
 
     def _get_train_sampler(self) -> Optional[paddle.io.Sampler]:
-        return DistributedBatchSampler(
-            self.train_dataset,
-            batch_size=self.args.per_device_train_batch_size,
+        if self.train_dataset is None:
+            return None
+
+        total_batch_size_per_acc_step = self.args.per_device_train_batch_size * self.args.dataset_world_size
+        total_batch_size = total_batch_size_per_acc_step
+
+        # In llm/llama/run_pretrain.py, it uses paddleformers.utils.batch_sampler.DistributedBatchSampler,
+        # which does no shuffle when shuffle is set True.
+        sampler = paddle.io.BatchSampler(
+            dataset=self.train_dataset,
             shuffle=False,
-            num_replicas=self.args.dataset_world_size,
-            rank=self.args.dataset_rank,
+            batch_size=total_batch_size,
             drop_last=self.args.dataloader_drop_last,
         )
+        sampler._acc_steps = self.args.gradient_accumulation_steps
+        return sampler
+
+
+def init_seed(seed: int = 1234, args=None):
+    if args is None:
+        random.seed(seed)
+        np.random.seed(seed)
+        paddle.seed(seed)
+    else:
+        assert not args.use_hybrid_parallel and args.enable_auto_parallel
+        if dist.get_world_size() > 1:
+            if args.hybrid_parallel_topo_order is None or args.hybrid_parallel_topo_order == "pp_first":
+                order = ["pp", "dp", "sharding", "mp", "sep"]
+            elif args.hybrid_parallel_topo_order == "sharding_first":
+                order = ["dp", "sharding", "pp", "mp", "sep"]
+            if args.context_parallel_degree is not None and args.context_parallel_degree > 1:
+                sep_degree = args.context_parallel_degree
+            elif args.sep_parallel_degree is not None and args.sep_parallel_degree > 1:
+                sep_degree = args.sep_parallel_degree
+            else:
+                sep_degree = 1
+            sep_degree = args.sep_parallel_degree if args.sep_parallel_degree > 1 else args.context_parallel_degree
+            topo = Topology(
+                dist.get_rank(),
+                dist.get_world_size(),
+                dp_degree=args.dataset_world_size,
+                pp_degree=args.pipeline_parallel_degree,
+                mp_degree=args.tensor_parallel_degree,
+                sep_degree=sep_degree,
+                sharding_degree=1,  # auto_parallel's sharding is not orthogonal with dp, mp and pp
+                order=order,
+            )
+
+            global_seed, local_seed, random_seed = _get_distributed_seeds(args.seed, topo)
+
+            paddle.seed(local_seed)
+            random.seed(random_seed)
+            np.random.seed(random_seed)
+
+            logger.info(
+                "The global seed is set to {}, local seed is set to {} and "
+                "random seed is set to {}.".format(global_seed, local_seed, random_seed)
+            )
+        else:
+            random.seed(args.seed)
+            np.random.seed(args.seed)
+            paddle.seed(args.seed)
 
 
 def main():
     parser = PdArgumentParser((ModelArguments, DataArguments, PreTrainingArguments))
-    # Support format as "args.json --arg1 value1 --arg2 value2.”
-    # In case of conflict, command line arguments take precedence.
-    if len(sys.argv) >= 2 and sys.argv[1].endswith(".json"):
-        model_args, data_args, training_args = parser.parse_json_file_and_cmd_lines()
+    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    if training_args.no_recompute_layers is not None:
-        training_args.no_recompute_layers.sort()
+    do_enable_linear_fused_grad_add = training_args.enable_linear_fused_grad_add
+    do_enable_mp_async_allreduce = (
+        training_args.enable_auto_parallel
+        and training_args.tensor_parallel_degree > 1
+        and "enable_mp_async_allreduce" in training_args.tensor_parallel_config
+        and not training_args.sequence_parallel
+    )
+    do_enable_sp_async_reduce_scatter = (
+        training_args.enable_auto_parallel
+        and training_args.tensor_parallel_degree > 1
+        and training_args.sequence_parallel
+        and "enable_sp_async_reduce_scatter" in training_args.tensor_parallel_config
+    )
+    if (
+        do_enable_linear_fused_grad_add or do_enable_mp_async_allreduce or do_enable_sp_async_reduce_scatter
+    ) and not training_args.to_static:
+        from llm.utils.fused_layers import mock_layers
 
-    if training_args.enable_linear_fused_grad_add:
-        from utils.fused_layers import mock_layers
-
-        mock_layers()
+        mock_layers(do_enable_linear_fused_grad_add, do_enable_mp_async_allreduce, do_enable_sp_async_reduce_scatter)
 
     if model_args.tokenizer_name_or_path is None:
         model_args.tokenizer_name_or_path = model_args.model_name_or_path
@@ -373,8 +446,10 @@ def main():
     if data_args.data_cache is not None:
         os.makedirs(data_args.data_cache, exist_ok=True)
 
+    init_seed(args=training_args)
     paddle.set_device(training_args.device)
-    set_seed(seed=training_args.seed)
+    if paddle.distributed.get_world_size() > 1:
+        paddle.distributed.init_parallel_env()
 
     training_args.eval_iters = 10
     training_args.test_iters = training_args.eval_iters * 10
@@ -393,72 +468,70 @@ def main():
     last_checkpoint = None
     if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
-        # if last_checkpoint is None and len(
-        #         os.listdir(training_args.output_dir)) > 1:
-        #     raise ValueError(
-        #         f"Output directory ({training_args.output_dir}) already exists and is not empty. "
-        #         "Use --overwrite_output_dir to overcome.")
         if last_checkpoint is not None and training_args.resume_from_checkpoint is None:
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path, download_hub="huggingface")
-    config = DeepseekV2FastConfig.from_pretrained(model_args.model_name_or_path)
+    config_class, model_class, criterion_class = MODEL_CLASSES[model_args.model_type]
 
-    # set all llm config
-    LlmMetaConfig.set_llm_config(config, training_args)
+    config = config_class.from_pretrained(model_args.model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
+
     config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
     config.seq_length = data_args.max_seq_length
-    config.max_sequence_length = data_args.max_seq_length
     # There are some technique extend RotaryEmbedding context. so don't change max_position_embeddings
     if not model_args.continue_training:
         config.max_position_embeddings = max(config.max_position_embeddings, data_args.max_seq_length)
 
     if not model_args.continue_training:
         config.vocab_size = max(config.vocab_size, ((tokenizer.vocab_size - 1) // 128 + 1) * 128)
-        logger.info(f"Reset vocab size to {config.vocab_size} for batter amp peformance.")
+        logger.info(f"Reset vocab size to {config.vocab_size} for batter amp performance.")
 
+    if model_args.no_recompute_layers is not None:
+        model_args.no_recompute_layers.sort()
+
+    config.vocab_size = model_args.vocab_size if model_args.vocab_size is not None else config.vocab_size
+    config.hidden_size = model_args.hidden_size if model_args.hidden_size is not None else config.hidden_size
+    config.intermediate_size = (
+        model_args.intermediate_size if model_args.intermediate_size is not None else config.intermediate_size
+    )
     config.num_hidden_layers = (
         model_args.num_hidden_layers if model_args.num_hidden_layers is not None else config.num_hidden_layers
     )
-    # Config for model using dropout, such as GPT.
-    if hasattr(config, "use_dualpipev"):
-        # NOTE(zhangyuqin): In Paddle, the segmentation and scheduling of pipeline parallel
-        # models are separate. Therefore, first we need to set the flag in the model config
-        # to perform V-shape segmentation. Second, we need to set the flag in the training_args
-        # to configure strategy.hybrid_configs to choose the DualPipeV schedule.
-        config.use_dualpipev = "use_dualpipev" in training_args.pipeline_parallel_config
-    if hasattr(config, "hidden_dropout_prob"):
-        config.hidden_dropout_prob = model_args.hidden_dropout_prob
-    if hasattr(config, "attention_probs_dropout_prob"):
-        config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
-    if model_args.fuse_attention_qkv is not None:
-        config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        config.fuse_attention_ffn = model_args.fuse_attention_ffn
+    config.num_attention_heads = (
+        model_args.num_attention_heads if model_args.num_attention_heads is not None else config.num_attention_heads
+    )
 
-    if config.sequence_parallel:
-        assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."
-    assert (
-        config.num_attention_heads % config.sep_parallel_degree == 0
-    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
-    assert (
-        config.seq_length % config.context_parallel_degree == 0
-    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_degree {config.context_parallel_degree}"
+    config.use_flash_attention = model_args.use_flash_attention
+    config.use_fused_rms_norm = model_args.use_fused_rms_norm
+    config.fuse_attention_qkv = model_args.fuse_attention_qkv
+    config.fuse_attention_ffn = model_args.fuse_attention_ffn
+    config.recompute_granularity = model_args.recompute_granularity
+    config.virtual_pp_degree = model_args.virtual_pp_degree
+    config.sequence_parallel = training_args.sequence_parallel
 
-    if training_args.sharding_parallel_config is not None:
-        # for stage1 overlap optimization
-        if (
-            "enable_stage1_allgather_overlap" in training_args.sharding_parallel_config
-            or "enable_stage1_broadcast_overlap" in training_args.sharding_parallel_config
-        ):
-            from paddle.io.reader import use_pinned_memory
+    config.fuse_sequence_parallel_allreduce = training_args.fuse_sequence_parallel_allreduce
 
-            use_pinned_memory(False)
+    config.use_fused_rope = model_args.use_fused_rope
+    config.no_recompute_layers = model_args.no_recompute_layers
+    config.pp_recompute_interval = model_args.pp_recompute_interval
+    config.recompute_use_reentrant = model_args.recompute_use_reentrant
 
+    config.use_recompute = training_args.recompute
+    config.tensor_parallel_degree = training_args.tensor_parallel_degree
+    config.tensor_parallel_rank = training_args.tensor_parallel_rank
+    config.sharding_parallel_degree = training_args.sharding_parallel_degree
+    config.to_static = training_args.to_static
+    config.sep_parallel_degree = training_args.sep_parallel_degree
+    config.context_parallel_degree = training_args.context_parallel_degree
+
+    if training_args.strategy.pipeline.enable and config.virtual_pp_degree > 1:
+        pipeline = training_args.strategy.pipeline
+        pipeline.vpp_degree = config.virtual_pp_degree
+        pipeline.vpp_seg_method = training_args.virtual_pipeline_seg_method
     if get_env_device() == "xpu" and training_args.gradient_accumulation_steps > 1:
         try:
             from paddle_xpu.layers.nn.linear import LinearConfig  # noqa: F401
@@ -471,64 +544,36 @@ def main():
 
     print("Final pre-training config:", config)
 
-    # Set the dtype for loading model
-    dtype = "float32"
-    if training_args.fp16_opt_level == "O2":
-        if training_args.fp16:
-            dtype = "float16"
-        if training_args.bf16:
-            dtype = "bfloat16"
-
-    model_class = DeepseekV2ForCausalLM
-    if training_args.pipeline_parallel_degree > 1:
-        model_class = DeepseekV2ForCausalLMPipe
-        if "LLama" in str(config.architectures):
-            try:
-                from utils.register_reshard import register_pp_reshard_information
-
-                register_pp_reshard_information(config.num_hidden_layers)
-            except:
-                print("Not register llama pp reshard information.")
-
-    architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
-        any(architecture in str(config.architectures) for architecture in architectures_to_check)
-        and training_args.data_parallel_degree > 1
+        "replace_with_parallel_cross_entropy" in training_args.tensor_parallel_config
+        and config.tensor_parallel_degree > 1
+        and config.to_static is False
     ):
-        training_args.use_expert_parallel = True
+        from llm.utils.replace_ops import replace_cross_entropy
 
-    if model_args.continue_training:
-        # NOTE(gongenlei): new add
-        if training_args.autotuner_benchmark:
-            model = model_class.from_config(config, dtype=dtype)
-        else:
-            model = model_class.from_pretrained(
-                model_args.model_name_or_path,
-                config=config,
-                dtype=dtype,
-            )
-    else:
-        # Modify here to reduce the number of model layers. The first 3 layers of DeepSeek are dense layers, and sparse layers appear after that.
-        # config.num_hidden_layers = 4  # v3 uses 61
-        # config.first_k_dense_replace = 0  # v3 uses 3
-        # Modify here to reduce the number of experts in the model. If EP (Expert Parallelism) is desired, the number of experts should be divisible by the parallelism degree.
-        # config.n_routed_experts = 64  # v3 uses 256
-        # config.num_experts_per_tok = 8  # v3 uses 8
-        # config.topk_group = 4  # v3 uses 4
+        replace_cross_entropy()
 
-        # config.using_flex_token = True
-        # config.num_nextn_predict_layers = 1
-        # config.using_fake_gate = True
-        # config.use_fused_rms_norm = True
-        # config.fuse_attention_ffn = True
-        # config.use_fused_rope = True
-        # config.token_drop_steps = 0
-        model = model_class.from_config(config, dtype=dtype)
+    # # Set the dtype for loading model
+    # dtype = "float32"
+    # if training_args.fp16_opt_level == "O2":
+    #     if training_args.fp16:
+    #         dtype = "float16"
+    #     if training_args.bf16:
+    #         dtype = "bfloat16"
+
+    with paddle.LazyGuard():
+        model = model_class.from_config(config, dtype="float32")
+        criterion = criterion_class(config)
 
     if training_args.recompute:
-        model.recompute_enable()
 
-    # Create the learning_rate sheduler and optimizer
+        def fn(layer):
+            if hasattr(layer, "enable_recompute") and (layer.enable_recompute is False or layer.enable_recompute == 0):
+                layer.enable_recompute = True
+
+        model.apply(fn)
+
+    # Create the learning_rate scheduler and optimizer
     if training_args.decay_steps is None:
         training_args.decay_steps = training_args.max_steps
 
@@ -563,37 +608,16 @@ def main():
         tokenizer,
         need_data=training_args.should_load_dataset,
     )
-
-    total_effective_tokens = (
-        training_args.per_device_train_batch_size
-        * training_args.dataset_world_size
-        * training_args.max_steps
-        * training_args.gradient_accumulation_steps
-        * data_args.max_seq_length
-    )
-
-    callbacks = [StepFlexToken(), FP8QuantWeightCallback()]
-
-    if getattr(config, "topk_method", None) == "noaux_tc":
-        aux_loss_free_gamma = getattr(config, "aux_loss_free_gamma", 0.001)
-        callbacks += [MoECorrectionBiasAdjustCallback(aux_loss_free_gamma)]
-
-    def resume_from_custom_func(model):
-        if training_args.resume_from_huggingface_ckpt:
-            load_huggingface_ckpt(model, training_args.resume_from_huggingface_ckpt)
-        else:
-            logger.info("No resume from checkpoint since training args 'resume_from_huggingface_ckpt' is None.")
-
     trainer = PretrainingTrainer(
         model=model,
+        model_type=model_args.model_type,
+        criterion=criterion,
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=eval_dataset if training_args.do_eval else None,
         optimizers=(None, lr_scheduler),
         tokenizer=tokenizer,
-        callbacks=callbacks,
-        resume_from_custom_func=resume_from_custom_func,
     )
 
     checkpoint = None
@@ -618,11 +642,6 @@ def main():
     if training_args.do_predict:
         test_ret = trainer.predict(test_dataset)
         trainer.log_metrics("test", test_ret.metrics)
-
-    if training_args.do_train and training_args.should_load_dataset:
-        effective_tokens_per_second = total_effective_tokens / train_result.metrics["train_runtime"]
-        print(f"Effective Tokens per second: {effective_tokens_per_second:.2f}")
-        print(f"ips: {effective_tokens_per_second:.2f} tokens/s")
 
 
 if __name__ == "__main__":

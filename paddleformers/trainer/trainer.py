@@ -2380,6 +2380,7 @@ class Trainer:
             and self.args.moe_sharding_parallel_degree >= 1
             and self.args.expert_parallel_degree > 1
             and self.args.sharding_parallel_degree > 1
+            and not self.args.reorder_pipeline_priority
         ):
             from ..utils import MoEHybridParallelOptimizer
 
@@ -2812,8 +2813,8 @@ class Trainer:
 
         # for v in self._pp_data_buffer[0].values():
         #     assert isinstance(v, paddle.Tensor), f"Only support tensor as pipeline mode input, got type {type(v)}"
-
-        inputs = model._prepare_pipeline_inputs_func(self._pp_data_buffer)
+        with self.autocast_smart_context_manager():
+            inputs = model._prepare_pipeline_inputs_func(self._pp_data_buffer)
         self._pp_data_buffer = []
 
         model.train()
@@ -2905,7 +2906,7 @@ class Trainer:
                         filter_optimzier_state_dict[op_k] = op_v
         return filter_optimzier_state_dict
 
-    def _ordered_save(self, state_dict, save_path):
+    def _ordered_save(self, state_dict, save_path, signal_path=None):
         group_size = self.args.ordered_save_group_size
         hcg = fleet.get_hybrid_communicate_group()
         if hcg.get_sharding_parallel_world_size() > 1 or hcg.get_model_parallel_world_size() <= 1:
@@ -2924,6 +2925,10 @@ class Trainer:
             if dist.get_rank() in group:
                 paddle.save(state_dict, save_path)
             dist.barrier(mp_group)
+
+        if signal_path is not None:
+            with open(signal_path, mode="w+") as f:
+                f.write("1")
 
     def _save_checkpoint(self, model, metrics=None):
         # assert unwrap_model(model) is self.model, "internal model should be a reference to self.model"

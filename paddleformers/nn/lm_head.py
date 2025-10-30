@@ -19,7 +19,6 @@ from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
 )
 
 from ..generation.configuration_utils import PretrainedConfig
-from ..utils.log import logger
 from .criterion.loss_utils import calc_lm_head_logits
 
 __all__ = ["LMHead"]
@@ -33,17 +32,17 @@ class LMHead(nn.Layer):
         self.vocab_parallel = False
 
         # apply vocab tensor parallel
+        if config.vocab_size % config.tensor_parallel_degree != 0:
+            raise ValueError(
+                f"lm_head can not activate vocab parallelism "
+                f"(vocab_size={config.vocab_size} % tp_degree={config.tensor_parallel_degree} != 0)."
+            )
+
         if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
             vocab_size = config.vocab_size // config.tensor_parallel_degree
             self.vocab_parallel = True
         else:
             vocab_size = config.vocab_size
-            if config.tensor_parallel_degree > 1:
-                logger.warning_once(
-                    "lm_head vocab parallelism is disabled (vocab_size=%d %% tp_degree=%d != 0).",
-                    vocab_size,
-                    config.tensor_parallel_degree,
-                )
 
         self.weight = self.create_parameter(
             shape=[vocab_size, config.hidden_size],
@@ -96,7 +95,7 @@ class LMHead(nn.Layer):
                 hidden_states,
                 self.weight,
                 self.bias,
-                self.config.tie_word_embeddings,
+                True,
             )
 
         return calc_lm_head_logits(
