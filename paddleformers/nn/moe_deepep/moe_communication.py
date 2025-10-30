@@ -77,8 +77,9 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         hidden_states: paddle.Tensor,
         topk_indices: paddle.Tensor,
         topk_weights: paddle.Tensor,
+        gates_masked: paddle.Tensor,
         mask: paddle.Tensor,
-        hidden_states_masked: paddle.Tensor,
+        priorities: paddle.Tensor,
         expert_parallel_degree: int,
         moe_group: Group,
         experts: nn.LayerList,
@@ -86,6 +87,7 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         num_experts_per_device: int,
         num_experts: int,
         topk: int,
+        token_dispatcher,
     ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """
         EP并行通信前向传播
@@ -239,6 +241,7 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         topk_weights: paddle.Tensor,
         gates_masked: paddle.Tensor,
         mask: paddle.Tensor,
+        priorities: paddle.Tensor,
         expert_parallel_degree: int,
         moe_group: Group,
         experts: nn.LayerList,
@@ -246,7 +249,7 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         num_experts_per_device: int,
         num_experts: int,
         topk: int,
-        token_dispatcher,
+        token_dispatcher
     ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         if expert_parallel_degree <= 1:
             return hidden_states

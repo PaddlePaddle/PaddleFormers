@@ -231,10 +231,11 @@ class ModularMoELayer(nn.Layer):
         if self.custom_communication is not None:
             self.communication = self.custom_communication
         else:
-            if os.getenv("USE_DEEPEP", "0") == "1":
-                self.communication = DeepEPMoECommunication()
-            else:
+            if os.getenv("USE_DEEPEP", "1") == "0":
                 self.communication = StandardMoECommunication()
+            else:
+                self.communication = DeepEPMoECommunication()
+                
 
         # self.is_dummy_moe = False if self.expert_parallel_degree > 1 else True
         # for k in self.experts:
@@ -328,11 +329,10 @@ class ModularMoELayer(nn.Layer):
         capacity, topk_weights, topk_indices, gates_masked, mask, priorities, aux_loss, z_loss = self.gate(
             hidden_states
         )
-        # 重塑输入
 
         # MoE前向传播
         if self.expert_parallel_degree > 1:
-            output = self._forward_with_ep_parallel(hidden_states, topk_indices, topk_weights, gates_masked, mask)
+            output = self._forward_with_ep_parallel(hidden_states, topk_indices, topk_weights, gates_masked, mask, priorities)
         else:
             if len(hidden_states.shape) == 3:
                 batch_size, seq_len, d_model = hidden_states.shape
@@ -401,6 +401,7 @@ class ModularMoELayer(nn.Layer):
         topk_weights: paddle.Tensor,
         gates_masked: paddle.Tensor,
         mask: paddle.Tensor,
+        priorities: paddle.Tensor,
     ) -> paddle.Tensor:
         """
         EP并行MoE前向传播
@@ -422,6 +423,7 @@ class ModularMoELayer(nn.Layer):
             topk_weights,
             gates_masked,
             mask,
+            priorities,
             self.expert_parallel_degree,
             self.moe_group,
             self.experts,

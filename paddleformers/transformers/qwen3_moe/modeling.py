@@ -1,4 +1,4 @@
-paddleformers/transformers/qwen3_moe# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2025 The Qwen team, Alibaba Group and the HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,16 +32,15 @@ from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
+from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
+from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen3MoeConfig
-from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
-from ..glm4_moe.modeling import Glm4MoeFlexMoE
 
 
 def rotate_half(x):
@@ -327,15 +326,6 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         if (layer_idx not in config.mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
         ):
-            # self.mlp = Qwen3MoeSparseMoeBlock(config)
-
-            # config.n_routed_experts = config.num_experts
-            # config.n_group = 1
-            # config.topk_group = 1
-            # config.routed_scaling_factor = 1
-            # config.n_shared_experts = 0
-            # self.mlp = Glm4MoeFlexMoE(config)
-            
             self.mlp = QuickAccessMoEFactory.create_from_model_name(config)
         else:
             # num_experts == 0 or this layer is not sparse layer
@@ -420,7 +410,6 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             )
         else:
             return hidden_states
-
 
 
 class Qwen3MoeRotaryEmbedding(nn.Layer):
@@ -1030,7 +1019,6 @@ class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = Qwen3MoeModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen3MoeModel.transpose_weight_keys
-    # _decoder_layer_pipe_cls = Qwen3MoeDecoderLayerPipe
 
 
 __all__ = [

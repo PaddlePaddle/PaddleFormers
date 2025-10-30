@@ -18,32 +18,21 @@ from typing import Any, Dict
 
 from ...transformers.configuration_utils import PretrainedConfig
 from .modular_moe_layer import ModularMoELayer
-
+from .moe_config import MOE_CONFIG
 
 class QuickAccessMoEFactory:
-    _moe_configs: Dict[str, Dict[str, Any]] = None
-
-    @classmethod
-    def _load_moe_configs(cls) -> Dict[str, Dict[str, Any]]:
-        if cls._moe_configs is None:
-            config_path = Path(__file__).parent / "moe_config.json"
-            with open(config_path, "r", encoding="utf-8") as f:
-                cls._moe_configs = json.load(f)
-        return cls._moe_configs
 
     @staticmethod
     def create_from_model_name(
         pretrained_config: PretrainedConfig,
     ) -> ModularMoELayer:
-        moe_configs = QuickAccessMoEFactory._load_moe_configs()
-
         model_type = getattr(pretrained_config, "model_type", None)
         if model_type is None:
             raise ValueError("Cannot determine model type from pretrained_config")
 
-        moe_config = moe_configs.get(model_type)
+        moe_config = MOE_CONFIG.get(model_type, None)
         if moe_config is None:
-            raise ValueError(f"No MOE configuration found for model type: {model_type}")
+            raise ValueError(f"No MoE config found for {model_type}")
 
         return ModularMoELayer(
             hidden_size=pretrained_config.hidden_size,
