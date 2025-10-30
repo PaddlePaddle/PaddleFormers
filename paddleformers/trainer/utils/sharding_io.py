@@ -421,7 +421,7 @@ class ShardingIO:
         path = os.path.join(checkpoint, optimizer_name)
         logger.info(f"load optimizer state from {path}")
         if os.path.isfile(path):
-            opt_state = paddlenlp_load(path, map_location="cpu")
+            opt_state = paddleformers_load(path, map_location="cpu")
             if self.is_ema:
                 opt_state = {"master_weights": opt_state.get("master_weights", {})}
             return self._remap_parameter_name(
