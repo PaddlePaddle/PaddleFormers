@@ -1464,7 +1464,8 @@ class TrainingArguments:
                     else:
                         if is_context_parallel_supported():
                             order = order[1:-1] + ["cp", "dp", "mp"]
-                        order = order[1:-1] + ["dp", "mp"]
+                        else:
+                            order = order[1:-1] + ["dp", "mp"]
 
                 if is_context_parallel_supported():
                     hybrid_configs = {
