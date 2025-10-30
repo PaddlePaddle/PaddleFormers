@@ -1,5 +1,5 @@
 ## 安装 CLI
-paddleformers 推荐使用 `CLI` (command line, 命令行工具) 进行模型微调、导出等，安装和使用方式请参考 [cli使用教程](../paddleformers/cli/README.md)
+paddleformers 推荐使用 `CLI` (command line, 命令行工具) 进行模型微调、导出等，安装和使用方式请参考 [cli使用教程](./cli_usage_zh.md)
 
 ## 0. 环境变量
 
