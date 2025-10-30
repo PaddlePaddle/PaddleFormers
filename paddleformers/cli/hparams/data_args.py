@@ -30,6 +30,14 @@ class DataArguments:
         },
     )
     dataset_name: str = field(default="KnowledgeBasedSFTReader", metadata={"help": "."})
+    input_dir: str = field(
+        default=None,
+        metadata={"help": "data path (only valid in offline pretrain dataset)"},
+    )
+    split: str = field(
+        default="950,50",
+        metadata={"help": "Train/Eval data split ratio (only valid in offline pretrain dataset)"},
+    )
     train_dataset_type: str = field(
         default=None,
         metadata={
