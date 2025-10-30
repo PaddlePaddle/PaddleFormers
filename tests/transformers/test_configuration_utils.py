@@ -26,6 +26,7 @@ from paddleformers.transformers.configuration_utils import (
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils import CONFIG_NAME
 from paddleformers.utils.env import LEGACY_CONFIG_NAME
+from tests.testing_utils import slow
 
 
 class FakeSimplePretrainedModelConfig(PretrainedConfig):

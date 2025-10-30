@@ -60,6 +60,7 @@ set_env() {
     if [[ ${FLAGS_enable_CE} == "true" ]];then
         export CE_TEST_ENV=1
         export RUN_SLOW_TEST=1
+        unset PF_HOME
         export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
     fi
 }
@@ -113,7 +114,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
     set +e
-    export PF_HOME=$PF_HOME &
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \

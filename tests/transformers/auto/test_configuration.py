@@ -24,6 +24,7 @@ from paddleformers.transformers import AutoConfig
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.bert.configuration import BertConfig
 from paddleformers.utils.env import CONFIG_NAME
+from tests.testing_utils import slow
 
 from ...utils.test_module.custom_configuration import CustomConfig
 
