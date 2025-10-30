@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional
 import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
+from paddle.distributed.fleet.base.topology import message2nccl_config
 
 from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.log import logger
@@ -39,6 +40,7 @@ from .trainer_utils import (
     OptimizerNames,
     SchedulerType,
     ShardingOption,
+    init_nccl_config,
     split_parallel_config,
 )
 
@@ -1096,6 +1098,16 @@ class TrainingArguments:
         default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
+    nccl_comm_group_config: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "supporting fine-grained control of communication groups in NCCL. "
+                "The default value is None, indicating that this configuration is not enabled"
+            )
+        },
+    )
+
     reorder_pipeline_priority: Optional[bool] = field(
         default=False,
         metadata={"help": "Controls the parallel execution order. False (pp first), True (sharding first)."},
@@ -1452,7 +1464,8 @@ class TrainingArguments:
                     else:
                         if is_context_parallel_supported():
                             order = order[1:-1] + ["cp", "dp", "mp"]
-                        order = order[1:-1] + ["dp", "mp"]
+                        else:
+                            order = order[1:-1] + ["dp", "mp"]
 
                 if is_context_parallel_supported():
                     hybrid_configs = {
@@ -1591,12 +1604,7 @@ class TrainingArguments:
                         assert (
                             "split_param" not in sharding_parallel_config
                         ), "split_param should not be set when enable_stage1_broadcast_overlap."
-                        use_casual_mask = os.getenv("USE_CASUAL_MASK", "False")
-                        assert use_casual_mask, "enable_stage1_broadcast_overlap requires USE_CASUAL_MASK=True."
-                        assert self.logging_steps > 1, (
-                            "The logging_steps should be greater than 1 for stage1_broadcast_overlap, "
-                            f"but got logging_steps={self.logging_steps}."
-                        )
+
                     if "enable_stage1_allgather_overlap" in sharding_parallel_config:
                         assert (
                             ShardingOption.SHARD_OP in self.sharding
@@ -1612,6 +1620,9 @@ class TrainingArguments:
                         assert (
                             self.amp_master_grad
                         ), "If `split_param` in sharding_parallel_config, `amp_master_grad` must be True."
+
+                if self.nccl_comm_group_config is not None:
+                    strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
 
                 fleet.init(is_collective=True, strategy=strategy)
                 logger.info(strategy)
@@ -2114,6 +2125,7 @@ class TrainingArguments:
             self.use_hybrid_parallel = False
 
     def add_moe_comm_group(self):
+        hybrid_configs = fleet.fleet._user_defined_strategy.hybrid_configs
         hcg = fleet.get_hybrid_communicate_group()
         topo = hcg._topo
         sharding_parallel_groups = topo.get_comm_list("sharding")
@@ -2125,7 +2137,12 @@ class TrainingArguments:
             for i in range(experts_replicas):
                 rank_indices = list(range(i * self.expert_parallel_degree, (i + 1) * self.expert_parallel_degree))
                 ranks = [ranks_in_current_sharding_group[i] for i in rank_indices]
-                group = dist.new_group(ranks=ranks)
+                if message2nccl_config is not None and hybrid_configs.get("ep_configs", None) is not None:
+                    group = dist.new_group(
+                        ranks=ranks, nccl_config=message2nccl_config(hybrid_configs["ep_configs"].nccl_config, "ep")
+                    )
+                else:
+                    group = dist.new_group(ranks=ranks)
                 if dist.get_rank() in ranks:
                     assert not hasattr(hcg, "expert_parallel_group"), "expert_parallel_group can not be set repeate"
                     setattr(hcg, "expert_parallel_group", group)
@@ -2134,7 +2151,13 @@ class TrainingArguments:
             for i in range(self.expert_parallel_degree):
                 rank_indices = list(range(i, self.sharding_parallel_degree, self.expert_parallel_degree))
                 ranks = [ranks_in_current_sharding_group[i] for i in rank_indices]
-                group = dist.new_group(ranks=ranks)
+                if message2nccl_config is not None and hybrid_configs.get("ep_configs", None) is not None:
+                    group = dist.new_group(
+                        ranks=ranks,
+                        nccl_config=message2nccl_config(hybrid_configs["ep_configs"].grad_nccl_config, "ep_grad"),
+                    )
+                else:
+                    group = dist.new_group(ranks=ranks)
                 if dist.get_rank() in ranks:
                     assert not hasattr(hcg, "expert_grad_comm_group"), "expert_grad_comm_group can not be set repeate"
                     setattr(hcg, "expert_grad_comm_group", group)

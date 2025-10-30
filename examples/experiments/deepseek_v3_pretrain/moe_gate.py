@@ -159,7 +159,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         assert n_experts % n_group == 0, "n_experts must be divisible by n_groups"
 
         assert self.e_score_correction_bias is not None, "e_score_correction_bias is None"
-        scores_for_choice = scores.reshape([bsz_seq_len, -1]) + self.e_score_correction_bias.unsqueeze(0)
+        scores_for_choice = scores.reshape([bsz_seq_len, -1]) + self.e_score_correction_bias.detach().unsqueeze(0)
         reshape_tmp_rst = scores_for_choice.reshape([bsz_seq_len, self.n_group, -1])
         top_k = min(reshape_tmp_rst.shape[2], 2)
         group_scores = reshape_tmp_rst.topk(top_k, axis=-1)[0].sum(axis=-1)  # fmt:skip [n, n_group]

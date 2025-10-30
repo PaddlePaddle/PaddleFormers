@@ -1,12 +1,11 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ./data/sft/train.json
+train_dataset_path: ./data/pt/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./data/sft/dev.json
+eval_dataset_path: ./data/pt/eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
-packing: true
 mix_strategy: concat
 
 ### model
@@ -15,7 +14,7 @@ attn_impl: flashmask
 
 ### finetuning
 # base
-stage: SFT
+stage: PT
 fine_tuning: full
 seed: 23
 do_train: true
