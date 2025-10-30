@@ -38,7 +38,7 @@ class LlamaConfig(PretrainedConfig):
         tie_word_embeddings=True,
         rope_scaling=None,
         use_rmsnorm=True,
-        pad_token_id=None,
+        pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
         rope_theta=10000.0,

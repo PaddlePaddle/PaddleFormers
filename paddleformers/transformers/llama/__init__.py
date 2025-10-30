@@ -27,6 +27,7 @@ import_structure = {
         "LlamaForCausalLM",
         "LlamaForCausalLMPipe",
     ],
+    "tokenizer_fast": ["LlamaTokenizerFast"],
 }
 
 if TYPE_CHECKING:

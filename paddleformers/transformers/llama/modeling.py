@@ -29,7 +29,7 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
-from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithCrossAttentions
+from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import LlamaConfig
 
@@ -253,6 +253,7 @@ class LlamaDecoderLayer(nn.Layer):
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_embeddings=position_embeddings,
+            output_attentions=output_attentions,
             past_key_value=past_key_value,
             use_cache=use_cache,
         )
@@ -482,7 +483,7 @@ class LlamaModel(LlamaPretrainedModel):
                 layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,
-                    attention_mask,
+                    causal_mask,
                     attn_mask_startend_row_indices,
                     position_ids,
                     position_embeddings,
@@ -494,10 +495,12 @@ class LlamaModel(LlamaPretrainedModel):
                 layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=causal_mask,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     position_ids=position_ids,
+                    position_embeddings=position_embeddings,
+                    output_attentions=output_attentions,
                     past_key_value=past_key_value,
                     use_cache=use_cache,
-                    position_embeddings=position_embeddings,
                 )
 
             hidden_states = layer_outputs[0] if isinstance(layer_outputs, tuple) else layer_outputs
@@ -511,8 +514,10 @@ class LlamaModel(LlamaPretrainedModel):
             else:
                 pass
         hidden_states = self.norm(hidden_states)
-        if output_attentions:
-            output_attentions.append(hidden_states)
+        if output_hidden_states:
+            all_hidden_states.append(
+                hidden_states,
+            )
 
         all_hidden_states = tuple(all_hidden_states) if all_hidden_states else None
         next_key_values = tuple(next_key_values) if next_key_values else None
@@ -616,54 +621,25 @@ class LlamaForCausalLM(LlamaPretrainedModel):
             return_dict=True,
         )
 
-        hidden_states = outputs.last_hidden_state
+        hidden_states = outputs[0]
 
-        if self.criterion.loss_type == "dpo":
-            logits = self.lm_head(hidden_states)
-            chosen_labels = kwargs.get("chosen_labels", None)
-            rejected_labels = kwargs.get("rejected_labels", None)
-            response_indexs = kwargs.get("response_indexs", None)
-            score_deltas = kwargs.get("score_deltas", None)
-            reference_chosen_logps = kwargs.get("reference_chosen_logps", None)
-            reference_rejected_logps = kwargs.get("reference_rejected_logps", None)
-            labels = (
-                chosen_labels,
-                rejected_labels,
-                response_indexs,
-                score_deltas,
-                reference_chosen_logps,
-                reference_rejected_logps,
-            )
-            return self.criterion(
-                logits,
-                labels,
-            )
-
-        # if labels is None，means we need full output, instead of tensor_parallel_output
-        # tensor_parallel_output is togather with ParallelCrossEntropy
         logits = self.lm_head(hidden_states)
 
-        # Pretrain & Eval must have labels
         loss = None
         if labels is not None:
             loss, _ = self.criterion(logits, labels)
 
-        if return_dict:
-            return CausalLMOutputWithCrossAttentions(
-                loss=loss,
-                logits=logits,
-                past_key_values=outputs.past_key_values,
-                hidden_states=outputs.hidden_states,
-                attentions=outputs.attentions,
-            )
-        else:
-            if loss is not None:
-                return (
-                    loss,
-                    logits,
-                ) + outputs[1:]
-            else:
-                return (logits,) + outputs[1:]
+        if not return_dict:
+            output = (logits,) + outputs[1:]
+            return (loss,) + output if loss is not None else output
+
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
 
 
 class LlamaForCausalLMPipe(GeneralModelForCausalLMPipe):
