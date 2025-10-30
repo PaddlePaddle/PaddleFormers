@@ -21,8 +21,8 @@ from typing import Any, Dict, Optional
 
 import paddle
 import paddle.distributed as dist
-from paddle.distributed import fleet
 from paddle import nn
+from paddle.distributed import fleet
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 
 from ...nn.mlp import MLP
@@ -235,7 +235,6 @@ class ModularMoELayer(nn.Layer):
                 self.communication = StandardMoECommunication()
             else:
                 self.communication = DeepEPMoECommunication()
-                
 
         # self.is_dummy_moe = False if self.expert_parallel_degree > 1 else True
         # for k in self.experts:
@@ -332,7 +331,9 @@ class ModularMoELayer(nn.Layer):
 
         # MoE前向传播
         if self.expert_parallel_degree > 1:
-            output = self._forward_with_ep_parallel(hidden_states, topk_indices, topk_weights, gates_masked, mask, priorities)
+            output = self._forward_with_ep_parallel(
+                hidden_states, topk_indices, topk_weights, gates_masked, mask, priorities
+            )
         else:
             if len(hidden_states.shape) == 3:
                 batch_size, seq_len, d_model = hidden_states.shape

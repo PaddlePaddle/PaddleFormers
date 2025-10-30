@@ -20,8 +20,8 @@ from ...transformers.configuration_utils import PretrainedConfig
 from .modular_moe_layer import ModularMoELayer
 from .moe_config import MOE_CONFIG
 
-class QuickAccessMoEFactory:
 
+class QuickAccessMoEFactory:
     @staticmethod
     def create_from_model_name(
         pretrained_config: PretrainedConfig,

@@ -249,7 +249,7 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         num_experts_per_device: int,
         num_experts: int,
         topk: int,
-        token_dispatcher
+        token_dispatcher,
     ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         if expert_parallel_degree <= 1:
             return hidden_states

@@ -22,11 +22,11 @@ import paddle
 import paddle.distributed as dist
 import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 
 from ...nn.linear import Linear as GeneralLinear
 from ...utils.log import logger
 from .moe_loss import LossCombiner, LossConfig, LossFunction, LossRegistry, LossType
-from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 
 
 class MoEGateMixin:
@@ -47,7 +47,9 @@ class MoEGateMixin:
             elif scoring_func == "leaky_relu":
                 scores = F.leaky_relu(logits)
             else:
-                logger.warning_once(f"insupportable scoring function for MoE gating: {scoring_func}, use softmax instead")
+                logger.warning_once(
+                    f"insupportable scoring function for MoE gating: {scoring_func}, use softmax instead"
+                )
                 scores = F.softmax(logits, axis=-1)
         return scores
 
@@ -130,7 +132,6 @@ class MoEGateMixin:
         aux_loss = paddle.sum(me * ce) * float(self.num_experts)
         return aux_loss
 
-
     def _cal_seq_aux_loss(self, probs, top_k, routing_map, seq_length):
         max_seq_len = seq_length
 
@@ -165,7 +166,6 @@ class MoEGateMixin:
         seq_aux_loss = (cost_coeff * all_probs.sum(axis=seq_axis) / max_seq_len).sum(axis=1).mean()
 
         return seq_aux_loss
-
 
     def _cal_z_loss(self, logits) -> paddle.Tensor:
         """
@@ -367,6 +367,7 @@ class MoEGateMixin:
 
         return topk_weight, topk_idx
 
+
 # 修改自 retrainedMoEGate
 class StandardMoEGate(nn.Layer, MoEGateMixin):
     def __init__(
@@ -378,7 +379,7 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         num_experts_per_tok: int,
         norm_topk_prob: bool,
         moe_config: Dict,
-        seq_length: int
+        seq_length: int,
     ):
         super(StandardMoEGate, self).__init__()
 
@@ -412,7 +413,7 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         if self.global_aux_loss:
             assert self.group is not None, "group is required when global_aux_loss is True"
             self.rank = dist.get_rank(self.group)
-        
+
         # 计算 logits：可以是 GeneralLinear 或者 paddle.create_parameter
         self.weight = paddle.create_parameter(
             shape=[self.expert_hidden_size, self.num_experts],
@@ -474,7 +475,7 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         top_gate = top_gate * self.routed_scaling_factor
 
         mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1)
-        
+
         if self.seq_aux:
             l_aux = self._cal_seq_aux_loss(gates_ori, self.num_experts_per_tok, mask, self.seq_length)
         else:
@@ -518,17 +519,19 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
             gates_masked = gates_masked / denom_s
         gates_masked = gates_masked.to(gates.dtype)
         gates_masked *= self.routed_scaling_factor
-        
+
         topk_weight = gates_masked.take_along_axis(top_idx, axis=-1)
         # assert paddle.allclose(topk_weight, top_gate, equal_nan=False), "topk_weight != top_gate"
 
         return (
-            capacity, # new capacity
-            top_gate, # weights of selected experts for each token [num_tokens, num_experts_per_token]
-            top_idx, # indices of selected experts for each token [num_tokens, num_experts_per_token]
-            gates_masked.to(paddle.float32), # masked gates. for each token, the selected experts are remainded with their original values, others are 0 [num_tokens, num_experts]
-            mask, # mask. for each token, the selected experts are marked with 1s [num_tokens, num_experts]
-            token_priority.take_along_axis(top_idx, axis=-1), # token priority
+            capacity,  # new capacity
+            top_gate,  # weights of selected experts for each token [num_tokens, num_experts_per_token]
+            top_idx,  # indices of selected experts for each token [num_tokens, num_experts_per_token]
+            gates_masked.to(
+                paddle.float32
+            ),  # masked gates. for each token, the selected experts are remainded with their original values, others are 0 [num_tokens, num_experts]
+            mask,  # mask. for each token, the selected experts are marked with 1s [num_tokens, num_experts]
+            token_priority.take_along_axis(top_idx, axis=-1),  # token priority
             l_aux,
             l_zloss,
         )
@@ -543,13 +546,11 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
 
         gates_ori = gates
 
-
         # 计算 logits ：如果使用 self.weight 那么使用下面两行
         # logits = F.linear(gates, self.weight)
         # 计算 logits ：如果使用 GeneralLinear 那么使用下面一行
         logits = self.gate(gates)
         gates = self.gate_score_func(logits=logits)
-
 
         l_zloss = self._cal_z_loss(gates)
 
@@ -587,8 +588,6 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
             l_aux = self._cal_aux_loss(gates, mask)
         exp_counts = paddle.sum(mask.cast(paddle.int64), axis=0)
         return None, None, None, gates_masked, mask, None, l_aux, l_zloss
-
-
 
 
 # TODO: 暂未实现
@@ -677,7 +676,7 @@ class FlexibleMoEGate(nn.Layer, MoEGateMixin):
             gates = gates.reshape([-1, d_model])
         elif len(gates.shape) == 2:
             batch_size_seq_len, d_model = gates.shape
-        
+
         gates_ori = gates
 
         # 将 hidden_state 转换成 score（每个 token 对每个专家的偏好分数）
