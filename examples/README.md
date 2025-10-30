@@ -17,16 +17,6 @@ export DOWNLOAD_SOURCE=modelscope
 export DOWNLOAD_SOURCE=aistudio
 ```
 
-### Paddle 权重使用说明
-
-使用 **Paddle** 格式权重，需要在配置文件（如 `full.yaml`、`lora.yaml`等）中手动添加以下参数，以避免与 **HuggingFace** 格式冲突：
-
-```yaml
-model_name_or_path: your_model_name_or_path
-convert_from_hf: false
-save_to_hf: false
-```
-
 
 ## 1. 预训练
 
