@@ -20,6 +20,7 @@ from paddle.distributed import fleet
 from paddleformers.trainer import TrainingArguments
 from paddleformers.trainer.trainer_utils import ShardingOption
 from paddleformers.utils.log import logger
+from paddleformers.transformers.configuration_utils import llmmetaclass
 
 try:
     from paddle.distributed import in_auto_parallel_align_mode
@@ -314,6 +315,7 @@ class DPOTrainingArguments(TrainingArguments):
 
 
 @dataclass
+@llmmetaclass
 class FinetuningArguments(
     SFTTrainingArguments,
     VLSFTTrainingArguments,
