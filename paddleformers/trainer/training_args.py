@@ -634,6 +634,11 @@ class TrainingArguments:
         metadata={"help": "Whether to remap parameter name when load_sharded_model = true."},
     )
 
+    sharded_model_from_ema: bool = field(
+        default=False,
+        metadata={"help": "Whether to load sharded model from EMA."},
+    )
+
     tensor_parallel_degree: int = field(
         default=-1,
         metadata={
@@ -2504,9 +2509,7 @@ class TrainingArguments:
     def should_load_sharding_stage1_model(self):
         if self.enable_auto_parallel:
             return False
-        return (
-            ShardingOption.SHARD_OP in self.sharding and self.sharding_parallel_degree > 1 and self.load_sharded_model
-        )
+        return self.load_sharded_model
 
     @property
     def should_load_dataset(self):
