@@ -2646,7 +2646,6 @@ class Trainer:
         if len(self._pp_data_buffer) != self.args.gradient_accumulation_steps:
             return paddle.zeros([])
 
-
         model.train()
         if model._dp_comm_overlap or model._sharding_comm_overlap:
             for _, buffers in model._chunk_2_comm_buffers.items():
@@ -2667,7 +2666,7 @@ class Trainer:
             return model._prepare_training(
                 inputs, self.optimizer, self.lr_scheduler
             )  # None, None => [optimizer, lr_scheduler]
-        
+
         if PipelineDatasetPreprocessor is None:
             inputs = _dataset_process_function()
         else:
