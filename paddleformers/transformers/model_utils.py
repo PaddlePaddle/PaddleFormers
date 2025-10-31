@@ -28,6 +28,8 @@ from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
+from safetensors.paddle import save_file
+from copy import deepcopy
 
 import aistudio_sdk
 import ml_dtypes
@@ -48,6 +50,8 @@ from paddle.distributed.fleet.meta_parallel.parallel_layers import (
     PipelineLayer,
     SharedLayerDesc,
 )
+
+import paddle.distributed as dist
 
 try:
     from paddle.distributed.fleet.meta_parallel import LocalSharedLayerDesc
@@ -113,6 +117,9 @@ __all__ = [
     "register_base_model",
 ]
 
+FLEX_CHECKPOINT_MODEL_WHITELIST = [
+    "Glm4MoeForCausalLMPipe",
+]
 
 def fit_bf16_to_uint16_np(tensor):
     if "xpu" in paddle.device.get_device() and isinstance(tensor, np.ndarray) and str(tensor.dtype) == "bfloat16":
@@ -1112,6 +1119,144 @@ def _load_state_dict_into_meta_model(
             param.value().get_tensor()._clear()
     return error_msgs
 
+def _parse_size(size_str: str) -> int:
+    """Parses a size string like '100MB', '2GB' into the number of bytes."""
+    size_str = size_str.upper().strip()
+    match = re.match(r"^(\d+\.?\d*)\s*(B|KB|MB|GB|TB)?$", size_str)
+    if not match:
+        raise ValueError(f"Could not parse size string: '{size_str}'")
+
+    num_str, unit = match.groups()
+    num = float(num_str)
+
+    if unit == "B" or unit is None:
+        return int(num)
+    elif unit == "KB":
+        return int(num * 1024)
+    elif unit == "MB":
+        return int(num * 1024**2)
+    elif unit == "GB":
+        return int(num * 1024**3)
+    elif unit == "TB":
+        return int(num * 1024**4)
+    else:
+        # This case should not be reached due to regex
+        raise ValueError(f"Unknown unit: '{unit}'")
+
+
+def save_full_param(
+    itr: Iterator[tuple[str, Tensor]],
+    save_dir: str,
+    rank: int,
+    world_size: int,
+    max_shard_size: str = "2GB",
+    num_saver_ranks: int = 8,
+) -> None:
+    """
+    Saves model weights from an iterator into shards, supporting max shard size
+    and a limited number of saver ranks.
+
+    Only ranks less than `num_saver_ranks` will perform disk I/O. All other ranks
+    will iterate through the data to maintain synchronization but will not save.
+    The parameter distribution logic is based on `num_saver_ranks`, ensuring all
+    parameters are handled by a designated saver rank.
+
+    Args:
+        itr (Iterator): An iterator that yields (param_key, param_tensor).
+        save_dir (str): The directory where shard files will be saved.
+        rank (int): The rank of the current process.
+        world_size (int): The total number of processes.
+        max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
+        num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
+    """
+    # 1. Non-saver ranks simply consume the iterator to stay in sync.
+    if rank >= num_saver_ranks:
+        logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Consuming iterator for synchronization...")
+        for _ in itr:
+            pass
+        logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Iterator consumption complete.")
+        return
+
+    max_shard_size_bytes = _parse_size(max_shard_size)
+    logger.info(
+        f"[Rank {rank}/{world_size}] (Saver) Initializing save. "
+        f"Max shard size set to: {max_shard_size_bytes / 1024**3:.2f} GB"
+    )
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    current_shard_state_dict = {}
+    current_shard_size_bytes = 0
+    sub_shard_index = 0
+
+    def _save_current_shard():
+        nonlocal sub_shard_index, current_shard_state_dict, current_shard_size_bytes
+        if not current_shard_state_dict:
+            return
+
+        # Filename includes the main shard number (rank) and the sub-shard index
+        shard_filename = f"shard_{rank}-{sub_shard_index}.safetensors"
+        save_path = os.path.join(save_dir, shard_filename)
+
+        logger.info(
+            f"[Rank {rank}/{world_size}] Saving sub-shard {sub_shard_index}... "
+            f"Size: {current_shard_size_bytes / 1024**2:.2f} MB, "
+            f"Params: {len(current_shard_state_dict)}, "
+            f"Path: {save_path}"
+        )
+
+        save_file(current_shard_state_dict, save_path)
+
+        # Reset for the next shard
+        sub_shard_index += 1
+        current_shard_state_dict = {}
+        current_shard_size_bytes = 0
+
+    logger.info(f"[Rank {rank}/{world_size}] Starting to process the weight iterator...")
+
+    total_size = 0
+
+    for i, (param_key, param) in enumerate(itr):
+        param_size_bytes = param.numel() * param.element_size()
+        total_size += param_size_bytes.item()
+        if i % num_saver_ranks == rank:
+            if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
+                _save_current_shard()
+
+            current_shard_state_dict[param_key] = param
+            current_shard_size_bytes += param_size_bytes
+
+            if current_shard_size_bytes >= max_shard_size_bytes:
+                _save_current_shard()
+    _save_current_shard()
+
+    dist.barrier()
+
+    logger.info(f"[Rank {rank}/{world_size}] (Saver) All shards saved successfully.")
+    return total_size
+
+
+def replace_name_and_gen_index(path,total_size):
+    index_mapping = {}
+    safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
+    total_files_num = len(safetensor_files)
+    cur_file_index = 0
+    for file in safetensor_files:
+        cur_file_index += 1
+        file_path = os.path.join(path, file)
+        new_file_name = f"model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
+        with safe_open(file_path, framework="np") as f:
+            for key in f.keys():
+                index_mapping[key] = new_file_name
+        new_file_path = os.path.join(path, new_file_name)
+        os.rename(file_path, new_file_path)
+    index_file_name = "model.safetensors.index.json"
+    index_infos = {}
+    index_infos["metadata"] = {}
+    index_infos["metadata"]["total_size"] = total_size
+    index_infos["weight_map"] = index_mapping
+    with open(os.path.join(path, index_file_name), "w") as f:
+        json.dump(index_infos, f, indent=4)
 
 @six.add_metaclass(InitTrackerMeta)
 class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
@@ -2672,6 +2817,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         dtype = kwargs.pop("dtype", None)
         download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", None)
+        load_via_cpu = kwargs.pop("load_via_cpu", False)
         if subfolder is None:
             subfolder = ""
         variant = kwargs.pop("variant", None)
@@ -2760,6 +2906,25 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             variant=variant,
         )
 
+        # 3. init the model
+        init_args = config["init_args"] or ()
+        with ContextManagers(init_contexts):
+            model = cls(config, *init_args, **model_kwargs)
+
+        model_name = cls.__name__
+        if model_name in FLEX_CHECKPOINT_MODEL_WHITELIST:
+            aoa_config = cls._gen_aoa_config(config)
+
+            sharded_state_dict = model.sharded_state_dict()
+            dist.load_state_dict(
+                sharded_state_dict,
+                path=pretrained_model_name_or_path,
+                aoa_config=aoa_config,
+                safetensors=True,
+                offload=load_via_cpu,
+            )
+            return model
+
         if not is_sharded and state_dict is None:
             # 4. loading non-sharded ckpt from the state dict
             if config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model_state.pdparams"):
@@ -2814,10 +2979,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         state_dict[k] = paddle.Tensor.__call__(
                             fit_bf16_to_uint16_np(state_dict.pop(k)), zero_copy=True
                         )
-        # 3. init the model
-        init_args = config["init_args"] or ()
-        with ContextManagers(init_contexts):
-            model = cls(config, *init_args, **model_kwargs)
 
         if use_keep_in_fp32_modules:
             # low_cpu_mem_usage = True
@@ -2978,6 +3139,36 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
+
+        model_name = self.__class__.__name__
+        if model_name in FLEX_CHECKPOINT_MODEL_WHITELIST:
+            aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+            itr = model_to_save.full(aoa_config=aoa_config)
+            total_saved_size = save_full_param(
+                itr=itr,
+                save_dir=save_dir,
+                rank=paddle.distributed.get_rank(),
+                world_size=paddle.distributed.get_world_size(),
+                max_shard_size=max_shard_size,
+                num_saver_ranks=8,
+            )
+
+            dtype = get_parameter_dtype(model_to_save)
+            if dtype is not None:
+                model_to_save.config.dtype = str(dtype).split(".")[1]
+            if config_to_save is None:
+                config_to_save = deepcopy(model_to_save.config)
+
+            # Attach architecture to the config
+            config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+            # Save the config
+            if is_main_process:
+                config_to_save.save_pretrained(save_directory)
+                if self.can_generate():
+                    model_to_save.generation_config.save_pretrained(save_directory)
+                # Organize the files in this directory into the Hugging Face (HF) format.
+                replace_name_and_gen_index(save_directory, total_saved_size)
+            return
 
         # save the string version of dtype to the config, e.g. convert paddle.float32 => "float32"
         # we currently don't use this setting automatically, but may start to use with v5
@@ -3356,7 +3547,7 @@ class PipelinePretrainedModel(PretrainedModel):
 
     def sharded_state_dict(self, *args, **kwargs):
         sharded_state_dict = super().sharded_state_dict(*args, **kwargs)
-        if self._pipeline_name_mapping is None:
+        if self._single_to_pp_mapping is None:
             self._set_pipeline_name_mapping()
 
         for k in list(sharded_state_dict.keys()):
