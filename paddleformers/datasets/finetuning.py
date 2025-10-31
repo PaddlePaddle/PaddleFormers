@@ -485,8 +485,30 @@ class SequenceDataset(IterableDataset):
                             self.estimate = False
                             yield []
 
-            if len(batch_sequence) > 0:
+            # If the entire dataset has been fully traversed, return the remaining data.
+            if len(all_tokenized_tokens) > 0:
+                cut_tokens = all_tokenized_tokens
+                cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
+                res_tokens = cut_tokens[:-1]
+                res_labels = cut_tokens[1:]
+                loss_mask = [1] * len(res_tokens)
+                pos_ids = list(range(len(res_tokens)))
+                sequence = Sequence(
+                    token_ids=res_tokens,
+                    position_ids=pos_ids,
+                    labels=res_labels,
+                    loss_mask=loss_mask,
+                    num_examples=actual_example_num,
+                )
+                batch_sequence = [sequence]
                 yield batch_sequence
+                if self.estimate:
+                    self.used_estimate_samples += actual_example_num
+                    if self.used_estimate_samples >= self.max_estimate_samples:
+                        self.used_estimate_samples = 0
+                        # Set flag to False and yield empty list to signal the end of estimation
+                        self.estimate = False
+                        yield []
         else:
             if not self.packing:
                 for _ in range(len(self.mix_datasets)):
