@@ -18,6 +18,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoImageProcessor
+from tests.testing_utils import skip_for_none_ce_case
 
 
 class TestHFMultiSourceImageProcessor(unittest.TestCase):
@@ -64,14 +65,18 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
         image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope")
         self.preprocess(image_processor)
 
+    @skip_for_none_ce_case
     def test_hf_hub(self):
         image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
         self.preprocess(image_processor)
 
+    @skip_for_none_ce_case
     def test_preprocess_consistency_with_hf(self):
         from transformers import AutoImageProcessor as AutoImageProcessor_hf
 
-        image_processor_pd = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+        image_processor_pd = AutoImageProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface"
+        )
         image_processor_hf = AutoImageProcessor_hf.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", use_fast=False)
         inputs_pd = image_processor_pd(self.image, return_tensors="pd")
         inputs_hf = image_processor_hf(self.image, return_tensors="pt")
