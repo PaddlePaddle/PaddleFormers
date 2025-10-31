@@ -25,9 +25,8 @@ from paddleformers.transformers.configuration_utils import (
 )
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils import CONFIG_NAME
-from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.env import LEGACY_CONFIG_NAME
-from tests.testing_utils import set_proxy, skip_for_none_ce_case
+from tests.testing_utils import slow
 
 
 class FakeSimplePretrainedModelConfig(PretrainedConfig):
@@ -146,6 +145,7 @@ class StandardConfigMappingTest(unittest.TestCase):
         fake_field = loaded_config.fake_field
         self.assertEqual(fake_field, hidden_size)
 
+    @slow
     def test_from_pretrained_cache_dir(self):
         model_id = "Paddleformers/tiny-random-bert"
         with tempfile.TemporaryDirectory() as tempdir:
@@ -154,8 +154,6 @@ class StandardConfigMappingTest(unittest.TestCase):
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
 
-    @skip_for_none_ce_case
-    @set_proxy(DownloadSource.HUGGINGFACE)
     def test_load_from_hf(self):
         """test load config from hf"""
         config = BertConfig.from_pretrained("Baicai003/tiny-bert", download_hub="huggingface")

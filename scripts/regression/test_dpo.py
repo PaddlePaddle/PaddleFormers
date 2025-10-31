@@ -25,6 +25,7 @@ import yaml
 
 TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/dpo"
+LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
 
@@ -52,14 +53,16 @@ class DPOTrainTester(unittest.TestCase):
         Calculate the average loss from the log file, and compare it with the expected value.
         """
 
-        loss_pattern = re.compile(r"loss:\s*([0-9]+\.[0-9]+)")
+        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+)")
         losses = [float(m.group(1)) for m in loss_pattern.finditer(output)]
-
+        print(f"losses list : {losses}")
         if losses:
             sum_loss = sum(losses) / len(losses)
             avg_loss = round(sum_loss, 6)
         else:
             avg_loss = 0
+        print(f"Current loss : {avg_loss}")
+        print(f"Base loss : {base_loss}")
         self.assertTrue(abs(avg_loss - base_loss) <= 0.0001, f"loss: {avg_loss}, base_loss: {base_loss}, exist diff!")
 
     def assert_result(self, ret_code, log_output):
@@ -100,15 +103,10 @@ class DPOTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "output_dir": output_dir,
-            "packing": True,
             "max_seq_len": 2048,
+            "warmup_steps": -1,
             "max_steps": 5,
             "save_steps": 3,
-            "tensor_parallel_degree": 2,
-            "pipeline_parallel_degree": 2,
-            "sequence_parallel": True,
-            "pipeline_parallel_config": "enable_clear_every_step_cache disable_partial_send_recv",
-            "sharding": "stage1",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -119,13 +117,34 @@ class DPOTrainTest(unittest.TestCase):
             updated_config_path,
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_full cmd is : {cmd}")
+        print(training_p.stdout)
+        dop_full_output = training_p.stdout
+        dop_full_log_file = os.path.join(LOG_PATH, "dop_full.log")
+        if dop_full_output and dop_full_output.strip():
+            with open(dop_full_log_file, "w", encoding="utf-8") as dop_full_f:
+                dop_full_f.write(dop_full_output)
 
         # test training result
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.474242
+        EXCEPTED_LOSS = 0.692086
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+
+        # test model resume
+        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_full reusme cmd is : {cmd}")
+        print(reusme_p.stdout)
+        dop_full_reusme_output = reusme_p.stdout
+        dop_full_reusme_log_file = os.path.join(LOG_PATH, "dop_full_reusme.log")
+        if dop_full_reusme_output and dop_full_reusme_output.strip():
+            with open(dop_full_reusme_log_file, "w", encoding="utf-8") as dop_full_reusme_f:
+                dop_full_reusme_f.write(dop_full_reusme_output)
+        self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+
+        EXCEPTED_LOSS = 0.691044
+        self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
@@ -138,7 +157,7 @@ class DPOTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "output_dir": output_dir,
-            "packing": True,
+            "warmup_steps": -1,
             "max_seq_len": 2048,
             "max_steps": 5,
             "save_steps": 3,
@@ -152,13 +171,33 @@ class DPOTrainTest(unittest.TestCase):
             updated_config_path,
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
+        print(f"dop_lora cmd is : {cmd}")
+        print(training_p.stdout)
+        dop_lora_output = training_p.stdout
+        dop_lora_log_file = os.path.join(LOG_PATH, "dop_lora.log")
+        if dop_lora_output and dop_lora_output.strip():
+            with open(dop_lora_log_file, "w", encoding="utf-8") as dop_lora_f:
+                dop_lora_f.write(dop_lora_output)
         # test training result
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.474235
+        EXCEPTED_LOSS = 0.692095
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+
+        # test model resume
+        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_lora reusme cmd is : {cmd}")
+        print(reusme_p.stdout)
+        dop_lora_reusme_output = reusme_p.stdout
+        dop_lora_reusme_log_file = os.path.join(LOG_PATH, "dop_lora_reusme.log")
+        if dop_lora_reusme_output and dop_lora_reusme_output.strip():
+            with open(dop_lora_reusme_log_file, "w", encoding="utf-8") as dop_lora_reusme_f:
+                dop_lora_reusme_f.write(dop_lora_reusme_output)
+        self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+
+        EXCEPTED_LOSS = 0.691209
+        self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora  merge
         lora_merge_output_dir = os.path.join(output_dir, "export")
@@ -180,6 +219,10 @@ class DPOTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "output_dir": output_dir,
+            "max_seq_len": 2048,
+            "max_steps": 5,
+            "warmup_steps": -1,
+            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -190,13 +233,32 @@ class DPOTrainTest(unittest.TestCase):
             updated_config_path,
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
+        print(f"dop_full_tp_pp cmd is : {cmd}")
+        print(training_p.stdout)
+        dop_full_tp_pp_output = training_p.stdout
+        dop_full_tp_pp_log_file = os.path.join(LOG_PATH, "dop_full_tp_pp.log")
+        if dop_full_tp_pp_output and dop_full_tp_pp_output.strip():
+            with open(dop_full_tp_pp_log_file, "w", encoding="utf-8") as dop_full_tp_pp_f:
+                dop_full_tp_pp_f.write(dop_full_tp_pp_output)
         # test training result
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.495105
+        EXCEPTED_LOSS = 0.692381
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+        # test model resume
+        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_full_tp_pp reusme cmd is : {cmd}")
+        print(reusme_p.stdout)
+        dop_full_tp_pp_reusme_output = reusme_p.stdout
+        dop_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "dop_full_tp_pp_reusme.log")
+        if dop_full_tp_pp_reusme_output and dop_full_tp_pp_reusme_output.strip():
+            with open(dop_full_tp_pp_reusme_log_file, "w", encoding="utf-8") as dop_full_tp_pp_reusme_f:
+                dop_full_tp_pp_reusme_f.write(dop_full_tp_pp_reusme_output)
+        self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+
+        EXCEPTED_LOSS = 0.691568
+        self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
@@ -209,6 +271,10 @@ class DPOTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "output_dir": output_dir,
+            "max_seq_len": 2048,
+            "warmup_steps": -1,
+            "max_steps": 5,
+            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -219,13 +285,33 @@ class DPOTrainTest(unittest.TestCase):
             updated_config_path,
         ]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
+        print(f"dop_lora_tp_pp cmd is : {cmd}")
+        print(training_p.stdout)
+        dop_lora_tp_pp_output = training_p.stdout
+        dop_lora_tp_pp_log_file = os.path.join(LOG_PATH, "dop_lora_tp_pp.log")
+        if dop_lora_tp_pp_output and dop_lora_tp_pp_output.strip():
+            with open(dop_lora_tp_pp_log_file, "w", encoding="utf-8") as dop_lora_tp_pp_f:
+                dop_lora_tp_pp_f.write(dop_lora_tp_pp_output)
         # test training result
         self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 0.495105
+        EXCEPTED_LOSS = 0.692254
         self.dpotrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+
+        # test model resume
+        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_lora_tp_pp reusme cmd is : {cmd}")
+        print(reusme_p.stdout)
+        dop_lora_tp_pp_reusme_output = reusme_p.stdout
+        dop_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "dop_lora_tp_pp_reusme.log")
+        if dop_lora_tp_pp_reusme_output and dop_lora_tp_pp_reusme_output.strip():
+            with open(dop_lora_tp_pp_reusme_log_file, "w", encoding="utf-8") as dop_lora_tp_pp_reusme_f:
+                dop_lora_tp_pp_reusme_f.write(dop_lora_tp_pp_reusme_output)
+        self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+
+        EXCEPTED_LOSS = 0.691406
+        self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora  merge
         lora_merge_output_dir = os.path.join(output_dir, "export")

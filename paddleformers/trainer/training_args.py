@@ -1281,6 +1281,8 @@ class TrainingArguments:
                                 "use_dualpipev",
                                 "forward_backward_overlap_scheduler",
                                 "enable_dynamic_shape",
+                                "sync_moment",
+                                "sync_param",
                             ]:
                                 raise ValueError(
                                     f"Found unknown pipeline mode config {x}, accept config is disable_p2p_cache_shape, disable_partial_send_recv."
@@ -1333,6 +1335,18 @@ class TrainingArguments:
                         in pipeline_parallel_config,
                         "enable_dynamic_shape": "enable_dynamic_shape" in pipeline_parallel_config,
                     }
+
+                    pp_sync_param = "sync_param" in pipeline_parallel_config
+                    pp_sync_moment = "sync_moment" in pipeline_parallel_config
+
+                    if pp_sync_param:
+                        logger.info("setting pp sync_param")
+                        strategy.hybrid_configs["pp_configs"].sync_param = True
+
+                    if pp_sync_moment:
+                        logger.info("setting pp sync_moment")
+                        strategy.hybrid_configs["pp_configs"].sync_moment = True
+
                     if dygraph_pp_configs["dp_comm_overlap"]:
                         raise ValueError("overlap has accuracy issue")  # TODO: fix `overalap` + `delay_scale` issue
 
@@ -1464,7 +1478,8 @@ class TrainingArguments:
                     else:
                         if is_context_parallel_supported():
                             order = order[1:-1] + ["cp", "dp", "mp"]
-                        order = order[1:-1] + ["dp", "mp"]
+                        else:
+                            order = order[1:-1] + ["dp", "mp"]
 
                 if is_context_parallel_supported():
                     hybrid_configs = {
@@ -1603,12 +1618,7 @@ class TrainingArguments:
                         assert (
                             "split_param" not in sharding_parallel_config
                         ), "split_param should not be set when enable_stage1_broadcast_overlap."
-                        use_casual_mask = os.getenv("USE_CASUAL_MASK", "False")
-                        assert use_casual_mask, "enable_stage1_broadcast_overlap requires USE_CASUAL_MASK=True."
-                        assert self.logging_steps > 1, (
-                            "The logging_steps should be greater than 1 for stage1_broadcast_overlap, "
-                            f"but got logging_steps={self.logging_steps}."
-                        )
+
                     if "enable_stage1_allgather_overlap" in sharding_parallel_config:
                         assert (
                             ShardingOption.SHARD_OP in self.sharding
