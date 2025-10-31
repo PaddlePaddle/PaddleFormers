@@ -271,6 +271,50 @@ def construct_types_for_video(image_mask, token_type_ids, image_type_ids):
     return image_is_video, compressed_image_indices, video_images_with_placeholder
 
 
+class SpatialLinear(nn.Layer):
+    def __init__(self, config, in_dim, out_dim):
+        super().__init__()
+
+        self.fc1 = (
+            RowSequenceParallelLinear(
+                in_dim,
+                out_dim,
+                input_is_parallel=True,
+                has_bias=True,
+                fuse_matmul_bias=True,
+            )
+            if config.tensor_parallel_degree > 1
+            else nn.Linear(in_dim, out_dim)
+        )
+        self.act_fn = nn.GELU()
+        self.fc2 = nn.Linear(out_dim, out_dim)
+        self.ln = nn.LayerNorm(out_dim, epsilon=1e-6)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act_fn(x)
+        x = self.fc2(x)
+        x = self.ln(x)
+        return x
+
+
+class TemporalLinear(nn.Layer):
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+
+        self.fc1 = nn.Linear(in_dim, out_dim)
+        self.act_fn = nn.GELU()
+        self.fc2 = nn.Linear(out_dim, out_dim)
+        self.ln = nn.LayerNorm(out_dim, epsilon=1e-6)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act_fn(x)
+        x = self.fc2(x)
+        x = self.ln(x)
+        return x
+
+
 class VariableResolutionResamplerModel(nn.Layer):
     """
     VariableResolutionResamplerModel, support variable resolution
@@ -294,30 +338,32 @@ class VariableResolutionResamplerModel(nn.Layer):
 
         with paddle.utils.unique_name.guard("mm_resampler_"):
 
-            self.spatial_linear = nn.Sequential(
-                (
-                    RowSequenceParallelLinear(
-                        self.spatial_dim,
-                        self.spatial_dim,
-                        input_is_parallel=True,
-                        has_bias=True,
-                        fuse_matmul_bias=True,
-                    )
-                    if config.tensor_parallel_degree > 1
-                    else nn.Linear(self.spatial_dim, self.spatial_dim)
-                ),
-                nn.GELU(),
-                nn.Linear(self.spatial_dim, self.spatial_dim),
-                nn.LayerNorm(self.spatial_dim, epsilon=1e-6),
-            )
+            # self.spatial_linear = nn.Sequential(
+            #     (
+            #         RowSequenceParallelLinear(
+            #             self.spatial_dim,
+            #             self.spatial_dim,
+            #             input_is_parallel=True,
+            #             has_bias=True,
+            #             fuse_matmul_bias=True,
+            #         )
+            #         if config.tensor_parallel_degree > 1
+            #         else nn.Linear(self.spatial_dim, self.spatial_dim)
+            #     ),
+            #     nn.GELU(),
+            #     nn.Linear(self.spatial_dim, self.spatial_dim),
+            #     nn.LayerNorm(self.spatial_dim, epsilon=1e-6),
+            # )
+            self.spatial_linear = SpatialLinear(config, self.spatial_dim, self.spatial_dim)
 
             if self.use_temporal_conv:
-                self.temporal_linear = nn.Sequential(
-                    nn.Linear(self.temporal_dim, self.spatial_dim),
-                    nn.GELU(),
-                    nn.Linear(self.spatial_dim, self.spatial_dim),
-                    nn.LayerNorm(self.spatial_dim, epsilon=1e-6),
-                )
+                # self.temporal_linear = nn.Sequential(
+                #     nn.Linear(self.temporal_dim, self.spatial_dim),
+                #     nn.GELU(),
+                #     nn.Linear(self.spatial_dim, self.spatial_dim),
+                #     nn.LayerNorm(self.spatial_dim, epsilon=1e-6),
+                # )
+                self.temporal_linear = TemporalLinear(self.temporal_dim, self.spatial_dim)
 
             self.mlp = nn.Linear(self.spatial_dim, self.out_dim)
 
@@ -328,14 +374,24 @@ class VariableResolutionResamplerModel(nn.Layer):
             self.after_norm = RMSNorm(out_config)
 
             if config.tensor_parallel_degree > 1:
-                for idx in [2, 3]:
-                    mark_as_sequence_parallel_parameter(self.spatial_linear[idx].weight)
-                    mark_as_sequence_parallel_parameter(self.spatial_linear[idx].bias)
+                # for idx in [2, 3]:
+                #     mark_as_sequence_parallel_parameter(self.spatial_linear[idx].weight)
+                #     mark_as_sequence_parallel_parameter(self.spatial_linear[idx].bias)
+                mark_as_sequence_parallel_parameter(self.spatial_linear.fc2.weight)
+                mark_as_sequence_parallel_parameter(self.spatial_linear.fc2.bias)
+                mark_as_sequence_parallel_parameter(self.spatial_linear.ln.weight)
+                mark_as_sequence_parallel_parameter(self.spatial_linear.ln.bias)
 
                 if self.use_temporal_conv:
-                    for idx in [0, 2, 3]:
-                        mark_as_sequence_parallel_parameter(self.temporal_linear[idx].weight)
-                        mark_as_sequence_parallel_parameter(self.temporal_linear[idx].bias)
+                    # for idx in [0, 2, 3]:
+                    #     mark_as_sequence_parallel_parameter(self.temporal_linear[idx].weight)
+                    #     mark_as_sequence_parallel_parameter(self.temporal_linear[idx].bias)
+                    mark_as_sequence_parallel_parameter(self.temporal_linear.fc1.weight)
+                    mark_as_sequence_parallel_parameter(self.temporal_linear.fc1.bias)
+                    mark_as_sequence_parallel_parameter(self.temporal_linear.fc2.weight)
+                    mark_as_sequence_parallel_parameter(self.temporal_linear.fc2.bias)
+                    mark_as_sequence_parallel_parameter(self.temporal_linear.ln.weight)
+                    mark_as_sequence_parallel_parameter(self.temporal_linear.ln.bias)
 
                 mark_as_sequence_parallel_parameter(self.mlp.weight)
                 mark_as_sequence_parallel_parameter(self.mlp.bias)
@@ -484,7 +540,8 @@ class VariableResolutionResamplerModel(nn.Layer):
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.text_config.num_attention_heads,
         )
-        res = {"spatial_linear.0.weight": partial(fn, is_column=False)}  # row parallel
+        # res = {"spatial_linear.0.weight": partial(fn, is_column=False)}  # row parallel
+        res = {"spatial_linear.fc1.weight": partial(fn, is_column=False)}  # row parallel
         return res
 
 
@@ -758,10 +815,14 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
     config_class = Ernie4_5_VLMoeConfig
     main_input_name = "pixel_values"
     transpose_weight_keys = [
-        "spatial_linear.0",
-        "temporal_linear.0",
-        "spatial_linear.2",
-        "temporal_linear.2",
+        # "spatial_linear.0",
+        # "temporal_linear.0",
+        # "spatial_linear.2",
+        # "temporal_linear.2",
+        "spatial_linear.fc1",
+        "temporal_linear.fc1",
+        "spatial_linear.fc2",
+        "temporal_linear.fc2",
         "mlp",
         "q_proj",
         "k_proj",
