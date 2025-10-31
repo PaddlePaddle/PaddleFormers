@@ -36,6 +36,11 @@ Integrates Packing dataflow and [FlashMask](https://arxiv.org/abs/2410.01359) op
 ### 💾 Industrial Storage Solution
 Features **Unified Checkpoint** storage tools for LLMs, enabling training resumption and dynamic resource scaling.  Additionally implements asynchronous storage (up to 95% faster) and Optimizer State Quantization (78% storage reduction), ensuring industrial training meets both efficiency and stability requirements.
 
+### Model Parallelism Capability Matrix
+| Model/Parallelism     |    TP    |    SP  |    PP   |    PP   |
+|:---------------------:|:--------:|:------:|:-------:|:-------:|
+|     GLM4.5     |    ✅    |    ✅   |    ✅   |    ✅   |
+
 ## Installation
 
 Requires Python 3.8+ and [PaddlePaddle](https://www.paddlepaddle.org.cn/install/quick) 3.1+.
