@@ -23,6 +23,7 @@ from safetensors.paddle import load_file
 
 from paddleformers.utils.log import logger
 from paddleformers.utils.upcast_downcast_triton import downcast_dict, upcast_dict
+from tests.testing_utils import slow
 
 PADDLE_DTYPE_MAP = {
     "paddle.float64": 8,
@@ -147,6 +148,7 @@ class GptOssWeightChangeTest(unittest.TestCase):
             assert key in origin_dict.keys()
             assert np.allclose(new_dict[key].numpy(), origin_dict[key].numpy(), atol=atol)
 
+    @slow
     def test_change_weight(self):
 
         repo_id = "PaddleFormers/gpt-oss-test-fp4"
