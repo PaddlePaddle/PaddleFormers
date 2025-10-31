@@ -462,7 +462,6 @@ class Trainer:
                 ShardingOption.FULL_SHARD not in self.args.sharding
             ), "FULL_SHARD is not supported when using zero cost checkpoint"
             assert not self.args.save_tokenizer, "save_tokenizer is not supported when using zero cost checkpoint"
-            assert not self.args.save_rng_states, "save_rng_states is not supported when using zero cost checkpoint"
 
             # init attributes for zero cost checkpoint mode
             self.zcc_manager = None
@@ -2048,34 +2047,18 @@ class Trainer:
         if checkpoint is None:
             return
 
-        # if use distributed training
-        if self.args.world_size > 1:
-            process_index = self.args.process_index
-            rng_file_list = [None for x in range(self.args.world_size)]
-            if self.args.should_save:
-                rng_file = os.path.join(checkpoint, f"rng_state_{self.args.world_size}.pth")
-                if os.path.isfile(rng_file):
-                    rng_file_list = paddle.load(rng_file, return_numpy=True)
-            paddle.distributed.broadcast_object_list(rng_file_list, src=0)
-            # if rng_file_list still empty, not log rng state.
-            if rng_file_list[0] is None:
-                logger.info(
-                    f"Didn't find an RNG file for process {process_index}, if you are resuming a training that "
-                    "wasn't launched in a distributed fashion, reproducibility is not guaranteed."
-                )
-                return
-            else:
-                checkpoint_rng_state = rng_file_list[process_index]
-        else:
-            rng_file = os.path.join(checkpoint, "rng_state.pth")
-            if not os.path.isfile(rng_file):
-                logger.info(
-                    "Didn't find an RNG file, if you are resuming a training that was launched in a distributed "
-                    "fashion, reproducibility is not guaranteed."
-                )
-                return
+        rng_file = os.path.join(checkpoint, f"rng_state_{dist.get_rank()}.pth")
+        if not os.path.isfile(rng_file):
+            logger.info(
+                "Didn't find an RNG file, if you are resuming a training that was launched in a distributed "
+                "fashion, reproducibility is not guaranteed."
+            )
+            return
 
-            checkpoint_rng_state = paddle.load(rng_file, return_numpy=True)
+        checkpoint_rng_state = paddle.load(rng_file, return_numpy=True)
+        if checkpoint_rng_state.get("world_size", None) != self.args.world_size:
+            logger.warn("Cannot load rng states when changing world size of training job.")
+            return
 
         random.setstate(checkpoint_rng_state["python"])
         np.random.set_state(checkpoint_rng_state["numpy"])
@@ -2813,28 +2796,22 @@ class Trainer:
         if self.args.should_save:
             self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
 
-        # Save RNG state in non-distributed training
-        rng_states = {
-            "python": random.getstate(),
-            "numpy": np.random.get_state(),
-            "cuda": paddle.get_rng_state(),
-            "cpu": paddle.framework.core.default_cpu_generator().get_state(),
-        }
-        if self.args.use_hybrid_parallel:
-            rng_states[
-                "hybrid_parallel_rng_state_tracker"
-            ] = fleet.meta_parallel.get_rng_state_tracker().get_states_tracker()
-
         if self.args.save_rng_states:
-            if self.args.world_size > 1:
-                rng_states_list = []
-                paddle.distributed.all_gather_object(rng_states_list, rng_states)
-                if self.args.should_save:
-                    os.makedirs(output_dir, exist_ok=True)
-                    paddle.save(rng_states_list, os.path.join(output_dir, f"rng_state_{self.args.world_size}.pth"))
-            else:
-                os.makedirs(output_dir, exist_ok=True)
-                paddle.save(rng_states, os.path.join(output_dir, "rng_state.pth"))
+            # Save RNG state in non-distributed training
+            rng_states = {
+                "python": random.getstate(),
+                "numpy": np.random.get_state(),
+                "cuda": paddle.get_rng_state(),
+                "cpu": paddle.framework.core.default_cpu_generator().get_state(),
+                "world_size": self.args.world_size,
+            }
+            if self.args.use_hybrid_parallel:
+                rng_states[
+                    "hybrid_parallel_rng_state_tracker"
+                ] = fleet.meta_parallel.get_rng_state_tracker().get_states_tracker()
+            rng_state_file = os.path.join(output_dir, f"rng_state_{dist.get_rank()}.pth")
+            os.makedirs(output_dir, exist_ok=True)
+            paddle.save(rng_states, rng_state_file)
 
         # only save model state dict, ignore optimizer and scheduler
         if not self.args.ignore_save_lr_and_optim:

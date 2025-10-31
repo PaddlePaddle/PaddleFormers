@@ -12,10 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import ml_dtypes
 import numpy as np
 import paddle
 import paddle.nn as nn
+
+enable_paddleformers_monkey_patch = int(os.getenv("FLAGS_enable_paddleformers_monkey_patch", "1"))
 
 np.bfloat16 = ml_dtypes.bfloat16
 np.float8_e5m2 = ml_dtypes.float8_e5m2
@@ -141,11 +145,12 @@ def _numel(self, *args, **kwargs):
     return origin_numel(self, *args, **kwargs)
 
 
-paddle.Tensor.numpy = _numpy
-paddle.Tensor.__call__ = enhance_init
-paddle.to_tensor = enhance_to_tensor
-paddle.core.eager.Tensor.set_value = enhance_set_value
-paddle.Tensor.numel = _numel
+if enable_paddleformers_monkey_patch:
+    paddle.Tensor.numpy = _numpy
+    paddle.Tensor.__call__ = enhance_init
+    paddle.to_tensor = enhance_to_tensor
+    paddle.core.eager.Tensor.set_value = enhance_set_value
+    paddle.Tensor.numel = _numel
 
 if not hasattr(paddle, "cat"):
     paddle.cat = paddle.concat
