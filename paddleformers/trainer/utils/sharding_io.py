@@ -352,7 +352,9 @@ class ShardingIO:
                 structure_name_map = split_structure_name_mapping(structure_name_map, group_getter)
                 for i in range(self.args.sharding_parallel_rank, sharding_degree, cur_sharding_degree):
                     tmp = self._load_one_state_dict_from_checkpoint(
-                        checkpoint, base_weight_name, self.args.sharded_name_suffix(i, j, sharding_parallel_degree=sharding_degree)
+                        checkpoint,
+                        base_weight_name,
+                        self.args.sharded_name_suffix(i, j, sharding_parallel_degree=sharding_degree),
                     )
                     tmp = split_model_state(tmp, group_getter)
                     for gid in gids:
