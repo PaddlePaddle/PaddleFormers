@@ -34,11 +34,12 @@ from paddleformers.transformers import (
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.auto.modeling import MODEL_MAPPING
 from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
+from tests.testing_utils import slow
 
 from ...utils.test_module.custom_configuration import CustomConfig
 from ...utils.test_module.custom_model import CustomModel
 from ..llama.test_modeling import LlamaModelTester
-from tests.testing_utils import slow
+
 
 class AutoModelTest(unittest.TestCase):
     @classmethod
