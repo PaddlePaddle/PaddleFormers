@@ -19,8 +19,6 @@ import paddle
 
 from paddleformers.transformers import AutoProcessor
 from paddleformers.transformers.qwen2_vl import process_vision_info
-from paddleformers.utils.download import DownloadSource
-from tests.testing_utils import set_proxy, skip_for_none_ce_case
 
 
 class TestHFMultiSourceProcessor(unittest.TestCase):
@@ -142,22 +140,16 @@ class TestHFMultiSourceProcessor(unittest.TestCase):
             )
         )
 
-    # @set_proxy(DownloadSource.AISTUDIO)
-    # def test_ai_studio(self):
     #     processor = AutoProcessor.from_pretrained(
     #         "ModelHub/Qwen2.5-VL-3B-Instruct", download_hub="aistudio"
     #     )
     #     self.preprocess_image(processor)
     #     self.preprocess_video(processor)
-
-    @set_proxy(DownloadSource.MODELSCOPE)
     def test_model_scope(self):
         processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope")
         self.preprocess_image(processor)
         self.preprocess_video(processor)
 
-    @skip_for_none_ce_case
-    @set_proxy(DownloadSource.HUGGINGFACE)
     def test_hf_hub(self):
         processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
         self.preprocess_image(processor)

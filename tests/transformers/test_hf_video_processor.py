@@ -18,8 +18,6 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoVideoProcessor
-from paddleformers.utils.download import DownloadSource
-from tests.testing_utils import set_proxy, skip_for_none_ce_case
 
 
 class TestHFMultiSourceVideoProcessor(unittest.TestCase):
@@ -62,26 +60,20 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
             )
         )
 
-    # @set_proxy(DownloadSource.AISTUDIO)
     # def test_ai_studio(self):
     #     video_processor = AutoVideoProcessor.from_pretrained(
     #         "ModelHub/Qwen2.5-VL-3B-Instruct", download_hub="aistudio"
     #     )
     #     self.preprocess(video_processor)
 
-    @set_proxy(DownloadSource.MODELSCOPE)
     def test_model_scope(self):
         video_processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope")
         self.preprocess(video_processor)
 
-    @skip_for_none_ce_case
-    @set_proxy(DownloadSource.HUGGINGFACE)
     def test_hf_hub(self):
         video_processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
         self.preprocess(video_processor)
 
-    @skip_for_none_ce_case
-    @set_proxy(DownloadSource.HUGGINGFACE)
     def test_preprocess_consistency_with_hf(self):
         from transformers import AutoVideoProcessor as AutoVideoProcessor_hf
 
