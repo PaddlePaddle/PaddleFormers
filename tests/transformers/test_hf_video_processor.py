@@ -18,6 +18,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoVideoProcessor
+from tests.testing_utils import skip_for_none_ce_case
 
 
 class TestHFMultiSourceVideoProcessor(unittest.TestCase):
@@ -74,6 +75,7 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
         video_processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
         self.preprocess(video_processor)
 
+    @skip_for_none_ce_case
     def test_preprocess_consistency_with_hf(self):
         from transformers import AutoVideoProcessor as AutoVideoProcessor_hf
 

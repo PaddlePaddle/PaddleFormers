@@ -133,7 +133,7 @@ def get_video_processor_config(
     video_processor_config = get_video_processor_config("FacebookAI/xlm-roberta-base")
 
     # Save a pretrained video processor locally and you can reload its config
-    from transformers import AutoVideoProcessor
+    from paddleformers.transformers import AutoVideoProcessor
 
     video_processor = AutoVideoProcessor.from_pretrained("llava-hf/llava-onevision-qwen2-0.5b-ov-hf")
     video_processor.save_pretrained("video-processor-test")
