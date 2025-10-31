@@ -24,10 +24,10 @@ from transformers.dynamic_module_utils import (
     resolve_trust_remote_code,
 )
 from transformers.models.auto.configuration_auto import (
+    CONFIG_MAPPING_NAMES,
     replace_list_option_in_docstrings,
 )
 from transformers.models.auto.image_processing_auto import (
-    IMAGE_PROCESSOR_MAPPING,
     IMAGE_PROCESSOR_MAPPING_NAMES,
     get_image_processor_class_from_name,
 )
@@ -43,7 +43,10 @@ from transformers.utils import (
 
 from ...utils.download import DownloadSource, resolve_file_path
 from ...utils.log import logger
-from ..image_processing_utils import PaddleImageProcessorMixin
+from ..image_processing_utils import PaddleImageProcessingMixin
+from .factory import _LazyAutoMapping
+
+IMAGE_PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, IMAGE_PROCESSOR_MAPPING_NAMES)
 
 
 def get_image_processor_config(
@@ -173,15 +176,15 @@ def get_image_processor_config(
 
 def _bind_paddle_mixin_if_available(image_processor_class):
     """
-    Bind the PaddleImageProcessorMixin if Paddle is available; otherwise, return the original class.
+    Bind the PaddleImageProcessingMixin if Paddle is available; otherwise, return the original class.
 
     Args:
         image_processor_class: The original image processor class.
 
     Returns:
-        The tokenizer class bound with PaddleImageProcessorMixin, or the original class.
+        The tokenizer class bound with PaddleImageProcessingMixin, or the original class.
     """
-    return type(image_processor_class.__name__, (PaddleImageProcessorMixin, image_processor_class), {})
+    return type(image_processor_class.__name__, (PaddleImageProcessingMixin, image_processor_class), {})
 
 
 class AutoImageProcessor(hf.AutoImageProcessor):
@@ -194,7 +197,7 @@ class AutoImageProcessor(hf.AutoImageProcessor):
     4. **Enhanced functionality**: Extends HuggingFace's standard tokenizer loading logic
 
     Features:
-    - Automatically binds PaddleImageProcessorMixin when PaddlePaddle is available
+    - Automatically binds PaddleImageProcessingMixin when PaddlePaddle is available
     - Falls back to pure Transformers mode when PaddlePaddle is not available
     - Maintains full compatibility with all HuggingFace tokenizers
     - Supports custom download sources through environment variables
@@ -229,7 +232,7 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                     pretrained_model_name_or_path, image_processor_filename=image_processor_filename, **kwargs
                 )
             else:
-                config_dict, _ = PaddleImageProcessorMixin.get_image_processor_dict(
+                config_dict, _ = PaddleImageProcessingMixin.get_image_processor_dict(
                     pretrained_model_name_or_path, image_processor_filename=image_processor_filename, **kwargs
                 )
         except Exception as initial_exception:
@@ -243,7 +246,7 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                         pretrained_model_name_or_path, image_processor_filename=CONFIG_NAME, **kwargs
                     )
                 else:
-                    config_dict, _ = PaddleImageProcessorMixin.get_image_processor_dict(
+                    config_dict, _ = PaddleImageProcessingMixin.get_image_processor_dict(
                         pretrained_model_name_or_path, image_processor_filename=CONFIG_NAME, **kwargs
                     )
             except Exception:
@@ -342,11 +345,11 @@ class AutoImageProcessor(hf.AutoImageProcessor):
             image_processor_class = get_class_from_dynamic_module(class_ref, pretrained_model_name_or_path, **kwargs)
             _ = kwargs.pop("code_revision", None)
             image_processor_class.register_for_auto_class()
-            # Bind PaddleImageProcessorMixin
+            # Bind PaddleImageProcessingMixin
             image_processor_class = _bind_paddle_mixin_if_available(image_processor_class)
             return image_processor_class.from_dict(config_dict, **kwargs)
         elif image_processor_class is not None:
-            # Bind PaddleImageProcessorMixin
+            # Bind PaddleImageProcessingMixin
             image_processor_class = _bind_paddle_mixin_if_available(image_processor_class)
             return image_processor_class.from_dict(config_dict, **kwargs)
         # Last try: we use the IMAGE_PROCESSOR_MAPPING.
@@ -363,12 +366,12 @@ class AutoImageProcessor(hf.AutoImageProcessor):
 
             if image_processor_class_fast and (use_fast or image_processor_class_py is None):
 
-                # Bind PaddleImageProcessorMixin
+                # Bind PaddleImageProcessingMixin
                 image_processor_class_fast = _bind_paddle_mixin_if_available(image_processor_class_fast)
                 return image_processor_class_fast.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
             else:
                 if image_processor_class_py is not None:
-                    # Bind PaddleImageProcessorMixin
+                    # Bind PaddleImageProcessingMixin
                     image_processor_class_py = _bind_paddle_mixin_if_available(image_processor_class_py)
                     return image_processor_class_py.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
                 else:
@@ -380,3 +383,6 @@ class AutoImageProcessor(hf.AutoImageProcessor):
             f"`image_processor_type` key in its {IMAGE_PROCESSOR_NAME} of {CONFIG_NAME}, or one of the following "
             f"`model_type` keys in its {CONFIG_NAME}: {', '.join(c for c in IMAGE_PROCESSOR_MAPPING_NAMES)}"
         )
+
+
+__all__ = ["IMAGE_PROCESSOR_MAPPING", "AutoImageProcessor"]

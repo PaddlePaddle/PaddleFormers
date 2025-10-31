@@ -47,7 +47,8 @@ import_structure = {
     "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
-    "image_processing_utils": ["ImageProcessingMixin", "BaseImageProcessor"],
+    "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
+    "video_processing_utils": ["BaseVideoProcessor"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": ["_DispatchManager"],
     "moe_layer": ["combining", "_AllToAll", "MoELayer", "dispatching", "MoEFlexTokenLayer"],
@@ -67,7 +68,7 @@ import_structure = {
     "bert.tokenizer_fast": ["BertTokenizerFast"],
     "bert.configuration": ["BERT_PRETRAINED_INIT_CONFIGURATION", "BertConfig", "BERT_PRETRAINED_RESOURCE_FILES_MAP"],
     "auto.configuration": ["AutoConfig"],
-    "auto.image_processing": ["AutoImageProcessor"],
+    "auto.image_processing": ["AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
     "auto.modeling": [
         "AutoTokenizer",
         "AutoBackbone",
@@ -87,13 +88,14 @@ import_structure = {
     ],
     "tokenizer_utils_base": [
         "PaddingStrategy",
+        "PreTokenizedInput",
         "TextInput",
         "TensorType",
         "TruncationStrategy",
     ],
     "auto.processing": ["AutoProcessor"],
-    "auto.tokenizer": ["AutoTokenizer"],
-    "auto.video_processing": ["AutoVideoProcessor"],
+    "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
+    "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "deepseek_v2.configuration": ["DeepseekV2Config"],
     "deepseek_v2.modeling": [
         "masked_fill",
@@ -299,6 +301,7 @@ import_structure = {
     ],
     "qwen2.tokenizer": ["Qwen2Tokenizer"],
     "qwen2.tokenizer_fast": ["Qwen2TokenizerFast"],
+    "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -307,7 +310,10 @@ import_structure = {
         "Qwen2MoeForCausalLMPipe",
         "Qwen2MoePretrainingCriterion",
     ],
+    "qwen2_vl.image_processor": ["Qwen2VLImageProcessor"],
+    "qwen2_vl.processor": ["Qwen2VLProcessor"],
     "qwen2_vl.video_processor": ["Qwen2VLVideoProcessor"],
+    "qwen2_vl.vision_process": ["process_vision_info"],
     "qwen3.configuration": ["Qwen3Config"],
     "qwen3.modeling": [
         "Qwen3Model",
@@ -363,7 +369,7 @@ if TYPE_CHECKING:
     from .tokenizer_utils_fast import PretrainedTokenizerFast
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
-    from .image_processing_utils import ImageProcessingMixin, BaseImageProcessor
+    from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
     from .video_processing_utils import BaseVideoProcessor
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
@@ -404,6 +410,7 @@ if TYPE_CHECKING:
     from .optimization import *
     from .qwen import *
     from .qwen2 import *
+    from .qwen2_5_vl import *
     from .qwen2_moe import *
     from .qwen2_vl import *
     from .qwen3 import *

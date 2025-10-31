@@ -188,18 +188,6 @@ class Qwen2VLVideoProcessor(BaseVideoProcessor):
                     min_pixels=size["shortest_edge"],
                     max_pixels=size["longest_edge"],
                 )
-                # import torch
-                # from torchvision.transforms.v2.functional import InterpolationMode
-                # import numpy as np
-                # import paddle
-                # stacked_videos = torch.from_numpy(stacked_videos.numpy())
-                # stacked_videos = self.resize(
-                #     image=stacked_videos,
-                #     size=SizeDict(height=resized_height, width=resized_width),
-                #     interpolation=InterpolationMode.BICUBIC,
-                #     antialias=True,
-                # ).numpy()
-                # stacked_videos = paddle.to_tensor(stacked_videos)
                 stacked_videos = self.resize(
                     image=stacked_videos,
                     size=SizeDict(height=resized_height, width=resized_width),

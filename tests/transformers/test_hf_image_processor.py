@@ -59,19 +59,19 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
     # @set_proxy(DownloadSource.AISTUDIO)
     # def test_ai_studio(self):
     #     image_processor = AutoImageProcessor.from_pretrained(
-    #         "ModelHub/Qwen2.5-VL-7B-Instruct", download_hub="aistudio"
+    #         "ModelHub/Qwen2.5-VL-3B-Instruct", download_hub="aistudio"
     #     )
     #     self.preprocess(image_processor)
 
     @set_proxy(DownloadSource.MODELSCOPE)
     def test_model_scope(self):
-        image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", download_hub="modelscope")
+        image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope")
         self.preprocess(image_processor)
 
     @skip_for_none_ce_case
     @set_proxy(DownloadSource.HUGGINGFACE)
     def test_hf_hub(self):
-        image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", download_hub="huggingface")
+        image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
         self.preprocess(image_processor)
 
     @skip_for_none_ce_case

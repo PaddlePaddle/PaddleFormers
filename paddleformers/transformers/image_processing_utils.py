@@ -37,7 +37,7 @@ from ..utils.log import logger
 from .feature_extraction_utils import BatchFeature
 
 
-class PaddleImageProcessorMixin:
+class PaddleImageProcessingMixin:
     """
     A mixin that extends Hugging Face image processor classes to support
     PaddlePaddle tensor return types.
@@ -272,18 +272,22 @@ class PaddleImageProcessorMixin:
 
 
 def warp_image_processormixin(hf_image_processormixin_class: ImageProcessingMixin_hf):
-    return type(hf_image_processormixin_class.__name__, (PaddleImageProcessorMixin, hf_image_processormixin_class), {})
+    return type(
+        hf_image_processormixin_class.__name__, (PaddleImageProcessingMixin, hf_image_processormixin_class), {}
+    )
 
 
 def warp_base_image_processor(hf_base_image_processor_class: BaseImageProcessor_hf):
-    return type(hf_base_image_processor_class.__name__, (PaddleImageProcessorMixin, hf_base_image_processor_class), {})
+    return type(
+        hf_base_image_processor_class.__name__, (PaddleImageProcessingMixin, hf_base_image_processor_class), {}
+    )
 
 
-class ImageProcessingMixin(PaddleImageProcessorMixin, ImageProcessingMixin_hf):
+class ImageProcessingMixin(PaddleImageProcessingMixin, ImageProcessingMixin_hf):
     def init(self, *args, **kwargs):
         super().init(*args, **kwargs)
 
 
-class BaseImageProcessor(PaddleImageProcessorMixin, BaseImageProcessor_hf):
+class BaseImageProcessor(PaddleImageProcessingMixin, BaseImageProcessor_hf):
     def init(self, *args, **kwargs):
         super().init(*args, **kwargs)

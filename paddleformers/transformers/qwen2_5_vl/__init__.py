@@ -1,4 +1,5 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,18 +13,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .legacy.tokenizer_utils_base import (
-    PaddingStrategy,
-    PreTokenizedInput,
-    TensorType,
-    TextInput,
-    TruncationStrategy,
-)
+import sys
+from typing import TYPE_CHECKING
 
-__all__ = [
-    "PaddingStrategy",
-    "PreTokenizedInput",
-    "TextInput",
-    "TensorType",
-    "TruncationStrategy",
-]
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "processor": ["Qwen2_5_VLProcessor"],
+}
+
+if TYPE_CHECKING:
+    from .processor import *
+
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

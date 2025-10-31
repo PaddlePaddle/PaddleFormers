@@ -192,7 +192,6 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
             self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
-            # TODO: Re-enable this test case once paddle.Tensor support the more tensor dimensions.
             # Test batched
             # encoded_videos = video_processing(video_inputs, return_tensors="pd")[self.input_name]
             # expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)

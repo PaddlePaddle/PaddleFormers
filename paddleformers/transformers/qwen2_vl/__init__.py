@@ -19,11 +19,17 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
+    "image_processor": ["Qwen2VLImageProcessor"],
+    "processor": ["Qwen2VLProcessor"],
     "video_processor": ["Qwen2VLVideoProcessor"],
+    "vision_process": ["process_vision_info"],
 }
 
 if TYPE_CHECKING:
+    from .image_processor import *
+    from .processor import *
     from .video_processor import *
+    from .vision_process import *
 
 else:
     sys.modules[__name__] = _LazyModule(

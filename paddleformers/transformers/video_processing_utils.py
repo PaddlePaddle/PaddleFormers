@@ -54,7 +54,7 @@ from .paddle_vision_utils import crop as paddle_crop
 from .paddle_vision_utils import grayscale_to_rgb
 from .paddle_vision_utils import normalize as paddle_normalize
 from .paddle_vision_utils import pad as paddle_pad
-from .processing_utils import VideosKwargs
+from .processing_utils import Unpack, VideosKwargs
 from .video_utils import (
     VideoInput,
     VideoMetadata,
@@ -66,11 +66,6 @@ from .video_utils import (
     make_batched_videos,
     reorder_videos,
 )
-
-try:
-    from typing import Unpack
-except ImportError:
-    from typing_extensions import Unpack
 
 
 def max_across_indices(values: Iterable[Any]) -> list[Any]:
@@ -586,7 +581,7 @@ class BaseVideoProcessor(BaseImageProcessor):
             with open(resolved_video_processor_file, encoding="utf-8") as reader:
                 text = reader.read()
             video_processor_dict = json.loads(text)
-            video_processor_dict = video_processor_dict.get("video_processor_dict", video_processor_dict)
+            video_processor_dict = video_processor_dict.get("video_processor", video_processor_dict)
 
         except json.JSONDecodeError:
             raise OSError(
@@ -622,7 +617,7 @@ class BaseVideoProcessor(BaseImageProcessor):
         for key in to_remove:
             kwargs.pop(key, None)
 
-        logger.info(f"Video processor {video_processor}")
+        # logger.info(f"Video processor {video_processor}")
         if return_unused_kwargs:
             return video_processor, kwargs
         else:
@@ -911,6 +906,9 @@ class BaseVideoProcessor(BaseImageProcessor):
             "to ensure precision alignment."
         )
         B, T, C, H, W = image.shape
+        dtype = image.dtype
+        if dtype != paddle.uint8:
+            image = image.astype(paddle.uint8)
         images_reshaped = image.reshape([-1, C, H, W])
         output_frames = []
         for i in range(images_reshaped.shape[0]):
@@ -923,6 +921,8 @@ class BaseVideoProcessor(BaseImageProcessor):
             )
             output_frames.append(resized_frame)
         output_resized = paddle.to_tensor(np.stack(output_frames, axis=0)).contiguous()
+        if dtype != paddle.uint8:
+            output_resized = output_resized.astype(dtype)
         output = output_resized.reshape([B, T, C, new_size[0], new_size[1]])
         return output
 

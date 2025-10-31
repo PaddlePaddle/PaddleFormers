@@ -20,15 +20,11 @@ import unittest
 from pathlib import Path
 
 from paddleformers.transformers import AutoVideoProcessor, Qwen2VLVideoProcessor
-from paddleformers.utils.download import DownloadSource
-from tests.testing_utils import set_proxy, skip_for_none_ce_case
 
 
 class AutoVideoProcessorTest(unittest.TestCase):
-    @skip_for_none_ce_case
-    @set_proxy(DownloadSource.HUGGINGFACE)
     def test_video_processor_from_pretrained(self):
-        processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+        processor = AutoVideoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
         self.assertIsInstance(processor, Qwen2VLVideoProcessor)
 
     def test_video_processor_from_local_directory_from_key(self):
@@ -78,11 +74,8 @@ class AutoVideoProcessorTest(unittest.TestCase):
             config = AutoVideoProcessor.from_pretrained(processor_tmpfile)
             self.assertIsInstance(config, Qwen2VLVideoProcessor)
 
-    @set_proxy(DownloadSource.AISTUDIO)
     def test_video_processor_save_pretrained(self):
-        config_dict = AutoVideoProcessor.from_pretrained(
-            "PaddleFormers/tiny-random-qwen2.5vl", download_hub="aistudio"
-        ).to_dict()
+        config_dict = AutoVideoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl").to_dict()
         config_dict.pop("video_processor_type")
         config = Qwen2VLVideoProcessor(**config_dict)
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -33,7 +33,7 @@ from .test_utils import check_json_file_has_correct_format
 
 
 def prepare_video(num_frames, num_channels, width=10, height=10, return_tensors="pil"):
-    """This function prepares a video as a list of PIL images/NumPy arrays/PyTorch tensors."""
+    """This function prepares a video as a list of PIL images/NumPy arrays/Paddle tensors."""
 
     video = []
     for i in range(num_frames):
@@ -43,7 +43,7 @@ def prepare_video(num_frames, num_channels, width=10, height=10, return_tensors=
         # PIL expects the channel dimension as last dimension
         video = [Image.fromarray(frame) for frame in video]
     elif return_tensors == "pd":
-        # Torch images are typically in channels first format
+        # Paddle images are typically in channels first format
         video = paddle.to_tensor(video).permute(0, 3, 1, 2)
     elif return_tensors == "np":
         # Numpy images are typically in channels last format
@@ -110,8 +110,8 @@ class VideoProcessingTestMixin:
         for video_processing_class in self.video_processor_list:
             video_processor_first = video_processing_class(**self.video_processor_dict)
 
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                json_file_path = os.path.join(tmpdirname, "video_processor.json")
+            with tempfile.TemporaryDirectory() as tmpdir:
+                json_file_path = os.path.join(tmpdir, "video_processor.json")
                 video_processor_first.to_json_file(json_file_path)
                 video_processor_second = video_processing_class.from_json_file(json_file_path)
 
@@ -130,10 +130,10 @@ class VideoProcessingTestMixin:
         for video_processing_class in self.video_processor_list:
             video_processor_first = video_processing_class(**self.video_processor_dict)
 
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                saved_file = video_processor_first.save_pretrained(tmpdirname)[0]
+            with tempfile.TemporaryDirectory() as tmpdir:
+                saved_file = video_processor_first.save_pretrained(tmpdir)[0]
                 check_json_file_has_correct_format(saved_file)
-                video_processor_second = video_processing_class.from_pretrained(tmpdirname)
+                video_processor_second = video_processing_class.from_pretrained(tmpdir)
 
             self.assertEqual(video_processor_second.to_dict(), video_processor_first.to_dict())
 
@@ -141,11 +141,11 @@ class VideoProcessingTestMixin:
         for video_processing_class in self.video_processor_list:
             video_processor_first = video_processing_class(**self.video_processor_dict)
 
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                saved_file = video_processor_first.save_pretrained(tmpdirname)[0]
+            with tempfile.TemporaryDirectory() as tmpdir:
+                saved_file = video_processor_first.save_pretrained(tmpdir)[0]
                 check_json_file_has_correct_format(saved_file)
 
-                video_processor_second = AutoVideoProcessor.from_pretrained(tmpdirname)
+                video_processor_second = AutoVideoProcessor.from_pretrained(tmpdir)
 
             self.assertEqual(video_processor_second.to_dict(), video_processor_first.to_dict())
 
@@ -160,7 +160,7 @@ class VideoProcessingTestMixin:
                 # Initialize video_processor
                 video_processor = video_processing_class(**self.video_processor_dict)
 
-                # create random PyTorch tensors
+                # create random Paddle tensors
                 video_inputs = self.video_processor_tester.prepare_video_inputs(
                     equal_resolution=False, return_tensors="pd"
                 )
@@ -202,6 +202,7 @@ class VideoProcessingTestMixin:
             expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
             self.assertEqual(tuple(encoded_videos.shape), (1, *expected_output_video_shape))
 
+            # TODO: Re-enable this test case once paddle.Tensor support the more tensor dimensions.
             # Test batched
             # encoded_videos = video_processing(video_inputs, return_tensors="pd")[self.input_name]
             # expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
@@ -236,7 +237,7 @@ class VideoProcessingTestMixin:
         for video_processing_class in self.video_processor_list:
             # Initialize video_processing
             video_processing = video_processing_class(**self.video_processor_dict)
-            # create random PyTorch tensors
+            # create random Paddle tensors
             video_inputs = self.video_processor_tester.prepare_video_inputs(
                 equal_resolution=False, return_tensors="pd"
             )

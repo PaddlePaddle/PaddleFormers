@@ -25,10 +25,10 @@ from transformers.dynamic_module_utils import (
     resolve_trust_remote_code,
 )
 from transformers.models.auto.configuration_auto import (
+    CONFIG_MAPPING_NAMES,
     model_type_to_module_name,
     replace_list_option_in_docstrings,
 )
-from transformers.models.auto.video_processing_auto import VIDEO_PROCESSOR_MAPPING
 from transformers.models.auto.video_processing_auto import (
     get_video_processor_config as get_video_processor_config_hf,
 )
@@ -37,12 +37,16 @@ from transformers.utils import CONFIG_NAME, VIDEO_PROCESSOR_NAME
 from ...utils.download import DownloadSource, resolve_file_path
 from ...utils.log import logger
 from ..video_processing_utils import BaseVideoProcessor
+from .factory import _LazyAutoMapping
 
 VIDEO_PROCESSOR_MAPPING_NAMES = OrderedDict(
     [
+        ("qwen2_5_vl", "Qwen2VLVideoProcessor"),
         ("qwen2_vl", "Qwen2VLVideoProcessor"),
     ]
 )
+
+VIDEO_PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, VIDEO_PROCESSOR_MAPPING_NAMES)
 
 
 def video_processor_class_from_name(class_name: str):
@@ -280,3 +284,6 @@ class AutoVideoProcessor:
             f"`video_processor_type` key in its {VIDEO_PROCESSOR_NAME} of {CONFIG_NAME}, or one of the following "
             f"`model_type` keys in its {CONFIG_NAME}: {', '.join(c for c in VIDEO_PROCESSOR_MAPPING_NAMES)}"
         )
+
+
+__all__ = ["VIDEO_PROCESSOR_MAPPING", "AutoVideoProcessor"]

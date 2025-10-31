@@ -21,6 +21,7 @@ import shutil
 import site
 import sys
 from contextlib import contextmanager
+from types import ModuleType
 from typing import Optional, Tuple, Type, Union
 
 import pip
@@ -390,3 +391,22 @@ def import_module(module_name: str) -> Optional[Type]:
         return target_module
     except ModuleNotFoundError:
         return None
+
+
+def direct_paddleformers_import(path: str, file="__init__.py") -> ModuleType:
+    """Imports paddleformers.transformers directly
+
+    Args:
+        path (`str`): The path to the source file
+        file (`str`, *optional*): The file to join with the path. Defaults to "__init__.py".
+
+    Returns:
+        `ModuleType`: The resulting imported module
+    """
+    name = "paddleformers.transformers"
+    location = os.path.join(path, file)
+    spec = importlib.util.spec_from_file_location(name, location, submodule_search_locations=[path])
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module = sys.modules[name]
+    return module

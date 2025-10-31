@@ -52,6 +52,7 @@ import_structure = {
         "is_transformers_available",
         "dynamic_graph_pybind_context",
         "custom_import",
+        "direct_paddleformers_import",
     ],
     "initializer": ["to"],
     "infohub": ["infohub", "InfoHub"],

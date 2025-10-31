@@ -13,6 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
 import shutil
 import unittest
@@ -35,7 +36,7 @@ class TestImageProcessor(unittest.TestCase):
                 shutil.rmtree(test_dir)
 
     def test_slow_image_processor_from_pretrained(self):
-        image_processor = AutoImageProcessor.from_pretrained("PaddleMIX/Qwen2.5-VL-7B-Instruct")
+        image_processor = AutoImageProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
         if hasattr(image_processor, "use"):
             self.assertFalse(image_processor.is_fast)
         else:
@@ -43,7 +44,7 @@ class TestImageProcessor(unittest.TestCase):
         self.assertEqual(image_processor.__class__.__name__, "Qwen2VLImageProcessor")
 
     def test_slow_image_processor_save_pretrained(self):
-        image_processor = AutoImageProcessor.from_pretrained("PaddleMIX/Qwen2.5-VL-7B-Instruct")
+        image_processor = AutoImageProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
         image_processor.min_pixels = 2048
         image_processor.save_pretrained("./slow_image_processor")
         self.assertTrue(os.path.exists("./slow_image_processor/preprocessor_config.json"))
