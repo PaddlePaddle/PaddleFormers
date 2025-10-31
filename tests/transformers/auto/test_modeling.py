@@ -38,7 +38,7 @@ from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
 from ...utils.test_module.custom_configuration import CustomConfig
 from ...utils.test_module.custom_model import CustomModel
 from ..llama.test_modeling import LlamaModelTester
-
+from tests.testing_utils import slow
 
 class AutoModelTest(unittest.TestCase):
     @classmethod
@@ -64,6 +64,7 @@ class AutoModelTest(unittest.TestCase):
             reloaded_model = AutoModel.from_pretrained(model_save_path)
             self.assertIsInstance(reloaded_model, LlamaModel)
 
+    @slow
     def test_model_from_pretrained_cache_dir(self):
         model_name = "Paddleformers/tiny-random-llama"
         with tempfile.TemporaryDirectory() as tempdir:
