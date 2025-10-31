@@ -104,7 +104,7 @@ class Ernie4_5_VLTextConfig(PretrainedConfig):
         tie_word_embeddings=True,
         rope_theta=500_000.0,
         freq_allocation=20,
-        rope_scaling=None,
+        rope_parameters=None,
         moe_gate="topk",
         moe_intermediate_size=[1536, 512],
         moe_k=6,

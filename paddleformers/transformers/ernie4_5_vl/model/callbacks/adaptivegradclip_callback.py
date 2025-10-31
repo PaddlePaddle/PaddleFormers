@@ -16,7 +16,7 @@
 
 """ ClipGradByAdaptiveNormCallback """
 
-# from ernie.utils import logger
+# from ..utils import logger
 import logging
 import os
 

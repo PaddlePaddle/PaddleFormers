@@ -41,10 +41,10 @@ try:
 except ImportError:
     from paddleformers.utils.env import PADDLE_WEIGHTS_NAME
 
-from ernie.modeling_moe import Ernie4_5_MoeForCausalLM
-from ernie.moe.moe_layer import MOELayer
-
 from paddleformers.transformers.model_utils import _add_variant
+
+from ..modeling_moe import Ernie4_5_MoeForCausalLM
+from ..moe.moe_layer import MOELayer
 
 __all__ = ["GlobalRNGCallback", "MoeLoggingCallback"]
 

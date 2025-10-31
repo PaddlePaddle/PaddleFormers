@@ -17,9 +17,9 @@ Layerwise dropout callback.
 
 from copy import deepcopy
 
-from ernie.modeling_moe import Ernie4_5_DecoderLayer
-
 from paddleformers.trainer.trainer_callback import TrainerCallback
+
+from ..modeling_moe import Ernie4_5_DecoderLayer
 
 
 class LayerwiseDropoutCallback(TrainerCallback):

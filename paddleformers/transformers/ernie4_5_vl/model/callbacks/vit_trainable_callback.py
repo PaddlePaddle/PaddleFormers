@@ -23,7 +23,6 @@ from types import MethodType
 import numpy as np
 import paddle
 import paddle.distributed as dist
-from ernie.comm_utils import all_gather, mp_slice, profile, scatter_varlen
 from paddle.distributed.fleet import fleet
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients_with_group,
@@ -37,6 +36,8 @@ from paddleformers.trainer.trainer_callback import (
 )
 from paddleformers.trainer.training_args import TrainingArguments
 from paddleformers.utils.log import logger
+
+from ..comm_utils import all_gather, mp_slice, profile, scatter_varlen
 
 
 def showmem(msg):

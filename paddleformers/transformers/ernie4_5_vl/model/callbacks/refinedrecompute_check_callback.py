@@ -16,9 +16,9 @@
 
 """ RefinedRecomputeCheckCallback"""
 
-from ernie.refined_recompute.utils import global_rr_queue_log
-
 from paddleformers.trainer.trainer_callback import TrainerCallback
+
+from ..refined_recompute.utils import global_rr_queue_log
 
 
 class RefinedRecomputeCheckCallback(TrainerCallback):

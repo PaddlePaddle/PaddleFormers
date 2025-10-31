@@ -35,7 +35,7 @@ def distributed_optimizer_for_moe(
     if not use_moe:
         return fleet.distributed_optimizer(optimizer)
 
-    from ernie.moe.distributed.hybrid_parallel_optimizer import (
+    from ..moe.distributed.hybrid_parallel_optimizer import (
         HybridParallelOptimizer as MoEHybridParallelOptimizer,
     )
 

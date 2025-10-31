@@ -221,7 +221,10 @@ class LoRAModel(nn.Layer):
                         single_name = [prefixes[idx]]
                         single_name.extend(name_splited[1:])
                     elif "shared_layers" in idx:
-                        single_name = ["ernie"]
+                        if getattr(self.model, "pipe_model_type", None) == "torch":
+                            single_name = ["model"]
+                        else:
+                            single_name = ["ernie"]
                         single_name.extend(k.split("shared_layers.embed_weight_share.")[1:])
                     else:
                         raise ValueError(f"Unexpected key: {k} for pp lora layer.")

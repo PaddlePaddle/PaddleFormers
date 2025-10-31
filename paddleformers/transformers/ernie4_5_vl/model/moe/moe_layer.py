@@ -26,7 +26,6 @@ from typing import Any, Callable, List, Optional, Tuple
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
-from ernie.sequence_parallel_utils import ScatterOp
 from paddle import Tensor, _C_ops, framework, nn
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
@@ -36,6 +35,8 @@ from paddle.distributed.fleet.utils import recompute
 from paddle.incubate.nn.functional import moe_combine, moe_gate_dispatch
 
 from paddleformers.utils.log import logger
+
+from ..sequence_parallel_utils import ScatterOp
 
 GateOutput = namedtuple(
     "GateOutput",
@@ -161,7 +162,7 @@ def combining(x, combine_weights, scatter_index, hard_gate=False):
         x_gatherd = F.embedding(scatter_index, x)  # [s,k,dim]
         return x_gatherd.squeeze(-2)
     if paddle.device.is_compiled_with_custom_device("npu"):
-        from ernie.fusion_ops.npu_fusion_ops import npu_combining
+        from ..fusion_ops.npu_fusion_ops import npu_combining
 
         ret = npu_combining(x, combine_weights, scatter_index)
     else:

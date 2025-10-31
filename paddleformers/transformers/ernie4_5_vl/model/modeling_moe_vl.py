@@ -54,7 +54,7 @@ from .sequence_parallel_utils import (
 )
 
 try:
-    from ernie.utils.misc import global_training_logs
+    from ..utils.misc import global_training_logs
 except ModuleNotFoundError:
     global_training_logs = {}
 
@@ -141,17 +141,17 @@ def get_backbone_lm_param_regex(config):
         else config.text_config.moe_num_experts
     )
 
-    freeze_part = [r"ernie\.norm.*", r"ernie\.layers.*norm.*"]  # freeze all norm
+    freeze_part = [r"model\.language_model\.norm.*", r"model\.language_model\.layers.*norm.*"]  # freeze all norm
     # we do not include gate weight
     # gate weight detach modality
     freeze_part += [
-        r"ernie\.layers\.(\d+)\.mlp\.(up_gate|gate|up|down)_proj\.*",
-        r"ernie\.layers\.(\d+)\.mlp\.shared_experts\.(up_gate|gate|up|down)_proj\.*",
-        r"ernie\.layers\.(\d+)\.self_attn.(q|k|v|o|qkv)_proj\.(weight|bias)",
-        r"ernie\.layers\.(\d)+\.mlp\.gate\.weight$",
+        r"model\.language_model\.layers\.(\d+)\.mlp\.(up_gate|gate|up|down)_proj\.*",
+        r"model\.language_model\.layers\.(\d+)\.mlp\.shared_experts\.(up_gate|gate|up|down)_proj\.*",
+        r"model\.language_model\.layers\.(\d+)\.self_attn.(q|k|v|o|qkv)_proj\.(weight|bias)",
+        r"model\.language_model\.layers\.(\d)+\.mlp\.(text_moe|vision_moe)\.gate\.weight$",
     ]
     logger.info(f"FREEZE_DEBUG: { moe_rank * num_local_experts} {num_freeze_expert}")
-    freeze_part += [r"ernie\.embed_tokens\.weight"]
+    freeze_part += [r"model\.language_model\.embed_tokens\.weight"]
     freeze_part += [r"lm_head\.weight", r"lm_head\.bias"]
 
     assert freeze_part, f"not freeze any part, moe: {moe_rank}/{moe_world_size}"

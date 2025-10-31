@@ -22,7 +22,7 @@ import_structure = {
         "Ernie4_5_VLConfig",
     ],
     "modeling": [
-        "Ernie4_5_VLMoeForConditionalGeneration",
+        "Ernie4_5_VLMoeForConditionalGenerationModel",
         "Ernie4_5_VLMoeForConditionalGenerationPipe",
     ],
 }

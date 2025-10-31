@@ -19,12 +19,13 @@ optimizer callback
 """
 
 import paddle
-from ernie.modeling_moe import Ernie4_5_DecoderLayer
 
 from paddleformers.trainer.trainer_callback import TrainerCallback
 
+from ..modeling_moe import Ernie4_5_DecoderLayer
+
 try:
-    from ernie.utils.misc import global_training_logs
+    from ..utils.misc import global_training_logs
 except ModuleNotFoundError:
     global_training_logs = {}
 
