@@ -20,7 +20,7 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "modular_moe_layer": ["ModularMoELayer"],
-    "moe_communication": ["MoECommunicationInterface", "StandardMoECommunication", "DeepEPMoECommunication"],
+    "moe_communication": ["MoECommunicationInterface", "AllToAllMoECommunication", "DeepEPMoECommunication"],
     "moe_expert": ["MoEExpertInterface", "StandardMoEExpert", "Qwen2MLP"],
     "moe_gate": ["PretrainedMoEGate"],
     "moe_factory": ["QuickAccessMoEFactory"],
@@ -28,8 +28,12 @@ import_structure = {
 
 if TYPE_CHECKING:
     from .modular_moe_layer import ModularMoELayer
-    from .moe_communication import MoECommunicationInterface, StandardMoECommunication, DeepEPMoECommunication
-    from .moe_expert import MoEExpertInterface, StandardMoEExpert, Qwen2MLP
+    from .moe_communication import (
+        AllToAllMoECommunication,
+        DeepEPMoECommunication,
+        MoECommunicationInterface,
+    )
+    from .moe_expert import MoEExpertInterface, Qwen2MLP, StandardMoEExpert
     from .moe_factory import *
     from .moe_gate import PretrainedMoEGate
 else:

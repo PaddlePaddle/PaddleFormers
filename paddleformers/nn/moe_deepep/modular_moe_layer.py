@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from copy import deepcopy
 from typing import Any, Dict, Optional
 
@@ -27,7 +26,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, Sca
 
 from ...transformers.configuration_utils import PretrainedConfig
 from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
-from .moe_communication import DeepEPMoECommunication, StandardMoECommunication
+from .moe_communication import AllToAllMoECommunication, DeepEPMoECommunication
 from .moe_expert import StandardMLPExpert
 from .moe_gate import StandardMoEGate
 from .moe_loss_instance import get_global_loss_registry
@@ -67,7 +66,7 @@ class ModularMoELayer(nn.Layer):
         self.tensor_parallel_degree = pretrained_config.get("tensor_parallel_degree", 1)
         self.seq_length = pretrained_config.get("seq_length", pretrained_config.get("max_seq_len", 1024))
         self.fuse_up_gate = pretrained_config.get("fuse_attention_ffn", False)
-
+        self.ep_communication_type = pretrained_config.get("ep_communication_type", "deepep")
         try:
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
         except Exception:
@@ -146,10 +145,14 @@ class ModularMoELayer(nn.Layer):
         if self.custom_communication is not None:
             self.communication = self.custom_communication
         else:
-            if os.getenv("USE_DEEPEP", "1") == "0":
-                self.communication = StandardMoECommunication()
-            else:
+            if self.ep_communication_type == "deepep":
                 self.communication = DeepEPMoECommunication()
+            elif self.ep_communication_type == "alltoall":
+                self.communication = AllToAllMoECommunication()
+            else:
+                raise ValueError(
+                    f"Unsupported communication type: {self.ep_communication_type}, please choose from ['deepep', 'alltoall']"
+                )
 
         if hasattr(dist, "fleet") and dist.is_initialized() and self.expert_parallel_degree > 1:
             self.is_mp_moe = False
@@ -189,11 +192,7 @@ class ModularMoELayer(nn.Layer):
         except AttributeError:
             is_fleet_init = False
 
-        if (
-            is_fleet_init
-            and self.expert_parallel_degree > 1
-            # and dist.fleet.get_hybrid_communicate_group().get_data_parallel_world_size() > 1
-        ):
+        if is_fleet_init and self.expert_parallel_degree > 1:
             self.moe_group = dist.fleet.get_hybrid_communicate_group().get_expert_parallel_group()
             self.moe_grad_group = dist.fleet.get_hybrid_communicate_group().get_moe_sharding_parallel_group()
             self.moe_rank = dist.get_rank(self.moe_group)
@@ -270,7 +269,6 @@ class ModularMoELayer(nn.Layer):
         # One hot encode the selected experts to create an expert mask
         # this will be used to easily index which expert is going to be sollicitated
         expert_mask = paddle.nn.functional.one_hot(selected_experts, num_classes=self.num_experts).transpose([2, 1, 0])
-        # [num_experts, topk, bs*seq]
         tokens_per_expert = expert_mask.reshape([expert_mask.shape[0], -1]).sum(axis=-1)
         # Loop over all available experts in the model and perform the computation on each expert
         for expert_idx in range(self.num_experts):

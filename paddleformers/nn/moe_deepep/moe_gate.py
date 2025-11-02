@@ -366,7 +366,7 @@ class MoEGateMixin:
         return topk_weight, topk_idx
 
 
-# 修改自 retrainedMoEGate
+# Modified from PretrainedMoEGate
 class StandardMoEGate(nn.Layer, MoEGateMixin):
     def __init__(
         self,
@@ -384,8 +384,6 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         self.num_experts = num_experts
         self.expert_hidden_size = expert_hidden_size
         self.drop_tokens = drop_tokens
-        # Qwen2MoE: greedy
-        # DeepSeekV2&V3: group_limited_greedy for training, and noaux_tc for inference
         self.topk_method = topk_method
         self.num_experts_per_tok = num_experts_per_tok
         self.norm_topk_prob = norm_topk_prob
@@ -412,15 +410,11 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
             assert self.group is not None, "group is required when global_aux_loss is True"
             self.rank = dist.get_rank(self.group)
 
-        # 计算 logits：可以是 GeneralLinear 或者 paddle.create_parameter
         self.weight = paddle.create_parameter(
             shape=[self.expert_hidden_size, self.num_experts],
             dtype="float32",
             default_initializer=paddle.nn.initializer.Uniform(),
         )
-        # self.gate = GeneralLinear.create(
-        #     self.expert_hidden_size, self.num_experts, has_bias=False, linear_type="default"
-        # )
 
     def forward(
         self,
@@ -442,17 +436,12 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
 
         gates_ori = gates
 
-        # 计算 logits ：如果使用 self.weight 那么使用下面两行
         logits = F.linear(gates, self.weight)
-
-        # 计算 logits ：如果使用 GeneralLinear 那么使用下面一行
-        # logits = self.gate(gates)
 
         gates = self.gate_score_func(logits=logits)
 
         l_zloss = self._cal_z_loss(gates)
 
-        # get topk gates
         if self.topk_method == "greedy":
             top_gate, top_idx = self._topk_greedy(gates, k=self.num_experts_per_tok)
         elif self.topk_method == "group_limited_greedy":

@@ -25,8 +25,6 @@ logger = logging.getLogger(__name__)
 
 
 class LossType(Enum):
-    """损失函数类型枚举"""
-
     AUXILIARY = "auxiliary"
     Z_LOSS = "z_loss"
     ENTROPY = "entropy"
@@ -37,7 +35,6 @@ class LossType(Enum):
 
 @dataclass
 class LossConfig:
-    """损失函数配置"""
 
     name: str
     loss_type: LossType
@@ -51,8 +48,6 @@ class LossConfig:
 
 
 class LossFunction(Protocol):
-    """损失函数协议接口"""
-
     def __call__(
         self,
         routing_weights: paddle.Tensor,
@@ -60,21 +55,15 @@ class LossFunction(Protocol):
         gate_logits: Optional[paddle.Tensor] = None,
         **kwargs
     ) -> paddle.Tensor:
-        """计算损失函数"""
         pass
 
 
 class LossCombiner(Protocol):
-    """损失组合器协议接口"""
-
     def __call__(self, losses: Dict[str, paddle.Tensor], configs: Dict[str, LossConfig]) -> paddle.Tensor:
-        """组合多个损失函数"""
-        ...
+        pass
 
 
 class LossRegistry:
-    """损失函数注册器"""
-
     def __init__(self):
         self._loss_functions: Dict[str, LossFunction] = {}
         self._loss_combiners: Dict[str, LossCombiner] = {}
@@ -82,7 +71,6 @@ class LossRegistry:
         self._register_default_combiners()
 
     def _register_default_losses(self):
-        """注册默认损失函数"""
         self.register_loss("auxiliary", self._auxiliary_loss)
         self.register_loss("z_loss", self._z_loss)
         self.register_loss("entropy", self._entropy_loss)
@@ -90,38 +78,30 @@ class LossRegistry:
         self.register_loss("diversity", self._diversity_loss)
 
     def _register_default_combiners(self):
-        """注册默认损失组合器"""
         self.register_combiner("weighted_sum", self._weighted_sum_combiner)
         self.register_combiner("adaptive_sum", self._adaptive_sum_combiner)
         self.register_combiner("geometric_mean", self._geometric_mean_combiner)
 
     def register_loss(self, name: str, loss_func: LossFunction):
-        """注册损失函数"""
         self._loss_functions[name] = loss_func
-        logger.info(f"注册损失函数: {name}")
+        logger.info(f"Registering loss function: {name}")
 
     def register_combiner(self, name: str, combiner: LossCombiner):
-        """注册损失组合器"""
         self._loss_combiners[name] = combiner
-        logger.info(f"注册损失组合器: {name}")
+        logger.info(f"Registering loss combiner: {name}")
 
     def get_loss(self, name: str) -> Optional[LossFunction]:
-        """获取损失函数"""
         return self._loss_functions.get(name)
 
     def get_combiner(self, name: str) -> Optional[LossCombiner]:
-        """获取损失组合器"""
         return self._loss_combiners.get(name)
 
     def list_losses(self) -> List[str]:
-        """列出所有损失函数"""
         return list(self._loss_functions.keys())
 
     def list_combiners(self) -> List[str]:
-        """列出所有损失组合器"""
         return list(self._loss_combiners.keys())
 
-    # 默认损失函数实现
     def _auxiliary_loss(
         self,
         routing_weights: paddle.Tensor,
@@ -129,7 +109,6 @@ class LossRegistry:
         gate_logits: Optional[paddle.Tensor] = None,
         **kwargs
     ) -> paddle.Tensor:
-        """标准辅助损失（负载均衡损失）"""
         num_experts = kwargs.get("num_experts", selected_experts.max().item() + 1)
         expert_usage = paddle.zeros([num_experts], dtype=routing_weights.dtype)
 
@@ -149,7 +128,6 @@ class LossRegistry:
         gate_logits: Optional[paddle.Tensor] = None,
         **kwargs
     ) -> paddle.Tensor:
-        """标准Z损失"""
         if gate_logits is None:
             return paddle.to_tensor(0.0)
         return paddle.sum(gate_logits**2)
@@ -161,7 +139,7 @@ class LossRegistry:
         gate_logits: Optional[paddle.Tensor] = None,
         **kwargs
     ) -> paddle.Tensor:
-        """熵损失 - 鼓励路由权重的多样性"""
+        """Entropy loss - encourage the diversity of routing weights"""
         return -paddle.sum(routing_weights * paddle.log(routing_weights + 1e-8))
 
     def _sparsity_loss(
@@ -171,7 +149,7 @@ class LossRegistry:
         gate_logits: Optional[paddle.Tensor] = None,
         **kwargs
     ) -> paddle.Tensor:
-        """稀疏性损失 - 鼓励专家选择的稀疏性"""
+        """Sparsety loss - encourage the sparsity of expert selection"""
         num_experts = kwargs.get("num_experts", selected_experts.max().item() + 1)
         expert_usage = paddle.zeros([num_experts])
 
@@ -189,7 +167,7 @@ class LossRegistry:
         gate_logits: Optional[paddle.Tensor] = None,
         **kwargs
     ) -> paddle.Tensor:
-        """多样性损失 - 鼓励专家选择的多样性"""
+        """Diversity loss - encourage the diversity of expert selection"""
         num_experts = kwargs.get("num_experts", selected_experts.max().item() + 1)
         expert_counts = paddle.zeros([num_experts])
 
@@ -208,7 +186,6 @@ class LossRegistry:
     def _weighted_sum_combiner(
         self, losses: Dict[str, paddle.Tensor], configs: Dict[str, LossConfig]
     ) -> paddle.Tensor:
-        """加权求和组合"""
         combined_loss = paddle.to_tensor(0.0)
         for name, loss_value in losses.items():
             config = configs.get(name)
@@ -219,7 +196,6 @@ class LossRegistry:
     def _adaptive_sum_combiner(
         self, losses: Dict[str, paddle.Tensor], configs: Dict[str, LossConfig]
     ) -> paddle.Tensor:
-        """自适应加权求和组合"""
         combined_loss = paddle.to_tensor(0.0)
         enabled_losses = [
             loss for name, loss in losses.items() if configs.get(name, LossConfig("", LossType.CUSTOM)).enabled
@@ -242,7 +218,6 @@ class LossRegistry:
     def _geometric_mean_combiner(
         self, losses: Dict[str, paddle.Tensor], configs: Dict[str, LossConfig]
     ) -> paddle.Tensor:
-        """几何平均组合"""
         combined_loss = paddle.to_tensor(1.0)
         for name, loss_value in losses.items():
             config = configs.get(name)

@@ -21,6 +21,7 @@ import paddle.distributed as dist
 from paddle import Tensor, nn
 from paddle.distributed.communication.group import Group
 
+
 class MoECommunicationInterface(ABC):
     @abstractmethod
     def forward(
@@ -41,8 +42,6 @@ class MoECommunicationInterface(ABC):
         token_dispatcher,
     ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """
-        EP并行通信前向传播
-
         Args:
             hidden_states: Input hidden states, shape: [batch_size*seq_len, hidden_size] or [batch_size, seq_len, hidden_size]
             topk_indices: Indices of selected experts for each token, shape: [num_tokens, num_experts_per_token]
@@ -67,7 +66,7 @@ class MoECommunicationInterface(ABC):
         pass
 
 
-class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
+class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
     """
     All-to-All EP
     """
@@ -95,8 +94,6 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
 
         # 1. Reshape topk_indices to a single list of all expert assignments
         #    Shape: [T * K]
-
-
         flat_expert_indices = paddle.flatten(topk_indices)
 
         tokens_per_expert = paddle.bincount(x=flat_expert_indices, minlength=num_experts)
@@ -229,7 +226,7 @@ class _AllToAll(paddle.autograd.PyLayer):
         out_split_sizes: List = None,
         in_split_sizes: List = None,
         group: Group = None,
-    ) -> Tensor:  # type: ignore
+    ) -> Tensor:
         """
         All-to-all communication in the group.
         Args:
