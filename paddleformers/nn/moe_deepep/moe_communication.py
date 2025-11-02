@@ -22,53 +22,7 @@ from paddle import Tensor, nn
 from paddle.distributed.communication.group import Group
 
 class MoECommunicationInterface(ABC):
-    """
-    MoE通信接口
-
-    定义EP并行通信的标准接口，支持不同的通信策略
-    """
-
     @abstractmethod
-    def forward(
-        self,
-        hidden_states: paddle.Tensor,
-        topk_indices: paddle.Tensor,
-        topk_weights: paddle.Tensor,
-        mask: paddle.Tensor,
-        hidden_states_masked: paddle.Tensor,
-        expert_parallel_degree: int,
-        moe_group: Group,
-        experts: nn.LayerList,
-        moe_rank: int,
-        num_experts_per_device: int,
-        num_experts: int,
-        topk: int,
-    ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
-        """
-        EP并行通信前向传播
-
-        Args:
-            hidden_states: 输入隐藏状态
-            topk_indices: TopK专家索引
-            topk_weights: TopK权重
-            expert_parallel_degree: 专家并行度
-            moe_group: MoE通信组
-
-        Returns:
-            output: 输出隐藏状态
-            aux_loss: 辅助损失
-            z_loss: Z损失
-        """
-        pass
-
-
-class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
-    """
-    标准MoE通信实现
-
-    基于All-to-All通信的EP并行实现
-    """
-
     def forward(
         self,
         hidden_states: paddle.Tensor,
@@ -90,61 +44,74 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         EP并行通信前向传播
 
         Args:
-            hidden_states: 输入隐藏状态
-            topk_indices: TopK专家索引
-            topk_weights: TopK权重
-            expert_parallel_degree: 专家并行度
-            moe_group: MoE通信组
+            hidden_states: Input hidden states, shape: [batch_size*seq_len, hidden_size] or [batch_size, seq_len, hidden_size]
+            topk_indices: Indices of selected experts for each token, shape: [num_tokens, num_experts_per_token]
+            topk_weights: Weights of selected experts for each token, shape: [num_tokens, num_experts_per_token]
+            gates_masked: Masked gates. For each token(row), the selected experts are remainded with their normalized gate values, others are 0. Shape: [num_tokens, num_experts]
+            mask: Mask. For each token(row), the selected experts are marked with 1, others are 0. Shape: [num_tokens, num_experts]
+            priorities: Token priorities, shape: [num_tokens, num_experts]
+            expert_parallel_degree: Expert parallel degree
+            moe_group: MoE group
+            experts: Experts list
+            moe_rank: Current rank id in the MoE group
+            num_experts_per_device: Number of experts per device
+            num_experts: Total number of experts
+            topk: Number of experts per token
+            token_dispatcher: Token dispatcher
 
         Returns:
-            output: 输出隐藏状态
-            aux_loss: 辅助损失
-            z_loss: Z损失
+            output: Output tensor
+            aux_loss: Auxiliary loss
+            z_loss: Z loss
         """
-        if expert_parallel_degree <= 1:
-            # 无需EP并行，直接返回
-            return hidden_states
+        pass
 
-        # 计算每个专家的token数量
-        # cnts = paddle.zeros([topk_indices.shape[0], num_experts], dtype=topk_indices.dtype)
-        # cnts = cnts.put_along_axis(topk_indices, 1, axis=1)
-        # tokens_per_expert = cnts.sum(axis=0)
+
+class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
+    """
+    All-to-All EP
+    """
+
+    def forward(
+        self,
+        hidden_states: paddle.Tensor,
+        topk_indices: paddle.Tensor,
+        topk_weights: paddle.Tensor,
+        gates_masked: paddle.Tensor,
+        mask: paddle.Tensor,
+        priorities: paddle.Tensor,
+        expert_parallel_degree: int,
+        moe_group: Group,
+        experts: nn.LayerList,
+        moe_rank: int,
+        num_experts_per_device: int,
+        num_experts: int,
+        topk: int,
+        token_dispatcher,
+    ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+
+        if expert_parallel_degree <= 1:
+            return hidden_states
 
         # 1. Reshape topk_indices to a single list of all expert assignments
         #    Shape: [T * K]
-        # Check topk_indices validity
-        if paddle.any(topk_indices < 0):
-            raise ValueError("Invalid topk_indices found < 0.")
-        if paddle.any(topk_indices >= num_experts):
-            raise ValueError("Invalid topk_indices found >= num_experts.")
-        if topk_indices.shape != topk_weights.shape:
-            raise ValueError("topk_indices shape must match topk_weights shape.")
-        if paddle.any(paddle.isnan(topk_indices)):
-            raise ValueError("Invalid topk_indices found NaN.")
-        if paddle.any(paddle.isinf(topk_indices)):
-            raise ValueError("Invalid topk_indices found Inf.")
+
 
         flat_expert_indices = paddle.flatten(topk_indices)
 
         tokens_per_expert = paddle.bincount(x=flat_expert_indices, minlength=num_experts)
         tokens_per_expert = tokens_per_expert.detach()
 
-        # 排序token
         idxs = topk_indices.reshape([topk_indices.shape[0] * topk_indices.shape[1]]).argsort()
         sorted_tokens = hidden_states[idxs // topk_indices.shape[1]]
         sorted_tokens_shape = sorted_tokens.shape
 
-        # EP并行通信
-        # 计算每个EP rank的token数量
         tokens_per_ep_rank = tokens_per_expert.reshape([expert_parallel_degree, -1]).sum(axis=1)
-        # 第一次All-to-All：交换token数量信息
         tokens_per_expert_group = _AllToAll.apply([tokens_per_expert.shape[0]], tokens_per_expert, group=moe_group)
 
-        # 计算输出分割大小
         tokens_per_expert_group_sum = tokens_per_expert_group.reshape([expert_parallel_degree, -1])
         output_splits = tokens_per_expert_group_sum.sum(axis=1).cpu().tolist()
         input_split_sizes = tokens_per_ep_rank.cpu().tolist()
-        # 第二次All-to-All：交换token数据
         gathered_tokens = _AllToAll.apply(
             [tokens_per_expert_group.sum(axis=0).cpu().item(), sorted_tokens.shape[1]],
             sorted_tokens,
@@ -153,11 +120,9 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
             group=moe_group,
         )
 
-        # 计算聚合后的每个专家token数量
         tokens_per_expert_post_gather = tokens_per_expert_group.reshape(
             [expert_parallel_degree, num_experts_per_device]
         ).sum(axis=0)
-        # 创建聚合索引
         gatherd_idxs = np.zeros(shape=(gathered_tokens.shape[0],), dtype=np.int32)
         s = 0
         for i, k in enumerate(tokens_per_expert_group.cpu().numpy()):
@@ -167,7 +132,6 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         sorted_tokens = gathered_tokens[gatherd_idxs]
         tokens_per_expert = tokens_per_expert_post_gather
 
-        # expert 计算前向
         outputs = []
         start_idx = 0
         for i, num_tokens in enumerate(tokens_per_expert):
@@ -181,10 +145,8 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
             start_idx = end_idx
         outs = paddle.concat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
 
-        # 第三次All-to-All：将专家输出分发回原始位置
         new_x = paddle.empty_like(outs)
         new_x[gatherd_idxs] = outs
-        # assert paddle.max(paddle.to_tensor(gatherd_idxs)) < new_x.shape[0], "Index out of bounds"
 
         gathered_tokens = _AllToAll.apply(
             sorted_tokens_shape,
@@ -195,7 +157,6 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
         )
         outs = gathered_tokens
 
-        # 最终聚合
         new_x = paddle.empty_like(outs)
         new_x[idxs] = outs
         final_out = (
@@ -211,9 +172,7 @@ class StandardMoECommunication(nn.Layer, MoECommunicationInterface):
 
 class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
     """
-    DeepEP MoE 通信实现
-
-    基于 DeepEP 通信的 EP 并行实现
+    DeepEP EP
     """
 
     def expert_forward(self, dispatched_input, tokens_per_expert, experts, moe_rank, num_experts_per_device):
@@ -224,7 +183,6 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         chunks = paddle.split(dispatched_input, num_or_sections=tokens_per_expert, axis=0)
         for i, chunk in enumerate(chunks):
             chunk = chunk.contiguous()
-            # assert chunk.shape[0] != 0, "Cannot dispatch empty input"
             current_expert_idx = i + moe_rank * num_experts_per_device
             expert = experts[current_expert_idx]
             outputs += [expert(chunk)]

@@ -21,6 +21,7 @@ class QuickAccessMoEFactory:
     @staticmethod
     def create_from_model_name(
         pretrained_config: PretrainedConfig,
+        expert_class
     ) -> ModularMoELayer:
         model_type = getattr(pretrained_config, "model_type", None)
         if model_type is None:
@@ -44,6 +45,7 @@ class QuickAccessMoEFactory:
             expert_activation=pretrained_config.get("hidden_act", pretrained_config.get("expert_activation", "silu")),
             moe_config=moe_config,
             model_type=model_type,
+            expert_class=expert_class,
             pretrained_config=pretrained_config,
         )
 

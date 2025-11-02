@@ -33,8 +33,7 @@ from .moe_communication import (
     StandardMoECommunication,
 )
 from .moe_expert import (
-    StandardMoEExpert,
-    expert_class_mapping,
+    StandardMLPExpert,
 )
 from .moe_gate import FlexibleMoEGate, StandardMoEGate
 from .moe_loss import LossConfig, LossFunction, LossType
@@ -45,13 +44,6 @@ global_loss_registry = get_global_loss_registry()
 
 
 class ModularMoELayer(nn.Layer):
-    """
-    模块化MoE Layer EP并行实现
-
-    设计理念：
-    1. 高度模块化：门控、专家、通信完全解耦
-    2. 易于扩展：支持自定义门控策略和专家架构
-    """
 
     def __init__(
         self,
@@ -64,39 +56,10 @@ class ModularMoELayer(nn.Layer):
         expert_activation: str,
         moe_config: Dict,
         model_type: str,
+        expert_class,
         pretrained_config: Optional[PretrainedConfig] = None,
     ):
-        """
-        初始化模块化MoE Layer
 
-        Args:
-            hidden_size: 隐藏维度
-            moe_intermediate_size: MoE 中间维度
-            num_experts: 专家数量
-            num_experts_per_tok: 每个token选择的专家数(TopK)
-            num_shared_experts: 共享专家数量
-            norm_topk_prob: 是否归一化TopK的概率
-            expert_activation: 专家使用的激活函数
-            moe_config: 其他 MoE 相关配置
-
-
-        moe_config 内参数：
-            moe_group: MoE通信组
-            custom_gate: 自定义门控网络
-            custom_expert: 自定义专家网络
-            custom_communication: 自定义通信策略
-            expert_parallel_degree: EP 并行度
-            gate_activation: 门控激活函数
-            aux_loss_weight: 辅助损失权重（传统模式）
-            z_loss_weight: Z损失权重（传统模式）
-            train_topk_method: 训练时使用的 TopK 具体方法
-            inference_topk_method: 推理时使用的 TopK 具体方法
-            drop_tokens: 是否在 Expert 满后抛弃 Token
-            use_flexible_loss: 是否使用灵活损失系统
-            loss_configs: 损失配置列表（灵活模式）
-            loss_combiner_name: 损失组合器名称
-            expert_dropout: 专家dropout
-        """
         super().__init__()
         self.hidden_size = hidden_size
         self.num_experts = num_experts
@@ -106,10 +69,12 @@ class ModularMoELayer(nn.Layer):
         self.expert_activation = expert_activation
         self.norm_topk_prob = norm_topk_prob
         self.model_type = model_type
+        self.expert_class = expert_class
 
         self.sequence_parallel = pretrained_config.get("sequence_parallel", False)
         self.tensor_parallel_degree = pretrained_config.get("tensor_parallel_degree", 1)
         self.seq_length = pretrained_config.get("seq_length", pretrained_config.get("max_seq_len", 1024))
+        self.fuse_up_gate = pretrained_config.get("fuse_attention_ffn", False)
 
         try:
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
@@ -117,9 +82,7 @@ class ModularMoELayer(nn.Layer):
             moe_group = None
         self.expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
 
-        self.moe_group = moe_config.get("moe_group", "data")
         self.custom_gate = moe_config.get("custom_gate", None)
-        self.custom_expert = moe_config.get("custom_expert", None)
         self.custom_communication = moe_config.get("custom_communication", None)
         self.gate_activation = moe_config.get("gate_activation", "softmax")
         self.aux_loss_weight = moe_config.get("aux_loss_weight", 0.01)
@@ -130,35 +93,14 @@ class ModularMoELayer(nn.Layer):
             else moe_config.get("inference_topk_method", "greedy")
         )
         self.drop_tokens = moe_config.get("drop_tokens", True)
-        self.use_flexible_loss = moe_config.get("use_flexible_loss", False)
+        self.use_flexible_loss = moe_config.get("use_flexible_loss", False) # TODO: use customized loss system, not implemented yet
         self.expert_dropout = moe_config.get("expert_dropout", 0.0)
         self.loss_configs = moe_config.get("loss_configs", None)
         self.loss_combiner_name = moe_config.get("loss_combiner_name", "weighted_sum")
 
-        # 初始化EP并行相关参数
         self._init_expert_parallel()
-        # 创建门控网络
         if self.custom_gate is not None:
             self.gate = self.custom_gate
-        elif self.use_flexible_loss:
-            # TODO: 使用灵活损失系统，暂未实现
-            if self.loss_configs is None:
-                self.loss_configs = [
-                    LossConfig("auxiliary", LossType.AUXILIARY, weight=self.aux_loss_weight),
-                    LossConfig("z_loss", LossType.Z_LOSS, weight=self.z_loss_weight),
-                ]
-            self.gate = FlexibleMoEGate(
-                num_experts=self.num_experts,
-                expert_hidden_size=self.hidden_size,
-                drop_tokens=self.drop_tokens,
-                topk_method=self.topk_method,
-                num_experts_per_tok=self.num_experts_per_tok,
-                norm_topk_prob=self.norm_topk_prob,
-                moe_config=moe_config,
-                loss_registry=global_loss_registry,
-                loss_configs=self.loss_configs,
-                loss_combiner_name=self.loss_combiner_name,
-            )
         else:
             self.gate = StandardMoEGate(
                 num_experts=self.num_experts,
@@ -171,11 +113,8 @@ class ModularMoELayer(nn.Layer):
                 seq_length=self.seq_length,
             )
 
-        # 创建专家网络
-        if self.custom_expert is not None:
-            expert_class = expert_class_mapping.get(self.custom_expert, StandardMoEExpert)
-        else:
-            expert_class = StandardMoEExpert
+        if self.expert_class is None:
+            self.expert_class = StandardMLPExpert
 
         routed_expert_pretrained_config = deepcopy(pretrained_config)
         shared_expert_pretrained_config = deepcopy(pretrained_config)
@@ -185,23 +124,18 @@ class ModularMoELayer(nn.Layer):
         elif self.expert_parallel_degree > 1 and self.tensor_parallel_degree >= 1:
             routed_expert_pretrained_config.tensor_parallel_degree = 1
 
-        # self.experts = nn.LayerList(
-        #     [expert_class(
-        #             hidden_size=self.hidden_size,
-        #             intermediate_size=self.moe_intermediate_size,
-        #             expert_activation=self.expert_activation,
-        #             expert_dropout=self.expert_dropout,
-        #             config={},
-        #         )
-        #     for _ in range(self.num_experts)]
-        # )
-
+        expert_args = {}
+        expert_args["config"] = routed_expert_pretrained_config
+        expert_args["intermediate_size"] = self.moe_intermediate_size
+        # Add more arguments for different models
+        if self.model_type == "qwen3_moe":
+            pass
+        elif self.model_type == "glm4_moe":
+            pass
         self.experts = nn.LayerList(
-            [
-                MLP(config=routed_expert_pretrained_config, intermediate_size=pretrained_config.moe_intermediate_size)
-                for _ in range(self.num_experts)
-            ]
+            [self.expert_class(**expert_args) for _ in range(self.num_experts)]
         )
+
         if self.expert_parallel_degree > 1:
             self.token_dispatcher = MoEFlexTokenDispatcher(
                 self.num_experts_per_device, self.num_experts_per_tok, self.num_experts, self.moe_group
@@ -209,22 +143,14 @@ class ModularMoELayer(nn.Layer):
         else:
             self.token_dispatcher = None
 
-        # 创建共享专家
+        shared_expert_args = {}
+        shared_expert_args["config"] = shared_expert_pretrained_config
+        shared_expert_args["intermediate_size"] = self.moe_intermediate_size * self.num_shared_experts
         if self.num_shared_experts > 0:
-            # self.shared_experts = expert_class(
-            #     hidden_size=self.hidden_size,
-            #     intermediate_size=self.moe_intermediate_size * self.num_shared_experts,
-            #     expert_activation=self.expert_activation,
-            #     expert_dropout=self.expert_dropout,
-            #     config={},
-            # )
-            self.shared_experts = MLP(
-                config=shared_expert_pretrained_config, intermediate_size=pretrained_config.moe_intermediate_size
-            )
+            self.shared_experts = self.expert_class(**shared_expert_args)
         else:
             self.shared_experts = None
 
-        # 创建通信策略
         if self.custom_communication is not None:
             self.communication = self.custom_communication
         else:
@@ -246,20 +172,14 @@ class ModularMoELayer(nn.Layer):
                     p.is_distributed = True
 
     def _init_expert_parallel(self):
-        """
-        初始化专家并行相关参数
-        """
-
         def _parse_moe_expert_parallel(num_experts: int, expert_parallel_degree: int) -> int:
             """
-            解析MoE专家并行参数
-
             Args:
-                num_experts: 专家总数
-                expert_parallel_degree: 专家并行度
+                num_experts: Total number of experts
+                expert_parallel_degree: Expert parallel groups
 
             Returns:
-                moe_num_experts_per_device: 每个设备的专家数
+                moe_num_experts_per_device: Number of experts per device
             """
             assert (
                 num_experts >= expert_parallel_degree
@@ -282,11 +202,8 @@ class ModularMoELayer(nn.Layer):
             and self.expert_parallel_degree > 1
             # and dist.fleet.get_hybrid_communicate_group().get_data_parallel_world_size() > 1
         ):
-            if self.moe_group == "data":
-                self.moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
-            elif self.moe_group == "expert":
-                self.moe_group = dist.fleet.get_hybrid_communicate_group().get_expert_parallel_group()
-                self.moe_grad_group = dist.fleet.get_hybrid_communicate_group().get_moe_sharding_parallel_group()
+            self.moe_group = dist.fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+            self.moe_grad_group = dist.fleet.get_hybrid_communicate_group().get_moe_sharding_parallel_group()
             self.moe_rank = dist.get_rank(self.moe_group)
             self.moe_rank = 0 if self.moe_rank < 0 else self.moe_rank
             new_expert_parallel_degree = dist.get_world_size(self.moe_group)
@@ -303,13 +220,11 @@ class ModularMoELayer(nn.Layer):
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         """
-        MoE Layer前向传播
-
         Args:
-            hidden_states: 输入隐藏状态，形状: [batch_size, seq_len, hidden_size]
+            hidden_states: Shape: [batch_size, seq_len, hidden_size]
 
         Returns:
-            output: 输出隐藏状态，形状: [batch_size, seq_len, hidden_size]
+            output: Shape: [batch_size, seq_len, hidden_size]
         """
         if self.expert_parallel_degree <= 1 and self.sequence_parallel:
             hidden_states = GatherOp.apply(hidden_states)
@@ -319,7 +234,6 @@ class ModularMoELayer(nn.Layer):
             hidden_states
         )
 
-        # MoE前向传播
         if self.expert_parallel_degree > 1:
             output = self._forward_with_ep_parallel(
                 hidden_states, topk_indices, topk_weights, gates_masked, mask, priorities
@@ -332,32 +246,30 @@ class ModularMoELayer(nn.Layer):
                 reshaped_input = hidden_states
             output = self._forward_traditional_moe(reshaped_input, topk_indices, topk_weights)
 
-        # 恢复原始形状
         output = output.reshape(orig_shape)
 
-        # 添加共享专家输出
         if self.shared_experts is not None:
             shared_output = self.shared_experts(residuals)
             output = output + shared_output
 
         if self.expert_parallel_degree <= 1 and self.sequence_parallel:
             output = ScatterOp.apply(output)
-        # currently no need return aux_loss and z_loss
+
         return output, aux_loss
 
     def _forward_traditional_moe(
         self, hidden_states: paddle.Tensor, selected_experts: paddle.Tensor, topk_weights: paddle.Tensor
     ) -> paddle.Tensor:
         """
-        传统MoE前向传播
+        Forward without expert parallelism
 
         Args:
-            hidden_states: 输入隐藏状态，形状: [batch_size*seq_len, hidden_size]
-            selected_experts: TopK专家索引，形状: [seq_len, num_experts_per_tok]
-            topk_weights: TopK权重，形状: [seq_len, num_experts_per_tok]
+            hidden_states: Input hidden states, shape: [batch_size*seq_len, hidden_size]
+            selected_experts: TopK experts indices, shape: [seq_len, num_experts_per_tok]
+            topk_weights: TopK weights, shape: [seq_len, num_experts_per_tok]
 
         Returns:
-            output: 输出隐藏状态，形状: [seq_len, hidden_size]
+            output: Output hidden states, shape: [seq_len, hidden_size]
         """
 
         _, d_model = hidden_states.shape
@@ -395,19 +307,18 @@ class ModularMoELayer(nn.Layer):
         priorities: paddle.Tensor,
     ) -> paddle.Tensor:
         """
-        EP并行MoE前向传播
+        Forward with expert parallelism
 
         Args:
-            hidden_states: 输入隐藏状态，形状: [seq_len, hidden_size]
-            topk_indices: 形状: [seq_len, num_experts_per_token]
-            topk_weights: 形状: [seq_len, num_experts_per_token]
-            gates_masked: mask 后的 hidden_states，形状: [seq_len, num_experts]
-            mask: 由每个 token 选中的 TopK 专家转换成 one-hot encoding，每一行会有 num_experts_per_tok 个 1，其他都是0，形状: [seq_len, num_experts]
+            hidden_states: Input hidden states, shape: [seq_len, hidden_size]
+            topk_indices: TopK experts indices, shape: [seq_len, num_experts_per_token]
+            topk_weights: TopK weights, shape: [seq_len, num_experts_per_token]
+            gates_masked: Masked hidden_states，形状: [seq_len, num_experts]
+            mask: One-hot encoding of the selected experts for each token, shape: [seq_len, num_experts]
 
         Returns:
-            output: 输出隐藏状态，形状: [seq_len, hidden_size]
+            output: Output hidden states, shape: [seq_len, hidden_size]
         """
-        # 使用通信策略进行EP并行
         output = self.communication.forward(
             hidden_states,
             topk_indices,
@@ -427,38 +338,23 @@ class ModularMoELayer(nn.Layer):
         return output
 
     def get_auxiliary_loss(self) -> paddle.Tensor:
-        """
-        获取辅助损失
-
-        Returns:
-            aux_loss: 辅助损失，标量
-        """
         return self.gate.get_auxiliary_loss()
 
     def get_z_loss(self) -> paddle.Tensor:
-        """
-        获取Z损失
-
-        Returns:
-            z_loss: Z损失，标量
-        """
         return self.gate.get_z_loss()
 
     def get_all_losses(self) -> Dict[str, paddle.Tensor]:
-        """获取所有损失（灵活模式）"""
         if hasattr(self.gate, "get_all_losses"):
             return self.gate.get_all_losses()
         else:
             return {"auxiliary": self.get_auxiliary_loss(), "z_loss": self.get_z_loss()}
 
     def get_total_loss(self) -> paddle.Tensor:
-        """获取总损失（灵活模式）"""
         if hasattr(self.gate, "get_total_loss"):
             return self.gate.get_total_loss()
         else:
             return self.get_auxiliary_loss() + self.get_z_loss()
 
-    # 灵活损失管理方法
     def add_loss_function(
         self,
         name: str,
@@ -468,12 +364,10 @@ class ModularMoELayer(nn.Layer):
         enabled: bool = True,
         params: Optional[Dict[str, Any]] = None,
     ):
-        """添加自定义损失函数"""
         if not self.use_flexible_loss:
-            logger.warning("当前使用传统损失模式，无法添加自定义损失函数")
+            logger.warning("Current not open `use_flexible_loss`, cannot add custom losses")
             return
 
-        # 注册损失函数
         loss_registry.register_loss(name, loss_func)
 
         # 添加损失配置
@@ -481,48 +375,39 @@ class ModularMoELayer(nn.Layer):
         if hasattr(self.gate, "add_loss_config"):
             self.gate.add_loss_config(config)
         else:
-            logger.warning("当前门控层不支持动态添加损失函数")
+            logger.warning("Current not open `add_loss_config` on gate, cannot add custom losses")
 
     def remove_loss_function(self, name: str):
-        """移除损失函数"""
         if not self.use_flexible_loss:
-            logger.warning("当前使用传统损失模式，无法移除损失函数")
+            logger.warning("Current not open `use_flexible_loss`, cannot remove custom losses")
             return
 
         if hasattr(self.gate, "remove_loss_config"):
             self.gate.remove_loss_config(name)
         else:
-            logger.warning("当前门控层不支持动态移除损失函数")
+            logger.warning("Current not open `remove_loss_config` on gate, cannot remove custom losses")
 
     def update_loss_weights(self, weights: Dict[str, float]):
-        """更新损失权重"""
         if not self.use_flexible_loss:
-            logger.warning("当前使用传统损失模式，无法动态更新损失权重")
+            logger.warning("Current not open `use_flexible_loss`, cannot update loss weights")
             return
 
         if hasattr(self.gate, "update_loss_weights"):
             self.gate.update_loss_weights(weights)
         else:
-            logger.warning("当前门控层不支持动态更新损失权重")
+            logger.warning("Current not open `update_loss_weights` on gate, cannot update loss weights")
 
     def set_loss_combiner(self, combiner_name: str):
-        """设置损失组合器"""
         if not self.use_flexible_loss:
-            logger.warning("当前使用传统损失模式，无法设置损失组合器")
+            logger.warning("Current not open `use_flexible_loss`, cannot set loss combiner")
             return
 
         if hasattr(self.gate, "set_loss_combiner"):
             self.gate.set_loss_combiner(combiner_name)
         else:
-            logger.warning("当前门控层不支持动态设置损失组合器")
+            logger.warning("Current not open `set_loss_combiner` on gate, cannot set loss combiner")
 
     def get_expert_info(self) -> Dict[str, Any]:
-        """
-        获取专家信息
-
-        Returns:
-            expert_info: 专家信息字典
-        """
         return {
             "num_experts": self.num_experts,
             "num_experts_per_device": self.num_experts_per_device,

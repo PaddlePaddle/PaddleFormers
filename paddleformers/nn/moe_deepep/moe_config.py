@@ -22,8 +22,6 @@ MOE_CONFIG = {
         "z_loss_weight": 0.0,
         "expert_dropout": 0.0,
         "use_flexible_loss": False,
-        "moe_group": "expert",
         "drop_tokens": False,
-        "custom_expert": "MLP",
     }
 }
