@@ -21,9 +21,6 @@ import paddle.distributed as dist
 from paddle import Tensor, nn
 from paddle.distributed.communication.group import Group
 
-from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
-
-
 class MoECommunicationInterface(ABC):
     """
     MoE通信接口

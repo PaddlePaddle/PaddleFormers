@@ -30,17 +30,14 @@ from ...transformers.configuration_utils import PretrainedConfig
 from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
 from .moe_communication import (
     DeepEPMoECommunication,
-    MoECommunicationInterface,
     StandardMoECommunication,
 )
 from .moe_expert import (
-    MoEExpertInterface,
-    Qwen2MoeMLP,
     StandardMoEExpert,
     expert_class_mapping,
 )
 from .moe_gate import FlexibleMoEGate, StandardMoEGate
-from .moe_loss import LossCombiner, LossConfig, LossFunction, LossRegistry, LossType
+from .moe_loss import LossConfig, LossFunction, LossType
 from .moe_loss_instance import get_global_loss_registry
 
 logger = logging.getLogger(__name__)
@@ -116,7 +113,7 @@ class ModularMoELayer(nn.Layer):
 
         try:
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
-        except:
+        except Exception:
             moe_group = None
         self.expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
 
@@ -235,13 +232,6 @@ class ModularMoELayer(nn.Layer):
                 self.communication = StandardMoECommunication()
             else:
                 self.communication = DeepEPMoECommunication()
-
-        # self.is_dummy_moe = False if self.expert_parallel_degree > 1 else True
-        # for k in self.experts:
-        #     if k is not None:
-        #         for p in k.parameters():
-        #             p.expert = not self.is_dummy_moe
-        #             p.no_sync = not self.is_dummy_moe
 
         if hasattr(dist, "fleet") and dist.is_initialized() and self.expert_parallel_degree > 1:
             self.is_mp_moe = False

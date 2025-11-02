@@ -23,7 +23,6 @@ from ...nn.mlp import MLP
 from ...transformers import Linear, linear_utils
 from ...transformers.activations import ACT2FN
 from ...transformers.configuration_utils import PretrainedConfig
-from ...transformers.llama import fusion_ops
 from ...transformers.refined_recompute import (
     RRColumnParallelLinear,
     RRColumnSequenceParallelLinear,
@@ -136,7 +135,7 @@ class Qwen2MoeMLP(nn.Layer):
         self.expert_dropout = expert_dropout
 
         self.skip_recompute_ops = config.get("skip_recompute_ops", {})
-        self.fuse_attention_ffn = config.get("skip_recompute_ops", False)
+        self.fuse_attention_ffn = config.get("fuse_attention_ffn", False)
         self.tensor_parallel_degree = config.get("tensor_parallel_degree", 1)
         self.sequence_parallel = config.get("sequence_parallel", 1)
         self.recompute = config.get("recompute", False)
@@ -198,13 +197,6 @@ class Qwen2MoeMLP(nn.Layer):
                 self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)  # w3
             self.down_proj = Linear(self.intermediate_size, self.hidden_size, bias_attr=False)  # w2
 
-        # if self.expert_activation == "silu":
-        #     self.act_fn = fusion_ops.swiglu
-        #     self.fuse_swiglu = True
-        # else:
-        #     self.act_fn = ACT2FN[self.expert_activation]
-        #     self.fuse_swiglu = False
-
         self.act_fn = ACT2FN[self.expert_activation]
         self.fuse_swiglu = config.get("fuse_swiglu", False)
 
@@ -218,10 +210,6 @@ class Qwen2MoeMLP(nn.Layer):
         else:
             x, y = self.gate_proj(x), self.up_proj(x)
 
-        # if self.fuse_swiglu:
-        #     x = self.act_fn(x, y)
-        # else:
-        #     x = self.act_fn(x) * y
 
         if self.fuse_swiglu:
             x = paddle.concat([x, y], axis=-1)

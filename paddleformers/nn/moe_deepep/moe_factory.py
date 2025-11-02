@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
-from pathlib import Path
-from typing import Any, Dict
-
 from ...transformers.configuration_utils import PretrainedConfig
 from .modular_moe_layer import ModularMoELayer
 from .moe_config import MOE_CONFIG

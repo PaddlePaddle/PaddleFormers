@@ -27,11 +27,11 @@ import_structure = {
 }
 
 if TYPE_CHECKING:
-    from .modular_moe_layer import *
-    from .moe_communication import *
-    from .moe_expert import *
+    from .modular_moe_layer import ModularMoELayer
+    from .moe_communication import MoECommunicationInterface, StandardMoECommunication, DeepEPMoECommunication
+    from .moe_expert import MoEExpertInterface, StandardMoEExpert, Qwen2MLP
     from .moe_factory import *
-    from .moe_gate import *
+    from .moe_gate import PretrainedMoEGate
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

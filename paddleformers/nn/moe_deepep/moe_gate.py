@@ -24,9 +24,8 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 
-from ...nn.linear import Linear as GeneralLinear
 from ...utils.log import logger
-from .moe_loss import LossCombiner, LossConfig, LossFunction, LossRegistry, LossType
+from .moe_loss import LossConfig, LossType
 
 
 class MoEGateMixin:

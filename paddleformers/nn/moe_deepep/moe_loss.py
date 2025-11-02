@@ -15,17 +15,11 @@
 from __future__ import annotations
 
 import logging
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Protocol
 
-import numpy as np
 import paddle
-import paddle.distributed as dist
-from paddle import Tensor, nn
-from paddle.distributed import fleet
-from paddle.distributed.communication.group import Group
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +61,7 @@ class LossFunction(Protocol):
         **kwargs
     ) -> paddle.Tensor:
         """计算损失函数"""
-        ...
+        pass
 
 
 class LossCombiner(Protocol):

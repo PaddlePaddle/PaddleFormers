@@ -538,7 +538,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 )
                 try:
                     moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
-                except:
+                except Exception:
                     moe_group = None
                 expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
                 # TODO: merge disable_ffn_model_parallel and expert_parallel_degree

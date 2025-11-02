@@ -16,7 +16,7 @@ from typing import Dict, Optional
 
 import paddle
 
-from .moe_loss import LossCombiner, LossConfig, LossFunction, LossRegistry, LossType
+from .moe_loss import LossConfig, LossRegistry
 
 
 # 全局损失注册器实例. 使用函数延迟创建实例
