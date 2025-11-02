@@ -16,7 +16,7 @@
 # limitations under the License.
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Tuple
 
 import paddle
 import paddle.distributed as dist
@@ -25,7 +25,6 @@ import paddle.nn.functional as F
 from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 
 from ...utils.log import logger
-from .moe_loss import LossConfig, LossType
 
 
 class MoEGateMixin:
@@ -213,9 +212,9 @@ class MoEGateMixin:
 
     def _probs_drop_policy(
         self,
-        scores: torch.Tensor,
+        scores: paddle.Tensor,
         capacity: int,
-    ) -> torch.Tensor:
+    ) -> paddle.Tensor:
         """
         Implements the Probability-based (Probs) drop policy to enforce expert capacity.
 
@@ -224,21 +223,21 @@ class MoEGateMixin:
         2. Its score for that expert is among the top 'capacity' scores for that expert.
 
         Args:
-            scores (torch.Tensor): [num_tokens, num_total_experts].
+            scores (paddle.Tensor): [num_tokens, num_total_experts].
                                 This should already contain zeros for non-selected
                                 experts (i.e., the result of top-K gating).
             capacity (int): The maximum number of tokens any single expert can handle.
                                     (Not strictly used here, but good practice to include).
 
         Returns:
-            torch.Tensor: [num_tokens, num_total_experts] boolean mask (converted to float).
+            paddle.Tensor: [num_tokens, num_total_experts] boolean mask (converted to float).
                         1.0 = Assigned and within capacity. 0.0 = Dropped or unassigned.
         """
         num_tokens, num_experts = scores.shape
 
         # --- Step 1: Find the 'capacity' best tokens for *each* expert ---
 
-        # Use torch.topk along dim=0 (the token dimension) to find the indices
+        # Use paddle.topk along dim=0 (the token dimension) to find the indices
         # of the tokens that have the highest scores for each expert (column).
         # Since 'scores' has shape [Tokens, Experts], dim=0 returns the token indices.
 
@@ -273,7 +272,7 @@ class MoEGateMixin:
 
         # --- Step 3: Ensure only originally selected tokens are kept ---
 
-        # Since torch.topk can pick up tokens with score 0 if num_tokens < capacity,
+        # Since paddle.topk can pick up tokens with score 0 if num_tokens < capacity,
         # we must ensure that we only keep tokens that had a positive score initially.
         # This step implicitly cleans up any spurious assignments made by topk on zero scores.
 
@@ -519,9 +518,6 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         gates_masked = gates_masked.to(gates.dtype)
         gates_masked *= self.routed_scaling_factor
 
-        topk_weight = gates_masked.take_along_axis(top_idx, axis=-1)
-        # assert paddle.allclose(topk_weight, top_gate, equal_nan=False), "topk_weight != top_gate"
-
         return (
             capacity,  # new capacity
             top_gate,  # weights of selected experts for each token [num_tokens, num_experts_per_token]
@@ -534,293 +530,3 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
             l_aux,
             l_zloss,
         )
-
-    def topkgating_nodrop(self, gates: paddle.Tensor):
-        """Implements TopKGating on logits."""
-        if len(gates.shape) == 3:
-            batch_size, seq_len, d_model = gates.shape
-            gates = gates.reshape([-1, d_model])
-        elif len(gates.shape) == 2:
-            batch_size_seq_len, d_model = gates.shape
-
-        gates_ori = gates
-
-        # 计算 logits ：如果使用 self.weight 那么使用下面两行
-        # logits = F.linear(gates, self.weight)
-        # 计算 logits ：如果使用 GeneralLinear 那么使用下面一行
-        logits = self.gate(gates)
-        gates = self.gate_score_func(logits=logits)
-
-        l_zloss = self._cal_z_loss(gates)
-
-        # get topk gates
-        if self.topk_method == "greedy":
-            top_gate, top_idx = self._topk_greedy(gates, k=self.num_experts_per_tok)
-        elif self.topk_method == "group_limited_greedy":
-            top_gate, top_idx = self._topk_group_limited_greedy(
-                gates, k=self.num_experts_per_tok, n_group=self.n_group, topk_group=self.topk_group
-            )
-        elif self.topk_method == "noaux_tc":
-            top_gate, top_idx = self._topk_noaux_tc(
-                gates, k=self.num_experts_per_tok, n_group=self.n_group, topk_group=self.topk_group
-            )
-            # norm gate to sum 1
-        if self.num_experts_per_tok > 1 and self.norm_topk_prob:
-            denominator = top_gate.sum(axis=-1, keepdim=True) + 1e-20
-            top_gate = top_gate / denominator
-        top_gate = top_gate * self.routed_scaling_factor
-
-        # get topk mask
-        mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0), axis=1)
-
-        # The gate applied during dispatch and to weight the FFN output is computed from the original affinity score s_{i,t} (without the bias).
-        gates_masked = gates * mask
-        gates_s = paddle.sum(gates_masked, axis=-1, keepdim=True)
-        denom_s = paddle.clip(gates_s, min=paddle.finfo(gates_masked.dtype).eps)
-
-        if self.norm_topk_prob:
-            gates_masked = gates_masked / denom_s
-        gates_masked *= self.routed_scaling_factor
-        if self.seq_aux:
-            l_aux = self._cal_seq_aux_loss(gates_ori, self.num_experts_per_tok, mask, self.seq_length)
-        else:
-            l_aux = self._cal_aux_loss(gates, mask)
-        exp_counts = paddle.sum(mask.cast(paddle.int64), axis=0)
-        return None, None, None, gates_masked, mask, None, l_aux, l_zloss
-
-
-# TODO: 暂未实现
-class FlexibleMoEGate(nn.Layer, MoEGateMixin):
-    """自定义损失函数的 MoE Gate"""
-
-    def __init__(
-        self,
-        num_experts: int,
-        expert_hidden_size: int,
-        drop_tokens: bool,
-        topk_method: str,
-        num_experts_per_tok: int,
-        norm_topk_prob: bool,
-        moe_config: Dict,
-        loss_registry,
-        loss_configs: Optional[List[LossConfig]] = None,
-        loss_combiner_name: str = "weighted_sum",
-        **kwargs
-    ):
-        super(FlexibleMoEGate, self).__init__()
-
-        self.num_experts = num_experts
-        self.expert_hidden_size = expert_hidden_size
-        self.drop_tokens = drop_tokens
-        # Qwen2MoE: greedy
-        # DeepSeekV2&V3: group_limited_greedy for training, and noaux_tc for inference
-        self.topk_method = topk_method
-        self.num_experts_per_tok = num_experts_per_tok
-        self.norm_topk_prob = norm_topk_prob
-        # force keep in float32 when using amp
-        self._cast_to_low_precision = False
-
-        self.scoring_func = moe_config.get("scoring_func", "sigmoid")
-        self.capacity_factor = moe_config.get("capacity_factor", 1.0)
-        self.eval_capacity_factor = moe_config.get("eval_capacity_factor", 1.0)
-        self.min_capacity = moe_config.get("min_capacity", 1)
-        self.max_capacity = moe_config.get("max_capacity", pow(2, 32))
-        self.group = moe_config.get("group", None)
-        self.global_aux_loss = moe_config.get("global_aux_loss", False)
-        self.use_rts = moe_config.get("use_rts", True)
-        self.top2_2nd_expert_sampling = moe_config.get("top2_2nd_expert_sampling", True)
-        self.drop_policy = moe_config.get("drop_policy", "probs")
-        self.n_group = moe_config.get("n_group", 1)  # for group_limited_greedy
-        self.topk_group = moe_config.get("topk_group", 1)  # for group_limited_greedy
-        self.routed_scaling_factor = moe_config.get("routed_scaling_factor", 1.0)
-        self.seq_aux = moe_config.get("seq_aux", False)
-
-        # 损失相关配置
-        self.loss_registry = loss_registry
-        self.loss_configs = loss_configs or [
-            LossConfig("auxiliary", LossType.AUXILIARY, weight=0.01),
-            LossConfig("z_loss", LossType.Z_LOSS, weight=0.0),
-        ]
-
-        # 设置损失组合器
-        self.loss_combiner = loss_registry.get_combiner(loss_combiner_name)
-        if self.loss_combiner is None:
-            logger.warning(f"未找到损失组合器: {loss_combiner_name}, 使用默认组合器")
-            self.loss_combiner = loss_registry.get_combiner("weighted_sum")
-
-        # 初始化损失存储
-        self.current_losses = {}
-        self.total_loss = paddle.to_tensor(0.0)
-
-        # weight of hidden_state -> score
-        self.weight = paddle.create_parameter(
-            shape=[self.expert_hidden_size, self.num_experts],
-            dtype="bfloat16",
-            default_initializer=paddle.nn.initializer.Uniform(),
-        )
-
-    def _gumbel_softmax(self, logits: paddle.Tensor, temperature: float = 1.0) -> paddle.Tensor:
-        """Gumbel-Softmax采样"""
-        gumbel_noise = -paddle.log(-paddle.log(paddle.rand_like(logits) + 1e-8) + 1e-8)
-        return paddle.nn.functional.softmax((logits + gumbel_noise) / temperature)
-
-    def forward(
-        self,
-        gates: paddle.Tensor,
-    ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
-        """Implements TopKGating on logits."""
-
-        if len(gates.shape) == 3:
-            batch_size, seq_len, d_model = gates.shape
-            gates = gates.reshape([-1, d_model])
-        elif len(gates.shape) == 2:
-            batch_size_seq_len, d_model = gates.shape
-
-        gates_ori = gates
-
-        # 将 hidden_state 转换成 score（每个 token 对每个专家的偏好分数）
-        with paddle.amp.auto_cast(False):
-            hidden_states = gates.cast(self.weight.dtype)
-            logits = F.linear(hidden_states.cast("float32"), self.weight.cast("float32"))
-            gates = self.gate_score_func(logits=logits)
-
-        # get topk gates
-        if self.topk_method == "greedy":
-            top_gate, top_idx = self._topk_greedy(gates, k=self.num_experts_per_tok)
-        elif self.topk_method == "group_limited_greedy":
-            top_gate, top_idx = self._topk_group_limited_greedy(
-                gates, k=self.num_experts_per_tok, n_group=self.n_group, topk_group=self.topk_group
-            )
-        elif self.topk_method == "noaux_tc":
-            top_gate, top_idx = self._topk_noaux_tc(
-                gates, k=self.num_experts_per_tok, n_group=self.n_group, topk_group=self.topk_group
-            )
-            # norm gate to sum 1
-        if self.num_experts_per_tok > 1 and self.norm_topk_prob:
-            denominator = top_gate.sum(axis=-1, keepdim=True) + 1e-20
-            top_gate = top_gate / denominator
-        top_gate = top_gate * self.routed_scaling_factor
-
-        # get topk mask
-        mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype="float32"), axis=1)
-
-        # 计算所有损失函数
-        self.current_losses = {}
-        config_dict = {config.name: config for config in self.loss_configs}
-
-        for config in self.loss_configs:
-            if not config.enabled:
-                continue
-
-            loss_func = self.loss_registry.get_loss(config.name)
-            if loss_func is None:
-                logger.warning(f"未找到损失函数: {config.name}")
-                continue
-
-            try:
-                self.loss_value = loss_func(
-                    routing_weights=top_gate,
-                    selected_experts=top_idx,
-                    gate_logits=gates,
-                    num_experts=self.num_experts,
-                    batch_size=batch_size,
-                    seq_len=seq_len,
-                    **config.params,
-                )
-                self.current_losses[config.name] = self.loss_value
-            except Exception as e:
-                logger.warning(f"计算损失函数 {config.name} 时出错: {e}")
-                self.current_losses[config.name] = paddle.to_tensor(0.0)
-
-        # 组合损失
-        self.total_loss = self.loss_combiner(self.current_losses, config_dict)
-
-        exp_counts = paddle.sum(mask.cast(paddle.int64), axis=0)
-
-        if self.drop_tokens:
-            # Calculate configured capacity and remove locations outside capacity from mask
-            capacity = self._capacity(
-                gates,
-                self.capacity_factor * self.num_experts_per_tok,
-                self.max_capacity,
-                self.min_capacity,
-            )
-
-            # update mask and locations by capacity
-            if self.drop_policy == "probs":
-                topk_masked_gates = paddle.zeros_like(gates).put_along_axis(top_idx, top_gate, axis=1)
-                capacity_probs, capacity_indices = paddle.topk(topk_masked_gates, k=capacity, axis=0, sorted=False)
-                token_priority = self._priority(capacity_indices, capacity)
-
-            elif self.drop_policy == "position":
-                token_priority = self._priority(top_idx, capacity)
-            else:
-                raise ValueError(f"Invalid drop_policy: {self.drop_policy}")
-        else:
-            # Do not drop tokens - set capacity according to current expert assignments
-            local_capacity = paddle.max(exp_counts)
-            if self.group is not None:
-                dist.all_reduce(local_capacity, op=dist.ReduceOp.MAX, group=self.group)
-            capacity = int(local_capacity)
-            token_priority = self._priority(top_idx, capacity)
-
-        # normalize gates
-        # gates_masked is equal to top_gate.
-        gates_masked = gates * mask
-        # if self.training:
-        gates_s = paddle.sum(gates_masked, axis=-1, keepdim=True)
-        denom_s = paddle.clip(gates_s, min=paddle.finfo(gates_masked.dtype).eps)
-        if self.norm_topk_prob:
-            gates_masked = gates_masked / denom_s
-        gates_masked *= self.routed_scaling_factor
-
-        return (
-            capacity,
-            gates_masked.take_along_axis(top_idx, axis=-1),
-            top_idx,
-            token_priority.take_along_axis(top_idx, axis=-1),
-            self.total_loss,
-            paddle.to_tensor(0.0),
-        )
-
-    def add_loss_config(self, config: LossConfig):
-        """添加损失配置"""
-        self.loss_configs.append(config)
-        logger.info(f"添加损失配置: {config.name}, 权重: {config.weight}")
-
-    def remove_loss_config(self, name: str):
-        """移除损失配置"""
-        self.loss_configs = [config for config in self.loss_configs if config.name != name]
-        logger.info(f"移除损失配置: {name}")
-
-    def update_loss_weights(self, weights: Dict[str, float]):
-        """更新损失权重"""
-        for config in self.loss_configs:
-            if config.name in weights:
-                config.weight = weights[config.name]
-        logger.info(f"更新损失权重: {weights}")
-
-    def set_loss_combiner(self, combiner_name: str):
-        """设置损失组合器"""
-        combiner = self.loss_registry.get_combiner(combiner_name)
-        if combiner is not None:
-            self.loss_combiner = combiner
-            logger.info(f"设置损失组合器: {combiner_name}")
-        else:
-            logger.warning(f"未找到损失组合器: {combiner_name}")
-
-    def get_auxiliary_loss(self) -> paddle.Tensor:
-        """获取辅助损失（兼容性方法）"""
-        return self.current_losses.get("auxiliary", paddle.to_tensor(0.0))
-
-    def get_z_loss(self) -> paddle.Tensor:
-        """获取Z损失（兼容性方法）"""
-        return self.current_losses.get("z_loss", paddle.to_tensor(0.0))
-
-    def get_all_losses(self) -> Dict[str, paddle.Tensor]:
-        """获取所有损失"""
-        return self.current_losses.copy()
-
-    def get_total_loss(self) -> paddle.Tensor:
-        """获取总损失"""
-        return self.total_loss

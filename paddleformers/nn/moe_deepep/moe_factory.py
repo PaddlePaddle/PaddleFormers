@@ -14,22 +14,31 @@
 
 from ...transformers.configuration_utils import PretrainedConfig
 from .modular_moe_layer import ModularMoELayer
-from .moe_config import MOE_CONFIG
 
 
 class QuickAccessMoEFactory:
     @staticmethod
     def create_from_model_name(
         pretrained_config: PretrainedConfig,
-        expert_class
+        expert_class,
+        gate_activation: str,
+        expert_activation: str,
+        train_topk_method: str,
+        inference_topk_method: str,
+        drop_tokens: bool,
     ) -> ModularMoELayer:
         model_type = getattr(pretrained_config, "model_type", None)
         if model_type is None:
             raise ValueError("Cannot determine model type from pretrained_config")
 
-        moe_config = MOE_CONFIG.get(model_type, None)
-        if moe_config is None:
-            raise ValueError(f"No MoE config found for {model_type}")
+        moe_config = {
+            "gate_activation": gate_activation,
+            "expert_activation": expert_activation,
+            "train_topk_method": train_topk_method,
+            "inference_topk_method": inference_topk_method,
+            "drop_tokens": drop_tokens
+            # TODO: support aux_loss_weight, z_loss_weight, expert_dropout, use_flexible_loss, loss_configs
+        }
 
         return ModularMoELayer(
             hidden_size=pretrained_config.hidden_size,

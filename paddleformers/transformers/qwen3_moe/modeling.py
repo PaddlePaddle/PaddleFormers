@@ -20,12 +20,13 @@ from functools import partial
 from typing import List, Optional, Tuple, Union
 
 import paddle
+import paddle.distributed as dist
 import paddle.nn.functional as F
 from paddle import Tensor, nn
+from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
-import paddle.distributed as dist
-from paddle.distributed import fleet
+
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
@@ -331,7 +332,19 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         if (layer_idx not in config.mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
         ):
-            self.mlp = QuickAccessMoEFactory.create_from_model_name(config, Qwen3MoeMLP) if expert_parallel_degree > 1 else Qwen3MoeSparseMoeBlock(config)
+            self.mlp = (
+                QuickAccessMoEFactory.create_from_model_name(
+                    pretrained_config=config,
+                    expert_class=Qwen3MoeMLP,
+                    gate_activation="softmax",
+                    expert_activation="silu",
+                    train_topk_method="greedy",
+                    inference_topk_method="greedy",
+                    drop_tokens=False,
+                )
+                if expert_parallel_degree > 1
+                else Qwen3MoeSparseMoeBlock(config)
+            )
         else:
             # num_experts == 0 or this layer is not sparse layer
             self.mlp = Qwen3MoeMLP(config)
@@ -489,17 +502,9 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
         LAYER_ROWWISE = ["self_attn.o_proj.weight"]
 
-        FUSE_LAYER_COLWISE = [
-            "self_attn.qkv_proj.weight",
-        ]
-
         EXPERT_LAYER_COLWISE = [
             "up_proj.weight",
             "gate_proj.weight",
-        ]
-
-        FUSE_EXPERT_LAYER_COLWISE = [
-            "up_gate_proj.weight",
         ]
 
         EXPERT_LAYER_ROWWISE = ["down_proj.weight"]
@@ -508,10 +513,6 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             "self_attn.q_proj.bias",
             "self_attn.k_proj.bias",
             "self_attn.v_proj.bias",
-        ]
-
-        FUSE_BIAS_KEYS = [
-            "self_attn.qkv_proj.bias",
         ]
 
         def make_base_actions():
@@ -543,7 +544,9 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                     # if not config.disable_ffn_model_parallel:
                     actions.update(
                         {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=True)
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
+                                fn, is_column=True
+                            )
                             for e in range(config.num_experts)
                             for k in EXPERT_LAYER_COLWISE
                         }

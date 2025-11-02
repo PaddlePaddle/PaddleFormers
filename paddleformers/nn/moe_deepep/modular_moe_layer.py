@@ -25,18 +25,11 @@ from paddle import nn
 from paddle.distributed import fleet
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 
-from ...nn.mlp import MLP
 from ...transformers.configuration_utils import PretrainedConfig
 from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
-from .moe_communication import (
-    DeepEPMoECommunication,
-    StandardMoECommunication,
-)
-from .moe_expert import (
-    StandardMLPExpert,
-)
-from .moe_gate import FlexibleMoEGate, StandardMoEGate
-from .moe_loss import LossConfig, LossFunction, LossType
+from .moe_communication import DeepEPMoECommunication, StandardMoECommunication
+from .moe_expert import StandardMLPExpert
+from .moe_gate import StandardMoEGate
 from .moe_loss_instance import get_global_loss_registry
 
 logger = logging.getLogger(__name__)
@@ -44,7 +37,6 @@ global_loss_registry = get_global_loss_registry()
 
 
 class ModularMoELayer(nn.Layer):
-
     def __init__(
         self,
         hidden_size: int,
@@ -92,8 +84,10 @@ class ModularMoELayer(nn.Layer):
             if self.training
             else moe_config.get("inference_topk_method", "greedy")
         )
-        self.drop_tokens = moe_config.get("drop_tokens", True)
-        self.use_flexible_loss = moe_config.get("use_flexible_loss", False) # TODO: use customized loss system, not implemented yet
+        self.drop_tokens = moe_config.get("drop_tokens", False)
+        self.use_flexible_loss = moe_config.get(
+            "use_flexible_loss", False
+        )  # TODO: use customized loss system, not implemented yet
         self.expert_dropout = moe_config.get("expert_dropout", 0.0)
         self.loss_configs = moe_config.get("loss_configs", None)
         self.loss_combiner_name = moe_config.get("loss_combiner_name", "weighted_sum")
@@ -132,9 +126,7 @@ class ModularMoELayer(nn.Layer):
             pass
         elif self.model_type == "glm4_moe":
             pass
-        self.experts = nn.LayerList(
-            [self.expert_class(**expert_args) for _ in range(self.num_experts)]
-        )
+        self.experts = nn.LayerList([self.expert_class(**expert_args) for _ in range(self.num_experts)])
 
         if self.expert_parallel_degree > 1:
             self.token_dispatcher = MoEFlexTokenDispatcher(
@@ -194,7 +186,7 @@ class ModularMoELayer(nn.Layer):
         try:
             dist.fleet.get_hybrid_communicate_group()
             is_fleet_init = True
-        except AttributeError as e:
+        except AttributeError:
             is_fleet_init = False
 
         if (
@@ -354,28 +346,6 @@ class ModularMoELayer(nn.Layer):
             return self.gate.get_total_loss()
         else:
             return self.get_auxiliary_loss() + self.get_z_loss()
-
-    def add_loss_function(
-        self,
-        name: str,
-        loss_func: LossFunction,
-        weight: float = 0.0,
-        loss_type: LossType = LossType.CUSTOM,
-        enabled: bool = True,
-        params: Optional[Dict[str, Any]] = None,
-    ):
-        if not self.use_flexible_loss:
-            logger.warning("Current not open `use_flexible_loss`, cannot add custom losses")
-            return
-
-        loss_registry.register_loss(name, loss_func)
-
-        # 添加损失配置
-        config = LossConfig(name, loss_type, weight, enabled, params or {})
-        if hasattr(self.gate, "add_loss_config"):
-            self.gate.add_loss_config(config)
-        else:
-            logger.warning("Current not open `add_loss_config` on gate, cannot add custom losses")
 
     def remove_loss_function(self, name: str):
         if not self.use_flexible_loss:
