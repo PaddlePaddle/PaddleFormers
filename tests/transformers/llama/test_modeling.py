@@ -14,16 +14,15 @@
 # limitations under the License.
 from __future__ import annotations
 
-# import tempfile
+import tempfile
 import unittest
 
-# import numpy as np
+import numpy as np
 import paddle
+from parameterized import parameterized
 
 from paddleformers.transformers import LlamaConfig, LlamaForCausalLM, LlamaModel
-
-# from tests.testing_utils import require_package, slow
-from tests.testing_utils import slow
+from tests.testing_utils import require_package, slow
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -33,8 +32,6 @@ from tests.transformers.test_modeling_common import (
     ids_tensor,
     random_attention_mask,
 )
-
-# from parameterized import parameterized
 
 
 class LlamaModelTester:
@@ -349,7 +346,7 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_no_attention(self):
-        model = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama")
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -366,13 +363,14 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
                     [-0.22070873, -0.05084248, -0.92472076],
                     [-0.45478714, -1.70910871, 0.60857075],
                 ]
-            ]
+            ],
+            dtype=output.dtype,
         )
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
 
     @slow
     def test_inference_with_attention(self):
-        model = LlamaModel.from_pretrained("test_paddleformers/tiny-random-llama")
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -388,124 +386,178 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
                     [-0.22070873, -0.05084248, -0.92472076],
                     [-0.45478714, -1.70910871, 0.60857075],
                 ]
-            ]
+            ],
+            dtype=output.dtype,
+        )
+        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+
+
+class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
+    base_model_class = LlamaModel
+
+    @slow
+    def test_inference_no_attention(self):
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3", convert_from_hf=True)
+        model.eval()
+        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+        with paddle.no_grad():
+            output = model(input_ids, attention_mask=attention_mask)[0]
+
+        expected_shape = [1, 11, 16]
+        self.assertEqual(output.shape, expected_shape)
+
+        expected_slice = paddle.to_tensor(
+            [
+                [
+                    [-1.28417969, 0.30957031, -0.15197754],
+                    [-0.71972656, -0.85546875, 1.87890625],
+                    [-1.13378906, -0.02519226, 0.90966797],
+                ]
+            ],
+            dtype=output.dtype,
+        )
+        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+
+    @slow
+    def test_inference_with_attention(self):
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3", convert_from_hf=True)
+        model.eval()
+        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+        with paddle.no_grad():
+            output = model(input_ids, attention_mask=attention_mask)[0]
+
+        expected_shape = [1, 11, 16]
+        self.assertEqual(output.shape, expected_shape)
+        expected_slice = paddle.to_tensor(
+            [
+                [
+                    [-1.28417969, 0.30957031, -0.15197754],
+                    [-0.71972656, -0.85546875, 1.87890625],
+                    [-1.13378906, -0.02519226, 0.90966797],
+                ]
+            ],
+            dtype=output.dtype,
         )
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
 
 
 class LlamaGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "test_paddleformers/tiny-random-llama"
+    internal_testing_model = "Paddleformers/tiny-random-llama"
 
 
-# class LlamaCompatibilityTest(unittest.TestCase):
-#     test_model_id = "hf-internal-testing/tiny-random-LlamaModel"
+class Llama3GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
+    internal_testing_model = "Paddleformers/tiny-random-llama3"
 
-#     @classmethod
-#     @require_package("transformers", "torch")
-#     def setUpClass(cls) -> None:
-#         from transformers import LlamaConfig, LlamaForCausalLM
 
-#         # when python application is done, `TemporaryDirectory` will be free
-#         cls.torch_model_path = tempfile.TemporaryDirectory().name
-#         config = LlamaConfig(hidden_size=16, num_hidden_layers=1, num_attention_heads=2)
-#         model = LlamaForCausalLM(config)
-#         model.save_pretrained(cls.torch_model_path)
+class LlamaCompatibilityTest(unittest.TestCase):
+    test_model_id = "hf-internal-testing/tiny-random-LlamaModel"
 
-#     @require_package("transformers", "torch")
-#     def test_llama_converter(self):
-#         # 1. create common input
-#         input_ids = np.random.randint(100, 200, [1, 20])
+    @classmethod
+    @require_package("transformers", "torch")
+    def setUpClass(cls) -> None:
+        from transformers import LlamaConfig, LlamaForCausalLM
 
-#         # 2. forward the paddle model
-#         from paddleformers.transformers import LlamaModel
+        # when python application is done, `TemporaryDirectory` will be free
+        cls.torch_model_path = tempfile.TemporaryDirectory().name
+        config = LlamaConfig(hidden_size=16, num_hidden_layers=1, num_attention_heads=2)
+        model = LlamaForCausalLM(config)
+        model.save_pretrained(cls.torch_model_path)
 
-#         paddle_model = LlamaModel.from_pretrained(self.torch_model_path, convert_from_hf=True)
-#         paddle_model.eval()
-#         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
+    @require_package("transformers", "torch")
+    def test_llama_converter(self):
+        # 1. create common input
+        input_ids = np.random.randint(100, 200, [1, 20])
 
-#         # 3. forward the torch  model
-#         import torch
-#         from transformers import LlamaModel
+        # 2. forward the paddle model
+        from paddleformers.transformers import LlamaModel
 
-#         torch_model = LlamaModel.from_pretrained(self.torch_model_path)
-#         torch_model.eval()
-#         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+        paddle_model = LlamaModel.from_pretrained(self.torch_model_path, convert_from_hf=True)
+        paddle_model.eval()
+        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-#         self.assertTrue(
-#             np.allclose(
-#                 paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
-#                 torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
-#                 rtol=1e-2,
-#             )
-#         )
+        # 3. forward the torch  model
+        import torch
+        from transformers import LlamaModel
 
-#     @require_package("transformers", "torch")
-#     def test_llama_converter_from_local_dir(self):
-#         with tempfile.TemporaryDirectory() as tempdir:
+        torch_model = LlamaModel.from_pretrained(self.torch_model_path)
+        torch_model.eval()
+        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-#             # 1. create common input
-#             input_ids = np.random.randint(100, 200, [1, 20])
+        self.assertTrue(
+            np.allclose(
+                paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
+                torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
+                rtol=1e-2,
+            )
+        )
 
-#             # 2. forward the torch  model
-#             import torch
-#             from transformers import LlamaModel
+    @require_package("transformers", "torch")
+    def test_llama_converter_from_local_dir(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            # 1. create common input
+            input_ids = np.random.randint(100, 200, [1, 20])
 
-#             torch_model = LlamaModel.from_pretrained(self.torch_model_path)
-#             torch_model.eval()
-#             torch_model.save_pretrained(tempdir)
-#             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+            # 2. forward the torch  model
+            import torch
+            from transformers import LlamaModel
 
-#             # 2. forward the paddle model
-#             from paddleformers.transformers import LlamaModel
+            torch_model = LlamaModel.from_pretrained(self.torch_model_path)
+            torch_model.eval()
+            torch_model.save_pretrained(tempdir)
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-#             paddle_model = LlamaModel.from_pretrained(tempdir, convert_from_hf=True)
-#             paddle_model.eval()
-#             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
+            # 2. forward the paddle model
+            from paddleformers.transformers import LlamaModel
 
-#             self.assertTrue(
-#                 np.allclose(
-#                     paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
-#                     torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
-#                     rtol=1e-2,
-#                 )
-#             )
+            paddle_model = LlamaModel.from_pretrained(tempdir, convert_from_hf=True)
+            paddle_model.eval()
+            paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-#     @parameterized.expand([("LlamaModel",), ("LlamaForCausalLM",)])
-#     @require_package("transformers", "torch")
-#     def test_llama_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-#         pytorch_class_name = pytorch_class_name or class_name
-#         with tempfile.TemporaryDirectory() as tempdir:
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
+                    torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
+                    rtol=1e-2,
+                )
+            )
 
-#             # 1. create common input
-#             input_ids = np.random.randint(100, 200, [1, 20])
+    @parameterized.expand([("LlamaModel",), ("LlamaForCausalLM",)])
+    @require_package("transformers", "torch")
+    def test_llama_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
+        pytorch_class_name = pytorch_class_name or class_name
+        with tempfile.TemporaryDirectory() as tempdir:
+            # 1. create common input
+            input_ids = np.random.randint(100, 200, [1, 20])
 
-#             # 2. forward the torch model
-#             import torch
-#             import transformers
+            # 2. forward the torch model
+            import torch
+            import transformers
 
-#             torch_model_class = getattr(transformers, pytorch_class_name)
-#             torch_model = torch_model_class.from_pretrained(self.torch_model_path)
-#             torch_model.eval()
+            torch_model_class = getattr(transformers, pytorch_class_name)
+            torch_model = torch_model_class.from_pretrained(self.torch_model_path)
+            torch_model.eval()
 
-#             torch_model.save_pretrained(tempdir)
-#             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+            torch_model.save_pretrained(tempdir)
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-#             # 3. forward the paddle model
-#             from paddleformers import transformers
+            # 3. forward the paddle model
+            from paddleformers import transformers
 
-#             paddle_model_class = getattr(transformers, class_name)
-#             paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True)
-#             paddle_model.eval()
+            paddle_model_class = getattr(transformers, class_name)
+            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True)
+            paddle_model.eval()
 
-#             paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
+            paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
 
-#             self.assertTrue(
-#                 np.allclose(
-#                     paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
-#                     torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
-#                     atol=1e-3,
-#                 )
-#             )
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
+                    torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
+                    atol=1e-3,
+                )
+            )
 
 
 if __name__ == "__main__":
