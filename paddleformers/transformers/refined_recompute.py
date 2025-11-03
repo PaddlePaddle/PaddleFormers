@@ -486,18 +486,16 @@ def get_pp_vp_split_layers(layer_num, pp_size, vp_size, skip_recompute_num=-1):
     if skip_recompute_num == 0:
         return set(no_recompute_layer_num)
 
-    if vp_size == 1:
-        # If vp_size == 1, we can not select model chunk for pp,
-        # so if skip_recompute_num > 0, we select the all layers to skip recompute.
-        if skip_recompute_num > 0:
-            return set(range(layer_num))
-        else:
-            return set()
-
     assert layer_num % (pp_size * vp_size) == 0, (
         "layer_num must be divisible by pp_size * vp_size,"
         f" but got layer_num: {layer_num}, pp_size: {pp_size}, vp_size: {vp_size}"
     )
+
+    if vp_size == 1:
+        real_skip_recompute_num = min(skip_recompute_num, chunk_size)
+        for i in range(pp_size):
+            no_recompute_layer_num.extend(chunk_list[i][-real_skip_recompute_num:])
+        return no_recompute_layer_num
 
     chunk_size = layer_num // (pp_size * vp_size)
     chunk_list = [list(range(i * chunk_size, (i + 1) * chunk_size)) for i in range(pp_size * vp_size)]

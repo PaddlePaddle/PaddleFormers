@@ -281,6 +281,7 @@ class LlmMetaConfig:
             "refined_recompute, Choose from 'mlp_row_ln', 'mlp_column_ln', 'attention_row_ln', 'attention_column_ln', 'flash_attn']",
         ),
         ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
+        ("selective_no_recompute_num", int, 0, "support selective no recompute layers number in pp")
     ]
 
     loss_attributes = [

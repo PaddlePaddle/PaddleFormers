@@ -14,6 +14,7 @@
 import ast
 import math
 from typing import OrderedDict
+from copy import deepcopy
 
 import paddle
 import paddle.distributed as dist
@@ -103,7 +104,7 @@ def parse_args(args, mtp_enable=False):
     return hidden_states, attention_mask, position_ids, position_embeddings, nbatch_pack_offset
 
 
-def get_pp_vp_split_layers(config, skip_recompute_num=-1):
+def get_pp_vp_split_layers(config):
     """
     Determines the layer partitioning scheme for Pipeline Parallelism (PP) and
     Virtual Pipeline Parallelism (VP) with recomputation optimization.
@@ -128,7 +129,8 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
     hcg = get_hcg()
     pp_size = max(hcg.get_pipe_parallel_world_size(), 1)
     vp_size = max(config.virtual_pp_degree, 1)
-
+    skip_recompute_num = config.selective_no_recompute_num
+    logger.info(f"use no_recompute_layers: {skip_recompute_num}")
     assert pp_size > 1, (
         "Only support pipeline parallel, " f"pp_size must be greater than 1, but got pp_size: {pp_size}"
     )
@@ -142,14 +144,6 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
     if skip_recompute_num == 0:
         return set(no_recompute_layer_num)
 
-    if vp_size == 1:
-        # If vp_size == 1, we can not select model chunk for pp,
-        # so if skip_recompute_num > 0, we select the all layers to skip recompute.
-        if skip_recompute_num > 0:
-            return set(range(layer_num))
-        else:
-            return set()
-
     assert layer_num % (pp_size * vp_size) == 0, (
         "layer_num must be divisible by pp_size * vp_size,"
         f" but got layer_num: {layer_num}, pp_size: {pp_size}, vp_size: {vp_size}"
@@ -157,6 +151,11 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
 
     chunk_size = layer_num // (pp_size * vp_size)
     chunk_list = [list(range(i * chunk_size, (i + 1) * chunk_size)) for i in range(pp_size * vp_size)]
+    if vp_size == 1:
+        real_skip_recompute_num = min(skip_recompute_num, chunk_size)
+        for i in range(pp_size):
+            no_recompute_layer_num.extend(chunk_list[i][-real_skip_recompute_num:])
+        return no_recompute_layer_num
 
     stage_chunk_list = [[] for _ in range(pp_size)]
     for i in range(pp_size * vp_size):
@@ -591,10 +590,12 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             )
 
         for i in range(config.num_hidden_layers):
+            config_copy = deepcopy(config)
+            config_copy.recompute = config_copy.recompute and i not in no_recompute_layers
             self.add_sequential_layer(
                 LayerDesc(
                     DecoderLayerPipe,
-                    config=config,
+                    config=config_copy,
                     layer_idx=i,
                 ),
                 f"model.layers.{i}",

@@ -39,6 +39,8 @@ from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import Glm4MoeConfig
+from ..refined_recompute import get_skip_recompute_ops
+from ..refined_recompute import recompute as rr_recompute
 
 
 def eager_attention_forward(
@@ -529,6 +531,8 @@ class Glm4MoeDecoderLayer(nn.Layer):
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size
+        self.layer_idx = layer_idx
+        self.skip_recompute_ops = get_skip_recompute_ops(self.config, self.layer_idx)
 
         self.self_attn = Glm4MoeAttention(config=config, layer_idx=layer_idx)
 
@@ -1431,6 +1435,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         moelayer_use_subbatch_recompute = (
             self.config.moe_subbatch_token_num > 0 if hasattr(self.config, "moe_subbatch_token_num") else False
         )
+        logging.info("test")
         if moelayer_use_subbatch_recompute:
             hidden_states = super().subbatch_recompute_forward(
                 hidden_states,
@@ -1440,7 +1445,8 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
                 position_embeddings=tuple_position_embeddings,
             )
         elif self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
-            hidden_states = recompute(
+            recompute_fn = rr_recompute if any(self.skip_recompute_ops.values()) else recompute
+            hidden_states = recompute_fn(
                 super().forward,
                 hidden_states,
                 position_ids=position_ids_decoder,
