@@ -36,6 +36,7 @@ def download_bert_model(model_name: str):
 class TestModeling(unittest.TestCase):
     """Test PretrainedModel single time, not in Transformer models"""
 
+    @slow
     def test_from_pretrained_cache_dir_community_model(self):
         model_name = "Paddleformers/tiny-random-bert"
         with TemporaryDirectory() as tempdir:

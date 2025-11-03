@@ -34,6 +34,10 @@ class SFTConfig(TrainingArguments):
         default=False,
         metadata={"help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."},
     )
+    eval_iters: int = field(
+        default=-1,
+        metadata={"help": "eval iteration for every evaluation."},
+    )
     decay_steps: int = field(
         default=0,
         metadata={"help": "The steps use to control the learing rate."},
