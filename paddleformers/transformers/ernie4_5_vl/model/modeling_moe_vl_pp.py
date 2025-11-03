@@ -716,15 +716,15 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         config.sequence_parallel = False  # disable inner`ScatterOp`
         self.use_full_recompute = use_full_recompute
         self.offload_resamler = False  # config.pp_recompute_offload_resampler
-        # out_dim = config.text_config.hidden_size
+        # out_dim = config.hidden_size
         super().__init__(config)
         if config.mm_vocab_size > 0:
-            self.mm_embed_tokens = VocabParallelEmbedding(config.mm_vocab_size, config.text_config.hidden_size)
+            self.mm_embed_tokens = VocabParallelEmbedding(config.mm_vocab_size, config.hidden_size)
         else:
             self.mm_embed_tokens = None
         self.resampler_model = VariableResolutionResamplerModel(
             config.vision_config.hidden_size,
-            config.text_config.hidden_size,
+            config.hidden_size,
             config.spatial_conv_size,
             config.temporal_conv_size,
             config=config,
@@ -774,7 +774,7 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
             self.use_mem_eff_attn,  # inbatch, False
             self.config.vision_config is not None,  # image-type-ids
             getattr(self.config.vision_config, "variable_resolution", False),  # varres
-            self.config.text_config.rope_3d,  # position-ids
+            self.config.rope_3d,  # position-ids
         )
 
         if inbatch_pack_offset is not None:
@@ -804,7 +804,7 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         def fwd(image_features, _):
             nonlocal input_ids, lm_input_ids, mm_input_ids, token_type_ids_input, image_type_ids, image_mask
             """recompute"""
-            assert lm_input_ids.max() < self.config.text_config.vocab_size, lm_input_ids.tolist()
+            assert lm_input_ids.max() < self.config.vocab_size, lm_input_ids.tolist()
 
             inputs_embeds = super_forward(lm_input_ids)
             if isinstance(inputs_embeds, tuple):
@@ -906,7 +906,7 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
         self.use_full_recompute = use_full_recompute
         self.use_meme_eff_attn = config.use_mem_eff_attn  # fix by liaojincheng
         self.sequence_parallel = config.sequence_parallel
-        self.rope_3d = config.text_config.rope_3d
+        self.rope_3d = config.rope_3d
 
     def forward(self, args):
         """forward"""
@@ -1326,7 +1326,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
                 token_type_ids
             ) = image_type_ids = token_type_ids_shifted = labels = audio_labels = inbatch_pack_offset = None
 
-        if self.model.vision_tower is None:
+        if self.vision_model is None:
             images = None
             global_grid_thw = None
             return multimodal_data_provider(
@@ -1378,7 +1378,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         grid_thw = paddle.concat(grid_thw) if len(grid_thw) else None  # list -> tensor
 
         # start pp data balance
-        pp_data_balance = getattr(self.model.vision_tower, "pp_data_balance", False)
+        pp_data_balance = getattr(self.vision_model, "pp_data_balance", False)
 
         if self.balanced_image_preprocess or self.config.offload_pp_data_chunk_size > 0 or pp_data_balance:
             # to initial group of batch send recv, early do alltoall
@@ -1393,7 +1393,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         if pp_data_balance:
             # step1: get some infos, like seqlen, grid_thw, for current sort and later restore
             seq_list, seq_idx_list = get_len_and_offset(images.shape[0], dp_group)
-            self.model.vision_tower.seq_list = seq_idx_list
+            self.vision_model.seq_list = seq_idx_list
 
             grid_thw = grid_thw[grid_thw > 0].reshape([-1, 3])
             grid_thw = F.pad(
@@ -1444,8 +1444,8 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             sorted_idx = paddle.to_tensor(sorted_idx, dtype=img_idx.dtype)
 
             assert sorted_thw.shape[1] == 5, f"{sorted_thw.shape}"
-            self.model.vision_tower.sorted_thw = sorted_thw.clone()
-            self.model.vision_tower.sorted_idx = sorted_idx.clone()
+            self.vision_model.sorted_thw = sorted_thw.clone()
+            self.vision_model.sorted_idx = sorted_idx.clone()
             # data exchange
             new_images, new_thw, new_idx, old_idx = exchange_pp_imgs_with_thw(
                 images,
@@ -1490,7 +1490,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
                 images = images.astype("bfloat16")
             else:
                 assert images.dtype == paddle.bfloat16, images.dtype
-            image_fea = self.model.vision_tower.extract_feature(images, grid_thw)
+            image_fea = self.vision_model.extract_feature(images, grid_thw)
             if self.config.tensor_parallel_degree > 1:
                 if getattr(self.config.vision_config, "variable_resolution", False):
                     S, C = image_fea.shape
@@ -1605,9 +1605,9 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         )
 
     def __init__(self, config, recompute=False):
-        new_initializer_range = math.sqrt(0.3333 / config.text_config.hidden_size)
-        logger.info(f"change initializer-range from {config.text_config.initializer_range} to {new_initializer_range}")
-        config.text_config.initializer_range = new_initializer_range
+        new_initializer_range = math.sqrt(0.3333 / config.hidden_size)
+        logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")
+        config.initializer_range = new_initializer_range
         if config.moe_group in {"mp", "model", "tp", "mpdp"}:
             assert config.sequence_parallel
             logger.info(f"disable FFN tensor model parallel, moe-group={config.moe_group}")
@@ -1645,7 +1645,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         logger.info("variable resolution vision model")
         config.vision_config.variable_resolution = True
 
-        if config.text_config.tie_word_embeddings:
+        if config.tie_word_embeddings:
             self.add_sequential_layer(
                 SharedLayerDesc(
                     key="embed_weight_share",
@@ -1671,7 +1671,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         def _need_full_recompute(layer_idx):
             return layer_idx not in no_recompute_layers and config.recompute
 
-        for i in range(config.text_config.num_hidden_layers):
+        for i in range(config.num_hidden_layers):
             self.add_sequential_layer(
                 LayerDesc(
                     ErnieDecoderLayerPipe,
@@ -1679,23 +1679,23 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
                     layer_idx=i,
                     use_full_recompute=_need_full_recompute(i),
                 ),
-                f"model.language_model.layers.{i}",
+                f"model.layers.{i}",
             )
 
-        for i in range(config.text_config.add_tail_layers):
+        for i in range(config.add_tail_layers):
             self.add_sequential_layer(
                 LayerDesc(
                     EmptyLayer,
                 ),
-                f"model.empty.layers.{i+config.text_config.num_hidden_layers}",
+                f"model.empty.layers.{i+config.num_hidden_layers}",
             )
 
         self.add_sequential_layer(
-            LayerDesc(RMSNormPipe if config.text_config.use_rmsnorm else LayerNormPipe, config=config),
-            "model.language_model.norm",
+            LayerDesc(RMSNormPipe if config.use_rmsnorm else LayerNormPipe, config=config),
+            "model.norm",
         )
 
-        if config.text_config.tie_word_embeddings:
+        if config.tie_word_embeddings:
             self.add_sequential_layer(
                 SharedLayerDesc(
                     key="embed_weight_share",
@@ -1722,7 +1722,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             pass
         if (
             seg_method == "layer:Ernie4_5_DecoderLayer|ErnieDecoderLayer|EmptyLayer"
-            and (config.text_config.num_hidden_layers + config.text_config.add_tail_layers)
+            and (config.num_hidden_layers + config.add_tail_layers)
             % get_hcg().topology().get_dim_size("pipe")
             != 0
         ):
@@ -1745,14 +1745,14 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         )
         self.model = Ernie4_5_VLModel(self.config)
         self._modality_param_mapping = None
-        self.model.vision_tower = DFNRopeVisionTransformerPipe(self.config)
+        self.vision_model = DFNRopeVisionTransformerPipe(self.config)
 
     def add_vision_model(
         self,
         encoder: nn.Layer,
     ):
         """add_vision_model"""
-        self.model.vision_tower = encoder
+        self.vision_model = encoder
 
     def add_image_preprocess(self, preprocess):
         """add image_preprocess"""
@@ -1827,7 +1827,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         for name, param in self._modality_param_mapping.get("vit", []):
             logger.info(f"Freezing vision parameter: {name}")
             param.stop_gradient = True
-        self.model.vision_tower.config.freeze_vision = True
+        self.vision_model.config.freeze_vision = True
 
     # Rewrite state dict
     def state_dict(self, *args, **kwargs):

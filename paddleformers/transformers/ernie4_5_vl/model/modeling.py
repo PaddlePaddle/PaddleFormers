@@ -89,10 +89,10 @@ def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_out
         hidden_states,
         weight,
         bias=bias,
-        transpose_y=config.text_config.tie_word_embeddings,
+        transpose_y=config.tie_word_embeddings,
         tensor_parallel_degree=config.tensor_parallel_degree,
         tensor_parallel_output=tensor_parallel_output,
-        fuse_linear=config.text_config.fuse_linear,
+        fuse_linear=config.fuse_linear,
         training=training,
     )
 
@@ -228,13 +228,13 @@ class RMSNorm(nn.Layer):
             config (Ernie4_5_Config): Model configuration.
         """
         super().__init__()
-        self.hidden_size = config.text_config.hidden_size
+        self.hidden_size = config.hidden_size
         self.weight = paddle.create_parameter(
             shape=[self.hidden_size],
             dtype=paddle.get_default_dtype(),
             default_initializer=nn.initializer.Constant(1.0),
         )
-        self.variance_epsilon = config.text_config.rms_norm_eps
+        self.variance_epsilon = config.rms_norm_eps
         self.config = config
 
         if config.sequence_parallel:
@@ -258,7 +258,7 @@ class RMSNorm(nn.Layer):
                 3. Scale by learned weight parameter
             - Maintains original dtype for numerical stability during computation
         """
-        if self.config.text_config.fuse_rms_norm:
+        if self.config.fuse_rms_norm:
             return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
         with paddle.amp.auto_cast(False):
             variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
@@ -284,7 +284,7 @@ class LayerNorm(nn.LayerNorm):
         Args:
             config (Ernie4_5_Config): Model configuration contains normalization parameters and flags.
         """
-        super().__init__(config.text_config.hidden_size, epsilon=config.text_config.rms_norm_eps)
+        super().__init__(config.hidden_size, epsilon=config.rms_norm_eps)
         self.config = config
         if config.sequence_parallel:
             mark_as_sequence_parallel_parameter(self.weight)
@@ -515,8 +515,8 @@ class Ernie4_5_MLP(nn.Layer):
         """
         super().__init__()
         self.config = config
-        self.hidden_size = config.text_config.hidden_size
-        self.intermediate_size = config.text_config.intermediate_size
+        self.hidden_size = config.hidden_size
+        self.intermediate_size = config.intermediate_size
 
         if config.tensor_parallel_degree > 1:
             ColumnLN = ColumnSequenceParallelLinear if config.sequence_parallel else ColumnParallelLinear
@@ -534,22 +534,22 @@ class Ernie4_5_MLP(nn.Layer):
                 self.hidden_size,
                 self.intermediate_size,
                 gather_output=False,
-                has_bias=config.text_config.use_bias,
-                fuse_matmul_bias=config.text_config.fuse_linear,
+                has_bias=config.use_bias,
+                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
             self.gate_proj = ColumnLN(
                 self.hidden_size,
                 self.intermediate_size,
                 gather_output=False,
-                has_bias=config.text_config.use_bias,
-                fuse_matmul_bias=config.text_config.fuse_linear,
+                has_bias=config.use_bias,
+                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
         else:
-            LinearFN = paddle.incubate.nn.FusedLinear if config.text_config.fuse_linear else Linear
-            self.up_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.text_config.use_bias)
-            self.gate_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.text_config.use_bias)
+            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
+            self.up_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
+            self.gate_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
 
         if config.tensor_parallel_degree > 1:
             row_ln_configs = {}
@@ -564,15 +564,15 @@ class Ernie4_5_MLP(nn.Layer):
                 self.intermediate_size,
                 self.hidden_size,
                 input_is_parallel=True,
-                has_bias=config.text_config.use_bias,
-                fuse_matmul_bias=config.text_config.fuse_linear,
+                has_bias=config.use_bias,
+                fuse_matmul_bias=config.fuse_linear,
                 **row_ln_configs,
             )
         else:
-            LinearFN = paddle.incubate.nn.FusedLinear if config.text_config.fuse_linear else Linear
-            self.down_proj = LinearFN(self.intermediate_size, self.hidden_size, bias_attr=config.text_config.use_bias)
+            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
+            self.down_proj = LinearFN(self.intermediate_size, self.hidden_size, bias_attr=config.use_bias)
 
-        self.fuse_swiglu = config.text_config.fuse_swiglu
+        self.fuse_swiglu = config.fuse_swiglu
         if self.fuse_swiglu:
             assert fused_swiglu is not None, "fused_swiglu operator is not found."
 
@@ -612,23 +612,23 @@ class Ernie4_5_Attention(nn.Layer):
         """
         super().__init__()
         self.layer_idx = layer_idx
-        self.hidden_size = config.text_config.hidden_size
-        self.num_heads = config.text_config.num_attention_heads
-        self.num_key_value_heads = config.text_config.num_key_value_heads
+        self.hidden_size = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        self.num_key_value_heads = config.num_key_value_heads
         if getattr(config, "head_dim", None) is None:
             self.head_dim = self.hidden_size // self.num_heads
         else:
             self.head_dim = config.head_dim
         self.is_gqa = (
-            config.text_config.num_key_value_heads is not None
-            and config.text_config.num_key_value_heads != self.num_heads
+            config.num_key_value_heads is not None
+            and config.num_key_value_heads != self.num_heads
         )
-        if config.text_config.fuse_rope:
+        if config.fuse_rope:
             assert fused_rope is not None, "fused_rope is not supported"
-        self.fuse_rope = config.text_config.fuse_rope
+        self.fuse_rope = config.fuse_rope
 
-        self.rope_3d = config.text_config.get("rope_3d", False)
-        self.freq_allocation = config.text_config.get("freq_allocation", 0)
+        self.rope_3d = config.get("rope_3d", False)
+        self.freq_allocation = config.get("freq_allocation", 0)
         if self.rope_3d:
             assert not self.fuse_rope, "does not support fuse rope when rope_3d is on for now."
             assert self.freq_allocation is not None, "freq_allocation must be provided if rope_3d is on."
@@ -652,10 +652,10 @@ class Ernie4_5_Attention(nn.Layer):
                 kv_hidden_size = self.hidden_size // self.num_heads * self.num_key_value_heads
                 q_hidden_size = self.hidden_size
             else:
-                kv_hidden_size = self.head_dim * config.text_config.num_key_value_heads
-                q_hidden_size = self.head_dim * config.text_config.num_attention_heads
+                kv_hidden_size = self.head_dim * config.num_key_value_heads
+                q_hidden_size = self.head_dim * config.num_attention_heads
         else:
-            q_hidden_size = kv_hidden_size = self.head_dim * config.text_config.num_attention_heads
+            q_hidden_size = kv_hidden_size = self.head_dim * config.num_attention_heads
 
         if config.tensor_parallel_degree > 1:
             column_ln_configs = {}
@@ -672,43 +672,43 @@ class Ernie4_5_Attention(nn.Layer):
             self.q_proj = ColumnLN(
                 self.hidden_size,
                 q_hidden_size,
-                has_bias=config.text_config.use_bias,
+                has_bias=config.use_bias,
                 gather_output=False,
-                fuse_matmul_bias=config.text_config.fuse_linear,
+                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
             self.k_proj = ColumnLN(
                 self.hidden_size,
                 kv_hidden_size,
-                has_bias=config.text_config.use_bias,
+                has_bias=config.use_bias,
                 gather_output=False,
-                fuse_matmul_bias=config.text_config.fuse_linear,
+                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
             self.v_proj = ColumnLN(
                 self.hidden_size,
                 kv_hidden_size,
-                has_bias=config.text_config.use_bias,
+                has_bias=config.use_bias,
                 gather_output=False,
-                fuse_matmul_bias=config.text_config.fuse_linear,
+                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
         else:
-            LinearFN = paddle.incubate.nn.FusedLinear if config.text_config.fuse_linear else Linear
+            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
             self.q_proj = LinearFN(
                 self.hidden_size,
                 q_hidden_size,
-                bias_attr=config.text_config.use_bias,
+                bias_attr=config.use_bias,
             )
             self.k_proj = LinearFN(
                 self.hidden_size,
                 kv_hidden_size,
-                bias_attr=config.text_config.use_bias,
+                bias_attr=config.use_bias,
             )
             self.v_proj = LinearFN(
                 self.hidden_size,
                 kv_hidden_size,
-                bias_attr=config.text_config.use_bias,
+                bias_attr=config.use_bias,
             )
 
         if config.tensor_parallel_degree > 1:
@@ -724,22 +724,22 @@ class Ernie4_5_Attention(nn.Layer):
             self.o_proj = RowLN(
                 (self.hidden_size if getattr(config, "head_dim", None) is None else q_hidden_size),
                 self.hidden_size,
-                has_bias=config.text_config.use_bias,
+                has_bias=config.use_bias,
                 input_is_parallel=True,
-                fuse_matmul_bias=config.text_config.fuse_linear,
+                fuse_matmul_bias=config.fuse_linear,
                 **row_ln_configs,
             )
         else:
-            LinearFN = paddle.incubate.nn.FusedLinear if config.text_config.fuse_linear else Linear
+            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
             self.o_proj = LinearFN(
                 (self.hidden_size if getattr(config, "head_dim", None) is None else q_hidden_size),
                 self.hidden_size,
-                bias_attr=config.text_config.use_bias,
+                bias_attr=config.use_bias,
             )
         self.rotary_emb = RopeEmbedding(
             self.head_dim,
-            compression_ratio=config.text_config.compression_ratio,
-            base=config.text_config.rope_theta,
+            compression_ratio=config.compression_ratio,
+            base=config.rope_theta,
             freq_allocation=self.freq_allocation,  # 0 in LLM, 20 in MLLM
         )
         self.config = config
@@ -756,12 +756,12 @@ class Ernie4_5_Attention(nn.Layer):
         Selects between flash/core attention.
         """
         config = self.config
-        if config.text_config.use_flash_attention:
+        if config.use_flash_attention:
             self.attn_func = self._flash_attention_wrapper
         else:
             self.attn_func = self.core_attn
 
-        if config.text_config.cachekv_quant:
+        if config.cachekv_quant:
             from paddleslim.common.wrapper_function import FuncWrapper
 
             self.attn_func = FuncWrapper(self.attn_func)
@@ -879,12 +879,12 @@ class Ernie4_5_Attention(nn.Layer):
             k,
             v,
             self.training,
-            self.config.text_config.attention_probs_dropout_prob,
-            self.config.text_config.use_sparse_flash_attn,
+            self.config.attention_probs_dropout_prob,
+            self.config.use_sparse_flash_attn,
             attention_mask,
             attn_mask_start_row_indices,
             seq_length,
-            self.config.text_config.use_var_len_flash_attn,
+            self.config.use_var_len_flash_attn,
             self._rr_flash_attn if self.training else None,
         )
 
@@ -922,7 +922,7 @@ class Ernie4_5_Attention(nn.Layer):
         k = tensor.transpose(x=k, perm=perm)
         v = tensor.transpose(x=v, perm=perm)
 
-        replicate = self.config.text_config.num_attention_heads // self.config.text_config.num_key_value_heads
+        replicate = self.config.num_attention_heads // self.config.num_key_value_heads
         k = paddle.repeat_interleave(k, replicate, axis=1)
         v = paddle.repeat_interleave(v, replicate, axis=1)
 
@@ -950,11 +950,11 @@ class Ernie4_5_Attention(nn.Layer):
 
         weights = weights.cast(origin_dtype)
 
-        if self.config.text_config.attention_probs_dropout_prob:
+        if self.config.attention_probs_dropout_prob:
             with get_rng_state_tracker().rng_state("local_seed"):
                 weights = F.dropout(
                     weights,
-                    self.config.text_config.attention_probs_dropout_prob,
+                    self.config.attention_probs_dropout_prob,
                     training=self.training,
                     mode="upscale_in_train",
                 )
@@ -1045,17 +1045,17 @@ class Ernie4_5_Attention(nn.Layer):
             _, kv_seq_len, num_key_value_heads, _ = key_states.shape
             if num_heads != num_key_value_heads:
                 query_states, _, _ = fused_rope(
-                    query_states, None, None, rotary_emb_base=self.config.text_config.rope_theta
+                    query_states, None, None, rotary_emb_base=self.config.rope_theta
                 )
                 key_states, _, _ = fused_rope(
-                    key_states, None, None, rotary_emb_base=self.config.text_config.rope_theta
+                    key_states, None, None, rotary_emb_base=self.config.rope_theta
                 )
             else:
                 query_states, key_states, _ = fused_rope(
                     query_states,
                     key_states,
                     None,
-                    rotary_emb_base=self.config.text_config.rope_theta,
+                    rotary_emb_base=self.config.rope_theta,
                 )
 
         query_states = query_states.astype(query_states_dtype)
@@ -1336,7 +1336,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             return_tuple (bool): Whether to return loss as tuple (loss, loss_sum). Defaults to True.
         """
         super(ErniePretrainingCriterion, self).__init__()
-        self.ignored_index = getattr(config.text_config, "ignored_index", -100)
+        self.ignored_index = getattr(config, "ignored_index", -100)
         self.config = config
         self.return_tuple = return_tuple
         self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
@@ -1456,8 +1456,8 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             self.config.tensor_parallel_degree,
             ignore_index=self.ignored_index,
             seq_chunk_size=self.config.get("loss_subbatch_seqlen", 32768),
-            transpose_y=self.config.text_config.tie_word_embeddings,
-            fuse_linear=self.config.text_config.fuse_linear,
+            transpose_y=self.config.tie_word_embeddings,
+            fuse_linear=self.config.fuse_linear,
             training=self.training,
         )
         if loss_mask is None:
@@ -1534,9 +1534,9 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             Same return format as forward()
         """
         if self.enable_parallel_cross_entropy:
-            assert prediction_scores.shape[-1] != self.config.text_config.vocab_size, (
+            assert prediction_scores.shape[-1] != self.config.vocab_size, (
                 f"enable_parallel_cross_entropy, the vocab_size should be splited:"
-                f" {prediction_scores.shape[-1]}, {self.config.text_config.vocab_size}"
+                f" {prediction_scores.shape[-1]}, {self.config.vocab_size}"
             )
 
         with paddle.amp.auto_cast(False):
@@ -1611,22 +1611,22 @@ class Ernie4_5_LMHead(nn.Layer):
         super(Ernie4_5_LMHead, self).__init__()
         self.config = config
         if config.tensor_parallel_degree > 1:
-            vocab_size = config.text_config.vocab_size // config.tensor_parallel_degree
+            vocab_size = config.vocab_size // config.tensor_parallel_degree
         else:
-            vocab_size = config.text_config.vocab_size
+            vocab_size = config.vocab_size
 
         self.weight = self.create_parameter(
             shape=(
-                [vocab_size, config.text_config.hidden_size]
-                if config.text_config.tie_word_embeddings
-                else [config.text_config.hidden_size, vocab_size]
+                [vocab_size, config.hidden_size]
+                if config.tie_word_embeddings
+                else [config.hidden_size, vocab_size]
             ),
             dtype=paddle.get_default_dtype(),
         )
         logger.info(
-            f"output-weight:{self.weight.shape} config.text_config.tie_word_embeddings={config.text_config.tie_word_embeddings}"
+            f"output-weight:{self.weight.shape} config.tie_word_embeddings={config.tie_word_embeddings}"
         )
-        if config.text_config.weight_share_add_bias and config.text_config.use_bias:
+        if config.weight_share_add_bias and config.use_bias:
             self.bias = self.create_parameter(
                 shape=[vocab_size],
                 dtype=paddle.get_default_dtype(),
@@ -1636,13 +1636,13 @@ class Ernie4_5_LMHead(nn.Layer):
             self.bias = None
 
         # Must set distributed attr for Tensor Parallel !
-        self.weight.is_distributed = True if (vocab_size != config.text_config.vocab_size) else False
-        if config.text_config.weight_share_add_bias and config.text_config.use_bias:
-            self.bias.is_distributed = True if (vocab_size != config.text_config.vocab_size) else False
+        self.weight.is_distributed = True if (vocab_size != config.vocab_size) else False
+        if config.weight_share_add_bias and config.use_bias:
+            self.bias.is_distributed = True if (vocab_size != config.vocab_size) else False
 
         if self.weight.is_distributed:
             self.weight.split_axis = 1
-        if config.text_config.weight_share_add_bias and config.text_config.use_bias and self.bias.is_distributed:
+        if config.weight_share_add_bias and config.use_bias and self.bias.is_distributed:
             self.bias.split_axis = 0
 
         if self.config.use_recompute_loss_fn:
@@ -1679,7 +1679,7 @@ class Ernie4_5_LMHead(nn.Layer):
                 hidden_states,
                 self.weight,
                 self.bias,
-                self.config.text_config.tie_word_embeddings,
+                self.config.tie_word_embeddings,
             )
 
         return calc_lm_head_logits(

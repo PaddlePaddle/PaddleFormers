@@ -302,7 +302,7 @@ class DFNRopeVisionBlock(nn.Layer):
         super().__init__()
         self.norm1 = nn.LayerNorm(config.hidden_size, epsilon=1e-6)
         self.norm2 = nn.LayerNorm(config.hidden_size, epsilon=1e-6)
-        mlp_hidden_dim = config.intermediate_size
+        mlp_hidden_dim = int(config.embed_dim * config.mlp_ratio)
 
         self.attn = VisionFlashAttention2(config.hidden_size, num_heads=config.num_heads)
         self.mlp = VisionMlp(

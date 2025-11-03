@@ -131,27 +131,27 @@ def get_backbone_lm_param_regex(config):
     moe_rank = dist.get_rank(config.moe_group)
     moe_world_size = dist.get_world_size(config.moe_group)
     num_local_experts = (
-        sum(config.text_config.moe_num_experts) // moe_world_size
-        if config.text_config.moe_num_experts
-        else config.text_config.moe_num_experts // moe_world_size
+        sum(config.moe_num_experts) // moe_world_size
+        if config.moe_num_experts
+        else config.moe_num_experts // moe_world_size
     )
     num_freeze_expert = (
-        config.text_config.moe_num_experts[0]
-        if config.text_config.moe_num_experts
-        else config.text_config.moe_num_experts
+        config.moe_num_experts[0]
+        if config.moe_num_experts
+        else config.moe_num_experts
     )
 
-    freeze_part = [r"model\.language_model\.norm.*", r"model\.language_model\.layers.*norm.*"]  # freeze all norm
+    freeze_part = [r"model\.norm.*", r"model\.layers.*norm.*"]  # freeze all norm
     # we do not include gate weight
     # gate weight detach modality
     freeze_part += [
-        r"model\.language_model\.layers\.(\d+)\.mlp\.(up_gate|gate|up|down)_proj\.*",
-        r"model\.language_model\.layers\.(\d+)\.mlp\.shared_experts\.(up_gate|gate|up|down)_proj\.*",
-        r"model\.language_model\.layers\.(\d+)\.self_attn.(q|k|v|o|qkv)_proj\.(weight|bias)",
-        r"model\.language_model\.layers\.(\d)+\.mlp\.(text_moe|vision_moe)\.gate\.weight$",
+        r"model\.layers\.(\d+)\.mlp\.(up_gate|gate|up|down)_proj\.*",
+        r"model\.layers\.(\d+)\.mlp\.shared_experts\.(up_gate|gate|up|down)_proj\.*",
+        r"model\.layers\.(\d+)\.self_attn.(q|k|v|o|qkv)_proj\.(weight|bias)",
+        r"model\.layers\.(\d)+\.mlp\.gate\.weight$",
     ]
     logger.info(f"FREEZE_DEBUG: { moe_rank * num_local_experts} {num_freeze_expert}")
-    freeze_part += [r"model\.language_model\.embed_tokens\.weight"]
+    freeze_part += [r"model\.embed_tokens\.weight"]
     freeze_part += [r"lm_head\.weight", r"lm_head\.bias"]
 
     assert freeze_part, f"not freeze any part, moe: {moe_rank}/{moe_world_size}"
@@ -271,50 +271,6 @@ def construct_types_for_video(image_mask, token_type_ids, image_type_ids):
     return image_is_video, compressed_image_indices, video_images_with_placeholder
 
 
-class SpatialLinear(nn.Layer):
-    def __init__(self, config, in_dim, out_dim):
-        super().__init__()
-
-        self.fc1 = (
-            RowSequenceParallelLinear(
-                in_dim,
-                out_dim,
-                input_is_parallel=True,
-                has_bias=True,
-                fuse_matmul_bias=True,
-            )
-            if config.tensor_parallel_degree > 1
-            else nn.Linear(in_dim, out_dim)
-        )
-        self.act_fn = nn.GELU()
-        self.fc2 = nn.Linear(out_dim, out_dim)
-        self.ln = nn.LayerNorm(out_dim, epsilon=1e-6)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act_fn(x)
-        x = self.fc2(x)
-        x = self.ln(x)
-        return x
-
-
-class TemporalLinear(nn.Layer):
-    def __init__(self, in_dim, out_dim):
-        super().__init__()
-
-        self.fc1 = nn.Linear(in_dim, out_dim)
-        self.act_fn = nn.GELU()
-        self.fc2 = nn.Linear(out_dim, out_dim)
-        self.ln = nn.LayerNorm(out_dim, epsilon=1e-6)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act_fn(x)
-        x = self.fc2(x)
-        x = self.ln(x)
-        return x
-
-
 class VariableResolutionResamplerModel(nn.Layer):
     """
     VariableResolutionResamplerModel, support variable resolution
@@ -338,60 +294,48 @@ class VariableResolutionResamplerModel(nn.Layer):
 
         with paddle.utils.unique_name.guard("mm_resampler_"):
 
-            # self.spatial_linear = nn.Sequential(
-            #     (
-            #         RowSequenceParallelLinear(
-            #             self.spatial_dim,
-            #             self.spatial_dim,
-            #             input_is_parallel=True,
-            #             has_bias=True,
-            #             fuse_matmul_bias=True,
-            #         )
-            #         if config.tensor_parallel_degree > 1
-            #         else nn.Linear(self.spatial_dim, self.spatial_dim)
-            #     ),
-            #     nn.GELU(),
-            #     nn.Linear(self.spatial_dim, self.spatial_dim),
-            #     nn.LayerNorm(self.spatial_dim, epsilon=1e-6),
-            # )
-            self.spatial_linear = SpatialLinear(config, self.spatial_dim, self.spatial_dim)
+            self.spatial_linear = nn.Sequential(
+                (
+                    RowSequenceParallelLinear(
+                        self.spatial_dim,
+                        self.spatial_dim,
+                        input_is_parallel=True,
+                        has_bias=True,
+                        fuse_matmul_bias=True,
+                    )
+                    if config.tensor_parallel_degree > 1
+                    else nn.Linear(self.spatial_dim, self.spatial_dim)
+                ),
+                nn.GELU(),
+                nn.Linear(self.spatial_dim, self.spatial_dim),
+                nn.LayerNorm(self.spatial_dim, epsilon=1e-6),
+            )
 
             if self.use_temporal_conv:
-                # self.temporal_linear = nn.Sequential(
-                #     nn.Linear(self.temporal_dim, self.spatial_dim),
-                #     nn.GELU(),
-                #     nn.Linear(self.spatial_dim, self.spatial_dim),
-                #     nn.LayerNorm(self.spatial_dim, epsilon=1e-6),
-                # )
-                self.temporal_linear = TemporalLinear(self.temporal_dim, self.spatial_dim)
+                self.temporal_linear = nn.Sequential(
+                    nn.Linear(self.temporal_dim, self.spatial_dim),
+                    nn.GELU(),
+                    nn.Linear(self.spatial_dim, self.spatial_dim),
+                    nn.LayerNorm(self.spatial_dim, epsilon=1e-6),
+                )
 
             self.mlp = nn.Linear(self.spatial_dim, self.out_dim)
 
             out_config = deepcopy(config)
-            out_config.text_config.hidden_size = out_dim
+            out_config.hidden_size = out_dim
             # Note(GuoxiaWang): fuse can reduce gpu peak memory
-            out_config.text_config.fuse_rms_norm = out_config.resampler_fuse_rms_norm
+            out_config.fuse_rms_norm = out_config.resampler_fuse_rms_norm
             self.after_norm = RMSNorm(out_config)
 
             if config.tensor_parallel_degree > 1:
-                # for idx in [2, 3]:
-                #     mark_as_sequence_parallel_parameter(self.spatial_linear[idx].weight)
-                #     mark_as_sequence_parallel_parameter(self.spatial_linear[idx].bias)
-                mark_as_sequence_parallel_parameter(self.spatial_linear.fc2.weight)
-                mark_as_sequence_parallel_parameter(self.spatial_linear.fc2.bias)
-                mark_as_sequence_parallel_parameter(self.spatial_linear.ln.weight)
-                mark_as_sequence_parallel_parameter(self.spatial_linear.ln.bias)
+                for idx in [2, 3]:
+                    mark_as_sequence_parallel_parameter(self.spatial_linear[idx].weight)
+                    mark_as_sequence_parallel_parameter(self.spatial_linear[idx].bias)
 
                 if self.use_temporal_conv:
-                    # for idx in [0, 2, 3]:
-                    #     mark_as_sequence_parallel_parameter(self.temporal_linear[idx].weight)
-                    #     mark_as_sequence_parallel_parameter(self.temporal_linear[idx].bias)
-                    mark_as_sequence_parallel_parameter(self.temporal_linear.fc1.weight)
-                    mark_as_sequence_parallel_parameter(self.temporal_linear.fc1.bias)
-                    mark_as_sequence_parallel_parameter(self.temporal_linear.fc2.weight)
-                    mark_as_sequence_parallel_parameter(self.temporal_linear.fc2.bias)
-                    mark_as_sequence_parallel_parameter(self.temporal_linear.ln.weight)
-                    mark_as_sequence_parallel_parameter(self.temporal_linear.ln.bias)
+                    for idx in [0, 2, 3]:
+                        mark_as_sequence_parallel_parameter(self.temporal_linear[idx].weight)
+                        mark_as_sequence_parallel_parameter(self.temporal_linear[idx].bias)
 
                 mark_as_sequence_parallel_parameter(self.mlp.weight)
                 mark_as_sequence_parallel_parameter(self.mlp.bias)
@@ -538,10 +482,9 @@ class VariableResolutionResamplerModel(nn.Layer):
             is_split=is_split,
             tensor_parallel_degree=config.tensor_parallel_degree,
             tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.text_config.num_attention_heads,
+            num_attention_heads=config.num_attention_heads,
         )
-        # res = {"spatial_linear.0.weight": partial(fn, is_column=False)}  # row parallel
-        res = {"spatial_linear.fc1.weight": partial(fn, is_column=False)}  # row parallel
+        res = {"spatial_linear.0.weight": partial(fn, is_column=False)}  # row parallel
         return res
 
 
@@ -711,8 +654,8 @@ def calc_multimodal_logits(
         parallel_matmul,
         tensor_parallel_degree=config.tensor_parallel_degree,
         tensor_parallel_output=config.tensor_parallel_output,
-        fuse_linear=config.text_config.fuse_linear,
-        transpose_y=config.text_config.tie_word_embeddings,
+        fuse_linear=config.fuse_linear,
+        transpose_y=config.tie_word_embeddings,
     )
 
     if mm_head_weight is None:
@@ -722,7 +665,7 @@ def calc_multimodal_logits(
             last_hidden_state,
             lm_head_weight,
             lm_head_bias,
-            transpose_y=config.text_config.tie_word_embeddings,
+            transpose_y=config.tie_word_embeddings,
         )
         return score_text, None, None
 
@@ -800,10 +743,10 @@ class Ernie4_5_MoeVLHead(Ernie4_5_LMHead):
                     hidden_state[:, -1:, :],
                     self.weight,
                     self.bias,
-                    transpose_y=self.config.text_config.tie_word_embeddings,
+                    transpose_y=self.config.tie_word_embeddings,
                     tensor_parallel_degree=self.config.tensor_parallel_degree,
                     tensor_parallel_output=False,
-                    fuse_linear=self.config.text_config.fuse_linear,
+                    fuse_linear=self.config.fuse_linear,
                 ),
                 None,
             )
@@ -815,14 +758,10 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
     config_class = Ernie4_5_VLMoeConfig
     main_input_name = "pixel_values"
     transpose_weight_keys = [
-        # "spatial_linear.0",
-        # "temporal_linear.0",
-        # "spatial_linear.2",
-        # "temporal_linear.2",
-        "spatial_linear.fc1",
-        "temporal_linear.fc1",
-        "spatial_linear.fc2",
-        "temporal_linear.fc2",
+        "spatial_linear.0",
+        "temporal_linear.0",
+        "spatial_linear.2",
+        "temporal_linear.2",
         "mlp",
         "q_proj",
         "k_proj",
@@ -831,7 +770,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         "gate_proj",
         "up_proj",
         "down_proj",
-        "gate",
+        # "gate",
         "proj",
         "qkv",
         "fc1",
@@ -851,15 +790,15 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
 
         if config.mm_vocab_size > 0:
             if config.tensor_parallel_degree > 1:
-                self.mm_embed_tokens = VocabParallelEmbedding(config.mm_vocab_size, config.text_config.hidden_size)
+                self.mm_embed_tokens = VocabParallelEmbedding(config.mm_vocab_size, config.hidden_size)
             else:
-                self.mm_embed_tokens = nn.Embedding(config.mm_vocab_size, config.text_config.hidden_size)
+                self.mm_embed_tokens = nn.Embedding(config.mm_vocab_size, config.hidden_size)
         else:
             self.mm_embed_tokens = None
 
         self.model.resampler_model = VariableResolutionResamplerModel(
             config.vision_config.hidden_size,
-            config.text_config.hidden_size,
+            config.hidden_size,
             config.spatial_conv_size,
             config.temporal_conv_size,
             config=config,
@@ -868,7 +807,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         self._modality_param_mapping = None
         self.image_preprocess = None
         self.lm_head = Ernie4_5_MoeVLHead(config)
-        self.model.vision_tower = DFNRopeVisionTransformerPretrainedModel(config=config.vision_config)
+        self.vision_model = DFNRopeVisionTransformerPretrainedModel(config=config.vision_config)
 
         self.tie_weights()  # maybe weight share
 
@@ -877,7 +816,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         encoder: nn.Layer,
     ):
         """add_vision_model"""
-        self.model.vision_tower = encoder
+        self.vision_model = encoder
         self._set_modality_param_mapping()
 
     def add_image_preprocess(self, preprocess):
@@ -894,14 +833,14 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             is_split=is_split,
             tensor_parallel_degree=config.tensor_parallel_degree,
             tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.text_config.num_attention_heads,
+            num_attention_heads=config.num_attention_heads,
         )
 
         def get_tensor_parallel_split_mappings(num_layers):
             final_actions = Ernie4_5_MoeForCausalLM._get_tensor_parallel_mappings(config, is_split=is_split)
             return final_actions
 
-        mappings = get_tensor_parallel_split_mappings(config.text_config.num_hidden_layers)
+        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
         resampler_actions = VariableResolutionResamplerModel._get_tensor_parallel_mappings(config, is_split=is_split)
         mappings.update({f"model.resampler_model.{k}": v for k, v in resampler_actions.items()})
 
@@ -955,7 +894,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         for name, param, _ in self._modality_param_mapping.get("vit", []):
             logger.info(f"Freezing vision parameter: {name}")
             param.stop_gradient = True
-        self.model.vision_tower.config.freeze_vision = True
+        self.vision_model.config.freeze_vision = True
 
     def vision_forward(
         self,
@@ -980,7 +919,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                 [0, 0, 1, 0],
                 value=1,
             )
-        image_features = self.model.vision_tower.extract_feature(images, grid_thw)
+        image_features = self.vision_model.extract_feature(images, grid_thw)
         return image_features
 
     def vision_mapping_forward(
@@ -1081,7 +1020,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             }
         )
 
-        if self.config.text_config.rope_3d:
+        if self.config.rope_3d:
             model_inputs.update({"position_ids": kwargs["position_ids"]})
 
         return model_inputs
@@ -1207,7 +1146,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             ):
                 nonlocal input_ids, token_type_ids_labels, mm_input_ids, image_type_ids
                 """During the backward of this function, the stop_graident attribute of param is reset"""
-                inputs_embeds = self.model.language_model.embed_tokens(lm_input_ids).astype(
+                inputs_embeds = self.model.embed_tokens(lm_input_ids).astype(
                     self.embed_tokens.weight.dtype
                 )
                 token_type_ids_w_video = token_type_ids[..., :-1].clone()
@@ -1226,7 +1165,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                 else:
                     pass  # do nothing, should not hang under DygraphShardingOptimizerV2
 
-                outputs = self.model.language_model(
+                outputs = self.model(
                     position_ids=position_ids,
                     attention_mask=attention_mask,
                     token_type_ids=token_type_ids,
@@ -1270,7 +1209,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                 freeze_context=freeze_context,
             )
         else:
-            inputs_embeds = self.model.language_model.embed_tokens(lm_input_ids)
+            inputs_embeds = self.model.embed_tokens(lm_input_ids)
             token_type_ids_w_video = token_type_ids[..., :-1].clone()
             token_type_ids[token_type_ids == TokenType.video] = TokenType.image
 
@@ -1288,7 +1227,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             else:
                 pass  # do nothing, should not hang under DygraphShardingOptimizerV2
 
-            outputs = self.model.language_model(
+            outputs = self.model(
                 position_ids=position_ids,
                 attention_mask=attention_mask,
                 token_type_ids=token_type_ids,  #

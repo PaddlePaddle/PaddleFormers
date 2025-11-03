@@ -868,11 +868,11 @@ class MOEAllGatherLayerV2(MOELayer):
             if use_dense_expert:
                 global_dense_expert_mask = dispatch_token_type_ids == self.dense_token_type
 
-        assert self.gate() is not None
+        assert self.gate is not None
         if hasattr(self, "rng") and self.rng.random() < self.all_to_all_dropout:
             orig_shape_2 = input.shape
             output = self.forward_experts(input)
-            output += self.gate().weight.sum() * 0.0  # hack for grad
+            output += self.gate.weight.sum() * 0.0  # hack for grad
             output = output.reshape(orig_shape or orig_shape_2)  # [e*1,c,m]
             return output, None, 0
         (
@@ -897,7 +897,7 @@ class MOEAllGatherLayerV2(MOELayer):
 
         if self.use_padding:
             if self.send_rank is None:
-                capacity = self.gate().get_capacity(input.shape[0] * self.config.moe_world_size)
+                capacity = self.gate.get_capacity(input.shape[0] * self.config.moe_world_size)
                 self.send_rank = (
                     paddle.arange(self.config.moe_world_size)
                     .repeat_interleave(capacity * self.num_local_experts)
@@ -1084,16 +1084,16 @@ class MOEAllGatherLayerV2(MOELayer):
         if self.group_experts:
             assert not self.use_correction_bias
             gate_logits_lm = gate_logits_lm.reshape([gate_logits_lm.shape[0], top_k, -1])
-            prob_lm = self.gate().act(gate_logits_lm)
+            prob_lm = self.gate.act(gate_logits_lm)
             prob_lm_ = prob_lm
             weight_lm, expert_id_lm = prob_lm_.topk(k=1, axis=-1)
             weight_lm = weight_lm.reshape([gate_logits_lm.shape[0], -1])
             group_size = gate_logits_lm.shape[-1]
             expert_id_lm = expert_id_lm.squeeze(-1)
         else:
-            prob_lm = self.gate().act(gate_logits_lm)
+            prob_lm = self.gate.act(gate_logits_lm)
             if self.use_correction_bias:
-                prob_lm_ = prob_lm + self.moe_statics().e_score_correction_bias[0].detach()
+                prob_lm_ = prob_lm + self.moe_statics.e_score_correction_bias[0].detach()
             else:
                 prob_lm_ = prob_lm
             weight_lm, expert_id_lm = prob_lm_.topk(k=top_k, axis=-1)
@@ -1119,9 +1119,9 @@ class MOEAllGatherLayerV2(MOELayer):
                 None,
             )
 
-        prob_mm = self.gate().act(gate_logits_mm)
+        prob_mm = self.gate.act(gate_logits_mm)
         if self.use_correction_bias:
-            prob_mm_ = prob_mm + self.moe_statics().e_score_correction_bias[1].detach()
+            prob_mm_ = prob_mm + self.moe_statics.e_score_correction_bias[1].detach()
         else:
             prob_mm_ = prob_mm
         weight_mm, expert_id_mm = prob_mm_.topk(k=top_k, axis=-1)
@@ -1183,8 +1183,8 @@ class MOEAllGatherLayerV2(MOELayer):
 
         def build_weights_and_expert_id(input):
             nonlocal token_type_ids, args
-            logits, capacity, router_loss = self.gate()(input, *args, transform_weight=False)
-            if self.config.text_config.multimodel_experts:
+            logits, capacity, router_loss = self.gate(input, *args, transform_weight=False)
+            if self.config.multimodel_experts:
                 gate_logits_lm, gate_logits_mm = logits.chunk(2, axis=-1)
             else:
                 gate_logits_lm, gate_logits_mm = logits, None
@@ -1203,7 +1203,7 @@ class MOEAllGatherLayerV2(MOELayer):
                 gate_prob_mm,
             )
 
-        capacity = self.gate().get_capacity(input.shape[0]) * self.world_size
+        capacity = self.gate.get_capacity(input.shape[0]) * self.world_size
         (
             global_hidden_states,
             combine_weights_and_expert_id,
@@ -1222,9 +1222,9 @@ class MOEAllGatherLayerV2(MOELayer):
         expert_id = expert_id.cast("int32")
         expert_id.stop_gradient = True
         num_experts = (
-            sum(self.config.text_config.moe_num_experts)
-            if isinstance(self.config.text_config.moe_num_experts, (tuple, list))
-            else self.config.text_config.moe_num_experts
+            sum(self.config.moe_num_experts)
+            if isinstance(self.config.moe_num_experts, (tuple, list))
+            else self.config.moe_num_experts
         )  # all-experts = 96
         if global_dense_expert_mask is not None:
             combine_weights_unnorm[global_dense_expert_mask] = 0.0
@@ -1262,13 +1262,13 @@ class MOEAllGatherLayerV2(MOELayer):
             )
 
         if self.use_correction_bias:
-            if self.gate().config.text_config.multimodel_experts:
+            if self.gate.config.multimodel_experts:
                 # MLLM
-                for i in range(len(self.moe_statics().expert_usage)):
-                    self.moe_statics().expert_usage[i] += expert_num_local[self.gate().experts_type_mask[i]].detach()
+                for i in range(len(self.moe_statics.expert_usage)):
+                    self.moe_statics.expert_usage[i] += expert_num_local[self.gate.experts_type_mask[i]].detach()
             else:
                 # LLM
-                self.moe_statics().expert_usage[0] += expert_num_local.detach()
+                self.moe_statics.expert_usage[0] += expert_num_local.detach()
 
         # When use unpad , `moe_ops_partial` output likes `scatter_index_rev==[]`.
         if scatter_index_rev.ndim == 0:
@@ -1310,7 +1310,7 @@ class MOEAllGatherLayerV2(MOELayer):
             ),
             group=self.config.moe_group,
         )
-        if self.gate().norm_gate_logits:
+        if self.gate.norm_gate_logits:
             local_combine_weights = local_combine_weights_unnorm / paddle.clip(
                 local_combine_weights_unnorm.sum(-1, keepdim=True), min=1e-12
             )
@@ -1376,17 +1376,17 @@ class MOEAllGatherLayerV2(MOELayer):
           3. Aggregates dummy outputs to first active expert to maintain gradient flow
         """
         expert_outputs = []
-        assert isinstance(self.experts(), nn.LayerList), type(self.experts())
+        assert isinstance(self.experts, nn.LayerList), type(self.experts)
 
         no_tokens_expert_outputs = []
         if not self.multimodal_experts:
-            true_experts = self.experts()[
+            true_experts = self.experts[
                 self.rank * self.num_local_experts : (self.rank + 1) * self.num_local_experts
             ]
         else:
             true_experts = []
             for i, num in enumerate(self.num_local_multimodal_experts):
-                current_modal_experts = self.experts()[
+                current_modal_experts = self.experts[
                     self.multimodal_expert_index[i] : self.multimodal_expert_index[i + 1]
                 ]
                 true_experts.extend(current_modal_experts[self.rank * num : (self.rank + 1) * num])
@@ -1470,23 +1470,23 @@ class MOEAllGatherLayerV2(MOELayer):
             Tensor: Updated router loss with new auxiliary components
         """
         dispatch_mask_3d = dispatch_mask.reshape([self.config.moe_world_size, -1])
-        if token_type_ids is not None and self.gate().config.text_config.moe_use_hard_gate:
+        if token_type_ids is not None and self.gate.config.moe_use_hard_gate:
             # MLLM
-            if not self.gate().weight.stop_gradient:
+            if not self.gate.weight.stop_gradient:
                 dispatch_tokens_mask = dispatch_token_type_ids == 0 if dispatch_token_type_ids is not None else None
                 lm_tokens_mask = (token_type_ids == 0).astype(gate_prob.dtype)
                 # hard code
                 lm_experts = (
-                    self.gate().num_experts[0]
-                    if isinstance(self.gate().num_experts, (tuple, list))
-                    else self.gate().num_experts
+                    self.gate.num_experts[0]
+                    if isinstance(self.gate.num_experts, (tuple, list))
+                    else self.gate.num_experts
                 )
                 dispatch_mask_lm = dispatch_mask_3d[:, : lm_experts // self.config.moe_world_size].reshape([-1])
                 router_loss += self._calc_router_loss(
                     dispatch_mask_lm,
                     gate_logits * lm_tokens_mask.unsqueeze(-1),
                     gate_prob * lm_tokens_mask.unsqueeze(-1),
-                    self.gate().num_experts_list[0],
+                    self.gate.num_experts_list[0],
                     self.group_experts,
                     self.layer_idx,
                     0,  # ortholoss
@@ -1500,14 +1500,14 @@ class MOEAllGatherLayerV2(MOELayer):
                 mm_tokens_mask = (token_type_ids == 1).astype(gate_prob_mm.dtype)
                 dispatch_tokens_mask = dispatch_token_type_ids == 1 if dispatch_token_type_ids is not None else None
                 dispatch_mask_mm = dispatch_mask_3d[
-                    :, self.gate().num_experts[0] // self.config.moe_world_size :
+                    :, self.gate.num_experts[0] // self.config.moe_world_size :
                 ].reshape([-1])
 
                 router_loss += self._calc_router_loss(
                     dispatch_mask_mm,
                     gate_logits_mm * mm_tokens_mask.unsqueeze(-1),
                     gate_prob_mm * mm_tokens_mask.unsqueeze(-1),
-                    self.gate().num_experts_list[1],
+                    self.gate.num_experts_list[1],
                     False,
                     self.layer_idx,
                     1,
@@ -1522,12 +1522,12 @@ class MOEAllGatherLayerV2(MOELayer):
                 dispatch_mask,
                 gate_logits,
                 gate_prob,
-                self.gate().num_experts_tensor,
+                self.gate.num_experts_tensor,
                 self.group_experts,
                 self.layer_idx,
                 0,
                 paddle.ones([gate_prob.shape[0]], "bool"),
-                paddle.ones([self.gate().config.moe_world_size * gate_prob.shape[0]], "bool"),
+                paddle.ones([self.gate.config.moe_world_size * gate_prob.shape[0]], "bool"),
                 prefix="lm",
             )
 
