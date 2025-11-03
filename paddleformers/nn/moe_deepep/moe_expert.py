@@ -13,26 +13,14 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Dict
 
 import paddle
-from paddle import nn
-from paddle.incubate.nn.functional import swiglu as fused_swiglu
 
 from ...nn.mlp import MLP
-from ...transformers import Linear, linear_utils
-from ...transformers.activations import ACT2FN
 from ...transformers.configuration_utils import PretrainedConfig
-from ...transformers.refined_recompute import (
-    RRColumnParallelLinear,
-    RRColumnSequenceParallelLinear,
-    RRRowParallelLinear,
-    RRRowSequenceParallelLinear,
-)
 
 
 class MoEExpertInterface(ABC):
-
     @abstractmethod
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         """
@@ -44,11 +32,11 @@ class MoEExpertInterface(ABC):
         """
         pass
 
+
 class StandardMLPExpert(MLP):
     def __init__(
         self,
         config: PretrainedConfig,
         moe_intermediate_size: int,
     ):
-        super().__init__(config=routed_expert_pretrained_config, intermediate_size=moe_intermediate_size)
-
+        super().__init__(config=config, intermediate_size=moe_intermediate_size)
