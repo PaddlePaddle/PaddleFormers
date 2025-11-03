@@ -36,7 +36,6 @@ from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import Glm4MoeConfig
@@ -1422,7 +1421,8 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
-        
+
+
 class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
     def forward(self, args):
         hidden_states, attention_mask, position_ids, position_embeddings, _ = parse_args(args)
@@ -1631,5 +1631,6 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
             )
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
+
 
 __all__ = ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"]

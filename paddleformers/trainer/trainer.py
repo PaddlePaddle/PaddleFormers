@@ -33,7 +33,6 @@ import types
 import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
-from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -44,16 +43,13 @@ import paddle.distributed as dist
 import paddle.nn as nn
 from packaging import version
 from paddle import framework
-from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
-    DygraphShardingOptimizerV2,
-)
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 
 try:
     from paddle.distributed.flex_checkpoint.dcp.sharded_weight import ShardedWeight
 except:
     ShardedWeight = None
-   
+
 try:
     from paddle.distributed.fleet.meta_parallel import PipelineDatasetPreprocessor
 except:
@@ -885,8 +881,8 @@ class Trainer:
             model_sharded_state_dict,
             model_state_dict_path,
         )
-    
-    def _save_flex_optimizer_state(self,output_dir):
+
+    def _save_flex_optimizer_state(self, output_dir):
         optimizer_state_dict_path = os.path.join(output_dir, OPTIMIZER_STATE_DIC)
         optimizer_states = {}
         master_weights = {}
@@ -953,7 +949,7 @@ class Trainer:
                 aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
             )
-       
+
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
@@ -962,7 +958,7 @@ class Trainer:
             )
 
             self._load_scheduler(resume_from_checkpoint)
- 
+
         dist.load_state_dict(
             model_sharded_state_dict,
             model_states_path,
@@ -2831,7 +2827,7 @@ class Trainer:
             self.model_wrapped.get_all_parameters(convert2cpu=True)
 
         if self.args.should_save_model_state:
-            self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel,fc_to_hf = fc_to_hf)
+            self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, fc_to_hf=fc_to_hf)
         else:
             if (
                 self.args.save_checkpoint_format == "unified_checkpoint"
@@ -2841,7 +2837,7 @@ class Trainer:
                 if self.is_in_train:
                     global_rank = paddle.distributed.get_rank() if paddle.distributed.get_world_size() > 1 else -1
                     paddle.save(global_rank, os.path.join(signal_dir, f".model_weight.done.{global_rank}"))
-            
+
         if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
             # save model_done file to ensure model is complete
             if (
@@ -3002,9 +2998,7 @@ class Trainer:
                             state_dict = self.optimizer.state_dict()
                             save_path = os.path.join(output_dir, optimizer_name)
                             if self.args.use_async_save:
-                                assert not strtobool(
-                                    os.getenv("FLAG_LLM_PDC", "False")
-                                ), "Dont support FLAG_LLM_PDC"
+                                assert not strtobool(os.getenv("FLAG_LLM_PDC", "False")), "Dont support FLAG_LLM_PDC"
                                 self._async_optimizer_saver.run(
                                     state_dict, save_path, saved_signal_path=saved_signal_path
                                 )
@@ -3174,14 +3168,17 @@ class Trainer:
         output_dir: Optional[str] = None,
         state_dict=None,
         merge_tensor_parallel=False,
-        fc_to_hf = False,
-    ):  
+        fc_to_hf=False,
+    ):
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"Saving model checkpoint to {output_dir}")
         # signal_dir is used for asynchronous saving situations.
         signal_dir = self.args.output_signal_dir
-        if self.args.save_checkpoint_format == "unified_checkpoint" and "async_save" in self.args.unified_checkpoint_config:
+        if (
+            self.args.save_checkpoint_format == "unified_checkpoint"
+            and "async_save" in self.args.unified_checkpoint_config
+        ):
             if PREFIX_CHECKPOINT_DIR in os.path.split(output_dir)[-1]:
                 signal_dir = os.path.join(signal_dir, os.path.split(output_dir)[-1])
             os.makedirs(signal_dir, exist_ok=True)
@@ -3236,7 +3233,7 @@ class Trainer:
                 self.model.save_pretrained(output_dir, is_main_process)
             else:
                 self._save_flex_model_state(output_dir)
-            return 
+            return
         merge_tensor_parallel = merge_tensor_parallel and self.args.use_hybrid_parallel
         # peft model
         if (

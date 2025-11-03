@@ -16,7 +16,9 @@ import paddle
 import paddle.nn as nn
 
 try:
-    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import build_sharded_state_dict
+    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+        build_sharded_state_dict,
+    )
 except:
     build_sharded_state_dict = None
 

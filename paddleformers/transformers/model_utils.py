@@ -24,17 +24,18 @@ import re
 import sys
 import tempfile
 import warnings
+from collections.abc import Iterator
 from contextlib import contextmanager
+from copy import deepcopy
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
-from safetensors.paddle import save_file
-from copy import deepcopy
 
 import aistudio_sdk
 import ml_dtypes
 import numpy as np
 import paddle
+import paddle.distributed as dist
 import paddle.nn as nn
 import six
 from huggingface_hub import (
@@ -50,8 +51,7 @@ from paddle.distributed.fleet.meta_parallel.parallel_layers import (
     PipelineLayer,
     SharedLayerDesc,
 )
-
-import paddle.distributed as dist
+from safetensors.paddle import save_file
 
 try:
     from paddle.distributed.fleet.meta_parallel import LocalSharedLayerDesc
@@ -120,6 +120,7 @@ __all__ = [
 FLEX_CHECKPOINT_MODEL_WHITELIST = [
     "Glm4MoeForCausalLMPipe",
 ]
+
 
 def fit_bf16_to_uint16_np(tensor):
     if "xpu" in paddle.device.get_device() and isinstance(tensor, np.ndarray) and str(tensor.dtype) == "bfloat16":
@@ -1119,6 +1120,7 @@ def _load_state_dict_into_meta_model(
             param.value().get_tensor()._clear()
     return error_msgs
 
+
 def _parse_size(size_str: str) -> int:
     """Parses a size string like '100MB', '2GB' into the number of bytes."""
     size_str = size_str.upper().strip()
@@ -1236,7 +1238,7 @@ def save_full_param(
     return total_size
 
 
-def replace_name_and_gen_index(path,total_size):
+def replace_name_and_gen_index(path, total_size):
     index_mapping = {}
     safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
     total_files_num = len(safetensor_files)
@@ -1257,6 +1259,7 @@ def replace_name_and_gen_index(path,total_size):
     index_infos["weight_map"] = index_mapping
     with open(os.path.join(path, index_file_name), "w") as f:
         json.dump(index_infos, f, indent=4)
+
 
 @six.add_metaclass(InitTrackerMeta)
 class PretrainedModel(Layer, GenerationMixin, ConversionMixin):

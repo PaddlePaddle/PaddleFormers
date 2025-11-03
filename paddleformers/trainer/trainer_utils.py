@@ -1385,6 +1385,8 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
             continue
         param_list.append(param)
     optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
+
+
 def parse_nccl_config_file(config_dir):
     json_file = Path(config_dir)
     if json_file.exists():
