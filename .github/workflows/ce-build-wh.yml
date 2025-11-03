@@ -1,8 +1,9 @@
 name: Build Whl CE
 
 on:
-  push:
+  pull_request:
     branches:
+      types: [closed]
       - develop
 
 env:
@@ -17,6 +18,7 @@ defaults:
 
 jobs:
   build-ce:
+    if: github.event.pull_request.merged == true
     name: build-ce
     runs-on: [self-hosted, paddleformers]
     steps:
