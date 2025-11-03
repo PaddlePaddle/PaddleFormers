@@ -341,6 +341,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
                     train_topk_method="greedy",
                     inference_topk_method="greedy",
                     drop_tokens=False,
+                    transpose_gate_weight=False,
                 )
                 if expert_parallel_degree > 1
                 else Qwen3MoeSparseMoeBlock(config)
