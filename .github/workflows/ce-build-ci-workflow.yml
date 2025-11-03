@@ -2,6 +2,8 @@ name: Build CI Images
 
 on:
   pull_request:
+    branches:
+      - develop
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
