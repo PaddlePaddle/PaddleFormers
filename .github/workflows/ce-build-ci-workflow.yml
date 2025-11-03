@@ -1,6 +1,7 @@
 name: Build CI Images
 
-on: [push, pull_request]
+on: 
+  push
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
