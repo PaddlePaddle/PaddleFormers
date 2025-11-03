@@ -491,14 +491,14 @@ def get_pp_vp_split_layers(layer_num, pp_size, vp_size, skip_recompute_num=-1):
         f" but got layer_num: {layer_num}, pp_size: {pp_size}, vp_size: {vp_size}"
     )
 
+    chunk_size = layer_num // (pp_size * vp_size)
+    chunk_list = [list(range(i * chunk_size, (i + 1) * chunk_size)) for i in range(pp_size * vp_size)]
+
     if vp_size == 1:
         real_skip_recompute_num = min(skip_recompute_num, chunk_size)
         for i in range(pp_size):
             no_recompute_layer_num.extend(chunk_list[i][-real_skip_recompute_num:])
         return no_recompute_layer_num
-
-    chunk_size = layer_num // (pp_size * vp_size)
-    chunk_list = [list(range(i * chunk_size, (i + 1) * chunk_size)) for i in range(pp_size * vp_size)]
 
     stage_chunk_list = [[] for _ in range(pp_size)]
     for i in range(pp_size * vp_size):

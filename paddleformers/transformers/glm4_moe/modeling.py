@@ -1435,7 +1435,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         moelayer_use_subbatch_recompute = (
             self.config.moe_subbatch_token_num > 0 if hasattr(self.config, "moe_subbatch_token_num") else False
         )
-        logging.info("test")
+
         if moelayer_use_subbatch_recompute:
             hidden_states = super().subbatch_recompute_forward(
                 hidden_states,
