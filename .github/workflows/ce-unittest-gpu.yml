@@ -1,8 +1,17 @@
 name: Unittest GPU CE
 
 on:
+  pull_request:
   schedule:
-    - cron: "0 1 * * *"     # every day at 09:00 Beijing time (UTC+8)
+    - cron: "0 18 * * *"
+  workflow_call:
+    inputs:
+      runner:
+        required: false
+        type: string
+      image_name:
+        required: false
+        type: string   # every day at 09:00 Beijing time (UTC+8)
   workflow_dispatch:        # allow to manually trigger the workflow
     inputs:
       paddle_whl:
