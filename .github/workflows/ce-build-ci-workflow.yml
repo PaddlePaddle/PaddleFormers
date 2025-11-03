@@ -1,7 +1,9 @@
 name: Build CI Images
 
 on: 
-  push
+  pull_request:
+    branches: [develop]  # 只对目标分支为 develop 的 PR 触发
+    types: [opened, synchronize, reopened]  # PR 创建、更新、重新打开时触发
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

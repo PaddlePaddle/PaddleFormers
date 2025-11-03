@@ -1,16 +1,5 @@
 name: Unittest GPU CI
 
-on:
-  schedule:
-    - cron: "0 18 * * *"
-  workflow_call:
-    inputs:
-      runner:
-        required: false
-        type: string
-      image_name:
-        required: false
-        type: string
 
 concurrency:
   group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
