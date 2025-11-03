@@ -1,7 +1,6 @@
 name: Unittest GPU CI
 
 on:
-  pull_request:
   schedule:
     - cron: "0 18 * * *"
   workflow_call:
