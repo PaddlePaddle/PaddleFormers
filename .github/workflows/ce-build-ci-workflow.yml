@@ -1,6 +1,7 @@
 name: Build CI Images
 
 on:
+  pull_request:
   schedule:
     - cron: "0 22 * * *"     # every day at 06:00 Beijing time (UTC+8)
   workflow_dispatch:
@@ -8,6 +9,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  image_base: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev"
 
 jobs:
   build-ci-images-test:
@@ -17,7 +21,7 @@ jobs:
     with:
       flag_build: test
       runner: ernie-8gpu-2
-      image_base: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev
+      image_base: ${{ env.image_base }}
 
   test-ci-images:
     name: test-ci-images
@@ -44,7 +48,7 @@ jobs:
     with:
       flag_build: update
       runner: ernie-8gpu-1
-      image_base: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev
+      image_base: ${{ env.image_base }}
 
   update-ci-images-2:
     name: update-ci-images-2
@@ -53,4 +57,4 @@ jobs:
     with:
       flag_build: update
       runner: ernie-8gpu-2
-      image_base: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev
+      image_base: ${{ env.image_base }}
