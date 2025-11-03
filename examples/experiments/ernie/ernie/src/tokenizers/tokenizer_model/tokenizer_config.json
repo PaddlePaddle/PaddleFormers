@@ -1,0 +1,15 @@
+{
+    "bos_token": "<s>",
+    "eos_token": "</s>",
+    "pad_token": "<unk>",
+    "unk_token": "<unk>",
+    "cls_token": "<|begin_of_sentence|>",
+    "sep_token": "<|end_of_sentence|>",
+    "mask_token": "<mask:1>",
+    "sys_start_token": "<mask:4>",
+    "sys_end_token": "<mask:5>",
+    "header_start_token": "<mask:6>",
+    "header_end_token": "<mask:7>",
+    "additional_special_tokens": null,
+    "tokenizer_class": "ErnieTokenizer"
+}
