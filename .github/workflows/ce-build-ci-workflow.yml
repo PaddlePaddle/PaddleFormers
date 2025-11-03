@@ -2,7 +2,7 @@ name: Build CI Images
 
 on:
   schedule:
-    - cron: "30 9 * * *"  # every day at 06:00 Beijing time (UTC+8)
+    - cron: "0 22 * * *"     # every day at 06:00 Beijing time (UTC+8)
   workflow_dispatch:
 
 concurrency:
