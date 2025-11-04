@@ -254,69 +254,6 @@ class Qwen3NextRMSNorm(nn.Layer):
         return f"dim={tuple(self.weight.shape)}, eps={self.eps}, dtype={self.weight.dtype}"
 
 
-def repeat_kv(hidden_states: Tensor, n_rep: int) -> Tensor:
-    """
-    This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
-    num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
-    """
-    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
-    if n_rep == 1:
-        return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
-    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
-
-
-def sdpa_attention_forward(
-    module: nn.Layer,
-    query: Tensor,
-    key: Tensor,
-    value: Tensor,
-    attention_mask: Optional[Tensor],
-    dropout: float = 0.0,
-    scaling: Optional[float] = None,
-    is_causal: Optional[bool] = None,
-    **kwargs,
-) -> tuple[Tensor, None]:
-    if kwargs.get("output_attentions", False) or kwargs.get("head_mask") is not None:
-        logger.warning_once(
-            "`sdpa` attention does not support `output_attentions=True` or `head_mask`."
-            " Please set your attention to `eager` if you want any of these features."
-        )
-    if hasattr(module, "num_key_value_groups"):
-        key = repeat_kv(key, module.num_key_value_groups)
-        value = repeat_kv(value, module.num_key_value_groups)
-
-    if attention_mask is not None and attention_mask.ndim == 4:
-        attention_mask = attention_mask[:, :, :, : key.shape[-2]]
-
-    # We dispatch to SDPA's Flash Attention or Efficient kernels via this `is_causal` if statement instead of an inline conditional assignment
-    # in SDPA to support both torch.compile's dynamic shapes and full graph options. An inline conditional prevents dynamic shapes from compiling.
-    # Note that it is important to check first for the shape, otherwise compile will fail with `argument 'is_causal' must be bool, not SymBool`
-    if is_causal is None:
-        # The last condition is for encoder (decoder) models which specify this by passing their own `is_causal` flag
-        # This is mainly due to those models having mixed implementations for encoder, decoder, and encoder-decoder attns
-        is_causal = query.shape[2] > 1 and attention_mask is None and getattr(module, "is_causal", True)
-
-    if scaling is not None:
-        default_scaling = query.shape[-1] ** -0.5
-        if scaling != default_scaling:
-            logger.warning_once(
-                "The paddle version of scaled_dot_product_attention doesn't support custom scaling."
-                f" The default scaling is {default_scaling}, but got {scaling}."
-            )
-
-    attn_output = F.scaled_dot_product_attention(
-        query.permute(0, 2, 1, 3),
-        key.permute(0, 2, 1, 3),
-        value.permute(0, 2, 1, 3),
-        attn_mask=attention_mask,
-        dropout_p=dropout,
-        is_causal=is_causal,
-    )
-
-    return attn_output, None
-
-
 class Qwen3NextAttention(Qwen3MoeAttention):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
@@ -363,38 +300,33 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         )
         gate = gate.reshape(bsz, q_len, -1)
 
-        query_states = self.q_norm(query_states.view(bsz, q_len, -1, self.head_dim)).transpose(1, 2)
-        key_states = self.k_norm(key_states.view(bsz, q_len, -1, self.head_dim)).transpose(1, 2)
-        value_states = value_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        query_states = self.q_norm(query_states.view(bsz, q_len, -1, self.head_dim))
+        key_states = self.k_norm(key_states.view(bsz, q_len, -1, self.head_dim))
+        value_states = value_states.reshape(bsz, q_len, -1, self.head_dim)
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        query_states, key_states = apply_rotary_pos_emb(
+            query_states, key_states, cos, sin, unsqueeze_dim=2
+        )
 
         if past_key_values is not None:
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
-        attention_interface: Callable = sdpa_attention_forward
-        if self.config._attn_implementation != "eager":
-            # TODO(liangshuhao): support various attention implements.
-            # attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-            logger.warning_once(
-                f"The `{self.config._attn_implementation}` is not supported, fallback to eager attention."
-            )
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, attn_weights = attention_interface(
             self,
-            query_states,
-            key_states,
-            value_states,
-            attention_mask,
+            query=query_states,
+            key=key_states,
+            value=value_states,
+            attention_mask=attention_mask,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
             **kwargs,
         )
 
-        attn_output = attn_output.reshape(*attn_output.shape[:-2], -1)
         attn_output = attn_output * paddle.sigmoid(gate)
 
         if self.config.sequence_parallel:
@@ -932,10 +864,6 @@ class Qwen3NextDecoderLayer(nn.Layer):
     ) -> Tensor:
         residual = hidden_states
 
-        if attention_mask is not None:
-            logger.warning_once("The attention_mask is not supported.")
-            attention_mask = None
-
         hidden_states = self.input_layernorm(hidden_states)
 
         # Token Mixer
@@ -1207,8 +1135,6 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
         loss_mask: Optional[Tensor] = None,
         use_cache: Optional[bool] = None,
         past_key_values: Optional[List[Tensor]] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
         output_router_logits: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
@@ -1235,10 +1161,6 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
         >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
         ```"""
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
         output_router_logits = (
             output_router_logits if output_router_logits is not None else self.config.output_router_logits
         )
@@ -1259,8 +1181,6 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
             past_key_values=past_key_values,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
             output_router_logits=output_router_logits,
             return_dict=return_dict,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
