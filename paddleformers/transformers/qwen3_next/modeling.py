@@ -19,6 +19,7 @@ from typing import Any, Callable, List, Optional
 import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 
 from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -26,6 +27,7 @@ from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.norm import mark_as_sequence_parallel_parameter
 from ...nn.pp_model import GeneralModelForCausalLMPipe, RMSNormPipe, parse_args
 from ...utils.log import logger
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
@@ -230,10 +232,13 @@ class Qwen3NextRotaryEmbedding(nn.Layer):
 
 
 class Qwen3NextRMSNorm(nn.Layer):
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, dim: int, eps: float = 1e-6, input_is_parallel: bool = False):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(paddle.zeros(dim))
+
+        if input_is_parallel:
+            mark_as_sequence_parallel_parameter(self.weight)
 
     def _norm(self, x):
         return x * paddle.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
@@ -323,10 +328,14 @@ class Qwen3NextAttention(Qwen3MoeAttention):
             tp_plan="colwise",
         )
         self.q_norm = Qwen3NextRMSNorm(
-            self.head_dim, eps=config.rms_norm_eps
+            self.head_dim,
+            eps=config.rms_norm_eps,
+            input_is_parallel=self.sequence_parallel,
         )  # unlike olmo, only on the head dim!
         self.k_norm = Qwen3NextRMSNorm(
-            self.head_dim, eps=config.rms_norm_eps
+            self.head_dim,
+            eps=config.rms_norm_eps,
+            input_is_parallel=self.sequence_parallel,
         )  # thus post q_norm does not need reshape
 
     def forward(
@@ -338,17 +347,25 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         cache_position: Optional[Tensor] = None,
         **kwargs,
     ) -> tuple[Tensor, Optional[Tensor]]:
-        input_shape = hidden_states.shape[:-1]
-        hidden_shape = (*input_shape, -1, self.head_dim)
+        query_states = self.q_proj(hidden_states)
+        key_states = self.k_proj(hidden_states)
+        value_states = self.v_proj(hidden_states)
+
+        if self.sequence_parallel:
+            max_sequence_length = self.config.max_sequence_length
+            bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+            q_len = max_sequence_length
+        else:
+            bsz, q_len, _ = hidden_states.shape
 
         query_states, gate = paddle.chunk(
-            self.q_proj(hidden_states).view(*input_shape, -1, self.head_dim * 2), 2, dim=-1
+            query_states.view(bsz, q_len, -1, self.head_dim * 2), chunks=2, dim=-1
         )
-        gate = gate.reshape(*input_shape, -1)
+        gate = gate.reshape(bsz, q_len, -1)
 
-        query_states = self.q_norm(query_states.view(hidden_shape)).transpose(1, 2)
-        key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
+        query_states = self.q_norm(query_states.view(bsz, q_len, -1, self.head_dim)).transpose(1, 2)
+        key_states = self.k_norm(key_states.view(bsz, q_len, -1, self.head_dim)).transpose(1, 2)
+        value_states = value_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -377,8 +394,11 @@ class Qwen3NextAttention(Qwen3MoeAttention):
             **kwargs,
         )
 
-        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        attn_output = attn_output.reshape(*attn_output.shape[:-2], -1)
         attn_output = attn_output * paddle.sigmoid(gate)
+
+        if self.config.sequence_parallel:
+            attn_output = attn_output.reshape(-1, attn_output.shape[-1])
 
         attn_output = self.o_proj(attn_output)
         return attn_output, attn_weights
@@ -662,6 +682,7 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         self.activation = config.hidden_act
         self.act = ACT2FN[config.hidden_act]
         self.layer_norm_epsilon = config.rms_norm_eps
+        self.sequence_parallel = config.sequence_parallel
 
         # QKV
         self.conv_dim = self.key_dim * 2 + self.value_dim
@@ -749,6 +770,9 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         cache_position: Optional[Tensor] = None,
         attention_mask: Optional[Tensor] = None,
     ):
+        if self.sequence_parallel:
+            hidden_states = GatherOp.apply(hidden_states).unsqueeze(0)
+
         hidden_states = apply_mask_to_padding_states(hidden_states, attention_mask)
 
         # Set up dimensions for reshapes later
@@ -857,6 +881,10 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         core_attn_out = core_attn_out.reshape(core_attn_out.shape[0], core_attn_out.shape[1], -1)
 
         output = self.out_proj(core_attn_out)
+
+        if self.sequence_parallel:
+            output = ScatterOp.apply(output.squeeze(0))
+
         return output
 
 
@@ -881,8 +909,16 @@ class Qwen3NextDecoderLayer(nn.Layer):
         else:
             self.mlp = Qwen3MoeMLP(config, intermediate_size=config.intermediate_size)
 
-        self.input_layernorm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = Qwen3NextRMSNorm(
+            config.hidden_size,
+            eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
+        self.post_attention_layernorm = Qwen3NextRMSNorm(
+            config.hidden_size,
+            eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
 
     def forward(
         self,
@@ -1096,14 +1132,12 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
 
-        causal_mask = create_causal_mask(
-            config=self.config,
-            input_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            cache_position=cache_position,
-            past_key_values=past_key_values,
-            position_ids=position_ids,
-        )
+        if self.config.sequence_parallel:
+            # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
+            inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
+            # [bs * seq_len / mp_degree, num_head * head_dim]
+            inputs_embeds = ScatterOp.apply(inputs_embeds)
+
         causal_mask = None
         linear_attn_mask = self._update_linear_attn_mask(attention_mask, cache_position)
 
