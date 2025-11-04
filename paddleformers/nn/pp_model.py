@@ -13,8 +13,8 @@
 # limitations under the License.
 import ast
 import math
-from typing import OrderedDict
 from copy import deepcopy
+from typing import OrderedDict
 
 import paddle
 import paddle.distributed as dist

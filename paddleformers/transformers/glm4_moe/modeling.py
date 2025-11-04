@@ -38,9 +38,9 @@ from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
-from .configuration import Glm4MoeConfig
 from ..refined_recompute import get_skip_recompute_ops
 from ..refined_recompute import recompute as rr_recompute
+from .configuration import Glm4MoeConfig
 
 
 def eager_attention_forward(
