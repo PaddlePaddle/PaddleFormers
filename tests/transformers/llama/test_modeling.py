@@ -359,9 +359,9 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-1.41304350, 0.50553894, 1.06899679],
-                    [-0.22070873, -0.05084248, -0.92472076],
-                    [-0.45478714, -1.70910871, 0.60857075],
+                    [-1.41310847, 0.50557643, 1.06902575],
+                    [-0.22077429, -0.05084393, -0.92472863],
+                    [-0.45454565, -1.70914638, 0.60857356],
                 ]
             ],
             dtype=output.dtype,
@@ -382,9 +382,9 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-1.41304350, 0.50553894, 1.06899679],
-                    [-0.22070873, -0.05084248, -0.92472076],
-                    [-0.45478714, -1.70910871, 0.60857075],
+                    [-1.41310847, 0.50557643, 1.06902575],
+                    [-0.22077429, -0.05084393, -0.92472863],
+                    [-0.45454565, -1.70914638, 0.60857356],
                 ]
             ],
             dtype=output.dtype,
@@ -397,22 +397,22 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_no_attention(self):
-        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3", convert_from_hf=True)
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 16]
+        expected_shape = [1, 11, 64]
         self.assertEqual(output.shape, expected_shape)
 
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-1.28417969, 0.30957031, -0.15197754],
-                    [-0.71972656, -0.85546875, 1.87890625],
-                    [-1.13378906, -0.02519226, 0.90966797],
+                    [0.54044795, -0.56001222, 0.31749421],
+                    [1.23107874, -0.61449337, 0.75768954],
+                    [1.02047992, -0.82791269, 0.71952438],
                 ]
             ],
             dtype=output.dtype,
@@ -421,21 +421,21 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_with_attention(self):
-        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3", convert_from_hf=True)
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 16]
+        expected_shape = [1, 11, 64]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-1.28417969, 0.30957031, -0.15197754],
-                    [-0.71972656, -0.85546875, 1.87890625],
-                    [-1.13378906, -0.02519226, 0.90966797],
+                    [0.54044795, -0.56001222, 0.31749421],
+                    [1.23107874, -0.61449337, 0.75768954],
+                    [1.02047992, -0.82791269, 0.71952438],
                 ]
             ],
             dtype=output.dtype,
