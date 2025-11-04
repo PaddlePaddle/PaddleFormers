@@ -234,7 +234,7 @@ class PaddleProcessorMixin:
 
         return proper_class
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, legacy_serialization=True) -> dict[str, Any]:
         """
         Serializes this instance to a Python dictionary.
 
