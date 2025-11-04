@@ -268,7 +268,7 @@ class EmbeddingPipe(nn.Layer):
                     dtype="int64",
                 )
                 .unsqueeze(0)
-                .tile(input_ids.shape[0], 1)
+                .tile([input_ids.shape[0], 1])
             )
         if self.config.fuse_rope:
             position_embeddings = None
