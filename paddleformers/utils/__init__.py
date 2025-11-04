@@ -85,6 +85,8 @@ import_structure = {
         "_make_causal_mask",
         "_expand_2d_mask",
         "build_alibi_tensor",
+        "get_use_casual_mask",
+        "get_triangle_upper_mask",
     ],
     "tools": ["device_guard"],
     "downloader": ["get_weights_path_from_url"],
