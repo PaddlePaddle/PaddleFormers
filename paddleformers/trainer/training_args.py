@@ -2565,6 +2565,8 @@ class TrainingArguments:
                 return True
             elif self.enable_auto_parallel:
                 return True
+            elif self.save_checkpoint_format == "flex_checkpoint":
+                return True
             elif self.use_hybrid_parallel:
                 # save on dataset rank 0
                 return (

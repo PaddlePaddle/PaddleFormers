@@ -125,7 +125,10 @@ from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatch
 from ..utils.env import (
     LOKR_WEIGHTS_NAME,
     LORA_WEIGHTS_NAME,
+    MASTER_WEIGHT_DIC,
     MODEL_META_NAME,
+    MODEL_STATE_DIC,
+    OPTIMIZER_STATE_DIC,
     PADDLE_MASTER_WEIGHTS_INDEX_NAME,
     PADDLE_OPTIMIZER_NAME,
     PADDLE_PEFT_WEIGHTS_INDEX_NAME,
@@ -240,10 +243,6 @@ except:
 
 
 __all__ = ["Trainer"]
-
-MODEL_STATE_DIC = "model_state"
-OPTIMIZER_STATE_DIC = "optimizer_state"
-MASTER_WEIGHT_DIC = "master_weight"
 
 
 class Trainer:
@@ -2807,7 +2806,7 @@ class Trainer:
         self,
         output_dir: Optional[str] = None,
         merge_tensor_parallel: Optional[bool] = False,
-        fc_to_hf: Optional[bool] = False,
+        save_to_flex: Optional[bool] = True,
     ):
         """
         Will save the model, so you can reload it using `from_pretrained()`.
@@ -2827,7 +2826,7 @@ class Trainer:
             self.model_wrapped.get_all_parameters(convert2cpu=True)
 
         if self.args.should_save_model_state:
-            self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, fc_to_hf=fc_to_hf)
+            self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, save_to_flex=save_to_flex)
         else:
             if (
                 self.args.save_checkpoint_format == "unified_checkpoint"
@@ -3168,7 +3167,7 @@ class Trainer:
         output_dir: Optional[str] = None,
         state_dict=None,
         merge_tensor_parallel=False,
-        fc_to_hf=False,
+        save_to_flex=True,
     ):
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
@@ -3227,12 +3226,13 @@ class Trainer:
 
             return
         if self.args.save_checkpoint_format == "flex_checkpoint":
-            if fc_to_hf:
-                assert self.args.save_to_hf, "save_to_hf must be True when save_checkpoint_format is flex_checkpoint"
-                is_main_process = paddle.distributed.get_rank() == 0
-                self.model.save_pretrained(output_dir, is_main_process)
-            else:
+            if save_to_flex:
                 self._save_flex_model_state(output_dir)
+            else:
+                is_main_process = paddle.distributed.get_rank() == 0
+                self.model.save_pretrained(
+                    output_dir, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                )
             return
         merge_tensor_parallel = merge_tensor_parallel and self.args.use_hybrid_parallel
         # peft model

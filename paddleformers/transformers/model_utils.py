@@ -117,10 +117,6 @@ __all__ = [
     "register_base_model",
 ]
 
-FLEX_CHECKPOINT_MODEL_WHITELIST = [
-    "Glm4MoeForCausalLMPipe",
-]
-
 
 def fit_bf16_to_uint16_np(tensor):
     if "xpu" in paddle.device.get_device() and isinstance(tensor, np.ndarray) and str(tensor.dtype) == "bfloat16":
@@ -2821,6 +2817,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", None)
         load_via_cpu = kwargs.pop("load_via_cpu", False)
+        load_checkpoint_format = kwargs.pop("load_checkpoint_format", "")
         if subfolder is None:
             subfolder = ""
         variant = kwargs.pop("variant", None)
@@ -2914,8 +2911,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         with ContextManagers(init_contexts):
             model = cls(config, *init_args, **model_kwargs)
 
-        model_name = cls.__name__
-        if model_name in FLEX_CHECKPOINT_MODEL_WHITELIST:
+        if hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
             aoa_config = cls._gen_aoa_config(config)
 
             sharded_state_dict = model.sharded_state_dict()
@@ -3126,6 +3122,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # variant = kwargs.get("variant", None)
         # is_main_process = kwargs.get("is_main_process", True)
         save_to_hf = kwargs.get("save_to_hf", False)
+
+        save_checkpoint_format = kwargs.get("save_checkpoint_format", "")
         safe_serialization = safe_serialization or save_to_hf
 
         save_directory = save_dir
@@ -3143,8 +3141,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
-        model_name = self.__class__.__name__
-        if model_name in FLEX_CHECKPOINT_MODEL_WHITELIST:
+        if hasattr(self.__class__, "_gen_inv_aoa_config") and save_checkpoint_format == "flex_checkpoint":
             aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
             itr = model_to_save.full(aoa_config=aoa_config)
             total_saved_size = save_full_param(
@@ -3153,7 +3150,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 rank=paddle.distributed.get_rank(),
                 world_size=paddle.distributed.get_world_size(),
                 max_shard_size=max_shard_size,
-                num_saver_ranks=8,
+                num_saver_ranks=min(8, paddle.distributed.get_world_size()),
             )
 
             dtype = get_parameter_dtype(model_to_save)
