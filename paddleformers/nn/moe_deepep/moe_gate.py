@@ -435,6 +435,8 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
             batch_size_seq_len, d_model = gates.shape
 
         gates_ori = gates
+        if self.scoring_func == "sigmoid":
+            gates_ori = gates_ori / (gates_ori.sum(axis=-1, keepdim=True) + 1e-20)
 
         logits = F.linear(gates, self.weight)
 
