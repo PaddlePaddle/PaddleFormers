@@ -20,8 +20,10 @@ from functools import partial
 from typing import List, Optional, Tuple, Union
 
 import paddle
+import paddle.distributed as dist
 import paddle.nn.functional as F
 from paddle import Tensor, nn
+from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 
@@ -31,6 +33,7 @@ from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
+from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
@@ -321,10 +324,27 @@ class Qwen3MoeDecoderLayer(nn.Layer):
 
         self.self_attn = Qwen3MoeAttention(config, layer_idx)
 
+        try:
+            moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+        except:
+            moe_group = None
+        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
         if (layer_idx not in config.mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
         ):
-            self.mlp = Qwen3MoeSparseMoeBlock(config)
+            self.mlp = (
+                QuickAccessMoEFactory.create_from_model_name(
+                    pretrained_config=config,
+                    expert_class=Qwen3MoeMLP,
+                    gate_activation="softmax",
+                    expert_activation="silu",
+                    train_topk_method="greedy",
+                    inference_topk_method="greedy",
+                    drop_tokens=False,
+                )
+                if expert_parallel_degree > 1
+                else Qwen3MoeSparseMoeBlock(config)
+            )
         else:
             # num_experts == 0 or this layer is not sparse layer
             self.mlp = Qwen3MoeMLP(config)
@@ -513,20 +533,46 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                         for k in LAYER_ROWWISE
                     }
                 )
+                try:
+                    moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+                except Exception:
+                    moe_group = None
+                expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+                # TODO: merge disable_ffn_model_parallel and expert_parallel_degree
+                if expert_parallel_degree <= 1:
+                    # # if disable_ffn_model_parallel is True, disable expert layer tp plan
+                    # if not config.disable_ffn_model_parallel:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
+                                fn, is_column=True
+                            )
+                            for e in range(config.num_experts)
+                            for k in EXPERT_LAYER_COLWISE
+                        }
+                    )
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
+                                fn, is_column=False
+                            )
+                            for e in range(config.num_experts)
+                            for k in EXPERT_LAYER_ROWWISE
+                        }
+                    )
                 actions.update(
                     {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=True)
-                        for e in range(config.num_experts)
-                        for k in EXPERT_LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=False)
-                        for e in range(config.num_experts)
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=False)
                         for k in EXPERT_LAYER_ROWWISE
                     }
                 )
+                actions.update(
+                    {
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=True)
+                        for k in EXPERT_LAYER_COLWISE
+                    }
+                )
+
                 # bias
                 if config.attention_bias:
                     actions.update(
@@ -535,7 +581,6 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                             for b in BIAS_KEYS
                         }
                     )
-
             return actions
 
         mappings = make_base_actions()

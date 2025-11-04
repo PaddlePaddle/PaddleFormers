@@ -140,6 +140,7 @@ def run_sft(
     training_args.max_seq_len = data_args.max_seq_len
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
+    training_args.print_config(training_args, "Train")
 
     if training_args.pre_alloc_memory > 0:
         memory_size = int(training_args.pre_alloc_memory * 1024 * 1024 * 1024)

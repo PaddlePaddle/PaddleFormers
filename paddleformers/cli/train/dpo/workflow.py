@@ -108,7 +108,7 @@ def run_dpo(
             logger.info("Tensor_parallel_degree = 1. Set sequence_parallel to False.")
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
-    training_args.print_config(training_args, "DPOConfig")
+    training_args.print_config(training_args, "Train")
 
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, world_size: "

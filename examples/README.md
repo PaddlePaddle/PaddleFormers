@@ -45,6 +45,13 @@ save_to_hf: false
 ...
 ```
 
+为了方便测试，我们也提供了[demo 数据集](https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz)可以直接使用：
+
+```shell
+wget https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz
+mkdir -p data/pt && tar -xf pt_data.tar.gz -C data/sft/
+```
+
 #### 1.1.2. 离线数据流
 
 我们也可以选择使用离线的比特预训练数据流，更节省内存。离线数据流制作方法如下：
