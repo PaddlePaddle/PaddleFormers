@@ -38,8 +38,6 @@ from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
-from ..refined_recompute import get_skip_recompute_ops
-from ..refined_recompute import recompute as rr_recompute
 from .configuration import Glm4MoeConfig
 
 
@@ -532,7 +530,6 @@ class Glm4MoeDecoderLayer(nn.Layer):
         self.config = config
         self.hidden_size = config.hidden_size
         self.layer_idx = layer_idx
-        self.skip_recompute_ops = get_skip_recompute_ops(self.config, self.layer_idx)
 
         self.self_attn = Glm4MoeAttention(config=config, layer_idx=layer_idx)
 
@@ -1445,8 +1442,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
                 position_embeddings=tuple_position_embeddings,
             )
         elif self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
-            recompute_fn = rr_recompute if any(self.skip_recompute_ops.values()) else recompute
-            hidden_states = recompute_fn(
+            hidden_states = recompute(
                 super().forward,
                 hidden_states,
                 position_ids=position_ids_decoder,
