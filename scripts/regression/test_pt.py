@@ -105,10 +105,6 @@ class PTTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/pt/train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/pt/eval.jsonl",
             "output_dir": output_dir,
-            "max_seq_len": 1024,
-            "warmup_steps": -1,
-            "max_steps": 5,
-            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -157,9 +153,6 @@ class PTTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/pt/train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/pt/eval.jsonl",
             "output_dir": output_dir,
-            "max_seq_len": 1024,
-            "max_steps": 5,
-            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -219,10 +212,6 @@ class PTTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/pt/train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/pt/eval.jsonl",
             "output_dir": output_dir,
-            "max_seq_len": 1024,
-            "warmup_steps": -1,
-            "max_steps": 5,
-            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -270,10 +259,6 @@ class PTTrainTest(unittest.TestCase):
             "train_dataset_path": "./tests/fixtures/dummy/pt/train.jsonl",
             "eval_dataset_path": "./tests/fixtures/dummy/pt/eval.jsonl",
             "output_dir": output_dir,
-            "max_seq_len": 1024,
-            "warmup_steps": -1,
-            "max_steps": 5,
-            "save_steps": 3,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
