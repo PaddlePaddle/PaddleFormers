@@ -61,7 +61,6 @@
     "v_head_dim": 128,
     "vocab_size": 129280,
     "using_flex_token": true,
-    "using_fake_gate": false,
     "use_fused_rms_norm": true,
     "fuse_attention_ffn": true,
     "use_fused_rope": true,

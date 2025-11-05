@@ -405,7 +405,7 @@ def main():
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path, download_hub="huggingface")
+    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
     config = DeepseekV2FastConfig.from_pretrained(model_args.model_name_or_path)
 
     # set all llm config
