@@ -30,7 +30,6 @@ from typing import Any, Dict, List, Optional
 import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
-from paddle.distributed.fleet.base.topology import message2nccl_config
 
 from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.log import logger
