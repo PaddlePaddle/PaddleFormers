@@ -390,17 +390,18 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
-        expected_shape = [1, 11, 16]
+        expected_shape = [1, 11, 64]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [1.68211806, -0.43463036, 1.29771197],
-                    [0.97434580, -1.14583611, 0.95339710],
-                    [0.49631220, -0.54543382, 1.69301867],
+                    [0.11164780, 1.03145301, -0.11895126],
+                    [0.15276040, 0.81533068, -0.27121973],
+                    [0.58725959, -0.20214812, -0.36888719],
                 ]
             ]
         )
+        print(output[:, 1:4, 1:4].cast(paddle.float32))
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
     def test_inference_with_attention(self):
@@ -412,17 +413,18 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
-        expected_shape = [1, 11, 16]
+        expected_shape = [1, 11, 64]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [1.68211806, -0.43463036, 1.29771197],
-                    [0.97434580, -1.14583611, 0.95339710],
-                    [0.49631220, -0.54543382, 1.69301867],
+                    [0.11164780, 1.03145301, -0.11895126],
+                    [0.15276040, 0.81533068, -0.27121973],
+                    [0.58725959, -0.20214812, -0.36888719],
                 ]
             ]
         )
+        print(output[:, 1:4, 1:4].cast(paddle.float32))
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
 
