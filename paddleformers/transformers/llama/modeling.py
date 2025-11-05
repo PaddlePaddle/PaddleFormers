@@ -39,6 +39,7 @@ from ..refined_recompute import (
     get_skip_recompute_ops,
 )
 from ..refined_recompute import recompute as rr_recompute
+from .auto_dist_config import get_dist_config
 
 try:
     from paddle.incubate.nn.functional import fused_rotary_position_embedding
@@ -178,15 +179,16 @@ def assign_kv_heads(num_kv_heads: int, num_gpus: int):
     return assignment_list
 
 
-def parallel_matmul(x: Tensor, y: Tensor, transpose_y=False, tensor_parallel_output=True):
+def parallel_matmul(x: Tensor, y: Tensor, transpose_y=False, tensor_parallel_output=True, args=None):
     is_fleet_init = True
     tensor_parallel_degree = 1
-    try:
-        hcg = fleet.get_hybrid_communicate_group()
-        model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
-    except:
-        is_fleet_init = False
+    if args is None or not args.run_single_model:
+        try:
+            hcg = fleet.get_hybrid_communicate_group()
+            model_parallel_group = hcg.get_model_parallel_group()
+            tensor_parallel_degree = hcg.get_model_parallel_world_size()
+        except:
+            is_fleet_init = False
 
     if paddle.in_dynamic_mode():
         y_is_distributed = y.is_distributed
@@ -1326,6 +1328,8 @@ class LlamaPretrainedModel(PretrainedModel):
 
     @classmethod
     def _get_name_mappings(cls, config: LlamaConfig) -> list[StateDictNameMapping]:
+        if config.run_single_model:
+            return cls._get_name_mappings()
         mappings: list[StateDictNameMapping] = []
         model_mappings = [
             ["embed_tokens.weight"],
@@ -1360,7 +1364,8 @@ class LlamaPretrainedModel(PretrainedModel):
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: LlamaConfig, is_split=True):
-
+        if config.run_single_model:
+            return {}
         from ..conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
@@ -1420,6 +1425,8 @@ class LlamaPretrainedModel(PretrainedModel):
 
     @classmethod
     def _get_fuse_or_split_param_mappings(cls, config: LlamaConfig, is_fuse=False):
+        if config.run_single_model:
+            return cls._get_fuse_or_split_param_mappings()
         # return parameter fuse utils
         from ..conversion_utils import split_or_fuse_func
 
@@ -1984,7 +1991,11 @@ class LlamaLMHead(nn.Layer):
             )
         else:
             logits = parallel_matmul(
-                hidden_states, self.weight, transpose_y=self.transpose_y, tensor_parallel_output=tensor_parallel_output
+                hidden_states,
+                self.weight,
+                transpose_y=self.transpose_y,
+                tensor_parallel_output=tensor_parallel_output,
+                args=self.config,
             )
         return logits
 
@@ -2156,3 +2167,7 @@ class LlamaForCausalLM(LlamaPretrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+    def auto_dist_config(self, prefix=""):
+        assert self.config.run_single_model, "Use `get_dist_config` only in single card mode."
+        return get_dist_config(self, prefix)
