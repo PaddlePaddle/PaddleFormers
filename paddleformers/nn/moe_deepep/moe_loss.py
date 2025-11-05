@@ -58,6 +58,27 @@ class LossFunction(Protocol):
         pass
 
 
+class AddAuxiliaryLoss(paddle.autograd.PyLayer):
+    """
+    The trick function of adding auxiliary (aux) loss,
+    which includes the gradient of the aux loss during backpropagation.
+    """
+
+    @staticmethod
+    def forward(ctx, x, loss):
+        assert paddle.numel(loss) == 1
+        ctx.dtype = loss.dtype
+        ctx.required_aux_loss = not loss.stop_gradient
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        grad_loss = None
+        if ctx.required_aux_loss:
+            grad_loss = paddle.ones(1, dtype=ctx.dtype)
+        return grad_output, grad_loss
+
+
 class LossCombiner(Protocol):
     def __call__(self, losses: Dict[str, paddle.Tensor], configs: Dict[str, LossConfig]) -> paddle.Tensor:
         pass

@@ -31,6 +31,7 @@ from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Glm4MoeMLP
+from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
@@ -562,7 +563,24 @@ class Glm4MoeDecoderLayer(nn.Layer):
             moe_group = None
         expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
         if layer_idx >= config.first_k_dense_replace:
-            self.mlp = Glm4MoeMoE(config) if expert_parallel_degree <= 1 else Glm4MoeFlexMoE(config)
+            self.mlp = (
+                Glm4MoeMoE(config)
+                if expert_parallel_degree <= 1
+                else (
+                    QuickAccessMoEFactory.create_from_model_name(
+                        pretrained_config=config,
+                        expert_class=Glm4MoeMLP,
+                        gate_activation="sigmoid",
+                        expert_activation="silu",
+                        train_topk_method="noaux_tc",
+                        inference_topk_method="noaux_tc",
+                        drop_tokens=False,
+                        transpose_gate_weight=True,
+                    )
+                    if config.use_unified_moe
+                    else Glm4MoeFlexMoE(config)
+                )
+            )
         else:
             self.mlp = Glm4MoeMLP(config, fuse_up_gate=config.fuse_attention_ffn)
 
