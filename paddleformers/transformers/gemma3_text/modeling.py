@@ -29,7 +29,6 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..activations import ACT2FN
-from ..configuration_utils import PretrainedConfig
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
@@ -57,7 +56,7 @@ class Gemma3TextScaledWordEmbedding(nn.Embedding):
         padding_idx = config.pad_token_id
 
         # TODO: config cannot be updated when pp!=1, temporarily hard-coded
-        embed_scale = config.hidden_size**0.5  # getattr(config, "embed_scale", 1.0)
+        embed_scale = config.hidden_size**0.5
 
         super().__init__(num_embeddings, embedding_dim, padding_idx)
         self.register_buffer("embed_scale", paddle.tensor(embed_scale), persistable=False)
@@ -144,59 +143,27 @@ class Gemma3RMSNormPipe(Gemma3RMSNorm):
         return super().forward(x)
 
 
-def _compute_default_rope_parameters(
-    config: Optional[PretrainedConfig] = None,
-    device: Optional["paddle.device"] = None,
-    seq_len: Optional[int] = None,
-) -> tuple["paddle.Tensor", float]:
-    """
-    Computes the inverse frequencies according to the original RoPE implementation
-    Args:
-        config ([`~transformers.PretrainedConfig`]):
-            The model configuration.
-        device (`paddle.device`):
-            The device to use for initialization of the inverse frequencies.
-        seq_len (`int`, *optional*):
-            The current sequence length. Unused for this type of RoPE.
-    Returns:
-        Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
-        post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
-    """
-    base = config.rope_theta
-    partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-    head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
-    dim = int(head_dim * partial_rotary_factor)
-
-    attention_factor = 1.0  # Unused in this type of RoPE
-
-    # Compute the inverse frequencies
-    inv_freq = 1.0 / (
-        base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).to(device=device, dtype=paddle.float32) / dim)
-    )
-    return inv_freq, attention_factor
-
-
 class Gemma3RotaryEmbedding(nn.Layer):
-    def __init__(self, config: Gemma3TextConfig, device=None):
+    def __init__(self, config):
         super().__init__()
-        # BC: "rope_type" was originally "type"
-        if hasattr(config, "rope_scaling") and isinstance(config.rope_scaling, dict):
-            self.rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
-        else:
-            self.rope_type = "default"
-        self.max_seq_len_cached = config.max_position_embeddings
-        self.original_max_seq_len = config.max_position_embeddings
-
         self.config = config
-        # TODO: rope_type is default in `gemma-3-1b-it` but linear in `gemma-3-4b-it`
-        self.rope_init_fn = _compute_default_rope_parameters
+        base = config.rope_theta
+        partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
+        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        dim = int(head_dim * partial_rotary_factor)
 
-        inv_freq, self.attention_scaling = self.rope_init_fn(self.config, device)
+        # TODO: The rope_type here is the 'default', which supports some models such as `gemma-3-1b-it`.
+        # Other models, such as `gemma-3-4b-it`, require other types, such as 'linear', which is not supported now.
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        self.attention_scaling = 1.0
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = self.inv_freq
 
-    @paddle.no_grad()
     def forward(self, x, position_ids):
+        # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
+        # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
+        # numerical stability is critical (e.g., RoPE init/compute), this conversion can lead to precision loss.
+        # Disabling auto_cast here ensures the matmul operation runs in the original precision (FP32) as intended.
         with paddle.amp.auto_cast(False):
             inv_freq_expanded = (
                 self.inv_freq.unsqueeze(0)
@@ -219,15 +186,26 @@ def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.cat((-x2, x1), dim=-1)
+    return paddle.cat([-x2, x1], axis=-1)
+
+
+def _apply_rotary_emb(
+    x: paddle.Tensor,
+    cos: paddle.Tensor,
+    sin: paddle.Tensor,
+) -> paddle.Tensor:
+    x = x.transpose([0, 2, 1, 3])
+    x_embed = (x * cos) + (rotate_half(x) * sin)
+    return x_embed.transpose([0, 2, 1, 3])
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+    """Applies Rotary Position Embedding to the query and key tensors."""
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed.transpose(1, 2).astype(q.dtype), k_embed.transpose(1, 2).astype(q.dtype)
+    q_embed = _apply_rotary_emb(q, cos, sin)
+    k_embed = _apply_rotary_emb(k, cos, sin)
+    return q_embed.astype(q.dtype), k_embed.astype(k.dtype)
 
 
 class Gemma3Attention(nn.Layer):
@@ -322,8 +300,8 @@ class Gemma3Attention(nn.Layer):
 
         hidden_shape = (bsz, q_len, -1, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
+        query_states = self.q_proj(hidden_states).reshape(hidden_shape)
+        key_states = self.k_proj(hidden_states).reshape(hidden_shape)
         value_states = self.v_proj(hidden_states).reshape(hidden_shape)
 
         query_states = self.q_norm(query_states)
@@ -428,12 +406,6 @@ class Gemma3DecoderLayer(nn.Layer):
 class Gemma3PreTrainedModel(PretrainedModel):
     config_class = Gemma3Config
     base_model_prefix = "model"
-    _no_split_modules = [
-        "Gemma3DecoderLayer",
-        # "SiglipVisionEmbeddings",
-        # "SiglipEncoderLayer",
-        # "SiglipMultiheadAttentionPoolingHead",
-    ]
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
     transpose_weight_keys = [
         "q_proj",
@@ -518,12 +490,8 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
 
     def __init__(self, config: Gemma3TextConfig):
         super().__init__(config)
-        self.padding_idx = config.pad_token_id
-        self.vocab_size = config.vocab_size
         self.sequence_parallel = config.sequence_parallel
 
-        # Gemma3 downcasts the below to bfloat16, causing sqrt(3072)=55.4256 to become 55.5.
-        # See https://github.com/huggingface/transformers/pull/29402
         self.embed_tokens = Gemma3TextScaledWordEmbedding(config)
         self.layers = nn.LayerList(
             [Gemma3DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
@@ -531,8 +499,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         self.norm = Gemma3RMSNormPipe(config)
         self.rotary_emb = Gemma3RotaryEmbedding(config=config)
 
-        # TODO: raushan fix this after RoPE refactor. For now we hack it by reassigning thetas
-        # when we want to create a local RoPE layer. Config defaults should hold values for global RoPE
+        # TODO: usage might be modified in the future
         config = copy.deepcopy(config)
         config.rope_theta = config.rope_local_base_freq
         config.rope_scaling = {"rope_type": "default"}
@@ -606,16 +573,15 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        # Compute cache length
+        if inputs_embeds is None:
+            # [bs, seq_len, dim]
+            inputs_embeds = self.embed_tokens(input_ids)
+
         cache_length = 0
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
         else:
             cache_length = past_key_values[0][0].shape[-2]
-
-        # Get input embeddings
-        if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
 
         if self.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
@@ -825,7 +791,6 @@ class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-        logits_to_keep: Union[int, paddle.Tensor] = 0,
         **kwargs,
     ) -> CausalLMOutputWithPast:
         r"""
@@ -874,9 +839,7 @@ class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
 
         hidden_states = outputs[0]
 
-        # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-        logits = self.lm_head(hidden_states[:, slice_indices, :])
+        logits = self.lm_head(hidden_states)
 
         if self.config.final_logit_softcapping is not None:
             logits = logits / self.config.final_logit_softcapping
@@ -907,7 +870,6 @@ class Gemma3TextForSequenceClassification(Gemma3PreTrainedModel):
     """
 
     config_class = Gemma3TextConfig
-    # TODO: implement the class refer to deepseekv2 & QWen3
 
 
 class Gemma3ForCausalLMPipe(GeneralModelForCausalLMPipe):

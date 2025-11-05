@@ -18,8 +18,6 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig, layer_type_validation
 
-# from ...modeling_rope_utils import rope_config_validation
-
 if TYPE_CHECKING:
     # TODO: Implement SiglipVisionConfig for multimodal support
     from ...siglip import SiglipVisionConfig
@@ -33,6 +31,7 @@ class Gemma3TextConfig(PretrainedConfig):
     e.g. [google/gemma3_text-7b](https://huggingface.co/google/gemma3_text-7b)
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
+
     Args:
         vocab_size (`int`, *optional*, defaults to 262208):
             Vocabulary size of the Gemma3Text model. Defines the number of different tokens that can be represented by the
@@ -130,11 +129,12 @@ class Gemma3TextConfig(PretrainedConfig):
                     Only used with 'llama3'. Scaling factor applied to high frequency components of the RoPE
         rope_local_base_freq (float, *optional*, defaults to 10000.0):
             The base period of the RoPE embeddings for local attention.
-        use_bidirectional_attention (`bool`, *optional*, defaults to `False`): If True, the model will attend to all
-            text tokens instead of using a causal mask. This does not change behavior for vision tokens.
+        use_bidirectional_attention (`bool`, *optional*, defaults to `False`):
+            If True, the model will attend to all text tokens instead of using a causal mask. This does not change
+            behavior for vision tokens.
 
     ```python
-    >>> from transformers import Gemma3TextModel, Gemma3TextConfig
+    >>> from paddleformers import Gemma3TextModel, Gemma3TextConfig
     >>> # Initializing a Gemma3Text gemma3_text-7b style configuration
     >>> configuration = Gemma3TextConfig()
     >>> # Initializing a model from the gemma3_text-7b style configuration
@@ -146,20 +146,6 @@ class Gemma3TextConfig(PretrainedConfig):
 
     model_type = "gemma3_text"
     keys_to_ignore_at_inference = ["past_key_values"]
-    base_model_tp_plan = {
-        "layers.*.self_attn.q_proj": "colwise",
-        "layers.*.self_attn.k_proj": "colwise",
-        "layers.*.self_attn.v_proj": "colwise",
-        "layers.*.self_attn.o_proj": "rowwise",
-        "layers.*.mlp.gate_proj": "colwise",
-        "layers.*.mlp.up_proj": "colwise",
-        "layers.*.mlp.down_proj": "rowwise",
-    }
-    base_model_pp_plan = {
-        "embed_tokens": (["input_ids"], ["inputs_embeds"]),
-        "layers": (["hidden_states", "attention_mask"], ["hidden_states"]),
-        "norm": (["hidden_states"], ["hidden_states"]),
-    }
 
     def __init__(
         self,
@@ -224,7 +210,6 @@ class Gemma3TextConfig(PretrainedConfig):
             self.sliding_window = self.sliding_window // 2 + 1
         self.rope_local_base_freq = rope_local_base_freq
         self.rope_scaling = rope_scaling
-        # rope_config_validation(self)
         self._sliding_window_pattern = kwargs.get("sliding_window_pattern", 6)
         if self.layer_types is None:
             self.layer_types = [
@@ -245,11 +230,15 @@ class Gemma3Config(PretrainedConfig):
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
 
+    **Note: This configuration class is currently a placeholder and is NOT associated with any implemented model.
+        Support for Gemma3(vision) models is not yet available in this library.**
+
     Args:
         text_config (`Union[Gemma3TextConfig, dict]`, *optional*):
             The config object of the text backbone.
         vision_config (`Union[AutoConfig, dict]`,  *optional*):
             Custom vision config or dict.
+            **Note: vision_config is not supported now.**
         mm_tokens_per_image (`int`, *optional*, defaults to 256):
             The number of tokens per image embedding.
         boi_token_index (`int`, *optional*, defaults to 255999):
@@ -261,23 +250,13 @@ class Gemma3Config(PretrainedConfig):
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
 
-
     Example:
 
     ```python
-    >>> from transformers import Gemma3ForConditionalGeneration, Gemma3Config, SiglipVisionConfig, Gemma3TextConfig
-
-    >>> # Initializing a Siglip-like vision config
-    >>> vision_config = SiglipVisionConfig()
+    >>> from paddleformers import Gemma3TextConfig
 
     >>> # Initializing a Gemma3 Text config
     >>> text_config = Gemma3TextConfig()
-
-    >>> # Initializing a Gemma3 gemma-3-4b style configuration
-    >>> configuration = Gemma3Config(vision_config, text_config)
-
-    >>> # Initializing a model from the gemma-3-4b style configuration
-    >>> model = Gemma3TextConfig(configuration)
 
     >>> # Accessing the model configuration
     >>> configuration = model.config
@@ -291,7 +270,6 @@ class Gemma3Config(PretrainedConfig):
     }
     sub_configs = {
         "text_config": Gemma3TextConfig,
-        # "vision_config": SiglipVisionConfig,
     }
 
     def __init__(
@@ -311,11 +289,6 @@ class Gemma3Config(PretrainedConfig):
         elif isinstance(text_config, dict):
             text_config = Gemma3TextConfig(**text_config)
 
-        # if isinstance(vision_config, dict):
-        #     vision_config = SiglipVisionConfig(**vision_config)
-        # elif vision_config is None:
-        #     vision_config = SiglipVisionConfig()
-        #     logger.info("vision_config is None, using default SiglipVisionConfig vision config.")
         logger.info("vision_config is not supported now.")
 
         self.text_config = text_config
