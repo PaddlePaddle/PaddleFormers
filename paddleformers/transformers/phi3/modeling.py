@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# # Copyright 2024 Microsoft and the HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -194,7 +194,7 @@ class Phi3DecoderLayer(nn.Layer):
             config=config,
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
-            has_bias=config.use_bias,
+            has_bias=False,
             norm_eps=self.config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
@@ -202,7 +202,7 @@ class Phi3DecoderLayer(nn.Layer):
             config=config,
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
-            has_bias=config.use_bias,
+            has_bias=False,
             norm_eps=self.config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
@@ -348,7 +348,7 @@ class Phi3Model(Phi3PreTrainedModel):
             config=config,
             norm_type="rms_norm",
             hidden_size=config.hidden_size,
-            has_bias=config.use_bias,
+            has_bias=False,
             norm_eps=self.config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
@@ -457,7 +457,6 @@ class Phi3Model(Phi3PreTrainedModel):
 
         hidden_states = inputs_embeds
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
-        cos, sin = position_embeddings
 
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
@@ -611,6 +610,7 @@ class Phi3ForCausalLM(Phi3PreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
+        loss_mask: Optional[paddle.Tensor] = None,
         **kwargs,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -645,7 +645,7 @@ class Phi3ForCausalLM(Phi3PreTrainedModel):
 
         loss = None
         if labels is not None:
-            loss, _ = self.criterion(logits, labels)
+            loss, _ = self.criterion(logits, labels, loss_mask)
 
         if not return_dict:
             output = (logits,) + outputs[1:]

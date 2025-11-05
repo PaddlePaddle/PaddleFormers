@@ -20,7 +20,7 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "tokenizer": ["Phi3Tokenizer"],
     "configuration": ["Phi3Config"],
-    "modeling": ["Phi3DecoderLayer", "Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "modeling": ["Phi3PreTrainedModel", "Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
 }
 
 if TYPE_CHECKING:

@@ -14,14 +14,19 @@
 # limitations under the License.
 from __future__ import annotations
 
+import tempfile
 import unittest
 
+import numpy as np
 import paddle
+from parameterized import parameterized
 
 from paddleformers.transformers import Phi3Config, Phi3ForCausalLM, Phi3Model
+from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
+    GenerationD2STestMixin,
     ModelTesterMixin,
     ids_tensor,
     random_attention_mask,
@@ -32,12 +37,12 @@ class Phi3ModelTester:
     def __init__(
         self,
         parent,
-        vocab_size=32064,
-        hidden_size=3072,
-        intermediate_size=8192,
-        num_hidden_layers=32,
-        num_attention_heads=32,
-        num_key_value_heads=None,
+        vocab_size=100352,
+        hidden_size=5120,
+        intermediate_size=17920,
+        num_hidden_layers=1,
+        num_attention_heads=40,
+        num_key_value_heads=10,
         resid_pdrop=0.0,
         embd_pdrop=0.0,
         attention_dropout=0.0,
@@ -263,7 +268,7 @@ class Phi3ModelTester:
         position_ids = paddle.arange(seq_len).expand((batch_size, seq_len))
         result_position_id = model(
             input_ids,
-            position_ids,
+            position_ids=position_ids,
             labels=input_ids if self.parent.use_labels else None,
             return_dict=self.parent.return_dict,
         )
@@ -327,9 +332,8 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
         self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
 
     def test_model_position_ids(self):
-        pass
-        # config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        # self.model_tester.check_model_position_ids(*config_and_inputs)
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.check_model_position_ids(*config_and_inputs)
 
     def test_generate_without_input_ids(self):
         pass
@@ -371,6 +375,166 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
 
     def test_hidden_states_output(self):
         pass
+
+
+class Phi3IntegrationTest(unittest.TestCase):
+    def test_model_tiny_logits(self):
+        input_ids = [[1, 306, 4658, 278, 6593, 310, 2834, 338]]
+
+        model = Phi3ForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-phi4", download_hub="aistudio", dtype="float32", convert_from_hf=True
+        )
+
+        input_ids = paddle.to_tensor(input_ids)
+        with paddle.no_grad():
+            out = model(input_ids, return_dict=True).logits
+
+        # Expected mean on dim = -1
+        EXPECTED_MEAN = paddle.to_tensor(
+            [[-0.00011489, 0.00058047, -0.00060976, -0.00023598, 0.00015398, -0.00014828, 0.00031586, 0.00036044]]
+        )
+        self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
+
+        # slicing logits[0, 0, 0:30]
+        EXPECTED_SLICE = paddle.to_tensor(
+            [
+                -0.02324827,
+                -0.02726699,
+                -0.08814652,
+                0.00653408,
+                -0.04648581,
+                0.04860921,
+                -0.02443087,
+                0.00239104,
+                0.03467777,
+                -0.01582086,
+                -0.05872551,
+                0.05706415,
+                0.11532584,
+                -0.07243908,
+                0.00748794,
+                -0.02105580,
+                0.01975052,
+                0.23326975,
+                0.02717321,
+                0.04710620,
+                0.14497876,
+                -0.02641426,
+                0.06328714,
+                0.01425896,
+                0.00643350,
+                -0.11734577,
+                -0.00358012,
+                -0.00397540,
+                -0.08387793,
+                0.01058182,
+            ]
+        )
+        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+
+
+class Phi3GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
+    internal_testing_model = "PaddleFormers/tiny-random-phi4"
+
+
+class Phi3CompatibilityTest(unittest.TestCase):
+    @classmethod
+    @require_package("transformers", "torch")
+    def setUpClass(cls) -> None:
+        from transformers import Phi3Config, Phi3ForCausalLM
+
+        cls.torch_model_path = tempfile.TemporaryDirectory().name
+        config = Phi3Config(hidden_size=16, num_hidden_layers=8, num_attention_heads=8)
+        model = Phi3ForCausalLM(config)
+        model.save_pretrained(cls.torch_model_path)
+
+    @require_package("transformers", "torch")
+    def test_Phi3_converter(self):
+        input_ids = np.random.randint(100, 200, [1, 20])
+
+        from paddleformers.transformers import Phi3Model
+
+        paddle_model = Phi3Model.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
+        paddle_model.eval()
+        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
+
+        import torch
+        from transformers import Phi3Model
+
+        torch_model = Phi3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model.eval()
+        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+        self.assertTrue(
+            np.allclose(
+                paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                rtol=1e2,
+            )
+        )
+
+    @require_package("transformers", "torch")
+    def test_Phi3_converter_from_local_dir(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            input_ids = np.random.randint(100, 200, [1, 20])
+
+            import torch
+            from transformers import Phi3Model
+
+            torch_model = Phi3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model.eval()
+            torch_model.save_pretrained(tempdir)
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+            from paddleformers.transformers import Phi3Model
+
+            paddle_model = Phi3Model.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model.eval()
+            paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
+
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    rtol=1e2,
+                )
+            )
+
+    @parameterized.expand([("Phi3Model",), ("Phi3ForCausalLM",)])
+    @require_package("transformers", "torch")
+    def test_Phi3_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
+        pytorch_class_name = pytorch_class_name or class_name
+        with tempfile.TemporaryDirectory() as tempdir:
+            input_ids = np.random.randint(100, 200, [1, 20])
+
+            import torch
+            import transformers
+
+            torch_model_class = getattr(transformers, pytorch_class_name)
+            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model.eval()
+
+            torch_model.save_pretrained(tempdir)
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+            from paddleformers import transformers
+
+            paddle_model_class = getattr(transformers, class_name)
+            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model.eval()
+
+            if class_name == "Phi3Model":
+                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
+            else:
+                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
+
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    atol=1e2,
+                )
+            )
 
 
 if __name__ == "__main__":

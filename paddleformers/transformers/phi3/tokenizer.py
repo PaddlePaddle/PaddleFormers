@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# # Copyright 2024 Microsoft and the HuggingFace Inc. team. All rights reserved.
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,4 +16,4 @@ import transformers as hf
 
 from ..tokenizer_utils import warp_tokenizer
 
-BertTokenizer = warp_tokenizer(hf.GPT2Tokenizer)
+Phi3Tokenizer = warp_tokenizer(hf.GPT2Tokenizer)

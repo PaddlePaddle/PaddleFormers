@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright 2024 Microsoft and the HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,10 +52,6 @@ class Phi3Config(PretrainedConfig):
         eos_token_id=32000,
         pad_token_id=32000,
         sliding_window=None,
-        use_bias=False,
-        use_flash_attention=False,
-        recompute=False,
-        recompute_granularity="core_attn",
         layer_types=None,
         **kwargs,
     ):
@@ -84,11 +80,6 @@ class Phi3Config(PretrainedConfig):
         self._rope_scaling_adjustment()
         self._rope_scaling_validation()
         self.sliding_window = sliding_window
-
-        self.use_bias = use_bias
-        self.use_flash_attention = use_flash_attention
-        self.recompute = recompute
-        self.recompute_granularity = recompute_granularity
 
         self.layer_types = layer_types
         if self.layer_types is None:
