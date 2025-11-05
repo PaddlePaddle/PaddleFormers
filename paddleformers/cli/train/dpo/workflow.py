@@ -28,6 +28,8 @@ from paddleformers.transformers import (
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
     AutoTokenizer,
+    Glm4MoeForCausalLM,
+    Glm4MoeForCausalLMPipe,
     LlamaForCausalLM,
     LlamaForCausalLMPipe,
     Qwen2ForCausalLM,
@@ -58,6 +60,8 @@ flash_mask_support_list = [
     Qwen3ForCausalLMPipe,
     Qwen3MoeForCausalLM,
     Qwen3MoeForCausalLMPipe,
+    Glm4MoeForCausalLM,
+    Glm4MoeForCausalLMPipe,
 ]
 
 from ...hparams import (
@@ -157,6 +161,7 @@ def run_dpo(
     model_config._attn_implementation = model_args.attn_impl
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.max_sequence_length = data_args.max_seq_len
+    model_config.seq_length = data_args.max_seq_len
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
@@ -167,6 +172,7 @@ def run_dpo(
         )
         ref_model_config.pp_seg_method = model_args.pp_seg_method
         ref_model_config.max_sequence_length = data_args.max_seq_len
+        ref_model_config.seq_length = data_args.max_seq_len
         ref_model_config._attn_implementation = model_args.attn_impl
 
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
