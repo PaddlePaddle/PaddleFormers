@@ -120,7 +120,7 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_full cmd is : {cmd}")
         print(training_p.stdout)
         dop_full_output = training_p.stdout
-        dop_full_log_file = os.path.join(LOG_PATH, "dop_full.log")
+        dop_full_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full.log")
         if dop_full_output and dop_full_output.strip():
             with open(dop_full_log_file, "w", encoding="utf-8") as dop_full_f:
                 dop_full_f.write(dop_full_output)
@@ -137,7 +137,7 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_full reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         dop_full_reusme_output = reusme_p.stdout
-        dop_full_reusme_log_file = os.path.join(LOG_PATH, "dop_full_reusme.log")
+        dop_full_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_reusme.log")
         if dop_full_reusme_output and dop_full_reusme_output.strip():
             with open(dop_full_reusme_log_file, "w", encoding="utf-8") as dop_full_reusme_f:
                 dop_full_reusme_f.write(dop_full_reusme_output)
@@ -174,7 +174,7 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_lora cmd is : {cmd}")
         print(training_p.stdout)
         dop_lora_output = training_p.stdout
-        dop_lora_log_file = os.path.join(LOG_PATH, "dop_lora.log")
+        dop_lora_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora.log")
         if dop_lora_output and dop_lora_output.strip():
             with open(dop_lora_log_file, "w", encoding="utf-8") as dop_lora_f:
                 dop_lora_f.write(dop_lora_output)
@@ -190,7 +190,7 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_lora reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         dop_lora_reusme_output = reusme_p.stdout
-        dop_lora_reusme_log_file = os.path.join(LOG_PATH, "dop_lora_reusme.log")
+        dop_lora_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_reusme.log")
         if dop_lora_reusme_output and dop_lora_reusme_output.strip():
             with open(dop_lora_reusme_log_file, "w", encoding="utf-8") as dop_lora_reusme_f:
                 dop_lora_reusme_f.write(dop_lora_reusme_output)
@@ -236,7 +236,7 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_full_tp_pp cmd is : {cmd}")
         print(training_p.stdout)
         dop_full_tp_pp_output = training_p.stdout
-        dop_full_tp_pp_log_file = os.path.join(LOG_PATH, "dop_full_tp_pp.log")
+        dop_full_tp_pp_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_tp_pp.log")
         if dop_full_tp_pp_output and dop_full_tp_pp_output.strip():
             with open(dop_full_tp_pp_log_file, "w", encoding="utf-8") as dop_full_tp_pp_f:
                 dop_full_tp_pp_f.write(dop_full_tp_pp_output)
@@ -251,7 +251,7 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_full_tp_pp reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         dop_full_tp_pp_reusme_output = reusme_p.stdout
-        dop_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "dop_full_tp_pp_reusme.log")
+        dop_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_tp_pp_reusme.log")
         if dop_full_tp_pp_reusme_output and dop_full_tp_pp_reusme_output.strip():
             with open(dop_full_tp_pp_reusme_log_file, "w", encoding="utf-8") as dop_full_tp_pp_reusme_f:
                 dop_full_tp_pp_reusme_f.write(dop_full_tp_pp_reusme_output)
@@ -288,7 +288,7 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_lora_tp_pp cmd is : {cmd}")
         print(training_p.stdout)
         dop_lora_tp_pp_output = training_p.stdout
-        dop_lora_tp_pp_log_file = os.path.join(LOG_PATH, "dop_lora_tp_pp.log")
+        dop_lora_tp_pp_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_tp_pp.log")
         if dop_lora_tp_pp_output and dop_lora_tp_pp_output.strip():
             with open(dop_lora_tp_pp_log_file, "w", encoding="utf-8") as dop_lora_tp_pp_f:
                 dop_lora_tp_pp_f.write(dop_lora_tp_pp_output)
@@ -304,7 +304,7 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_lora_tp_pp reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         dop_lora_tp_pp_reusme_output = reusme_p.stdout
-        dop_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "dop_lora_tp_pp_reusme.log")
+        dop_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_tp_pp_reusme.log")
         if dop_lora_tp_pp_reusme_output and dop_lora_tp_pp_reusme_output.strip():
             with open(dop_lora_tp_pp_reusme_log_file, "w", encoding="utf-8") as dop_lora_tp_pp_reusme_f:
                 dop_lora_tp_pp_reusme_f.write(dop_lora_tp_pp_reusme_output)

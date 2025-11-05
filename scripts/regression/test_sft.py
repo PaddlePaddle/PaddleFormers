@@ -122,7 +122,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full cmd is : {cmd}")
         print(training_p.stdout)
         sft_full_output = training_p.stdout
-        sft_full_log_file = os.path.join(LOG_PATH, "sft_full.log")
+        sft_full_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full.log")
         if sft_full_output and sft_full_output.strip():
             with open(sft_full_log_file, "w", encoding="utf-8") as sft_full_f:
                 sft_full_f.write(sft_full_output)
@@ -138,7 +138,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         sft_full_reusme_output = reusme_p.stdout
-        sft_full_reusme_log_file = os.path.join(LOG_PATH, "sft_full_reusme.log")
+        sft_full_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_reusme.log")
         if sft_full_reusme_output and sft_full_reusme_output.strip():
             with open(sft_full_reusme_log_file, "w", encoding="utf-8") as sft_full_reusme_f:
                 sft_full_reusme_f.write(sft_full_reusme_output)
@@ -173,7 +173,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_lora cmd is : {cmd}")
         print(training_p.stdout)
         sft_lora_output = training_p.stdout
-        sft_lora_log_file = os.path.join(LOG_PATH, "sft_lora.log")
+        sft_lora_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_lora.log")
         if sft_lora_output and sft_lora_output.strip():
             with open(sft_lora_log_file, "w", encoding="utf-8") as sft_lora_f:
                 sft_lora_f.write(sft_lora_output)
@@ -190,7 +190,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_lora reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         sft_lora_reusme_output = reusme_p.stdout
-        sft_lora_reusme_log_file = os.path.join(LOG_PATH, "sft_lora_reusme.log")
+        sft_lora_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_lora_reusme.log")
         if sft_lora_reusme_output and sft_lora_reusme_output.strip():
             with open(sft_lora_reusme_log_file, "w", encoding="utf-8") as sft_lora_reusme_f:
                 sft_lora_reusme_f.write(sft_lora_reusme_output)
@@ -235,7 +235,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full_tp_pp cmd is : {cmd}")
         print(training_p.stdout)
         sft_full_tp_pp_output = training_p.stdout
-        sft_full_tp_pp_log_file = os.path.join(LOG_PATH, "sft_full_tp_pp.log")
+        sft_full_tp_pp_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_tp_pp.log")
         if sft_full_tp_pp_output and sft_full_tp_pp_output.strip():
             with open(sft_full_tp_pp_log_file, "w", encoding="utf-8") as sft_full_tp_pp_f:
                 sft_full_tp_pp_f.write(sft_full_tp_pp_output)
@@ -251,7 +251,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full_tp_pp reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         sft_full_tp_pp_reusme_output = reusme_p.stdout
-        sft_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "sft_full_tp_pp_reusme.log")
+        sft_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_tp_pp_reusme.log")
         if sft_full_tp_pp_reusme_output and sft_full_tp_pp_reusme_output.strip():
             with open(sft_full_tp_pp_reusme_log_file, "w", encoding="utf-8") as sft_full_tp_pp_reusme_f:
                 sft_full_tp_pp_reusme_f.write(sft_full_tp_pp_reusme_output)
@@ -287,7 +287,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_lora_tp_pp cmd is : {cmd}")
         print(training_p.stdout)
         sft_lora_tp_pp_output = training_p.stdout
-        sft_lora_tp_pp_log_file = os.path.join(LOG_PATH, "sft_lora_tp_pp.log")
+        sft_lora_tp_pp_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_lora_tp_pp.log")
         if sft_lora_tp_pp_output and sft_lora_tp_pp_output.strip():
             with open(sft_lora_tp_pp_log_file, "w", encoding="utf-8") as sft_lora_tp_pp_f:
                 sft_lora_tp_pp_f.write(sft_lora_tp_pp_output)
@@ -303,7 +303,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_lora_tp_pp reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         sft_lora_tp_pp_reusme_output = reusme_p.stdout
-        sft_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "sft_lora_tp_pp_reusme.log")
+        sft_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_lora_tp_pp_reusme.log")
         if sft_lora_tp_pp_reusme_output and sft_lora_tp_pp_reusme_output.strip():
             with open(sft_lora_tp_pp_reusme_log_file, "w", encoding="utf-8") as sft_lora_tp_pp_reusme_f:
                 sft_lora_tp_pp_reusme_f.write(sft_lora_tp_pp_reusme_output)
@@ -350,7 +350,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full_function_call cmd is : {cmd}")
         print(training_p.stdout)
         sft_full_function_call_output = training_p.stdout
-        sft_full_function_call_log_file = os.path.join(LOG_PATH, "sft_full_function_call.log")
+        sft_full_function_call_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_function_call.log")
         if sft_full_function_call_output and sft_full_function_call_output.strip():
             with open(sft_full_function_call_log_file, "w", encoding="utf-8") as sft_full_function_call_f:
                 sft_full_function_call_f.write(sft_full_function_call_output)
@@ -366,7 +366,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full_function_call reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         sft_full_function_call_reusme_output = reusme_p.stdout
-        sft_full_function_call_reusme_log_file = os.path.join(LOG_PATH, "sft_full_function_call_reusme.log")
+        sft_full_function_call_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_function_call_reusme.log")
         if sft_full_function_call_reusme_output and sft_full_function_call_reusme_output.strip():
             with open(
                 sft_full_function_call_reusme_log_file, "w", encoding="utf-8"

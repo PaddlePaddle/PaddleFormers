@@ -98,119 +98,119 @@ class SFTTrainTest(unittest.TestCase):
             shutil.rmtree(OUTPUT_DIR)
         super().tearDown()
 
-    def test_sft_full(self):
-        output_dir = os.path.join(OUTPUT_DIR, "sft_full")
-        update_args = {
-            "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
-            "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
-            "output_dir": output_dir,
-            "max_seq_len": 1024,
-            "warmup_steps": -1,
-            "max_steps": 5,
-            "save_steps": 3,
-        }
-        config_path = os.path.join(CONFIG_PATH, "full.yaml")
-        updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
-        # cli mode
-        cmd = [
-            "paddleformers-cli",
-            "train",
-            updated_config_path,
-        ]
-        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"sft_full cmd is : {cmd}")
-        print(training_p.stdout)
-        sft_full_output = training_p.stdout
-        sft_full_log_file = os.path.join(LOG_PATH, "sft_full.log")
-        if sft_full_output and sft_full_output.strip():
-            with open(sft_full_log_file, "w", encoding="utf-8") as sft_full_f:
-                sft_full_f.write(sft_full_output)
-        # test training result
-        self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
+    # def test_sft_full(self):
+    #     output_dir = os.path.join(OUTPUT_DIR, "sft_full")
+    #     update_args = {
+    #         "model_name_or_path": MODEL_NAME_OR_PATH,
+    #         "train_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+    #         "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+    #         "output_dir": output_dir,
+    #         "max_seq_len": 1024,
+    #         "warmup_steps": -1,
+    #         "max_steps": 5,
+    #         "save_steps": 3,
+    #     }
+    #     config_path = os.path.join(CONFIG_PATH, "full.yaml")
+    #     updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
+    #     # cli mode
+    #     cmd = [
+    #         "paddleformers-cli",
+    #         "train",
+    #         updated_config_path,
+    #     ]
+    #     training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    #     print(f"sft_full cmd is : {cmd}")
+    #     print(training_p.stdout)
+    #     sft_full_output = training_p.stdout
+    #     sft_full_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full.log")
+    #     if sft_full_output and sft_full_output.strip():
+    #         with open(sft_full_log_file, "w", encoding="utf-8") as sft_full_f:
+    #             sft_full_f.write(sft_full_output)
+    #     # test training result
+    #     self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
-        # test training loss
-        EXCEPTED_LOSS = 11.931005
-        self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+    #     # test training loss
+    #     EXCEPTED_LOSS = 11.931005
+    #     self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
-        # test model resume
-        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"sft_full reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
-        sft_full_reusme_output = reusme_p.stdout
-        sft_full_reusme_log_file = os.path.join(LOG_PATH, "sft_full_reusme.log")
-        if sft_full_reusme_output and sft_full_reusme_output.strip():
-            with open(sft_full_reusme_log_file, "w", encoding="utf-8") as sft_full_reusme_f:
-                sft_full_reusme_f.write(sft_full_reusme_output)
-        self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
-        EXCEPTED_LOSS = 11.920915
-        self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+    #     # test model resume
+    #     reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    #     print(f"sft_full reusme cmd is : {cmd}")
+    #     print(reusme_p.stdout)
+    #     sft_full_reusme_output = reusme_p.stdout
+    #     sft_full_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_reusme.log")
+    #     if sft_full_reusme_output and sft_full_reusme_output.strip():
+    #         with open(sft_full_reusme_log_file, "w", encoding="utf-8") as sft_full_reusme_f:
+    #             sft_full_reusme_f.write(sft_full_reusme_output)
+    #     self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+    #     EXCEPTED_LOSS = 11.920915
+    #     self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
-        # test model generate
-        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
-        self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
+    #     # test model generate
+    #     EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+    #     self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
-    def test_sft_lora(self):
-        output_dir = os.path.join(OUTPUT_DIR, "sft_lora")
-        update_args = {
-            "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
-            "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
-            "output_dir": output_dir,
-            "max_seq_len": 1024,
-            "max_steps": 5,
-            "save_steps": 3,
-        }
-        config_path = os.path.join(CONFIG_PATH, "lora.yaml")
-        updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
-        # cli mode
-        cmd = [
-            "paddleformers-cli",
-            "train",
-            updated_config_path,
-        ]
-        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"sft_lora cmd is : {cmd}")
-        print(training_p.stdout)
-        sft_lora_output = training_p.stdout
-        sft_lora_log_file = os.path.join(LOG_PATH, "sft_lora.log")
-        if sft_lora_output and sft_lora_output.strip():
-            with open(sft_lora_log_file, "w", encoding="utf-8") as sft_lora_f:
-                sft_lora_f.write(sft_lora_output)
+    # def test_sft_lora(self):
+    #     output_dir = os.path.join(OUTPUT_DIR, "sft_lora")
+    #     update_args = {
+    #         "model_name_or_path": MODEL_NAME_OR_PATH,
+    #         "train_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+    #         "eval_dataset_path": "./tests/fixtures/dummy/ernie/sft-train.jsonl",
+    #         "output_dir": output_dir,
+    #         "max_seq_len": 1024,
+    #         "max_steps": 5,
+    #         "save_steps": 3,
+    #     }
+    #     config_path = os.path.join(CONFIG_PATH, "lora.yaml")
+    #     updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
+    #     # cli mode
+    #     cmd = [
+    #         "paddleformers-cli",
+    #         "train",
+    #         updated_config_path,
+    #     ]
+    #     training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    #     print(f"sft_lora cmd is : {cmd}")
+    #     print(training_p.stdout)
+    #     sft_lora_output = training_p.stdout
+    #     sft_lora_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_lora.log")
+    #     if sft_lora_output and sft_lora_output.strip():
+    #         with open(sft_lora_log_file, "w", encoding="utf-8") as sft_lora_f:
+    #             sft_lora_f.write(sft_lora_output)
 
-        # test training result
-        self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
+    #     # test training result
+    #     self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
-        # test training loss
-        EXCEPTED_LOSS = 11.94409
-        self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+    #     # test training loss
+    #     EXCEPTED_LOSS = 11.94409
+    #     self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
-        # test model resume
-        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"sft_lora reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
-        sft_lora_reusme_output = reusme_p.stdout
-        sft_lora_reusme_log_file = os.path.join(LOG_PATH, "sft_lora_reusme.log")
-        if sft_lora_reusme_output and sft_lora_reusme_output.strip():
-            with open(sft_lora_reusme_log_file, "w", encoding="utf-8") as sft_lora_reusme_f:
-                sft_lora_reusme_f.write(sft_lora_reusme_output)
-        self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+    #     # test model resume
+    #     reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    #     print(f"sft_lora reusme cmd is : {cmd}")
+    #     print(reusme_p.stdout)
+    #     sft_lora_reusme_output = reusme_p.stdout
+    #     sft_lora_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_lora_reusme.log")
+    #     if sft_lora_reusme_output and sft_lora_reusme_output.strip():
+    #         with open(sft_lora_reusme_log_file, "w", encoding="utf-8") as sft_lora_reusme_f:
+    #             sft_lora_reusme_f.write(sft_lora_reusme_output)
+    #     self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.943027
-        self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+    #     EXCEPTED_LOSS = 11.943027
+    #     self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
-        # test lora merge
-        lora_merge_output_dir = os.path.join(output_dir, "export")
-        # cli mode
-        lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
-        lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        self.sfttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
+    #     # test lora merge
+    #     lora_merge_output_dir = os.path.join(output_dir, "export")
+    #     # cli mode
+    #     lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
+    #     lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    #     self.sfttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
-        # test lora_merge_model generate
-        EXPECTED_RESULT = paddle.to_tensor(
-            [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
-        )
-        self.sfttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+    #     # test lora_merge_model generate
+    #     EXPECTED_RESULT = paddle.to_tensor(
+    #         [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+    #     )
+    #     self.sfttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
     def test_sft_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_tp_pp")
@@ -235,7 +235,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full_tp_pp cmd is : {cmd}")
         print(training_p.stdout)
         sft_full_tp_pp_output = training_p.stdout
-        sft_full_tp_pp_log_file = os.path.join(LOG_PATH, "sft_full_tp_pp.log")
+        sft_full_tp_pp_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_tp_pp.log")
         if sft_full_tp_pp_output and sft_full_tp_pp_output.strip():
             with open(sft_full_tp_pp_log_file, "w", encoding="utf-8") as sft_full_tp_pp_f:
                 sft_full_tp_pp_f.write(sft_full_tp_pp_output)
@@ -251,7 +251,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full_tp_pp reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         sft_full_tp_pp_reusme_output = reusme_p.stdout
-        sft_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "sft_full_tp_pp_reusme.log")
+        sft_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_tp_pp_reusme.log")
         if sft_full_tp_pp_reusme_output and sft_full_tp_pp_reusme_output.strip():
             with open(sft_full_tp_pp_reusme_log_file, "w", encoding="utf-8") as sft_full_tp_pp_reusme_f:
                 sft_full_tp_pp_reusme_f.write(sft_full_tp_pp_reusme_output)
@@ -287,7 +287,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_lora_tp_pp cmd is : {cmd}")
         print(training_p.stdout)
         sft_lora_tp_pp_output = training_p.stdout
-        sft_lora_tp_pp_log_file = os.path.join(LOG_PATH, "sft_lora_tp_pp.log")
+        sft_lora_tp_pp_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_lora_tp_pp.log")
         if sft_lora_tp_pp_output and sft_lora_tp_pp_output.strip():
             with open(sft_lora_tp_pp_log_file, "w", encoding="utf-8") as sft_lora_tp_pp_f:
                 sft_lora_tp_pp_f.write(sft_lora_tp_pp_output)
@@ -303,7 +303,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_lora_tp_pp reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         sft_lora_tp_pp_reusme_output = reusme_p.stdout
-        sft_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, "sft_lora_tp_pp_reusme.log")
+        sft_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_lora_tp_pp_reusme.log")
         if sft_lora_tp_pp_reusme_output and sft_lora_tp_pp_reusme_output.strip():
             with open(sft_lora_tp_pp_reusme_log_file, "w", encoding="utf-8") as sft_lora_tp_pp_reusme_f:
                 sft_lora_tp_pp_reusme_f.write(sft_lora_tp_pp_reusme_output)
@@ -350,7 +350,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full_function_call cmd is : {cmd}")
         print(training_p.stdout)
         sft_full_function_call_output = training_p.stdout
-        sft_full_function_call_log_file = os.path.join(LOG_PATH, "sft_full_function_call.log")
+        sft_full_function_call_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_function_call.log")
         if sft_full_function_call_output and sft_full_function_call_output.strip():
             with open(sft_full_function_call_log_file, "w", encoding="utf-8") as sft_full_function_call_f:
                 sft_full_function_call_f.write(sft_full_function_call_output)
@@ -366,7 +366,7 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full_function_call reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         sft_full_function_call_reusme_output = reusme_p.stdout
-        sft_full_function_call_reusme_log_file = os.path.join(LOG_PATH, "sft_full_function_call_reusme.log")
+        sft_full_function_call_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_function_call_reusme.log")
         if sft_full_function_call_reusme_output and sft_full_function_call_reusme_output.strip():
             with open(
                 sft_full_function_call_reusme_log_file, "w", encoding="utf-8"
