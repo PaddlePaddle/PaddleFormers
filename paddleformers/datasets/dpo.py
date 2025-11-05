@@ -638,7 +638,7 @@ class SequenceDataset(IterableDataset):
 
         # encoded_messages: List[List[int]]
         if not self.tokenizer.chat_template:
-            self.tokenizer.init_chat_template(NONE_CHAT_TEMPLATE)
+            self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
         if example.is_function_call:
             chosen_encoded_messages = postprocess_fc_sequence(self.tokenizer, example.chosen)
             rejected_encoded_messages = postprocess_fc_sequence(self.tokenizer, example.rejected)
