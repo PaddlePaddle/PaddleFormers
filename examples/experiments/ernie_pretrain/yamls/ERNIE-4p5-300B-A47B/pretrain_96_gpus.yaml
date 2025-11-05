@@ -1,0 +1,116 @@
+# -----------环境变量----------------------#
+env:
+    HOME: null
+
+# ---------------------------model args-------------------------------------------------#
+model_args:
+    model_name_or_path: model_configs/ERNIE-4p5-300B-A47B/
+    tokenizer_name: ./ernie/src/tokenizers/tokenizer_model
+    output_dir: ./output/
+    data_load_process_num: 40
+    max_seq_length: 4096
+    base_seq_length: 4096
+    num_consecutive: 32
+
+    enable_global_training_logs: False
+    moe_use_aux_free_update_coef: 0.001
+    global_logging_interval: 10
+    enable_mtp_magic_send: True
+
+    model_config:
+        multi_token_pred_depth: 1
+        use_ep_comm_overlap: false
+        use_combine_before_a2a: true
+        use_rms_qkv_recompute: true
+
+        moe_logging: True
+        moe_use_aux_free: true
+        use_recompute: false
+        use_fp8_mlp: true
+        use_fp8_fuse_node: true
+        fp8_mem_configs:
+            shared_expert: false
+            recompute_fwd_gate_up: [4, 5, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18]
+            dequant_input: true
+        fp8_fused_ops_configs:
+            stack_quant: true
+            swiglu_probs_bwd: true
+            split_group_gemm: false
+            spaq: true
+            transpose_split_quant: true
+
+        moe_gate: top2_fused
+
+
+
+# ---------------------------trainer args-------------------------------------------------#
+trainer_args:
+    input_dir: "0.4 ./demo_data/data-1-part0 0.6 ./demo_data/data-1-part0"
+    split: "998,1,1"
+
+    use_sp_callback: true
+    moe_gate_lr_ratio: 0.01
+    do_train: True
+    dataloader_num_workers: 8
+    prefetch_factor: 32
+    overwrite_output_dir: 1
+    disable_tqdm: 1
+    logging_steps: 1
+    eval_steps: 1000
+    eval_iters: -1
+    save_steps: 100
+    max_steps: 100
+    adam_beta1: 0.9
+    adam_beta2: 0.95
+    adam_epsilon: 1e-8
+    learning_rate: 2.2e-4
+    min_lr: 2.2e-5
+
+    gradient_accumulation_steps: 1890
+    per_device_train_batch_size: 1
+    per_device_eval_batch_size: 1
+
+    lr_scheduler: wsd:231084
+    decay_function: 1-sqrt
+    max_grad_norm: 1.0
+    use_async_save: True
+
+    weight_decay: 0.1
+    warmup_steps: 200
+    save_total_limit: 5
+    bf16: True
+    fp16_opt_level: "O2"
+    use_fp8: False
+    scale_loss: 4096
+    seed: 666
+    use_train_part_sharding: 1
+    pre_alloc_memory: 60
+    offload_optim: True
+
+    pipeline_parallel_degree: 12
+    tensor_parallel_degree: 1
+    virtual_pp_degree: 1
+    data_parallel_degree: 1
+    expert_parallel_degree: 8
+    sharding: "stage1"
+    sharding_parallel_degree: 8
+    amp_master_grad: 1
+    pipeline_parallel_config: enable_delay_scale_loss enable_overlap_p2p_comm best_unbalanced_scheduler
+    sharding_parallel_config: split_param
+    sharding_comm_buffer_size_MB: 2048
+    tensor_parallel_config: sync_param sync_grad sync_moment
+    hybrid_parallel_topo_order: sharding_first
+
+    skip_profile_timer: True
+    ignore_data_skip: 0
+    shuffle_consecutive: True
+    load_sharded_model: True
+    save_sharded_model: True
+    ignore_load_lr_and_optim: False
+    metrics_output_path: ./output/paddle_distributed_logs/
+    use_moe: true
+    moe_with_send_router_loss: False
+    moe_group: ep
+    log_global_grad_norm: True
+    enable_optimizer_timer: False
+    gc_interval: 100000
