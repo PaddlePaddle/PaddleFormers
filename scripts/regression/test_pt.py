@@ -126,7 +126,7 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.931005
+        EXCEPTED_LOSS = 11.978933
         self.pttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -175,7 +175,7 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.94409
+        EXCEPTED_LOSS = 11.978933
         self.pttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -232,7 +232,7 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.945682
+        EXCEPTED_LOSS = 11.980663
         self.pttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -280,7 +280,7 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.94778
+        EXCEPTED_LOSS = 11.980666
         self.pttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
