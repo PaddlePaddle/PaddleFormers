@@ -214,6 +214,92 @@ LoRA DPO 启动命令参考
 python -u ./alignment/dpo/run_dpo.py ./config/dpo/lora.yaml
 ```
 
+### 3.4 function-call DPO
+#### 3.4.1 数据准备
+我们支持的 function-call DPO 训练数据格式是每行包含一个字典的 json 文件，每个字典包含以下字段：
+- `messages` : `List(dict)`, 对话历史列表。
+  - 普通轮次：包含 `role` (`"user"` 或 `"assistant"`) 和 `content` (`str`) 字段。
+  - 偏好/非偏好轮次（用于偏好学习）：包含以下两个关键字段，用于表示对同一用户查询的不同系统回复的偏好排序。
+    - `preferred_output` : `dict`, 偏好（chosen）的系统回复，包含 `role` (`"assistant"`) 和 `content` (`str`) 等字段，根据是否调用工具可能包含工具调用信息 (`tool_calls`)。
+    - `non_preferred_output` : `dict`, 非偏好（rejected）的系统回复，包含 `role` (`"assistant"`) 和 `content` (`str`) 等字段。
+- `tools` : `List(dict)`, 对话中可能用到的工具（函数）的定义列表。
+- `label` : `List(int)`, 用于区分 `preferred_output` 和 `non_preferred_output` 的排序标签。其中 0 对应 `non_preferred_output` (rejected)， 1 对应 `preferred_output` (chosen)。
+
+详细的数据格式可见[function call说明](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/examples/best_practices/function_call.md)
+
+样例数据
+```text
+{
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a function calling AI model. You are provided with function signatures within <tools> </tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions.\n<tools>\n[{'type': 'function', 'function': {'name': 'play_music', 'description': 'Play music from a specified playlist or genre', 'parameters': {'type': 'object', 'properties': {'playlist': {'type': 'string', 'description': 'The playlist to play'}, 'genre': {'type': 'string', 'description': 'The genre of music to play'}}, 'required': []}}}, {'type': 'function', 'function': {'name': 'analyze_sentiment', 'description': 'Analyze the sentiment of a text', 'parameters': {'type': 'object', 'properties': {'text': {'type': 'string', 'description': 'The text to analyze'}, 'language': {'type': 'string', 'description': 'The language of the text (optional)'}}, 'required': ['text']}}}]\n</tools>\nFor each function call return a json object with function name and arguments within <tool_call> </tool_call> XML tags with the following schema:\n<tool_call>\n{'arguments': <args-dict>, 'name': <function-name>}\n</tool_call>\n"
+        },
+        {
+            "role": "user",
+            "content": "I want to listen to some music. Can you play something for me?"
+        },
+        {
+            "preferred_output": {
+                "role": "assistant",
+                "content": "Of course! Do you have a specific playlist or genre in mind?"
+            },
+            "non_preferred_output": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "play_music",
+                            "arguments": "{\n\t\"playlist\": \"Top hits\"\n}"
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "play_music",
+                "description": "Play music from a specified playlist or genre",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "playlist": {
+                            "type": "string",
+                            "description": "The playlist to play"
+                        },
+                        "genre": {
+                            "type": "string",
+                            "description": "The genre of music to play"
+                        }
+                    },
+                    "required": []
+                }
+            }
+        },
+    ],
+    "label": [
+        1,
+        0
+    ]
+}
+```
+为了方便测试，我们也提供了 function-call DPO 数据集可以直接使用：
+```bash
+wget https://paddleformers.bj.bcebos.com/datasets/dpo_function_call_1k.tar.gz
+
+mkdir -p data/dpo_fc && tar -zxf dpo_function_call_1k.tar.gz -C data/dpo_fc/
+```
+
+function call DPO 启动命令参考:
+```bash
+python -u ./alignment/dpo/run_dpo.py ./config/dpo/full_function_call.yaml
+```
+
 
 ## 4. LoRA 参数合并
 
