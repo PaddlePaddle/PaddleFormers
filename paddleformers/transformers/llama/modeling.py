@@ -28,6 +28,8 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
+from .auto_dist_config import get_dist_config
+
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
@@ -326,6 +328,8 @@ class LlamaPretrainedModel(PretrainedModel):
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: LlamaConfig, is_split=True):
+        if config.run_single_model:
+            return {}
         from ..conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
@@ -688,6 +692,10 @@ class LlamaForCausalLM(LlamaPretrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+    def auto_dist_config(self, prefix=""):
+        assert self.config.run_single_model, "Use `get_dist_config` only in single card mode."
+        return get_dist_config(self, prefix)
 
 
 class LlamaForCausalLMPipe(GeneralModelForCausalLMPipe):
