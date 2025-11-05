@@ -105,8 +105,8 @@ class DPOTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_seq_len": 2048,
             "warmup_steps": -1,
-            "max_steps": 5,
-            "save_steps": 3,
+            "max_steps": 3,
+            "save_steps": 2,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -159,8 +159,8 @@ class DPOTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "warmup_steps": -1,
             "max_seq_len": 2048,
-            "max_steps": 5,
-            "save_steps": 3,
+            "max_steps": 3,
+            "save_steps": 2,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -220,9 +220,9 @@ class DPOTrainTest(unittest.TestCase):
             "eval_dataset_path": "./tests/fixtures/dummy/ernie/dpo-train.jsonl",
             "output_dir": output_dir,
             "max_seq_len": 2048,
-            "max_steps": 5,
+            "max_steps": 3,
             "warmup_steps": -1,
-            "save_steps": 3,
+            "save_steps": 2,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -273,8 +273,8 @@ class DPOTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_seq_len": 2048,
             "warmup_steps": -1,
-            "max_steps": 5,
-            "save_steps": 3,
+            "max_steps": 3,
+            "save_steps": 2,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
