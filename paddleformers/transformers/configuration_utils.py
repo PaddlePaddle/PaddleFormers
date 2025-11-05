@@ -303,6 +303,7 @@ class LlmMetaConfig:
     moe_attributes = [
         ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
         ("using_fake_gate", bool, False, "Whether to fake gate."),
+        ("ep_communication_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
     ]
 
     mtp_attributes = [
@@ -509,7 +510,8 @@ class PretrainedConfig:
             `"single_label_classification"` or `"multi_label_classification"`.
         moe_subbatch_token_num (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
-
+        ep_communication_type (`str`, *optional*, defaults to `deepep`):
+            Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
         > Parameters for general components
 
         _attn_implementation (`str`, defaults to `eager`)
@@ -654,6 +656,7 @@ class PretrainedConfig:
         self.kto_config = kwargs.pop("kto_config", None)
 
         self.moe_subbatch_token_num = kwargs.pop("moe_subbatch_token_num", 0)
+        self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
         self.using_fake_gate = kwargs.pop("using_fake_gate", False)
 
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config

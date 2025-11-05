@@ -271,6 +271,12 @@ class PaddleTokenizerMixin:
         # get all tokenizer-related files
         vocab_files = {**cls.vocab_files_names, **additional_files_names}
 
+        if "PF_HOME" in os.environ:
+            home_path = os.environ["PF_HOME"]
+            home_model_path = os.path.join(home_path, pretrained_model_name_or_path)
+            if os.path.isfile(home_model_path) or os.path.isdir(home_model_path):
+                pretrained_model_name_or_path = home_model_path
+
         if os.path.isdir(pretrained_model_name_or_path):
             for file_id, file_name in vocab_files.items():
                 full_file_name = os.path.join(pretrained_model_name_or_path, subfolder, file_name)

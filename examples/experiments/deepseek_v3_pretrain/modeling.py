@@ -3038,7 +3038,8 @@ class FusedRMSLinearSingle(paddle.nn.Layer):
 class FastCrossEntropyFunction(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, preds, labels):
-        softmax_val, loss = paddle._C_ops.cross_entropy_with_softmax(preds, labels, False, True, False, -100, -1)
+        preds = preds.cast(paddle.float32)
+        softmax_val, loss = paddle._C_ops.cross_entropy_with_softmax(preds, labels, False, True, True, -100, -1)
         loss = loss.cast(paddle.float32)
         ctx.save_for_backward(labels, softmax_val)
         return loss
