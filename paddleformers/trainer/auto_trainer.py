@@ -49,6 +49,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     _exec_mode_guard,
     get_last_checkpoint,
     has_length,
+    init_optimizer,
     speed_metrics,
 )
 from .utils.ckpt_converter import CheckpointConverter
@@ -64,6 +65,9 @@ OPTIMIZER_NAME = "optimizer"
 DIST_CKPT_PATH = "dist_ckpt"
 DIST_MODEL_PATH = "dist_model"
 FREE_SVAE_LOAD_KEY_PATTERNS = ["learning_rate_", "gradient_merge_", "@GRAD@MERG", "eager_tmp"]
+MODEL_STATE_DIC = "model_state"
+OPTIMIZER_STATE_DIC = "optimizer_state"
+MASTER_WEIGHT_DIC = "master_weight"
 
 
 class AutoTrainer(Trainer):
@@ -518,7 +522,18 @@ class AutoTrainer(Trainer):
 
         train_dataloader = dist_loader()
         if resume_from_checkpoint is not None:
-            self._load_from_checkpoint(resume_from_checkpoint)
+            model_sharded_state_dict = model.sharded_state_dict()
+            aoa_config = model._gen_aoa_config()
+            # load safetensors format
+            dist.load_state_dict(
+                model_sharded_state_dict,
+                resume_from_checkpoint,
+                aoa_config=aoa_config,
+                offload=False,
+                safetensors=True,
+            )
+            # load paddle format
+            # self._load_flex_checkpoint(resume_from_checkpoint)
 
         self.timers and self.timers("read-data").start()
 
@@ -924,20 +939,35 @@ class AutoTrainer(Trainer):
         logger.info(f"Saving model checkpoint to {output_dir}")
 
         if self.args.should_save:
-            if self.tokenizer is not None:
-                self.tokenizer.save_pretrained(output_dir)
-            # Good practice: save your training arguments together with the trained model
-            paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
-            # Save the config
-            model_to_save = unwrap_model(self.model)
-            config_to_save = copy.deepcopy(model_to_save.config)
-            config_to_save.mp_degree = getattr(config_to_save, "config_to_save", 1)
-            # Attach architecture to the config
-            config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+            if self.args.save_checkpoint_format == "flex_checkpoint":
+                # save safetensors format
+                self.model.save_pretrained(
+                    output_dir,
+                    variant=self.args.weight_name_suffix,
+                    save_function=dist.save_state_dict,
+                    merge_tensor_parallel=merge_tensor_parallel,
+                    is_main_process=self.args.should_save,
+                    max_shard_size="1024GB",
+                    save_to_hf=True,
+                )
+                # save paddle format
+                # self._save_flex_model_state(output_dir)
+                # self._save_flex_optimizer_state(output_dir)
+            else:
+                if self.tokenizer is not None:
+                    self.tokenizer.save_pretrained(output_dir)
+                # Good practice: save your training arguments together with the trained model
+                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+                # Save the config
+                model_to_save = unwrap_model(self.model)
+                config_to_save = copy.deepcopy(model_to_save.config)
+                config_to_save.mp_degree = getattr(config_to_save, "config_to_save", 1)
+                # Attach architecture to the config
+                config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
 
-            config_to_save.save_pretrained(output_dir)
-            if self.model.can_generate():
-                model_to_save.generation_config.save_pretrained(output_dir)
+                config_to_save.save_pretrained(output_dir)
+                if self.model.can_generate():
+                    model_to_save.generation_config.save_pretrained(output_dir)
 
         if self.args.should_save_model_state:
             if state_dict is None:
@@ -1037,6 +1067,94 @@ class AutoTrainer(Trainer):
                 self.model_wrapped.set_state_dict(optim_state_dict)
             # release memory
             del state_dict
+
+    def _save_flex_model_state(self, output_dir):
+        model_sharded_state_dict = self.model.sharded_state_dict()
+        model_state_dict_path = os.path.join(output_dir, MODEL_STATE_DIC)
+        os.makedirs(model_state_dict_path, exist_ok=True)
+        dist.save_state_dict(
+            model_sharded_state_dict,
+            model_state_dict_path,
+        )
+
+    def _save_flex_optimizer_state(self, output_dir):
+        optimizer_state_dict_path = os.path.join(output_dir, OPTIMIZER_STATE_DIC)
+        optimizer_states = {}
+        master_weights = {}
+        model_sharded_state_dict = self.model.sharded_state_dict()
+        optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+        for k, v in optimizer_sharded_state_dict.items():
+            if k.endswith(".w_0"):
+                master_weights[k] = v
+            else:
+                optimizer_states[k] = v
+
+        dist.save_state_dict(
+            optimizer_states,
+            optimizer_state_dict_path,
+        )
+
+        master_weights_path = os.path.join(output_dir, MASTER_WEIGHT_DIC)
+        dist.save_state_dict(
+            master_weights,
+            master_weights_path,
+        )
+
+    def _load_flex_checkpoint(self, resume_from_checkpoint):
+        def get_metadata_file_name(path):
+            files = os.listdir(path)
+            metadata_files = [f for f in files if f.endswith(".metadata")]
+            assert len(metadata_files) > 0, f"Found no metadata files in {path}"
+            assert len(metadata_files) == 1, f"Found multiple metadata files in {path}"
+            return metadata_files[0]
+
+        model_sharded_state_dict = self.model.sharded_state_dict()
+        master_weights_path = os.path.join(resume_from_checkpoint, MASTER_WEIGHT_DIC)
+        opt_states_path = os.path.join(resume_from_checkpoint, OPTIMIZER_STATE_DIC)
+        model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
+        if not self.args.ignore_load_lr_and_optim:
+            state_dict_metadata = {}
+            metadata_paths = [
+                os.path.join(model_states_path, get_metadata_file_name(model_states_path)),
+                os.path.join(opt_states_path, get_metadata_file_name(opt_states_path)),
+                os.path.join(master_weights_path, get_metadata_file_name(master_weights_path)),
+            ]
+
+            for metadata_file in metadata_paths:
+                if not os.path.exists(metadata_file):
+                    raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
+                metadata = paddle.load(metadata_file)
+                state_dict_metadata.update(metadata.state_dict_metadata)
+
+            init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+            opt_states = {}
+            master_weights = {}
+            for k, v in optimizer_sharded_state_dict.items():
+                if k.endswith(".w_0"):
+                    master_weights[k] = v
+                else:
+                    opt_states[k] = v
+            dist.load_state_dict(
+                opt_states,
+                opt_states_path,
+                aoa_config=self.args.aoa_config,
+                offload=self.args.load_via_cpu,
+            )
+            dist.load_state_dict(
+                master_weights,
+                master_weights_path,
+                aoa_config=self.args.aoa_config,
+                offload=self.args.load_via_cpu,
+            )
+            self._load_scheduler(resume_from_checkpoint)
+
+        dist.load_state_dict(
+            model_sharded_state_dict,
+            model_states_path,
+            aoa_config=self.args.aoa_config,
+            offload=self.args.load_via_cpu,
+        )
 
     def _convert_state_dict_for_loading_tensor_fusion_ckpt(self, state_dict):
         if self.args.load_model_with_sharding_tensor_fusion:
