@@ -134,7 +134,9 @@ class PTTrainTest(unittest.TestCase):
         print(f"pt_full reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         pt_full_reusme_output = reusme_p.stdout
-        pt_full_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_reusme.log")
+        pt_full_reusme_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_reusme.log"
+        )
         if pt_full_reusme_output and pt_full_reusme_output.strip():
             with open(pt_full_reusme_log_file, "w", encoding="utf-8") as pt_full_reusme_f:
                 pt_full_reusme_f.write(pt_full_reusme_output)
@@ -183,7 +185,9 @@ class PTTrainTest(unittest.TestCase):
         print(f"pt_lora reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         pt_lora_reusme_output = reusme_p.stdout
-        pt_lora_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_reusme.log")
+        pt_lora_reusme_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_reusme.log"
+        )
         if pt_lora_reusme_output and pt_lora_reusme_output.strip():
             with open(pt_lora_reusme_log_file, "w", encoding="utf-8") as pt_lora_reusme_f:
                 pt_lora_reusme_f.write(pt_lora_reusme_output)
@@ -224,7 +228,9 @@ class PTTrainTest(unittest.TestCase):
         print(f"pt_full_tp_pp cmd is : {cmd}")
         print(training_p.stdout)
         pt_full_tp_pp_output = training_p.stdout
-        pt_full_tp_pp_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_tp_pp.log")
+        pt_full_tp_pp_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_tp_pp.log"
+        )
         if pt_full_tp_pp_output and pt_full_tp_pp_output.strip():
             with open(pt_full_tp_pp_log_file, "w", encoding="utf-8") as pt_full_tp_pp_f:
                 pt_full_tp_pp_f.write(pt_full_tp_pp_output)
@@ -240,7 +246,9 @@ class PTTrainTest(unittest.TestCase):
         print(f"pt_full_tp_pp reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         pt_full_tp_pp_reusme_output = reusme_p.stdout
-        pt_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_tp_pp_reusme.log")
+        pt_full_tp_pp_reusme_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_tp_pp_reusme.log"
+        )
         if pt_full_tp_pp_reusme_output and pt_full_tp_pp_reusme_output.strip():
             with open(pt_full_tp_pp_reusme_log_file, "w", encoding="utf-8") as pt_full_tp_pp_reusme_f:
                 pt_full_tp_pp_reusme_f.write(pt_full_tp_pp_reusme_output)
@@ -272,7 +280,9 @@ class PTTrainTest(unittest.TestCase):
         print(f"pt_lora_tp_pp cmd is : {cmd}")
         print(training_p.stdout)
         pt_lora_tp_pp_output = training_p.stdout
-        pt_lora_tp_pp_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_tp_pp.log")
+        pt_lora_tp_pp_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_tp_pp.log"
+        )
         if pt_lora_tp_pp_output and pt_lora_tp_pp_output.strip():
             with open(pt_lora_tp_pp_log_file, "w", encoding="utf-8") as pt_lora_tp_pp_f:
                 pt_lora_tp_pp_f.write(pt_lora_tp_pp_output)
@@ -288,7 +298,9 @@ class PTTrainTest(unittest.TestCase):
         print(f"pt_lora_tp_pp reusme cmd is : {cmd}")
         print(reusme_p.stdout)
         pt_lora_tp_pp_reusme_output = reusme_p.stdout
-        pt_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_tp_pp_reusme.log")
+        pt_lora_tp_pp_reusme_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_tp_pp_reusme.log"
+        )
         if pt_lora_tp_pp_reusme_output and pt_lora_tp_pp_reusme_output.strip():
             with open(pt_lora_tp_pp_reusme_log_file, "w", encoding="utf-8") as pt_lora_tp_pp_reusme_f:
                 pt_lora_tp_pp_reusme_f.write(pt_lora_tp_pp_reusme_output)
@@ -306,6 +318,6 @@ class PTTrainTest(unittest.TestCase):
 
         # test lora_merge_model generate
         EXPECTED_RESULT = paddle.to_tensor(
-            [[22407 , 120525, 77505 , 113631, 47887 , 134141, 122487, 61092 , 40897 , 40601 ]]
+            [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
         )
         self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
