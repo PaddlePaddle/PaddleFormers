@@ -263,7 +263,7 @@ class DPOTrainingArguments(TrainingArguments):
     )
     # base
     normalize_logps: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Apply logprobs normalization."},
     )
     label_smoothing: float = field(
@@ -273,6 +273,10 @@ class DPOTrainingArguments(TrainingArguments):
     dpo_benchmark: bool = field(
         default=False,
         metadata={"help": "Whether to run benchmark by autotuner. True for from_scratch."},
+    )
+    ignore_eos_token: bool = field(
+        default=False,
+        metadata={"help": "Ignore EOS token during training."},
     )
     # reference model
     ref_model_update_steps: int = field(

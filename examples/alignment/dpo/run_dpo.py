@@ -15,6 +15,11 @@
 """ Training DPO """
 
 import os
+
+os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
+os.environ["NCCL_ALGO"] = "Tree"
+os.environ["FLAGS_embedding_deterministic"] = "1"
+os.environ["FLAGS_cudnn_deterministic"] = "1"
 import sys
 from functools import partial
 
@@ -295,7 +300,7 @@ def main():
             use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
-        ignore_eos_token=True,
+        ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
     )
 

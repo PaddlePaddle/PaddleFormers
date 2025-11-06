@@ -116,6 +116,7 @@ def run_dpo(
         offset_alpha=training_args.offset_alpha,
         simpo_gamma=training_args.simpo_gamma,
         normalize_logps=training_args.normalize_logps,
+        ignore_eos_token=training_args.ignore_eos_token,
         label_smoothing=training_args.label_smoothing,
         loss_type=training_args.loss_type,
         pref_loss_ratio=training_args.pref_loss_ratio,
@@ -305,7 +306,7 @@ def run_dpo(
             use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
-        ignore_eos_token=True,
+        ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
     )
 
