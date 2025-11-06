@@ -15,6 +15,13 @@
 import paddle
 import paddle.nn as nn
 
+try:
+    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+        build_sharded_state_dict,
+    )
+except:
+    build_sharded_state_dict = None
+
 from ..generation.configuration_utils import PretrainedConfig
 from .criterion.loss_utils import calc_lm_head_logits
 
@@ -107,3 +114,10 @@ class LMHead(nn.Layer):
 
     def extra_repr(self):
         return f"hidden_size={self.weight.shape[1]}, vocab_size={self.weight.shape[0]}, dtype={self.weight.dtype}, vocab_parallel={self.vocab_parallel}"
+
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"weight": 0, "bias": 0}, structured_name_prefix)
