@@ -105,7 +105,7 @@ def scaled_dot_product_attention(
     attention_interface = ALL_ATTENTION_FUNCTIONS[config._attn_implementation]
 
     # Placeholder: module unused but required by flashmask_attention_forward.
-    outputs = attention_interface(
+    attn_output, attn_weights = attention_interface(
         module=nn.Layer(),
         query=query_states,
         key=key_states,
@@ -116,23 +116,14 @@ def scaled_dot_product_attention(
         scaling=softmax_scale,
     )
 
-    attn_output, attn_weights = outputs
-
-    if isinstance(outputs, tuple):
-        x = outputs[0]
-        x = x.reshape([bsz, q_len, v_num_heads, head_dim])
-        x = x[..., :v_head_dim]
-        x = x.reshape([bsz, q_len, -1])
-        outputs = x
-    else:
-        outputs = outputs.reshape([bsz, q_len, v_num_heads, head_dim])
-        outputs = outputs[..., :v_head_dim]
-        outputs = outputs.reshape([bsz, q_len, -1])
+    attn_output = attn_output.reshape([bsz, q_len, v_num_heads, head_dim])
+    attn_output = attn_output[..., :v_head_dim]
+    attn_output = attn_output.reshape([bsz, q_len, -1])
 
     if sequence_parallel:
-        attn_output = outputs.reshape([bsz * q_len, v_head_dim * num_heads])
+        attn_output = attn_output.reshape([bsz * q_len, v_head_dim * num_heads])
     else:
-        attn_output = outputs.reshape([bsz, q_len, v_head_dim * num_heads])
+        attn_output = attn_output.reshape([bsz, q_len, v_head_dim * num_heads])
 
     return (attn_output, attn_weights) if output_attentions else attn_output
 
@@ -150,7 +141,7 @@ def _compute_yarn_parameters(
     base = config["rope_theta"]
     rope_parameters_dict = config["rope_scaling"]
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-    head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+    head_dim = getattr(config, "qk_rope_head_dim", config.hidden_size // config.num_attention_heads)
     dim = int(head_dim * partial_rotary_factor)
 
     factor = rope_parameters_dict["factor"]
@@ -593,9 +584,6 @@ class DeepseekV2Attention(nn.Layer):
         # are the small weight and cannot achieve performance gain. So we use the original
         # linear layers. We use the tensor parallel linear layers for q_proj，q_b_proj and kv_b_proj
         # for which are the large weight and can achieve performance gain.
-        # Note (@Difers):
-
-        # fmt: off
 
         if self.q_lora_rank is None:
             self.q_proj = GeneralLinear.create(
@@ -661,7 +649,7 @@ class DeepseekV2Attention(nn.Layer):
             fuse_matmul_bias=config.fuse_linear,
             tp_plan="rowwise",
             gather_output=False,
-            input_is_parallel=True
+            input_is_parallel=True,
         )
 
         self.kv_a_layernorm = GeneralNorm.create(
@@ -671,7 +659,6 @@ class DeepseekV2Attention(nn.Layer):
             input_is_parallel=self.tensor_parallel and self.sequence_parallel,
         )
 
-        # fmt: on
         if self.tensor_parallel and self.sequence_parallel:
             mark_as_sequence_parallel_parameter(self.kv_a_proj_with_mqa.weight)
             mark_as_sequence_parallel_parameter(self.q_a_proj.weight)
@@ -1365,7 +1352,6 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                 past_key_values_length=past_key_values_length,
             )
         # Convert bool attention_mask to float attention mask, which will be added to attention_scores later
-
         expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), 0.0, paddle.finfo(dtype).min).astype(dtype)
         return expanded_attn_mask
 
@@ -1730,7 +1716,9 @@ class DeepseekV2PretrainingCriterion(nn.Layer):
                 else:
                     res_cur_depth = compute_loss(prediction_scores_cur_depth, masked_lm_labels_cur_depth)
                 mtp_loss_res.append(res_cur_depth)
-            loss = add_loss(loss, self.config.num_nextn_predict_lambda * sum([x for x in mtp_loss_res]) / len(mtp_loss_res))  # fmt: skip
+            loss = add_loss(
+                loss, self.config.num_nextn_predict_lambda * sum([x for x in mtp_loss_res]) / len(mtp_loss_res)
+            )
 
         else:
             if self.config.moe_subbatch_token_num > 0:
