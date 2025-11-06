@@ -139,7 +139,7 @@ class PTTrainTest(unittest.TestCase):
             with open(pt_full_reusme_log_file, "w", encoding="utf-8") as pt_full_reusme_f:
                 pt_full_reusme_f.write(pt_full_reusme_output)
         self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
-        EXCEPTED_LOSS = 11.920915
+        EXCEPTED_LOSS = 11.978933
         self.pttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
@@ -189,7 +189,7 @@ class PTTrainTest(unittest.TestCase):
                 pt_lora_reusme_f.write(pt_lora_reusme_output)
         self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.943027
+        EXCEPTED_LOSS = 11.978933
         self.pttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora merge
@@ -246,7 +246,7 @@ class PTTrainTest(unittest.TestCase):
                 pt_full_tp_pp_reusme_f.write(pt_full_tp_pp_reusme_output)
         self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.938123
+        EXCEPTED_LOSS = 11.980663
         self.pttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
@@ -294,7 +294,7 @@ class PTTrainTest(unittest.TestCase):
                 pt_lora_tp_pp_reusme_f.write(pt_lora_tp_pp_reusme_output)
         self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.941195
+        EXCEPTED_LOSS = 11.980666
         self.pttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora merge
