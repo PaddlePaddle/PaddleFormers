@@ -17,8 +17,10 @@ from functools import partial
 from typing import Any, Callable, List, Optional
 
 import paddle
+import paddle.distributed as dist
 import paddle.nn.functional as F
 from paddle import Tensor, nn
+from paddle.distributed import fleet
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 
 from ...nn.activation import ACT2FN
@@ -27,13 +29,14 @@ from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import mark_as_sequence_parallel_parameter
 from ...nn.pp_model import GeneralModelForCausalLMPipe, RMSNormPipe, parse_args
 from ...utils.log import logger
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 
-from ..qwen2_moe.modeling import Qwen2MoeSparseMoeBlock
+from ..qwen2_moe.modeling import Qwen2MoeSparseMoeBlock, load_balancing_loss_func
 from ..qwen3_moe.modeling import (
     Qwen3MoeAttention,
     Qwen3MoeMLP,
@@ -334,62 +337,6 @@ class Qwen3NextAttention(Qwen3MoeAttention):
 
         attn_output = self.o_proj(attn_output)
         return attn_output, attn_weights
-
-
-def create_causal_mask(
-    config: PretrainedConfig,
-    input_embeds: Tensor,
-    attention_mask: Optional[Tensor],
-    cache_position: Tensor,
-    past_key_values: Optional[Tensor],
-    position_ids: Optional[Tensor] = None,
-    or_mask_function: Optional[Callable] = None,
-    and_mask_function: Optional[Callable] = None,
-) -> Optional[Tensor]:
-    """
-    Create a standard causal mask based on the attention implementation used (stored in the config). If `past_key_values`
-    has an hybrid cache structure, this function will return the mask corresponding to one of the "full_attention" layers (to align
-    to what is needed in the `modeling_xxx.py` files).
-
-    Args:
-        config (`PretrainedConfig`):
-            The model config.
-        input_embeds (`paddle.Tensor`):
-            The input embeddings of shape (batch_size, query_length, hidden_dim). This is used only to infer the
-            batch size, query length and dtype.
-        attention_mask (`paddle.Tensor`, optional):
-            The 2D attention mask corresponding to padded tokens of shape (batch_size, number_of_seen_tokens+q_length).
-            It can also be an already prepared 4D mask, in which case it is returned as-is.
-        cache_position (`paddle.Tensor`):
-            A tensor of shape (query_length,) indicating the current indices of the input sequence elements.
-        past_key_values (`paddle.Tensor`, optional):
-            The past key values, if we use a cache.
-        position_ids (`paddle.Tensor`, optional)
-            A 2D tensor of shape (batch_size, query_length) indicating the positions of each token in the sequences.
-        or_mask_function (`Callable`, optional):
-            An optional mask function to combine with the causal mask function (by doing the union of both). This is
-            useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
-        and_mask_function (`Callable`, optional):
-            An optional mask function to combine with the causal mask function (by doing the intersection of both). This is
-            useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
-    """
-    assert (or_mask_function is None) and (and_mask_function is None), (
-        "Currently or_mask_function or and_mask_function is not supported."
-    )
-
-    batch_size, dtype = input_embeds.shape[0], input_embeds.dtype
-    query_length = cache_position.shape[-1]
-    min_dtype = paddle.finfo(dtype).min
-
-    causal_mask = paddle.where(
-        cache_position.expand([query_length, -1]) <
-        cache_position.unsqueeze(-1).expand([-1, query_length]),
-        min_dtype,
-        paddle.to_tensor(0.0, dtype),
-    )
-    causal_mask = causal_mask.expand([batch_size, 1, -1, -1])
-
-    return causal_mask
 
 
 def torch_causal_conv1d_update(
@@ -834,10 +781,29 @@ class Qwen3NextDecoderLayer(nn.Layer):
         elif self.layer_type == "full_attention":
             self.self_attn = Qwen3NextAttention(config, layer_idx)
 
+        try:
+            moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+        except:
+            moe_group = None
+        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+
         if (layer_idx not in config.mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
         ):
-            self.mlp = Qwen2MoeSparseMoeBlock(config)
+            self.mlp = (
+                QuickAccessMoEFactory.create_from_model_name(
+                    pretrained_config=config,
+                    expert_class=Qwen3MoeMLP,
+                    gate_activation="softmax",
+                    expert_activation="silu",
+                    train_topk_method="greedy",
+                    inference_topk_method="greedy",
+                    drop_tokens=False,
+                    transpose_gate_weight=False,
+                )
+                if expert_parallel_degree > 1
+                else Qwen2MoeSparseMoeBlock(config)
+            )
         else:
             self.mlp = Qwen3MoeMLP(config, intermediate_size=config.intermediate_size)
 
@@ -855,11 +821,12 @@ class Qwen3NextDecoderLayer(nn.Layer):
     def forward(
         self,
         hidden_states: Tensor,
-        position_embeddings: tuple[Tensor, Tensor],
         attention_mask: Optional[Tensor] = None,
-        position_ids: Optional[Tensor] = None,
-        past_key_values: Optional[Tensor] = None,
-        cache_position: Optional[Tensor] = None,
+        past_key_values: Optional[List[Tensor]] = None,
+        use_cache: Optional[bool] = False,
+        position_embeddings: tuple[Tensor, Tensor] = None,
+        attn_mask_startend_row_indices: Optional[Tensor] = None,
+        batch_size: Optional[int] = None,
         **kwargs,
     ) -> Tensor:
         residual = hidden_states
@@ -871,7 +838,6 @@ class Qwen3NextDecoderLayer(nn.Layer):
             hidden_states = self.linear_attn(
                 hidden_states=hidden_states,
                 cache_params=past_key_values,
-                cache_position=cache_position,
                 attention_mask=attention_mask,
             )
         elif self.layer_type == "full_attention":
@@ -879,10 +845,11 @@ class Qwen3NextDecoderLayer(nn.Layer):
             hidden_states, _ = self.self_attn(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
-                position_ids=position_ids,
                 past_key_values=past_key_values,
-                cache_position=cache_position,
                 position_embeddings=position_embeddings,
+                use_cache=use_cache,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                batch_size=batch_size,
                 **kwargs,
             )
 
