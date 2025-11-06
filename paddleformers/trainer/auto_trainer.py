@@ -522,19 +522,21 @@ class AutoTrainer(Trainer):
 
         train_dataloader = dist_loader()
         if resume_from_checkpoint is not None:
-            model_sharded_state_dict = model.sharded_state_dict()
-            aoa_config = model._gen_aoa_config()
-            # load safetensors format
-            dist.load_state_dict(
-                model_sharded_state_dict,
-                resume_from_checkpoint,
-                aoa_config=aoa_config,
-                offload=False,
-                safetensors=True,
-            )
-            # load paddle format
-            # self._load_flex_checkpoint(resume_from_checkpoint)
-
+            if self.args.load_checkpoint_format == "flex_checkpoint":
+                model_sharded_state_dict = model.sharded_state_dict()
+                aoa_config = model._gen_aoa_config()
+                # load safetensors format
+                dist.load_state_dict(
+                    model_sharded_state_dict,
+                    resume_from_checkpoint,
+                    aoa_config=aoa_config,
+                    offload=False,
+                    safetensors=True,
+                )
+                # load paddle format
+                # self._load_flex_checkpoint(resume_from_checkpoint)
+            else:
+                self._load_from_checkpoint(resume_from_checkpoint)
         self.timers and self.timers("read-data").start()
 
         for epoch in range(epochs_trained, num_train_epochs):
