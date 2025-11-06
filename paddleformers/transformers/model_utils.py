@@ -3010,6 +3010,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         # Attach architecture to the config
         config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        
+        # delete the dpo training config key '_attn_implementation'
+        key_to_move = "_attn_implementation"
+        if hasattr(config_to_save, key_to_move):
+            delattr(config_to_save, key_to_move)
         # Save the config
         if is_main_process:
             config_to_save.save_pretrained(save_directory)

@@ -782,6 +782,10 @@ def save_model_config(model_to_save, save_directory, save_to_hf=False):
 
     # save the config
     config_to_save = save_config(model_to_save)
+    # delete the dpo training config key '_attn_implementation'
+    key_to_move = "_attn_implementation"
+    if hasattr(config_to_save, key_to_move):
+        delattr(config_to_save, key_to_move)
     # Attach architecture to the config
     if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
         config_to_save.architectures = [clean_model_class_name(model_to_save.model.__class__.__name__)]
