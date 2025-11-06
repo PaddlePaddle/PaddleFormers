@@ -421,7 +421,7 @@ def run_sft(
             logger.info("Benchmark done.")
         else:
             if not training_args.autotuner_benchmark:
-                trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1)
+                trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1, save_to_flex=False)
                 trainer.log_metrics("train", train_result.metrics)
                 trainer.save_metrics("train", train_result.metrics)
                 trainer.save_state()
