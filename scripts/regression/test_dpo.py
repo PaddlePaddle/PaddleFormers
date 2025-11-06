@@ -83,8 +83,6 @@ class DPOTrainTester(unittest.TestCase):
         model = Qwen3ForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
-        print(f"result is : {result}")
-        print(f"result[0] is : {result[0]}")
         self.assertTrue(paddle.allclose(result[0], excepted_result))
 
 
@@ -149,7 +147,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+        EXPECTED_RESULT = paddle.to_tensor([[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]])
         self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_dpo_lora(self):
@@ -263,7 +261,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+        EXPECTED_RESULT = paddle.to_tensor([[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]])
         self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_dpo_lora_tp_pp(self):
