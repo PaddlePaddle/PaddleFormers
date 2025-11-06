@@ -6,19 +6,18 @@ train_dataset_prob: "1.0"
 eval_dataset_path: ./data/dpo/dev.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
+num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
 
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
 attn_impl: flashmask
-lora: true
-lora_rank: 8
 
 ### finetuning
 # base
 stage: DPO
-fine_tuning: lora
+fine_tuning: full
 seed: 23
 do_train: true
 do_eval: true
@@ -33,20 +32,20 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3_hf_0p6b_dpo_lora_ckpts_parallel
+output_dir: ./checkpoints/qwen3_hf_0p6b_dpo_ckpts_parallel
 disable_tqdm: true
 eval_accumulation_steps: 16
 
 # train
 warmup_steps: 20
-learning_rate: 1.0e-5
+learning_rate: 1.0e-6
 
 # performance
 tensor_parallel_degree: 2
 pipeline_parallel_degree: 2
 pipeline_parallel_config: enable_clear_every_step_cache disable_partial_send_recv
-sequence_parallel: true
 sharding: stage1
+sequence_parallel: true
 recompute: true
 bf16: true
 fp16_opt_level: O2
