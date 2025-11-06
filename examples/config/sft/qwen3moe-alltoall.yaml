@@ -1,0 +1,69 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: /root/paddlejob/gpfs/hushenwei/PaddleFormers/examples/experiments/glm_ci/data/sft/train.json
+train_dataset_prob: "1.0"
+eval_dataset_path: /root/paddlejob/gpfs/hushenwei/PaddleFormers/examples/experiments/glm_ci/data/sft/dev.json
+eval_dataset_prob: "1.0"
+max_seq_len: 4096
+packing: true
+mix_strategy: concat
+
+
+### model
+model_name_or_path: /root/paddlejob/gpfs/hushenwei/huggingface-model/huggingface/Qwen/Qwen3-30B-A3B
+attn_impl: flashmask
+
+### finetuning
+# base
+stage: SFT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 5
+max_steps: 50
+eval_steps: 100
+evaluation_strategy: steps
+save_steps: 10000
+save_total_limit: 1
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 4
+logging_dir: ./vdl_log
+output_dir: ./checkpoints/qwen3_hf_30b_sft_ckpts_parallel
+disable_tqdm: true
+eval_accumulation_steps: 16
+
+# train
+warmup_steps: 20
+learning_rate: 1.0e-5
+
+# performance
+tensor_parallel_degree: 2
+expert_parallel_degree: 4
+pipeline_parallel_degree: 2
+sequence_parallel: true
+use_expert_parallel: true
+sharding: stage1
+#3 offload
+# offload: true,
+offload_optim: false
+use_fused_head_and_loss_fn: true
+# use_filtered_label_loss: true
+optim: adamw_custom
+tensorwise_offload_optimizer: true
+recompute: true
+# recompute_use_reentrant: true
+# unified_checkpoint_config: ignore_merge_optimizer
+bf16: true
+fp16_opt_level: O2
+unified_checkpoint: true
+
+sharding_parallel_config: "split_param"
+amp_master_grad: true
+
+use_unified_moe: true
+ep_communication_type: "alltoall"
