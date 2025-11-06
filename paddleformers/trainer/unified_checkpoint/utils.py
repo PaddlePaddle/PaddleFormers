@@ -782,7 +782,6 @@ def save_model_config(model_to_save, save_directory, save_to_hf=False):
 
     # save the config
     config_to_save = save_config(model_to_save)
-    
     # Attach architecture to the config
     if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
         config_to_save.architectures = [clean_model_class_name(model_to_save.model.__class__.__name__)]
