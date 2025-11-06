@@ -15,11 +15,6 @@
 """ Training DPO """
 
 import os
-
-os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
-os.environ["NCCL_ALGO"] = "Tree"
-os.environ["FLAGS_embedding_deterministic"] = "1"
-os.environ["FLAGS_cudnn_deterministic"] = "1"
 import sys
 from functools import partial
 
