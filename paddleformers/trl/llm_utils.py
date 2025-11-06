@@ -112,33 +112,23 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "qwen2":
         target_modules = [
-            # fused
-            ".*qkv_proj.*",
-            ".*gate_up_fused_proj.*",
-            # independent
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
-            ".*gate_proj.*",
-            ".*up_proj.*",
-            # always exist
             ".*o_proj.*",
+            ".*gate_proj.*",
             ".*down_proj.*",
+            ".*up_proj.*",
         ]
     elif model.config.model_type == "qwen3":
         target_modules = [
-            # fused
-            ".*qkv_proj.*",
-            ".*gate_up_fused_proj.*",
-            # independent
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
-            ".*gate_proj.*",
-            ".*up_proj.*",
-            # always exist
             ".*o_proj.*",
+            ".*gate_proj.*",
             ".*down_proj.*",
+            ".*up_proj.*",
         ]
     elif model.config.model_type == "mixtral":
         target_modules = [
@@ -227,6 +217,9 @@ def get_lora_target_modules(model):
             ".*gate_proj.*",
             ".*up_proj.*",
             ".*down_proj.*",
+            ".*mlp.gate_proj.*",
+            ".*mlp.up_proj.*",
+            ".*mlp.down_proj.*",
             ".*mlp.gate_proj.*",
             ".*mlp.up_proj.*",
             ".*mlp.down_proj.*",

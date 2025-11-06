@@ -33,6 +33,7 @@ from paddleformers.data.causal_dataset import (
 from paddleformers.trainer import (
     FP8QuantWeightCallback,
     MoECorrectionBiasAdjustCallback,
+    MoeExpertsGradScaleCallback,
     PdArgumentParser,
     StepFlexToken,
     Trainer,
@@ -404,7 +405,7 @@ def main():
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path, download_hub="huggingface")
+    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
     config = DeepseekV2FastConfig.from_pretrained(model_args.model_name_or_path)
 
     # set all llm config
@@ -573,6 +574,9 @@ def main():
     )
 
     callbacks = [StepFlexToken(), FP8QuantWeightCallback()]
+
+    if training_args.use_expert_parallel:
+        callbacks += [MoeExpertsGradScaleCallback(training_args)]
 
     if getattr(config, "topk_method", None) == "noaux_tc":
         aux_loss_free_gamma = getattr(config, "aux_loss_free_gamma", 0.001)

@@ -58,6 +58,11 @@ def register_model_group(models: dict[str, dict[DownloadSource, str]]) -> None:
 
 
 def check_repo(model_name_or_path, download_hub):
+    if "PF_HOME" in os.environ:
+        home_path = os.environ["PF_HOME"]
+        home_model_path = os.path.join(home_path, model_name_or_path)
+        if os.path.isfile(home_model_path) or os.path.isdir(home_model_path):
+            model_name_or_path = home_model_path
     is_local = os.path.isfile(model_name_or_path) or os.path.isdir(model_name_or_path)
     if not is_local:
         assert download_hub in [

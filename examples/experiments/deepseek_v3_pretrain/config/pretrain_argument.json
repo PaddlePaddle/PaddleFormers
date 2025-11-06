@@ -18,8 +18,8 @@
     "sequence_parallel": 0,
     "use_flash_attention": true,
     "max_seq_length": 4097,
-    "learning_rate": 3e-05,
-    "min_learning_rate": 3e-06,
+    "learning_rate": 2.2e-05,
+    "min_learning_rate": 7.333e-07,
     "warmup_steps": 30,
     "logging_steps": 1,
     "max_steps": 200,
@@ -51,5 +51,6 @@
     "unified_checkpoint_config": "ignore_merge_optimizer",
     "offload_optim": true,
     "reorder_pipeline_priority": true,
-    "num_nextn_predict_layers":1
+    "num_nextn_predict_layers":1,
+    "using_fake_gate": false
   }

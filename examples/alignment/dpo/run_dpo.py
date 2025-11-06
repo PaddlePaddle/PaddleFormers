@@ -41,38 +41,11 @@ from paddleformers.transformers import (
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
     AutoTokenizer,
-    LlamaForCausalLM,
-    LlamaForCausalLMPipe,
-    Phi3ForCausalLM,
-    Phi3ForCausalLMPipe,
-    Qwen2ForCausalLM,
-    Qwen2ForCausalLMPipe,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeForCausalLMPipe,
-    Qwen3ForCausalLM,
-    Qwen3ForCausalLMPipe,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeForCausalLMPipe,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DPOTrainer
 from paddleformers.trl.llm_utils import get_lora_target_modules
 from paddleformers.utils.log import logger
-
-flash_mask_support_list = [
-    LlamaForCausalLM,
-    LlamaForCausalLMPipe,
-    Qwen2ForCausalLM,
-    Qwen2ForCausalLMPipe,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeForCausalLMPipe,
-    Qwen3ForCausalLM,
-    Qwen3ForCausalLMPipe,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeForCausalLMPipe,
-    Phi3ForCausalLM,
-    Phi3ForCausalLMPipe,
-]
 
 
 def main():
@@ -150,6 +123,7 @@ def main():
     model_config._attn_implementation = model_args.attn_impl
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.max_sequence_length = data_args.max_seq_len
+    model_config.seq_length = data_args.max_seq_len
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
@@ -160,6 +134,7 @@ def main():
         )
         ref_model_config.pp_seg_method = model_args.pp_seg_method
         ref_model_config.max_sequence_length = data_args.max_seq_len
+        ref_model_config.seq_length = data_args.max_seq_len
         ref_model_config._attn_implementation = model_args.attn_impl
 
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
@@ -192,9 +167,6 @@ def main():
             ref_model = None
     if training_args.pipeline_parallel_degree > 1:
         model.config.dpo_config = None
-
-    if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
-        raise NotImplementedError(f"{model.__class__} not support flash mask.")
 
     if model_args.tokenizer_name_or_path is not None:
         tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)

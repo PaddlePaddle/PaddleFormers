@@ -71,7 +71,9 @@ def create_dataset(**dataset_config):
         task_dataset_prob=task_dataset_prob,
         sub_dataset_type=sub_dataset_type,
         process_fn=process_example,
+        process_fn_pt=process_pretraining_example,
         process_fn_fc=process_fc,
+        is_pretraining=dataset_config["is_pretraining"],
     )
     sequence_dataset = SequenceDataset(
         dataset=example_dataset,
@@ -86,6 +88,7 @@ def create_dataset(**dataset_config):
         mix_strategy=dataset_config["mix_strategy"],
         encode_one_turn=dataset_config["encode_one_turn"],
         use_template=dataset_config["use_template"],
+        is_pretraining=dataset_config["is_pretraining"],
     )
     return sequence_dataset
 
@@ -164,10 +167,11 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
             padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
             return_list[-1].append(padded_nbatch_pack_offset)
 
-        if model_args.use_attn_mask_startend_row_indices:
-            return_list[-1].append(gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len))
-        else:
-            return_list[-1].append(gen_self_attn_mask(original_token_ids, max_seq_len))
+        if not model_args.stage.lower() == "pt":
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len))
+            else:
+                return_list[-1].append(gen_self_attn_mask(original_token_ids, max_seq_len))
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
     input_dict = dict(zip(input_keys, return_list))
@@ -199,7 +203,7 @@ def process_fc(data, input_file):
             ex = Example(
                 request={"messages": message, "tools": tools_list},
                 system=system,
-                label=label,
+                label=[1],
                 is_system=is_system,
                 source=input_file,
                 is_function_call=True,
@@ -273,6 +277,42 @@ def process_example(data, input_file):
     )
 
 
+def process_pretraining_example(data, input_file):
+    """Convert raw data example into training example.
+    Args:
+        data (dict): Raw example data with:
+        input_file (str): Source file path
+    Returns:
+        Example: Processed example for sequence generation
+    """
+    # We have the code completion dataset, which has the following fields
+    if isinstance(data["text"], str):
+        data["text"] = [data["text"]]
+
+    if len(data["text"]) == 0:
+        raise ValueError("Ignore example with empty src or empty tgt.")
+
+    for item in data["text"]:
+        if len(item.strip()) == 0:
+            raise ValueError("Ignore example with empty string in str / tgt field.")
+
+    if "label" not in data:
+        data["label"] = [1] * len(data["text"])
+
+    # convert to OpenAI format
+    data["messages"] = []
+    for a in data["text"]:
+        data["messages"].append({"role": "assistant", "content": a.strip()})
+
+    return Example(
+        request={"messages": data["messages"]},
+        system="",
+        label=data["label"],
+        is_system=0,
+        source=input_file,
+    )
+
+
 class SequenceDataset(IterableDataset):
     """Dataset for creating sequences from multi-source examples.
 
@@ -293,6 +333,7 @@ class SequenceDataset(IterableDataset):
         mix_strategy: str = "random",
         encode_one_turn: bool = True,
         use_template: bool = True,
+        is_pretraining: bool = False,
     ):
         """Initialize SequenceDataset.
 
@@ -326,6 +367,7 @@ class SequenceDataset(IterableDataset):
         self.use_template = use_template
         self.num_samples_each_epoch = num_samples_each_epoch
         self.reverse = True
+        self.is_pretraining = is_pretraining
 
         # For new data concatenation mode
         self.begin_of_query = self.tokenizer.tokenize("User: ")
@@ -397,21 +439,69 @@ class SequenceDataset(IterableDataset):
         batch_sequence, cur_len = [], 0
         dataset_iterator = iter(self.mix_datasets)
 
-        if not self.packing:
+        # pre-training:
+        # 1. tokenize all the samples in the sampling pool,
+        # 2. combine them into one large sample
+        # 3. truncate it into multiple new samples based on the max_seq_len.
+        if self.is_pretraining:
+            all_tokenized_tokens = []
             for _ in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
                 actual_example_num = 1
-                sequence = self._postprocess_sequence(example, actual_example_num)
-                # unused_samples and used_samples are used to calculate skip_samples and actual_train_samples
-                if sequence is None:
+                tokens = self._postprocess_pretraining_sequence(example, actual_example_num)
+                if tokens is None:
                     if self.estimate:
                         self.unused_samples += actual_example_num
                     continue
                 if self.estimate:
                     self.used_samples += actual_example_num
-                batch_sequence, cur_len = [sequence], len(sequence.token_ids)
-                yield batch_sequence
 
+                all_tokenized_tokens.extend(tokens)
+
+                while len(all_tokenized_tokens) >= self.max_seq_len:
+                    cut_tokens = all_tokenized_tokens[: self.max_seq_len]
+                    cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
+                    all_tokenized_tokens = all_tokenized_tokens[self.max_seq_len :]
+
+                    res_tokens = cut_tokens[:-1]
+                    res_labels = cut_tokens[1:]
+                    loss_mask = [1] * len(res_tokens)
+                    pos_ids = list(range(len(res_tokens)))
+                    sequence = Sequence(
+                        token_ids=res_tokens,
+                        position_ids=pos_ids,
+                        labels=res_labels,
+                        loss_mask=loss_mask,
+                        num_examples=actual_example_num,
+                    )
+                    batch_sequence = [sequence]
+                    yield batch_sequence
+
+                    if self.estimate:
+                        self.used_estimate_samples += actual_example_num
+                        if self.used_estimate_samples >= self.max_estimate_samples:
+                            self.used_estimate_samples = 0
+                            # Set flag to False and yield empty list to signal the end of estimation
+                            self.estimate = False
+                            yield []
+
+            # If the entire dataset has been fully traversed, return the remaining data.
+            if len(all_tokenized_tokens) > 0:
+                cut_tokens = all_tokenized_tokens
+                cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
+                res_tokens = cut_tokens[:-1]
+                res_labels = cut_tokens[1:]
+                loss_mask = [1] * len(res_tokens)
+                pos_ids = list(range(len(res_tokens)))
+                sequence = Sequence(
+                    token_ids=res_tokens,
+                    position_ids=pos_ids,
+                    labels=res_labels,
+                    loss_mask=loss_mask,
+                    num_examples=actual_example_num,
+                )
+                batch_sequence = [sequence]
+                yield batch_sequence
                 if self.estimate:
                     self.used_estimate_samples += actual_example_num
                     if self.used_estimate_samples >= self.max_estimate_samples:
@@ -419,34 +509,25 @@ class SequenceDataset(IterableDataset):
                         # Set flag to False and yield empty list to signal the end of estimation
                         self.estimate = False
                         yield []
-            if len(batch_sequence) > 0:
-                yield batch_sequence
         else:
-            if not self.greedy_intokens:
-                # base
+            if not self.packing:
                 for _ in range(len(self.mix_datasets)):
                     example = next(dataset_iterator)
                     actual_example_num = 1
                     sequence = self._postprocess_sequence(example, actual_example_num)
+                    # unused_samples and used_samples are used to calculate skip_samples and actual_train_samples
                     if sequence is None:
                         if self.estimate:
                             self.unused_samples += actual_example_num
                         continue
                     if self.estimate:
                         self.used_samples += actual_example_num
-                    if cur_len + len(sequence.token_ids) <= self.max_seq_len:
-                        batch_sequence.append(sequence)
-                        cur_len += len(sequence.token_ids)
-                    else:
-                        yield batch_sequence
-                        batch_sequence, cur_len = [sequence], len(sequence.token_ids)
+                    batch_sequence, cur_len = [sequence], len(sequence.token_ids)
+                    yield batch_sequence
 
                     if self.estimate:
                         self.used_estimate_samples += actual_example_num
                         if self.used_estimate_samples >= self.max_estimate_samples:
-                            # Yield left batch sequence before estimation ends
-                            if len(batch_sequence) > 0:
-                                yield batch_sequence
                             self.used_estimate_samples = 0
                             # Set flag to False and yield empty list to signal the end of estimation
                             self.estimate = False
@@ -454,46 +535,78 @@ class SequenceDataset(IterableDataset):
                 if len(batch_sequence) > 0:
                     yield batch_sequence
             else:
-                # Pseudo multiple rounds + group greedy intokens.
-                buffer_size = 500
-                examples = []
-                actual_example_num_list = []
-                i = 0
-                for _ in range(len(self.mix_datasets)):
-                    example = next(dataset_iterator)
-                    actual_example_num = 1
-                    if i < buffer_size:
-                        examples.append(example)
-                        actual_example_num_list.append(actual_example_num)
-                        i += 1
-                    else:
-                        # Running greedy strategy in examples.
+                if not self.greedy_intokens:
+                    # base
+                    for _ in range(len(self.mix_datasets)):
+                        example = next(dataset_iterator)
+                        actual_example_num = 1
+                        sequence = self._postprocess_sequence(example, actual_example_num)
+                        if sequence is None:
+                            if self.estimate:
+                                self.unused_samples += actual_example_num
+                            continue
+                        if self.estimate:
+                            self.used_samples += actual_example_num
+                        if cur_len + len(sequence.token_ids) <= self.max_seq_len:
+                            batch_sequence.append(sequence)
+                            cur_len += len(sequence.token_ids)
+                        else:
+                            yield batch_sequence
+                            batch_sequence, cur_len = [sequence], len(sequence.token_ids)
+
+                        if self.estimate:
+                            self.used_estimate_samples += actual_example_num
+                            if self.used_estimate_samples >= self.max_estimate_samples:
+                                # Yield left batch sequence before estimation ends
+                                if len(batch_sequence) > 0:
+                                    yield batch_sequence
+                                self.used_estimate_samples = 0
+                                # Set flag to False and yield empty list to signal the end of estimation
+                                self.estimate = False
+                                yield []
+                    if len(batch_sequence) > 0:
+                        yield batch_sequence
+                else:
+                    # Pseudo multiple rounds + group greedy intokens.
+                    buffer_size = 500
+                    examples = []
+                    actual_example_num_list = []
+                    i = 0
+                    for _ in range(len(self.mix_datasets)):
+                        example = next(dataset_iterator)
+                        actual_example_num = 1
+                        if i < buffer_size:
+                            examples.append(example)
+                            actual_example_num_list.append(actual_example_num)
+                            i += 1
+                        else:
+                            # Running greedy strategy in examples.
+                            generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
+                            for pack in generate_packs:
+                                if len(pack) > 0:
+                                    yield pack
+                            examples = [example]
+                            i = 1
+
+                        if self.estimate:
+                            self.used_estimate_samples += actual_example_num
+                            # Stop estimation if the number of samples used in estimation is larger than max_estimate_samples
+                            if self.used_estimate_samples >= self.max_estimate_samples:
+                                # Yield left packs before estimation ends
+                                if len(examples) > 0:
+                                    generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
+                                    for pack in generate_packs:
+                                        if len(pack) > 0:
+                                            yield pack
+                                # Set flag to False and yield empty list to signal the end of estimation
+                                self.estimate = False
+                                yield []
+
+                    if len(examples) > 0:
                         generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
                         for pack in generate_packs:
                             if len(pack) > 0:
                                 yield pack
-                        examples = [example]
-                        i = 1
-
-                    if self.estimate:
-                        self.used_estimate_samples += actual_example_num
-                        # Stop estimation if the number of samples used in estimation is larger than max_estimate_samples
-                        if self.used_estimate_samples >= self.max_estimate_samples:
-                            # Yield left packs before estimation ends
-                            if len(examples) > 0:
-                                generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
-                                for pack in generate_packs:
-                                    if len(pack) > 0:
-                                        yield pack
-                            # Set flag to False and yield empty list to signal the end of estimation
-                            self.estimate = False
-                            yield []
-
-                if len(examples) > 0:
-                    generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
-                    for pack in generate_packs:
-                        if len(pack) > 0:
-                            yield pack
 
     def __iter__(self):
         """Iterator interface for the dataset.
@@ -506,6 +619,13 @@ class SequenceDataset(IterableDataset):
         else:
             while True:
                 yield from self.__iter_func()
+
+    def _postprocess_pretraining_sequence(self, example, actual_example_num):
+        # tokens
+        content = example.request["messages"][0]["content"]
+        tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
+
+        return tokens
 
     def _postprocess_sequence(self, example, actual_example_num):
         """Process code completion examples into token sequences.

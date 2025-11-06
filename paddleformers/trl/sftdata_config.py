@@ -51,6 +51,23 @@ class DataConfig:
         default="1.0",
         metadata={"help": "probabilities of eval datasets."},
     )
+    dataset_type: str = field(
+        default="iterable",
+        metadata={
+            "help": (
+                "Specify the type of dataset to use. Options are 'iterable' "
+                "for 'IterableDataset' and 'map' for 'MapDataset'."
+            )
+        },
+    )
+    input_dir: str = field(
+        default=None,
+        metadata={"help": "data path (only valid in offline pretrain dataset)"},
+    )
+    split: str = field(
+        default="950,50",
+        metadata={"help": "Train/Eval data split ratio (only valid in offline pretrain dataset)"},
+    )
     mix_strategy: str = field(
         default="concat",
         metadata={

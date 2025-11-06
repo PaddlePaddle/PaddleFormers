@@ -71,7 +71,9 @@ def parse_args(args, mtp_enable=False):
                 hidden_states, attention_mask, nbatch_pack_offset = args
                 position_ids = None
             else:
-                hidden_states, attention_mask, position_ids = args
+                hidden_states, position_ids, position_embeddings = args
+                attention_mask = None
+                nbatch_pack_offset = None
         elif len(args) == 2:
             if mtp_enable:
                 hidden_states, nbatch_pack_offset = args
@@ -487,13 +489,12 @@ def make_decoder_layer_pipe(decoder_layer):
 class CriterionLayerPipe(CriterionLayer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.return_tuple = False  # loss_func only return loss, no loss_sum
 
     def forward(self, logits, labels):
         if isinstance(labels, tuple) and "sft" in self.loss_type:
             labels, loss_mask = labels
-            loss, loss_sum = super().forward(logits, labels)
-        else:
-            loss = super().forward(logits, labels)
+        loss = super().forward(logits, labels)
         return loss
 
 

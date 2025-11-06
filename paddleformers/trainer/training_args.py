@@ -30,7 +30,6 @@ from typing import Any, Dict, List, Optional
 import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
-from paddle.distributed.fleet.base.topology import message2nccl_config
 
 from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.log import logger
@@ -634,6 +633,11 @@ class TrainingArguments:
         metadata={"help": "Whether to remap parameter name when load_sharded_model = true."},
     )
 
+    sharded_model_from_ema: bool = field(
+        default=False,
+        metadata={"help": "Whether to load sharded model from EMA."},
+    )
+
     tensor_parallel_degree: int = field(
         default=-1,
         metadata={
@@ -783,7 +787,7 @@ class TrainingArguments:
                 "Following options are supported:\n"
                 "- pp_first. the topo order is dp, pp, sharding, mp \n"
                 "- sharding_first. the topo order is dp, sharding, pp, mp \n"
-                "Default is None, for pp_first"
+                "Default is None, for sharding_first"
             )
         },
     )
@@ -1281,6 +1285,8 @@ class TrainingArguments:
                                 "use_dualpipev",
                                 "forward_backward_overlap_scheduler",
                                 "enable_dynamic_shape",
+                                "sync_moment",
+                                "sync_param",
                             ]:
                                 raise ValueError(
                                     f"Found unknown pipeline mode config {x}, accept config is disable_p2p_cache_shape, disable_partial_send_recv."
@@ -1333,6 +1339,18 @@ class TrainingArguments:
                         in pipeline_parallel_config,
                         "enable_dynamic_shape": "enable_dynamic_shape" in pipeline_parallel_config,
                     }
+
+                    pp_sync_param = "sync_param" in pipeline_parallel_config
+                    pp_sync_moment = "sync_moment" in pipeline_parallel_config
+
+                    if pp_sync_param:
+                        logger.info("setting pp sync_param")
+                        strategy.hybrid_configs["pp_configs"].sync_param = True
+
+                    if pp_sync_moment:
+                        logger.info("setting pp sync_moment")
+                        strategy.hybrid_configs["pp_configs"].sync_moment = True
+
                     if dygraph_pp_configs["dp_comm_overlap"]:
                         raise ValueError("overlap has accuracy issue")  # TODO: fix `overalap` + `delay_scale` issue
 
@@ -1462,9 +1480,13 @@ class TrainingArguments:
                                 sd_idx = order.index("sharding")
                                 order.insert(sd_idx, "cp")
                     else:
-                        if is_context_parallel_supported():
-                            order = order[1:-1] + ["cp", "dp", "mp"]
-                        order = order[1:-1] + ["dp", "mp"]
+                        if self.moe_sharding_parallel_degree >= 1 and self.expert_parallel_degree > 1:
+                            if is_context_parallel_supported():
+                                order = ["sharding", "moe_sharding", "pp", "sep", "cp", "dp", "ep", "mp"]
+                            else:
+                                order = ["sharding", "moe_sharding", "pp", "sep", "dp", "ep", "mp"]
+                        else:
+                            order = ["sharding", "pp", "sep", "dp", "mp"]
 
                 if is_context_parallel_supported():
                     hybrid_configs = {
@@ -1603,12 +1625,7 @@ class TrainingArguments:
                         assert (
                             "split_param" not in sharding_parallel_config
                         ), "split_param should not be set when enable_stage1_broadcast_overlap."
-                        use_casual_mask = os.getenv("USE_CASUAL_MASK", "False")
-                        assert use_casual_mask, "enable_stage1_broadcast_overlap requires USE_CASUAL_MASK=True."
-                        assert self.logging_steps > 1, (
-                            "The logging_steps should be greater than 1 for stage1_broadcast_overlap, "
-                            f"but got logging_steps={self.logging_steps}."
-                        )
+
                     if "enable_stage1_allgather_overlap" in sharding_parallel_config:
                         assert (
                             ShardingOption.SHARD_OP in self.sharding
@@ -2122,54 +2139,20 @@ class TrainingArguments:
                 self.expert_tensor_parallel_degree = -1
 
         if self.hybrid_parallel_topo_order is None:
-            self.hybrid_parallel_topo_order = "pp_first"
+            self.hybrid_parallel_topo_order = "sharding_first"
         assert self.hybrid_parallel_topo_order in ["pp_first", "sharding_first"]
 
         if self.use_hybrid_parallel and self.enable_auto_parallel:
             self.use_hybrid_parallel = False
 
     def add_moe_comm_group(self):
-        hybrid_configs = fleet.fleet._user_defined_strategy.hybrid_configs
+        # NOTE(zhangweilong):move init_moe_group logic to paddle fleet.init
+        moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+        moe_grad_group = fleet.get_hybrid_communicate_group().get_moe_sharding_parallel_group()
         hcg = fleet.get_hybrid_communicate_group()
-        topo = hcg._topo
-        sharding_parallel_groups = topo.get_comm_list("sharding")
-        experts_replicas = self.sharding_parallel_degree // self.expert_parallel_degree
-
-        # init experts groups inside all sharding groups
-        for ranks_in_current_sharding_group in sharding_parallel_groups:
-            # init experts parallel groups (dispatch & combine)
-            for i in range(experts_replicas):
-                rank_indices = list(range(i * self.expert_parallel_degree, (i + 1) * self.expert_parallel_degree))
-                ranks = [ranks_in_current_sharding_group[i] for i in rank_indices]
-                if message2nccl_config is not None and hybrid_configs.get("ep_configs", None) is not None:
-                    group = dist.new_group(
-                        ranks=ranks, nccl_config=message2nccl_config(hybrid_configs["ep_configs"].nccl_config, "ep")
-                    )
-                else:
-                    group = dist.new_group(ranks=ranks)
-                if dist.get_rank() in ranks:
-                    assert not hasattr(hcg, "expert_parallel_group"), "expert_parallel_group can not be set repeate"
-                    setattr(hcg, "expert_parallel_group", group)
-
-            # init experts gradients comm groups
-            for i in range(self.expert_parallel_degree):
-                rank_indices = list(range(i, self.sharding_parallel_degree, self.expert_parallel_degree))
-                ranks = [ranks_in_current_sharding_group[i] for i in rank_indices]
-                if message2nccl_config is not None and hybrid_configs.get("ep_configs", None) is not None:
-                    group = dist.new_group(
-                        ranks=ranks,
-                        nccl_config=message2nccl_config(hybrid_configs["ep_configs"].grad_nccl_config, "ep_grad"),
-                    )
-                else:
-                    group = dist.new_group(ranks=ranks)
-                if dist.get_rank() in ranks:
-                    assert not hasattr(hcg, "expert_grad_comm_group"), "expert_grad_comm_group can not be set repeate"
-                    setattr(hcg, "expert_grad_comm_group", group)
-
-        assert hasattr(hcg, "expert_parallel_group") and hasattr(hcg, "expert_grad_comm_group")
-        logger.info(
-            f"experts groups are created, expert_parallel_group: {hcg.expert_parallel_group}, expert_grad_comm_group: {hcg.expert_grad_comm_group}"
-        )
+        setattr(hcg, "expert_parallel_group", moe_group)
+        setattr(hcg, "expert_grad_comm_group", moe_grad_group)
+        return
 
     def __str__(self):
         self_as_dict = asdict(self)
@@ -2494,9 +2477,7 @@ class TrainingArguments:
     def should_load_sharding_stage1_model(self):
         if self.enable_auto_parallel:
             return False
-        return (
-            ShardingOption.SHARD_OP in self.sharding and self.sharding_parallel_degree > 1 and self.load_sharded_model
-        )
+        return self.load_sharded_model
 
     @property
     def should_load_dataset(self):

@@ -337,6 +337,7 @@ import_structure = {
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "qwen2_moe": [],
     "qwen3_moe": [],
+    "glm4_moe.configuration": ["Glm4MoeConfig"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"],
     "auto": ["AutoModelForCausalLM"],
     "legacy.tokenizer_utils_base": ["EncodingFast"],

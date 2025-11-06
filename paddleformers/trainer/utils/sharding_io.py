@@ -269,7 +269,7 @@ class GroupGetter:
 
 
 class ShardingIO:
-    def __init__(self, args, model, optimizer=None, hcg=None, remap_parameter_name=False):
+    def __init__(self, args, model, optimizer=None, hcg=None, remap_parameter_name=False, is_ema=False):
         self.args = args
         self.model = model
         self.optimizer = optimizer
@@ -281,6 +281,7 @@ class ShardingIO:
 
         self.remap_parameter_name = remap_parameter_name
         self.remapper = None
+        self.is_ema = is_ema
 
     def _get_remapper(self, checkpoint):
         if not self.remap_parameter_name:
@@ -351,7 +352,9 @@ class ShardingIO:
                 structure_name_map = split_structure_name_mapping(structure_name_map, group_getter)
                 for i in range(self.args.sharding_parallel_rank, sharding_degree, cur_sharding_degree):
                     tmp = self._load_one_state_dict_from_checkpoint(
-                        checkpoint, base_weight_name, self.args.sharded_name_suffix(i, j)
+                        checkpoint,
+                        base_weight_name,
+                        self.args.sharded_name_suffix(i, j, sharding_parallel_degree=sharding_degree),
                     )
                     tmp = split_model_state(tmp, group_getter)
                     for gid in gids:
@@ -399,6 +402,8 @@ class ShardingIO:
         """
         load state_dict of one shard from_checkpoint, Only load model state dict.
         """
+        if self.is_ema:
+            base_weight_name = base_weight_name.replace("model_state", "ema").replace("pdparams", "pdopt")
         file_path = os.path.join(resume_from_checkpoint, _add_variant(base_weight_name, weight_name_suffix))
         if not os.path.isfile(file_path):
             raise ValueError(f"Can't find a valid checkpoint at {resume_from_checkpoint}, no {file_path}")
@@ -406,17 +411,24 @@ class ShardingIO:
         logger.info(f"Loading model from {resume_from_checkpoint} .")
         # We load the model state dict on the CPU to avoid an OOM error.
         state_dict = paddle.load(file_path, return_numpy=True)
+        if self.is_ema:
+            state_dict.pop("master_weights", None)
         state_dict = self._remap_parameter_name(resume_from_checkpoint, state_dict, is_opt=False)
         return state_dict
 
     def _load_optimizer_state_of_one_shard(self, checkpoint, base_opt_name, optimizer_name_suffix, group_getter=None):
+        if self.is_ema:
+            base_opt_name = base_opt_name.replace("optimizer", "ema")
         optimizer_name = _add_variant(base_opt_name, optimizer_name_suffix)
         path = os.path.join(checkpoint, optimizer_name)
         logger.info(f"load optimizer state from {path}")
         if os.path.isfile(path):
+            opt_state = paddleformers_load(path, map_location="cpu")
+            if self.is_ema:
+                opt_state = {"master_weights": opt_state.get("master_weights", {})}
             return self._remap_parameter_name(
                 checkpoint,
-                self._modify_ckpt_for_compatibility(paddleformers_load(path, map_location="cpu")),
+                self._modify_ckpt_for_compatibility(opt_state),
                 is_opt=True,
             )
         logger.info(f"{path} not exists")
@@ -449,9 +461,12 @@ class ShardingIO:
         if sharding_strategy == SHARDING_STRATEGY_V1:
             param2rank = sharding_meta["param2rank"]
             optimizer = unwrap_optimizer(self.optimizer, DygraphShardingOptimizer)
-            assert optimizer
-            if len(param2rank) == 0:
-                logger.warning("The param2rank is empty. Force reshard would be performed.")
+            if self.args.sharding_parallel_degree > 1:
+                assert optimizer is not None
+            else:
+                assert optimizer is None
+            if len(param2rank) == 0 or optimizer is None:
+                logger.warning("The param2rank is empty or sharding degree is 1. Force reshard would be performed.")
                 return True
             assert len(param2rank) == len(optimizer._param2rank)
             for (k, v) in param2rank.items():
