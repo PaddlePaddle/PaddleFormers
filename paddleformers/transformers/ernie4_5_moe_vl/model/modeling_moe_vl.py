@@ -35,10 +35,7 @@ from paddle.nn import functional as F
 from paddleformers.utils.log import logger
 
 from .configuration import Ernie4_5_VLMoeConfig
-from .dfnrope.modeling import (
-    DFNRopeVisionTransformerConfig,
-    DFNRopeVisionTransformerPretrainedModel,
-)
+from .dfnrope.modeling import DFNRopeVisionTransformerPretrainedModel
 from .distributed import RowSequenceParallelLinear, parallel_matmul
 from .longcontext_ops import TensorBalanceByTokenType
 from .modeling import Ernie4_5_LMHead
@@ -135,11 +132,7 @@ def get_backbone_lm_param_regex(config):
         if config.moe_num_experts
         else config.moe_num_experts // moe_world_size
     )
-    num_freeze_expert = (
-        config.moe_num_experts[0]
-        if config.moe_num_experts
-        else config.moe_num_experts
-    )
+    num_freeze_expert = config.moe_num_experts[0] if config.moe_num_experts else config.moe_num_experts
 
     freeze_part = [r"model\.norm.*", r"model\.layers.*norm.*"]  # freeze all norm
     # we do not include gate weight
@@ -1146,9 +1139,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             ):
                 nonlocal input_ids, token_type_ids_labels, mm_input_ids, image_type_ids
                 """During the backward of this function, the stop_graident attribute of param is reset"""
-                inputs_embeds = self.model.embed_tokens(lm_input_ids).astype(
-                    self.embed_tokens.weight.dtype
-                )
+                inputs_embeds = self.model.embed_tokens(lm_input_ids).astype(self.embed_tokens.weight.dtype)
                 token_type_ids_w_video = token_type_ids[..., :-1].clone()
                 token_type_ids[token_type_ids == TokenType.video] = TokenType.image
                 if images is not None:

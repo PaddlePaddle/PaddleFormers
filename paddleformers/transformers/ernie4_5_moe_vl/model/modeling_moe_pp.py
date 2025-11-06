@@ -588,9 +588,7 @@ class RMSNormPipe(RMSNorm):
         """
         if self.config.num_nextn_predict_layers > 0:
             if self.config.enable_mtp_magic_send:
-                assert (
-                    len(args) == self.config.num_nextn_predict_layers + 1
-                ), "the length is not valid in mtp"
+                assert len(args) == self.config.num_nextn_predict_layers + 1, "the length is not valid in mtp"
                 mtp_outputs = []
                 for hidden_states in args:
                     mtp_outputs.append(super().forward(hidden_states))
@@ -646,9 +644,7 @@ class LayerNormPipe(LayerNorm):
         """
         if self.config.num_nextn_predict_layers > 0:
             if self.config.enable_mtp_magic_send:
-                assert (
-                    len(args) == self.config.num_nextn_predict_layers + 1
-                ), "the length is not valid in mtp"
+                assert len(args) == self.config.num_nextn_predict_layers + 1, "the length is not valid in mtp"
                 mtp_outputs = []
                 for hidden_states in args:
                     mtp_outputs.append(super().forward(hidden_states))
@@ -692,18 +688,11 @@ class MTPLayer(nn.Layer):
         ), "Adding MTPLayer must assign value to num_nextn_predict_layers"
 
         self.mtp_block = paddle.nn.LayerList(
-            [
-                Ernie4_5_DecoderLayer(config, layer_idx)
-                for layer_idx in range(self.config.num_nextn_predict_layers)
-            ]
+            [Ernie4_5_DecoderLayer(config, layer_idx) for layer_idx in range(self.config.num_nextn_predict_layers)]
         )
         Norm = RMSNorm if config.use_rmsnorm else LayerNorm
-        self.mtp_hidden_norm = paddle.nn.LayerList(
-            [Norm(config) for _ in range(self.config.num_nextn_predict_layers)]
-        )
-        self.mtp_emb_norm = paddle.nn.LayerList(
-            [Norm(config) for _ in range(self.config.num_nextn_predict_layers)]
-        )
+        self.mtp_hidden_norm = paddle.nn.LayerList([Norm(config) for _ in range(self.config.num_nextn_predict_layers)])
+        self.mtp_emb_norm = paddle.nn.LayerList([Norm(config) for _ in range(self.config.num_nextn_predict_layers)])
 
         LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else paddle.nn.Linear
         self.mtp_linear_proj = paddle.nn.LayerList(
@@ -1102,9 +1091,7 @@ class Ernie4_5_MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
 
         if (
             seg_method == "layer:Ernie4_5_DecoderLayer|EmptyLayer"
-            and (config.num_hidden_layers + config.add_tail_layers)
-            % get_hcg().topology().get_dim_size("pipe")
-            != 0
+            and (config.num_hidden_layers + config.add_tail_layers) % get_hcg().topology().get_dim_size("pipe") != 0
         ):
             seg_method = "uniform"
         logger.info(f"using recompute_interval={recompute_interval}, seg_method={seg_method}")

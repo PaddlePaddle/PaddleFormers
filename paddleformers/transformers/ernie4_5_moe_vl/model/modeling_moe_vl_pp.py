@@ -53,7 +53,6 @@ from paddleformers.utils.log import logger
 
 from .comm_utils import all_gather_varlen, gather_varlen
 from .configuration import Ernie4_5_VLMoeConfig
-from .dfnrope.modeling import DFNRopeVisionTransformerConfig
 from .dfnrope.modeling_pp import DFNRopeVisionTransformerPipe
 from .modeling import LayerNorm, RMSNorm
 from .modeling_moe import Ernie4_5_DecoderLayer as ErnieMoEDecoderLayer
@@ -1722,9 +1721,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             pass
         if (
             seg_method == "layer:Ernie4_5_DecoderLayer|ErnieDecoderLayer|EmptyLayer"
-            and (config.num_hidden_layers + config.add_tail_layers)
-            % get_hcg().topology().get_dim_size("pipe")
-            != 0
+            and (config.num_hidden_layers + config.add_tail_layers) % get_hcg().topology().get_dim_size("pipe") != 0
         ):
             seg_method = "uniform"
         logger.info(f"using recompute_interval={recompute_interval}, seg_method={seg_method}")

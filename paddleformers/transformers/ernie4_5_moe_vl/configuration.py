@@ -15,7 +15,6 @@
 """ Ernie4_5VL model configuration """
 from .model.configuration import Ernie4_5_VLMoeConfig as Ernie4_5_VLConfig
 
-
 __all__ = [
     "Ernie4_5_VLConfig",
 ]

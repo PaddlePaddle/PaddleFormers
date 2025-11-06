@@ -619,10 +619,7 @@ class Ernie4_5_Attention(nn.Layer):
             self.head_dim = self.hidden_size // self.num_heads
         else:
             self.head_dim = config.head_dim
-        self.is_gqa = (
-            config.num_key_value_heads is not None
-            and config.num_key_value_heads != self.num_heads
-        )
+        self.is_gqa = config.num_key_value_heads is not None and config.num_key_value_heads != self.num_heads
         if config.fuse_rope:
             assert fused_rope is not None, "fused_rope is not supported"
         self.fuse_rope = config.fuse_rope
@@ -1044,12 +1041,8 @@ class Ernie4_5_Attention(nn.Layer):
             _, _, num_heads, _ = query_states.shape
             _, kv_seq_len, num_key_value_heads, _ = key_states.shape
             if num_heads != num_key_value_heads:
-                query_states, _, _ = fused_rope(
-                    query_states, None, None, rotary_emb_base=self.config.rope_theta
-                )
-                key_states, _, _ = fused_rope(
-                    key_states, None, None, rotary_emb_base=self.config.rope_theta
-                )
+                query_states, _, _ = fused_rope(query_states, None, None, rotary_emb_base=self.config.rope_theta)
+                key_states, _, _ = fused_rope(key_states, None, None, rotary_emb_base=self.config.rope_theta)
             else:
                 query_states, key_states, _ = fused_rope(
                     query_states,
@@ -1617,15 +1610,11 @@ class Ernie4_5_LMHead(nn.Layer):
 
         self.weight = self.create_parameter(
             shape=(
-                [vocab_size, config.hidden_size]
-                if config.tie_word_embeddings
-                else [config.hidden_size, vocab_size]
+                [vocab_size, config.hidden_size] if config.tie_word_embeddings else [config.hidden_size, vocab_size]
             ),
             dtype=paddle.get_default_dtype(),
         )
-        logger.info(
-            f"output-weight:{self.weight.shape} config.tie_word_embeddings={config.tie_word_embeddings}"
-        )
+        logger.info(f"output-weight:{self.weight.shape} config.tie_word_embeddings={config.tie_word_embeddings}")
         if config.weight_share_add_bias and config.use_bias:
             self.bias = self.create_parameter(
                 shape=[vocab_size],

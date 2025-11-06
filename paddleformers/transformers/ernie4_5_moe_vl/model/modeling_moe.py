@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Optional, Tuple, Union
 
-import numpy as np
 import paddle
 import paddle.distributed as dist
 import paddle.distributed.communication.group
@@ -172,11 +171,7 @@ def get_gate(
             - experts: LayerList containing distributed expert networks
                       (each device gets moe_num_experts/moe_world_size experts)
     """
-    moe_num_experts = (
-        sum(config.moe_num_experts)
-        if config.multimodel_experts
-        else config.moe_num_experts
-    )
+    moe_num_experts = sum(config.moe_num_experts) if config.multimodel_experts else config.moe_num_experts
     assert (
         moe_num_experts >= config.moe_world_size
     ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={config.moe_world_size}"
@@ -303,7 +298,7 @@ def _parse_moe_group(
             # need use dummy group for `moe_gate_dispatch_partial_nosoftmaxtopk` kernel.
             if moe_group.nranks <= 1:
                 moe_group = paddle.distributed.communication.group.Group(0, None, [0])
-        except Exception as _:
+        except Exception:
             # (LiuTing): just single-gpu
             moe_group = paddle.distributed.communication.group.Group(0, None, [0])
 
@@ -446,9 +441,7 @@ class Ernie4_5_DecoderLayer(nn.Layer):
             and layer_idx <= moe_layer_end_index  # 53
         ):
             gate, experts, lm_gate, lm_experts, moe_statics = self._init_gate_and_experts(layer_idx)
-            shared_experts = (
-                self._init_shared_experts() if hasattr(config, "moe_num_shared_experts") else None
-            )
+            shared_experts = self._init_shared_experts() if hasattr(config, "moe_num_shared_experts") else None
             dense_experts = None
             moe_cls = MOELayer
             if config.moe_multimodal_dispatch_use_allgather:  # v2
@@ -547,9 +540,7 @@ class Ernie4_5_DecoderLayer(nn.Layer):
                 )
                 cfg.intermediate_size = inter_size * cfg.moe_num_shared_experts
             else:
-                cfg.intermediate_size = (
-                    cfg.intermediate_size * cfg.moe_num_shared_experts
-                )
+                cfg.intermediate_size = cfg.intermediate_size * cfg.moe_num_shared_experts
             cfg.disable_ffn_model_parallel = False  # split shared epxert
             shared_experts = Ernie4_5_MoeMLP(cfg, True)
         else:
@@ -573,9 +564,9 @@ class Ernie4_5_DecoderLayer(nn.Layer):
         if cfg.moe_intermediate_size:
             if isinstance(cfg.moe_intermediate_size, (tuple, list)):
                 cfg.moe_num_experts = cfg.moe_num_experts
-                assert isinstance(cfg.moe_num_experts, (tuple, list)) and len(
-                    cfg.moe_num_experts
-                ) == len(cfg.moe_intermediate_size)
+                assert isinstance(cfg.moe_num_experts, (tuple, list)) and len(cfg.moe_num_experts) == len(
+                    cfg.moe_intermediate_size
+                )
                 fc = []
                 for _i, (num_experts, intermediate_size) in enumerate(
                     zip(cfg.moe_num_experts, cfg.moe_intermediate_size)
@@ -859,9 +850,9 @@ class Ernie4_5_PretrainedModel(PretrainedModel):
             extend_key_prefix = f"{cls.base_model_prefix}.layers.0"
 
             moe_layer_start_index = (
-            min(config.moe_layer_start_index)
-            if isinstance(config.moe_layer_start_index, (tuple, list))
-            else config.moe_layer_start_index
+                min(config.moe_layer_start_index)
+                if isinstance(config.moe_layer_start_index, (tuple, list))
+                else config.moe_layer_start_index
             )
             moe_layer_end_index = (
                 max(config.moe_layer_end_index)
@@ -871,11 +862,7 @@ class Ernie4_5_PretrainedModel(PretrainedModel):
 
             for i in range(num_layers):
                 # skip non-moe layers
-                if (
-                    ((i + 1) % config.moe_layer_interval != 0)
-                    or i < moe_layer_start_index
-                    or i > moe_layer_end_index
-                ):
+                if ((i + 1) % config.moe_layer_interval != 0) or i < moe_layer_start_index or i > moe_layer_end_index:
                     continue
                 experts_newkey = extend_key_prefix.replace("layers.0", f"layers.{i}.mlp.experts")
                 expert_type = ["text_moe.experts", "vision_moe.experts"]
@@ -973,10 +960,7 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
 
         if self.config.num_nextn_predict_layers > 0:
             self.mtp_block = paddle.nn.LayerList(
-                [
-                    Ernie4_5_DecoderLayer(config, layer_idx)
-                    for layer_idx in range(self.config.num_nextn_predict_layers)
-                ]
+                [Ernie4_5_DecoderLayer(config, layer_idx) for layer_idx in range(self.config.num_nextn_predict_layers)]
             )
             Norm = RMSNorm if config.use_rmsnorm else LayerNorm
             self.mtp_hidden_norm = paddle.nn.LayerList(
@@ -1435,9 +1419,7 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             if self.config.num_nextn_predict_layers > 0:
                 loss = add_loss(
                     loss,
-                    self.config.multi_token_pred_lambda
-                    * sum([x[0] for x in mtp_loss_res])
-                    / len(mtp_loss_res),
+                    self.config.multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
                 )
                 loss_sum = loss_sum + self.config.multi_token_pred_lambda * sum(
                     [x[1].detach() for x in mtp_loss_res]
@@ -1447,9 +1429,7 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             if self.config.num_nextn_predict_layers > 0:
                 loss = add_loss(
                     loss,
-                    self.config.multi_token_pred_lambda
-                    * sum([x[0] for x in mtp_loss_res])
-                    / len(mtp_loss_res),
+                    self.config.multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
                 )
 
         if router_loss is not None and isinstance(router_loss, paddle.Tensor):

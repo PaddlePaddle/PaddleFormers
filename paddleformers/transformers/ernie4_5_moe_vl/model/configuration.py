@@ -297,7 +297,7 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
         self,
         moe_num_experts: Optional[Union[int, list]] = None,
         use_recompute_moe=False,
-        moe_capacity=(),
+        moe_capacity=[],
         moe_layer_interval=2,
         moe_layer_start_index=0,
         moe_layer_end_index=-1,
