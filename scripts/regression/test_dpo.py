@@ -278,7 +278,6 @@ class DPOTrainTest(unittest.TestCase):
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
-        # cli mode
         cmd = [
             "paddleformers-cli",
             "train",

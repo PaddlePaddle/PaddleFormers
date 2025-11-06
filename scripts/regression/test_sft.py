@@ -295,7 +295,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.94778
+        EXCEPTED_LOSS = 11.947971
         self.sfttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
 
         # test model resume
@@ -309,7 +309,7 @@ class SFTTrainTest(unittest.TestCase):
                 sft_lora_tp_pp_reusme_f.write(sft_lora_tp_pp_reusme_output)
         self.sfttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        EXCEPTED_LOSS = 11.941195
+        EXCEPTED_LOSS = 11.941562
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test lora merge

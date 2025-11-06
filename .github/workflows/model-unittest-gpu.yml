@@ -95,7 +95,6 @@ jobs:
             tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
             echo "work_dir = ${work_dir}"
             source ${work_dir}/../../../proxy
-            cat ${work_dir}/../../../proxy
             cd PaddleFormers
             git config --global user.name "PaddleCI"
             git config --global user.email "paddle_ci@example.com"
