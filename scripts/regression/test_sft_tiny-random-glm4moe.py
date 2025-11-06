@@ -76,11 +76,11 @@ class SFTTrainTester(unittest.TestCase):
         model_path,
         excepted_result,
     ):
-        from paddleformers.transformers import Qwen3ForCausalLM
+        from paddleformers.transformers import Glm4MoeForCausalLM
 
         input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
         attention_mask = paddle.ones_like(input_ids)
-        model = Qwen3ForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
+        model = Glm4MoeForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
         print(f"result is : {result}")
@@ -147,7 +147,7 @@ class SFTTrainTest(unittest.TestCase):
         # self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+        EXPECTED_RESULT = paddle.to_tensor([[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]])
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_sft_lora(self):
@@ -260,7 +260,7 @@ class SFTTrainTest(unittest.TestCase):
         # EXCEPTED_LOSS = 11.928201
         # self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+        EXPECTED_RESULT = paddle.to_tensor([[132047, 74061 , 74061 , 74061 , 74061 , 74061 , 74061 , 74061 , 74061 , 74061 ]])
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_sft_lora_tp_pp(self):
@@ -378,5 +378,5 @@ class SFTTrainTest(unittest.TestCase):
         # self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+        EXPECTED_RESULT = paddle.to_tensor([[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]])
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
