@@ -413,6 +413,8 @@ class TrainingArguments:
             Whether to load checkpoint data into CPU memory first before transferring to GPU.
             This helps mitigate GPU memory shortage by staging data on the CPU and only moving required parts to the GPU on demand during communication.
             Defaults to False.
+        save_hf_steps (`int`, *optional*, defaults to 500):
+            Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
     """
 
     output_dir: str = field(
@@ -1170,6 +1172,8 @@ class TrainingArguments:
             "help": "If True, loads checkpoint data to CPU first, then transfers required parts to GPU on demand to reduce GPU memory usage. Defaults to False."
         },
     )
+
+    save_hf_steps: int = field(default=500, metadata={"help": "Save huggingface checkpoint every X updates steps."})
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()

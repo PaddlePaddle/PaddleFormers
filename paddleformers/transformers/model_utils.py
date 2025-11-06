@@ -1167,6 +1167,9 @@ def save_full_param(
         max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
         num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
     """
+
+    use_dist = True if paddle.distributed.get_world_size() > 1 else False
+
     # 1. Non-saver ranks simply consume the iterator to stay in sync.
     if rank >= num_saver_ranks:
         logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Consuming iterator for synchronization...")
@@ -1228,10 +1231,39 @@ def save_full_param(
                 _save_current_shard()
     _save_current_shard()
 
-    dist.barrier()
+    if use_dist:
+        dist.barrier()
 
     logger.info(f"[Rank {rank}/{world_size}] (Saver) All shards saved successfully.")
     return total_size
+
+
+def clean_unrelated_safetensors(save_dir):
+    use_dist = True if paddle.distributed.get_world_size() > 1 else False
+
+    if not os.path.exists(save_dir):
+        return
+
+    to_delete = []
+    for filename in os.listdir(save_dir):
+        filepath = os.path.join(save_dir, filename)
+        if filename.endswith(".safetensors") and filename != "model.safetensors" and os.path.isfile(filepath):
+            to_delete.append(filepath)
+        elif filename == "model.safetensors.index.json" and os.path.isfile(filepath):
+            to_delete.append(filepath)
+
+    if to_delete:
+        logger.warning(
+            "There are unrelated safetensors files in the current folder, which may break the consistency of Huggingface format weights. They will be deleted automatically."
+        )
+        for filepath in to_delete:
+            try:
+                os.remove(filepath)
+            except FileNotFoundError:
+                pass
+
+    if use_dist:
+        dist.barrier()
 
 
 def replace_name_and_gen_index(path, total_size):
@@ -3143,6 +3175,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         if hasattr(self.__class__, "_gen_inv_aoa_config") and save_checkpoint_format == "flex_checkpoint":
             aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+
+            clean_unrelated_safetensors(save_dir)
+
             itr = model_to_save.full(aoa_config=aoa_config)
             total_saved_size = save_full_param(
                 itr=itr,
@@ -3161,6 +3196,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
             # Attach architecture to the config
             config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+
             # Save the config
             if is_main_process:
                 config_to_save.save_pretrained(save_directory)

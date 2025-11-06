@@ -135,6 +135,7 @@ from ..utils.env import (
     PADDLE_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_NAME,
     PREFIX_CHECKPOINT_DIR,
+    PREFIX_HF_CHECKPOINT_DIR,
     PREFIX_WEIGHTS_NAME,
     SAFE_MASTER_WEIGHTS_INDEX_NAME,
     SAFE_PEFT_WEIGHTS_INDEX_NAME,
@@ -1862,6 +1863,19 @@ class Trainer:
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
             self.log_trained_tokens()
 
+        if self.control.should_save_hf:
+            if self.args.save_checkpoint_format == "flex_checkpoint":
+                is_main_process = paddle.distributed.get_rank() == 0
+                run_dir = self.args.output_dir
+                checkpoint_folder = f"{PREFIX_HF_CHECKPOINT_DIR}-{self.state.global_step}"
+                ckpt_path = os.path.join(run_dir, checkpoint_folder)
+                self.model.save_pretrained(
+                    ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                )
+                if self.tokenizer is not None and self.args.save_tokenizer:
+                    self.tokenizer.save_pretrained(ckpt_path)
+                self.control = self.callback_handler.on_save_hf(self.args, self.state, self.control)
+
     def log_trained_tokens(self):
         if self.args.count_trained_tokens:
             token_list = []
@@ -3232,6 +3246,8 @@ class Trainer:
                 self.model.save_pretrained(
                     output_dir, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
                 )
+            if self.tokenizer is not None and self.args.save_tokenizer:
+                self.tokenizer.save_pretrained(output_dir)
             return
         merge_tensor_parallel = merge_tensor_parallel and self.args.use_hybrid_parallel
         # peft model
