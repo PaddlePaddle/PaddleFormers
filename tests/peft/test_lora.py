@@ -213,7 +213,3 @@ class TestLoRAConfig(unittest.TestCase):
             lora_config.save_pretrained(tempdir)
             loaded_lora_config = LoRAConfig.from_pretrained(tempdir)
             self.assertEqual(lora_config, loaded_lora_config)
-
-
-if __name__ == "__main__":
-    unittest.main()
