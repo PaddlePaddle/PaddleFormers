@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import os
 import random
 import time
@@ -29,14 +28,12 @@ from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.profiler.utils import switch_job_schedule_profiler
 from tqdm.auto import tqdm
 
-from ..transformers.model_utils import clean_model_class_name, unwrap_model
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     PREFIX_CHECKPOINT_DIR,
     SCALER_NAME,
     SCHEDULER_NAME,
     TRAINER_STATE_NAME,
-    TRAINING_ARGS_NAME,
 )
 from ..utils.log import logger
 from .argparser import strtobool
@@ -522,10 +519,9 @@ class AutoTrainer(Trainer):
 
         train_dataloader = dist_loader()
         if resume_from_checkpoint is not None:
-            if self.args.load_checkpoint_format == "flex_checkpoint":
+            if self.args.convert_from_hf:
                 model_sharded_state_dict = model.sharded_state_dict()
-                aoa_config = model._gen_aoa_config()
-                # load safetensors format
+                aoa_config = model._gen_aoa_config(model.config)
                 dist.load_state_dict(
                     model_sharded_state_dict,
                     resume_from_checkpoint,
@@ -533,10 +529,8 @@ class AutoTrainer(Trainer):
                     offload=False,
                     safetensors=True,
                 )
-                # load paddle format
-                # self._load_flex_checkpoint(resume_from_checkpoint)
             else:
-                self._load_from_checkpoint(resume_from_checkpoint)
+                self._load_flex_checkpoint(resume_from_checkpoint)
         self.timers and self.timers("read-data").start()
 
         for epoch in range(epochs_trained, num_train_epochs):
@@ -879,7 +873,7 @@ class AutoTrainer(Trainer):
                         OPTIMIZER_NAME: optim_state_dict,
                     }
 
-                self._save(output_dir=os.path.join(output_dir, DIST_CKPT_PATH), state_dict=state_dict)
+                self._save(output_dir=output_dir, state_dict=state_dict)
                 # FIXME: maybe only save one copy
                 paddle.save(self.lr_scheduler.state_dict(), os.path.join(output_dir, SCHEDULER_NAME))
 
@@ -941,8 +935,7 @@ class AutoTrainer(Trainer):
         logger.info(f"Saving model checkpoint to {output_dir}")
 
         if self.args.should_save:
-            if self.args.save_checkpoint_format == "flex_checkpoint":
-                # save safetensors format
+            if self.args.save_to_hf:
                 self.model.save_pretrained(
                     output_dir,
                     variant=self.args.weight_name_suffix,
@@ -952,32 +945,9 @@ class AutoTrainer(Trainer):
                     max_shard_size="1024GB",
                     save_to_hf=True,
                 )
-                # save paddle format
-                # self._save_flex_model_state(output_dir)
-                # self._save_flex_optimizer_state(output_dir)
             else:
-                if self.tokenizer is not None:
-                    self.tokenizer.save_pretrained(output_dir)
-                # Good practice: save your training arguments together with the trained model
-                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
-                # Save the config
-                model_to_save = unwrap_model(self.model)
-                config_to_save = copy.deepcopy(model_to_save.config)
-                config_to_save.mp_degree = getattr(config_to_save, "config_to_save", 1)
-                # Attach architecture to the config
-                config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
-
-                config_to_save.save_pretrained(output_dir)
-                if self.model.can_generate():
-                    model_to_save.generation_config.save_pretrained(output_dir)
-
-        if self.args.should_save_model_state:
-            if state_dict is None:
-                self._save_ckpt_func(self.model.state_dict(), output_dir)
-                logger.info(f"Model weights saved in {output_dir}")
-            else:
-                self._save_ckpt_func(state_dict, output_dir)
-                logger.info(f"Model weights and optimizer states saved in {output_dir}")
+                self._save_flex_model_state(output_dir)
+                self._save_flex_optimizer_state(output_dir)
 
     def _load_from_checkpoint(self, resume_from_checkpoint=None):
 
@@ -1101,6 +1071,24 @@ class AutoTrainer(Trainer):
             master_weights,
             master_weights_path,
         )
+
+    def _load_scheduler(self, checkpoint):
+        if checkpoint is None:
+            self.runtime_timer.stop()
+            return
+
+        if not self.args.ignore_load_lr_and_optim:
+            if distributed_isfile(os.path.join(checkpoint, SCHEDULER_NAME)):
+                self.lr_scheduler.set_state_dict(
+                    paddle.load(distributed_file(os.path.join(checkpoint, SCHEDULER_NAME)))
+                )
+            else:
+                raise ValueError(f"scheduler-file not found, scheduler:{os.path.join(checkpoint, SCHEDULER_NAME)}")
+
+            if self.do_grad_scaling and distributed_isfile(os.path.join(checkpoint, SCALER_NAME)):
+                self.scaler.load_state_dict(
+                    paddle.load(distributed_file(os.path.join(checkpoint, SCALER_NAME)), return_numpy=True)
+                )
 
     def _load_flex_checkpoint(self, resume_from_checkpoint):
         def get_metadata_file_name(path):
