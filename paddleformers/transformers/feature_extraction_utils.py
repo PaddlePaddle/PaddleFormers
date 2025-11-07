@@ -124,6 +124,62 @@ class BatchFeature(UserDict):
 
         return self
 
+    def to(self, *args, **kwargs) -> "BatchFeature":
+        """
+        Send all values to device by calling `v.to(*args, **kwargs)` (Paddle only). This should support casting in
+        different `dtypes` and sending the `BatchFeature` to a different `device`.
+
+        Args:
+            args (`Tuple`):
+                Will be passed to the `to(...)` function of the tensors.
+            kwargs (`Dict`, *optional*):
+                Will be passed to the `to(...)` function of the tensors.
+                To enable asynchronous data transfer, set the `non_blocking` flag in `kwargs` (defaults to `False`).
+
+        Returns:
+            [`BatchFeature`]: The same instance after modification.
+        """
+        device = kwargs.get("device", None)
+        non_blocking = kwargs.get("non_blocking", False)
+
+        def is_paddle_dtype(x):
+            """
+            Tests if `x` is a paddle dtype or not. Safe to call even if paddle is not installed.
+            """
+            if isinstance(x, str):
+                if hasattr(paddle, x):
+                    x = getattr(paddle, x)
+                else:
+                    return False
+            return isinstance(x, paddle.dtype)
+
+        # Check if the args are a device or a dtype
+        if device is None and len(args) > 0:
+            # device should be always the first argument
+            arg = args[0]
+            if is_paddle_dtype(arg):
+                # The first argument is a dtype
+                pass
+            elif isinstance(arg, str) or isinstance(arg, int):
+                device = arg
+            else:
+                # it's something else
+                raise ValueError(f"Attempting to cast a BatchFeature to type {str(arg)}. This is not supported.")
+
+        # We cast only floating point tensors to avoid issues with tokenizers casting `LongTensor` to `FloatTensor`
+        def maybe_to(v):
+            # check if v is a floating point
+            if isinstance(v, paddle.Tensor) and paddle.is_floating_point(v):
+                # cast and send to device
+                return v.to(*args, **kwargs)
+            elif isinstance(v, paddle.Tensor) and device is not None:
+                return v.to(device=device, non_blocking=non_blocking)
+            else:
+                return v
+
+        self.data = {k: maybe_to(v) for k, v in self.items()}
+        return self
+
 
 class FeatureExtractionMixin(object):
     """

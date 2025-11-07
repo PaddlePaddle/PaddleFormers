@@ -40,7 +40,6 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     mark_as_sequence_parallel_parameter,
 )
 from paddle.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
-from paddle.nn.functional.flash_attention import flash_attention
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -55,11 +54,9 @@ from ...utils.log import logger
 from ...utils.masking_utils import (
     _expand_2d_mask,
     _make_causal_mask,
-    get_triangle_upper_mask,
     get_use_casual_mask,
     is_casual_mask,
 )
-from ...utils.tools import get_env_device
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..model_outputs import (
     BaseModelOutputWithPastAndMTP,
@@ -69,7 +66,6 @@ from ..model_outputs import (
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
-from ..utils import device_guard
 from .configuration import DeepseekV2Config
 
 __all__ = [
@@ -96,294 +92,150 @@ def scaled_dot_product_attention(
     bsz, q_len, num_heads, head_dim = query_states.shape
     _, kv_seq_len, v_num_heads, v_head_dim = value_states.shape
 
-    if config.use_flash_attention and flash_attention:
-        # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
-        # Torch Flash Attention input [ bz, nhead, seqlen, head_dim]
+    # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
+    q_head_dim = query_states.shape[-1]
+    softmax_scale = softmax_scale * (q_head_dim**0.5)
+    query_states = query_states * softmax_scale
+    value_padding = paddle.zeros(
+        [bsz, kv_seq_len, v_num_heads, head_dim - v_head_dim],
+        dtype=value_states.dtype,
+    )
+    value_states = paddle.cat([value_states, value_padding], axis=-1)
 
-        # Note: Flash Attention does not support softmax_scale, so we need to scale the query_states
-        q_head_dim = query_states.shape[-1]
-        softmax_scale = softmax_scale * (q_head_dim**0.5)
-        query_states = query_states * softmax_scale
-        value_padding = paddle.zeros(
-            [bsz, kv_seq_len, v_num_heads, head_dim - v_head_dim],
-            dtype=value_states.dtype,
-        )
-        value_states = paddle.cat([value_states, value_padding], axis=-1)
+    attention_interface = ALL_ATTENTION_FUNCTIONS[config._attn_implementation]
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS[config._attn_implementation]
+    # Placeholder: module unused but required by flashmask_attention_forward.
+    attn_output, attn_weights = attention_interface(
+        module=nn.Layer(),
+        query=query_states,
+        key=key_states,
+        value=value_states,
+        attention_mask=attention_mask,
+        attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+        dropout=config.get("attention_dropout", 0.0) if training else 0.0,
+        scaling=softmax_scale,
+    )
 
-        # Placeholder: module unused but required by flashmask_attention_forward.
-        outputs = attention_interface(
-            module=nn.Layer(),
-            query=query_states,
-            key=key_states,
-            value=value_states,
-            attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            dropout=config.get("attention_dropout", 0.0) if training else 0.0,
-            scaling=softmax_scale,
-        )
+    attn_output = attn_output.reshape([bsz, q_len, v_num_heads, head_dim])
+    attn_output = attn_output[..., :v_head_dim]
+    attn_output = attn_output.reshape([bsz, q_len, -1])
 
-        if isinstance(outputs, tuple):
-            x = outputs[0]
-            x = x.reshape([bsz, q_len, v_num_heads, head_dim])
-            x = x[..., :v_head_dim]
-            x = x.reshape([bsz, q_len, -1])
-            outputs = x
-        else:
-            outputs = outputs.reshape([bsz, q_len, v_num_heads, head_dim])
-            outputs = outputs[..., :v_head_dim]
-            outputs = outputs.reshape([bsz, q_len, -1])
-
-        if sequence_parallel:
-            attn_output = outputs.reshape([bsz * q_len, v_head_dim * num_heads])
-        else:
-            attn_output = outputs.reshape([bsz, q_len, v_head_dim * num_heads])
-        return attn_output
-
+    if sequence_parallel:
+        attn_output = attn_output.reshape([bsz * q_len, v_head_dim * num_heads])
     else:
-        #  [ bz, seqlen, nhead, head_dim] -> [bs, nhead, seq_len, head_dim]
-        query_states = paddle.transpose(query_states, [0, 2, 1, 3])
-        # merge with the next transpose
-        key_states = paddle.transpose(key_states, [0, 2, 1, 3])
-        value_states = paddle.transpose(value_states, [0, 2, 1, 3])
+        attn_output = attn_output.reshape([bsz, q_len, v_head_dim * num_heads])
 
-        # matmul and divide by sqrt(head_dim)
-        attn_weights = paddle.matmul(query_states * softmax_scale, key_states.transpose([0, 1, 3, 2]))
-
-        if attn_weights.shape != [bsz, num_heads, q_len, kv_seq_len]:
-            raise ValueError(
-                f"Attention weights should be of shape {(bsz, num_heads, q_len, kv_seq_len)}, but is"
-                f" {attn_weights.shape}"
-            )
-
-        if attention_mask is None:
-            attention_mask = get_triangle_upper_mask(attn_weights)
-        attention_mask = attention_mask.reshape([bsz, 1, q_len, kv_seq_len])
-        if attention_mask.shape != [bsz, 1, q_len, kv_seq_len]:
-            raise ValueError(
-                f"Attention mask should be of shape {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.shape}"
-            )
-
-        attn_weights = attn_weights + attention_mask
-        with paddle.amp.auto_cast(False):
-            attn_weights = F.softmax(attn_weights, axis=-1, dtype="float32").astype(query_states.dtype)
-
-        attn_weights = F.dropout(attn_weights, p=config.attention_dropout, training=training)
-
-        attn_output = paddle.matmul(attn_weights, value_states)
-        attn_output = attn_output.transpose([0, 2, 1, 3])
-
-        if sequence_parallel:
-            attn_output = attn_output.reshape([bsz * q_len, v_head_dim * num_heads])
-        else:
-            attn_output = attn_output.reshape([bsz, q_len, v_head_dim * num_heads])
-        return (attn_output, attn_weights) if output_attentions else attn_output
+    return (attn_output, attn_weights) if output_attentions else attn_output
 
 
-class DeepseekV2RotaryEmbedding(nn.Layer):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000):
-        super().__init__()
-
-        self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        # [dim / 2]
-        with device_guard("cpu"):
-            self.inv_freq = 1.0 / (
-                self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim)
-            )
-            self._set_cos_sin_cache(seq_len=max_position_embeddings)
-
-        self.max_seq_len_cached = None
-
-    def _set_cos_sin_cache(self, seq_len):
-        self.max_seq_len_cached = seq_len
-        # [seq_len]
-        t = paddle.arange(seq_len, dtype="float32")
-        # [seq_len, axis/2]
-        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        # [seq_len, axis]
-        emb = paddle.cat([freqs, freqs], axis=-1)
-        # [1, seqlen, 1, axis]
-        self.cos_cached = emb.cos()[None, :, None, :]
-        self.sin_cached = emb.sin()[None, :, None, :]
-
-    def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        if self.max_seq_len_cached is None or seq_len > self.max_seq_len_cached:
-            self._set_cos_sin_cache(seq_len)
-        cos = self.cos_cached[:seq_len]
-        sin = self.sin_cached[:seq_len]
-        return (
-            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
-            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
-        )
-
-
-# Copied from transformers.models.llama.modeling_llama.LlamaLinearScalingRotaryEmbedding with Llama->DeepseekV2
-class DeepseekV2LinearScalingRotaryEmbedding(DeepseekV2RotaryEmbedding):
-    """DeepseekV2RotaryEmbedding extended with linear scaling. Credits to the Reddit user /u/kaiokendev"""
-
-    def __init__(
-        self,
-        dim,
-        max_position_embeddings=2048,
-        base=10000,
-        scaling_factor=1.0,
-    ):
-        self.scaling_factor = scaling_factor
-        super().__init__(dim, max_position_embeddings * scaling_factor, base)
-
-    def _set_cos_sin_cache(self, seq_len):
-        self.max_seq_len_cached = seq_len
-        # [seq_len]
-        t = paddle.arange(seq_len, dtype="float32")
-        t = t / self.scaling_factor
-        # [seq_len, axis/2]
-        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        # [seq_len, axis]
-        emb = paddle.cat([freqs, freqs], axis=-1)
-        # [1, seqlen, 1, axis]
-        self.cos_cached = emb.cos()[None, :, None, :]
-        self.sin_cached = emb.sin()[None, :, None, :]
-        self.cos_sin_table = None if get_env_device() != "gcu" else paddle.cat([freqs.cos(), freqs.sin()], axis=-1)
-
-
-# Copied from transformers.models.llama.modeling_llama.LlamaDynamicNTKScalingRotaryEmbedding with Llama->DeepseekV2
-class DeepseekV2DynamicNTKScalingRotaryEmbedding(DeepseekV2RotaryEmbedding):
-    """DeepseekV2RotaryEmbedding extended with Dynamic NTK scaling. Credits to the Reddit users /u/bloc97 and /u/emozilla"""
-
-    def __init__(
-        self,
-        dim,
-        max_position_embeddings=2048,
-        base=10000,
-        scaling_factor=1.0,
-    ):
-        self.scaling_factor = scaling_factor
-        super().__init__(dim, max_position_embeddings, base)
-
-    def _scale_cos_sin(self, seq_len):
-        # [seq_len]
-        t = paddle.arange(seq_len, dtype="float32")
-        # [seq_len, axis/2]
-        alpha = (self.scaling_factor * seq_len / self.max_position_embeddings) - (self.scaling_factor - 1)
-        base = self.base * alpha ** (self.axis / (self.axis - 2))
-        inv_freq = 1.0 / (base ** (paddle.cast(paddle.arange(0, self.axis, 2), dtype="float32") / self.axis))
-        freqs = paddle.einsum("i,j->ij", t, inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        # [seq_len, axis]
-        emb = paddle.cat([freqs, freqs], axis=-1)
-        # [1, seqlen, 1, axis]
-        scale_cos = emb.cos()[None, :, None, :]
-        scale_sin = emb.sin()[None, :, None, :]
-        scale_cos_sin = None if get_env_device() != "gcu" else paddle.cat([freqs.cos(), freqs.sin()], axis=-1)
-        return scale_cos, scale_sin, scale_cos_sin
-
-    def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        if seq_len > self.max_position_embeddings:
-            scale_cos, scale_sin, _ = self._scale_cos_sin(seq_len=seq_len)
-        else:
-            scale_cos, scale_sin = self.cos_cached, self.sin_cached
-        cos = scale_cos[:, :seq_len, :, ...]
-        sin = scale_sin[:, :seq_len, :, ...]
-        return (
-            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
-            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
-        )
-
-    def get_fused_cos_sin(self, x, seq_len=None):
-        if seq_len > self.max_position_embeddings:
-            _, _, scale_cos_sin = self._scale_cos_sin(seq_len=seq_len)
-        else:
-            scale_cos_sin = self.cos_sin_table
-        if scale_cos_sin is not None and scale_cos_sin.dtype != x.dtype:
-            return scale_cos_sin.cast(x.dtype)
-        else:
-            return scale_cos_sin
-
-
-# Inverse axis formula to find dim based on number of rotations
-def yarn_find_correction_dim(num_rotations, dim, base=10000, max_position_embeddings=2048):
-    return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
-
-
-# Find axis range bounds based on rotations
-def yarn_find_correction_range(low_rot, high_rot, dim, base=10000, max_position_embeddings=2048):
-    low = math.floor(yarn_find_correction_dim(low_rot, dim, base, max_position_embeddings))
-    high = math.ceil(yarn_find_correction_dim(high_rot, dim, base, max_position_embeddings))
-    return max(low, 0), min(high, dim - 1)  # Clamp values just in case
-
-
-def yarn_get_mscale(scale=1, mscale=1):
+def yarn_get_mscale(scale, mscale=1):
     if scale <= 1:
         return 1.0
     return 0.1 * mscale * math.log(scale) + 1.0
 
 
-def yarn_linear_ramp_mask(min, max, dim):
-    if min == max:
-        max += 0.001  # Prevent singularity
+def _compute_yarn_parameters(
+    config,
+    seq_len=None,
+):
+    base = config["rope_theta"]
+    rope_parameters_dict = config["rope_scaling"]
+    partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
+    head_dim = getattr(config, "qk_rope_head_dim", config.hidden_size // config.num_attention_heads)
+    dim = int(head_dim * partial_rotary_factor)
 
-    linear_func = (paddle.arange(dim, dtype=paddle.float32) - min) / (max - min)
-    ramp_func = paddle.clip(linear_func, 0, 1)
-    return ramp_func
+    factor = rope_parameters_dict["factor"]
+    attention_factor = rope_parameters_dict.get("attention_factor", None)
+    mscale = rope_parameters_dict.get("mscale")
+    mscale_all_dim = rope_parameters_dict.get("mscale_all_dim")
+
+    # NOTE: DeekSeek-V3 (and potentially other models) modify `max_position_embeddings` and have a
+    # `original_max_position_embeddings` field containing the pretrained value. They use the ratio between these two
+    # values to compute the default attention scaling factor, instead of using `factor`.
+    if "original_max_position_embeddings" in rope_parameters_dict:
+        original_max_position_embeddings = rope_parameters_dict["original_max_position_embeddings"]
+        factor = config.max_position_embeddings / original_max_position_embeddings
+    else:
+        original_max_position_embeddings = config.max_position_embeddings
+
+    # Sets the attention factor as suggested in the paper
+    if attention_factor is None:
+        if mscale and mscale_all_dim:
+            attention_factor = float(yarn_get_mscale(factor, mscale) / yarn_get_mscale(factor, mscale_all_dim))
+        else:
+            attention_factor = yarn_get_mscale(factor)
+
+    # Optional config options
+    # beta_fast/beta_slow: as suggested in the paper, default to 32/1 (correspondingly)
+    beta_fast = rope_parameters_dict.get("beta_fast") or 32
+    beta_slow = rope_parameters_dict.get("beta_slow") or 1
+
+    # Compute the inverse frequencies
+    def find_correction_dim(num_rotations, dim, base, max_position_embeddings):
+        """Inverse dimension formula to find the dimension based on the number of rotations"""
+        return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
+
+    def find_correction_range(low_rot, high_rot, dim, base, max_position_embeddings, truncate):
+        """Find dimension range bounds based on rotations"""
+        low = find_correction_dim(low_rot, dim, base, max_position_embeddings)
+        high = find_correction_dim(high_rot, dim, base, max_position_embeddings)
+        if truncate:
+            low = math.floor(low)
+            high = math.ceil(high)
+        return max(low, 0), min(high, dim - 1)
+
+    def linear_ramp_factor(min, max, dim):
+        if min == max:
+            max += 0.001  # Prevent singularity
+
+        linear_func = (paddle.arange(dim, dtype=paddle.float32) - min) / (max - min)
+        ramp_func = paddle.clamp(linear_func, 0, 1)
+        return ramp_func
+
+    pos_freqs = base ** (paddle.arange(0, dim, 2).astype(paddle.float32) / dim)
+    inv_freq_extrapolation = 1.0 / pos_freqs
+    inv_freq_interpolation = 1.0 / (factor * pos_freqs)
+
+    # truncate = config.rope_parameters.get("truncate", True)
+    low, high = find_correction_range(beta_fast, beta_slow, dim, base, original_max_position_embeddings, True)
+
+    # Get n-dimensional rotational scaling corrected for extrapolation
+    inv_freq_extrapolation_factor = 1 - linear_ramp_factor(low, high, dim // 2).astype(paddle.float32)
+
+    inv_freq = (
+        inv_freq_interpolation * (1 - inv_freq_extrapolation_factor)
+        + inv_freq_extrapolation * inv_freq_extrapolation_factor
+    )
+    return inv_freq, attention_factor
 
 
-class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
-    def __init__(
-        self,
-        dim,
-        max_position_embeddings=2048,
-        base=10000,
-        scaling_factor=1.0,
-        original_max_position_embeddings=4096,
-        beta_fast=32,
-        beta_slow=1,
-        mscale=1,
-        mscale_all_dim=0,
-    ):
-        self.scaling_factor = scaling_factor
-        self.original_max_position_embeddings = original_max_position_embeddings
-        self.beta_fast = beta_fast
-        self.beta_slow = beta_slow
-        self.mscale = mscale
-        self.mscale_all_dim = mscale_all_dim
-        super().__init__(dim, max_position_embeddings, base)
+class DeepseekV2YarnRotaryEmbedding(nn.Layer):
+    def __init__(self, config: DeepseekV2Config, device=None):
+        super().__init__()
+        self.config = config
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
 
-    def _set_cos_sin_cache(self, seq_len):
-        self.max_seq_len_cached = seq_len
-        dim = self.dim
+        self.rope_type = self.config.rope_scaling["type"]
+        assert self.rope_type == "yarn"
 
-        freq_extra = 1.0 / (self.base ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim))
-        freq_inter = 1.0 / (self.scaling_factor * self.base ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim))
+        self.inv_freq, self.attention_scaling = _compute_yarn_parameters(config)
+        self.register_buffer("inv_freq", self.inv_freq, persistable=False)
+        # self.original_inv_freq = self.inv_freq
 
-        low, high = yarn_find_correction_range(
-            self.beta_fast,
-            self.beta_slow,
-            dim,
-            self.base,
-            self.original_max_position_embeddings,
-        )
-        inv_freq_mask = 1.0 - yarn_linear_ramp_mask(low, high, dim // 2)
-        self.inv_freq = freq_inter * (1 - inv_freq_mask) + freq_extra * inv_freq_mask
-
-        t = paddle.arange(seq_len, dtype=paddle.float32)
-
-        freqs = paddle.outer(t, paddle.cast(self.inv_freq, dtype="float32"))
-
-        _mscale = float(
-            yarn_get_mscale(self.scaling_factor, self.mscale)
-            / yarn_get_mscale(self.scaling_factor, self.mscale_all_dim)
-        )
-
-        emb = paddle.cat((freqs, freqs), axis=-1)
-        self.cos_cached = emb.cos() * _mscale
-        self.sin_cached = emb.sin() * _mscale
+    def forward(self, x, position_ids):
+        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+        position_ids_expanded = position_ids[:, None, :].float()
+        # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
+        # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
+        # numerical stability is critical (e.g., RoPE init/compute), this conversion can lead to precision loss.
+        # Disabling auto_cast here ensures the matmul operation runs in the original precision (FP32) as intended.
+        with paddle.amp.auto_cast(False):  # Force float32
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+            emb = paddle.cat((freqs, freqs), dim=-1)
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 def rotate_half(x):
@@ -425,10 +277,10 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
         cos = cos[:, : q.shape[1], :, :]  # [bs, seq_len, 1, axis]
         sin = sin[:, : q.shape[1], :, :]  # [bs, seq_len, 1, axis]
     else:
-        cos = cos.squeeze(axis=[0, 2])  # [seq_len, axis]
-        sin = sin.squeeze(axis=[0, 2])  # [seq_len, axis]
-        cos = cos[position_ids].unsqueeze(2)  # [bs, seq_len, 1, axis]
-        sin = sin[position_ids].unsqueeze(2)  # [bs, seq_len, 1, axis]
+        cos = cos.squeeze().contiguous()  # [seq_len, axis]
+        sin = sin.squeeze().contiguous()  # [seq_len, axis]
+        cos = cos[position_ids].unsqueeze(2).contiguous()  # [bs, seq_len, 1, axis]
+        sin = sin[position_ids].unsqueeze(2).contiguous()  # [bs, seq_len, 1, axis]
 
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
@@ -465,7 +317,6 @@ class MoEGate(PretrainedMoEGate):
             shape=[expert_hidden_size, num_experts],
             dtype=paddle.float32,
             is_bias=False,
-            # default_initializer=nn.initializer.Constant(1.0),
         )
 
         self.config = config
@@ -733,9 +584,6 @@ class DeepseekV2Attention(nn.Layer):
         # are the small weight and cannot achieve performance gain. So we use the original
         # linear layers. We use the tensor parallel linear layers for q_proj，q_b_proj and kv_b_proj
         # for which are the large weight and can achieve performance gain.
-        # Note (@Difers):
-
-        # fmt: off
 
         if self.q_lora_rank is None:
             self.q_proj = GeneralLinear.create(
@@ -801,7 +649,7 @@ class DeepseekV2Attention(nn.Layer):
             fuse_matmul_bias=config.fuse_linear,
             tp_plan="rowwise",
             gather_output=False,
-            input_is_parallel=True
+            input_is_parallel=True,
         )
 
         self.kv_a_layernorm = GeneralNorm.create(
@@ -811,15 +659,12 @@ class DeepseekV2Attention(nn.Layer):
             input_is_parallel=self.tensor_parallel and self.sequence_parallel,
         )
 
-        # fmt: on
         if self.tensor_parallel and self.sequence_parallel:
             mark_as_sequence_parallel_parameter(self.kv_a_proj_with_mqa.weight)
             mark_as_sequence_parallel_parameter(self.q_a_proj.weight)
             if config.attention_bias:
                 mark_as_sequence_parallel_parameter(self.kv_a_proj_with_mqa.bias)
                 mark_as_sequence_parallel_parameter(self.q_a_proj.bias)
-
-        self._init_rope()
 
         self.softmax_scale = self.q_head_dim ** (-0.5)
         if self.config.rope_scaling is not None:
@@ -830,52 +675,6 @@ class DeepseekV2Attention(nn.Layer):
                 self.softmax_scale = self.softmax_scale * mscale * mscale
 
         self.attn_func = scaled_dot_product_attention
-
-    def _init_rope(self):
-        if self.config.rope_scaling is None:
-            self.rotary_emb = DeepseekV2RotaryEmbedding(
-                self.qk_rope_head_dim,
-                max_position_embeddings=self.max_position_embeddings,
-                base=self.rope_theta,
-            )
-        else:
-            scaling_type = self.config.rope_scaling["type"]
-            scaling_factor = self.config.rope_scaling["factor"]
-            if scaling_type == "linear":
-                self.rotary_emb = DeepseekV2LinearScalingRotaryEmbedding(
-                    self.qk_rope_head_dim,
-                    max_position_embeddings=self.max_position_embeddings,
-                    scaling_factor=scaling_factor,
-                    base=self.rope_theta,
-                )
-            elif scaling_type == "dynamic":
-                self.rotary_emb = DeepseekV2DynamicNTKScalingRotaryEmbedding(
-                    self.qk_rope_head_dim,
-                    max_position_embeddings=self.max_position_embeddings,
-                    scaling_factor=scaling_factor,
-                    base=self.rope_theta,
-                )
-            elif scaling_type == "yarn":
-                kwargs = {
-                    key: self.config.rope_scaling[key]
-                    for key in [
-                        "original_max_position_embeddings",
-                        "beta_fast",
-                        "beta_slow",
-                        "mscale",
-                        "mscale_all_dim",
-                    ]
-                    if key in self.config.rope_scaling
-                }
-                self.rotary_emb = DeepseekV2YarnRotaryEmbedding(
-                    self.qk_rope_head_dim,
-                    max_position_embeddings=self.max_position_embeddings,
-                    scaling_factor=scaling_factor,
-                    base=self.rope_theta,
-                    **kwargs,
-                )
-            else:
-                raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
 
     def _shape(self, tensor: paddle.Tensor, seq_len: int, bsz: int):
         return tensor.reshape([bsz, seq_len, self.num_heads, self.v_head_dim]).transpose([1, 0, 2, 3])
@@ -889,6 +688,7 @@ class DeepseekV2Attention(nn.Layer):
         output_attentions: bool = False,
         use_cache: bool = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         if "padding_mask" in kwargs:
@@ -934,7 +734,7 @@ class DeepseekV2Attention(nn.Layer):
         if past_key_value is not None:
             kv_seq_len += past_key_value[0].shape[-3]
 
-        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+        cos, sin = position_embeddings[0], position_embeddings[1]
         cos = cos[None, :, None, :]
         sin = sin[None, :, None, :]
         q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids, self.fuse_rope)
@@ -1056,6 +856,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[paddle.Tensor] = None,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         offload_kwargs = {}
         offload_kwargs["offload_indices"] = [0]
@@ -1069,6 +870,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
             past_key_value,
             use_cache,
             attn_mask_startend_row_indices,
+            position_embeddings,
             **offload_kwargs,
         )
         hidden_states = attn_outputs[0]
@@ -1113,6 +915,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[paddle.Tensor] = None,
         **kwargs,
     ):
         residual = hidden_states
@@ -1131,6 +934,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
                 past_key_value=past_key_value,
                 use_cache=use_cache,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=position_embeddings,
                 **kwargs,
             )
         else:
@@ -1142,6 +946,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
                 past_key_value=past_key_value,
                 use_cache=use_cache,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=position_embeddings,
                 **kwargs,
             )
 
@@ -1200,6 +1005,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[paddle.Tensor] = None,
         *args,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
@@ -1216,6 +1022,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
             past_key_value,
             use_cache,
             attn_mask_startend_row_indices,
+            position_embeddings,
             **kwargs,
         )
         hidden_states = attn_outputs[0]
@@ -1263,6 +1070,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         hidden_states = self.hnorm(hidden_states)
@@ -1278,6 +1086,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
             past_key_value,
             use_cache,
             attn_mask_startend_row_indices,
+            position_embeddings,
             **kwargs,
         )
 
@@ -1298,6 +1107,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         hidden_states = self.hnorm(hidden_states)
@@ -1313,6 +1123,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
             past_key_value,
             use_cache,
             attn_mask_startend_row_indices,
+            position_embeddings,
             **kwargs,
         )
 
@@ -1541,7 +1352,6 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                 past_key_values_length=past_key_values_length,
             )
         # Convert bool attention_mask to float attention mask, which will be added to attention_scores later
-
         expanded_attn_mask = paddle.where(expanded_attn_mask.cast("bool"), 0.0, paddle.finfo(dtype).min).astype(dtype)
         return expanded_attn_mask
 
@@ -1838,7 +1648,7 @@ class DeepseekV2PretrainingCriterion(nn.Layer):
         def subbatch_compute_loss(preds, labels, subbatch_token_num):
             seq_axis = 1
             seq_len = preds.shape[seq_axis]
-            print("preds.shape", preds.shape)
+
             assert seq_len % subbatch_token_num == 0
             num_chunks = seq_len // subbatch_token_num
             preds_list = paddle.split(preds, num_chunks, axis=seq_axis)
@@ -1906,7 +1716,9 @@ class DeepseekV2PretrainingCriterion(nn.Layer):
                 else:
                     res_cur_depth = compute_loss(prediction_scores_cur_depth, masked_lm_labels_cur_depth)
                 mtp_loss_res.append(res_cur_depth)
-            loss = add_loss(loss, self.config.num_nextn_predict_lambda * sum([x for x in mtp_loss_res]) / len(mtp_loss_res))  # fmt: skip
+            loss = add_loss(
+                loss, self.config.num_nextn_predict_lambda * sum([x for x in mtp_loss_res]) / len(mtp_loss_res)
+            )
 
         else:
             if self.config.moe_subbatch_token_num > 0:
@@ -2274,6 +2086,7 @@ class DeepseekV2MTPLayerPipe(DeepseekV2MTPLayer):
                     position_ids=position_ids,
                     attention_mask=attn_mask,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    position_embeddings=position_embeddings,
                 )
             elif self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
                 if attn_mask is not None or attn_mask_startend_row_indices is not None:
@@ -2285,6 +2098,7 @@ class DeepseekV2MTPLayerPipe(DeepseekV2MTPLayer):
                         attention_mask=attn_mask,
                         attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                         use_reentrant=self.config.recompute_use_reentrant,
+                        position_embeddings=position_embeddings,
                     )
                 else:
                     # for pretrain
@@ -2295,6 +2109,7 @@ class DeepseekV2MTPLayerPipe(DeepseekV2MTPLayer):
                         position_ids=position_ids,
                         attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                         use_reentrant=self.config.recompute_use_reentrant,
+                        position_embeddings=position_embeddings,
                     )
             else:
                 hidden_states = super().forward(
@@ -2303,6 +2118,7 @@ class DeepseekV2MTPLayerPipe(DeepseekV2MTPLayer):
                     position_ids=position_ids,
                     attention_mask=attn_mask,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    position_embeddings=position_embeddings,
                 )
             output_list.append(hidden_states)
 
@@ -2313,11 +2129,16 @@ class DeepseekV2MTPLayerPipe(DeepseekV2MTPLayer):
             ret += (attention_mask.clone(),)
         if position_ids is not None:
             ret += (position_ids.clone(),)
-
+        if position_embeddings is not None:
+            ret += (position_embeddings.clone(),)
         return ret
 
 
 class DeepseekV2EmbeddingPipe(EmbeddingPipe):
+    def __init__(self, config, embed_cls=None, rotary_emb_cls=None):
+        rotary_emb_cls = DeepseekV2YarnRotaryEmbedding
+        super().__init__(config, embed_cls, rotary_emb_cls)
+
     def forward(self, args):
         num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
         input_ids, attention_mask, position_ids, position_embeddings, _ = parse_args(
@@ -2345,6 +2166,20 @@ class DeepseekV2EmbeddingPipe(EmbeddingPipe):
                 attn_mask, (batch_size, max_seq_len), 0, inputs_embeds.dtype
             )
         attn_mask = attn_mask_startend_row_indices if attn_mask_startend_row_indices is not None else attn_mask
+
+        if position_ids is None and not self.config.fuse_rope:
+            position_ids = (
+                paddle.arange(
+                    0,
+                    max_seq_len,
+                    dtype="int64",
+                )
+                .unsqueeze(0)
+                .tile([input_ids.shape[0], 1])
+            ).contiguous()
+
+        if position_embeddings is None:
+            position_embeddings = paddle.stack(self.rotary_emb(inputs_embeds, position_ids=position_ids))
 
         if num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]  # [B, S, D]
@@ -2380,6 +2215,8 @@ class DeepseekV2EmbeddingPipe(EmbeddingPipe):
             ret += (attn_mask.clone(),)
         if position_ids is not None:
             ret += (position_ids.clone(),)
+        if position_embeddings is not None:
+            ret += (position_embeddings.clone(),)
         return ret
 
 
@@ -2413,6 +2250,7 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
                 position_ids=position_ids,
                 attention_mask=attn_mask,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=position_embeddings,
             )
         elif self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
             hidden_states = recompute(
@@ -2422,6 +2260,7 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
                 attention_mask=attn_mask,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 use_reentrant=self.config.recompute_use_reentrant,
+                position_embeddings=position_embeddings,
             )
         else:
             hidden_states = super().forward(
@@ -2429,6 +2268,7 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
                 position_ids=position_ids,
                 attention_mask=attn_mask,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=position_embeddings,
             )
 
         if self.config.num_nextn_predict_layers > 0:
@@ -2442,6 +2282,8 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
             ret += (position_ids.clone(),)
         if len(ret) == 1:
             (ret,) = ret
+        if position_embeddings is not None:
+            ret += (position_embeddings.clone(),)
         return ret
 
 
