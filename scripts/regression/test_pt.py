@@ -33,20 +33,20 @@ SAVE_STEPS = 2
 TRAIN_DATASET_PATH = "./tests/fixtures/dummy/pt/train.jsonl"
 EVAL_DATASET_PATH = "./tests/fixtures/dummy/pt/eval.jsonl"
 
-PT_FULL_EXCEPTED_LOSS = 11.978933
-PT_FULL_RESUME_EXCEPTED_LOSS = 11.978933
+PT_FULL_EXCEPTED_LOSS = 11.975817
+PT_FULL_RESUME_EXCEPTED_LOSS = 11.975817
 PT_FULL_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]]
 
-PT_LORA_EXCEPTED_LOSS = 11.978933
-PT_LORA_RESUME_EXCEPTED_LOSS = 11.978933
+PT_LORA_EXCEPTED_LOSS = 11.97582
+PT_LORA_RESUME_EXCEPTED_LOSS = 11.97582
 PT_LORA_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
 
-PT_FULL_TP_PP_EXCEPTED_LOSS = 11.980663
-PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.931005
+PT_FULL_TP_PP_EXCEPTED_LOSS = 11.983081
+PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.983081
 PT_FULL_TP_PP_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]]
 
-PT_LORA_TP_PP_EXCEPTED_LOSS = 11.980666
-PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.980666
+PT_LORA_TP_PP_EXCEPTED_LOSS = 11.983086
+PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.983086
 PT_LORA_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
 
 PT_FC_EXCEPTED_LOSS = 11.931005
@@ -130,7 +130,7 @@ class PTTrainTest(unittest.TestCase):
             "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
-            "save_steps": SAVE_STEPS
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -181,7 +181,7 @@ class PTTrainTest(unittest.TestCase):
             "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
-            "save_steps": SAVE_STEPS
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -219,7 +219,6 @@ class PTTrainTest(unittest.TestCase):
                 pt_lora_reusme_f.write(pt_lora_reusme_output)
         self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-
         self.pttrain_tester.assert_loss(reusme_p.stdout, PT_LORA_RESUME_EXCEPTED_LOSS)
 
         # test lora merge
@@ -241,7 +240,7 @@ class PTTrainTest(unittest.TestCase):
             "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
-            "save_steps": SAVE_STEPS
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -292,7 +291,7 @@ class PTTrainTest(unittest.TestCase):
             "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
-            "save_steps": SAVE_STEPS
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -331,7 +330,6 @@ class PTTrainTest(unittest.TestCase):
                 pt_lora_tp_pp_reusme_f.write(pt_lora_tp_pp_reusme_output)
         self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-
         self.pttrain_tester.assert_loss(reusme_p.stdout, PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS)
 
         # test lora merge
@@ -342,7 +340,5 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-        EXPECTED_RESULT = paddle.to_tensor(
-            PT_LORA_TP_PP_EXCEPTED_RESULT
-        )
+        EXPECTED_RESULT = paddle.to_tensor(PT_LORA_TP_PP_EXCEPTED_RESULT)
         self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)

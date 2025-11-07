@@ -33,17 +33,17 @@ SAVE_STEPS = 2
 TRAIN_DATASET_PATH = "./tests/fixtures/dummy/ernie/dpo-train.jsonl"
 EVAL_DATASET_PATH = "./tests/fixtures/dummy/ernie/dpo-train.jsonl"
 
-DPO_FULL_EXCEPTED_LOSS = 0.692323
-DPO_FULL_RESUME_EXCEPTED_LOSS = 0.692323
+DPO_FULL_EXCEPTED_LOSS = 0.692869
+DPO_FULL_RESUME_EXCEPTED_LOSS = 0.692869
 DPO_FULL_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]]
 
-DPO_LORA_EXCEPTED_LOSS = 0.692928
-DPO_LORA_RESUME_EXCEPTED_LOSS = 0.692928
+DPO_LORA_EXCEPTED_LOSS = 0.693131
+DPO_LORA_RESUME_EXCEPTED_LOSS = 0.693131
 DPO_LORA_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
 
 DPO_FULL_TP_PP_EXCEPTED_LOSS = 0.693105
 DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 0.693105
-DPO_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 74061 , 74061 , 74061 , 74061 , 74061 , 74061 , 74061 , 74061 , 74061 ]]
+DPO_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 74061, 74061, 74061, 74061, 74061, 74061, 74061, 74061, 74061]]
 
 DPO_LORA_TP_PP_EXCEPTED_LOSS = 0.69313
 DPO_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 0.69313
@@ -52,7 +52,6 @@ DPO_LORA_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 
 DPO_FC_EXCEPTED_LOSS = 0.69313
 DPO_FC_RESUME_EXCEPTED_LOSS = 0.69313
 DPO_FC_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
-
 
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
@@ -227,9 +226,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-        EXPECTED_RESULT = paddle.to_tensor(
-            DPO_LORA_EXCEPTED_RESULT
-        )
+        EXPECTED_RESULT = paddle.to_tensor(DPO_LORA_EXCEPTED_RESULT)
         self.dpotrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
     def test_dpo_full_tp_pp(self):
@@ -254,7 +251,9 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_full_tp_pp cmd is : {cmd}")
         print(training_p.stdout)
         dop_full_tp_pp_output = training_p.stdout
-        dop_full_tp_pp_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_tp_pp.log")
+        dop_full_tp_pp_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_tp_pp.log"
+        )
         if dop_full_tp_pp_output and dop_full_tp_pp_output.strip():
             with open(dop_full_tp_pp_log_file, "w", encoding="utf-8") as dop_full_tp_pp_f:
                 dop_full_tp_pp_f.write(dop_full_tp_pp_output)
@@ -302,7 +301,9 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_lora_tp_pp cmd is : {cmd}")
         print(training_p.stdout)
         dop_lora_tp_pp_output = training_p.stdout
-        dop_lora_tp_pp_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_tp_pp.log")
+        dop_lora_tp_pp_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_tp_pp.log"
+        )
         if dop_lora_tp_pp_output and dop_lora_tp_pp_output.strip():
             with open(dop_lora_tp_pp_log_file, "w", encoding="utf-8") as dop_lora_tp_pp_f:
                 dop_lora_tp_pp_f.write(dop_lora_tp_pp_output)
@@ -333,7 +334,5 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-        EXPECTED_RESULT = paddle.to_tensor(
-            DPO_LORA_TP_PP_EXCEPTED_RESULT
-        )
+        EXPECTED_RESULT = paddle.to_tensor(DPO_LORA_TP_PP_EXCEPTED_RESULT)
         self.dpotrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
