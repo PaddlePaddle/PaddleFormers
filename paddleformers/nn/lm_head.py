@@ -119,6 +119,12 @@ class LMHead(nn.Layer):
         self,
         structured_name_prefix: str = "",
     ):
+        if build_sharded_state_dict is None:
+            raise ImportError(
+                "The current version of paddlepaddle does not support 'build_sharded_state_dict'. "
+                "Please install paddlepaddle>=3.2."
+            )
+
         if self.config.tensor_parallel_degree > 1:
             state_dict = self.state_dict(structured_name_prefix="")
             return build_sharded_state_dict(state_dict, {"weight": 0, "bias": 0}, structured_name_prefix)
