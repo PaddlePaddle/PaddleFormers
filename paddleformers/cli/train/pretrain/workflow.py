@@ -220,7 +220,7 @@ def create_pretrained_dataset(
         data_impl=data_args.data_impl,
         splits_string=data_args.split,
         train_val_test_num_samples=train_val_test_num_samples,
-        seq_length=data_args.max_seq_length,
+        seq_length=data_args.max_seq_len,
         seed=training_args.seed,
         skip_warmup=data_args.skip_warmup,
         share_folder=data_args.share_folder,
@@ -403,11 +403,11 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
     LlmMetaConfig.set_llm_config(config, training_args)
     config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
-    config.seq_length = data_args.max_seq_length
-    config.max_sequence_length = data_args.max_seq_length
+    config.seq_length = data_args.max_seq_len
+    config.max_sequence_length = data_args.max_seq_len
     # There are some technique extend RotaryEmbedding context. so don't change max_position_embeddings
     if not model_args.continue_training:
-        config.max_position_embeddings = max(config.max_position_embeddings, data_args.max_seq_length)
+        config.max_position_embeddings = max(config.max_position_embeddings, data_args.max_seq_len)
 
     if not model_args.continue_training:
         config.vocab_size = max(config.vocab_size, ((tokenizer.vocab_size - 1) // 128 + 1) * 128)
@@ -561,7 +561,7 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         * training_args.dataset_world_size
         * training_args.max_steps
         * training_args.gradient_accumulation_steps
-        * data_args.max_seq_length
+        * data_args.max_seq_len
     )
 
     callbacks = [StepFlexToken(), FP8QuantWeightCallback()]

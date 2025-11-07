@@ -17,7 +17,7 @@ sharding: "stage1"
 virtual_pp_degree: 1
 sequence_parallel: 0
 use_flash_attention: true
-max_seq_length: 4097
+max_seq_len: 4097
 learning_rate: 2.2e-05
 min_learning_rate: 7.333e-07
 warmup_steps: 30

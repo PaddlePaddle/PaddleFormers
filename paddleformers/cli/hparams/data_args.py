@@ -140,13 +140,6 @@ class DataArguments:
         metadata={"help": "Whether to use template in data processing."},
     )
     eval_with_do_generation: bool = field(default=False, metadata={"help": "Whether to do generation for evaluation"})
-    max_seq_length: int = field(
-        default=1024,
-        metadata={
-            "help": "The maximum total input sequence length after tokenization. Sequences longer "
-            "than this will be truncated, sequences shorter will be padded."
-        },
-    )
     share_folder: bool = field(
         default=False,
         metadata={"help": "Use share folder for data dir and output dir on multi machine."},
