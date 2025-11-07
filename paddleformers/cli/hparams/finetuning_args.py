@@ -424,11 +424,6 @@ class FinetuningArguments(
         },
     )
 
-    unified_checkpoint: bool = field(
-        default=False,
-        metadata={"help": "Enable fused linear grad add strategy."},
-    )
-
     def __post_init__(self):
         self.bf16 = True
         if self.compute_type == "bf16":
