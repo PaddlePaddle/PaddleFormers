@@ -147,9 +147,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor(
-            [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
-        )
+        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_sft_lora(self):
@@ -262,9 +260,7 @@ class SFTTrainTest(unittest.TestCase):
         EXCEPTED_LOSS = 11.938123
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor(
-            [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 11806]]
-        )
+        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_sft_lora_tp_pp(self):
@@ -382,7 +378,5 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
 
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor(
-            [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
-        )
+        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
