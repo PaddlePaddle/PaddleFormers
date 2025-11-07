@@ -17,10 +17,6 @@ import shutil
 import unittest
 
 from paddleformers.transformers import Ernie4_5_VLTokenizer
-from paddleformers.utils.download import DownloadSource
-from tests.testing_utils import set_proxy
-
-HUB_FLAG = "aistudio"
 
 
 class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
@@ -42,31 +38,25 @@ class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
 
-    @set_proxy(DownloadSource.AISTUDIO)
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
+            self.from_pretrained_id, download_hub="aistudio", trust_remote_code=True
         )
         self.assertTrue(tokenizer is not None)
 
-    @set_proxy(DownloadSource.AISTUDIO)
     def test_slow_tokenizer_save_pretrained(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
+            self.from_pretrained_id, download_hub="aistudio", trust_remote_code=True
         )
         tokenizer.model_max_length = 512
         tokenizer.save_pretrained("./slow_tokenizer")
         self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
 
-    @set_proxy(DownloadSource.AISTUDIO)
     def test_tokenize(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
+            self.from_pretrained_id, download_hub="aistudio", trust_remote_code=True
         )
         text = "hello world, this is a tokenizer test"
         output_dict = tokenizer(text)
         decode_text = tokenizer.decode(output_dict["input_ids"], skip_special_tokens=True)
         self.assertEqual(text, decode_text)
-
-
-Ernie4_5_VL_TokenizationTest().test_slow_tokenizer_from_pretrained()
