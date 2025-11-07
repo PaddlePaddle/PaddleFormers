@@ -61,6 +61,7 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
     #     )
     #     self.preprocess(image_processor)
 
+    @skip_for_none_ce_case
     def test_model_scope(self):
         image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope")
         self.preprocess(image_processor)
