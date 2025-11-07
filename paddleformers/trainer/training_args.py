@@ -2325,6 +2325,8 @@ class TrainingArguments:
                 name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_parallel_degree))
             if self.use_expert_parallel and self.expert_parallel_degree <= 1:
                 name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree))
+            if self.use_expert_parallel and self.expert_parallel_degree > 1:
+                name.append(self._format_name("moe_sharding", self.expert_parallel_rank, self.expert_parallel_degree))
             return "_".join(name)
 
         else:
