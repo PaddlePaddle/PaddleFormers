@@ -24,7 +24,7 @@ HUB_FLAG = "aistudio"
 
 
 class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
-    from_pretrained_id = "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Base-PT"
+    from_pretrained_id = "PaddleFormers/tiny_random_ernie4_5_vl"
     tokenizer_class = Ernie4_5_VLTokenizer
     test_slow_tokenizer = True
     space_between_special_tokens = False
