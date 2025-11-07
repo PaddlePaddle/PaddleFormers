@@ -684,6 +684,39 @@ class PipelinePretrainedModel(PretrainedModel):
             layer.cos_cached.set_value(cos_cached)
             layer.sin_cached.set_value(sin_cached)
 
+    def sharded_state_dict(self, *args, **kwargs):
+        sharded_state_dict = super().sharded_state_dict(*args, **kwargs)
+        if self._pipeline_name_mapping is None:
+            self._set_pipeline_name_mapping()
+
+        for k in list(sharded_state_dict.keys()):
+            v = sharded_state_dict.pop(k)
+            v.key = self._pp_to_single_mapping[k]
+            sharded_state_dict[self._pp_to_single_mapping[k]] = v
+
+        import re
+
+        def increment_expert_number(s, increment):
+            def replace(match):
+                original_number = int(match.group(0))
+                new_number = original_number + increment
+                return str(new_number)
+
+            return re.sub(r"(?<=experts\.)\d+", replace, s)
+
+        renamed_sharded_state_dict = {}
+        for k, v in sharded_state_dict.items():
+            global_expert_id_offset = getattr(v, "global_expert_id_offset", None)
+            if global_expert_id_offset is not None:
+                new_key = increment_expert_number(k, global_expert_id_offset)
+                v.key = new_key
+                delattr(v, "global_expert_id_offset")
+                renamed_sharded_state_dict[new_key] = v
+            else:
+                renamed_sharded_state_dict[k] = v
+
+        return renamed_sharded_state_dict
+
 
 def get_pp_vp_split_layers(config):
     hcg = fleet.get_hybrid_communicate_group()

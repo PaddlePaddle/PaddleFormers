@@ -112,6 +112,7 @@ def resolve_file_path(
     local_files_only: bool = False,
     endpoint: Optional[str] = None,
     download_hub: Optional[DownloadSource] = None,
+    force_return: Optional[bool] = False,
 ) -> str:
     """
     This is a general download function, mainly called by the from_pretrained function.
@@ -127,6 +128,8 @@ def resolve_file_path(
         repo_type('str'): The default is model.
         cache_dir('str' or Path): Where to save or load the file after downloading.
         download_hub (DownloadSource): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
+        force_return (Optional[bool]): If True, the function will return None instead of raising an error
+            when none of the specified `filenames` can be found or downloaded. Defaults to False (raises error).
 
 
     Returns:
@@ -183,7 +186,10 @@ def resolve_file_path(
             elif index < len(filenames) - 1:
                 continue
             else:
-                raise FileNotFoundError(f"please make sure one of the {filenames} under the dir {repo_id}")
+                if force_return:
+                    return None
+                else:
+                    raise FileNotFoundError(f"please make sure one of the {filenames} under the dir {repo_id}")
 
     # check cache
     for filename in filenames:
@@ -207,7 +213,12 @@ def resolve_file_path(
                     if index < len(filenames) - 1:
                         continue
                     else:
-                        raise EntryNotFoundError(f"please make sure one of the {filenames} under the repo {repo_id}")
+                        if force_return:
+                            return None
+                        else:
+                            raise EntryNotFoundError(
+                                f"please make sure one of the {filenames} under the repo {repo_id}"
+                            )
 
         elif download_hub == DownloadSource.AISTUDIO:
             for index, filename in enumerate(filenames):
@@ -221,8 +232,12 @@ def resolve_file_path(
                 except Exception:
                     if index < len(filenames) - 1:
                         continue
-                    else:
-                        raise EntryNotFoundError(f"please make sure one of the {filenames} under the repo {repo_id}")
+                        if force_return:
+                            return None
+                        else:
+                            raise EntryNotFoundError(
+                                f"please make sure one of the {filenames} under the repo {repo_id}"
+                            )
 
         elif download_hub == DownloadSource.HUGGINGFACE:
             log_endpoint = "Huggingface Hub"

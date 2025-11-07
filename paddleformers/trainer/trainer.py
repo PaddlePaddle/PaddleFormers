@@ -876,6 +876,11 @@ class Trainer:
 
         # The resume_from_checkpoint could be None in some machine node.
         # Here we reset None to temp directory.
+        resume_from_checkpoint = None if not resume_from_checkpoint else resume_from_checkpoint
+        if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
+            resume_from_checkpoint = get_last_checkpoint(self.args.output_dir)
+            if resume_from_checkpoint is None:
+                raise ValueError(f"No valid checkpoint found in output directory ({self.args.output_dir})")
         if args.world_size > 1:
             is_resume_from_checkpoint = paddle.to_tensor([resume_from_checkpoint is not None], dtype="int32")
             paddle.distributed.all_reduce(is_resume_from_checkpoint)
