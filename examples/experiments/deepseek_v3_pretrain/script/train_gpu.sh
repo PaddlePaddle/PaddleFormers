@@ -58,3 +58,6 @@ python3.10 -m paddle.distributed.launch \
     --run_mode=collective \
     ${script:-run_pretrain.py}  \
     $@
+
+# train by paddleformers-cli
+# paddleformers-cli train $@

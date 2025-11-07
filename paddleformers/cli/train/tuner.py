@@ -18,6 +18,7 @@ import paddle
 
 from ..hparams import get_train_args, read_args
 from .dpo import run_dpo
+from .pretrain import run_dsv3_pretrain
 from .sft import run_sft
 
 
@@ -40,6 +41,10 @@ def _training_function(config: dict[str, Any]) -> None:
     """
     args = config.get("args")
     model_args, data_args, preprocess_args, generating_args, finetuning_args = get_train_args(args)
+
+    if model_args.stage == "dsv3_pretrain":
+        run_dsv3_pretrain(model_args, data_args, generating_args, finetuning_args)
+        return
 
     if "VL" in model_args.stage:
         pass
