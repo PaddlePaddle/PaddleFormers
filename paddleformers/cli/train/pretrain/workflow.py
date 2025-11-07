@@ -350,6 +350,11 @@ class PretrainingTrainer(Trainer):
 
 
 def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
+    if training_args.pre_alloc_memory > 0:
+        memory_size = int(training_args.pre_alloc_memory * 1024 * 1024 * 1024)
+        x = paddle.empty([memory_size], dtype=paddle.uint8)
+        logger.info(f"pre_alloc_memory size {x.shape}")
+        del x
 
     if training_args.no_recompute_layers is not None:
         training_args.no_recompute_layers.sort()

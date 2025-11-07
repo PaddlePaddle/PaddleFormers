@@ -55,3 +55,4 @@ num_nextn_predict_layers: 1
 using_fake_gate: false
 hidden_dropout_prob: 0.1
 attention_probs_dropout_prob: 0.1
+pre_alloc_memory: 61

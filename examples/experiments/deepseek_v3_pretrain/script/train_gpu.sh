@@ -59,5 +59,6 @@ python3.10 -m paddle.distributed.launch \
     ${script:-run_pretrain.py}  \
     $@
 
-# train by paddleformers-cli
+# Training command by paddleformers-cli
+# NOTE: Please use "pre_alloc_memory" in pretrain_argument.yaml instead of setting "export FLAGS_large_pool_pre_alloc_in_mb". 
 # paddleformers-cli train $@
