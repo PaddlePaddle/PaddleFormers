@@ -3250,6 +3250,7 @@ class Trainer:
                     self.model.save_pretrained(
                         output_dir,
                         merge_tensor_parallel=merge_tensor_parallel,
+                        variant=self.args.weight_name_suffix,
                         save_checkpoint_format=self.args.save_checkpoint_format,
                     )
                 else:

@@ -181,7 +181,6 @@ class TestLoraModel(unittest.TestCase):
 class TestLoraModelFC(unittest.TestCase):
     def test_lora_model_save_load_fc(self):
         with TemporaryDirectory() as tempdir:
-            # tempdir = "./test_lora_fc"
             input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
             lora_config = LoRAConfig(
                 target_modules=[".*q_proj.*", ".*v_proj.*"],
@@ -214,3 +213,7 @@ class TestLoRAConfig(unittest.TestCase):
             lora_config.save_pretrained(tempdir)
             loaded_lora_config = LoRAConfig.from_pretrained(tempdir)
             self.assertEqual(lora_config, loaded_lora_config)
+
+
+if __name__ == "__main__":
+    unittest.main()
