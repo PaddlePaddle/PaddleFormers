@@ -6,18 +6,19 @@ train_dataset_prob: "1.0"
 eval_dataset_path: ./data/dpo/dev.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
-num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
 
 ### model
 model_name_or_path: Qwen/Qwen3-30B-A3B
 attn_impl: flashmask
+lora: true
+lora_rank: 8
 
 ### finetuning
 # base
 stage: DPO
-fine_tuning: full
+fine_tuning: lora
 seed: 23
 do_train: true
 do_eval: true
@@ -32,16 +33,16 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3_hf_0p6b_dpo_ckpts_parallel
+output_dir: ./checkpoints/qwen3_hf_0p6b_dpo_lora_ckpts_parallel
 disable_tqdm: true
 eval_accumulation_steps: 16
 
 # train
 warmup_steps: 20
-learning_rate: 1.0e-6
+learning_rate: 1.0e-5
 
 # performance
-tensor_parallel_degree: 2
+tensor_parallel_degree: 4
 pipeline_parallel_degree: 2
 expert_parallel_degree: 4
 use_expert_parallel: true
@@ -52,8 +53,5 @@ recompute: true
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: true
-
-sharding_parallel_config: "split_param"
-amp_master_grad: true
 
 ep_communication_type: "alltoall" # choices: ["deepep", "alltoall"], "deepep" only for Hooper GPU
