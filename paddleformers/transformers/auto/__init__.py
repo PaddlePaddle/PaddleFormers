@@ -27,6 +27,7 @@ import_structure = {
         "get_tokenizer_config",
         "INIT_CONFIG_MAPPING",
         "AutoTokenizer",
+        "TOKENIZER_MAPPING",
     ],
     "configuration_utils": ["PretrainedConfig"],
     "tokenizer_utils": ["PretrainedTokenizer"],
@@ -51,12 +52,16 @@ import_structure = {
         "AutoModelForConditionalGeneration",
     ],
     "factory": [],
-    "image_processing": ["AutoImageProcessor"],
-    "processing": ["AutoProcessor"],
+    "image_processing": ["get_image_processor_config", "AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
+    "processing": ["AutoProcessor", "PROCESSOR_MAPPING"],
+    "video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
 }
 
 if TYPE_CHECKING:
+    from .image_processing import *
     from .modeling import *
+    from .tokenizer import *
+    from .video_processing import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

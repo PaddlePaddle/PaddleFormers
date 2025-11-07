@@ -28,37 +28,11 @@ from paddleformers.transformers import (
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
     AutoTokenizer,
-    LlamaForCausalLM,
-    LlamaForCausalLMPipe,
-    Qwen2ForCausalLM,
-    Qwen2ForCausalLMPipe,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeForCausalLMPipe,
-    Qwen3ForCausalLM,
-    Qwen3ForCausalLMPipe,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeForCausalLMPipe,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import DPOTrainer
 from paddleformers.trl.llm_utils import get_lora_target_modules
 from paddleformers.utils.log import logger
-
-from .dpo_argument import DPOConfig
-from .dpo_estimate_training import dpo_estimate_training
-
-flash_mask_support_list = [
-    LlamaForCausalLM,
-    LlamaForCausalLMPipe,
-    Qwen2ForCausalLM,
-    Qwen2ForCausalLMPipe,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeForCausalLMPipe,
-    Qwen3ForCausalLM,
-    Qwen3ForCausalLMPipe,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeForCausalLMPipe,
-]
 
 from ...hparams import (
     DataArguments,
@@ -66,6 +40,8 @@ from ...hparams import (
     GeneratingArguments,
     ModelArguments,
 )
+from .dpo_argument import DPOConfig
+from .dpo_estimate_training import dpo_estimate_training
 
 
 def run_dpo(
@@ -140,6 +116,7 @@ def run_dpo(
         offset_alpha=training_args.offset_alpha,
         simpo_gamma=training_args.simpo_gamma,
         normalize_logps=training_args.normalize_logps,
+        ignore_eos_token=training_args.ignore_eos_token,
         label_smoothing=training_args.label_smoothing,
         loss_type=training_args.loss_type,
         pref_loss_ratio=training_args.pref_loss_ratio,
@@ -157,6 +134,7 @@ def run_dpo(
     model_config._attn_implementation = model_args.attn_impl
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.max_sequence_length = data_args.max_seq_len
+    model_config.seq_length = data_args.max_seq_len
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
@@ -167,6 +145,7 @@ def run_dpo(
         )
         ref_model_config.pp_seg_method = model_args.pp_seg_method
         ref_model_config.max_sequence_length = data_args.max_seq_len
+        ref_model_config.seq_length = data_args.max_seq_len
         ref_model_config._attn_implementation = model_args.attn_impl
 
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
@@ -198,9 +177,6 @@ def run_dpo(
             ref_model = None
     if training_args.pipeline_parallel_degree > 1:
         model.config.dpo_config = None
-
-    if model_args.attn_impl == "flashmask" and not any(isinstance(model, cls) for cls in flash_mask_support_list):
-        raise NotImplementedError(f"{model.__class__} not support flash mask.")
 
     if model_args.tokenizer_name_or_path is not None:
         tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
@@ -330,7 +306,7 @@ def run_dpo(
             use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
-        ignore_eos_token=True,
+        ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
     )
 

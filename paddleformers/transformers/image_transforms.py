@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import warnings
+from collections import defaultdict
 from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -145,12 +146,52 @@ def to_pil_image(
     return PIL.Image.fromarray(image)
 
 
+def get_size_with_aspect_ratio(image_size, size, max_size=None) -> tuple[int, int]:
+    """
+    Computes the output image size given the input image size and the desired output size.
+
+    Args:
+        image_size (`tuple[int, int]`):
+            The input image size.
+        size (`int`):
+            The desired output size.
+        max_size (`int`, *optional*):
+            The maximum allowed output size.
+    """
+    height, width = image_size
+    raw_size = None
+    if max_size is not None:
+        min_original_size = float(min((height, width)))
+        max_original_size = float(max((height, width)))
+        if max_original_size / min_original_size * size > max_size:
+            raw_size = max_size * min_original_size / max_original_size
+            size = int(round(raw_size))
+
+    if (height <= width and height == size) or (width <= height and width == size):
+        oh, ow = height, width
+    elif width < height:
+        ow = size
+        if max_size is not None and raw_size is not None:
+            oh = int(raw_size * height / width)
+        else:
+            oh = int(size * height / width)
+    else:
+        oh = size
+        if max_size is not None and raw_size is not None:
+            ow = int(raw_size * width / height)
+        else:
+            ow = int(size * width / height)
+
+    return (oh, ow)
+
+
 # Logic adapted from torchvision resizing logic: https://github.com/pytorch/vision/blob/511924c1ced4ce0461197e5caa64ce5b9e558aab/torchvision/transforms/functional.py#L366
 def get_resize_output_image_size(
     input_image: np.ndarray,
     size: Union[int, Tuple[int, int], List[int], Tuple[int]],
     default_to_square: bool = True,
     max_size: Optional[int] = None,
+    input_data_format: Optional[Union[str, ChannelDimension]] = None,
 ) -> tuple:
     """
     Find the target (height, width) dimension of the output image after resizing given the input image and the desired
@@ -192,7 +233,7 @@ def get_resize_output_image_size(
     if default_to_square:
         return (size, size)
 
-    height, width = get_image_size(input_image)
+    height, width = get_image_size(input_image, input_data_format)
     short, long = (width, height) if width <= height else (height, width)
     requested_new_short = size
 
@@ -653,3 +694,168 @@ def convert_to_rgb(image: ImageInput) -> ImageInput:
 
     image = image.convert("RGB")
     return image
+
+
+def _group_images_by_shape(nested_images, *paired_inputs, is_nested: bool = False):
+    """Helper function to flatten a single level of nested image and batch structures and group by shape."""
+    grouped_images = defaultdict(list)
+    grouped_images_index = {}
+    paired_grouped_values = [defaultdict(list) for _ in paired_inputs]
+
+    # Normalize inputs to consistent nested structure
+    normalized_images = [nested_images] if not is_nested else nested_images
+    normalized_paired = []
+    for paired_input in paired_inputs:
+        normalized_paired.append([paired_input] if not is_nested else paired_input)
+
+    # Process each image and group by shape
+    for i, (sublist, *paired_sublists) in enumerate(zip(normalized_images, *normalized_paired)):
+        for j, (image, *paired_values) in enumerate(zip(sublist, *paired_sublists)):
+            key = (i, j) if is_nested else j
+            shape = image.shape[1:]
+
+            # Add to grouped structures
+            grouped_images[shape].append(image)
+            for paired_index, paired_value in enumerate(paired_values):
+                paired_grouped_values[paired_index][shape].append(paired_value)
+            grouped_images_index[key] = (shape, len(grouped_images[shape]) - 1)
+
+    return grouped_images, *paired_grouped_values, grouped_images_index
+
+
+def _reconstruct_nested_structure(indices, processed_images):
+    """Helper function to reconstruct a single level nested structure."""
+    # Find the maximum outer index
+    max_outer_idx = max(idx[0] for idx in indices)
+
+    # Create the outer list
+    result = [None] * (max_outer_idx + 1)
+
+    # Group indices by outer index
+    nested_indices = defaultdict(list)
+    for i, j in indices:
+        nested_indices[i].append(j)
+
+    for i in range(max_outer_idx + 1):
+        if i in nested_indices:
+            inner_max_idx = max(nested_indices[i])
+            inner_list = [None] * (inner_max_idx + 1)
+            for j in range(inner_max_idx + 1):
+                if (i, j) in indices:
+                    shape, idx = indices[(i, j)]
+                    inner_list[j] = processed_images[shape][idx]
+            result[i] = inner_list
+
+    return result
+
+
+def _disable_grouping_output_nested(images, *paired_inputs):
+    """Build the disable_grouping output tuple for a single-level nested structure."""
+    outer_range = range(len(images))
+    inner_ranges = [range(len(images[i])) for i in outer_range]
+
+    # Precompute all (i, j) pairs
+    ij_pairs = [(i, j) for i in outer_range for j in inner_ranges[i]]
+
+    images_dict = {(i, j): images[i][j].unsqueeze(0) for (i, j) in ij_pairs}
+    paired_dicts = [{(i, j): paired_list[i][j].unsqueeze(0) for (i, j) in ij_pairs} for paired_list in paired_inputs]
+    index_map = {(i, j): ((i, j), 0) for (i, j) in ij_pairs}
+    return images_dict, *paired_dicts, index_map
+
+
+def _disable_grouping_output_flat(images, *paired_inputs):
+    """Build the disable_grouping output tuple for a flat list structure."""
+    idx_range = range(len(images))
+    images_dict = {i: images[i].unsqueeze(0) for i in idx_range}
+    paired_dicts = [{i: paired_list[i].unsqueeze(0) for i in idx_range} for paired_list in paired_inputs]
+    index_map = {i: (i, 0) for i in idx_range}
+    return images_dict, *paired_dicts, index_map
+
+
+def group_images_by_shape(
+    images: Union[list["paddle.Tensor"], "paddle.Tensor"],
+    *paired_inputs,
+    disable_grouping: Optional[bool],
+    is_nested: bool = False,
+) -> tuple[dict, ...]:
+    """
+    Groups images by shape.
+    Returns a dictionary with the shape as key and a list of images with that shape as value,
+    and a dictionary with the index of the image in the original list as key and the shape and index in the grouped list as value.
+
+    The function supports both flat lists of tensors and nested structures.
+    The input must be either all flat or all nested, not a mix of both.
+
+    Args:
+        images (Union[list["paddle.Tensor"], "paddle.Tensor"]):
+            A list of images or a single tensor
+        *paired_inputs (Any):
+            Zero or more lists that mirror the structure of `images` (flat list, or list of lists when
+            `is_nested=True`). Each element is paired 1:1 with the corresponding image so it can be grouped by the
+            same shape key. These paired values are grouped alongside `images` but are not stacked in the output, so
+            they do not need to be tensors.
+        disable_grouping (bool):
+            Whether to disable grouping. If None, will be set to True if the images are on CPU, and False otherwise.
+            This choice is based on empirical observations, as detailed here: https://github.com/huggingface/transformers/pull/38157
+        is_nested (bool, *optional*, defaults to False):
+            Whether the images are nested.
+
+    Returns:
+        tuple[dict, ...]:
+            - A dictionary with shape as key and list/batch of images with that shape as value
+            - Zero or more dictionaries (one per argument in `*paired_inputs`) grouped consistently with `images`; these carry
+              the corresponding per-item values and are not stacked
+            - A dictionary mapping original indices to (shape, index) tuples
+    """
+    # If disable grouping is not explicitly provided, we favor disabling it if the images are on CPU, and enabling it otherwise.
+    if disable_grouping is None:
+        device = images[0][0].device if is_nested else images[0].device
+        disable_grouping = device == "cpu"
+
+    if disable_grouping:
+        if is_nested:
+            return _disable_grouping_output_nested(images, *paired_inputs)
+        else:
+            return _disable_grouping_output_flat(images, *paired_inputs)
+
+    # Handle single level nested structure
+    grouped_images, *paired_grouped_values, grouped_images_index = _group_images_by_shape(
+        images, *paired_inputs, is_nested=is_nested
+    )
+
+    # Stack images with the same shape
+    grouped_images = {shape: paddle.stack(images_list, dim=0) for shape, images_list in grouped_images.items()}
+
+    return grouped_images, *paired_grouped_values, grouped_images_index
+
+
+def reorder_images(
+    processed_images: dict[tuple[int, int], "paddle.Tensor"],
+    grouped_images_index: dict[Union[int, tuple[int, int]], tuple[tuple[int, int], int]],
+    is_nested: bool = False,
+) -> Union[list["paddle.Tensor"], "paddle.Tensor"]:
+    """
+    Reconstructs images in the original order, preserving the original structure (nested or not).
+    The input structure is either all flat or all nested.
+
+    Args:
+        processed_images (dict[tuple[int, int], "paddle.Tensor"]):
+            Dictionary mapping shapes to batched processed images.
+        grouped_images_index (dict[Union[int, tuple[int, int]], tuple[tuple[int, int], int]]):
+            Dictionary mapping original indices to (shape, index) tuples.
+        is_nested (bool, *optional*, defaults to False):
+            Whether the images are nested. Cannot be inferred from the input, as some processing functions outputs nested images.
+            even with non nested images,e.g functions splitting images into patches. We thus can't deduce is_nested from the input.
+
+
+    Returns:
+        Union[list["paddle.Tensor"], "paddle.Tensor"]:
+            Images in the original structure.
+    """
+    if not is_nested:
+        return [
+            processed_images[grouped_images_index[i][0]][grouped_images_index[i][1]]
+            for i in range(len(grouped_images_index))
+        ]
+
+    return _reconstruct_nested_structure(grouped_images_index, processed_images)

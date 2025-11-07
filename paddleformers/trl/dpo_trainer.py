@@ -17,9 +17,9 @@ import paddle
 import paddle.nn.functional as F
 from paddle.distributed import fleet
 
+from ..nn.criterion import CriterionLayer
 from ..peft.lora.lora_model import AVAILABLE_LAYERS
 from ..trainer import Trainer
-from ..transformers.dpo_criterion import DPOCriterion
 from ..transformers.model_utils import unwrap_model
 from ..utils import infohub
 
@@ -65,10 +65,8 @@ class DPOTrainer(Trainer):
             self.dpo_config = dpo_config
         if not model_with_dpo_criterion:
             if dpo_criterion is None:
-                self.dpo_criterion = DPOCriterion(
-                    self.model.config, dpo_config=dpo_config, ignore_eos_token=ignore_eos_token
-                )
-            elif isinstance(dpo_criterion, DPOCriterion):
+                self.dpo_criterion = CriterionLayer(self.model.config, ignore_eos_token=ignore_eos_token)
+            elif isinstance(dpo_criterion, CriterionLayer):
                 self.dpo_criterion = dpo_criterion
             else:
                 raise ValueError("dpo_criterion should be None or DPOCriterion. Got {}".format(type(dpo_criterion)))
@@ -538,7 +536,7 @@ def prepare_pipeline_dpo_inputs_func(inputs):
         first_stage_keys = [
             "input_ids",
             "attn_mask_start_row_indices",
-            "attn_mask_startend_row_indice",
+            "attn_mask_startend_row_indices",
             "position_ids",
         ]
 

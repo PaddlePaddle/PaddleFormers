@@ -423,6 +423,9 @@ class DeepseekV2MoE(MoELayer):
         if self.using_post_norm_recompute:
             assert norm_weight is not None and norm_eps is not None
 
+        hcg = fleet.get_hybrid_communicate_group()
+        moe_grad_group = hcg.get_moe_sharding_parallel_group()
+
         gate = MoEGate(
             config=config,
             num_experts=config.n_routed_experts,
@@ -438,6 +441,8 @@ class DeepseekV2MoE(MoELayer):
             norm_weight=norm_weight,
             norm_eps=norm_eps,
         )
+        self.is_mp_moe = False
+        self.is_ep_moe = True
         DeepseekV2MLPClass = FP8Mlp if config.dsv3_use_fp8_gemm else DeepseekV2MLP
 
         super().__init__(
@@ -456,13 +461,20 @@ class DeepseekV2MoE(MoELayer):
         )
 
         if config.offline_quant_expert_weight and config.clear_origin_weight_when_offline_quant:
-            moe_grad_group = fleet.get_hybrid_communicate_group().expert_grad_comm_group
             expert_w1_list = [expert.w1 for expert in self.experts if expert is not None]
             expert_w2_list = [expert.w2 for expert in self.experts if expert is not None]
             for p in expert_w1_list:
+                setattr(p, "is_moe_param", True)
                 setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
+                p.no_sync = not self.is_mp_moe
+                p.expert = not self.is_mp_moe
+                logger.info(f"expert no-sync={p.no_sync}-{p.name}")
             for p in expert_w2_list:
+                setattr(p, "is_moe_param", True)
                 setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
+                p.no_sync = not self.is_mp_moe
+                p.expert = not self.is_mp_moe
+                logger.info(f"expert no-sync={p.no_sync}-{p.name}")
 
         self.alpha = config.aux_loss_alpha
         if config.n_shared_experts is not None:

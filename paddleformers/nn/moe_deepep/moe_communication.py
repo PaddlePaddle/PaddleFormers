@@ -13,13 +13,14 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any, List, Tuple
+from typing import Tuple
 
 import numpy as np
 import paddle
-import paddle.distributed as dist
-from paddle import Tensor, nn
+from paddle import nn
 from paddle.distributed.communication.group import Group
+
+from ...transformers.moe_layer import _AllToAll
 
 
 class MoECommunicationInterface(ABC):
@@ -88,29 +89,61 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         topk: int,
         token_dispatcher,
     ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+        """
+        Forward propagation for EP (Expert Parallelism) communication
 
+        Args:
+            hidden_states: Input hidden states. Shape: [batch_size * seq_len, d_model]
+            topk_indices: Top-K expert indices. Shape: [batch_size * seq_len, num_experts_per_token]
+            topk_weights: Top-K weights. Shape: [batch_size * seq_len, num_experts_per_token]
+            gates_masked:
+                Masked gate scores, where each row contains only `num_experts_per_token` non-zero elements, and the sum of each row is 1.
+                Shape: [batch_size * seq_len, num_experts]
+            mask:
+                Mask tensor indicating which experts are selected.
+                Shape: [batch_size * seq_len, num_experts], where [i, j] is 1 when expert j is selected at sequence index i; otherwise it's zero.
+            expert_parallel_degree: Degree of expert parallelism
+            moe_group: MoE communication group
+
+        Returns:
+            output: Output hidden states
+            aux_loss: Auxiliary loss
+            z_loss: Z-loss
+        """
         if expert_parallel_degree <= 1:
             return hidden_states
+        mask = mask.to(paddle.int64)
 
-        # 1. Reshape topk_indices to a single list of all expert assignments
-        #    Shape: [T * K]
-        flat_expert_indices = paddle.flatten(topk_indices)
+        if len(hidden_states.shape) == 3:
+            batch_size, seq_len, d_model = hidden_states.shape
+        else:
+            seq_len, d_model = hidden_states.shape
+        reshaped_input = hidden_states.reshape([-1, d_model])
 
-        tokens_per_expert = paddle.bincount(x=flat_expert_indices, minlength=num_experts)
+        tokens_per_expert = mask.sum(axis=0)  # Shape: [num_experts]
+        token_indices, expert_indices = paddle.where(mask == 1)
+        combined_key = expert_indices * seq_len + token_indices
+        sort_indices = paddle.argsort(combined_key)
+        sorted_token_indices = token_indices[sort_indices]
+        sorted_tokens = reshaped_input[
+            sorted_token_indices
+        ]  # Tokens that sorted by expert id. First `tokens_per_expert[0]` tokens belong to expert 0, next `tokens_per_expert[1]` tokens belong to expert 1, etc. Shape: [batch_size * seq_len * num_experts_per_token, d_model]
+
         tokens_per_expert = tokens_per_expert.detach()
-
-        idxs = topk_indices.reshape([topk_indices.shape[0] * topk_indices.shape[1]]).argsort()
-        sorted_tokens = hidden_states[idxs // topk_indices.shape[1]]
         sorted_tokens_shape = sorted_tokens.shape
 
         tokens_per_ep_rank = tokens_per_expert.reshape([expert_parallel_degree, -1]).sum(axis=1)
+        # First All-to-All: Exchange expert token counts across ranks
         tokens_per_expert_group = _AllToAll.apply([tokens_per_expert.shape[0]], tokens_per_expert, group=moe_group)
 
         tokens_per_expert_group_sum = tokens_per_expert_group.reshape([expert_parallel_degree, -1])
         output_splits = tokens_per_expert_group_sum.sum(axis=1).cpu().tolist()
         input_split_sizes = tokens_per_ep_rank.cpu().tolist()
+        output_shape = [tokens_per_expert_group.sum(axis=0).cpu().item(), sorted_tokens.shape[1]]
+
+        # Second All-to-All: Exchange expert tokens across ranks. `gathered_tokens` are the tokens that will be processed by current rank
         gathered_tokens = _AllToAll.apply(
-            [tokens_per_expert_group.sum(axis=0).cpu().item(), sorted_tokens.shape[1]],
+            output_shape,
             sorted_tokens,
             out_split_sizes=output_splits,
             in_split_sizes=input_split_sizes,
@@ -127,11 +160,11 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
             s += k
         gatherd_idxs = gatherd_idxs.argsort()
         sorted_tokens = gathered_tokens[gatherd_idxs]
-        tokens_per_expert = tokens_per_expert_post_gather
 
+        # Expert Forward
         outputs = []
         start_idx = 0
-        for i, num_tokens in enumerate(tokens_per_expert):
+        for i, num_tokens in enumerate(tokens_per_expert_post_gather):
             end_idx = start_idx + num_tokens
             if num_tokens == 0:
                 continue
@@ -142,6 +175,7 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
             start_idx = end_idx
         outs = paddle.concat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
 
+        # Third All-to-All: Exchange expert outputs back to original rank. `gathered_tokens` are the tokens that originally belong to current rank
         new_x = paddle.empty_like(outs)
         new_x[gatherd_idxs] = outs
 
@@ -152,19 +186,29 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
             in_split_sizes=output_splits,
             group=moe_group,
         )
-        outs = gathered_tokens
 
-        new_x = paddle.empty_like(outs)
-        new_x[idxs] = outs
-        final_out = (
-            new_x.reshape(topk_indices.shape + [-1])
-            .astype(topk_weights.dtype)
-            .multiply_(topk_weights.unsqueeze(-1))
-            .sum(axis=1)
-            .astype(new_x.dtype)
+        # For every processed token, need to multiply the expert weight.
+        num_all_tokens = tokens_per_expert.sum().item()  # i.e. batch_size * seq_len * num_experts_per_token
+        boundaries = paddle.cumsum(tokens_per_expert, dim=0)
+        token_indices = paddle.arange(num_all_tokens)
+        expert_ids = paddle.searchsorted(boundaries, token_indices, right=False)  # shape [num_all_tokens]
+        expert_major_weights = gates_masked[sorted_token_indices, expert_ids]  # shape [num_all_tokens]
+        weighted_gathered_tokens = gathered_tokens * expert_major_weights.unsqueeze(-1).to(
+            gathered_tokens.dtype
+        )  # shape [num_all_tokens, d_model]
+
+        final_output_empty = paddle.zeros(reshaped_input.shape, dtype=gathered_tokens.dtype)
+        token_indices_for_scatter = sorted_token_indices.unsqueeze(-1).expand(
+            -1, d_model
+        )  # shape [num_all_tokens, d_model]
+
+        token_indices_for_scatter_single = token_indices_for_scatter[:, 0:1].squeeze()  # shape [num_all_tokens, 1]
+
+        final_output = paddle.index_add(
+            final_output_empty, index=token_indices_for_scatter_single, axis=0, value=weighted_gathered_tokens
         )
 
-        return final_out
+        return final_output
 
 
 class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
@@ -215,62 +259,3 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         )
         output, _ = token_dispatcher.token_unpermutation(expert_output, None)
         return output
-
-
-class _AllToAll(paddle.autograd.PyLayer):
-    @staticmethod
-    def forward(
-        ctx: Any,
-        output_shape: List,
-        input: Tensor,
-        out_split_sizes: List = None,
-        in_split_sizes: List = None,
-        group: Group = None,
-    ) -> Tensor:
-        """
-        All-to-all communication in the group.
-        Args:
-            ctx (Any): Context object.
-            output_shape (List): Output shape.
-            input (Tensor): Input tensor.
-            out_split_sizes (List): Output split sizes.
-            in_split_sizes (List): Input split sizes.
-            group (Group): The group object.
-        Returns:
-            Tensor: Output tensor.
-        """
-
-        ctx.group = group
-        ctx.input_shape = input.shape
-        ctx.out_split_sizes = out_split_sizes
-        ctx.in_split_sizes = in_split_sizes
-
-        # return input
-        if dist.get_world_size(group) <= 1:
-            return input
-
-        output = paddle.empty(output_shape, dtype=input.dtype)
-        task = dist.alltoall_single(
-            output,
-            input,
-            out_split_sizes=out_split_sizes,
-            in_split_sizes=in_split_sizes,
-            sync_op=False,
-            group=group,
-        )
-        task.wait()
-
-        return output
-
-    @staticmethod
-    def backward(ctx: Any, *grad_output: Tensor) -> Tuple[Tensor]:
-        """
-        Aggregates gradient information from all input tensors into a single tensor.
-        Args:
-            ctx (Any): The context object used to store information that needs to be passed.
-            *grad_output (Tensor): A list of input tensors whose gradients are to be aggregated.
-        Returns:
-            Tuple[Tensor]: A tuple containing a tensor that holds the gradients of all input tensors.
-        """
-        # return grad_output
-        return _AllToAll.apply(ctx.input_shape, *grad_output, ctx.in_split_sizes, ctx.out_split_sizes, ctx.group)
