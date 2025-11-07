@@ -1,6 +1,6 @@
 ### 🎬 Video Processor
 
-`Video Processor` is a video preprocessing tool responsible for preparing input features for multimodal models and processing their outputs. It provides various transformations, such as resizing, normalization, and converting to Paddle Tensor.
+`Video Processor` is a video preprocessing tool responsible for preparing input features for multimodal models and processing their outputs. It provides various transformations, such as resizing and normalization, and supports returning outpus in Paddle Tensor.
 
 The Video Processor extends the functionality of an image processor to handle video inputs, allowing models to process videos using a different set of parameters than images. It acts as a bridge between raw video data and the model, ensuring that input features are optimized for VLM (Vision-Language Model).
 
@@ -23,8 +23,9 @@ from paddleformers.transformers.video_utils import load_video
 video_processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
 
 video = load_video("your_video.mp4")    # or video URL
-processed_video = video_processor(video[0], return_tensors="pd")
+processed_video = video_processor(video[0], return_tensors="pd")    # return Paddle Tensor
 ```
+
 
 > **How to change the download source?**
 >
