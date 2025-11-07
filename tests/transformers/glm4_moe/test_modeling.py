@@ -388,6 +388,18 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         for model_class in self.all_model_classes:
             model = model_class(config)
             model.eval()
+
+            model_state = model.state_dict()
+            if model_class is Glm4MoeModel:
+                gate_weight_key = "layers.1.mlp.gate.weight"
+            elif model_class is Glm4MoeForCausalLM:
+                gate_weight_key = "model.layers.1.mlp.gate.weight"
+            else:
+                raise NotImplementedError
+
+            gate_weight = model_state[gate_weight_key]
+
+            paddle.assign(gate_weight.cast("bfloat16").cast("float32"), gate_weight)
             with paddle.no_grad():
                 first = model(**self._prepare_for_class(inputs_dict, model_class))[0]
 
