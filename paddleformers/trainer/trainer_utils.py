@@ -44,6 +44,9 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizerV2,
 )
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
+from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
+    GroupShardedOptimizerStage2,
+)
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
 from transformers.tokenization_utils_base import BatchEncoding
@@ -1377,6 +1380,25 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         state_dict["LR_Scheduler"] = {"last_epoch": 1, "last_lr": 5e-06}
         optimizer.set_state_dict(state_dict)
         return
+
+    elif isinstance(optimizer, GroupShardedOptimizerStage2):
+        local_params = optimizer._segment_params()[optimizer._rank]
+        for p in local_params:
+            param_name = p.name
+            struct_name = static_to_struct_mapping[param_name]
+            print(struct_name)
+            print(p)
+
+        param_list = []
+        for param in local_params:
+            param_name = param.name
+            struct_name = static_to_struct_mapping[param_name]
+            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                continue
+            param_list.append(param)
+        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
+        return
+
     param_list = []
     for param in optimizer._parameter_list:
         param_name = param.name
