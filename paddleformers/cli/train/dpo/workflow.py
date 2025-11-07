@@ -161,6 +161,8 @@ def run_dpo(
             model_args.model_name_or_path,
             config=model_config,
             convert_from_hf=training_args.convert_from_hf,
+            load_via_cpu=training_args.load_via_cpu,
+            load_checkpoint_format=training_args.load_checkpoint_format,
         )
         # for DPO save
         if not training_args.reference_free and not model_args.lora:
@@ -313,7 +315,7 @@ def run_dpo(
         train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
 
         if not training_args.autotuner_benchmark and not training_args.benchmark:
-            trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1, save_to_flex=False)
+            trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1)
             trainer.log_metrics("train", train_result.metrics)
             trainer.save_metrics("train", train_result.metrics)
             trainer.save_state()
