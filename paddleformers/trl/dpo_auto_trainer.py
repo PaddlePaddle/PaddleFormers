@@ -1121,7 +1121,7 @@ def prepare_pipeline_dpo_inputs_func(inputs):
         first_stage_keys = [
             "input_ids",
             "attn_mask_start_row_indices",
-            "attn_mask_startend_row_indice",
+            "attn_mask_startend_row_indices",
             "position_ids",
         ]
 
