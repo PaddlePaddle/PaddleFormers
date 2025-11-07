@@ -533,7 +533,7 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
     if training_args.lr_scheduler_type.value == "cosine":
         lr_scheduler = CosineAnnealingWithWarmupDecay(
             max_lr=training_args.learning_rate,
-            min_lr=training_args.min_learning_rate,
+            min_lr=training_args.min_lr,
             warmup_step=warmup_steps,
             decay_step=training_args.decay_steps,
             last_epoch=0,
@@ -541,7 +541,7 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
     elif training_args.lr_scheduler_type.value == "linear":
         lr_scheduler = LinearAnnealingWithWarmupDecay(
             max_lr=training_args.learning_rate,
-            min_lr=training_args.min_learning_rate,
+            min_lr=training_args.min_lr,
             warmup_step=warmup_steps,
             decay_step=training_args.decay_steps,
             last_epoch=0,

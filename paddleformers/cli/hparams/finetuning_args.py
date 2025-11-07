@@ -229,7 +229,7 @@ class VLSFTTrainingArguments(PreTrainingArguments):
         default=True,
         metadata={"help": "save and load state of SFT data, support resuming without replacement"},
     )
-    hidden_dropout_prob: float = field(default=0.1, metadata={"help": "hidden dropout rate"})
+    hidden_dropout_prob: float = field(default=0.0, metadata={"help": "hidden dropout rate"})
     moe_dropout_prob: float = field(default=0.0, metadata={"help": "moe dropout rate"})
     token_balance_loss: bool = field(default=False, metadata={"help": "use token_loss_equal_weight or not."})
     use_train_part_sharding: Optional[bool] = field(default=True, metadata={"help": "use_train_part_sharding"})
@@ -353,11 +353,11 @@ class FinetuningArguments(
         metadata={"help": "dropout warmup steps"},
     )
     hidden_dropout_prob: float = field(
-        default=0.1,
+        default=0.0,
         metadata={"help": "dropout probability for hidden layers"},
     )
     attention_probs_dropout_prob: float = field(
-        default=0.1,
+        default=0.0,
         metadata={"help": "dropout probability for attention layers"},
     )
     benchmark: bool = field(
@@ -417,10 +417,6 @@ class FinetuningArguments(
     dataset_kwargs: Optional[dict[str, Any]] = None
     dataset_text_field: str = "text"
 
-    min_learning_rate: float = field(
-        default=1e-5,
-        metadata={"help": "Minimum learning rate deacyed to."},
-    )
     enable_linear_fused_grad_add: bool = field(
         default=False,
         metadata={
@@ -429,7 +425,7 @@ class FinetuningArguments(
     )
 
     unified_checkpoint: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Enable fused linear grad add strategy."},
     )
 
@@ -545,18 +541,3 @@ class FinetuningArguments(
         if ShardingOption.SHARD_GRAD_OP in self.sharding:
             logger.info("disabling `sp_callback` b/c using sharding stage2")
             self.use_sp_callback = False
-
-        from paddleformers.trainer.trainer_utils import IntervalStrategy
-
-        if self.autotuner_benchmark:
-            self.max_steps = 5
-            self.do_train = True
-            self.do_export = False
-            self.do_predict = False
-            self.do_eval = False
-            self.overwrite_output_dir = True
-            self.load_best_model_at_end = False
-            self.report_to = []
-            self.save_strategy = IntervalStrategy.NO
-            self.evaluation_strategy = IntervalStrategy.NO
-            self.unified_checkpoint = False

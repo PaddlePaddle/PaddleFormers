@@ -19,7 +19,7 @@ sequence_parallel: 0
 use_flash_attention: true
 max_seq_len: 4097
 learning_rate: 2.2e-05
-min_learning_rate: 7.333e-07
+min_lr: 7.333e-07
 warmup_steps: 30
 logging_steps: 1
 max_steps: 200
@@ -53,3 +53,5 @@ offload_optim: true
 reorder_pipeline_priority: true
 num_nextn_predict_layers: 1
 using_fake_gate: false
+hidden_dropout_prob: 0.1
+attention_probs_dropout_prob: 0.1
