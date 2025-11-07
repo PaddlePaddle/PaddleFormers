@@ -135,6 +135,7 @@ from ..utils.env import (
     PADDLE_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_NAME,
     PREFIX_CHECKPOINT_DIR,
+    PREFIX_HF_CHECKPOINT_DIR,
     PREFIX_WEIGHTS_NAME,
     SAFE_MASTER_WEIGHTS_INDEX_NAME,
     SAFE_PEFT_WEIGHTS_INDEX_NAME,
@@ -989,6 +990,11 @@ class Trainer:
 
         # The resume_from_checkpoint could be None in some machine node.
         # Here we reset None to temp directory.
+        resume_from_checkpoint = None if not resume_from_checkpoint else resume_from_checkpoint
+        if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
+            resume_from_checkpoint = get_last_checkpoint(self.args.output_dir)
+            if resume_from_checkpoint is None:
+                raise ValueError(f"No valid checkpoint found in output directory ({self.args.output_dir})")
         if args.world_size > 1:
             is_resume_from_checkpoint = paddle.to_tensor([resume_from_checkpoint is not None], dtype="int32")
             paddle.distributed.all_reduce(is_resume_from_checkpoint)
@@ -1861,6 +1867,19 @@ class Trainer:
             logger.info(f"{self.runtime_timer.log()}")
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
             self.log_trained_tokens()
+
+        if self.control.should_save_hf:
+            if self.args.save_checkpoint_format == "flex_checkpoint":
+                is_main_process = paddle.distributed.get_rank() == 0
+                run_dir = self.args.output_dir
+                checkpoint_folder = f"{PREFIX_HF_CHECKPOINT_DIR}-{self.state.global_step}"
+                ckpt_path = os.path.join(run_dir, checkpoint_folder)
+                self.model.save_pretrained(
+                    ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                )
+                if self.tokenizer is not None and self.args.save_tokenizer:
+                    self.tokenizer.save_pretrained(ckpt_path)
+                self.control = self.callback_handler.on_save_hf(self.args, self.state, self.control)
 
     def log_trained_tokens(self):
         if self.args.count_trained_tokens:
@@ -2805,7 +2824,7 @@ class Trainer:
         self,
         output_dir: Optional[str] = None,
         merge_tensor_parallel: Optional[bool] = False,
-        save_to_flex: Optional[bool] = True,
+        last_fc_to_hf: Optional[bool] = False,
     ):
         """
         Will save the model, so you can reload it using `from_pretrained()`.
@@ -2825,7 +2844,7 @@ class Trainer:
             self.model_wrapped.get_all_parameters(convert2cpu=True)
 
         if self.args.should_save_model_state:
-            self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, save_to_flex=save_to_flex)
+            self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, last_fc_to_hf=last_fc_to_hf)
         else:
             if (
                 self.args.save_checkpoint_format == "unified_checkpoint"
@@ -3166,7 +3185,7 @@ class Trainer:
         output_dir: Optional[str] = None,
         state_dict=None,
         merge_tensor_parallel=False,
-        save_to_flex=True,
+        last_fc_to_hf=False,
     ):
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
@@ -3225,9 +3244,7 @@ class Trainer:
 
             return
         if self.args.save_checkpoint_format == "flex_checkpoint":
-            if save_to_flex:
-                self._save_flex_model_state(output_dir)
-            else:
+            if last_fc_to_hf:
                 is_main_process = paddle.distributed.get_rank() == 0
                 if isinstance(self.model, LoRAModel):
                     self.model.save_pretrained(
@@ -3239,6 +3256,11 @@ class Trainer:
                     self.model.save_pretrained(
                         output_dir, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
                     )
+            else:
+                self._save_flex_model_state(output_dir)
+
+            if self.tokenizer is not None and self.args.save_tokenizer:
+                self.tokenizer.save_pretrained(output_dir)
             return
         merge_tensor_parallel = merge_tensor_parallel and self.args.use_hybrid_parallel
         # peft model
