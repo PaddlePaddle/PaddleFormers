@@ -126,15 +126,6 @@ def paddle_name_to_hf_names_ds_v2(paddle_name: str) -> List[str]:
 
 
 def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
-    """
-    将Paddle模型参数名称转换为Hugging Face格式的名称列表
-
-    参数:
-        paddle_name: Paddle格式的参数名称
-
-    返回:
-        Hugging Face格式的参数名称列表（可能拆分多个参数）
-    """
     if paddle_name == "_layers.local_shared_layers.DeepseekV2_shared_weight.embed_tokens.weight":
         return ["model.embed_tokens.weight"]
 
@@ -203,18 +194,11 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
 
 
 def _get_hf_prefix(segment_id: int, id_in_segment: int) -> str:
-    """生成Hugging Face格式的层级前缀"""
-    # 特殊层级映射
-    # special_cases = {(0, 0): "model", (60, 2): "model.layers.61", (60, 3): "model"}
-    # special_cases = {(0, 0): "model", (28, 2): "model.layers.61", (28, 3): "model"}
-    # special_cases = {(0, 0): "model", (28, 2): "model.layers.61", (4, 1): "model"}
-    # special_cases = {(0, 0): "model",  (28, 2): "model", (28,3): "lm_head"}
     special_cases = {(0, 0): "model", (60, 2): "model.layers.61", (60, 3): "model", (60, 4): "lm_head"}
 
     if (segment_id, id_in_segment) in special_cases:
         return special_cases[(segment_id, id_in_segment)]
 
-    # 通用层级计算
     layer_idx = segment_id + id_in_segment - 1
     return f"model.layers.{layer_idx}"
 
