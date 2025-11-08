@@ -523,6 +523,7 @@ class LoRAModel(nn.Layer):
             index_infos["metadata"] = {}
             index_infos["metadata"]["total_size"] = total_size
             index_infos["weight_map"] = index_mapping
+            index_infos["type"] = "lora"
             with open(os.path.join(path, index_file_name), "w") as f:
                 json.dump(index_infos, f, indent=4)
             # For PDC signal
