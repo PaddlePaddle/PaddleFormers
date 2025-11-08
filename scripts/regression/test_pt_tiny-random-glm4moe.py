@@ -156,17 +156,17 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_loss(training_p.stdout, PT_FULL_EXCEPTED_LOSS)
 
         # test model resume
-        # reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        # print(f"pt_full reusme cmd is : {cmd}")
-        # print(reusme_p.stdout)
-        # pt_full_reusme_output = reusme_p.stdout
-        # pt_full_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_reusme.log")
-        # if pt_full_reusme_output and pt_full_reusme_output.strip():
-        #     with open(pt_full_reusme_log_file, "w", encoding="utf-8") as pt_full_reusme_f:
-        #         pt_full_reusme_f.write(pt_full_reusme_output)
-        # self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        # resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        # print(f"pt_full resume cmd is : {cmd}")
+        # print(resume_p.stdout)
+        # pt_full_resume_output = resume_p.stdout
+        # pt_full_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_resume.log")
+        # if pt_full_resume_output and pt_full_resume_output.strip():
+        #     with open(pt_full_resume_log_file, "w", encoding="utf-8") as pt_full_resume_f:
+        #         pt_full_resume_f.write(pt_full_resume_output)
+        # self.pttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        # self.pttrain_tester.assert_loss(reusme_p.stdout, PT_FULL_RESUME_EXCEPTED_LOSS)
+        # self.pttrain_tester.assert_loss(resume_p.stdout, PT_FULL_RESUME_EXCEPTED_LOSS)
 
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor(PT_FULL_EXCEPTED_RESULT)
@@ -206,17 +206,17 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_loss(training_p.stdout, PT_LORA_EXCEPTED_LOSS)
 
         # test model resume
-        # reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        # print(f"pt_lora reusme cmd is : {cmd}")
-        # print(reusme_p.stdout)
-        # pt_lora_reusme_output = reusme_p.stdout
-        # pt_lora_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_reusme.log")
-        # if pt_lora_reusme_output and pt_lora_reusme_output.strip():
-        #     with open(pt_lora_reusme_log_file, "w", encoding="utf-8") as pt_lora_reusme_f:
-        #         pt_lora_reusme_f.write(pt_lora_reusme_output)
-        # self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        # resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        # print(f"pt_lora resume cmd is : {cmd}")
+        # print(resume_p.stdout)
+        # pt_lora_resume_output = resume_p.stdout
+        # pt_lora_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_resume.log")
+        # if pt_lora_resume_output and pt_lora_resume_output.strip():
+        #     with open(pt_lora_resume_log_file, "w", encoding="utf-8") as pt_lora_resume_f:
+        #         pt_lora_resume_f.write(pt_lora_resume_output)
+        # self.pttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        # self.pttrain_tester.assert_loss(reusme_p.stdout, PT_LORA_RESUME_EXCEPTED_LOSS)
+        # self.pttrain_tester.assert_loss(resume_p.stdout, PT_LORA_RESUME_EXCEPTED_LOSS)
 
         # test lora merge
         lora_merge_output_dir = os.path.join(output_dir, "export")
@@ -226,7 +226,7 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-        EXPECTED_RESULT = paddle.to_tensor(PT_FULL_TP_PP_EXCEPTED_RESULT)
+        EXPECTED_RESULT = paddle.to_tensor(PT_LORA_EXCEPTED_RESULT)
         self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
     def test_pt_full_tp_pp(self):
@@ -263,17 +263,17 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_loss(training_p.stdout, PT_FULL_TP_PP_EXCEPTED_LOSS)
 
         # test model resume
-        # reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        # print(f"pt_full_tp_pp reusme cmd is : {cmd}")
-        # print(reusme_p.stdout)
-        # pt_full_tp_pp_reusme_output = reusme_p.stdout
-        # pt_full_tp_pp_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_tp_pp_reusme.log")
-        # if pt_full_tp_pp_reusme_output and pt_full_tp_pp_reusme_output.strip():
-        #     with open(pt_full_tp_pp_reusme_log_file, "w", encoding="utf-8") as pt_full_tp_pp_reusme_f:
-        #         pt_full_tp_pp_reusme_f.write(pt_full_tp_pp_reusme_output)
-        # self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        # resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        # print(f"pt_full_tp_pp resume cmd is : {cmd}")
+        # print(resume_p.stdout)
+        # pt_full_tp_pp_resume_output = resume_p.stdout
+        # pt_full_tp_pp_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_tp_pp_resume.log")
+        # if pt_full_tp_pp_resume_output and pt_full_tp_pp_resume_output.strip():
+        #     with open(pt_full_tp_pp_resume_log_file, "w", encoding="utf-8") as pt_full_tp_pp_resume_f:
+        #         pt_full_tp_pp_resume_f.write(pt_full_tp_pp_resume_output)
+        # self.pttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        # self.pttrain_tester.assert_loss(reusme_p.stdout, PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS)
+        # self.pttrain_tester.assert_loss(resume_p.stdout, PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS)
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor(PT_FULL_TP_PP_EXCEPTED_RESULT)
         self.pttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
@@ -313,17 +313,17 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_loss(training_p.stdout, PT_LORA_TP_PP_EXCEPTED_LOSS)
 
         # test model resume
-        # reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        # print(f"pt_lora_tp_pp reusme cmd is : {cmd}")
-        # print(reusme_p.stdout)
-        # pt_lora_tp_pp_reusme_output = reusme_p.stdout
-        # pt_lora_tp_pp_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_tp_pp_reusme.log")
-        # if pt_lora_tp_pp_reusme_output and pt_lora_tp_pp_reusme_output.strip():
-        #     with open(pt_lora_tp_pp_reusme_log_file, "w", encoding="utf-8") as pt_lora_tp_pp_reusme_f:
-        #         pt_lora_tp_pp_reusme_f.write(pt_lora_tp_pp_reusme_output)
-        # self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        # resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        # print(f"pt_lora_tp_pp resume cmd is : {cmd}")
+        # print(resume_p.stdout)
+        # pt_lora_tp_pp_resume_output = resume_p.stdout
+        # pt_lora_tp_pp_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_tp_pp_resume.log")
+        # if pt_lora_tp_pp_resume_output and pt_lora_tp_pp_resume_output.strip():
+        #     with open(pt_lora_tp_pp_resume_log_file, "w", encoding="utf-8") as pt_lora_tp_pp_resume_f:
+        #         pt_lora_tp_pp_resume_f.write(pt_lora_tp_pp_resume_output)
+        # self.pttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        # self.pttrain_tester.assert_loss(reusme_p.stdout, PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS)
+        # self.pttrain_tester.assert_loss(resume_p.stdout, PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS)
 
         # test lora merge
         lora_merge_output_dir = os.path.join(output_dir, "export")

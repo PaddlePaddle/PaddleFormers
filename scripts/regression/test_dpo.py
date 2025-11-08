@@ -157,19 +157,19 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_loss(training_p.stdout, DPO_FULL_EXCEPTED_LOSS)
 
         # test model resume
-        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"dop_full reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
-        dop_full_reusme_output = reusme_p.stdout
-        dop_full_reusme_log_file = os.path.join(
-            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_reusme.log"
+        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_full resume cmd is : {cmd}")
+        print(resume_p.stdout)
+        dop_full_resume_output = resume_p.stdout
+        dop_full_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_resume.log"
         )
-        if dop_full_reusme_output and dop_full_reusme_output.strip():
-            with open(dop_full_reusme_log_file, "w", encoding="utf-8") as dop_full_reusme_f:
-                dop_full_reusme_f.write(dop_full_reusme_output)
-        self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        if dop_full_resume_output and dop_full_resume_output.strip():
+            with open(dop_full_resume_log_file, "w", encoding="utf-8") as dop_full_resume_f:
+                dop_full_resume_f.write(dop_full_resume_output)
+        self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        self.dpotrain_tester.assert_loss(reusme_p.stdout, DPO_FULL_RESUME_EXCEPTED_LOSS)
+        self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_FULL_RESUME_EXCEPTED_LOSS)
 
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor(DPO_LORA_EXCEPTED_RESULT)
@@ -208,19 +208,19 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_loss(training_p.stdout, DPO_LORA_EXCEPTED_LOSS)
 
         # test model resume
-        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"dop_lora reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
-        dop_lora_reusme_output = reusme_p.stdout
-        dop_lora_reusme_log_file = os.path.join(
-            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_reusme.log"
+        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_lora resume cmd is : {cmd}")
+        print(resume_p.stdout)
+        dop_lora_resume_output = resume_p.stdout
+        dop_lora_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_resume.log"
         )
-        if dop_lora_reusme_output and dop_lora_reusme_output.strip():
-            with open(dop_lora_reusme_log_file, "w", encoding="utf-8") as dop_lora_reusme_f:
-                dop_lora_reusme_f.write(dop_lora_reusme_output)
-        self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        if dop_lora_resume_output and dop_lora_resume_output.strip():
+            with open(dop_lora_resume_log_file, "w", encoding="utf-8") as dop_lora_resume_f:
+                dop_lora_resume_f.write(dop_lora_resume_output)
+        self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        self.dpotrain_tester.assert_loss(reusme_p.stdout, DPO_LORA_RESUME_EXCEPTED_LOSS)
+        self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_LORA_RESUME_EXCEPTED_LOSS)
 
         # test lora  merge
         lora_merge_output_dir = os.path.join(output_dir, "export")
@@ -267,19 +267,19 @@ class DPOTrainTest(unittest.TestCase):
         # test training loss
         self.dpotrain_tester.assert_loss(training_p.stdout, DPO_FULL_TP_PP_EXCEPTED_LOSS)
         # test model resume
-        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"dop_full_tp_pp reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
-        dop_full_tp_pp_reusme_output = reusme_p.stdout
-        dop_full_tp_pp_reusme_log_file = os.path.join(
-            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_tp_pp_reusme.log"
+        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_full_tp_pp resume cmd is : {cmd}")
+        print(resume_p.stdout)
+        dop_full_tp_pp_resume_output = resume_p.stdout
+        dop_full_tp_pp_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_tp_pp_resume.log"
         )
-        if dop_full_tp_pp_reusme_output and dop_full_tp_pp_reusme_output.strip():
-            with open(dop_full_tp_pp_reusme_log_file, "w", encoding="utf-8") as dop_full_tp_pp_reusme_f:
-                dop_full_tp_pp_reusme_f.write(dop_full_tp_pp_reusme_output)
-        self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        if dop_full_tp_pp_resume_output and dop_full_tp_pp_resume_output.strip():
+            with open(dop_full_tp_pp_resume_log_file, "w", encoding="utf-8") as dop_full_tp_pp_resume_f:
+                dop_full_tp_pp_resume_f.write(dop_full_tp_pp_resume_output)
+        self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        self.dpotrain_tester.assert_loss(reusme_p.stdout, DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS)
+        self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS)
 
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor(DPO_FULL_TP_PP_EXCEPTED_RESULT)
@@ -319,19 +319,19 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_loss(training_p.stdout, DPO_LORA_TP_PP_EXCEPTED_LOSS)
 
         # test model resume
-        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"dop_lora_tp_pp reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
-        dop_lora_tp_pp_reusme_output = reusme_p.stdout
-        dop_lora_tp_pp_reusme_log_file = os.path.join(
-            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_tp_pp_reusme.log"
+        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_lora_tp_pp resume cmd is : {cmd}")
+        print(resume_p.stdout)
+        dop_lora_tp_pp_resume_output = resume_p.stdout
+        dop_lora_tp_pp_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_tp_pp_resume.log"
         )
-        if dop_lora_tp_pp_reusme_output and dop_lora_tp_pp_reusme_output.strip():
-            with open(dop_lora_tp_pp_reusme_log_file, "w", encoding="utf-8") as dop_lora_tp_pp_reusme_f:
-                dop_lora_tp_pp_reusme_f.write(dop_lora_tp_pp_reusme_output)
-        self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        if dop_lora_tp_pp_resume_output and dop_lora_tp_pp_resume_output.strip():
+            with open(dop_lora_tp_pp_resume_log_file, "w", encoding="utf-8") as dop_lora_tp_pp_resume_f:
+                dop_lora_tp_pp_resume_f.write(dop_lora_tp_pp_resume_output)
+        self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        self.dpotrain_tester.assert_loss(reusme_p.stdout, DPO_LORA_TP_PP_RESUME_EXCEPTED_LOSS)
+        self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_LORA_TP_PP_RESUME_EXCEPTED_LOSS)
 
         # test lora  merge
         lora_merge_output_dir = os.path.join(output_dir, "export")
