@@ -19,10 +19,17 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import paddle
-from config.configuration import DeepseekV2FastConfig
-from load_hf_ckpt import load_huggingface_ckpt
-from modeling_pp import DeepseekV2ForCausalLMPipe
-from moe_utils import get_env_device
+
+try:
+    from config.configuration import DeepseekV2FastConfig
+    from load_hf_ckpt import load_huggingface_ckpt
+    from modeling_pp import DeepseekV2ForCausalLMPipe
+    from moe_utils import get_env_device
+except:
+    DeepseekV2FastConfig = None
+    load_huggingface_ckpt = None
+    DeepseekV2ForCausalLMPipe = None
+    get_env_device = None
 
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
