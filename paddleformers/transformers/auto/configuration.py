@@ -39,6 +39,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
+        ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("llama", "LlamaConfig"),
         ("qwen", "QWenConfig"),
         ("qwen2", "Qwen2Config"),
