@@ -28,8 +28,8 @@ CONFIG_PATH = "./examples/config/dpo"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
-MAX_STEPS = 3
-SAVE_STEPS = 2
+MAX_STEPS = 6
+SAVE_STEPS = 4
 TRAIN_DATASET_PATH = "./tests/fixtures/dummy/ernie/dpo-train.jsonl"
 EVAL_DATASET_PATH = "./tests/fixtures/dummy/ernie/dpo-train.jsonl"
 
@@ -39,7 +39,7 @@ DPO_FULL_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99
 
 DPO_LORA_EXCEPTED_LOSS = 0.693131
 DPO_LORA_RESUME_EXCEPTED_LOSS = 0.693131
-DPO_LORA_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+DPO_LORA_EXCEPTED_RESULT = [[51172 , 37927 , 96130 , 27654 , 133362, 95331 , 27654 , 133362, 115845, 115845]]
 
 DPO_FULL_TP_PP_EXCEPTED_LOSS = 0.693105
 DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 0.693105
@@ -47,7 +47,7 @@ DPO_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 74061, 74061, 74061, 74061, 74061, 74
 
 DPO_LORA_TP_PP_EXCEPTED_LOSS = 0.69313
 DPO_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 0.69313
-DPO_LORA_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+DPO_LORA_TP_PP_EXCEPTED_RESULT = [[51172 , 37927 , 96130 , 27654 , 133362, 95331 , 27654 , 133362, 115845, 115845]]
 
 DPO_FC_EXCEPTED_LOSS = 0.69313
 DPO_FC_RESUME_EXCEPTED_LOSS = 0.69313
@@ -157,17 +157,17 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_loss(training_p.stdout, DPO_FULL_EXCEPTED_LOSS)
 
         # test model resume
-        # reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        # print(f"dop_full reusme cmd is : {cmd}")
-        # print(reusme_p.stdout)
-        # dop_full_reusme_output = reusme_p.stdout
-        # dop_full_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_reusme.log")
-        # if dop_full_reusme_output and dop_full_reusme_output.strip():
-        #     with open(dop_full_reusme_log_file, "w", encoding="utf-8") as dop_full_reusme_f:
-        #         dop_full_reusme_f.write(dop_full_reusme_output)
-        # self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_full reusme cmd is : {cmd}")
+        print(reusme_p.stdout)
+        dop_full_reusme_output = reusme_p.stdout
+        dop_full_reusme_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_reusme.log")
+        if dop_full_reusme_output and dop_full_reusme_output.strip():
+            with open(dop_full_reusme_log_file, "w", encoding="utf-8") as dop_full_reusme_f:
+                dop_full_reusme_f.write(dop_full_reusme_output)
+        self.dpotrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
 
-        # self.dpotrain_tester.assert_loss(reusme_p.stdout, DPO_FULL_RESUME_EXCEPTED_LOSS)
+        self.dpotrain_tester.assert_loss(reusme_p.stdout, DPO_FULL_RESUME_EXCEPTED_LOSS)
 
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor(DPO_FULL_EXCEPTED_RESULT)

@@ -28,8 +28,8 @@ CONFIG_PATH = "./examples/config/sft"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
-MAX_STEPS = 3
-SAVE_STEPS = 2
+MAX_STEPS = 6
+SAVE_STEPS = 4
 TRAIN_DATASET_PATH = "./tests/fixtures/dummy/ernie/sft-train.jsonl"
 EVAL_DATASET_PATH = "./tests/fixtures/dummy/ernie/sft-train.jsonl"
 FC_TRAIN_DATASET_PATH = ("./tests/fixtures/dummy/function-call/function-call-train.jsonl",)
@@ -37,7 +37,7 @@ FC_EVAL_DATASET_PATH = ("./tests/fixtures/dummy/function-call/function-call-eval
 
 SFT_FULL_EXCEPTED_LOSS = 11.944817
 SFT_FULL_RESUME_EXCEPTED_LOSS = 11.944817
-SFT_FULL_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+SFT_FULL_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]]
 
 SFT_LORA_EXCEPTED_LOSS = 11.944797
 SFT_LORA_RESUME_EXCEPTED_LOSS = 11.944797
@@ -45,11 +45,11 @@ SFT_LORA_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487
 
 SFT_FULL_TP_PP_EXCEPTED_LOSS = 11.956961
 SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.956961
-SFT_FULL_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 11806]]
+SFT_FULL_TP_PP_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]]
 
 SFT_LORA_TP_PP_EXCEPTED_LOSS = 11.956964
 SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.956964
-SFT_LORA_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 11806]]
+SFT_LORA_TP_PP_EXCEPTED_RESULT = [[22407 , 120525, 77505 , 113631, 47887 , 134141, 122487, 61092 , 40897 , 40601 ]]
 
 SFT_FC_EXCEPTED_LOSS = 11.945908
 SFT_FC_RESUME_EXCEPTED_LOSS = 11.939684
@@ -132,7 +132,7 @@ class SFTTrainTest(unittest.TestCase):
             "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
-            "max_steps": MAX_STEPS,
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -182,7 +182,7 @@ class SFTTrainTest(unittest.TestCase):
             "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
-            "max_steps": MAX_STEPS,
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -241,7 +241,7 @@ class SFTTrainTest(unittest.TestCase):
             "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
-            "max_steps": MAX_STEPS,
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -292,7 +292,7 @@ class SFTTrainTest(unittest.TestCase):
             "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
-            "max_steps": MAX_STEPS,
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -352,7 +352,7 @@ class SFTTrainTest(unittest.TestCase):
             "eval_dataset_path": FC_EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
-            "max_steps": MAX_STEPS,
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
