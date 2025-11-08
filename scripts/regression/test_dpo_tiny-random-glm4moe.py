@@ -39,7 +39,7 @@ DPO_FULL_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99
 
 DPO_LORA_EXCEPTED_LOSS = 0.693131
 DPO_LORA_RESUME_EXCEPTED_LOSS = 0.693131
-DPO_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198 ]]
+DPO_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
 DPO_FULL_TP_PP_EXCEPTED_LOSS = 0.693105
 DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 0.693105
@@ -47,7 +47,7 @@ DPO_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 74061, 74061, 74061, 74061, 74061, 74
 
 DPO_LORA_TP_PP_EXCEPTED_LOSS = 0.69313
 DPO_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 0.69313
-DPO_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198 ]]
+DPO_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
 DPO_FC_EXCEPTED_LOSS = 0.69313
 DPO_FC_RESUME_EXCEPTED_LOSS = 0.69313
@@ -145,10 +145,10 @@ class DPOTrainTest(unittest.TestCase):
         # print(f"dpo_full cmd is : {cmd}")
         # with open(dop_full_log_file, "w", encoding="utf-8") as log_file:
         #     training_p = subprocess.Popen(
-        #         cmd, 
-        #         stdout=subprocess.PIPE, 
-        #         stderr=subprocess.STDOUT, 
-        #         text=True, 
+        #         cmd,
+        #         stdout=subprocess.PIPE,
+        #         stderr=subprocess.STDOUT,
+        #         text=True,
         #         bufsize=1
         #     )
         #     # 逐行处理输出

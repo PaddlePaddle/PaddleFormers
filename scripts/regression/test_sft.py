@@ -49,7 +49,7 @@ SFT_FULL_TP_PP_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 906
 
 SFT_LORA_TP_PP_EXCEPTED_LOSS = 11.956645
 SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.956057
-SFT_LORA_TP_PP_EXCEPTED_RESULT = [[22407 , 120525, 77505 , 113631, 47887 , 134141, 122487, 61092 , 40897 , 40601 ]]
+SFT_LORA_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
 
 SFT_FC_EXCEPTED_LOSS = 11.941746
 SFT_FC_RESUME_EXCEPTED_LOSS = 11.936615
@@ -393,7 +393,7 @@ class SFTTrainTest(unittest.TestCase):
             ) as sft_full_function_call_resume_f:
                 sft_full_function_call_resume_f.write(sft_full_function_call_resume_output)
         self.sfttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
-        
+
         self.sfttrain_tester.assert_loss(resume_p.stdout, SFT_FC_RESUME_EXCEPTED_LOSS)
 
         # test model generate
