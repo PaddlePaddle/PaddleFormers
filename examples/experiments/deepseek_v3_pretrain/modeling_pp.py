@@ -767,6 +767,9 @@ class FusionFp8DecoderLayerNode(ScheduleNode):
         return inputs
 
     def post_process_backward(self, output_grad, event_to_wait=None):
+        if event_to_wait is not None:
+            event_to_wait.calc_stream_wait(self.moe_group.id)
+
         grad = self.post_process_node.backward(output_grad)
 
         if self.using_post_norm_recompute:
