@@ -49,7 +49,7 @@ SFT_FULL_TP_PP_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 906
 
 SFT_LORA_TP_PP_EXCEPTED_LOSS = 11.956645
 SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.956057
-SFT_LORA_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+SFT_LORA_TP_PP_EXCEPTED_RESULT = [[22407 , 120525, 77505 , 113631, 47887 , 134141, 122487, 61092 , 40897 , 40601 ]]
 
 SFT_FC_EXCEPTED_LOSS = 11.941746
 SFT_FC_RESUME_EXCEPTED_LOSS = 11.936615
@@ -142,6 +142,29 @@ class SFTTrainTest(unittest.TestCase):
             "train",
             updated_config_path,
         ]
+        
+        # sft_full_resume_log_file = os.path.join(
+        #     LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_resume.log"
+        # )
+
+        # print(f"sft_full resume cmd is : {cmd}")
+
+        # with open(sft_full_resume_log_file, "w", encoding="utf-8") as log_file:
+        #     resume_p = subprocess.Popen(
+        #         cmd, 
+        #         stdout=subprocess.PIPE, 
+        #         stderr=subprocess.STDOUT, 
+        #         text=True, 
+        #         bufsize=1
+        #     )
+        #     # 逐行处理输出
+        #     for line in resume_p.stdout:
+        #         print(line, end='', flush=True)  # 实时输出到终端
+        #         log_file.write(line)  # 实时写入文件
+        #         log_file.flush()
+        #     resume_p.wait()
+        # print("Command execution completed and log saved.")
+        
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_full cmd is : {cmd}")
         print(training_p.stdout)
@@ -167,6 +190,7 @@ class SFTTrainTest(unittest.TestCase):
         if sft_full_resume_output and sft_full_resume_output.strip():
             with open(sft_full_resume_log_file, "w", encoding="utf-8") as sft_full_resume_f:
                 sft_full_resume_f.write(sft_full_resume_output)
+
         self.sfttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
         self.sfttrain_tester.assert_loss(resume_p.stdout, SFT_FULL_RESUME_EXCEPTED_LOSS)
 
@@ -393,7 +417,7 @@ class SFTTrainTest(unittest.TestCase):
             ) as sft_full_function_call_resume_f:
                 sft_full_function_call_resume_f.write(sft_full_function_call_resume_output)
         self.sfttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
-
+        
         self.sfttrain_tester.assert_loss(resume_p.stdout, SFT_FC_RESUME_EXCEPTED_LOSS)
 
         # test model generate
