@@ -267,7 +267,9 @@ class PTTrainTest(unittest.TestCase):
         print(f"pt_full_tp_pp resume cmd is : {cmd}")
         print(resume_p.stdout)
         pt_full_tp_pp_resume_output = resume_p.stdout
-        pt_full_tp_pp_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_tp_pp_resume.log")
+        pt_full_tp_pp_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_tp_pp_resume.log"
+        )
         if pt_full_tp_pp_resume_output and pt_full_tp_pp_resume_output.strip():
             with open(pt_full_tp_pp_resume_log_file, "w", encoding="utf-8") as pt_full_tp_pp_resume_f:
                 pt_full_tp_pp_resume_f.write(pt_full_tp_pp_resume_output)
@@ -317,7 +319,9 @@ class PTTrainTest(unittest.TestCase):
         print(f"pt_lora_tp_pp resume cmd is : {cmd}")
         print(resume_p.stdout)
         pt_lora_tp_pp_resume_output = resume_p.stdout
-        pt_lora_tp_pp_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_tp_pp_resume.log")
+        pt_lora_tp_pp_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_tp_pp_resume.log"
+        )
         if pt_lora_tp_pp_resume_output and pt_lora_tp_pp_resume_output.strip():
             with open(pt_lora_tp_pp_resume_log_file, "w", encoding="utf-8") as pt_lora_tp_pp_resume_f:
                 pt_lora_tp_pp_resume_f.write(pt_lora_tp_pp_resume_output)
