@@ -876,6 +876,11 @@ class Trainer:
 
         # The resume_from_checkpoint could be None in some machine node.
         # Here we reset None to temp directory.
+        resume_from_checkpoint = None if not resume_from_checkpoint else resume_from_checkpoint
+        if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
+            resume_from_checkpoint = get_last_checkpoint(self.args.output_dir)
+            if resume_from_checkpoint is None:
+                raise ValueError(f"No valid checkpoint found in output directory ({self.args.output_dir})")
         if args.world_size > 1:
             is_resume_from_checkpoint = paddle.to_tensor([resume_from_checkpoint is not None], dtype="int32")
             paddle.distributed.all_reduce(is_resume_from_checkpoint)
@@ -2209,7 +2214,6 @@ class Trainer:
             and self.args.moe_sharding_parallel_degree >= 1
             and self.args.expert_parallel_degree > 1
             and self.args.sharding_parallel_degree > 1
-            and not self.args.reorder_pipeline_priority
         ):
             from ..utils import MoEHybridParallelOptimizer
 

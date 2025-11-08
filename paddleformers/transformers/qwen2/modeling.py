@@ -627,6 +627,7 @@ class Qwen2ForCausalLM(Qwen2PretrainedModel):
         loss_mask: Optional[paddle.Tensor] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
+        **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:

@@ -78,8 +78,8 @@ class GptOssWeightChangeTest(unittest.TestCase):
         self.tempdir = "./models/gpt-oss"
 
     def fp4_to_bf16(self):
-        load_path = os.path.join(self.tempdir, "gpt-oss-test-fp4")
-        save_path = os.path.join(self.tempdir, "gpt-oss-test-new-bf16")
+        load_path = os.path.join(self.tempdir, "tiny-random-gpt-oss-fp4")
+        save_path = os.path.join(self.tempdir, "tiny-random-gpt-oss-new-bf16")
 
         safetensor_prefix = "model"
         save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
@@ -103,8 +103,8 @@ class GptOssWeightChangeTest(unittest.TestCase):
         logger.info(f"Model index file saved in {save_index_file}.")
 
     def bf16_to_fp4(self):
-        load_path = os.path.join(self.tempdir, "gpt-oss-test-bf16")
-        save_path = os.path.join(self.tempdir, "gpt-oss-test-new-fp4")
+        load_path = os.path.join(self.tempdir, "tiny-random-gpt-oss-bf16")
+        save_path = os.path.join(self.tempdir, "tiny-random-gpt-oss-new-fp4")
         safetensor_prefix = "model"
         save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
         index = {"metadata": {"total_size": 0}, "weight_map": {}}
@@ -127,7 +127,7 @@ class GptOssWeightChangeTest(unittest.TestCase):
         logger.info(f"Model index file saved in {save_index_file}.")
 
     def check_weight(self, origin_path, new_path, atol):
-        origin_file_name = "model-00008-of-00009.safetensors"
+        origin_file_name = "model.safetensors"
         new_file_name = "model-00001-of-00001.safetensors"
 
         origin_dict = load_file(os.path.join(origin_path, origin_file_name))
@@ -151,23 +151,25 @@ class GptOssWeightChangeTest(unittest.TestCase):
     @slow
     def test_change_weight(self):
 
-        repo_id = "PaddleFormers/gpt-oss-test-fp4"
-        filename = "model-00008-of-00009.safetensors"
-        aistudio_download(repo_id, filename, None, False, os.path.join(self.tempdir, "gpt-oss-test-fp4/"))
+        repo_id = "PaddleFormers/tiny-random-gpt-oss-fp4"
+        filename = "model.safetensors"
+        aistudio_download(repo_id, filename, None, False, os.path.join(self.tempdir, "tiny-random-gpt-oss-fp4/"))
 
-        repo_id = "PaddleFormers/gpt-oss-test-bf16"
-        filename = "model-00008-of-00009.safetensors"
-        aistudio_download(repo_id, filename, None, False, os.path.join(self.tempdir, "gpt-oss-test-bf16/"))
+        repo_id = "PaddleFormers/tiny-random-gpt-oss-bf16"
+        filename = "model.safetensors"
+        aistudio_download(repo_id, filename, None, False, os.path.join(self.tempdir, "tiny-random-gpt-oss-bf16/"))
 
-        self.fp4_to_bf16()
         self.bf16_to_fp4()
+        self.fp4_to_bf16()
 
         self.check_weight(
-            os.path.join(self.tempdir, "gpt-oss-test-fp4/"), os.path.join(self.tempdir, "gpt-oss-test-new-fp4/"), 1e-2
+            os.path.join(self.tempdir, "tiny-random-gpt-oss-fp4/"),
+            os.path.join(self.tempdir, "tiny-random-gpt-oss-new-fp4/"),
+            1e-2,
         )
         self.check_weight(
-            os.path.join(self.tempdir, "gpt-oss-test-bf16/"),
-            os.path.join(self.tempdir, "gpt-oss-test-new-bf16/"),
+            os.path.join(self.tempdir, "tiny-random-gpt-oss-bf16/"),
+            os.path.join(self.tempdir, "tiny-random-gpt-oss-new-bf16/"),
             1e-2,
         )
 

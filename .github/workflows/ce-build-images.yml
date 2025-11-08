@@ -28,10 +28,12 @@ jobs:
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
+          IMAGE_BASE: ${{ inputs.image_base }}
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> ${{ github.env }}
-          docker_image="${image_base}"
+          docker_image="${IMAGE_BASE}"
+          echo "docker_image=${docker_image}"
           docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
