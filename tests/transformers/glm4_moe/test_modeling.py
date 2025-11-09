@@ -384,8 +384,8 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
             model_state_1 = model1.state_dict()
             model_state_2 = model2.state_dict()
-            
-            for k,v in model_state_1.items():
+
+            for k, v in model_state_1.items():
                 md51 = v._md5sum()
                 md52 = model_state_2[k]._md5sum()
                 assert md51 == md52
@@ -396,14 +396,15 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                 model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
                 model_state_3 = model3.state_dict()
 
-                for k,v in model_state_3.items():
+                for k, v in model_state_3.items():
                     md53 = v._md5sum()
                     md52 = model_state_2[k]._md5sum()
                     if k.endswith(".mlp.gate.weight"):
-                        md52 = model_state_2[k].cast('bfloat16')._md5sum()
-                        md53 = model_state_3[k].cast('bfloat16')._md5sum()
+                        md52 = model_state_2[k].cast("bfloat16")._md5sum()
+                        md53 = model_state_3[k].cast("bfloat16")._md5sum()
                     print(k)
                     assert md52 == md53
+
     def test_hidden_states_output(self):
         pass
 

@@ -589,7 +589,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: Qwen3MoeConfig):
-        model_prefix = "" if cls == cls.base_model_class else "model." 
+        model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_config = {
             "aoa_statements": [
                 f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
@@ -598,7 +598,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
-                f"model.norm.weight -> {model_prefix}norm.weight"
+                f"model.norm.weight -> {model_prefix}norm.weight",
             ]
         }
 
@@ -615,22 +615,20 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
         # FFN
         if not config.fuse_attention_ffn:
-            aoa_config["aoa_statements"] += (
-                [
-                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight"
-                    for p in ("gate", "up")
-                ]
-            )
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight"
+                for p in ("gate", "up")
+            ]
         else:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
             ]
 
         return aoa_config
-    
+
     @classmethod
-    def _gen_inv_aoa_config(cls, config: Glm4MoeConfig):
-        model_prefix = "" if cls == cls.base_model_class else "model." 
+    def _gen_inv_aoa_config(cls, config: Qwen3MoeConfig):
+        model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_statements = [
             # do cast
             f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
@@ -640,7 +638,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
-            f"{model_prefix}norm.weight -> model.norm.weight"
+            f"{model_prefix}norm.weight -> model.norm.weight",
         ]
 
         if not config.fuse_attention_qkv:
@@ -659,17 +657,15 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             ]
 
         if not config.fuse_attention_ffn:
-            aoa_statements += (
-                [
-                    f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight"
-                    for y in ("gate", "up")
-                ]
-            )
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight"
+                for y in ("gate", "up")
+            ]
         else:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
                 f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight",
-                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight"
+                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight",
             ]
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config

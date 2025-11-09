@@ -328,21 +328,18 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
-                model1 = model_class.from_pretrained(
-                    tmpdirname, convert_from_hf=True
-                )
+                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
 
-                model2 = model_class.from_pretrained(
-                tmpdirname, load_checkpoint_format="flex_checkpoint"
-                )
+                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
 
                 model_state_1 = model1.state_dict()
                 model_state_2 = model2.state_dict()
-                
-                for k,v in model_state_1.items():
+
+                for k, v in model_state_1.items():
                     md51 = v._md5sum()
                     md52 = model_state_2[k]._md5sum()
                     assert md51 == md52
+
 
 class Qwen3MoeIntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):

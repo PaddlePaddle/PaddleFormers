@@ -1294,6 +1294,7 @@ def replace_name_and_gen_index(path, total_size):
             saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
             paddle.save(i, saved_signal_path)
 
+
 def get_common_folder(file_list):
     dirnames = [os.path.dirname(f) for f in file_list]
     common_folder = dirnames[0]
@@ -1301,6 +1302,7 @@ def get_common_folder(file_list):
         return common_folder
     else:
         raise ValueError("All files must be in the same folder!")
+
 
 @six.add_metaclass(InitTrackerMeta)
 class PretrainedModel(Layer, GenerationMixin, ConversionMixin):

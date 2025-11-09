@@ -1047,7 +1047,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: Glm4MoeConfig):
-        model_prefix = "" if cls == cls.base_model_class else "model." 
+        model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_config = {
             "aoa_statements": [
                 f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
@@ -1103,7 +1103,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     # NOTE: These aoa_config items will be removed later. The subsequent AOA parsing module will automatically generate the reverse AOA based on the forward (from_pretrained) AOA.
     @classmethod
     def _gen_inv_aoa_config(cls, config: Glm4MoeConfig):
-        model_prefix = "" if cls == cls.base_model_class else "model." 
+        model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_statements = [
             # do cast
             f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
@@ -1153,8 +1153,8 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         else:
             aoa_statements += [
                 f"{model_prefix}layers.0.mlp.up_gate_proj.weight -> model.layers.0.mlp.gate_proj.weight, model.layers.0.mlp.up_proj.weight, fused_ffn",
-                f"model.layers.0.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
-                f"model.layers.0.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
+                "model.layers.0.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
+                "model.layers.0.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
                 f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight, fused_ffn",
                 f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
             ]
