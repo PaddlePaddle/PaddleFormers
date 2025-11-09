@@ -172,7 +172,7 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_FULL_RESUME_EXCEPTED_LOSS)
 
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor(DPO_LORA_EXCEPTED_RESULT)
+        EXPECTED_RESULT = paddle.to_tensor(DPO_FULL_EXCEPTED_RESULT)
         self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_dpo_lora(self):
