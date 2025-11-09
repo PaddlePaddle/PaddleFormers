@@ -1627,8 +1627,8 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Glm4MoeModel.transpose_weight_keys
     _rotary_emb_cls = Glm4MoeRotaryEmbedding
-    _gen_aoa_config = Glm4MoeModel._gen_aoa_config
-    _gen_inv_aoa_config = Glm4MoeModel._gen_inv_aoa_config
+    _gen_aoa_config = Glm4MoeForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = Glm4MoeForCausalLM._gen_inv_aoa_config
 
 
 __all__ = ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"]
