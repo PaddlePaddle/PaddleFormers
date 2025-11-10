@@ -929,6 +929,7 @@ class AutoTrainer(Trainer):
         output_dir: Optional[str] = None,
         state_dict=None,
         merge_tensor_parallel=False,
+        last_fc_to_hf=False,
     ):
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
