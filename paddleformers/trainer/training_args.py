@@ -1967,7 +1967,7 @@ class TrainingArguments:
                 "attention_column_ln": 0,
                 "mlp_column_ln": 0,
                 "flash_attn": 0,
-                "global": 0
+                "global": 0,
             }
             ops = self.refined_recompute.split(",")
             enable_rr = False
