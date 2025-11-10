@@ -417,6 +417,13 @@ class FinetuningArguments(
     dataset_kwargs: Optional[dict[str, Any]] = None
     dataset_text_field: str = "text"
 
+    enable_linear_fused_grad_add: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable fused linear grad add strategy, which will reduce elementwise add for grad accumulation in the backward of nn.Linear ."
+        },
+    )
+
     def __post_init__(self):
         self.bf16 = True
         if self.compute_type == "bf16":

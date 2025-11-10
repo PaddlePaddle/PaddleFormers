@@ -1282,7 +1282,7 @@ class Trainer:
             self.timers and self.timers("read-data").start()
 
         if self.resume_from_custom_func is not None:
-            self.resume_from_custom_func(self.model)
+            self.resume_from_custom_func(model)
 
         for epoch in range(epochs_trained, num_train_epochs):
             if isinstance(train_dataloader, paddle.io.DataLoader) and isinstance(
