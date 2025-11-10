@@ -1036,6 +1036,17 @@ class MOELayer(nn.Layer):
             combined_output = combined_output.clone().reshape(orig_shape[:-1] + [combined_output.shape[-1]])
         return combined_output, combine_weights, router_loss2, gate_logits
 
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        sharded_state_dict = super().sharded_state_dict(structured_name_prefix)
+        global_expert_id_offset = self.group.rank * self.num_local_experts
+        for k, v in sharded_state_dict.items():
+            v.global_expert_id_offset = global_expert_id_offset
+            sharded_state_dict[k] = v
+        return sharded_state_dict
+
 
 class FP8FusedWLCHFunc(paddle.autograd.PyLayer):
     @staticmethod

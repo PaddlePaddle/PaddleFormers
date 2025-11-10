@@ -36,9 +36,15 @@ from .loss_utils import subbatch
 def kto_preprocess_inputs(self, logits, labels):
     hidden_states, lm_head_weight, lm_head_bias, transpose_y = None, None, None, None
 
-    if isinstance(logits, tuple):
-        hidden_states, lm_head_weight, lm_head_bias, transpose_y = logits  # unpack logits when using fused head loss
-        logits = None
+    def unpack_logits(obj):
+        if isinstance(obj, tuple):
+            if len(obj) == 1:
+                return unpack_logits(obj[0])
+            elif len(obj) == 4:
+                return None, *obj  # unpack logits when using fused head loss
+        return obj, None, None, None, None
+
+    logits, hidden_states, lm_head_weight, lm_head_bias, transpose_y = unpack_logits(logits)
     return logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y
 
 
