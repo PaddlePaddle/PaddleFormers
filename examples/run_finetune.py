@@ -241,10 +241,6 @@ def main():
 
     # Load tokenizer & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
-    # tokenizer.chat_template = None
-
-    # init chat_template for tokenizer
-    # init_chat_template(tokenizer, model_args.model_name_or_path, data_args.chat_template)
 
     # if using chat_template, data_args.eval_with_do_generation must be false
     if tokenizer.chat_template is not None:
