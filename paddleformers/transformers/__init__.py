@@ -342,6 +342,7 @@ import_structure = {
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
+    "ernie4_5_moe_vl": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
@@ -405,6 +406,7 @@ if TYPE_CHECKING:
     from .deepseek_v3 import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
+    from .ernie4_5_moe_vl import *
     from .llama import *
     from .optimization import *
     from .qwen import *
