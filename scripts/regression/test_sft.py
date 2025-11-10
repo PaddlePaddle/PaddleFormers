@@ -109,7 +109,7 @@ class SFTTrainTester(unittest.TestCase):
         model = Qwen3ForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
-        print(f"result is : {result}")
+        print(f"excepted_result is : {excepted_result}")
         print(f"result[0] is : {result[0]}")
         self.assertTrue(paddle.allclose(result[0], excepted_result))
 

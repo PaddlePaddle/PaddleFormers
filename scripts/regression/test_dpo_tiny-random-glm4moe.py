@@ -107,7 +107,7 @@ class DPOTrainTester(unittest.TestCase):
         model = Glm4MoeForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
-        print(f"result is : {result}")
+        print(f"excepted_result is : {excepted_result}")
         print(f"result[0] is : {result[0]}")
         self.assertTrue(paddle.allclose(result[0], excepted_result))
 
@@ -131,6 +131,7 @@ class DPOTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "sharding": "stage1",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -172,19 +173,19 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_loss(training_p.stdout, DPO_FULL_EXCEPTED_LOSS)
 
         # test model resume
-        # resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        # print(f"dop_full resume cmd is : {cmd}")
-        # print(resume_p.stdout)
-        # dop_full_resume_output = resume_p.stdout
-        # dop_full_resume_log_file = os.path.join(
-        #     LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_resume.log"
-        # )
-        # if dop_full_resume_output and dop_full_resume_output.strip():
-        #     with open(dop_full_resume_log_file, "w", encoding="utf-8") as dop_full_resume_f:
-        #         dop_full_resume_f.write(dop_full_resume_output)
-        # self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
+        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_full resume cmd is : {cmd}")
+        print(resume_p.stdout)
+        dop_full_resume_output = resume_p.stdout
+        dop_full_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full_resume.log"
+        )
+        if dop_full_resume_output and dop_full_resume_output.strip():
+            with open(dop_full_resume_log_file, "w", encoding="utf-8") as dop_full_resume_f:
+                dop_full_resume_f.write(dop_full_resume_output)
+        self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        # self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_FULL_RESUME_EXCEPTED_LOSS)
+        self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_FULL_RESUME_EXCEPTED_LOSS)
 
         # test model generate
         EXPECTED_RESULT = paddle.to_tensor(DPO_FULL_EXCEPTED_RESULT)
@@ -199,6 +200,7 @@ class DPOTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "sharding": "stage1",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -223,17 +225,17 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_loss(training_p.stdout, DPO_LORA_EXCEPTED_LOSS)
 
         # test model resume
-        # resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        # print(f"dop_lora resume cmd is : {cmd}")
-        # print(resume_p.stdout)
-        # dop_lora_resume_output = resume_p.stdout
-        # dop_lora_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_resume.log")
-        # if dop_lora_resume_output and dop_lora_resume_output.strip():
-        #     with open(dop_lora_resume_log_file, "w", encoding="utf-8") as dop_lora_resume_f:
-        #         dop_lora_resume_f.write(dop_lora_resume_output)
-        # self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
+        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"dop_lora resume cmd is : {cmd}")
+        print(resume_p.stdout)
+        dop_lora_resume_output = resume_p.stdout
+        dop_lora_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_resume.log")
+        if dop_lora_resume_output and dop_lora_resume_output.strip():
+            with open(dop_lora_resume_log_file, "w", encoding="utf-8") as dop_lora_resume_f:
+                dop_lora_resume_f.write(dop_lora_resume_output)
+        self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        # self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_LORA_RESUME_EXCEPTED_LOSS)
+        self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_LORA_RESUME_EXCEPTED_LOSS)
 
         # test lora  merge
         lora_merge_output_dir = os.path.join(output_dir, "export")
