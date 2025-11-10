@@ -302,9 +302,6 @@ class TrainingArguments:
         recompute (`bool`, *optional*, defaults to `False`):
             Recompute the forward pass to calculate gradients. Used for saving memory.
             Only support for networks with transformer blocks.
-        recompute_use_reentrant(`bool`, *optional*, defaults to `True`):
-            Recompute_use_reentrant = True: use PyLayer implementation of recompute, otherwise
-            use hook implementation of recompute.
         refined_recompute (`str`, *optional*, defaults to `""`):
             The refined recompute parameter is designed to optimize the balance between GPU memory usage and computational speed.
             An example configuration could be: `attention_column_ln:-1,attention_row_ln:-1,flash_attn:-1,mlp_column_ln:5,mlp_row_ln:-1`.
@@ -813,10 +810,6 @@ class TrainingArguments:
             "help": "Recompute the forward pass to calculate gradients. Used for saving memory. "
             "Only support for networks with transformer blocks."
         },
-    )
-    recompute_use_reentrant: bool = field(
-        default=True,
-        metadata={"help": "Use reentrant mechanism"},
     )
     refined_recompute: str = field(
         default="",
