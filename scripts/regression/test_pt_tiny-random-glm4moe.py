@@ -47,7 +47,7 @@ PT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 74061, 74061, 74061, 74061, 74061, 740
 
 PT_LORA_TP_PP_EXCEPTED_LOSS = 11.93247
 PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.932783
-PT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198 ]]
+PT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
 PT_FC_EXCEPTED_LOSS = 11.931005
 PT_FC_RESUME_EXCEPTED_LOSS = 11.931005
@@ -161,7 +161,9 @@ class PTTrainTest(unittest.TestCase):
         print(f"pt_full resume cmd is : {cmd}")
         print(resume_p.stdout)
         pt_full_resume_output = resume_p.stdout
-        pt_full_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_resume.log")
+        pt_full_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_resume.log"
+        )
         if pt_full_resume_output and pt_full_resume_output.strip():
             with open(pt_full_resume_log_file, "w", encoding="utf-8") as pt_full_resume_f:
                 pt_full_resume_f.write(pt_full_resume_output)
@@ -212,7 +214,9 @@ class PTTrainTest(unittest.TestCase):
         print(f"pt_lora resume cmd is : {cmd}")
         print(resume_p.stdout)
         pt_lora_resume_output = resume_p.stdout
-        pt_lora_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_resume.log")
+        pt_lora_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_resume.log"
+        )
         if pt_lora_resume_output and pt_lora_resume_output.strip():
             with open(pt_lora_resume_log_file, "w", encoding="utf-8") as pt_lora_resume_f:
                 pt_lora_resume_f.write(pt_lora_resume_output)

@@ -229,7 +229,9 @@ class DPOTrainTest(unittest.TestCase):
         print(f"dop_lora resume cmd is : {cmd}")
         print(resume_p.stdout)
         dop_lora_resume_output = resume_p.stdout
-        dop_lora_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_resume.log")
+        dop_lora_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_lora_resume.log"
+        )
         if dop_lora_resume_output and dop_lora_resume_output.strip():
             with open(dop_lora_resume_log_file, "w", encoding="utf-8") as dop_lora_resume_f:
                 dop_lora_resume_f.write(dop_lora_resume_output)

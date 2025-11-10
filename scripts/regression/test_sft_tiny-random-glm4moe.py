@@ -162,7 +162,9 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_full resume cmd is : {cmd}")
         print(resume_p.stdout)
         sft_full_resume_output = resume_p.stdout
-        sft_full_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_resume.log")
+        sft_full_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_resume.log"
+        )
         if sft_full_resume_output and sft_full_resume_output.strip():
             with open(sft_full_resume_log_file, "w", encoding="utf-8") as sft_full_resume_f:
                 sft_full_resume_f.write(sft_full_resume_output)
@@ -212,7 +214,9 @@ class SFTTrainTest(unittest.TestCase):
         print(f"sft_lora resume cmd is : {cmd}")
         print(resume_p.stdout)
         sft_lora_resume_output = resume_p.stdout
-        sft_lora_resume_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_lora_resume.log")
+        sft_lora_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_lora_resume.log"
+        )
         if sft_lora_resume_output and sft_lora_resume_output.strip():
             with open(sft_lora_resume_log_file, "w", encoding="utf-8") as sft_lora_resume_f:
                 sft_lora_resume_f.write(sft_lora_resume_output)
