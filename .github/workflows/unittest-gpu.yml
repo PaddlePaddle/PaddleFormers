@@ -36,7 +36,7 @@ defaults:
 jobs:
   unittest-gpu-ci:
     name: unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu' }}
+    runs-on: ${{ inputs.runner || 'ernie-8gpu-1' }}
     outputs:  
       pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}
     steps:
