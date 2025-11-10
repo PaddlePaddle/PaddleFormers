@@ -108,7 +108,6 @@ import_structure = {
         "DeepseekV2MoE",
         "DeepseekV2MoEFlexToken",
         "scaled_dot_product_attention",
-        "DeepseekV2RotaryEmbedding",
         "rotate_half",
         "DeepseekV2MTPLayer",
         "DeepseekV2RMSNorm",
@@ -122,15 +121,10 @@ import_structure = {
         "_expand_2d_mask",
         "DeepseekV2Model",
         "repeat_kv",
-        "yarn_find_correction_dim",
-        "yarn_linear_ramp_mask",
-        "DeepseekV2DynamicNTKScalingRotaryEmbedding",
         "DeepseekV2MLP",
         "yarn_get_mscale",
         "DeepseekV2DecoderLayer",
-        "yarn_find_correction_range",
         "get_triangle_upper_mask",
-        "DeepseekV2LinearScalingRotaryEmbedding",
         "DeepseekV2ForCausalLMPipe",
     ],
     "deepseek_v2.modeling_auto": [
@@ -175,6 +169,12 @@ import_structure = {
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
     "ernie4_5_moe.configuration": ["Ernie4_5_MoeConfig"],
     "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"],
+    "ernie4_5_moe_vl.configuration": ["Ernie4_5_VLConfig"],
+    "ernie4_5_moe_vl.modeling": [
+        "Ernie4_5_VLMoeForConditionalGenerationModel",
+        "Ernie4_5_VLMoeForConditionalGenerationPipe",
+    ],
+    "ernie4_5_moe_vl.tokenizer": ["Ernie4_5_VLTokenizer"],
     "export": ["export_model"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
@@ -333,8 +333,6 @@ import_structure = {
         "Qwen3MoeForCausalLMPipe",
         "Qwen3MoePretrainingCriterion",
     ],
-    "ernie4_5vl.tokenizer": ["Ernie4_5_VLTokenizer"],
-    "ernie4_5vl": [],
     "bert": [],
     "llama": [],
     "qwen2": [],
@@ -344,6 +342,7 @@ import_structure = {
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
+    "ernie4_5_moe_vl": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
@@ -407,6 +406,7 @@ if TYPE_CHECKING:
     from .deepseek_v3 import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
+    from .ernie4_5_moe_vl import *
     from .llama import *
     from .optimization import *
     from .qwen import *
