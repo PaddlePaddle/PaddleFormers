@@ -430,6 +430,10 @@ class TrainingArguments:
                 hybrid\\_parallel\\_expert\\_grad\\_scale} =
                     \\frac{tensor\\_parallel\\_degree}{expert\\_parallel\\_degree}
         )
+        enable_auto_parallel (`bool`, *optional*, defaults to `False`):
+            whether to run distributed training in auto parallel mode.
+        use_intermediate_api (`bool`, *optional*, defaults to `True`):
+            whether to use auto_parallel intermediate API if `enable_auto_parallel=True`.
     """
 
     output_dir: str = field(
@@ -1194,6 +1198,10 @@ class TrainingArguments:
         default=None,
         metadata={"help": ("Scaling factor for expert gradients.")},
     )
+    use_intermediate_api: bool = field(
+        default=True,
+        metadata={"help": "whether to use auto_parallel intermediate API."},
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1729,11 +1737,19 @@ class TrainingArguments:
                         self.add_moe_comm_group()
 
         elif self.enable_auto_parallel:
+
+            assert paddle.distributed.get_world_size() > 1, "Auto parallel mode needs world size > 1."
+            assert self.use_intermediate_api, "Auto parallel is only supported with intermediate API now."
+            assert (
+                not self.to_static
+            ), "Auto parallel only support dyanmic parallel now. Static parallel will be supported later."
+
             self.tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
             self.sep_parallel_degree = max(self.sep_parallel_degree, 1)
             self.context_parallel_degree = max(self.context_parallel_degree, 1)
             self.pipeline_parallel_degree = max(self.pipeline_parallel_degree, 1)
 
+            assert self.pipeline_parallel_degree == 1, "Current not support pipeline parallel in auto parallel mode."
             assert (
                 world_size % (self.tensor_parallel_degree * self.pipeline_parallel_degree) == 0
             ), f"Total world_size:{world_size} should be divided by tensor_parallel_degree: {self.tensor_parallel_degree} and pipeline_parallel_degree: {self.pipeline_parallel_degree}."
@@ -2609,6 +2625,20 @@ class TrainingArguments:
                 return True
             else:
                 return False
+
+    def get_auto_dist_flag(self):
+        """
+        Get the auto distributed flags for auto_parallel intermediate API.
+        """
+        auto_dist_flag = {
+            "tensor_parallel": self.tensor_parallel_degree > 1,
+            "sequence_parallel": self.sequence_parallel,
+            "pipeline_parallel": self.pipeline_parallel_degree > 1,
+            "data_sharding_parallel": self.dataset_world_size > 1,
+            "sharding": self.sharding,
+            "sharding_mesh_dim": self.sharding_parallel_mesh_dimension,
+        }
+        return auto_dist_flag
 
     @contextlib.contextmanager
     def main_process_first(self, local=True, desc="work"):
