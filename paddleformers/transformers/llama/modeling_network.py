@@ -1015,14 +1015,14 @@ class LlamaForCausalLMNet(LlamaPretrainedModelNet):
         super().__init__(config)
         self.config = config
 
-        self.model = LlamaModelNet(config)
+        self.llama = LlamaModelNet(config)
         self.lm_head = LlamaLMHeadNet(config)
 
     def get_input_embeddings(self):
-        return self.model.embed_tokens
+        return self.llama.embed_tokens
 
     def set_input_embeddings(self, value):
-        self.model.embed_tokens = value
+        self.llama.embed_tokens = value
 
     def get_output_embeddings(self):
         return self.lm_head
@@ -1031,10 +1031,10 @@ class LlamaForCausalLMNet(LlamaPretrainedModelNet):
         self.lm_head = new_embeddings
 
     def set_decoder(self, decoder):
-        self.model = decoder
+        self.llama = decoder
 
     def get_decoder(self):
-        return self.model
+        return self.llama
 
     def prepare_inputs_for_generation(
         self, input_ids, use_cache=False, past_key_values=None, inputs_embeds=None, **kwargs
@@ -1111,7 +1111,7 @@ class LlamaForCausalLMNet(LlamaPretrainedModelNet):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        outputs = self.model(
+        outputs = self.llama(
             input_ids,  # [bs, seq_len]
             position_ids=position_ids,
             attention_mask=attention_mask,
@@ -1142,47 +1142,47 @@ class LlamaForCausalLMNet(LlamaPretrainedModelNet):
         config = {
             "sp_config": {
                 "parallelize_plan": {
-                    f"{prefix}model.embed_tokens": [
+                    f"{prefix}llama.embed_tokens": [
                         dist.ColWiseParallel(),
                         dist.SequenceParallelBegin(),
                     ],
-                    f"{prefix}model.reshard_row": PrepareLayerInput(layer_input_parallel_row_hook),
-                    f"{prefix}model.reshard_row_and_col": PrepareLayerInput(layer_input_parallel_row_and_col_hook),
-                    f"{prefix}model.global_layer.reshard_replicate": PrepareLayerInput(layer_input_replicate_hook),
-                    f"{prefix}model.layers.*.self_attn.qkv_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.self_attn.q_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.self_attn.k_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.self_attn.v_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.self_attn.o_proj": dist.RowWiseParallel(),
-                    f"{prefix}model.layers.*.self_attn": dist.SequenceParallelDisable(),
-                    f"{prefix}model.layers.*.mlp.gate_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.mlp.up_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.mlp.gate_up_fused_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.mlp.down_proj": dist.RowWiseParallel(),
-                    f"{prefix}model.layers.*.mlp": dist.SequenceParallelDisable(need_transpose=False),
+                    f"{prefix}llama.reshard_row": PrepareLayerInput(layer_input_parallel_row_hook),
+                    f"{prefix}llama.reshard_row_and_col": PrepareLayerInput(layer_input_parallel_row_and_col_hook),
+                    f"{prefix}llama.global_layer.reshard_replicate": PrepareLayerInput(layer_input_replicate_hook),
+                    f"{prefix}llama.layers.*.self_attn.qkv_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.self_attn.q_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.self_attn.k_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.self_attn.v_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.self_attn.o_proj": dist.RowWiseParallel(),
+                    f"{prefix}llama.layers.*.self_attn": dist.SequenceParallelDisable(),
+                    f"{prefix}llama.layers.*.mlp.gate_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.mlp.up_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.mlp.gate_up_fused_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.mlp.down_proj": dist.RowWiseParallel(),
+                    f"{prefix}llama.layers.*.mlp": dist.SequenceParallelDisable(need_transpose=False),
                     f"{prefix}lm_head.weight": dist.ColWiseParallel(),
                     f"{prefix}lm_head": dist.SequenceParallelEnd(),
                 }
             },
             "mp_config": {
                 "parallelize_plan": {
-                    f"{prefix}model.embed_tokens": dist.ColWiseParallel(gather_output=True),
-                    f"{prefix}model.reshard_row": PrepareLayerInput(layer_input_parallel_row_hook),
-                    f"{prefix}model.reshard_row_and_col": PrepareLayerInput(layer_input_parallel_row_and_col_hook),
-                    f"{prefix}model.global_layer.reshard_replicate": PrepareLayerInput(layer_input_replicate_hook),
-                    f"{prefix}model.layers.*.self_attn.qkv_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.self_attn.q_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.self_attn.k_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.self_attn.v_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.self_attn.o_proj": dist.RowWiseParallel(),
-                    f"{prefix}model.layers.*.mlp.gate_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.mlp.up_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.mlp.gate_up_fused_proj": dist.ColWiseParallel(),
-                    f"{prefix}model.layers.*.mlp.down_proj": dist.RowWiseParallel(),
+                    f"{prefix}llama.embed_tokens": dist.ColWiseParallel(gather_output=True),
+                    f"{prefix}llama.reshard_row": PrepareLayerInput(layer_input_parallel_row_hook),
+                    f"{prefix}llama.reshard_row_and_col": PrepareLayerInput(layer_input_parallel_row_and_col_hook),
+                    f"{prefix}llama.global_layer.reshard_replicate": PrepareLayerInput(layer_input_replicate_hook),
+                    f"{prefix}llama.layers.*.self_attn.qkv_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.self_attn.q_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.self_attn.k_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.self_attn.v_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.self_attn.o_proj": dist.RowWiseParallel(),
+                    f"{prefix}llama.layers.*.mlp.gate_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.mlp.up_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.mlp.gate_up_fused_proj": dist.ColWiseParallel(),
+                    f"{prefix}llama.layers.*.mlp.down_proj": dist.RowWiseParallel(),
                     f"{prefix}lm_head.weight": dist.ColWiseParallel(),
                 }
             },
-            "pp_config": {"split_spec": f"{prefix}model.layers", "global_spec": f"{prefix}model.global_layer"},
+            "pp_config": {"split_spec": f"{prefix}llama.layers", "global_spec": f"{prefix}llama.global_layer"},
         }
 
         return config
@@ -1191,30 +1191,30 @@ class LlamaForCausalLMNet(LlamaPretrainedModelNet):
     def _gen_aoa_config(cls, config: LlamaConfig):
         aoa_config = {
             "aoa_statements": [
-                "model.layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+                "llama.layers.$LAYER_ID.mlp.down_proj.weight^T -> llama.layers.$LAYER_ID.mlp.down_proj.weight",
                 "lm_head.weight^T -> lm_head.weight",
             ]
         }
         # attention qkv
         if not config.fuse_attention_qkv:
             aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                f"llama.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> llama.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
             ]
         else:
             aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> model.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> model.layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                f"llama.layers.$LAYER_ID.self_attn.q_proj.weight^T, llama.layers.$LAYER_ID.self_attn.k_proj.weight^T, llama.layers.$LAYER_ID.self_attn.v_proj.weight^T -> llama.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+                f"llama.layers.$LAYER_ID.self_attn.q_proj.bias, llama.layers.$LAYER_ID.self_attn.k_proj.bias, llama.layers.$LAYER_ID.self_attn.v_proj.bias -> llama.layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
             ]
         # FFN
         if not config.fuse_attention_ffn:
             aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
+                f"llama.layers.$LAYER_ID.mlp.{y}_proj.weight^T -> llama.layers.$LAYER_ID.mlp.{y}_proj.weight"
                 for y in ("gate", "up")
             ]
         else:
             aoa_config["aoa_statements"] += [
-                "model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.gate_up_fused_proj.weight, fused_ffn",
+                "llama.layers.$LAYER_ID.mlp.gate_proj.weight^T, llama.layers.$LAYER_ID.mlp.up_proj.weight^T -> llama.layers.$LAYER_ID.mlp.gate_up_fused_proj.weight, fused_ffn",
             ]
         return aoa_config
 
@@ -1222,39 +1222,39 @@ class LlamaForCausalLMNet(LlamaPretrainedModelNet):
     def _gen_inv_aoa_config(cls, config: LlamaConfig):
         aoa_config = {
             "aoa_statements": [
-                "model.layers.$LAYER_ID.mlp.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.gate_proj.weight",
-                "model.layers.$LAYER_ID.mlp.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.up_proj.weight",
-                "model.layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+                "llama.layers.$LAYER_ID.mlp.gate_proj.weight^T -> llama.layers.$LAYER_ID.mlp.gate_proj.weight",
+                "llama.layers.$LAYER_ID.mlp.up_proj.weight^T -> llama.layers.$LAYER_ID.mlp.up_proj.weight",
+                "llama.layers.$LAYER_ID.mlp.down_proj.weight^T -> llama.layers.$LAYER_ID.mlp.down_proj.weight",
                 "lm_head.weight^T -> lm_head.weight",
             ]
         }
         # attention qkv
         if not config.fuse_attention_qkv:
             aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                f"llama.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> llama.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
             ]
         else:
             aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-                f"model.layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
+                f"llama.layers.$LAYER_ID.self_attn.qkv_proj.weight -> llama.layers.$LAYER_ID.self_attn.q_proj.weight, llama.layers.$LAYER_ID.self_attn.k_proj.weight, llama.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+                f"llama.layers.$LAYER_ID.self_attn.qkv_proj.bias -> llama.layers.$LAYER_ID.self_attn.q_proj.bias, llama.layers.$LAYER_ID.self_attn.k_proj.bias, llama.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
             ]
             aoa_config["aoa_statements"] += [
-                f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
+                f"llama.layers.{layer_id}.self_attn.{x}_proj.weight^T -> llama.layers.{layer_id}.self_attn.{x}_proj.weight"
                 for layer_id in range(config.num_hidden_layers)
                 for x in ("q", "k", "v")
             ]
         # FFN
         if not config.fuse_attention_ffn:
             aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
+                f"llama.layers.$LAYER_ID.mlp.{y}_proj.weight^T -> llama.layers.$LAYER_ID.mlp.{y}_proj.weight"
                 for y in ("gate", "up")
             ]
         else:
             aoa_config["aoa_statements"] += [
-                "model.layers.$LAYER_ID.mlp.gate_up_fused_proj.weight -> model.layers.$LAYER_ID.mlp.gate_proj.weight, model.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
-                "model.layers.$LAYER_ID.mlp.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.gate_proj.weight",
-                "model.layers.$LAYER_ID.mlp.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.up_proj.weight",
+                "llama.layers.$LAYER_ID.mlp.gate_up_fused_proj.weight -> llama.layers.$LAYER_ID.mlp.gate_proj.weight, llama.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
+                "llama.layers.$LAYER_ID.mlp.gate_proj.weight^T -> llama.layers.$LAYER_ID.mlp.gate_proj.weight",
+                "llama.layers.$LAYER_ID.mlp.up_proj.weight^T -> llama.layers.$LAYER_ID.mlp.up_proj.weight",
             ]
         return aoa_config
 

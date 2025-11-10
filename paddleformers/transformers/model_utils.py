@@ -3161,8 +3161,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         save_to_hf = kwargs.get("save_to_hf", False)
 
         save_checkpoint_format = kwargs.get("save_checkpoint_format", "")
+
         if kwargs.get("enable_auto_parallel", ""):
+            # use flex_checkpoint as the default format in auto_parallel
             save_checkpoint_format = "flex_checkpoint"
+
         safe_serialization = safe_serialization or save_to_hf
 
         save_directory = save_dir
@@ -3204,7 +3207,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             # Attach architecture to the config
             config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
             # Save the config
-            if is_main_process and paddle.distributed.get_rank() == 0:
+            if is_main_process:
                 config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
