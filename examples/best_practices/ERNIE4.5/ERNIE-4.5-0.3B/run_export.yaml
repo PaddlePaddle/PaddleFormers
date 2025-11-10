@@ -1,0 +1,18 @@
+### model
+model_name_or_path: baidu/ERNIE-4.5-0.3B-PT
+fine_tuning: LoRA
+
+### split
+max_shard_size: 5
+hf_hub_id: null
+output_dir: ./output
+
+### performance
+tensor_parallel_degree: 1
+pipeline_parallel_degree: 1
+sharding_parallel_degree: 1
+sharding: stage1
+pipeline_parallel_config: disable_partial_send_recv enable_clear_every_step_cache
+sequence_parallel: True
+compute_type: bf16
+fp16_opt_level: O2

@@ -1,0 +1,52 @@
+### data
+eval_dataset_type: "erniekit"
+eval_dataset_path: "./examples/data/sft-eval.jsonl"
+eval_dataset_prob: "1.0"
+max_seq_len: 8192
+num_samples_each_epoch: 6000000
+
+### model
+model_name_or_path: baidu/ERNIE-4.5-21B-A3B-PT
+fine_tuning: LoRA
+lora_rank: 32
+fuse_rope: True
+
+### eval
+seed: 23
+do_train: False
+do_eval: True
+distributed_dataloader: False
+dataloader_num_workers: 1
+batch_size: 1
+logging_dir: ./vdl_log
+output_dir: ./output
+disable_tqdm: True
+
+# performance
+tensor_parallel_degree: 1
+pipeline_parallel_degree: 1
+sharding_parallel_degree: 1
+sharding: stage1
+sequence_parallel: True
+pipeline_parallel_config: disable_partial_send_recv enable_clear_every_step_cache
+recompute: True
+compute_type: bf16
+fp16_opt_level: O2
+disable_ckpt_quant: True
+amp_master_grad: True
+amp_custom_white_list:
+  - lookup_table
+  - lookup_table_v2
+  - flash_attn
+  - matmul
+  - matmul_v2
+  - fused_gemm_epilogue
+amp_custom_black_list:
+  - reduce_sum
+  - softmax_with_cross_entropy
+  - c_softmax_with_cross_entropy
+  - elementwise_div
+  - sin
+  - cos
+unified_checkpoint: True
+unified_checkpoint_config: async_save

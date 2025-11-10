@@ -1,0 +1,91 @@
+### data
+train_dataset_type: "erniekit"
+eval_dataset_type: "erniekit"
+train_dataset_path: "./examples/data/dpo-train.jsonl"
+train_dataset_prob: "1.0"
+eval_dataset_path: "./examples/data/dpo-eval.jsonl"
+eval_dataset_prob: "1.0"
+max_seq_len: 8192
+num_samples_each_epoch: 6000000
+
+### model
+model_name_or_path: baidu/ERNIE-4.5-300B-A47B-PT
+moe_group: mp
+fine_tuning: Full
+fuse_rope: True
+pp_seg_method: [0,7,10,14,18,22,26,30,34,38,42,46,50,53,57]
+
+### finetuning
+# base
+stage: DPO
+seed: 42
+do_train: True
+do_eval: True
+distributed_dataloader: True
+dataloader_num_workers: 4
+batch_size: 1
+num_train_epochs: 1
+max_steps: 800
+max_evaluate_steps: 10000
+eval_steps: 20000
+evaluation_strategy: epoch
+save_steps: 100
+save_total_limit: 5
+save_strategy: steps
+logging_steps: 1
+release_grads: True
+gradient_accumulation_steps: 36
+logging_dir: ./vdl_log
+output_dir: ./output
+disable_tqdm: True
+
+# train
+warmup_steps: 50
+learning_rate: 5.0e-7
+lr_scheduler_type: cosine
+min_lr: 5.0e-7
+layerwise_lr_decay_bound: 0.5
+attention_probs_dropout_prob: 0.1
+dropout_warmup_steps: 100
+
+# loss
+offset_alpha: 0.0
+scale_loss: 8192
+
+# optimizer
+weight_decay: 0.1
+adam_epsilon: 1.0e-8
+adam_beta1: 0.9
+adam_beta2: 0.95
+offload_optim: True
+
+# performance
+use_sp_callback: True
+tensor_parallel_degree: 8
+tensor_parallel_config: "sync_param sync_grad sync_moment"
+pipeline_parallel_degree: 14
+sharding_parallel_degree: 1
+sharding: stage1
+sequence_parallel: True
+pipeline_parallel_config: "disable_partial_send_recv enable_clear_every_step_cache enable_delay_scale_loss enable_overlap_p2p_comm best_unbalanced_scheduler"
+recompute: True
+recompute_use_reentrant: True
+compute_type: bf16
+fp16_opt_level: O2
+amp_master_grad: True
+amp_custom_white_list:
+  - "lookup_table"
+  - "lookup_table_v2"
+  - "flash_attn"
+  - "matmul"
+  - "matmul_v2"
+  - "fused_gemm_epilogue"
+amp_custom_black_list:
+  - "reduce_sum"
+  - "softmax_with_cross_entropy"
+  - "c_softmax_with_cross_entropy"
+  - "elementwise_div"
+  - "sin"
+  - "cos"
+unified_checkpoint: True
+# unified_checkpoint_config: async_save
