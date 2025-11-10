@@ -99,6 +99,7 @@ jobs:
             echo "Downloading PaddleFormers.tar"
             wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
             echo "Extracting PaddleFormers.tar"
+            rm -rf PaddleFormers
             tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
             source $work_dir/../../../proxy
             cd PaddleFormers

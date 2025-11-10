@@ -27,31 +27,32 @@ TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/pt"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
+MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
 MAX_STEPS = 6
 SAVE_STEPS = 4
 TRAIN_DATASET_PATH = "./tests/fixtures/dummy/pt/train.jsonl"
 EVAL_DATASET_PATH = "./tests/fixtures/dummy/pt/eval.jsonl"
 
-PT_FULL_EXCEPTED_LOSS = 11.976337
-PT_FULL_RESUME_EXCEPTED_LOSS = 11.97685
-PT_FULL_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]]
+PT_FULL_EXCEPTED_LOSS = 12.741729
+PT_FULL_RESUME_EXCEPTED_LOSS = 12.747096
+PT_FULL_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]]
 
-PT_LORA_EXCEPTED_LOSS = 11.976369
-PT_LORA_RESUME_EXCEPTED_LOSS = 11.976941
-PT_LORA_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+PT_LORA_EXCEPTED_LOSS = 12.741831
+PT_LORA_RESUME_EXCEPTED_LOSS = 12.747286
+PT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
-PT_FULL_TP_PP_EXCEPTED_LOSS = 11.977347
-PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.974186
-PT_FULL_TP_PP_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]]
+PT_FULL_TP_PP_EXCEPTED_LOSS = 11.932426
+PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.932665
+PT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 74061, 74061, 74061, 74061, 74061, 74061, 74061, 74061, 74061]]
 
-PT_LORA_TP_PP_EXCEPTED_LOSS = 11.977341
-PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.974185
-PT_LORA_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+PT_LORA_TP_PP_EXCEPTED_LOSS = 11.93247
+PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.932783
+PT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 PT_FC_EXCEPTED_LOSS = 11.931005
 PT_FC_RESUME_EXCEPTED_LOSS = 11.931005
 PT_FC_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]]
+
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
@@ -100,11 +101,11 @@ class PTTrainTester(unittest.TestCase):
         model_path,
         excepted_result,
     ):
-        from paddleformers.transformers import Qwen3ForCausalLM
+        from paddleformers.transformers import Glm4MoeForCausalLM
 
         input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
         attention_mask = paddle.ones_like(input_ids)
-        model = Qwen3ForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
+        model = Glm4MoeForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
         print(f"excepted_result is : {excepted_result}")
@@ -131,6 +132,7 @@ class PTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "sharding": "stage1",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -182,6 +184,7 @@ class PTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "sharding": "stage1",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)

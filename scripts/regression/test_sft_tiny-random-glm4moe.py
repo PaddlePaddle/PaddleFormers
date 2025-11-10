@@ -27,38 +27,38 @@ TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/sft"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
+MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
 MAX_STEPS = 6
 SAVE_STEPS = 4
 TRAIN_DATASET_PATH = "./tests/fixtures/dummy/ernie/sft-train.jsonl"
 EVAL_DATASET_PATH = "./tests/fixtures/dummy/ernie/sft-train.jsonl"
-FC_TRAIN_DATASET_PATH = "./tests/fixtures/dummy/function-call/function-call-eval.jsonl"
+FC_TRAIN_DATASET_PATH = "./tests/fixtures/dummy/function-call/function-call-train.jsonl"
 FC_EVAL_DATASET_PATH = "./tests/fixtures/dummy/function-call/function-call-eval.jsonl"
 
-SFT_FULL_EXCEPTED_LOSS = 11.944916
-SFT_FULL_RESUME_EXCEPTED_LOSS = 11.946712
-SFT_FULL_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]]
+SFT_FULL_EXCEPTED_LOSS = 13.091749
+SFT_FULL_RESUME_EXCEPTED_LOSS = 13.079882
+SFT_FULL_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]]
 
-SFT_LORA_EXCEPTED_LOSS = 11.944835
-SFT_LORA_RESUME_EXCEPTED_LOSS = 11.94655
-SFT_LORA_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+SFT_LORA_EXCEPTED_LOSS = 13.092247
+SFT_LORA_RESUME_EXCEPTED_LOSS = 13.081569
+SFT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
-SFT_FULL_TP_PP_EXCEPTED_LOSS = 11.956736
-SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.956321
-SFT_FULL_TP_PP_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]]
+SFT_FULL_TP_PP_EXCEPTED_LOSS = 11.92912
+SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.928993
+SFT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 74061, 74061, 74061, 74061, 74061, 74061, 74061, 74061, 74061]]
 
-SFT_LORA_TP_PP_EXCEPTED_LOSS = 11.956645
-SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.956057
-SFT_LORA_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+SFT_LORA_TP_PP_EXCEPTED_LOSS = 11.929121
+SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.929088
+SFT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
-SFT_FC_EXCEPTED_LOSS = 11.941746
-SFT_FC_RESUME_EXCEPTED_LOSS = 11.936615
-SFT_FC_EXCEPTED_RESULT = [[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]]
+SFT_FC_EXCEPTED_LOSS = 12.862782
+SFT_FC_RESUME_EXCEPTED_LOSS = 12.867558
+SFT_FC_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]]
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
 os.environ["FLAGS_embedding_deterministic"] = "1"
-os.environ["FLAGS_cudnn_deterministic"] = "1"
+os.environ["FLAGS_cudnn_deterministic"] = "0"
 
 
 class SFTTrainTester(unittest.TestCase):
@@ -102,11 +102,11 @@ class SFTTrainTester(unittest.TestCase):
         model_path,
         excepted_result,
     ):
-        from paddleformers.transformers import Qwen3ForCausalLM
+        from paddleformers.transformers import Glm4MoeForCausalLM
 
         input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
         attention_mask = paddle.ones_like(input_ids)
-        model = Qwen3ForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
+        model = Glm4MoeForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
         print(f"excepted_result is : {excepted_result}")
@@ -133,6 +133,7 @@ class SFTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "sharding": "stage1",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -142,29 +143,6 @@ class SFTTrainTest(unittest.TestCase):
             "train",
             updated_config_path,
         ]
-
-        # sft_full_resume_log_file = os.path.join(
-        #     LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "sft_full_resume.log"
-        # )
-
-        # print(f"sft_full resume cmd is : {cmd}")
-
-        # with open(sft_full_resume_log_file, "w", encoding="utf-8") as log_file:
-        #     resume_p = subprocess.Popen(
-        #         cmd,
-        #         stdout=subprocess.PIPE,
-        #         stderr=subprocess.STDOUT,
-        #         text=True,
-        #         bufsize=1
-        #     )
-        #     # 逐行处理输出
-        #     for line in resume_p.stdout:
-        #         print(line, end='', flush=True)  # 实时输出到终端
-        #         log_file.write(line)  # 实时写入文件
-        #         log_file.flush()
-        #     resume_p.wait()
-        # print("Command execution completed and log saved.")
-
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"sft_full cmd is : {cmd}")
         print(training_p.stdout)
@@ -190,7 +168,6 @@ class SFTTrainTest(unittest.TestCase):
         if sft_full_resume_output and sft_full_resume_output.strip():
             with open(sft_full_resume_log_file, "w", encoding="utf-8") as sft_full_resume_f:
                 sft_full_resume_f.write(sft_full_resume_output)
-
         self.sfttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
         self.sfttrain_tester.assert_loss(resume_p.stdout, SFT_FULL_RESUME_EXCEPTED_LOSS)
 
@@ -207,6 +184,7 @@ class SFTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "sharding": "stage1",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -377,6 +355,7 @@ class SFTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "sharding": "stage1",
         }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
