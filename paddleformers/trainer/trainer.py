@@ -1432,6 +1432,26 @@ class Trainer:
                         logger.warning("found `no sync` param when `use_expert_parallel=False`")
                     fused_allreduce_gradients(nonmoe_list, hcg)
 
+                def hybrid_parallel_scale_param_grad(paramlist, hcg):
+                    if not hasattr(hcg, "get_context_parallel_world_size"):
+                        cp_worldsize = 1
+                    else:
+                        cp_worldsize = hcg.get_context_parallel_world_size()
+
+                    if cp_worldsize > 1:
+                        raise ValueError(
+                            "hybrid_parallel_scale_param_grad is not supported when Context Parallel is enable"
+                        )
+
+                    for p in paramlist:
+                        color = getattr(p, "color", -1)
+                        is_expert = isinstance(color, dict) and color.get("color", -1) == "moe_expert"
+                        if is_expert and self.args.hybrid_parallel_expert_grad_scale != 1.0:
+                            grad = getattr(p, "main_grad", p.grad)
+                            if grad is not None:
+                                coeff = self.args.hybrid_parallel_expert_grad_scale
+                                grad.scale_(coeff)
+
                 if (step_control + 1) % args.gradient_accumulation_steps == 0 or (
                     # last step in epoch but step is always smaller than gradient_accumulation_steps
                     steps_in_epoch <= args.gradient_accumulation_steps
@@ -1450,6 +1470,8 @@ class Trainer:
                     # Case 3: Pipeline or sharding overlap
                     # local_rank != -1 don't means dp in networks.
                     self.timers and self.timers("all-reduce").start()
+                    if hasattr(self.optimizer, "_hcg"):
+                        hybrid_parallel_scale_param_grad(list(model.parameters()), self.optimizer._hcg)
 
                     # Case 1: Use recompute and dp / sharding stage1,
                     # manually collect gradient for dp.
