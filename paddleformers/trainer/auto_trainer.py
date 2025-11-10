@@ -61,9 +61,6 @@ OPTIMIZER_NAME = "optimizer"
 DIST_CKPT_PATH = "dist_ckpt"
 DIST_MODEL_PATH = "dist_model"
 FREE_SVAE_LOAD_KEY_PATTERNS = ["learning_rate_", "gradient_merge_", "@GRAD@MERG", "eager_tmp"]
-MODEL_STATE_DIC = "model_state"
-OPTIMIZER_STATE_DIC = "optimizer_state"
-MASTER_WEIGHT_DIC = "master_weight"
 
 
 class AutoTrainer(Trainer):
