@@ -1,4 +1,5 @@
-# Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -11,25 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
-from typing import TYPE_CHECKING
+"""Learning rate scheduler related classes"""
+from .cosine_lr import get_cosine_schedule_with_warmup
+from .wsd_lr import get_wsd_schedule_with_warmup
 
-from ...utils.lazy_import import _LazyModule
-
-import_structure = {
-    "tokenizer": ["Ernie4_5_VLTokenizer"],
-    "configuration": [
-        "Ernie4_5_VLMoEConfig",
-    ],
-}
-
-if TYPE_CHECKING:
-    from .configuration import *
-    from .tokenizer import Ernie4_5_VLTokenizer
-else:
-    sys.modules[__name__] = _LazyModule(
-        __name__,
-        globals()["__file__"],
-        import_structure,
-        module_spec=__spec__,
-    )
+__all__ = ["get_cosine_schedule_with_warmup", "get_wsd_schedule_with_warmup"]

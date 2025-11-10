@@ -491,6 +491,8 @@ def _load_part_state_dict(
                     with device_guard():
                         weight = paddle.Tensor.__call__(fit_bf16_to_uint16_np(weight), zero_copy=True)
                     weight = weight._copy_to(paddle.framework._current_expected_place(), False)
+                if not isinstance(weight, paddle.Tensor):
+                    weight = paddle.Tensor.__call__(weight, zero_copy=True)
                 weight = _transpose_hf_weight(key, weight)
                 part_state_dict[key] = weight
 
