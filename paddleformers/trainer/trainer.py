@@ -2810,7 +2810,7 @@ class Trainer:
                 inputs, self.optimizer, self.lr_scheduler
             )  # None, None => [optimizer, lr_scheduler]
 
-        if PipelineDatasetPreprocessor is None:
+        if PipelineDatasetPreprocessor is None or "use_dualpipev" in self.args.pipeline_parallel_config:
             inputs = _dataset_process_function()
         else:
             inputs = PipelineDatasetPreprocessor(_dataset_process_function)
