@@ -14,25 +14,16 @@
 import sys
 from typing import TYPE_CHECKING
 
-from ...utils.lazy_import import _LazyModule
+from ....utils.lazy_import import _LazyModule
 
 import_structure = {
-    "tokenizer": ["Ernie4_5_VLTokenizer"],
-    "configuration": [
-        "Ernie4_5_VLConfig",
-    ],
-    "modeling": [
-        "Ernie4_5_VLMoeForConditionalGenerationModel",
-        "Ernie4_5_VLMoeForConditionalGenerationPipe",
-    ],
-    "model": [],
+    "modeling_moe_vl": ["Ernie4_5_VLMoeForConditionalGeneration"],
+    "modeling_moe_vl_pp": ["Ernie4_5_VLMoeForConditionalGenerationPipe"],
 }
 
 if TYPE_CHECKING:
-    from .configuration import *
-    from .model import *
-    from .modeling import *
-    from .tokenizer import Ernie4_5_VLTokenizer
+    from .modeling_moe_vl import Ernie4_5_VLMoeForConditionalGeneration
+    from .modeling_moe_vl_pp import Ernie4_5_VLMoeForConditionalGenerationPipe
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
