@@ -13,8 +13,8 @@
 # limitations under the License.
 """
 This module is used to store environmental variables in PaddleFormers.
-PPNLP_HOME              -->  the root directory for storing PaddleFormers related data. Default to ~/.paddleformers. Users can change the
-├                            default value through the PPNLP_HOME environment variable.
+PF_HOME              -->  the root directory for storing PaddleFormers related data. Default to ~/.paddleformers. Users can change the
+├                            default value through the PF_HOME environment variable.
 ├─ MODEL_HOME              -->  Store model files.
 └─ DATA_HOME         -->  Store automatically downloaded datasets.
 """
@@ -33,20 +33,20 @@ def _get_user_home():
     return os.path.expanduser("~")
 
 
-def _get_ppnlp_home():
-    if "PPNLP_HOME" in os.environ:
-        home_path = os.environ["PPNLP_HOME"]
+def _get_pf_home():
+    if "PF_HOME" in os.environ:
+        home_path = os.environ["PF_HOME"]
         if os.path.exists(home_path):
             if os.path.isdir(home_path):
                 return home_path
             else:
-                raise RuntimeError("The environment variable PPNLP_HOME {} is not a directory.".format(home_path))
+                raise RuntimeError("The environment variable PF_HOME {} is not a directory.".format(home_path))
         else:
             return home_path
     return os.path.join(_get_user_home(), ".paddleformers")
 
 
-def _get_sub_home(directory, parent_home=_get_ppnlp_home()):
+def _get_sub_home(directory, parent_home=_get_pf_home()):
     home = os.path.join(parent_home, directory)
     if not os.path.exists(home):
         os.makedirs(home, exist_ok=True)
@@ -64,7 +64,7 @@ def _get_bool_env(env_key: str, default_value: str) -> bool:
 
 
 USER_HOME = _get_user_home()
-PPNLP_HOME = _get_ppnlp_home()
+PF_HOME = _get_pf_home()
 MODEL_HOME = _get_sub_home("models")
 HF_CACHE_HOME = os.environ.get("HUGGINGFACE_HUB_CACHE", MODEL_HOME)
 DATA_HOME = _get_sub_home("datasets")
@@ -164,3 +164,11 @@ else:
 
 USE_FAST_TOKENIZER: bool = _get_bool_env("USE_FAST_TOKENIZER", "false")
 PREFILL_USE_SAGE_ATTN: bool = _get_bool_env("PREFILL_USE_SAGE_ATTN", "false")
+
+# Folder names for FlexCheckpoint
+MODEL_STATE_DIC = "model_state"
+OPTIMIZER_STATE_DIC = "optimizer_state"
+MASTER_WEIGHT_DIC = "master_weight"
+
+# hf checkpoint dir name
+PREFIX_HF_CHECKPOINT_DIR = "hf_checkpoint"

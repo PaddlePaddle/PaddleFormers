@@ -17,16 +17,6 @@ export DOWNLOAD_SOURCE=modelscope
 export DOWNLOAD_SOURCE=aistudio
 ```
 
-### Paddle 权重使用说明
-
-使用 **Paddle** 格式权重，需要在配置文件（如 `full.yaml`、`lora.yaml`等）中手动添加以下参数，以避免与 **HuggingFace** 格式冲突：
-
-```yaml
-model_name_or_path: your_model_name_or_path
-convert_from_hf: false
-save_to_hf: false
-```
-
 
 ## 1. 预训练
 
@@ -43,6 +33,13 @@ save_to_hf: false
 ```text
 {"text": ["一个需要连续输入值的分类问题的示例是房屋价格预测。房屋的价格通常基于诸如平方英尺、位置、卧室和浴室数量以及像后院或车库等功能这样的因素定价。为了准确预测房屋价格，这些标准必须作为连续输入值输入到分类模型中。"]}
 ...
+```
+
+为了方便测试，我们也提供了[demo 数据集](https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz)可以直接使用：
+
+```shell
+wget https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz
+mkdir -p data/pt && tar -xf pt_data.tar.gz -C data/sft/
 ```
 
 #### 1.1.2. 离线数据流

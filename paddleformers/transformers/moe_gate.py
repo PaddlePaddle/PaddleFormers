@@ -577,7 +577,11 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         """Implements TopKGating on logits."""
         # batch_size, seq_len, d_model = gates.shape
         d_model = gates.shape[-1]
+
         gates_ori = gates
+        if self.scoring_func == "sigmoid":
+            gates_ori = gates_ori / (gates_ori.sum(axis=-1, keepdim=True) + 1e-20)
+
         gates = gates.reshape([-1, d_model])
 
         l_zloss = self._cal_z_loss(gates)

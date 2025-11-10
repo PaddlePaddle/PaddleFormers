@@ -39,7 +39,7 @@ from paddleformers.transformers.configuration_utils import PretrainedConfig
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils.env import CONFIG_NAME, LEGACY_CONFIG_NAME  # MODEL_HOME,
 
-from ..testing_utils import skip_for_none_ce_case, slow
+from ..testing_utils import slow
 
 
 def _config_zero_init(config):
@@ -783,9 +783,7 @@ class ModelTesterPretrainedMixin:
     hf_remote_test_model_path: str = None
     paddlehub_remote_test_model_path: str = None
 
-    # Download from HF doesn't work in CI yet
     @slow
-    @skip_for_none_ce_case
     def test_model_from_pretrained_hf_hub(self):
         if self.hf_remote_test_model_path is None or self.base_model_class is None:
             return

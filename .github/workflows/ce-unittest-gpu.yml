@@ -64,6 +64,8 @@ jobs:
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
+            -v /home/paddle-1/models/:/home/models/ \
+            -e PF_HOME=/home/models/ \
             -e BRANCH \
             -e AGILE_COMPILE_BRANCH \
             -e COMMIT_ID \
