@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextlib
-import copy
 import gc
 import inspect
 import json
@@ -26,6 +25,7 @@ import tempfile
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
+from copy import deepcopy
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
@@ -71,6 +71,7 @@ from ..quantization.quantization_utils import (
     update_loaded_state_dict_keys,
 )
 from ..quantization.unified_checkpoint_quantization import dequant_unified_optimizer
+from ..trainer.argparser import strtobool
 from ..utils import device_guard
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.env import (
@@ -1166,6 +1167,9 @@ def save_full_param(
         max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
         num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
     """
+
+    use_dist = True if paddle.distributed.get_world_size() > 1 else False
+
     # 1. Non-saver ranks simply consume the iterator to stay in sync.
     if rank >= num_saver_ranks:
         logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Consuming iterator for synchronization...")
@@ -1227,10 +1231,39 @@ def save_full_param(
                 _save_current_shard()
     _save_current_shard()
 
-    dist.barrier()
+    if use_dist:
+        dist.barrier()
 
     logger.info(f"[Rank {rank}/{world_size}] (Saver) All shards saved successfully.")
     return total_size
+
+
+def clean_unrelated_safetensors(save_dir):
+    use_dist = True if paddle.distributed.get_world_size() > 1 else False
+
+    if not os.path.exists(save_dir):
+        return
+
+    to_delete = []
+    for filename in os.listdir(save_dir):
+        filepath = os.path.join(save_dir, filename)
+        if filename.endswith(".safetensors") and filename != "model.safetensors" and os.path.isfile(filepath):
+            to_delete.append(filepath)
+        elif filename == "model.safetensors.index.json" and os.path.isfile(filepath):
+            to_delete.append(filepath)
+
+    if to_delete:
+        logger.warning(
+            "There are unrelated safetensors files in the current folder, which may break the consistency of Huggingface format weights. They will be deleted automatically."
+        )
+        for filepath in to_delete:
+            try:
+                os.remove(filepath)
+            except FileNotFoundError:
+                pass
+
+    if use_dist:
+        dist.barrier()
 
 
 def replace_name_and_gen_index(path, total_size):
@@ -1254,6 +1287,11 @@ def replace_name_and_gen_index(path, total_size):
     index_infos["weight_map"] = index_mapping
     with open(os.path.join(path, index_file_name), "w") as f:
         json.dump(index_infos, f, indent=4)
+    # For PDC signal
+    if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
+        for i in range(paddle.distributed.get_world_size()):
+            saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
+            paddle.save(i, saved_signal_path)
 
 
 @six.add_metaclass(InitTrackerMeta)
@@ -2815,6 +2853,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         dtype = kwargs.pop("dtype", None)
         download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", None)
+        load_via_cpu = kwargs.pop("load_via_cpu", False)
+        load_checkpoint_format = kwargs.pop("load_checkpoint_format", "")
         if subfolder is None:
             subfolder = ""
         variant = kwargs.pop("variant", None)
@@ -2903,6 +2943,24 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             variant=variant,
         )
 
+        # 3. init the model
+        init_args = config["init_args"] or ()
+        with ContextManagers(init_contexts):
+            model = cls(config, *init_args, **model_kwargs)
+
+        if hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
+            aoa_config = cls._gen_aoa_config(config)
+
+            sharded_state_dict = model.sharded_state_dict()
+            dist.load_state_dict(
+                sharded_state_dict,
+                path=pretrained_model_name_or_path,
+                aoa_config=aoa_config,
+                safetensors=True,
+                offload=load_via_cpu,
+            )
+            return model
+
         if not is_sharded and state_dict is None:
             # 4. loading non-sharded ckpt from the state dict
             if config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model_state.pdparams"):
@@ -2957,10 +3015,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         state_dict[k] = paddle.Tensor.__call__(
                             fit_bf16_to_uint16_np(state_dict.pop(k)), zero_copy=True
                         )
-        # 3. init the model
-        init_args = config["init_args"] or ()
-        with ContextManagers(init_contexts):
-            model = cls(config, *init_args, **model_kwargs)
 
         if use_keep_in_fp32_modules:
             # low_cpu_mem_usage = True
@@ -3105,6 +3159,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # variant = kwargs.get("variant", None)
         # is_main_process = kwargs.get("is_main_process", True)
         save_to_hf = kwargs.get("save_to_hf", False)
+
+        save_checkpoint_format = kwargs.get("save_checkpoint_format", "")
         safe_serialization = safe_serialization or save_to_hf
 
         save_directory = save_dir
@@ -3122,8 +3178,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
-        if hasattr(self.__class__, "_gen_inv_aoa_config"):
+        if hasattr(self.__class__, "_gen_inv_aoa_config") and save_checkpoint_format == "flex_checkpoint":
             aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+
+            clean_unrelated_safetensors(save_dir)
+
             itr = model_to_save.full(aoa_config=aoa_config)
             total_saved_size = save_full_param(
                 itr=itr,
@@ -3525,6 +3584,39 @@ class PipelinePretrainedModel(PretrainedModel):
             state_dict[self._pp_to_single_mapping[k]] = v
 
         return state_dict
+
+    def sharded_state_dict(self, *args, **kwargs):
+        sharded_state_dict = super().sharded_state_dict(*args, **kwargs)
+        if self._single_to_pp_mapping is None:
+            self._set_pipeline_name_mapping()
+
+        for k in list(sharded_state_dict.keys()):
+            v = sharded_state_dict.pop(k)
+            v.key = self._pp_to_single_mapping[k]
+            sharded_state_dict[self._pp_to_single_mapping[k]] = v
+
+        import re
+
+        def increment_expert_number(s, increment):
+            def replace(match):
+                original_number = int(match.group(0))
+                new_number = original_number + increment
+                return str(new_number)
+
+            return re.sub(r"(?<=experts\.)\d+", replace, s)
+
+        renamed_sharded_state_dict = {}
+        for k, v in sharded_state_dict.items():
+            global_expert_id_offset = getattr(v, "global_expert_id_offset", None)
+            if global_expert_id_offset is not None:
+                new_key = increment_expert_number(k, global_expert_id_offset)
+                v.key = new_key
+                delattr(v, "global_expert_id_offset")
+                renamed_sharded_state_dict[new_key] = v
+            else:
+                renamed_sharded_state_dict[k] = v
+
+        return renamed_sharded_state_dict
 
     def set_state_dict(self, state_dict, *args, **kwargs):
         if self._single_to_pp_mapping is None:

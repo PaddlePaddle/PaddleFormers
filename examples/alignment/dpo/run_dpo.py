@@ -295,7 +295,7 @@ def main():
             use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
-        ignore_eos_token=True,
+        ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
     )
 

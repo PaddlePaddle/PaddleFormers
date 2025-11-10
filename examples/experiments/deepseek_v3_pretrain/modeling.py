@@ -71,9 +71,7 @@ from paddleformers.transformers.conversion_utils import (
     init_name_mappings,
 )
 from paddleformers.transformers.deepseek_v2 import (
-    DeepseekV2DynamicNTKScalingRotaryEmbedding,
-    DeepseekV2LinearScalingRotaryEmbedding,
-    DeepseekV2RotaryEmbedding,
+    yarn_get_mscale,
     _expand_2d_mask,
     _make_causal_mask,
 )
@@ -82,9 +80,6 @@ from paddleformers.transformers.deepseek_v2 import (
     is_casual_mask,
     rotate_half,
     scaled_dot_product_attention,
-    yarn_find_correction_range,
-    yarn_get_mscale,
-    yarn_linear_ramp_mask,
 )
 from paddleformers.transformers.deepseek_v2.fp8_linear import Linear as Linear_
 from paddleformers.transformers.fp8_utils import (
@@ -595,6 +590,46 @@ class DeepseekV2MoE(MoELayer):
         return final_hidden_states
 
 
+class DeepseekV2RotaryEmbedding(nn.Layer):
+    def __init__(self, dim, max_position_embeddings=2048, base=10000):
+        super().__init__()
+
+        self.dim = dim
+        self.max_position_embeddings = max_position_embeddings
+        self.base = base
+        # [dim / 2]
+        with device_guard("cpu"):
+            self.inv_freq = 1.0 / (
+                self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim)
+            )
+            self._set_cos_sin_cache(seq_len=max_position_embeddings)
+
+        self.max_seq_len_cached = None
+
+    def _set_cos_sin_cache(self, seq_len):
+        self.max_seq_len_cached = seq_len
+        # [seq_len]
+        t = paddle.arange(seq_len, dtype="float32")
+        # [seq_len, axis/2]
+        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
+        # Different from paper, but it uses a different permutation in order to obtain the same calculation
+        # [seq_len, axis]
+        emb = paddle.cat([freqs, freqs], axis=-1)
+        # [1, seqlen, 1, axis]
+        self.cos_cached = emb.cos()[None, :, None, :]
+        self.sin_cached = emb.sin()[None, :, None, :]
+
+    def forward(self, x, seq_len=None):
+        # x: [bs, num_attention_heads, seq_len, head_size]
+        if self.max_seq_len_cached is None or seq_len > self.max_seq_len_cached:
+            self._set_cos_sin_cache(seq_len)
+        cos = self.cos_cached[:seq_len]
+        sin = self.sin_cached[:seq_len]
+        return (
+            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
+            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
+        )
+
 # Copied from transformers.models.llama.modeling_llama.LlamaAttention with Llama->DeepseekV2
 class DeepseekV2Attention(nn.Layer):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
@@ -726,21 +761,7 @@ class DeepseekV2Attention(nn.Layer):
         else:
             scaling_type = self.config.rope_scaling["type"]
             scaling_factor = self.config.rope_scaling["factor"]
-            if scaling_type == "linear":
-                self.rotary_emb = DeepseekV2LinearScalingRotaryEmbedding(
-                    self.qk_rope_head_dim,
-                    max_position_embeddings=self.max_position_embeddings,
-                    scaling_factor=scaling_factor,
-                    base=self.rope_theta,
-                )
-            elif scaling_type == "dynamic":
-                self.rotary_emb = DeepseekV2DynamicNTKScalingRotaryEmbedding(
-                    self.qk_rope_head_dim,
-                    max_position_embeddings=self.max_position_embeddings,
-                    scaling_factor=scaling_factor,
-                    base=self.rope_theta,
-                )
-            elif scaling_type == "yarn":
+            if scaling_type == "yarn":
                 kwargs = {
                     key: self.config.rope_scaling[key]
                     for key in [
@@ -1823,6 +1844,27 @@ class DeepseekV2PretrainingCriterionFast(nn.Layer):
         return loss
 
 
+# Inverse axis formula to find dim based on number of rotations
+def yarn_find_correction_dim(num_rotations, dim, base=10000, max_position_embeddings=2048):
+    return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
+
+
+# Find axis range bounds based on rotations
+def yarn_find_correction_range(low_rot, high_rot, dim, base=10000, max_position_embeddings=2048):
+    low = math.floor(yarn_find_correction_dim(low_rot, dim, base, max_position_embeddings))
+    high = math.ceil(yarn_find_correction_dim(high_rot, dim, base, max_position_embeddings))
+    return max(low, 0), min(high, dim - 1)  # Clamp values just in case
+
+
+def yarn_linear_ramp_mask(min, max, dim):
+    if min == max:
+        max += 0.001  # Prevent singularity
+
+    linear_func = (paddle.arange(dim, dtype=paddle.float32) - min) / (max - min)
+    ramp_func = paddle.clip(linear_func, 0, 1)
+    return ramp_func
+
+
 class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
     def __init__(
         self,
@@ -1918,47 +1960,6 @@ class DeepseekV2RMSNorm(nn.Layer):
 
     def extra_repr(self):
         return f"hidden_size={self.hidden_size}, dtype={self.weight.dtype}"
-
-
-class DeepseekV2RotaryEmbedding(nn.Layer):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000):
-        super().__init__()
-
-        self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        # [dim / 2]
-        with device_guard("cpu"):
-            self.inv_freq = 1.0 / (
-                self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim)
-            )
-            self._set_cos_sin_cache(seq_len=max_position_embeddings)
-
-        self.max_seq_len_cached = None
-
-    def _set_cos_sin_cache(self, seq_len):
-        self.max_seq_len_cached = seq_len
-        # [seq_len]
-        t = paddle.arange(seq_len, dtype="float32")
-        # [seq_len, axis/2]
-        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        # [seq_len, axis]
-        emb = paddle.cat([freqs, freqs], axis=-1)
-        # [1, seqlen, 1, axis]
-        self.cos_cached = emb.cos()[None, :, None, :]
-        self.sin_cached = emb.sin()[None, :, None, :]
-
-    def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        if self.max_seq_len_cached is None or seq_len > self.max_seq_len_cached:
-            self._set_cos_sin_cache(seq_len)
-        cos = self.cos_cached[:seq_len]
-        sin = self.sin_cached[:seq_len]
-        return (
-            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
-            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
-        )
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
