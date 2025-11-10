@@ -192,13 +192,8 @@ class MultiModalData:
 
 class PaddleProcessorMixin:
 
+    _auto_class = None
     valid_processor_kwargs = ProcessingKwargs
-
-    # testing #
-    image_processor_class = "AutoImageProcessor"
-    video_processor_class = "AutoVideoProcessor"
-    tokenizer_class = "Qwen2Tokenizer"
-    attributes = ["image_processor", "tokenizer", "video_processor"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

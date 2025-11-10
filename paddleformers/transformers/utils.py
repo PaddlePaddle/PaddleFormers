@@ -849,9 +849,9 @@ def dtype_byte_size(dtype):
     4
     ```
     """
-    if dtype == paddle.bool:
+    if str(dtype) in {"paddle.bool", "bool"}:
         return 1 / 8
-    if dtype == paddle.float8_e4m3fn or dtype == paddle.float8_e5m2:
+    if str(dtype) in {"paddle.float8_e4m3fn", "paddle.float8_e5m2", "float8_e4m3fn", "float8_e5m2"}:
         return 1
     bit_search = re.search(r"[^\d](\d+)$", str(dtype))
     if bit_search is None:

@@ -14,6 +14,7 @@
 
 import copy
 import gc
+import json
 import math
 import os
 import re
@@ -32,6 +33,7 @@ from paddle.distributed.fleet.meta_parallel import (
     RowParallelLinear,
 )
 
+from ...trainer.argparser import strtobool
 from ...transformers import linear_utils
 from ...transformers.conversion_utils import ConversionMixin
 from ...transformers.model_utils import (
@@ -41,9 +43,17 @@ from ...transformers.model_utils import (
     dtype_guard,
     load_state_dict,
 )
-from ...transformers.utils import get_checkpoint_shard_files, weight_name_suffix
+from ...transformers.utils import (
+    dtype_byte_size,
+    get_checkpoint_shard_files,
+    weight_name_suffix,
+)
 from ...utils.distributed import distributed_allgather, distributed_gather
-from ...utils.env import LORA_WEIGHTS_NAME, SAFE_PEFT_WEIGHTS_INDEX_NAME
+from ...utils.env import (
+    LORA_WEIGHTS_NAME,
+    SAFE_PEFT_WEIGHTS_INDEX_NAME,
+    SAFE_PEFT_WEIGHTS_NAME,
+)
 from ...utils.log import logger
 from ...utils.tools import get_env_device
 from .lora_config import LoRAAutoConfig, LoRAConfig
@@ -363,7 +373,7 @@ class LoRAModel(nn.Layer):
         self.model.set_state_dict(state_dict)
         logger.info("Load lora weight successfully")
 
-    def _merge_trainable_tensor_parallel(self, trainable_state_dict):
+    def _merge_trainable_tensor_parallel(self, trainable_state_dict, offload=True):
         trainable_name_action_mappings = self._get_tensor_parallel_convert_actions(
             trainable_state_dict.keys(), is_split=False
         )
@@ -376,9 +386,9 @@ class LoRAModel(nn.Layer):
             tensor = trainable_state_dict[key]
             if key in trainable_name_action_mappings:
                 if get_env_device() == "xpu":
-                    ret = distributed_allgather(tensor, group=mp_group, offload=True)
+                    ret = distributed_allgather(tensor, group=mp_group, offload=offload)
                 else:
-                    ret = distributed_gather(tensor, group=mp_group, offload=True)
+                    ret = distributed_gather(tensor, group=mp_group, offload=offload)
                 action = trainable_name_action_mappings[key]
                 if key in self.lora_split_mapping and not self.lora_split_mapping[key] and "_scale" in key and is_dst:
                     ret = paddle.to_tensor(ret)
@@ -387,7 +397,10 @@ class LoRAModel(nn.Layer):
                     tensor = action(ret) if is_dst else None
                 trainable_state_dict[key] = tensor
             else:
-                trainable_state_dict[key] = tensor.cpu().numpy() if is_dst else None
+                if offload:
+                    trainable_state_dict[key] = tensor.cpu().numpy() if is_dst else None
+                else:
+                    trainable_state_dict[key] = tensor if is_dst else None
 
         return trainable_state_dict
 
@@ -417,10 +430,20 @@ class LoRAModel(nn.Layer):
 
     def save_pretrained(self, save_directory: str, merge_tensor_parallel: bool = False, **kwargs):
         save_model_config = kwargs.get("save_model_config", True)
+        save_checkpoint_format = kwargs.get("save_checkpoint_format", None)
+        safetensors = False
+        if save_checkpoint_format == "flex_checkpoint":
+            safetensors = True
+        logger.info(f"Saving LoRA weights use safetensors: {safetensors}")
 
         if self.is_pipelinemodel:
             self.model._single_to_pp_mapping = None
-        if self.is_pipelinemodel and merge_tensor_parallel and self.lora_config.tensor_parallel_degree > 1:
+        if (
+            self.is_pipelinemodel
+            and merge_tensor_parallel
+            and self.lora_config.tensor_parallel_degree > 1
+            and not safetensors
+        ):
             merge_tensor_parallel = False
             logger.warning(
                 "Pipeline parallelism does not support merge_tensor_parallel. Set merge_tensor_parallel to False."
@@ -442,8 +465,8 @@ class LoRAModel(nn.Layer):
         trainable_state_dict = self.get_trainable_state_dict(concat_init_lora=lora_config_to_save.loraga)
 
         if merge_tensor_parallel and lora_config_to_save.tensor_parallel_degree > 1:
-            trainable_state_dict = self._merge_trainable_tensor_parallel(trainable_state_dict)
-            if not is_main_process:
+            trainable_state_dict = self._merge_trainable_tensor_parallel(trainable_state_dict, offload=not safetensors)
+            if not is_main_process and not safetensors:
                 logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
                 return
             if variant is not None and "tp" in variant:
@@ -455,11 +478,63 @@ class LoRAModel(nn.Layer):
                     variant = weight_name_suffix()
 
         # save lora weight
-        lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, variant)
-        weight_filename = os.path.join(save_directory, lora_weight_name)
-        paddle.save(trainable_state_dict, weight_filename)
+        total_size = 0
+        if safetensors:
+            lora_weight_name = _add_variant(SAFE_PEFT_WEIGHTS_NAME, variant)
+            tensor_state_dict = {}
+            for key, weight in trainable_state_dict.items():
+                if isinstance(weight, paddle.Tensor):
+                    total_size += weight.numel().item() * dtype_byte_size(weight.dtype)
+                    tensor_state_dict[key] = weight
+                else:
+                    logger.info(f"Wrong type: {key}: {weight}")
+            logger.info(f"Total size of LoRA weights: {total_size} bytes")
+            weight_filename = os.path.join(save_directory, lora_weight_name)
+            if total_size != 0:
+                logger.info(f"Saving LoRA weights to {weight_filename}")
+                paddle.save(tensor_state_dict, weight_filename, safetensors=safetensors)
+        else:
+            lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, variant)
+            weight_filename = os.path.join(save_directory, lora_weight_name)
+            paddle.save(trainable_state_dict, weight_filename, safetensors=safetensors)
+
+        def replace_name_and_gen_index(path):
+            index_mapping = {}
+            safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
+            total_files_num = len(safetensor_files)
+            cur_file_index = 0
+            total_size = 0
+            for file in safetensor_files:
+                single_size = 0
+                cur_file_index += 1
+                file_path = os.path.join(path, file)
+                new_file_name = f"peft_model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
+                from safetensors.paddle import safe_open
+
+                with safe_open(file_path, framework="paddle") as f:
+                    for key in f.keys():
+                        index_mapping[key] = new_file_name
+                        single_size += f.get_tensor(key).numel().item() * dtype_byte_size(f.get_tensor(key).dtype)
+                total_size += single_size
+                new_file_path = os.path.join(path, new_file_name)
+                os.rename(file_path, new_file_path)
+            index_file_name = SAFE_PEFT_WEIGHTS_INDEX_NAME
+            index_infos = {}
+            index_infos["metadata"] = {}
+            index_infos["metadata"]["total_size"] = total_size
+            index_infos["weight_map"] = index_mapping
+            index_infos["type"] = "lora"
+            with open(os.path.join(path, index_file_name), "w") as f:
+                json.dump(index_infos, f, indent=4)
+            # For PDC signal
+            if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
+                for i in range(paddle.distributed.get_world_size()):
+                    saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
+                    paddle.save(i, saved_signal_path)
 
         # save lora config
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
         if is_main_process:
             lora_config_to_save.save_pretrained(save_directory)
             if save_model_config:
@@ -467,6 +542,8 @@ class LoRAModel(nn.Layer):
                 if merge_tensor_parallel:
                     model_config_to_save.tensor_parallel_degree = -1
                 model_config_to_save.save_pretrained(save_directory)
+            if safetensors:
+                replace_name_and_gen_index(save_directory)
 
     def _find_and_replace_module(self, model, module_name, lora_config):
         parent_module = model
