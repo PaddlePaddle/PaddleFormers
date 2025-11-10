@@ -945,6 +945,7 @@ class AutoTrainer(Trainer):
                     is_main_process=self.args.should_save,
                     max_shard_size="1024GB",
                     save_to_hf=True,
+                    enable_auto_parallel=True,
                 )
             else:
                 self._save_flex_model_state(output_dir)

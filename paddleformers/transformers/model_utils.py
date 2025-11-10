@@ -71,6 +71,7 @@ from ..quantization.quantization_utils import (
     update_loaded_state_dict_keys,
 )
 from ..quantization.unified_checkpoint_quantization import dequant_unified_optimizer
+from ..trainer.argparser import strtobool
 from ..utils import device_guard
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.env import (
@@ -1286,6 +1287,11 @@ def replace_name_and_gen_index(path, total_size):
     index_infos["weight_map"] = index_mapping
     with open(os.path.join(path, index_file_name), "w") as f:
         json.dump(index_infos, f, indent=4)
+    # For PDC signal
+    if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
+        for i in range(paddle.distributed.get_world_size()):
+            saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
+            paddle.save(i, saved_signal_path)
 
 
 @six.add_metaclass(InitTrackerMeta)
@@ -3155,6 +3161,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         save_to_hf = kwargs.get("save_to_hf", False)
 
         save_checkpoint_format = kwargs.get("save_checkpoint_format", "")
+        if kwargs.get("enable_auto_parallel", ""):
+            save_checkpoint_format = "flex_checkpoint"
         safe_serialization = safe_serialization or save_to_hf
 
         save_directory = save_dir
