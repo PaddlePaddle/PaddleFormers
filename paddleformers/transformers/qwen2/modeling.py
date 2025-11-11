@@ -281,8 +281,6 @@ class Qwen2PretrainedModel(PretrainedModel):
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: Qwen2Config, is_split=True):
-        if config.run_single_model:
-            return {}
         """Generate tensor parallel mappings for model conversion."""
         from ..conversion_utils import split_or_merge_func
 
