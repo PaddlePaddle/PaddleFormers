@@ -14,14 +14,12 @@
 # limitations under the License.
 import os
 import tempfile
-import shutil
 import unittest
 
 from paddleformers.transformers import BertTokenizer, BertTokenizerFast
 
 
 class TestTokenizer(unittest.TestCase):
-
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = BertTokenizer.from_pretrained("aistudio/bert-base-uncased")
         self.assertTrue(tokenizer is not None)

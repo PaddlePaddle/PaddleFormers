@@ -13,9 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import tempfile
-import shutil
 import sys
+import tempfile
 import unittest
 
 import paddle as paddle_shadow
@@ -27,7 +26,6 @@ sys.modules["paddle"] = paddle_shadow
 
 
 class TestTokenizer(unittest.TestCase):
-
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2-7B", use_fast=False)
         if hasattr(tokenizer, "is_fast"):

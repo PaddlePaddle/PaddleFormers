@@ -14,14 +14,12 @@
 # limitations under the License.
 import os
 import tempfile
-import shutil
 import unittest
 
 from paddleformers.transformers import LlamaTokenizer, LlamaTokenizerFast
 
 
 class TestTokenizer(unittest.TestCase):
-
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = LlamaTokenizer.from_pretrained("PaddleNLP/Llama-2-7b")
         self.assertTrue(tokenizer is not None)

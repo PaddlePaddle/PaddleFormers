@@ -14,7 +14,6 @@
 # limitations under the License.
 import os
 import tempfile
-import shutil
 import unittest
 
 from paddleformers.transformers import Ernie4_5_VLTokenizer
