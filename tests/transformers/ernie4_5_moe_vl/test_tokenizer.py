@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import shutil
+import tempfile
 import unittest
 
 from paddleformers.transformers import Ernie4_5_VLTokenizer
@@ -31,17 +31,6 @@ class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
     from_pretrained_kwargs = None
     test_seq2seq = False
 
-    def setUp(self):
-        self.test_dirs = ["./slow_tokenizer"]
-        for test_dir in self.test_dirs:
-            if os.path.exists(test_dir):
-                shutil.rmtree(test_dir)
-
-    def tearDown(self):
-        for test_dir in self.test_dirs:
-            if os.path.exists(test_dir):
-                shutil.rmtree(test_dir)
-
     @set_proxy(DownloadSource.AISTUDIO)
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
@@ -51,12 +40,13 @@ class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
 
     @set_proxy(DownloadSource.AISTUDIO)
     def test_slow_tokenizer_save_pretrained(self):
-        tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
-        )
-        tokenizer.model_max_length = 512
-        tokenizer.save_pretrained("./slow_tokenizer")
-        self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
+                self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
+            )
+            tokenizer.model_max_length = 512
+            tokenizer.save_pretrained(tmpdir)
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "tokenizer_config.json")))
 
     @set_proxy(DownloadSource.AISTUDIO)
     def test_tokenize(self):

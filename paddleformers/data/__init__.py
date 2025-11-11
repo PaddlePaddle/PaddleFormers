@@ -19,6 +19,15 @@ from typing import TYPE_CHECKING
 from ..utils.lazy_import import _LazyModule
 
 import_structure = {
+    "blendable_dataset": [
+        "BlendableDataset",
+    ],
+    "causal_dataset": [
+        "check_data_split",
+        "get_datasets_weights_and_num_samples",
+        "build_train_valid_test_datasets",
+        "GPTDataset",
+    ],
     "sampler": ["SamplerHelper"],
     "data_collator": [
         "DataCollatorForSeq2Seq",

@@ -1254,6 +1254,8 @@ def clean_unrelated_safetensors(save_dir):
             to_delete.append(filepath)
         elif filename == "model.safetensors.index.json" and os.path.isfile(filepath):
             to_delete.append(filepath)
+        elif filename == "peft_model.safetensors.index.json" and os.path.isfile(filepath):
+            to_delete.append(filepath)
 
     if to_delete:
         logger.warning(
