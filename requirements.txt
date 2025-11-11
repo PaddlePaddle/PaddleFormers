@@ -3,7 +3,7 @@ colorlog
 decord
 scikit-learn
 multiprocess<=0.70.12.2
-datasets >= 2.0.0
+datasets >= 3.0.0
 tqdm
 sentencepiece
 huggingface_hub>=0.19.2

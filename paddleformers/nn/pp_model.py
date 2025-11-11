@@ -434,10 +434,6 @@ def make_decoder_layer_pipe(decoder_layer):
             attn_mask_startend_row_indices = None
             assert len(tgt_mask.shape) == 4, f"Attention mask should be 4D tensor, but got {tgt_mask.shape}."
 
-        position_ids_decoder = None
-        if position_ids is not None:
-            position_ids_decoder = position_ids[:, :max_seq_len]
-
         if position_embeddings is not None:
             position_embeddings = position_embeddings[..., :max_seq_len, :]
             tuple_position_embeddings = (position_embeddings[0], position_embeddings[1])
@@ -452,7 +448,6 @@ def make_decoder_layer_pipe(decoder_layer):
                 hidden_states,
                 attention_mask=tgt_mask,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                position_ids=position_ids_decoder,
                 position_embeddings=tuple_position_embeddings,
                 use_reentrant=self.config.recompute_use_reentrant,
             )
@@ -462,7 +457,6 @@ def make_decoder_layer_pipe(decoder_layer):
                 hidden_states=hidden_states,
                 attention_mask=tgt_mask,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                position_ids=position_ids_decoder,
                 position_embeddings=tuple_position_embeddings,
             )
 
