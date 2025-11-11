@@ -179,23 +179,16 @@ def assign_kv_heads(num_kv_heads: int, num_gpus: int):
     return assignment_list
 
 
-def parallel_matmul(x: Tensor, y: Tensor, transpose_y=False, tensor_parallel_output=True, args=None):
-    is_fleet_init = True
-    tensor_parallel_degree = 1
-    if args is None or not args.run_single_model:
-        try:
-            hcg = fleet.get_hybrid_communicate_group()
-            model_parallel_group = hcg.get_model_parallel_group()
-            tensor_parallel_degree = hcg.get_model_parallel_world_size()
-        except:
-            is_fleet_init = False
-
+def parallel_matmul(
+    x: Tensor, y: Tensor, transpose_y=False, tensor_parallel_degree=1, tensor_parallel_output=True, args=None
+):
     if paddle.in_dynamic_mode():
         y_is_distributed = y.is_distributed
     else:
         y_is_distributed = tensor_parallel_degree > 1
-
-    if is_fleet_init and tensor_parallel_degree > 1 and y_is_distributed:
+    if tensor_parallel_degree > 1 and y_is_distributed:
+        hcg = fleet.get_hybrid_communicate_group()
+        model_parallel_group = hcg.get_model_parallel_group()
         # if not running under distributed.launch, it will raise AttributeError: 'Fleet' object has no attribute '_hcg'
         input_parallel = paddle.distributed.collective._c_identity(x, group=model_parallel_group)
         logits = paddle.matmul(input_parallel, y, transpose_y=transpose_y)
@@ -1328,8 +1321,6 @@ class LlamaPretrainedModel(PretrainedModel):
 
     @classmethod
     def _get_name_mappings(cls, config: LlamaConfig) -> list[StateDictNameMapping]:
-        if config.run_single_model:
-            return cls._get_name_mappings()
         mappings: list[StateDictNameMapping] = []
         model_mappings = [
             ["embed_tokens.weight"],
@@ -1364,8 +1355,6 @@ class LlamaPretrainedModel(PretrainedModel):
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: LlamaConfig, is_split=True):
-        if config.run_single_model:
-            return {}
         from ..conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
@@ -1425,8 +1414,6 @@ class LlamaPretrainedModel(PretrainedModel):
 
     @classmethod
     def _get_fuse_or_split_param_mappings(cls, config: LlamaConfig, is_fuse=False):
-        if config.run_single_model:
-            return cls._get_fuse_or_split_param_mappings()
         # return parameter fuse utils
         from ..conversion_utils import split_or_fuse_func
 
@@ -1981,11 +1968,13 @@ class LlamaLMHead(nn.Layer):
         if tensor_parallel_output is None:
             tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1
 
+        tensor_parallel_degree = self.config.tensor_parallel_degree
         if get_env_device() == "xpu" and self.xpu_parallel_matmul is not None:
             logits = self.xpu_parallel_matmul(
                 hidden_states,
                 self.weight,
                 transpose_y=self.transpose_y,
+                tensor_parallel_degree=tensor_parallel_degree,
                 tensor_parallel_output=tensor_parallel_output,
                 training=self.training,
             )
@@ -1994,6 +1983,7 @@ class LlamaLMHead(nn.Layer):
                 hidden_states,
                 self.weight,
                 transpose_y=self.transpose_y,
+                tensor_parallel_degree=tensor_parallel_degree,
                 tensor_parallel_output=tensor_parallel_output,
                 args=self.config,
             )
