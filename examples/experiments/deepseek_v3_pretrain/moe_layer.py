@@ -321,6 +321,90 @@ class MoELayer(nn.Layer):
 
         return final_out, l_aux, l_zloss
 
+    def expert_forward(self, dispatched_input):
+        outputs = []
+        chunks = paddle.split(dispatched_input, num_or_sections=self.get_tokens_per_expert(), axis=0)
+        for i, chunk in enumerate(chunks):
+            chunk = chunk.contiguous()
+            # assert chunk.shape[0] != 0, "Cannot dispatch empty input"
+            expert = self.experts[i + self.moe_rank * self.moe_num_experts_per_device]
+            outputs += [expert(chunk)]
+
+        return paddle.concat(outputs, axis=0)
+
+    def forward_flex_token(self, hidden_states: paddle.Tensor, probs=None, routing_map=None, l_aux=None, l_zloss=None):
+        _, _, d_model = hidden_states.shape
+        # reshaped_input = hidden_states.reshape([-1, d_model])
+        if self.using_post_norm_recompute:
+            assert probs is not None and routing_map is not None and l_aux is not None and l_zloss is not None
+        else:
+            probs, routing_map, l_aux, l_zloss = self.router(hidden_states)
+        if hasattr(self.config, "dsv3_use_fp8_gemm") and self.config.dsv3_use_fp8_gemm:
+            if hasattr(self.config, "dsv3_use_fp8_dispatch") and self.config.dsv3_use_fp8_dispatch:
+                output = FusionMoe.apply(
+                    hidden_states,
+                    probs,
+                    routing_map,
+                    self,
+                    recompute_fwd_gate_up=self.config.recompute_fwd_gate_up,
+                    is_split_group_gemm=self.config.is_split_group_gemm,
+                )
+            else:
+                hidden_states, token_indices, token_probs = self.token_dispatcher.pre_dispatch(
+                    hidden_states, probs, routing_map
+                )
+                output = FusionMoe.apply(
+                    hidden_states,
+                    token_indices,
+                    token_probs,
+                    self,
+                    recompute_fwd_gate_up=self.config.recompute_fwd_gate_up,
+                    is_split_group_gemm=self.config.is_split_group_gemm,
+                )
+        else:
+            (
+                dispatched_input,
+                token_permuted_indices,
+                prob_permuted_indices,
+                dispatched_probs,
+            ) = self.token_dispatcher.token_permutation(hidden_states, probs, routing_map)
+
+            expert_output = self.expert_forward(dispatched_input)
+            output, _ = self.token_dispatcher.token_unpermutation(
+                expert_output, token_permuted_indices, prob_permuted_indices, dispatched_probs, None
+            )
+        return output, l_aux, l_zloss
+
+    def get_tokens_per_expert(self):
+        return self.token_dispatcher._comm_manager.tokens_per_expert_list
+
+    def set_tokens_per_expert(self, tokens_per_expert_list):
+        self.token_dispatcher._comm_manager.tokens_per_expert_list = tokens_per_expert_list
+
+    def pre_dispatch_compute(self, hidden_states):
+        _, _, d_model = hidden_states.shape
+        probs, routing_map, l_aux, l_zloss = self.router(hidden_states)
+        hidden_states, token_indices, token_probs = self.token_dispatcher.pre_dispatch(
+            hidden_states, probs, routing_map
+        )
+        return l_aux, l_zloss, hidden_states, token_indices, token_probs
+
+    def post_dispatch_compute(self, hidden_states, dispatched_indices, dispatched_probs):
+        (global_input_tokens, token_permuted_indices, prob_permuted_indices) = self.token_dispatcher.post_dispatch(
+            hidden_states, dispatched_indices
+        )
+        return (global_input_tokens, token_permuted_indices, prob_permuted_indices)
+
+    def pre_combine_compute(self, hidden_states, token_permuted_indices, prob_permuted_indices, dispatched_probs):
+        hidden_states = self.token_dispatcher.pre_combine(
+            hidden_states, token_permuted_indices, prob_permuted_indices, dispatched_probs
+        )
+        return hidden_states
+
+    def post_combine_compute(self, hidden_states):
+        hidden_states = self.token_dispatcher.post_combine(hidden_states)
+        return hidden_states
+
 
 class MoEFlexTokenLayer(nn.Layer):
     def __init__(self, config, moe_num_experts, expert_class, expert_kwargs, gate, moe_group):
