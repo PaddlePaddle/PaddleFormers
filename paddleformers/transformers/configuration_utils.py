@@ -537,6 +537,9 @@ class PretrainedConfig:
             Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
             model has a output word embedding layer.
 
+        run_single_model (`bool`, *optional*, defaults to `False`):
+            Whether to run the model in single card mode. When enabled, all parallel degree configurations will be disabled.
+
         dtype (`str`, *optional*):
             The `dtype` of the weights. This attribute can be used to initialize the model to a non-default `dtype`
             (which is normally `float32`) and thus allow for optimal storage allocation. For example, if the saved
@@ -600,6 +603,13 @@ class PretrainedConfig:
         self.output_attentions = kwargs.pop("output_attentions", False)
         self.use_cache = kwargs.pop("use_cache", False)
         self.tie_word_embeddings = kwargs.pop("tie_word_embeddings", True)
+
+        # for run model in single card mode
+        self.run_single_model = kwargs.pop("run_single_model", False)
+        if self.run_single_model:
+            self.tensor_parallel_degree = 1
+            self.sep_parallel_degree = 1
+            self.context_parallel_degree = 1
 
         # for transformers fuse
         self.fuse_linear = kwargs.pop("fuse_linear", False)
