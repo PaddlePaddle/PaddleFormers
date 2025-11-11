@@ -72,20 +72,14 @@ def parallel_matmul(
         except ImportError:
             pass
 
-    is_fleet_init = True
-    try:
-        hcg = fleet.get_hybrid_communicate_group()
-        model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
-    except:
-        is_fleet_init = False
-
     is_logit_weight_distributed = logit_weights.is_distributed
     #  `is_distributed` in static mode is always False
     if in_declarative_mode() and tensor_parallel_degree > 1:
         is_logit_weight_distributed = True
 
-    if is_fleet_init and tensor_parallel_degree > 1 and is_logit_weight_distributed:
+    if tensor_parallel_degree > 1 and is_logit_weight_distributed:
+        hcg = fleet.get_hybrid_communicate_group()
+        model_parallel_group = hcg.get_model_parallel_group()
         input_parallel = paddle.distributed.collective._c_identity(lm_output, group=model_parallel_group)
 
         if transpose_y:
