@@ -1107,7 +1107,9 @@ class Trainer:
 
                 if resume_from_checkpoint is not None:
                     if isinstance(self.model, LoRAModel):
-                        self.model.from_pretrained(self.model, resume_from_checkpoint, use_fc=True)
+                        self.model.from_pretrained(
+                            self.model, resume_from_checkpoint, load_checkpoint_format=self.args.load_checkpoint_format
+                        )
                     else:
                         self._load_flex_checkpoint(resume_from_checkpoint)
             else:
