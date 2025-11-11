@@ -22,7 +22,14 @@ import paddle
 from paddleformers.datasets.dpo import collate_fn, create_dataset
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
-from paddleformers.trainer import IntervalStrategy, get_last_checkpoint, set_seed
+from paddleformers.trainer import (
+    IntervalStrategy,
+    MoECorrectionBiasAdjustCallback,
+    MoeExpertsGradScaleCallback,
+    MoEGateSpGradSyncCallBack,
+    get_last_checkpoint,
+    set_seed,
+)
 from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -291,6 +298,17 @@ def run_dpo(
         eval_dataset = None
     logger.info("Creating dataset successfully ...")
 
+    callbacks = []
+    if getattr(model_config, "topk_method", None) == "noaux_tc":
+        callbacks += [MoECorrectionBiasAdjustCallback(lr=0)]
+
+    if training_args.use_expert_parallel:
+        callbacks += [MoeExpertsGradScaleCallback(training_args)]
+
+    if training_args.sequence_parallel and not model_args.lora:
+        callbacks += [MoEGateSpGradSyncCallBack()]
+
+    logger.info(f"callbacks: {callbacks}")
     # padding to the maximum seq length in batch data when max_seq_len is None
     max_seq_len = data_args.max_seq_len if (data_args.packing or training_args.sequence_parallel) else None
     trainer = DPOTrainer(
@@ -310,6 +328,7 @@ def run_dpo(
         ),
         ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
+        callbacks=callbacks,
     )
 
     if training_args.do_train:
