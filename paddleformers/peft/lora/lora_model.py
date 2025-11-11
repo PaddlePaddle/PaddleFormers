@@ -40,6 +40,7 @@ from ...transformers.model_utils import (
     PretrainedModel,
     _add_variant,
     _load_state_dict_into_model,
+    clean_unrelated_safetensors,
     dtype_guard,
     load_state_dict,
 )
@@ -49,11 +50,7 @@ from ...transformers.utils import (
     weight_name_suffix,
 )
 from ...utils.distributed import distributed_allgather, distributed_gather
-from ...utils.env import (
-    LORA_WEIGHTS_NAME,
-    SAFE_PEFT_WEIGHTS_INDEX_NAME,
-    SAFE_PEFT_WEIGHTS_NAME,
-)
+from ...utils.env import LORA_WEIGHTS_NAME, SAFE_PEFT_WEIGHTS_INDEX_NAME
 from ...utils.log import logger
 from ...utils.tools import get_env_device
 from .lora_config import LoRAAutoConfig, LoRAConfig
@@ -258,6 +255,7 @@ class LoRAModel(nn.Layer):
     @classmethod
     def from_pretrained(cls, model, lora_path, **kwargs):
         lora_config = kwargs.pop("lora_config", None)
+        load_checkpoint_format = kwargs.pop("load_checkpoint_format", None)
         # init lora config & lora model
         if not isinstance(lora_config, LoRAConfig):
             lora_config = LoRAConfig.from_pretrained(lora_path)
@@ -275,7 +273,7 @@ class LoRAModel(nn.Layer):
             loaded_keys = sharded_metadata["all_checkpoint_keys"]
             expected_keys = set(lora_model.get_trainable_state_dict().keys())
             missing_keys = expected_keys - set(loaded_keys)
-            if len(missing_keys) > 0:
+            if len(missing_keys) > 0 and load_checkpoint_format != "flex_checkpoint":
                 raise ValueError(f"missing_keys: {missing_keys}")
 
             error_msgs = []
@@ -492,7 +490,8 @@ class LoRAModel(nn.Layer):
         # save lora weight
         total_size = 0
         if safetensors:
-            lora_weight_name = _add_variant(SAFE_PEFT_WEIGHTS_NAME, variant)
+            clean_unrelated_safetensors(save_directory)
+            lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, variant)
             tensor_state_dict = {}
             for key, weight in trainable_state_dict.items():
                 if isinstance(weight, paddle.Tensor):
@@ -512,7 +511,7 @@ class LoRAModel(nn.Layer):
 
         def replace_name_and_gen_index(path):
             index_mapping = {}
-            safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
+            safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".pdparams")]
             total_files_num = len(safetensor_files)
             cur_file_index = 0
             total_size = 0

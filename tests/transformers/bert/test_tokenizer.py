@@ -13,49 +13,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import shutil
+import tempfile
 import unittest
 
 from paddleformers.transformers import BertTokenizer, BertTokenizerFast
 
 
 class TestTokenizer(unittest.TestCase):
-    def setUp(self):
-        self.test_dirs = ["./slow_tokenizer", "./fast_tokenizer"]
-        for test_dir in self.test_dirs:
-            if os.path.exists(test_dir):
-                shutil.rmtree(test_dir)
-
-    def tearDown(self):
-        for test_dir in self.test_dirs:
-            if os.path.exists(test_dir):
-                shutil.rmtree(test_dir)
-
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = BertTokenizer.from_pretrained("aistudio/bert-base-uncased")
         self.assertTrue(tokenizer is not None)
 
     def test_slow_tokenizer_save_pretrained(self):
-        tokenizer = BertTokenizer.from_pretrained("aistudio/bert-base-uncased")
-        special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
-        tokenizer.add_special_tokens(special_tokens_dict)
-        tokenizer.add_tokens(["new_word", "another_word"])
-        tokenizer.model_max_length = 512
-        tokenizer.save_pretrained("./slow_tokenizer")
-        self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tokenizer = BertTokenizer.from_pretrained("aistudio/bert-base-uncased")
+            special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+            tokenizer.add_special_tokens(special_tokens_dict)
+            tokenizer.add_tokens(["new_word", "another_word"])
+            tokenizer.model_max_length = 512
+            tokenizer.save_pretrained(tmpdir)
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "tokenizer_config.json")))
 
     def test_fast_tokenizer_from_pretrained(self):
         tokenizer = BertTokenizerFast.from_pretrained("aistudio/bert-base-uncased")
         self.assertTrue(tokenizer is not None)
 
     def test_fast_tokenizer_save_pretrained(self):
-        tokenizer = BertTokenizerFast.from_pretrained("aistudio/bert-base-uncased")
-        special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
-        tokenizer.add_special_tokens(special_tokens_dict)
-        tokenizer.add_tokens(["new_word", "another_word"])
-        tokenizer.model_max_length = 512
-        tokenizer.save_pretrained("./fast_tokenizer")
-        self.assertTrue(os.path.exists("./fast_tokenizer/tokenizer_config.json"))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tokenizer = BertTokenizerFast.from_pretrained("aistudio/bert-base-uncased")
+            special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+            tokenizer.add_special_tokens(special_tokens_dict)
+            tokenizer.add_tokens(["new_word", "another_word"])
+            tokenizer.model_max_length = 512
+            tokenizer.save_pretrained(tmpdir)
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "tokenizer_config.json")))
 
     def test_tokenize(self):
         tokenizer = BertTokenizerFast.from_pretrained("aistudio/bert-base-uncased")

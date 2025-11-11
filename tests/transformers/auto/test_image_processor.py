@@ -16,6 +16,7 @@
 
 import os
 import shutil
+import tempfile
 import unittest
 
 from paddleformers.transformers import AutoImageProcessor
@@ -44,7 +45,8 @@ class TestImageProcessor(unittest.TestCase):
         self.assertEqual(image_processor.__class__.__name__, "Qwen2VLImageProcessor")
 
     def test_slow_image_processor_save_pretrained(self):
-        image_processor = AutoImageProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
-        image_processor.min_pixels = 2048
-        image_processor.save_pretrained("./slow_image_processor")
-        self.assertTrue(os.path.exists("./slow_image_processor/preprocessor_config.json"))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_processor = AutoImageProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
+            image_processor.min_pixels = 2048
+            image_processor.save_pretrained(tmpdir)
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "preprocessor_config.json")))
