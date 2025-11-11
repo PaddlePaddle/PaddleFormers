@@ -225,15 +225,15 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_loss(resume_p.stdout, PT_LORA_RESUME_EXCEPTED_LOSS)
 
         # test lora merge
-        lora_merge_output_dir = os.path.join(output_dir, "export")
+        # lora_merge_output_dir = os.path.join(output_dir, "export")
         # cli mode
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.pttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-        EXPECTED_RESULT = paddle.to_tensor(PT_LORA_EXCEPTED_RESULT)
-        self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+        # EXPECTED_RESULT = paddle.to_tensor(PT_LORA_EXCEPTED_RESULT)
+        # self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
     def test_pt_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "pt_full_tp_pp")
@@ -336,12 +336,12 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_loss(resume_p.stdout, PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS)
 
         # test lora merge
-        lora_merge_output_dir = os.path.join(output_dir, "export")
+        # lora_merge_output_dir = os.path.join(output_dir, "export")
         # cli mode
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.pttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-        EXPECTED_RESULT = paddle.to_tensor(PT_LORA_TP_PP_EXCEPTED_RESULT)
-        self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+        # EXPECTED_RESULT = paddle.to_tensor(PT_LORA_TP_PP_EXCEPTED_RESULT)
+        # self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)

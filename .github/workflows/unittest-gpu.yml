@@ -36,7 +36,7 @@ defaults:
 jobs:
   unittest-gpu-ci:
     name: unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu' }}
+    runs-on: ${{ inputs.runner || 'ernie-8gpu-1' }}
     outputs:  
       pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}
     steps:
@@ -134,7 +134,11 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
+<<<<<<< HEAD
           timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} true ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
+=======
+          timeout 50m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
+>>>>>>> upstream/develop
           '
           
       - name: Upload Products

@@ -379,7 +379,7 @@ def run_sft(
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
 
-    if training_args.sequence_parallel:
+    if training_args.sequence_parallel and not model_args.lora:
         callbacks += [MoEGateSpGradSyncCallBack()]
 
     print("callbacks:", callbacks, flush=True)

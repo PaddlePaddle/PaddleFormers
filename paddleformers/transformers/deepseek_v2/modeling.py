@@ -279,9 +279,11 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
     else:
         cos = cos.squeeze().contiguous()  # [seq_len, axis]
         sin = sin.squeeze().contiguous()  # [seq_len, axis]
-        cos = cos[position_ids].unsqueeze(2).contiguous()  # [bs, seq_len, 1, axis]
-        sin = sin[position_ids].unsqueeze(2).contiguous()  # [bs, seq_len, 1, axis]
-
+        if b == 1:
+            cos = cos.unsqueeze(0).contiguous()
+            sin = sin.unsqueeze(0).contiguous()
+        cos = cos.unsqueeze(2).contiguous()  # [bs, seq_len, 1, axis]
+        sin = sin.unsqueeze(2).contiguous()  # [bs, seq_len, 1, axis]
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
@@ -1304,20 +1306,16 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         # Recompute defaults to False and is controlled by Trainer
         self.enable_recompute = False
         self.recompute_granularity = config.recompute_granularity
-        self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
 
         self.embed_tokens = GeneralEmbedding.create(
             config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
         )
 
         self.layers = nn.LayerList(
-            [
-                DeepseekV2DecoderLayer(config, layer_idx, layer_idx not in self.no_recompute_layers)
-                for layer_idx in range(config.num_hidden_layers)
-            ]
+            [DeepseekV2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         for layer_idx in range(config.num_hidden_layers, config.num_hidden_layers + config.num_nextn_predict_layers):
-            self.layers.append(DeepseekV2MTPLayer(config, layer_idx, layer_idx not in self.no_recompute_layers))
+            self.layers.append(DeepseekV2MTPLayer(config, layer_idx))
 
         self.norm = GeneralNorm.create(
             config=config,
@@ -1326,6 +1324,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         )
 
         self.enable_recompute = False
+        self.rotary_emb = DeepseekV2YarnRotaryEmbedding(config=config)
 
     @staticmethod
     def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
@@ -1399,6 +1398,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices: Optional[Tensor] = None,
+        position_embeddings: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> Union[Tuple, BaseModelOutputWithPastAndMTP]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -1459,15 +1459,24 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
             past_key_values_length = past_key_values[0][0].shape[1]
             seq_length_with_past += past_key_values_length
 
-        if position_ids is None:
-            position_ids = paddle.arange(
-                past_key_values_length, seq_length + past_key_values_length, dtype=paddle.int64
-            )
-            position_ids = position_ids.unsqueeze(0)
+        if position_ids is None and not self.config.fuse_rope:
+            position_ids = (
+                paddle.arange(
+                    0,
+                    self.config.seq_length,
+                    dtype="int64",
+                )
+                .unsqueeze(0)
+                .tile([input_ids.shape[0], 1])
+            ).contiguous()
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
             inputs_embeds = self.embed_tokens(input_ids)
+
+        if position_embeddings is None:
+            position_embeddings = paddle.stack(self.rotary_emb(inputs_embeds, position_ids=position_ids))
+
         # embed positions
         if attn_mask_startend_row_indices is not None or get_use_casual_mask():
             attention_mask = None
@@ -1523,13 +1532,9 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                     past_key_value,
                     use_cache,
                     attn_mask_startend_row_indices,
+                    position_embeddings,
                 )
-            elif (
-                self.enable_recompute
-                and idx not in self.no_recompute_layers
-                and has_gradient
-                and self.recompute_granularity == "full"
-            ):
+            elif self.enable_recompute and has_gradient and self.recompute_granularity == "full":
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
@@ -1539,6 +1544,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                     past_key_value,
                     use_cache,
                     attn_mask_startend_row_indices,
+                    position_embeddings,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -1549,6 +1555,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                     past_key_value,
                     use_cache,
                     attn_mask_startend_row_indices,
+                    position_embeddings,
                 )
 
             # NOTE: clear outdate cache after it has been used for memory saving
@@ -1588,6 +1595,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                     past_key_value,
                     use_cache,
                     attn_mask_startend_row_indices,
+                    position_embeddings,
                 )
 
                 if isinstance(layer_outputs, (tuple, list)):
