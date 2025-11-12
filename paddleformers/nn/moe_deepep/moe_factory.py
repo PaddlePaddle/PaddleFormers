@@ -26,6 +26,7 @@ class QuickAccessMoEFactory:
         train_topk_method: str,
         inference_topk_method: str,
         drop_tokens: bool,
+        transpose_gate_weight: bool,
     ) -> ModularMoELayer:
         model_type = getattr(pretrained_config, "model_type", None)
         if model_type is None:
@@ -55,6 +56,7 @@ class QuickAccessMoEFactory:
             moe_config=moe_config,
             model_type=model_type,
             expert_class=expert_class,
+            transpose_gate_weight=transpose_gate_weight,
             pretrained_config=pretrained_config,
         )
 

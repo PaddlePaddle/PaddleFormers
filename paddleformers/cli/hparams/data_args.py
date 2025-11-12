@@ -140,3 +140,14 @@ class DataArguments:
         metadata={"help": "Whether to use template in data processing."},
     )
     eval_with_do_generation: bool = field(default=False, metadata={"help": "Whether to do generation for evaluation"})
+    share_folder: bool = field(
+        default=False,
+        metadata={"help": "Use share folder for data dir and output dir on multi machine."},
+    )
+
+    data_impl: str = field(default="mmap", metadata={"help": "The format of the preprocessed data."})
+    skip_warmup: bool = field(
+        default=True,
+        metadata={"help": "Whether to skip the warmup process of mmap files."},
+    )
+    data_cache: str = field(default=None, metadata={"help": "The path of the cached dataset."})

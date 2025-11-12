@@ -29,6 +29,7 @@ from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
 from .moe_communication import AllToAllMoECommunication, DeepEPMoECommunication
 from .moe_expert import StandardMLPExpert
 from .moe_gate import StandardMoEGate
+from .moe_loss import AddAuxiliaryLoss
 from .moe_loss_instance import get_global_loss_registry
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class ModularMoELayer(nn.Layer):
         moe_config: Dict,
         model_type: str,
         expert_class,
+        transpose_gate_weight: bool,
         pretrained_config: Optional[PretrainedConfig] = None,
     ):
 
@@ -61,23 +63,25 @@ class ModularMoELayer(nn.Layer):
         self.norm_topk_prob = norm_topk_prob
         self.model_type = model_type
         self.expert_class = expert_class
+        self.transpose_gate_weight = transpose_gate_weight
 
         self.sequence_parallel = pretrained_config.get("sequence_parallel", False)
         self.tensor_parallel_degree = pretrained_config.get("tensor_parallel_degree", 1)
         self.seq_length = pretrained_config.get("seq_length", pretrained_config.get("max_seq_len", 1024))
         self.fuse_up_gate = pretrained_config.get("fuse_attention_ffn", False)
         self.ep_communication_type = pretrained_config.get("ep_communication_type", "deepep")
+        self.n_group = pretrained_config.get("n_group", 1)
+        self.topk_group = pretrained_config.get("topk_group", 1)
+        self.routed_scaling_factor = pretrained_config.get("routed_scaling_factor", 1.0)
+        self.aux_loss_alpha = pretrained_config.get("aux_loss_alpha", 0.0)
+        self.moe_subbatch_token_num = pretrained_config.get("moe_subbatch_token_num", -1)
         try:
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
         except Exception:
             moe_group = None
         self.expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
 
-        self.custom_gate = moe_config.get("custom_gate", None)
-        self.custom_communication = moe_config.get("custom_communication", None)
         self.gate_activation = moe_config.get("gate_activation", "softmax")
-        self.aux_loss_weight = moe_config.get("aux_loss_weight", 0.01)
-        self.z_loss_weight = moe_config.get("z_loss_weight", 0.0)
         self.topk_method = (
             moe_config.get("train_topk_method", "greedy")
             if self.training
@@ -92,19 +96,23 @@ class ModularMoELayer(nn.Layer):
         self.loss_combiner_name = moe_config.get("loss_combiner_name", "weighted_sum")
 
         self._init_expert_parallel()
-        if self.custom_gate is not None:
-            self.gate = self.custom_gate
-        else:
-            self.gate = StandardMoEGate(
-                num_experts=self.num_experts,
-                expert_hidden_size=self.hidden_size,
-                drop_tokens=self.drop_tokens,
-                topk_method=self.topk_method,
-                num_experts_per_tok=self.num_experts_per_tok,
-                norm_topk_prob=self.norm_topk_prob,
-                moe_config=moe_config,
-                seq_length=self.seq_length,
-            )
+        self.gate = StandardMoEGate(
+            num_experts=self.num_experts,
+            expert_hidden_size=self.hidden_size,
+            drop_tokens=self.drop_tokens,
+            topk_method=self.topk_method,
+            num_experts_per_tok=self.num_experts_per_tok,
+            norm_topk_prob=self.norm_topk_prob,
+            moe_config=moe_config,
+            seq_length=self.seq_length,
+            n_group=self.n_group,
+            topk_group=self.topk_group,
+            routed_scaling_factor=self.routed_scaling_factor,
+            moe_subbatch_token_num=self.moe_subbatch_token_num,
+            tensor_parallel_degree=self.tensor_parallel_degree,
+            sequence_parallel=self.sequence_parallel,
+            transpose_gate_weight=self.transpose_gate_weight,
+        )
 
         if self.expert_class is None:
             self.expert_class = StandardMLPExpert
@@ -124,8 +132,14 @@ class ModularMoELayer(nn.Layer):
         if self.model_type == "qwen3_moe":
             pass
         elif self.model_type == "glm4_moe":
-            pass
-        self.experts = nn.LayerList([self.expert_class(**expert_args) for _ in range(self.num_experts)])
+            expert_args["fuse_up_gate"] = self.fuse_up_gate
+
+        self.experts = nn.LayerList([])
+        for i in range(self.num_experts):
+            if i // self.num_experts_per_device == self.moe_rank:
+                self.experts.append(self.expert_class(**expert_args))
+            else:
+                self.experts.append(None)
 
         if self.expert_parallel_degree > 1:
             self.token_dispatcher = MoEFlexTokenDispatcher(
@@ -137,22 +151,25 @@ class ModularMoELayer(nn.Layer):
         shared_expert_args = {}
         shared_expert_args["config"] = shared_expert_pretrained_config
         shared_expert_args["intermediate_size"] = self.moe_intermediate_size * self.num_shared_experts
+        # Add more arguments for different models
+        if self.model_type == "qwen3_moe":
+            pass
+        elif self.model_type == "glm4_moe":
+            shared_expert_args["fuse_up_gate"] = self.fuse_up_gate
+
         if self.num_shared_experts > 0:
             self.shared_experts = self.expert_class(**shared_expert_args)
         else:
             self.shared_experts = None
 
-        if self.custom_communication is not None:
-            self.communication = self.custom_communication
+        if self.ep_communication_type == "deepep":
+            self.communication = DeepEPMoECommunication()
+        elif self.ep_communication_type == "alltoall":
+            self.communication = AllToAllMoECommunication()
         else:
-            if self.ep_communication_type == "deepep":
-                self.communication = DeepEPMoECommunication()
-            elif self.ep_communication_type == "alltoall":
-                self.communication = AllToAllMoECommunication()
-            else:
-                raise ValueError(
-                    f"Unsupported communication type: {self.ep_communication_type}, please choose from ['deepep', 'alltoall']"
-                )
+            raise ValueError(
+                f"Unsupported communication type: {self.ep_communication_type}, please choose from ['deepep', 'alltoall']"
+            )
 
         if hasattr(dist, "fleet") and dist.is_initialized() and self.expert_parallel_degree > 1:
             self.is_mp_moe = False
@@ -224,6 +241,9 @@ class ModularMoELayer(nn.Layer):
         capacity, topk_weights, topk_indices, gates_masked, mask, priorities, aux_loss, z_loss = self.gate(
             hidden_states
         )
+        # topk_weights, topk_indices will be used in AllToAllMoECommunication
+        # gates_masked, mask will be used in DeepEPMoECommunication
+        # capacity, priorities are not used currently
 
         if self.expert_parallel_degree > 1:
             output = self._forward_with_ep_parallel(
@@ -237,16 +257,20 @@ class ModularMoELayer(nn.Layer):
                 reshaped_input = hidden_states
             output = self._forward_traditional_moe(reshaped_input, topk_indices, topk_weights)
 
-        output = output.reshape(orig_shape)
+        if self.training and self.aux_loss_alpha > 0.0:
+            aux_loss = aux_loss * self.aux_loss_alpha
+            output = AddAuxiliaryLoss.apply(output, aux_loss)
 
         if self.shared_experts is not None:
             shared_output = self.shared_experts(residuals)
             output = output + shared_output
 
+        output = output.reshape(orig_shape)
+
         if self.expert_parallel_degree <= 1 and self.sequence_parallel:
             output = ScatterOp.apply(output)
 
-        return output, aux_loss
+        return output
 
     def _forward_traditional_moe(
         self, hidden_states: paddle.Tensor, selected_experts: paddle.Tensor, topk_weights: paddle.Tensor

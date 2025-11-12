@@ -16,21 +16,42 @@
 
 import os
 from collections import UserDict
-from typing import Dict, Iterable, List, Tuple, Union
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import paddle
-import PIL.Image
-import PIL.ImageOps
+import PIL
 import requests
 from packaging import version
 
+from ..utils.log import logger
 from .tokenizer_utils import ExplicitEnum
 
 IMAGENET_DEFAULT_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_DEFAULT_STD = [0.229, 0.224, 0.225]
 IMAGENET_STANDARD_MEAN = [0.5, 0.5, 0.5]
 IMAGENET_STANDARD_STD = [0.5, 0.5, 0.5]
+OPENAI_CLIP_MEAN = [0.48145466, 0.4578275, 0.40821073]
+OPENAI_CLIP_STD = [0.26862954, 0.26130258, 0.27577711]
+
+
+if version.parse(version.parse(PIL.__version__).base_version) >= version.parse("9.1.0"):
+    PILImageResampling = PIL.Image.Resampling
+else:
+    PILImageResampling = PIL.Image
+
+
+ImageInput = Union[
+    "PIL.Image.Image", np.ndarray, "paddle.Tensor", List["PIL.Image.Image"], List[np.ndarray], List["paddle.Tensor"]
+]  # noqa
+
+
+pil_paddle_interpolation_mapping = {
+    PILImageResampling.NEAREST: "nearest",
+    PILImageResampling.BILINEAR: "bilinear",
+    PILImageResampling.BICUBIC: "bicubic",
+}
 
 
 def is_paddle_tensor(tensor):
@@ -49,17 +70,6 @@ def to_numpy(obj):
         return obj.detach().cpu().numpy()
     else:
         return obj
-
-
-if version.parse(version.parse(PIL.__version__).base_version) >= version.parse("9.1.0"):
-    PILImageResampling = PIL.Image.Resampling
-else:
-    PILImageResampling = PIL.Image
-
-
-ImageInput = Union[
-    "PIL.Image.Image", np.ndarray, "paddle.Tensor", List["PIL.Image.Image"], List[np.ndarray], List["paddle.Tensor"]
-]  # noqa
 
 
 class ChannelDimension(ExplicitEnum):
@@ -135,7 +145,9 @@ def to_numpy_array(img) -> np.ndarray:
     return to_numpy(img)
 
 
-def infer_channel_dimension_format(image: np.ndarray) -> ChannelDimension:
+def infer_channel_dimension_format(
+    image: np.ndarray, num_channels: Optional[Union[int, tuple[int, ...]]] = None
+) -> ChannelDimension:
     """
     Infers the channel dimension format of `image`.
 
@@ -146,6 +158,9 @@ def infer_channel_dimension_format(image: np.ndarray) -> ChannelDimension:
     Returns:
         The channel dimension of the image.
     """
+    num_channels = num_channels if num_channels is not None else (1, 3)
+    num_channels = (num_channels,) if isinstance(num_channels, int) else num_channels
+
     if image.ndim == 3:
         first_dim, last_dim = 0, 2
     elif image.ndim == 4:
@@ -153,9 +168,14 @@ def infer_channel_dimension_format(image: np.ndarray) -> ChannelDimension:
     else:
         raise ValueError(f"Unsupported number of image dimensions: {image.ndim}")
 
-    if image.shape[first_dim] in (1, 3):
+    if image.shape[first_dim] in num_channels and image.shape[last_dim] in num_channels:
+        logger.warning(
+            f"The channel dimension is ambiguous. Got image shape {image.shape}. Assuming channels are the first dimension."
+        )
         return ChannelDimension.FIRST
-    elif image.shape[last_dim] in (1, 3):
+    elif image.shape[first_dim] in num_channels:
+        return ChannelDimension.FIRST
+    elif image.shape[last_dim] in num_channels:
         return ChannelDimension.LAST
     raise ValueError("Unable to infer channel dimension format")
 
@@ -201,6 +221,37 @@ def get_image_size(image: np.ndarray, channel_dim: ChannelDimension = None) -> T
         return image.shape[-3], image.shape[-2]
     else:
         raise ValueError(f"Unsupported data format: {channel_dim}")
+
+
+def get_image_size_for_max_height_width(
+    image_size: tuple[int, int],
+    max_height: int,
+    max_width: int,
+) -> tuple[int, int]:
+    """
+    Computes the output image size given the input image and the maximum allowed height and width. Keep aspect ratio.
+    Important, even if image_height < max_height and image_width < max_width, the image will be resized
+    to at least one of the edges be equal to max_height or max_width.
+
+    For example:
+        - input_size: (100, 200), max_height: 50, max_width: 50 -> output_size: (25, 50)
+        - input_size: (100, 200), max_height: 200, max_width: 500 -> output_size: (200, 400)
+
+    Args:
+        image_size (`tuple[int, int]`):
+            The image to resize.
+        max_height (`int`):
+            The maximum allowed height.
+        max_width (`int`):
+            The maximum allowed width.
+    """
+    height, width = image_size
+    height_scale = max_height / height
+    width_scale = max_width / width
+    min_scale = min(height_scale, width_scale)
+    new_height = int(height * min_scale)
+    new_width = int(width * min_scale)
+    return new_height, new_width
 
 
 def is_valid_annotation_coco_detection(annotation: Dict[str, Union[List, Tuple]]) -> bool:
@@ -619,3 +670,29 @@ class ImageFeatureExtractionMixin:
         return image.rotate(
             angle, resample=resample, expand=expand, center=center, translate=translate, fillcolor=fillcolor
         )
+
+
+def validate_kwargs(valid_processor_keys: list[str], captured_kwargs: list[str]):
+    unused_keys = set(captured_kwargs).difference(set(valid_processor_keys))
+    if unused_keys:
+        unused_key_str = ", ".join(unused_keys)
+        logger.warning(f"Unused or unrecognized kwargs: {unused_key_str}.")
+
+
+@dataclass(frozen=True)
+class SizeDict:
+    """
+    Hashable dictionary to store image size information.
+    """
+
+    height: Optional[int] = None
+    width: Optional[int] = None
+    longest_edge: Optional[int] = None
+    shortest_edge: Optional[int] = None
+    max_height: Optional[int] = None
+    max_width: Optional[int] = None
+
+    def __getitem__(self, key):
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(f"Key {key} not found in SizeDict.")

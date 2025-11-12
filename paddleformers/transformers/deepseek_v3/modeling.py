@@ -61,6 +61,7 @@ class DeepseekV3PretrainedModel(DeepseekV2PretrainedModel):
         "gate",
         "eh_proj",
     ]
+    _keep_in_fp32_modules = ["mlp.gate.weight", "e_score_correction_bias"]
 
 
 @register_base_model
@@ -195,8 +196,7 @@ class DeepseekV3ForCausalLMPipe(DeepseekV2ForCausalLMPipe):
     _get_tensor_parallel_mappings = DeepseekV3PretrainedModel._get_tensor_parallel_mappings
     _init_weights = DeepseekV3PretrainedModel._init_weights
     _keys_to_ignore_on_load_unexpected = DeepseekV3PretrainedModel._keys_to_ignore_on_load_unexpected
-    _get_model_flops = DeepseekV3PretrainedModel._get_model_flops
-    _get_hardware_flops = DeepseekV3PretrainedModel._get_hardware_flops
     _tied_weights_keys = ["lm_head.weight"]
     base_model_prefix = DeepseekV3PretrainedModel.base_model_prefix
     transpose_weight_keys = DeepseekV3PretrainedModel.transpose_weight_keys
+    _keep_in_fp32_modules = DeepseekV3PretrainedModel._keep_in_fp32_modules
