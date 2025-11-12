@@ -117,7 +117,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    python -m pytest -v -s -n 8 \
+    python -m pytest -v -s -n 4 \
         --dist no \
         --maxfail=1 \
         --retries 3 --retry-delay 1 \
