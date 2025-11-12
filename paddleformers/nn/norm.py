@@ -40,11 +40,22 @@ __all__ = ["Norm"]
 
 
 class LayerNorm(nn.LayerNorm):
-    def __init__(self, config: PretrainedConfig, hidden_size=None, norm_eps=None, has_bias=None, **kwargs):
+    def __init__(
+        self,
+        config: PretrainedConfig,
+        hidden_size=None,
+        norm_eps=None,
+        has_bias=None,
+        input_is_parallel=False,
+        **kwargs
+    ):
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.norm_eps = config.get("norm_eps", 1e-5) if norm_eps is None else norm_eps
         super().__init__(self.hidden_size, epsilon=self.norm_eps)
         self.config = config
+
+        if input_is_parallel:
+            self.enable_sequence_parallel()
 
     def enable_sequence_parallel(self):
         mark_as_sequence_parallel_parameter(self.weight)
@@ -53,7 +64,7 @@ class LayerNorm(nn.LayerNorm):
 
 
 class RMSNorm(nn.Layer):
-    def __init__(self, config: PretrainedConfig, hidden_size=None, norm_eps=None, **kwargs):
+    def __init__(self, config: PretrainedConfig, hidden_size=None, norm_eps=None, input_is_parallel=False, **kwargs):
         super().__init__()
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.variance_epsilon = config.rms_norm_eps if norm_eps is None else norm_eps
@@ -63,6 +74,9 @@ class RMSNorm(nn.Layer):
             default_initializer=nn.initializer.Constant(1.0),
         )
         self.config = config
+
+        if input_is_parallel:
+            self.enable_sequence_parallel()
 
     def forward(self, hidden_states):
         if self.config.get("fuse_rms_norm", False):
@@ -88,10 +102,14 @@ class Norm(GeneralInterface):
     _global_mapping = {"layer_norm": LayerNorm, "rms_norm": RMSNorm}
 
     @classmethod
-    def create(self, config, hidden_size=None, has_bias=None, norm_eps=None, norm_type=None, **kwargs):
+    def create(
+        self, config, hidden_size=None, has_bias=None, norm_eps=None, norm_type=None, input_is_parallel=False, **kwargs
+    ):
         if norm_type is None:
             norm_type = "rms_norm"
         if has_bias is None:
             has_bias = config.get("use_bias", False)
         norm_cls = self._global_mapping[norm_type]
-        return norm_cls(config, hidden_size, has_bias=has_bias, norm_eps=norm_eps, **kwargs)
+        return norm_cls(
+            config, hidden_size, has_bias=has_bias, norm_eps=norm_eps, input_is_parallel=input_is_parallel, **kwargs
+        )

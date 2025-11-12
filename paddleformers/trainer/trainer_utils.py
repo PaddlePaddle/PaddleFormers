@@ -32,13 +32,21 @@ import threading
 import time
 from contextlib import contextmanager
 from enum import Enum
+from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
 import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
+    DygraphShardingOptimizer,
+    DygraphShardingOptimizerV2,
+)
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
+from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
+    GroupShardedOptimizerStage2,
+)
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
 from transformers.tokenization_utils_base import BatchEncoding
@@ -1296,3 +1304,195 @@ def _insert_sync(self, sync_var, src, mp_group, sync_mode):
     # Move it back to pin memory
     if original_device == "pin_memory":
         sync_var = paddle.to_tensor(sync_var, place=paddle.CUDAPinnedPlace())
+
+
+def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
+    """
+    Initialize the optimizer's states according to its type.
+
+    For DygraphShardingOptimizer (V1), initializes accumulators for local parameters.
+    For DygraphShardingOptimizerV2, manually initializes master weights and state dict for sharded parameters.
+    For other cases, initializes accumulators for all parameters.
+
+    Args:
+        optimizer: The optimizer instance to be initialized.
+    """
+    optimizer_state_names = [".moment1_0", ".moment2_0", ".beta1_pow_acc_0", ".beta2_pow_acc_0", ".w_0"]
+    inner_opt = getattr(optimizer, "_inner_opt", None)
+    static_to_struct_mapping = {}
+    model_sharded_state_dict = dict(sorted(model_sharded_state_dict.items()))
+    for k, v in model_sharded_state_dict.items():
+        if v.local_tensor.name not in static_to_struct_mapping:
+            static_to_struct_mapping[v.local_tensor.name] = k
+
+    if isinstance(inner_opt, DygraphShardingOptimizer):
+        local_params = optimizer._rank2params[optimizer._sharding_rank]
+        param_list = []
+        for param in local_params:
+            param_name = param.name
+            struct_name = static_to_struct_mapping[param_name]
+            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                continue
+            param_list.append(param)
+        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
+        return
+
+    elif isinstance(inner_opt, DygraphShardingOptimizerV2):
+
+        def init_param_optimizer_states(param_iter):
+            master_weights = {}
+            state_dict = {}
+            moments = ("moment1_0", "moment2_0")
+            betas = ("beta1_pow_acc_0", "beta2_pow_acc_0")
+            for static_name, shape, no_need_master_weights in param_iter:
+                if not no_need_master_weights:
+                    master_weights[static_name] = paddle.zeros(shape, dtype="float32")
+                    prefix = f"{static_name}_fp32_master_0_"
+                else:
+                    prefix = f"{static_name}_"
+
+                for moment in moments:
+                    key = f"{prefix}{moment}"
+                    state_dict[key] = paddle.zeros(shape, dtype="float32")
+                for beta in betas:
+                    key = f"{prefix}{beta}"
+                    state_dict[key] = paddle.zeros((1,), dtype="float32")
+            return master_weights, state_dict
+
+        def buffer_params():
+            for buffer in optimizer._comm_buffer_list:
+                for param_name, grad_view in buffer._sharding_param_grad_view.items():
+                    struct_name = static_to_struct_mapping[param_name]
+                    if not any(
+                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                    ):
+                        continue
+                    param_begin = grad_view._param_begin
+                    param_end = grad_view._param_end
+                    shape = (param_end - param_begin,)
+                    no_need_master_weights = grad_view._param.dtype == paddle.float32
+
+                    if shape[0] > 0:
+                        yield param_name, shape, no_need_master_weights
+
+        master_weights, state_dict = init_param_optimizer_states(buffer_params())
+        state_dict["master_weights"] = master_weights
+        state_dict["LR_Scheduler"] = {"last_epoch": 1, "last_lr": 5e-06}
+        optimizer.set_state_dict(state_dict)
+        return
+
+    elif isinstance(optimizer, GroupShardedOptimizerStage2):
+        local_params = optimizer._segment_params()[optimizer._rank]
+        for p in local_params:
+            param_name = p.name
+            struct_name = static_to_struct_mapping[param_name]
+            print(struct_name)
+            print(p)
+
+        param_list = []
+        for param in local_params:
+            param_name = param.name
+            struct_name = static_to_struct_mapping[param_name]
+            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                continue
+            param_list.append(param)
+        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
+        return
+
+    param_list = []
+    for param in optimizer._parameter_list:
+        param_name = param.name
+        struct_name = static_to_struct_mapping[param_name]
+        if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+            continue
+        param_list.append(param)
+    optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
+
+
+def parse_nccl_config_file(config_dir):
+    json_file = Path(config_dir)
+    if json_file.exists():
+        with open(json_file, "r") as file:
+            data = json.load(file)
+
+        def get_full_config_from_dict(comm_config):
+            assert type(comm_config) is dict
+            min_val = {
+                "ll_buffsize": 2**15,  # 32KB
+                "ll128_buffsize": 2**17,  # 128KB
+                "simple_buffsize": 2**17,  # 128KB
+            }
+            final_config = {}
+
+            # if user does not set group name, use the default name set by Paddle
+            if comm_config.get("name", None) is not None:
+                final_config["commName"] = comm_config["name"]
+            final_config["buffsize_align"] = comm_config.get("buffsize_align", 1024)
+            final_config["algoStr"] = comm_config.get("algo", "")
+            final_config["protoStr"] = comm_config.get("proto", "")
+            final_config["nchannels"] = comm_config.get("n_channels", -1)
+
+            # ll part
+            # -1 means using the default value
+            final_config["ll_buffsize"] = comm_config.get("ll_buffsize", -1)
+            # keep the buffsize > the min value
+            if final_config["ll_buffsize"] != -1:
+                final_config["ll_buffsize"] = max(final_config["ll_buffsize"], min_val["ll_buffsize"])
+
+            # ll128 part
+            final_config["ll128_buffsize"] = comm_config.get("ll128_buffsize", -1)
+            if final_config["ll128_buffsize"] != -1:
+                final_config["ll128_buffsize"] = max(final_config["ll128_buffsize"], min_val["ll128_buffsize"])
+
+            # simple part
+            final_config["simple_buffsize"] = comm_config.get("simple_buffsize", -1)
+            if final_config["simple_buffsize"] != -1:
+                final_config["simple_buffsize"] = max(final_config["simple_buffsize"], min_val["simple_buffsize"])
+
+            # set the buffer size of unused protocols to the minimum value
+            if final_config["protoStr"] != "":
+                protos = split_parallel_config(final_config["protoStr"].lower())
+                for proto in ["ll", "ll128", "simple"]:
+                    if proto not in protos:
+                        final_config[(proto + "_buffsize")] = min_val[(proto + "_buffsize")]
+
+            return final_config
+
+        for key in data.keys():
+            data[key] = get_full_config_from_dict(data[key])
+
+        return data
+    else:
+        raise FileNotFoundError(f"The argument file {json_file} does not exist.")
+
+
+def init_nccl_config(nccl_comm_group_config, strategy):
+    nccl_config = parse_nccl_config_file(nccl_comm_group_config)
+
+    def set_comm_config(configs, attr, dict_obj):
+        if strategy.hybrid_configs.get(configs, None) is None or dict_obj is None:
+            return
+        if not hasattr(strategy.hybrid_configs[configs], attr):
+            return
+        attr_obj = getattr(strategy.hybrid_configs[configs], attr)
+        for key, value in dict_obj.items():
+            if hasattr(attr_obj, key):
+                setattr(attr_obj, key, value)
+
+    set_comm_config("pp_configs", "coll_nccl_config", nccl_config.get("pp", None))
+    set_comm_config("pp_configs", "p2p_nccl_config", nccl_config.get("pp_p2p", None))
+    set_comm_config("pp_configs", "shared_nccl_config", nccl_config.get("pp_shared", None))
+    set_comm_config("mp_configs", "nccl_config", nccl_config.get("tp", None))
+    set_comm_config("sharding_configs", "nccl_config", nccl_config.get("sharding", None))
+    set_comm_config("sharding_configs", "check_nccl_config", nccl_config.get("sharding_check", None))
+    set_comm_config("dp_configs", "nccl_config", nccl_config.get("dp", None))
+    set_comm_config("dp_configs", "check_nccl_config", nccl_config.get("dp_check", None))
+    set_comm_config("sep_configs", "nccl_config", nccl_config.get("sep", None))
+    set_comm_config("dp_sep_configs", "nccl_config", nccl_config.get("dp_sep", None))
+    set_comm_config("pp_tp_configs", "nccl_config", nccl_config.get("pp_tp", None))
+    set_comm_config("ep_configs", "nccl_config", nccl_config.get("ep", None))
+    set_comm_config("ep_configs", "grad_nccl_config", nccl_config.get("ep_grad", None))
+    set_comm_config("moe_sharding_configs", "nccl_config", nccl_config.get("moe_sharding", None))
+    set_comm_config("moe_sharding_configs", "check_nccl_config", nccl_config.get("moe_sharding_check", None))
+    set_comm_config("default_comm_group_configs", "nccl_config", nccl_config.get("default", None))
+    return strategy

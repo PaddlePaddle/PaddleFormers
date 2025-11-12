@@ -1,5 +1,6 @@
+# coding=utf-8
 # Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2018 Google AI, Google Brain and the HuggingFace Inc. team.
+# Copyright 2021 The HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,171 +13,223 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import importlib
-import io
+import inspect
 import json
 import os
 from collections import OrderedDict
 
+from transformers import AutoConfig, PretrainedConfig
+from transformers.dynamic_module_utils import (
+    get_class_from_dynamic_module,
+    resolve_trust_remote_code,
+)
+from transformers.models.auto.configuration_auto import (
+    CONFIG_MAPPING_NAMES,
+    model_type_to_module_name,
+    replace_list_option_in_docstrings,
+)
+from transformers.utils import (
+    FEATURE_EXTRACTOR_NAME,
+    PROCESSOR_NAME,
+    VIDEO_PROCESSOR_NAME,
+)
+
 from ...utils.download import resolve_file_path
-from ...utils.import_utils import import_module
-from ...utils.log import logger
+from ..image_processing_utils import ImageProcessingMixin
+from ..processing_utils import ProcessorMixin
+from ..tokenizer_utils import TOKENIZER_CONFIG_FILE
+from ..video_processing_utils import BaseVideoProcessor
+from .factory import _LazyAutoMapping
+from .image_processing import AutoImageProcessor
+from .tokenizer import AutoTokenizer
 
-__all__ = [
-    "AutoProcessor",
-]
+PROCESSOR_MAPPING_NAMES = OrderedDict(
+    [
+        ("qwen2_5_vl", "Qwen2_5_VLProcessor"),
+        ("qwen2_vl", "Qwen2VLProcessor"),
+    ]
+)
 
-PROCESSOR_MAPPING_NAMES = OrderedDict([])
+PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, PROCESSOR_MAPPING_NAMES)
 
 
-def get_configurations():
-    MAPPING_NAMES = OrderedDict()
-    for key, class_name in PROCESSOR_MAPPING_NAMES.items():
-        import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.processing")
-        processor_name = getattr(import_class, key)
-        name = tuple(processor_name.pretrained_init_configuration.keys())
-        if MAPPING_NAMES.get(name, None) is None:
-            MAPPING_NAMES[name] = []
-        MAPPING_NAMES[name].append(processor_name)
-    return MAPPING_NAMES
+def processor_class_from_name(class_name: str):
+    for module_name, extractors in PROCESSOR_MAPPING_NAMES.items():
+        if class_name in extractors:
+            module_name = model_type_to_module_name(module_name)
+
+            module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
+            try:
+                return getattr(module, class_name)
+            except AttributeError:
+                continue
+
+    for extractor in PROCESSOR_MAPPING._extra_content.values():
+        if getattr(extractor, "__name__", None) == class_name:
+            return extractor
+
+    # We did not find the class, but maybe it's because a dep is missing. In that case, the class will be in the main
+    # init and we return the proper dummy to get an appropriate error message.
+    main_module = importlib.import_module("paddleformers.transformers")
+    if hasattr(main_module, class_name):
+        return getattr(main_module, class_name)
+
+    return None
 
 
 class AutoProcessor:
     """
-    AutoClass can help you automatically retrieve the relevant model given the provided
-    pretrained weights/vocabulary.
-    Autoprocessor is a generic processor class that will be instantiated as one of the
-    base processor classes when created with the Autoprocessor.from_pretrained() classmethod.
+    Smart AutoProcessor that automatically adapts based on available dependencies:
+
+    1. **Multi-source support**: Supports HuggingFace, PaddleFormers, and other download sources
+    2. **Conditional Paddle integration**: Automatically detects PaddlePaddle availability
+    3. **Fallback compatibility**: Works seamlessly with or without Paddle dependencies
+    4. **Enhanced functionality**: Extends HuggingFace's standard processor loading logic
+
+    Features:
+    - Maintains full compatibility with all HuggingFace processors
+    - Supports custom download sources through environment variables
     """
 
-    MAPPING_NAMES = get_configurations()
-    _processor_mapping = MAPPING_NAMES
-    _name_mapping = PROCESSOR_MAPPING_NAMES
-    processor_config_file = "preprocessor_config.json"
-
-    def __init__(self, *args, **kwargs):
-        raise EnvironmentError(
-            f"{self.__class__.__name__} is designed to be instantiated "
-            f"using the `{self.__class__.__name__}.from_pretrained(pretrained_model_name_or_path).`"
-        )
-
     @classmethod
-    def _get_processor_class_from_config(cls, pretrained_model_name_or_path, config_file_path):
-        with io.open(config_file_path, encoding="utf-8") as f:
-            init_kwargs = json.load(f)
-        # class name corresponds to this configuration
-        init_class = init_kwargs.pop("init_class", None)
-        if init_class is None:
-            init_class = init_kwargs.pop("processor_class", None)
-            if init_class is None:
-                init_class = init_kwargs.pop("image_processor_type", None)
-                # replace old name to new name
-                if init_class is not None and init_class.endswith("ImageProcessor"):
-                    init_class = init_class.replace("ImageProcessor", "Processor")
-            if init_class is None:
-                init_class = init_kwargs.pop("feature_extractor_type", None)
-                # replace old name to new name
-                if init_class is not None and init_class.endswith("FeatureExtractor"):
-                    init_class = init_class.replace("FeatureExtractor", "Processor")
-
-        if init_class:
-            try:
-                class_name = cls._name_mapping[init_class]
-                import_class = import_module(f"paddleformers.transformers.{class_name}.processing")
-                processor_class = getattr(import_class, init_class)
-                return processor_class
-            except Exception:
-                init_class = None
-
-        # If no `init_class`, we use pattern recognition to recognize the processor class.
-        if init_class is None:
-            logger.info("We use pattern recognition to recognize the processor class.")
-            for key, pattern in cls._name_mapping.items():
-                if pattern in pretrained_model_name_or_path.lower():
-                    init_class = key
-                    class_name = cls._name_mapping[init_class]
-                    import_class = import_module(f"paddleformers.transformers.{class_name}.processor")
-                    processor_class = getattr(import_class, init_class)
-                    break
-            return processor_class
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
-        """
-        Creates an instance of `Autoprocessor`. Related resources are loaded by
-        specifying name of a built-in pretrained model, or a community-contributed
-        pretrained model, or a local file directory path.
-
-        Args:
-            pretrained_model_name_or_path (str): Name of pretrained model or dir path
-                to load from. The string can be:
-
-                - Name of built-in pretrained model
-                - Name of a community-contributed pretrained model.
-                - Local directory path which contains processor related resources
-                  and processor config file ("processor_config.json").
-            *args (tuple): position arguments for model `__init__`. If provided,
-                use these as position argument values for processor initialization.
-            **kwargs (dict): keyword arguments for model `__init__`. If provided,
-                use these to update pre-defined keyword argument values for processor
-                initialization.
-
-        Returns:
-            Pretrainedprocessor: An instance of `Pretrainedprocessor`.
-
-
-        Example:
-            .. code-block::
-            from paddleformers.transformers import AutoProcessor
-            processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
-            processor.save_pretrained('clip_processor')
-        """
-        cache_dir = kwargs.get("cache_dir", None)
-        subfolder = kwargs.get("subfolder", "")
-        if subfolder is None:
-            subfolder = ""
+    @replace_list_option_in_docstrings(PROCESSOR_MAPPING_NAMES)
+    def from_pretrained(cls, pretrained_model_name_or_path, **kwargs):
         download_hub = kwargs.get("download_hub", None)
-        kwargs["subfolder"] = subfolder
-        kwargs["cache_dir"] = cache_dir
+        if download_hub is None:
+            download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
+            kwargs["download_hub"] = download_hub
 
-        all_processor_names = []
-        for names, processor_class in cls._processor_mapping.items():
-            for name in names:
-                all_processor_names.append(name)
+        config = kwargs.pop("config", None)
+        trust_remote_code = kwargs.pop("trust_remote_code", None)
+        kwargs["_from_auto"] = True
 
-        # From built-in pretrained models
-        if pretrained_model_name_or_path in all_processor_names:
-            for names, processor_classes in cls._processor_mapping.items():
-                for pattern in names:
-                    if pattern == pretrained_model_name_or_path:
-                        actual_processor_class = processor_classes[0]
-                        logger.info(
-                            "We are using %s to load '%s'." % (actual_processor_class, pretrained_model_name_or_path)
-                        )
-                        return actual_processor_class.from_pretrained(
-                            pretrained_model_name_or_path, *model_args, **kwargs
-                        )
+        processor_class = None
+        processor_auto_map = None
 
-        config_file = resolve_file_path(
+        resolve_file_path_kwargs = {
+            key: kwargs[key] for key in inspect.signature(resolve_file_path).parameters if key in kwargs
+        }
+        resolve_file_path_kwargs.update({"force_return": True})  # do not raise error when file not found
+
+        # Checking whether the processor class is saved in a processor config
+        processor_config_file = resolve_file_path(
             pretrained_model_name_or_path,
-            [cls.processor_config_file],
-            subfolder,
-            cache_dir=cache_dir,
-            download_hub=download_hub,
+            PROCESSOR_NAME,
+            **resolve_file_path_kwargs,
         )
-        if config_file is not None and os.path.exists(config_file):
-            processor_class = cls._get_processor_class_from_config(
+        if processor_config_file is not None:
+            config_dict, _ = ProcessorMixin.get_processor_dict(pretrained_model_name_or_path, **kwargs)
+            processor_class = config_dict.get("processor_class")
+            if "AutoProcessor" in config_dict.get("auto_map", {}):
+                processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
+
+        if processor_class is None:
+            # Checking whether the processor class is saved in an image processor config
+            preprocessor_config_file = resolve_file_path(
                 pretrained_model_name_or_path,
-                config_file,
+                FEATURE_EXTRACTOR_NAME,
+                **resolve_file_path_kwargs,
             )
-            logger.info(f"We are using {processor_class} to load '{pretrained_model_name_or_path}'.")
-            return processor_class.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
-        else:
-            raise RuntimeError(
-                f"Can't load processor for '{pretrained_model_name_or_path}'.\n"
-                f"Please make sure that '{pretrained_model_name_or_path}' is:\n"
-                "- a correct model-identifier of built-in pretrained processor,\n"
-                "- or a correct model-identifier of community-contributed pretrained models,\n"
-                "- or the correct path to a directory containing relevant processor files.\n"
+            if preprocessor_config_file is not None:
+                config_dict, _ = ImageProcessingMixin.get_image_processor_dict(pretrained_model_name_or_path, **kwargs)
+                processor_class = config_dict.get("processor_class", None)
+                if "AutoProcessor" in config_dict.get("auto_map", {}):
+                    processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
+
+            # Saved as video processor
+            if preprocessor_config_file is None:
+                preprocessor_config_file = resolve_file_path(
+                    pretrained_model_name_or_path,
+                    VIDEO_PROCESSOR_NAME,
+                    **resolve_file_path_kwargs,
+                )
+                if preprocessor_config_file is not None:
+                    config_dict, _ = BaseVideoProcessor.get_video_processor_dict(
+                        pretrained_model_name_or_path, **kwargs
+                    )
+                    processor_class = config_dict.get("processor_class", None)
+                    if "AutoProcessor" in config_dict.get("auto_map", {}):
+                        processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
+
+        if processor_class is None:
+            # Checking whether the processor class is saved in a tokenizer
+            tokenizer_config_file = resolve_file_path(
+                pretrained_model_name_or_path,
+                TOKENIZER_CONFIG_FILE,
+                **resolve_file_path_kwargs,
             )
+            if tokenizer_config_file is not None:
+                with open(tokenizer_config_file, encoding="utf-8") as reader:
+                    config_dict = json.load(reader)
+
+                processor_class = config_dict.get("processor_class", None)
+                if "AutoProcessor" in config_dict.get("auto_map", {}):
+                    processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
+
+        if processor_class is None:
+            # Otherwise, load config, if it can be loaded.
+            if not isinstance(config, PretrainedConfig):
+                config = AutoConfig.from_pretrained(
+                    pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+                )
+
+            # And check if the config contains the processor class.
+            processor_class = getattr(config, "processor_class", None)
+            if hasattr(config, "auto_map") and "AutoProcessor" in config.auto_map:
+                processor_auto_map = config.auto_map["AutoProcessor"]
+
+        if processor_class is not None:
+            processor_class = processor_class_from_name(processor_class)
+
+        has_remote_code = processor_auto_map is not None
+        has_local_code = processor_class is not None or type(config) in PROCESSOR_MAPPING
+
+        if has_remote_code:
+            if "--" in processor_auto_map:
+                upstream_repo = processor_auto_map.split("--")[0]
+            else:
+                upstream_repo = None
+            trust_remote_code = resolve_trust_remote_code(
+                trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
+            )
+
+        if has_remote_code and trust_remote_code:
+            processor_class = get_class_from_dynamic_module(
+                processor_auto_map, pretrained_model_name_or_path, **kwargs
+            )
+            _ = kwargs.pop("code_revision", None)
+            processor_class.register_for_auto_class()
+            return processor_class.from_pretrained(
+                pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+            )
+        elif processor_class is not None:
+            return processor_class.from_pretrained(
+                pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+            )
+        # Last try: we use the PROCESSOR_MAPPING.
+        elif type(config) in PROCESSOR_MAPPING:
+            return PROCESSOR_MAPPING[type(config)].from_pretrained(pretrained_model_name_or_path, **kwargs)
+
+        # At this stage, there doesn't seem to be a `Processor` class available for this model, so let's try a
+        # tokenizer.
+        try:
+            return AutoTokenizer.from_pretrained(
+                pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+            )
+        except Exception:
+            try:
+                return AutoImageProcessor.from_pretrained(
+                    pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+                )
+            except Exception:
+                pass
+
+        raise ValueError(
+            f"Unrecognized processing class in {pretrained_model_name_or_path}. Can't instantiate a processor, a "
+            "tokenizer or an image processorfor this model. Make sure the repository contains "
+            "the files of at least one of those processing classes."
+        )
+
+
+__all__ = ["PROCESSOR_MAPPING", "AutoProcessor"]

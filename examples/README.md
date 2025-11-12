@@ -17,20 +17,110 @@ export DOWNLOAD_SOURCE=modelscope
 export DOWNLOAD_SOURCE=aistudio
 ```
 
-### Paddle 权重使用说明
 
-使用 **Paddle** 格式权重，需要在配置文件（如 `full.yaml`、`lora.yaml`等）中手动添加以下参数，以避免与 **HuggingFace** 格式冲突：
+## 1. 预训练
 
-```yaml
-model_name_or_path: your_model_name_or_path
-convert_from_hf: false
-save_to_hf: false
+### 1.1. 数据准备
+
+#### 1.1.1. 在线数据流
+
+我们支持的精调数据格式是每行包含一个字典的 json 文件，每个字典包含以下字段：
+
+- `text` : `str, List(str)`, 预训练文本。
+
+样例数据：
+
+```text
+{"text": ["一个需要连续输入值的分类问题的示例是房屋价格预测。房屋的价格通常基于诸如平方英尺、位置、卧室和浴室数量以及像后院或车库等功能这样的因素定价。为了准确预测房屋价格，这些标准必须作为连续输入值输入到分类模型中。"]}
+...
 ```
 
+为了方便测试，我们也提供了[demo 数据集](https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz)可以直接使用：
 
-## 1. 精调
+```shell
+wget https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz
+mkdir -p data/pt && tar -xf pt_data.tar.gz -C data/sft/
+```
 
-### 1.1 数据准备
+#### 1.1.2. 离线数据流
+
+我们也可以选择使用离线的比特预训练数据流，更节省内存。离线数据流制作方法如下：
+
+下载一个文本数据集，例如 https://modelscope.cn/datasets/BazingaLyn/mini_pretrain_dataset
+
+格式需为jsonl，每行格式例如BazingaLyn/mini_pretrain_dataset/pretrain_hq_v7.jsonl：
+```text
+{"text": "番茄炒蛋\n材料：\n鸡蛋3个、番茄1个、油、盐、糖、水淀粉\n做法：..."}
+{"text": "请描述一下如何正确规划个人理财。正确规划个人理财需要以下几个步骤..."}
+{"text": "请输入一段描述有关海洋保护的情景对话。Person A: 哇，这个海滩真..."}
+{"text": "鉴别两种不同类型的葡萄酒。鉴别葡萄酒的方法因其类型和品种而异，下..."}
+```
+
+运行`examples/tools/create_pretraining_data.py`，生成数据将会保存在当前目录下的`./pretrain_data.bin`和`./pretrain_data.idx`
+```text
+python -u examples/tools/create_pretraining_data.py \
+    --model_name_or_path "/path/to/your/Qwen3-0.6B-base" \
+    --data_format "JSON" \
+    --input_path "/path/to/your/BazingaLyn/mini_pretrain_dataset/pretrain_hq_v7.jsonl" \
+    --append_eos \
+    --output_prefix "./pretrain_data"  \
+    --workers 1 \
+    --log_interval 10000 \
+    --data_impl "mmap"
+```
+
+- 参数说明
+ 
+| 参数名              | 类型        | 说明                 |
+|--------------------|----------- |-----------------|
+| `--model_name_or_path`     | string     | 模型路径  |
+| `--data_format`    | string     | 支持的文件格式，之前只支持 json |
+| `--input_path`     | string     | 输入的json文件的路径  |
+| `--append_eos`     | store_true | 是否在document的结尾添加eos token  |
+| `--output_prefix`  | str        | 输出文件的前缀    |
+| `--workers`        | int        | 运行的进程数     |
+| `--log_interval`   | int        | 打印日志间隔   |
+| `--data_impl`      | str        | 制作的数据集类型，默认为mmap，也可以选择lazy |
+
+### 1.2. 全参 PT
+
+预训练需要在配置文件中指定 `stage: PT`
+
+在线数据流
+```bash
+# 单卡
+paddleformers-cli train ./config/pt/full.yaml
+# 多卡
+paddleformers-cli train ./config/pt/full_tp_pp.yaml
+```
+
+离线数据流
+
+在配置文件中：
+
+`input_dir`指定数据集的前缀，例如：数据集 `data-1-part0.bin` 需要设置为 `input_dir: "1.0 ./data-1-part0"`，`1.0` 为数据配比；
+
+`split` 字段为 `train/eval` 的分配比例，如：`split: "998,2"`, 其中`train`为训练集，`eval`为评估集
+
+`dataset_type` 指定为 `pretrain`，例如：`dataset_type: "pretrain"`
+
+```bash
+paddleformers-cli train ./config/pt/full_offline_data.yaml
+```
+
+### 1.3. LoRA PT
+
+LoRA SFT 启动命令参考
+```bash
+# 单卡
+paddleformers-cli train ./config/pt/lora.yaml
+# 多卡
+paddleformers-cli train ./config/pt/lora_tp_pp.yaml
+```
+
+## 2. 精调
+
+### 2.1 数据准备
 
 我们支持的精调数据格式是每行包含一个字典的 json 文件，每个字典包含以下字段：
 
@@ -51,7 +141,7 @@ wget https://bj.bcebos.com/paddlenlp/datasets/examples/alpaca_demo.gz
 mkdir -p data/sft && tar -xf alpaca_demo.gz -C data/sft/ --strip-components=1
 ```
 
-### 1.2 全参 SFT
+### 2.2 全参 SFT
 
 单卡
 ```bash
@@ -63,7 +153,7 @@ python -u run_finetune.py ./config/sft/full.yaml
 python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_finetune.py ./config/sft/full_tp_pp.yaml
 ```
 
-### 1.3 LoRA SFT
+### 2.3 LoRA SFT
 
 LoRA SFT 启动命令参考
 ```bash
@@ -71,9 +161,9 @@ python -u run_finetune.py ./config/sft/lora.yaml
 ```
 
 
-## 2. 对齐
+## 3. 对齐
 
-### 2.1 数据准备
+### 3.1 数据准备
 
 我们支持的精调数据格式是每行包含一个字典的 json 文件，每个字典包含以下字段：
 
@@ -105,7 +195,7 @@ wget https://bj.bcebos.com/paddlenlp/datasets/examples/ultrafeedback_binarized.t
 mkdir -p data/dpo && tar -zxf ultrafeedback_binarized.tar.gz -C data/dpo/ --strip-components=1
 ```
 
-### 2.2 全参 DPO
+### 3.2 全参 DPO
 
 单卡
 ```bash
@@ -117,7 +207,7 @@ python -u ./alignment/dpo/run_dpo.py ./config/dpo/full.yaml
 python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" ./alignment/dpo/run_dpo.py ./config/dpo/full_tp_pp.yaml
 ```
 
-### 2.3 LoRA DPO
+### 3.3 LoRA DPO
 
 LoRA DPO 启动命令参考
 ```bash
@@ -125,7 +215,7 @@ python -u ./alignment/dpo/run_dpo.py ./config/dpo/lora.yaml
 ```
 
 
-## 3. LoRA 参数合并
+## 4. LoRA 参数合并
 
 使用 LoRA 方式训练模型后，为了方便推理，我们提供将 LoRA 参数合并到模型主权重中的脚本`tools/mergekit.py`。
 

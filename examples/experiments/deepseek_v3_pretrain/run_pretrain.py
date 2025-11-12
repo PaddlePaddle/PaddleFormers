@@ -32,6 +32,8 @@ from paddleformers.data.causal_dataset import (
 )
 from paddleformers.trainer import (
     FP8QuantWeightCallback,
+    MoECorrectionBiasAdjustCallback,
+    MoeExpertsGradScaleCallback,
     PdArgumentParser,
     StepFlexToken,
     Trainer,
@@ -403,7 +405,7 @@ def main():
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path, download_hub="huggingface")
+    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
     config = DeepseekV2FastConfig.from_pretrained(model_args.model_name_or_path)
 
     # set all llm config
@@ -411,6 +413,7 @@ def main():
     config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
     config.seq_length = data_args.max_seq_length
+    config.max_sequence_length = data_args.max_seq_length
     # There are some technique extend RotaryEmbedding context. so don't change max_position_embeddings
     if not model_args.continue_training:
         config.max_position_embeddings = max(config.max_position_embeddings, data_args.max_seq_length)
@@ -571,6 +574,13 @@ def main():
     )
 
     callbacks = [StepFlexToken(), FP8QuantWeightCallback()]
+
+    if training_args.use_expert_parallel:
+        callbacks += [MoeExpertsGradScaleCallback(training_args)]
+
+    if getattr(config, "topk_method", None) == "noaux_tc":
+        aux_loss_free_gamma = getattr(config, "aux_loss_free_gamma", 0.001)
+        callbacks += [MoECorrectionBiasAdjustCallback(aux_loss_free_gamma)]
 
     def resume_from_custom_func(model):
         if training_args.resume_from_huggingface_ckpt:

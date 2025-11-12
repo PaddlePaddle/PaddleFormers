@@ -248,7 +248,7 @@ class TestUnifiedCheckpointOnN2C4(TestUnifiedCheckpointBase):
 
 
 # Test Unified Checkpoint Hybrid Parallel Strategy Convert on N2C4
-@pytest.mark.skipif(True, reason="Skip for failed")
+@pytest.mark.skipif(True, reason="Skip for unsupoort")
 class TestUnifiedCheckpointOnN2C4Dynamic(TestUnifiedCheckpointBase):
     def setUp(self):
         super().setUp()
@@ -270,7 +270,7 @@ class TestUnifiedCheckpointOnN2C4Dynamic(TestUnifiedCheckpointBase):
 
 
 # Test Unified Checkpoint Hybrid Parallel Strategy and Devices Convert Between N1C8 and N2C4
-@pytest.mark.skipif(True, reason="Skip for failed")
+@pytest.mark.skipif(True, reason="Skip for unsupoort")
 class TestUnifiedCheckpointOnN1C8ToN2C4(TestUnifiedCheckpointBase):
     def setUp(self):
         super().setUp()
@@ -292,7 +292,7 @@ class TestUnifiedCheckpointOnN1C8ToN2C4(TestUnifiedCheckpointBase):
             np.testing.assert_allclose(res[0], res[-1], rtol=self.rtol)
 
 
-@pytest.mark.skipif(True, reason="Skip for failed")
+@pytest.mark.skipif(True, reason="Skip for unsupoort")
 class TestUnifiedCheckpointOnN2C4ToN1C8(TestUnifiedCheckpointBase):
     def setUp(self):
         super().setUp()
@@ -315,7 +315,6 @@ class TestUnifiedCheckpointOnN2C4ToN1C8(TestUnifiedCheckpointBase):
 
 
 # Test Unified Checkpoint Config on N1C8
-@pytest.mark.skipif(True, reason="Skip for None CE")
 class TestUnifiedCheckpointOnN1C8SkipSaveModelWeight(TestUnifiedCheckpointBase):
     def setUp(self):
         super().setUp()
@@ -335,7 +334,6 @@ class TestUnifiedCheckpointOnN1C8SkipSaveModelWeight(TestUnifiedCheckpointBase):
         self.run_n1c8(self.run_pretrain_file, **train_args)
 
 
-@pytest.mark.skipif(True, reason="Skip for None CE")
 class TestUnifiedCheckpointOnN1C8MasterWeightCompatibleO1ToO2(TestUnifiedCheckpointBase):
     def setUp(self):
         super().setUp()
@@ -356,7 +354,6 @@ class TestUnifiedCheckpointOnN1C8MasterWeightCompatibleO1ToO2(TestUnifiedCheckpo
         self.run_n1c8(self.run_pretrain_file, **train_args)
 
 
-@pytest.mark.skipif(True, reason="Skip for None CE")
 class TestUnifiedCheckpointOnN1C8MasterWeightCompatibleO2ToO1(TestUnifiedCheckpointBase):
     def setUp(self):
         super().setUp()
@@ -377,7 +374,6 @@ class TestUnifiedCheckpointOnN1C8MasterWeightCompatibleO2ToO1(TestUnifiedCheckpo
         self.run_n1c8(self.run_pretrain_file, **train_args)
 
 
-@pytest.mark.skipif(True, reason="Skip for None CE")
 class TestUnifiedCheckpointOnN1C8CheckpointCompatible(TestUnifiedCheckpointBase):
     def setUp(self):
         super().setUp()
@@ -394,7 +390,6 @@ class TestUnifiedCheckpointOnN1C8CheckpointCompatible(TestUnifiedCheckpointBase)
         self.run_n1c8(self.run_pretrain_file, **train_args)
 
 
-@pytest.mark.skipif(True, reason="Skip for None CE")
 class TestPaddleCheckpointOnN1C8Reset(TestUnifiedCheckpointBase):
     def setUp(self):
         super().setUp()
@@ -411,7 +406,7 @@ class TestPaddleCheckpointOnN1C8Reset(TestUnifiedCheckpointBase):
         self.run_n1c8(self.run_pretrain_file, **train_args)
 
 
-@pytest.mark.skipif(True, reason="Skip for None CE")
+@pytest.mark.skipif(True, reason="Skip for unsupoort")
 class TestPaddleCheckpointOnN1C2Reset(TestMultipleGpus):
     def setUp(self):
         self.configs = get_pretrain_arguments(pretrain_arguments)
@@ -436,7 +431,6 @@ class TestPaddleCheckpointOnN1C2Reset(TestMultipleGpus):
         train_args["unified_checkpoint"] = 0
         self.run_n1c2(self.run_pretrain_file, **train_args)
 
-    @skip_for_none_ce_case
     @require_paddle_at_least_2_gpu
     def testTP2(self):
         remove_logs()
@@ -453,7 +447,7 @@ class TestPaddleCheckpointOnN1C2Reset(TestMultipleGpus):
             np.testing.assert_allclose(res[0], res[1], self.rtol)
 
 
-@pytest.mark.skipif(True, reason="Skip for None CE")
+@pytest.mark.skipif(True, reason="Skip for unsupoort")
 class TestUnifiedCheckpointOnN1C2Reset(TestMultipleGpus):
     def setUp(self):
         self.configs = get_pretrain_arguments(pretrain_arguments)
@@ -514,7 +508,6 @@ class TestUnifiedCheckpointOnN1C2Reset(TestMultipleGpus):
             assert len(res) == 2
             np.testing.assert_allclose(res[0], res[1], self.rtol)
 
-    @skip_for_none_ce_case
     @require_paddle_at_least_2_gpu
     def testFileLists(self):
         remove_logs()
@@ -553,7 +546,6 @@ class TestUnifiedCheckpointOnN1C2Reset(TestMultipleGpus):
             np.testing.assert_allclose(res[0], res[1], self.rtol)
 
 
-@pytest.mark.skipif(True, reason="Skip for None CE")
 class TestUnifiedCheckpointOnN1C8AsyncSaveToDisk(TestUnifiedCheckpointBase):
     def setUp(self):
         super().setUp()
