@@ -16,6 +16,7 @@ from copy import deepcopy
 from functools import partial
 from typing import List, Optional, Tuple, Union
 
+import numpy as np
 import paddle
 import paddle.distributed as dist
 from paddle import Tensor, nn
@@ -35,6 +36,7 @@ from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
+from ..context_parallel_utils import ContextParallelScatterOp, flashmask_attention_cp
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -221,21 +223,47 @@ class Glm4MoeAttention(nn.Layer):
             key_states = self.k_proj(hidden_states)
             value_states = self.v_proj(hidden_states)
 
-            if self.sequence_parallel:
-                max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
-                q_len = max_sequence_length
+            if self.config.context_parallel_degree > 1:
+                if self.sequence_parallel:
+                    bsz = (
+                        hidden_states.shape[0]
+                        * self.config.tensor_parallel_degree
+                        * self.config.context_parallel_degree
+                        // self.config.max_sequence_length
+                    )
+                    q_len = self.config.max_sequence_length // self.config.context_parallel_degree
+                else:
+                    bsz = (
+                        hidden_states.shape[0] * self.config.context_parallel_degree // self.config.max_sequence_length
+                    )
+                    q_len = self.config.max_sequence_length // self.config.context_parallel_degree
             else:
-                bsz, q_len, _ = hidden_states.shape
+                if self.sequence_parallel:
+                    max_sequence_length = self.config.max_sequence_length
+                    bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                    q_len = max_sequence_length
+                else:
+                    bsz, q_len, _ = hidden_states.shape
+
             query_states = query_states.reshape([bsz, q_len, -1, self.head_dim])
             key_states = key_states.reshape([bsz, q_len, -1, self.head_dim])
             value_states = value_states.reshape([bsz, q_len, -1, self.head_dim])
         else:
             mix_layer = self.qkv_proj(hidden_states)
-            if self.sequence_parallel:
-                max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
-                q_len = max_sequence_length
+            if self.config.context_parallel_degree > 1:
+                if self.sequence_parallel:
+                    bsz = (
+                        hidden_states.shape[0]
+                        * self.config.tensor_parallel_degree
+                        * self.config.context_parallel_degree
+                        // self.config.max_sequence_length
+                    )
+                    q_len = self.config.max_sequence_length // self.config.context_parallel_degree
+                else:
+                    bsz = (
+                        hidden_states.shape[0] * self.config.context_parallel_degree // self.config.max_sequence_length
+                    )
+                    q_len = self.config.max_sequence_length // self.config.context_parallel_degree
                 target_shape = [
                     bsz,
                     q_len,
@@ -243,7 +271,18 @@ class Glm4MoeAttention(nn.Layer):
                     (self.num_key_value_groups + 2) * self.head_dim,
                 ]
             else:
-                target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
+                if self.sequence_parallel:
+                    max_sequence_length = self.config.max_sequence_length
+                    bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                    q_len = max_sequence_length
+                    target_shape = [
+                        bsz,
+                        q_len,
+                        self.num_key_value_heads,
+                        (self.num_key_value_groups + 2) * self.head_dim,
+                    ]
+                else:
+                    target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
             mix_layer = paddle.reshape_(mix_layer, target_shape)
             query_states, key_states, value_states = paddle.split(
                 mix_layer,
@@ -265,18 +304,41 @@ class Glm4MoeAttention(nn.Layer):
             value_states = paddle.cat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-
-        attn_output, attn_weights = attention_interface(
-            self,
-            query=query_states,
-            key=key_states,
-            value=value_states,
-            attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
-            scaling=self.scaling,
-        )
+        if self.config.context_parallel_degree > 1:
+            bsz, q_len, num_heads, head_dim = query_states.shape
+            attention_interface = flashmask_attention_cp
+            if attn_mask_startend_row_indices.shape[-1] == 1:
+                bs, k_heads, k_seqlen, _ = attn_mask_startend_row_indices.shape
+                nocausal_startend_row_indices = paddle.to_tensor(
+                    np.arange(k_seqlen), dtype=attn_mask_startend_row_indices.dtype
+                )
+                nocausal_startend_row_indices = nocausal_startend_row_indices.reshape(1, 1, k_seqlen, 1)
+                nocausal_startend_row_indices_expand = nocausal_startend_row_indices.expand(bs, k_heads, k_seqlen, 1)
+                attn_mask_startend_row_indices = paddle.concat(
+                    [attn_mask_startend_row_indices, nocausal_startend_row_indices_expand], axis=-1
+                )
+            attn_output = attention_interface(
+                query_states.astype(value_states.dtype),
+                key_states.astype(value_states.dtype),
+                value_states.astype(value_states.dtype),
+                startend_row_indices=attn_mask_startend_row_indices,
+                dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
+                causal=False,
+            )
+            attn_output = attn_output.reshape([bsz, q_len, head_dim * num_heads])
+            attn_weights = None
+        else:
+            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+            attn_output, attn_weights = attention_interface(
+                self,
+                query=query_states,
+                key=key_states,
+                value=value_states,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                dropout=self.config.get("attention_dropout", 0.0) if self.training else 0.0,
+                scaling=self.scaling,
+            )
 
         # if sequence_parallel is true, out shape are [q_len / n, bs, num_head * head_dim]
         # else their shape are [bs, q_len, num_head * head_dim], n is mp parallelism.
@@ -641,9 +703,12 @@ class Glm4MoeDecoderLayer(nn.Layer):
         present_key_value = attn_outputs[2] if use_cache else None
 
         hidden_size = hidden_states.shape[-1]
+        seq_len = self.config.max_sequence_length
+        if self.config.context_parallel_degree > 1:
+            seq_len = seq_len // self.config.context_parallel_degree
         if self.config.sequence_parallel:
             # hidden_states shape:[b*s,h]
-            seq_len = self.config.max_sequence_length // self.config.tensor_parallel_degree
+            seq_len = seq_len // self.config.tensor_parallel_degree
             batch_size = hidden_states.shape[0] // seq_len
             assert (
                 batch_size > 0
@@ -1319,8 +1384,12 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
         elif input_ids is not None:
+            if self.config.context_parallel_degree > 1:
+                input_ids = ContextParallelScatterOp.apply(input_ids, axis=-1)
             batch_size, seq_length = input_ids.shape
         elif inputs_embeds is not None:
+            if self.config.context_parallel_degree > 1:
+                inputs_embeds = ContextParallelScatterOp.apply(inputs_embeds, axis=-1)
             batch_size, seq_length, _ = inputs_embeds.shape
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
@@ -1567,6 +1636,8 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         if self.config.sequence_parallel:
             # hidden_states shape:[b*s,h]
             max_seq_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
+        if self.config.context_parallel_degree > 1:
+            max_seq_len = max_seq_len * self.config.context_parallel_degree
         if attention_mask is None:
             attn_mask = None
             attn_mask_startend_row_indices = None

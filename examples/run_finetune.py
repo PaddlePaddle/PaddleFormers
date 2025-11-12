@@ -19,6 +19,7 @@ import sys
 from functools import partial
 
 import paddle
+import paddle.distributed.fleet as fleet
 
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
@@ -200,6 +201,13 @@ def main():
     model_config.max_sequence_length = training_args.max_seq_len
     model_config.aux_loss_alpha = training_args.aux_loss_alpha
     model_config._attn_implementation = model_args.attn_impl
+
+    # set context_parallel_degree for model_config
+    hcg = fleet.get_hybrid_communicate_group()
+    if hasattr(hcg, "get_context_parallel_world_size"):
+        model_config.context_parallel_degree = max(hcg.get_context_parallel_world_size(), 1)
+    else:
+        model_config.context_parallel_degree = 1
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 

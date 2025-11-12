@@ -18,6 +18,10 @@ import paddle.nn as nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 
+from ...transformers.context_parallel_utils import (
+    ContextParallelGatherOp,
+    ContextParallelScatterOp,
+)
 from ...transformers.sequence_parallel_utils import (
     AllGatherVarlenOp,
     sequence_parallel_sparse_mask_labels,
@@ -66,6 +70,9 @@ def loss_impl(self, logits, labels):
 def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias, labels, loss_mask, transpose_y):
     seq_len = labels.shape[1] if labels.ndim == 2 else labels.shape[0]
     if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
+        assert (
+            self.config.context_parallel_degree == 1
+        ), "context parallel does not support use_fused_head_and_loss_fn now"
         masked_lm_loss = fused_head_and_loss_fn(
             hidden_states,
             lm_head_weight,
@@ -84,6 +91,9 @@ def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias
     else:
         if self.use_fused_head_and_loss_fn:
             # go back to non-subbatch fused head loss
+            assert (
+                self.config.context_parallel_degree == 1
+            ), "context parallel does not support use_fused_head_and_loss_fn now"
             logits = calc_lm_head_logits(
                 self.config,
                 hidden_states,
@@ -107,6 +117,9 @@ def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias
         elif logits.dim() == 3 and labels.dim() == 1:
             labels = labels.unsqueeze(0)
 
+        if self.config.context_parallel_degree > 1:
+            labels = ContextParallelScatterOp.apply(labels, axis=1)
+
         # logits: bsz seq_len
         # labels: bsz seq_len vocab_size
         if self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
@@ -121,6 +134,9 @@ def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias
         else:
             masked_lm_loss = loss_impl(self, logits, labels.unsqueeze(-1))
 
+        if self.config.context_parallel_degree > 1:
+            masked_lm_loss = ContextParallelGatherOp.apply(masked_lm_loss, axis=1)
+            labels = ContextParallelGatherOp.apply(labels, axis=1)
     masked_lm_loss = sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask)
     return masked_lm_loss
 
@@ -136,6 +152,8 @@ def sft_loss_forward(
         self, logits, labels
     )
     if self.use_filtered_label_loss:
+        if self.config.context_parallel_degree > 1:
+            assert False, "context parallel does not support use_filtered_label_loss"
         if self.tensor_parallel and self.sequence_parallel and logits is None:
             masked_lm_labels, sparse_label_idx = sequence_parallel_sparse_mask_labels(labels, self.ignored_index)
             sparse_label_idx = sparse_label_idx.reshape([-1, 1])

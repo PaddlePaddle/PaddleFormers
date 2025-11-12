@@ -28,6 +28,7 @@ from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ..transformers.configuration_utils import PretrainedConfig
+from ..transformers.context_parallel_utils import ContextParallelScatterOp
 from ..transformers.model_utils import PipelinePretrainedModel
 from ..utils.log import logger
 from .criterion import CriterionLayer
@@ -266,17 +267,21 @@ class EmbeddingPipe(nn.Layer):
             args, num_nextn_predict_layers > 0, is_embed=True
         )
         input_ids.stop_gradient = True
+        if self.config.context_parallel_degree > 1:
+            input_ids = ContextParallelScatterOp.apply(input_ids, axis=-1)
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         if position_ids is None and not self.config.fuse_rope:
             position_ids = (
                 paddle.arange(
                     0,
-                    input_ids.shape[1],
+                    self.config.max_sequence_length,
                     dtype="int64",
                 )
                 .unsqueeze(0)
                 .tile([input_ids.shape[0], 1])
             )
+        if self.config.context_parallel_degree > 1:
+            position_ids = ContextParallelScatterOp.apply(position_ids, axis=-1)
         if self.config.fuse_rope:
             position_embeddings = None
         else:

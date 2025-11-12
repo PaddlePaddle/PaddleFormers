@@ -25,6 +25,7 @@ import paddle.nn.functional as F
 from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 
 from ..utils.log import logger
+from .context_parallel_utils import ContextParallelAllGatherOp
 
 
 class MoEGateMixin:
@@ -135,16 +136,34 @@ class MoEGateMixin:
 
         sub_max_seq_len = max_seq_len
         if self.config.moe_subbatch_token_num > 0:
-            sub_max_seq_len = self.config.moe_subbatch_token_num * self.config.tensor_parallel_degree
+            sub_max_seq_len = (
+                self.config.moe_subbatch_token_num
+                * self.config.tensor_parallel_degree
+                * self.config.context_parallel_degree
+            )
 
         # all_probs and routing_map should be computed using the runtime local sequence length on each worker.
-        if self.config.tensor_parallel_degree > 1:
-            assert self.config.sequence_parallel and max_seq_len % self.config.tensor_parallel_degree == 0
-            local_seq_len = sub_max_seq_len // self.config.tensor_parallel_degree
+        if self.config.tensor_parallel_degree > 1 or self.config.tensor_parallel_degree > 1:
+            local_seq_len = sub_max_seq_len
+            if self.config.tensor_parallel_degree > 1:
+                assert self.config.sequence_parallel and max_seq_len % self.config.tensor_parallel_degree == 0
+                local_seq_len = sub_max_seq_len // self.config.tensor_parallel_degree
+            if self.config.context_parallel_degree > 1:
+                assert local_seq_len % self.config.context_parallel_degree == 0
+                local_seq_len = local_seq_len // self.config.context_parallel_degree
             # [B*S, E]
-            all_probs = AllGatherOp.apply(probs)
+            if self.config.tensor_parallel_degree > 1:
+                all_probs = AllGatherOp.apply(probs)
+            else:
+                all_probs = probs
+            if self.config.context_parallel_degree > 1:
+                all_probs = all_probs.reshape(
+                    [-1, sub_max_seq_len // self.config.context_parallel_degree, self.num_experts]
+                )
+                all_probs = ContextParallelAllGatherOp.apply(all_probs, axis=1)
+            else:
+                all_probs = all_probs.reshape([-1, sub_max_seq_len, self.num_experts])
             # [B, S, E]
-            all_probs = all_probs.reshape([-1, sub_max_seq_len, self.num_experts])
             batch_size = all_probs.shape[0]
             # [B, S, E]
             routing_map = routing_map.reshape([batch_size, local_seq_len, -1])

@@ -46,6 +46,9 @@ def calc_lm_head_logits(
         hidden_states = GatherOp.apply(hidden_states)
         seq_length = config.max_sequence_length
 
+        if config.context_parallel_degree > 1:
+            seq_length = seq_length // config.context_parallel_degree
+
         hidden_states = hidden_states.reshape([-1, seq_length, hidden_states.shape[-1]])
 
     if tensor_parallel_output is None:

@@ -111,7 +111,6 @@ except:
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..transformers.context_parallel_utils import split_inputs_sequence_dim_load_balance
 from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
     PretrainedModel,
@@ -1160,8 +1159,6 @@ class Trainer:
                 trainable_numel = int(trainable_numel_tensor.item()) // self.args.dataset_world_size
                 if self.args.sep_parallel_degree > 0:
                     trainable_numel = trainable_numel // self.args.sep_parallel_degree
-                if self.args.context_parallel_degree > 0:
-                    trainable_numel = trainable_numel // self.args.context_parallel_degree
                 # the numel is roughly, because the tensor parallel still hold own bias or layer_norm weight without splited
                 # so, the trainable numel is a little bigger than real.
                 logger.debug(f"  Number of trainable parameters = {trainable_numel:,} (all devices, roughly)")
@@ -1306,12 +1303,6 @@ class Trainer:
                     and self.args.split_inputs_sequence_dim
                 ):
                     inputs = split_inputs_sequence_dim(inputs)
-                if (
-                    self.args.use_hybrid_parallel
-                    and self.args.context_parallel_degree > 1
-                    and self.args.split_inputs_sequence_dim
-                ):
-                    inputs = split_inputs_sequence_dim_load_balance(inputs)
                 if self.args.ignore_data_skip:
                     self.timers and self.timers("read-data").stop()
 

@@ -793,28 +793,45 @@ class MoeExpertsGradScaleCallback(TrainerCallback):
         if not args.use_expert_parallel:
             raise ValueError("This callback should be used with expert parallel")
         if args.expert_parallel_degree > 1:
-            self.expert_gradient_scaling_factor = 1.0 / args.expert_parallel_degree
-            if args.tensor_parallel_degree > 1:
-                self.expert_gradient_scaling_factor *= args.tensor_parallel_degree
+            tensor_parallel_degree = max(args.tensor_parallel_degree, 1)
+            context_parallel_degree = max(args.context_parallel_degree, 1)
+            expert_parallel_degree = max(args.expert_parallel_degree, 1)
+            self.expert_gradient_scaling_factor = (
+                tensor_parallel_degree * context_parallel_degree / expert_parallel_degree
+            )
             logger.info(
                 f"EP-MoE is used, expert gradient scaling factor is set to {self.expert_gradient_scaling_factor}"
             )
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
         model = kwargs["model"]
-        param_count = 0
+        optimizer = kwargs["optimizer"]
+        hcg = optimizer._hcg
+        if not hasattr(hcg, "get_context_parallel_world_size"):
+            cp_worldsize = 1
+        else:
+            cp_worldsize = hcg.get_context_parallel_world_size()
+
+        ep_scale_param_count = 0
+        cp_scale_param_count = 0
         for p in model.parameters():
-            if not getattr(p, "no_sync", False):
-                continue
-            if hasattr(p, "is_moe_param") and p.is_moe_param:
-                with paddle.no_grad():
-                    if hasattr(p, "main_grad") and p.main_grad is not None:
-                        p.main_grad.scale_(self.expert_gradient_scaling_factor)
-                        param_count += 1
-                    elif p.grad is not None:
-                        p.grad.scale_(self.expert_gradient_scaling_factor)
-                        param_count += 1
-        logger.info("correct ep grad count:{}".format(param_count))
+            with paddle.no_grad():
+                is_expert = hasattr(p, "is_moe_param") and p.is_moe_param
+                disable_scale_grad = getattr(p, "context_parallel_disable_scale_grad", False)
+                if not (disable_scale_grad or is_expert) and cp_worldsize > 1:
+                    grad = getattr(p, "main_grad", p.grad)
+                    if grad is not None:
+                        coeff = cp_worldsize
+                        grad.scale_(coeff)
+                        cp_scale_param_count += 1
+                elif is_expert and self.expert_gradient_scaling_factor != 1.0:
+                    grad = getattr(p, "main_grad", p.grad)
+                    if grad is not None:
+                        coeff = self.expert_gradient_scaling_factor
+                        grad.scale_(coeff)
+                        ep_scale_param_count += 1
+
+        logger.info(f"correct ep grad count: {ep_scale_param_count}, correct cp grad count: {cp_scale_param_count}")
 
 
 class MoEGateSpGradSyncCallBack(TrainerCallback):
