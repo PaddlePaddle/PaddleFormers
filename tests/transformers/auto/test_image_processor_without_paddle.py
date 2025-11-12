@@ -13,12 +13,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import os
 import shutil
+import sys
 import unittest
 
+import paddle as paddle_shadow
+
+sys.modules["paddle"] = None
 from paddleformers.transformers import AutoImageProcessor
+
+sys.modules["paddle"] = paddle_shadow
 
 
 class TestImageProcessor(unittest.TestCase):
