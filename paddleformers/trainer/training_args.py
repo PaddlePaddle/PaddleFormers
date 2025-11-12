@@ -2099,7 +2099,7 @@ class TrainingArguments:
         assert (
             self.save_steps % self.zcc_ema_interval == 0
         ), f"save_steps[{self.save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
-        if self.zcc_save_ema_coef is not None:
+        if self.enable_zero_cost_checkpoint and self.zcc_save_ema_coef is not None:
             assert (
                 self.zcc_workers_num == 1
             ), "EMA function in zero cost checkpoint mode does not support zcc_workers_num > 1 for now."
