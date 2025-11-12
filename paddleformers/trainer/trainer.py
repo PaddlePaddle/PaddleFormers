@@ -957,6 +957,10 @@ class Trainer:
                 offload=self.args.load_via_cpu,
             )
 
+            for v in optimizer_sharded_state_dict.values():
+                if hasattr(v.local_tensor, "target_tensor"):
+                    del v.local_tensor.target_tensor
+
             self._load_scheduler(resume_from_checkpoint)
 
         dist.load_state_dict(
@@ -965,6 +969,10 @@ class Trainer:
             aoa_config=self.args.aoa_config,
             offload=self.args.load_via_cpu,
         )
+
+        for v in model_sharded_state_dict.values():
+            if hasattr(v.local_tensor, "target_tensor"):
+                del v.local_tensor.target_tensor
 
     def train(
         self,
