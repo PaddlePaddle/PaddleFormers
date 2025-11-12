@@ -491,6 +491,8 @@ def _load_part_state_dict(
                     with device_guard():
                         weight = paddle.Tensor.__call__(fit_bf16_to_uint16_np(weight), zero_copy=True)
                     weight = weight._copy_to(paddle.framework._current_expected_place(), False)
+                if not isinstance(weight, paddle.Tensor):
+                    weight = paddle.Tensor.__call__(weight, zero_copy=True)
                 weight = _transpose_hf_weight(key, weight)
                 part_state_dict[key] = weight
 
@@ -1252,6 +1254,8 @@ def clean_unrelated_safetensors(save_dir):
             to_delete.append(filepath)
         elif filename == "model.safetensors.index.json" and os.path.isfile(filepath):
             to_delete.append(filepath)
+        elif filename == "peft_model.safetensors.index.json" and os.path.isfile(filepath):
+            to_delete.append(filepath)
 
     if to_delete:
         logger.warning(
@@ -1293,6 +1297,15 @@ def replace_name_and_gen_index(path, total_size):
         for i in range(paddle.distributed.get_world_size()):
             saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
             paddle.save(i, saved_signal_path)
+
+
+def get_common_folder(file_list):
+    dirnames = [os.path.dirname(f) for f in file_list]
+    common_folder = dirnames[0]
+    if all(d == common_folder for d in dirnames):
+        return common_folder
+    else:
+        raise ValueError("All files must be in the same folder!")
 
 
 @six.add_metaclass(InitTrackerMeta)
@@ -2944,6 +2957,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             variant=variant,
         )
 
+        file_list = resolved_sharded_files if is_sharded else [resolved_archive_file]
+        ckpt_path = get_common_folder(file_list)
         # 3. init the model
         init_args = config["init_args"] or ()
         with ContextManagers(init_contexts):
@@ -2951,11 +2966,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         if hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
             aoa_config = cls._gen_aoa_config(config)
-
             sharded_state_dict = model.sharded_state_dict()
             dist.load_state_dict(
                 sharded_state_dict,
-                path=pretrained_model_name_or_path,
+                path=ckpt_path,
                 aoa_config=aoa_config,
                 safetensors=True,
                 offload=load_via_cpu,
