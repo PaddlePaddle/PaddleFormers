@@ -37,7 +37,7 @@ from .moe.utils import _parse_moe_group
 from .norm import LayerNorm, RMSNorm
 
 
-def parse_args(args, mtp_enable=False, is_embed=False):
+def parse_args(args):
     """
     Parses input arguments and converts them into model-ready format.
     Processes different input argument patterns into standardized hidden states,
@@ -61,39 +61,13 @@ def parse_args(args, mtp_enable=False, is_embed=False):
             - position_ids (Optional[paddle.Tensor]): Position IDs if provided
             All returned tensors have stop_gradient=True.
     """
-    if isinstance(args, tuple):
-        position_embeddings = None
-        nbatch_pack_offset = None
+    if isinstance(args, dict):
+        hidden_states = args.get("hidden_states", None)
+        attention_mask = args.get("attention_mask", None)
+        position_ids = args.get("position_ids", None)
+        position_embeddings = args.get("position_embeddings", None)
+        nbatch_pack_offset = args.get("nbatch_pack_offset", None)
 
-        if len(args) == 5:
-            hidden_states, attention_mask, position_ids, position_embeddings, nbatch_pack_offset = args
-        elif len(args) == 4:
-            hidden_states, attention_mask, position_ids, position_embeddings = args
-        elif len(args) == 3:
-            if mtp_enable:
-                hidden_states, attention_mask, nbatch_pack_offset = args
-                position_ids = None
-            elif is_embed:
-                hidden_states, attention_mask, position_ids = args
-            else:
-                hidden_states, position_ids, position_embeddings = args
-                attention_mask = None
-                nbatch_pack_offset = None
-        elif len(args) == 2:
-            if mtp_enable:
-                hidden_states, nbatch_pack_offset = args
-                attention_mask = None
-            else:
-                hidden_states, attention_mask = args
-            position_ids = None
-        elif len(args) == 1:
-            (hidden_states,) = args
-            attention_mask = None
-            position_ids = None
-            nbatch_pack_offset = None
-    else:
-        hidden_states = args
-        attention_mask, position_ids, position_embeddings, nbatch_pack_offset = None, None, None, None
     # need position_ids to compute value for PPO.
     if position_ids is not None:
         position_ids.stop_gradient = True
@@ -262,9 +236,7 @@ class EmbeddingPipe(nn.Layer):
         num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
         enable_mtp_magic_send = self.config.get("enable_mtp_magic_send", False)
 
-        input_ids, attention_mask, position_ids, _, nbatch_pack_offset = parse_args(
-            args, num_nextn_predict_layers > 0, is_embed=True
-        )
+        input_ids, attention_mask, position_ids, _, nbatch_pack_offset = parse_args(args)
         input_ids.stop_gradient = True
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         if position_ids is None and not self.config.fuse_rope:
@@ -282,6 +254,7 @@ class EmbeddingPipe(nn.Layer):
         else:
             position_embeddings = paddle.stack(self.rotary_emb(emb, position_ids))  # cos and sin
 
+        ret = {}
         if num_nextn_predict_layers > 0:
             if enable_mtp_magic_send:
                 emb = emb[:, :-num_nextn_predict_layers, :]
@@ -311,13 +284,13 @@ class EmbeddingPipe(nn.Layer):
 
                     mtp_emb_res.append(inputs_embeds_mtp)
                 res = paddle.cat(mtp_emb_res)
-                ret = (res,)
+                ret["hidden_states"] = res
         else:
             if self.sequence_parallel:
                 emb = emb.reshape([-1, emb.shape[-1]])
                 emb = ScatterOp.apply(emb)
 
-            ret = (emb,)
+            ret["hidden_states"] = emb
 
         if attention_mask is not None:
             if attention_mask.dtype != paddle.int32:
@@ -332,15 +305,15 @@ class EmbeddingPipe(nn.Layer):
                 )
 
         if attention_mask is not None:
-            ret += (attention_mask.clone(),)
+            ret["attention_mask"] = attention_mask.clone()
         if position_ids is not None:
-            ret += (position_ids.clone(),)
+            ret["position_ids"] = position_ids.clone()
         if position_embeddings is not None:
-            ret += (position_embeddings.clone(),)
+            ret["position_embeddings"] = position_embeddings.clone()
         if nbatch_pack_offset is not None:
-            ret += (nbatch_pack_offset.clone(),)
+            ret["nbatch_pack_offset"] = nbatch_pack_offset.clone()
         if len(ret) == 1:
-            ret = ret[0]
+            ret = {"hidden_states": ret["hidden_states"]}
         return ret
 
 
@@ -460,23 +433,24 @@ def make_decoder_layer_pipe(decoder_layer):
                 position_embeddings=tuple_position_embeddings,
             )
 
+        ret = {}
         if isinstance(hidden_states, paddle.Tensor):
-            ret = (hidden_states,)
+            ret["hidden_states"] = hidden_states
         if attention_mask is not None:
-            ret += (attention_mask.clone(),)
+            ret["attention_mask"] = attention_mask
         if position_ids is not None:
-            ret += (position_ids.clone(),)
+            ret["position_ids"] = position_ids
         if position_embeddings is not None:
-            ret += (position_embeddings.clone(),)
+            ret["position_embeddings"] = position_embeddings
         if nbatch_pack_offset is not None:
-            ret += (nbatch_pack_offset.clone(),)
+            ret["nbatch_pack_offset"] = nbatch_pack_offset
         if len(ret) == 1:
-            (ret,) = ret
+            ret = {"hidden_states": ret["hidden_states"]}
         if num_nextn_predict_layers > 0:
             if enable_mtp_magic_send:
-                ret = (ret,)
+                ret = {"hidden_states": ret["hidden_states"]}
             else:
-                ret = (paddle.cat([ret[0], *inputs_embeds]),) + ret[1:]
+                ret["hidden_states"] = paddle.cat([ret["hidden_states"], *inputs_embeds])
 
         return ret
 
