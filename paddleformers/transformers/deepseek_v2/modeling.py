@@ -51,13 +51,9 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.norm import RMSNorm
 from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
-from ...utils.masking_utils import (
-    _expand_2d_mask,
-    _make_causal_mask,
-    get_use_casual_mask,
-    is_casual_mask,
-)
+from ...utils.masking_utils import _expand_2d_mask, _make_causal_mask
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import (
     BaseModelOutputWithPastAndMTP,
     CausalLMOutputWithPast,
@@ -1477,21 +1473,19 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         if position_embeddings is None:
             position_embeddings = paddle.stack(self.rotary_emb(inputs_embeds, position_ids=position_ids))
 
-        # embed positions
-        if attn_mask_startend_row_indices is not None or get_use_casual_mask():
-            attention_mask = None
-        else:
-            # [bs, seq_len]
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-            attention_mask = self._prepare_decoder_attention_mask(
-                attention_mask, (batch_size, seq_length), past_key_values_length, inputs_embeds.dtype
-            )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                attention_mask = None if is_casual_mask(attention_mask) else attention_mask
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": past_key_values_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+            "return_mapping": False,
+        }
+
+        attention_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
 
         if self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]  # [B, S, D]

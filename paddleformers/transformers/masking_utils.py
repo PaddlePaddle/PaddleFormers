@@ -125,6 +125,19 @@ def create_causal_masks_and_row_indices(
                 )
             return causal_mask, attn_mask_startend_row_indices
 
+    # Enables the efficient built-in causal mode (is_causal=True)
+    # for FA backends (sdpa/flashmask), bypassing manual mask generation.
+    FLASH_BACKENDS = {"sdpa", "flashmask"}
+    attn_impl = getattr(config, "_attn_implementation", "eager")
+    is_flash_backend = attn_impl in FLASH_BACKENDS
+    if attention_mask is None and attn_mask_startend_row_indices is None and is_flash_backend:
+        if return_mapping:
+            causal_mask_mapping = {"full_attention": None, "sliding_attention": None}
+            attn_mask_startend_row_indices_mapping = {"full_attention": None, "sliding_attention": None}
+            return causal_mask_mapping, attn_mask_startend_row_indices_mapping
+        else:
+            return None, None
+
     seq_length_with_past = seq_length + cache_length
     attention_mask = (
         paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
