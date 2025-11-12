@@ -233,6 +233,8 @@ def run_sft(
             model_args.model_name_or_path,
             config=model_config,
             convert_from_hf=training_args.convert_from_hf,
+            load_via_cpu=training_args.load_via_cpu,
+            load_checkpoint_format=training_args.load_checkpoint_format,
         )
     else:
         model = model_class.from_config(model_config, dtype=dtype)
@@ -257,10 +259,6 @@ def run_sft(
 
     # Load tokenizer & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
-    # tokenizer.chat_template = None
-
-    # init chat_template for tokenizer
-    # init_chat_template(tokenizer, model_args.model_name_or_path, data_args.chat_template)
 
     # if using chat_template, data_args.eval_with_do_generation must be false
     if tokenizer.chat_template is not None:
@@ -381,7 +379,7 @@ def run_sft(
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
 
-    if training_args.sequence_parallel:
+    if training_args.sequence_parallel and not model_args.lora:
         callbacks += [MoEGateSpGradSyncCallBack()]
 
     print("callbacks:", callbacks, flush=True)
@@ -421,7 +419,7 @@ def run_sft(
             logger.info("Benchmark done.")
         else:
             if not training_args.autotuner_benchmark:
-                trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1)
+                trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1, last_fc_to_hf=True)
                 trainer.log_metrics("train", train_result.metrics)
                 trainer.save_metrics("train", train_result.metrics)
                 trainer.save_state()

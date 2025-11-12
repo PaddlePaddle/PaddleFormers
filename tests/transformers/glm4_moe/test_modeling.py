@@ -372,7 +372,38 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         pass
 
     def test_save_load(self):
-        pass
+        for model_class in self.all_model_classes:
+            # test from_pretrained
+            model1 = model_class.from_pretrained(
+                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=True
+            )
+
+            model2 = model_class.from_pretrained(
+                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", load_checkpoint_format="flex_checkpoint"
+            )
+
+            model_state_1 = model1.state_dict()
+            model_state_2 = model2.state_dict()
+
+            for k, v in model_state_1.items():
+                md51 = v._md5sum()
+                md52 = model_state_2[k]._md5sum()
+                assert md51 == md52
+
+            # test save_pretrained
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
+                model_state_3 = model3.state_dict()
+
+                for k, v in model_state_3.items():
+                    md53 = v._md5sum()
+                    md52 = model_state_2[k]._md5sum()
+                    if k.endswith(".mlp.gate.weight"):
+                        md52 = model_state_2[k].cast("bfloat16")._md5sum()
+                        md53 = model_state_3[k].cast("bfloat16")._md5sum()
+                    print(k)
+                    assert md52 == md53
 
     def test_hidden_states_output(self):
         pass

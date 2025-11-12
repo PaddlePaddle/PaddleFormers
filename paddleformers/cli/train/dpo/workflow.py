@@ -22,7 +22,14 @@ import paddle
 from paddleformers.datasets.dpo import collate_fn, create_dataset
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
-from paddleformers.trainer import IntervalStrategy, get_last_checkpoint, set_seed
+from paddleformers.trainer import (
+    IntervalStrategy,
+    MoECorrectionBiasAdjustCallback,
+    MoeExpertsGradScaleCallback,
+    MoEGateSpGradSyncCallBack,
+    get_last_checkpoint,
+    set_seed,
+)
 from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -162,6 +169,8 @@ def run_dpo(
             model_args.model_name_or_path,
             config=model_config,
             convert_from_hf=training_args.convert_from_hf,
+            load_via_cpu=training_args.load_via_cpu,
+            load_checkpoint_format=training_args.load_checkpoint_format,
         )
         # for DPO save
         if not training_args.reference_free and not model_args.lora:
@@ -289,6 +298,17 @@ def run_dpo(
         eval_dataset = None
     logger.info("Creating dataset successfully ...")
 
+    callbacks = []
+    if getattr(model_config, "topk_method", None) == "noaux_tc":
+        callbacks += [MoECorrectionBiasAdjustCallback(lr=0)]
+
+    if training_args.use_expert_parallel:
+        callbacks += [MoeExpertsGradScaleCallback(training_args)]
+
+    if training_args.sequence_parallel and not model_args.lora:
+        callbacks += [MoEGateSpGradSyncCallBack()]
+
+    logger.info(f"callbacks: {callbacks}")
     # padding to the maximum seq length in batch data when max_seq_len is None
     max_seq_len = data_args.max_seq_len if (data_args.packing or training_args.sequence_parallel) else None
     trainer = DPOTrainer(
@@ -308,13 +328,14 @@ def run_dpo(
         ),
         ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
+        callbacks=callbacks,
     )
 
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
 
         if not training_args.autotuner_benchmark and not training_args.benchmark:
-            trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1)
+            trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1, last_fc_to_hf=True)
             trainer.log_metrics("train", train_result.metrics)
             trainer.save_metrics("train", train_result.metrics)
             trainer.save_state()

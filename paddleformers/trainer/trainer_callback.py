@@ -165,6 +165,7 @@ class TrainerControl:
     should_training_stop: bool = False
     should_epoch_stop: bool = False
     should_save: bool = False
+    should_save_hf: bool = False
     should_evaluate: bool = False
     should_log: bool = False
 
@@ -179,6 +180,7 @@ class TrainerControl:
     def _new_step(self):
         """Internal method that resets the variable for a new step."""
         self.should_save = False
+        self.should_save_hf = False
         self.should_evaluate = False
         self.should_log = False
 
@@ -316,6 +318,12 @@ class TrainerCallback:
         """
         pass
 
+    def on_save_hf(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """
+        Event called after a huggingface checkpoint save.
+        """
+        pass
+
 
 class CallbackHandler(TrainerCallback):
     """Internal class that just calls the list of callbacks in order."""
@@ -396,6 +404,7 @@ class CallbackHandler(TrainerCallback):
         control.should_log = False
         control.should_evaluate = False
         control.should_save = False
+        control.should_save_hf = False
         return self.call_event("on_step_begin", args, state, control)
 
     def on_load_data_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, inputs: Dict):
@@ -420,6 +429,10 @@ class CallbackHandler(TrainerCallback):
     def on_save(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
         control.should_save = False
         return self.call_event("on_save", args, state, control)
+
+    def on_save_hf(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+        control.should_save_hf = False
+        return self.call_event("on_save_hf", args, state, control)
 
     def on_log(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, logs, **kwargs):
         control.should_log = False
@@ -483,6 +496,14 @@ class DefaultFlowCallback(TrainerCallback):
         # End training
         if state.global_step >= state.max_steps:
             control.should_training_stop = True
+
+        # Save hf
+        if (
+            args.save_strategy == IntervalStrategy.STEPS
+            and args.save_hf_steps > 0
+            and state.global_step % args.save_hf_steps == 0
+        ):
+            control.should_save_hf = True
 
         return control
 
@@ -812,11 +833,14 @@ class MoEGateSpGradSyncCallBack(TrainerCallback):
             hcg = fleet.get_hybrid_communicate_group()
             pg = hcg.get_model_parallel_group().process_group
             for param in model.parameters():
-                if getattr(param, "is_gate", False):
-                    if hasattr(param, "main_grad"):
-                        pg.allreduce(param.main_grad).wait()
-                    else:
-                        pg.allreduce(param.grad).wait()
+                if not getattr(param, "is_gate", False):
+                    continue
+                grad = getattr(param, "main_grad", None)
+                if grad is None:
+                    grad = getattr(param, "grad", None)
+                if grad is None:
+                    continue
+                pg.allreduce(grad).wait()
 
             logger.info("MoEGate grad allreduced done")
 

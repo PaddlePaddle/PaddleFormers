@@ -211,6 +211,11 @@ class ModelArguments:
     use_recompute_loss_fn: bool = field(default=True, metadata={"help": "Whether to recompute loss function"})
     loss_subbatch_seqlen: int = field(default=32768, metadata={"help": "Sub batch size for loss calculation"})
 
+    num_hidden_layers: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_hidden_layers."},
+    )
+
     def __post_init__(self):
         if self.fine_tuning.lower() == "LoRA".lower():
             self.lora = True

@@ -59,6 +59,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("deepseek_v3", "DeepseekV3"),
         ("ernie4_5", "Ernie4_5"),
         ("ernie4_5_moe", "Ernie4_5_Moe"),
+        ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("llama", "Llama"),
         ("qwen", "QWen"),
         ("qwen2", "Qwen2"),
