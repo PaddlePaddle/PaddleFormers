@@ -611,18 +611,30 @@ class Glm4MoeDecoderLayer(nn.Layer):
     ) -> paddle.Tensor:
         offload_kwargs = {}
         offload_kwargs["offload_indices"] = [0]
-        assert self.config.recompute_granularity != "full_attn"
-        attn_outputs = recompute(
-            self.attn,
-            hidden_states,
-            past_key_value=past_key_value,
-            attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            position_ids=position_ids,
-            use_cache=use_cache,
-            position_embeddings=position_embeddings,
-            **offload_kwargs,
-        )
+
+        has_gradient = not hidden_states.stop_gradient
+        if self.config.recompute and has_gradient and self.config.recompute_granularity != "full_attn":
+            attn_outputs = recompute(
+                self.attn,
+                hidden_states,
+                past_key_value=past_key_value,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_ids=position_ids,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **offload_kwargs,
+            )
+        else:
+            attn_outputs = self.attn(
+                hidden_states,
+                past_key_value=past_key_value,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_ids=position_ids,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+            )
 
         hidden_states = attn_outputs[0]
         residual = attn_outputs[1]
@@ -649,11 +661,15 @@ class Glm4MoeDecoderLayer(nn.Layer):
         for chunk in input_list:
             if self.config.sequence_parallel:
                 chunk = chunk.reshape([-1, hidden_size])
-            out = recompute(
-                self.mlp.forward,
-                chunk,
-                **offload_kwargs,
-            )
+            has_gradient = not chunk.stop_gradient
+            if self.config.recompute and has_gradient and self.config.recompute_granularity != "full_attn":
+                out = recompute(
+                    self.mlp.forward,
+                    chunk,
+                    **offload_kwargs,
+                )
+            else:
+                out = self.mlp.forward(chunk)
             output_list.append(out)
         hidden_states = paddle.concat(output_list, axis=seq_axis)
         outputs = recompute(
