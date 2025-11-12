@@ -189,7 +189,7 @@ class ZeroCostCheckpointEMAProcessor:
             # logger.info(f'[ZCC EMA2] wait all done, doing EMA w/ coef: {self.ema_coef}, status:{self.status()}')
             for index, ema_buf in self.ema_buffer_model_params.items():
                 _, cpu_buf = self.param_fusion_storage_helper.inited_buffers[index]
-                updated_ema = self.ema_coef * ema_buf + (1 - self.ema_coef) * cpu_buf
+                updated_ema = self.ema_coef * ema_buf + (1 - self.ema_coef) * cpu_buf.cpu()
                 self.ema_buffer_model_params[index] = updated_ema
 
         logger.info(f"[ZCC EMA] accumulating, buffer type:{self.ema_buffer.place} {self.ema_buffer.dtype}, done")

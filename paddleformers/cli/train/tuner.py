@@ -18,6 +18,7 @@ import paddle
 
 from ..hparams import get_train_args, read_args
 from .dpo import run_dpo
+from .pretrain import run_dsv3_pretrain
 from .sft import run_sft
 
 
@@ -41,7 +42,7 @@ def _training_function(config: dict[str, Any]) -> None:
     args = config.get("args")
     model_args, data_args, preprocess_args, generating_args, finetuning_args = get_train_args(args)
 
-    if "VL" in model_args.stage:
+    if "VL" in model_args.stage or model_args.stage == "dsv3_pretrain":
         pass
     elif data_args.dataset_type != "pretrain":
         check_path(data_args.train_dataset_path)
@@ -53,6 +54,8 @@ def _training_function(config: dict[str, Any]) -> None:
     elif model_args.stage == "DPO":
         with paddle.amp.auto_cast(enable=False):
             run_dpo(model_args, data_args, generating_args, finetuning_args)
+    elif model_args.stage == "dsv3_pretrain":
+        run_dsv3_pretrain(model_args, data_args, generating_args, finetuning_args)
     else:
         raise ValueError(f"Unknown task: {model_args.stage}.")
 

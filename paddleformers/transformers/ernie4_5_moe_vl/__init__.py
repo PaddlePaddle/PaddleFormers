@@ -25,10 +25,12 @@ import_structure = {
         "Ernie4_5_VLMoeForConditionalGenerationModel",
         "Ernie4_5_VLMoeForConditionalGenerationPipe",
     ],
+    "model": [],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
+    from .model import *
     from .modeling import *
     from .tokenizer import Ernie4_5_VLTokenizer
 else:
