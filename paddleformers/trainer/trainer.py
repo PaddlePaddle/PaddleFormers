@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import collections
 import contextlib
-import copy
 import gc
 import inspect
 import json
@@ -122,7 +121,6 @@ from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
     PretrainedModel,
     _add_variant,
-    clean_model_class_name,
     load_sharded_checkpoint,
     unwrap_model,
 )
@@ -1259,7 +1257,18 @@ class Trainer:
 
         if self.args.enable_auto_parallel:
             if resume_from_checkpoint is not None:
-                self._load_from_checkpoint(resume_from_checkpoint)
+                if self.args.convert_from_hf:
+                    model_sharded_state_dict = model.sharded_state_dict()
+                    aoa_config = model._gen_aoa_config(model.config)
+                    dist.load_state_dict(
+                        model_sharded_state_dict,
+                        resume_from_checkpoint,
+                        aoa_config=aoa_config,
+                        offload=False,
+                        safetensors=True,
+                    )
+                else:
+                    self._load_flex_checkpoint(resume_from_checkpoint)
         else:
             if self.args.should_load_sharding_stage1_model:
                 if self.sharding_io is not None:
@@ -3436,7 +3445,7 @@ class Trainer:
                         OPTIMIZER_NAME: optim_state_dict,
                     }
 
-                    self._save(output_dir=os.path.join(output_dir, DIST_CKPT_PATH), state_dict=state_dict)
+                    self._save(output_dir=output_dir, state_dict=state_dict)
                     # FIXME: maybe only save one copy
                     paddle.save(self.lr_scheduler.state_dict(), os.path.join(output_dir, SCHEDULER_NAME))
 
@@ -3749,25 +3758,21 @@ class Trainer:
                 json.dump(save_info, f)
 
         if self.args.enable_auto_parallel:
-            if self.args.should_save:
-                if self.tokenizer is not None:
-                    self.tokenizer.save_pretrained(output_dir)
-                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
-                model_to_save = unwrap_model(self.model)
-                config_to_save = copy.deepcopy(model_to_save.config)
-                config_to_save.mp_degree = getattr(config_to_save, "config_to_save", 1)
-                config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
-                config_to_save.save_pretrained(output_dir)
-                if self.model.can_generate():
-                    model_to_save.generation_config.save_pretrained(output_dir)
-
-            if self.args.should_save_model_state:
-                if state_dict is None:
-                    self._save_ckpt_func(self.model.state_dict(), output_dir)
-                    logger.info(f"Model weights saved in {output_dir}")
-                else:
-                    self._save_ckpt_func(state_dict, output_dir)
-                    logger.info(f"Model weights and optimizer states saved in {output_dir}")
+            if self.args.save_to_hf:
+                is_main_process = paddle.distributed.get_rank() == 0
+                self.model.save_pretrained(
+                    output_dir,
+                    variant=self.args.weight_name_suffix,
+                    save_function=dist.save_state_dict,
+                    merge_tensor_parallel=merge_tensor_parallel,
+                    is_main_process=is_main_process,
+                    max_shard_size="1024GB",
+                    save_to_hf=True,
+                    enable_auto_parallel=True,
+                )
+            else:
+                self._save_flex_model_state(output_dir)
+                self._save_flex_optimizer_state(output_dir)
             return
 
         else:
