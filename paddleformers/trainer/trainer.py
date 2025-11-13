@@ -1484,7 +1484,7 @@ class Trainer:
                 raise ValueError(f"unsupported type: {type(dtensors)}")
         return global_micro_batchs
 
-    def optimizer_step(self, args, parameters_list=None):
+    def optimizer_step(self, args, model, parameters_list=None):
         optimizer_was_run = True
         if args.enable_auto_parallel and self.args.offload_optim:
             self._reload_optimizer()
@@ -1506,11 +1506,12 @@ class Trainer:
                     f"optimizer not run, scale_before: {scale_before_value[0]}, scale_after: {scale_after_value[0]}"
                 )
         elif isinstance(self.optimizer, HybridParallelOptimizer):
+            parameters_list = [t if t.is_contiguous() else t.contiguous() for t in parameters_list]
             self.optimizer._step(parameters_list)
         else:
             self.optimizer.step()
 
-        if args.enable_auto_parallel and self.args.offload_optim:
+        if not args.enable_auto_parallel and self.args.offload_optim:
             self._offload_optimizer()
 
         if optimizer_was_run:
@@ -1524,6 +1525,10 @@ class Trainer:
 
         if not args.enable_auto_parallel and (args.release_grads or enable_release_grads):
             self.optimizer.clear_grad(set_to_zero=False)
+            if args.pipeline_parallel_degree > 1:
+                for _, buffers in model._chunk_2_comm_buffers.items():
+                    for buffer in buffers:
+                        buffer._clear_grad_storage()
         else:
             self.optimizer.clear_grad()
 
@@ -1810,6 +1815,8 @@ class Trainer:
                     if not self.args.enable_auto_parallel:
                         with sync_context:
                             if "step_control" in inspect.signature(self.training_step).parameters:
+                                tr_loss_step = self.training_step(model, inputs, step_control=step_control)
+                            else:
                                 tr_loss_step = self.training_step(model, inputs)
                     else:
                         tr_loss_step = self.training_step(model, inputs)
@@ -1934,7 +1941,7 @@ class Trainer:
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
 
-                        self.optimizer_step(args, parameters_list=parameters_list)
+                        self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
                         self.timers and self.timers("optimizer-step").stop()
 
@@ -2111,7 +2118,7 @@ class Trainer:
         if self.args.enable_auto_parallel or self.args.world_size <= 1:
             return paddle.io.BatchSampler(
                 dataset=self.train_dataset,
-                shuffle=False,
+                shuffle=shuffle,
                 batch_size=total_batch_size,
                 drop_last=self.args.dataloader_drop_last,
             )
@@ -2792,7 +2799,6 @@ class Trainer:
             and self.args.moe_sharding_parallel_degree >= 1
             and self.args.expert_parallel_degree > 1
             and self.args.sharding_parallel_degree > 1
-            and not self.args.reorder_pipeline_priority
         ):
             from ..utils import MoEHybridParallelOptimizer
 
