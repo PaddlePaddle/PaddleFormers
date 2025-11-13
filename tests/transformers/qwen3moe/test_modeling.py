@@ -345,7 +345,7 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = Qwen3MoeForCausalLM.from_pretrained(
-            "PaddleFormers/tiny-random-qwen3moe", dtype="float32", convert_from_hf=True
+            "PaddleFormers/tiny-random-qwen3moev2", dtype="float32", convert_from_hf=True
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
@@ -353,22 +353,22 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[-0.00030643, -0.00071559, -0.00056766, -0.00085897, -0.00123006, -0.00022042, -0.00023746, -0.00052526]]
+            [[0.00170604, 0.00471663, 0.00417853, 0.00308787, 0.00467000, 0.00604948, 0.00412507, 0.00160586]]
         )
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
 
         # slicing logits[0, 0, 0:30]
-        EXPECTED_SLICE = paddle.to_tensor([0.30254516, -0.30803320, -0.38494134, -0.47322115, -0.21808594,
-                                           0.13004600, -0.13100961, 0.08265260, 0.19084544, -0.27980503,
-                                           0.14799611, 0.08284992, -0.19547234, -0.16578345, -0.16760986,
-                                           -0.04950186, 0.02147415, -0.51295358, 0.08290517, -0.31099084,
-                                           0.12259193, -0.07422141, 0.10754116, 0.00818088, -0.18319097,
-                                           0.01319447, 0.13641201, -0.26029447, -0.33172122, 0.05208641])  # fmt: skip
+        EXPECTED_SLICE = paddle.to_tensor([1.19751632, 1.76759684, 1.42320514, -3.55444431, 0.54329103,
+                                           -0.24107473, -2.48883653, 0.09119778, 0.10803542, 0.95290345,
+                                           0.08615199, 0.75243753, 0.67679799, -0.49227887, -0.11838460,
+                                           -1.38586426, -1.02522457, -0.34655067, 0.00249448, 0.01345686,
+                                           -1.25499344, -2.20100021, 1.13552403, -1.18407190, -1.93378878,
+                                           -0.31357813, -2.56630087, 0.80468446, 0.56240237, -0.04839380])  # fmt: skip
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2))
 
 
 class Qwen3MoeGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "PaddleFormers/tiny-random-qwen3moe"
+    internal_testing_model = "PaddleFormers/tiny-random-qwen3moev2"
 
 
 class Qwen3MoeCompatibilityTest(unittest.TestCase):

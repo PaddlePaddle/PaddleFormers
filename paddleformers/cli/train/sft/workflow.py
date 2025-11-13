@@ -411,11 +411,16 @@ def run_sft(
         if model_args.neftune:
             neft_post_hook_handle.remove()
         if training_args.benchmark:
-            total_effective_tokens = (
-                sum([len(i["input_ids"]) for i in trainer.train_dataset]) * train_result.metrics["progress_or_epoch"]
+            total_tokens = (
+                data_args.max_seq_len
+                * training_args.dataset_world_size
+                * training_args.gradient_accumulation_steps
+                * training_args.max_steps
             )
-            effective_tokens_per_second = total_effective_tokens / train_result.metrics["train_runtime"]
-            logger.info(f"Effective_Tokens_per_second: {effective_tokens_per_second} ")
+            total_tokens_per_second_per_gpu = (
+                total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
+            )
+            logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
             logger.info("Benchmark done.")
         else:
             if not training_args.autotuner_benchmark:
