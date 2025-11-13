@@ -35,7 +35,7 @@ defaults:
 jobs:
   unittest-gpu-ce:
     name: unittest-gpu-ce
-    runs-on: [self-hosted, ernie-8gpu]
+    runs-on: [self-hosted, ernie-8gpu, distribute]
     steps:
       - name: Determine Image Name
         run: |
