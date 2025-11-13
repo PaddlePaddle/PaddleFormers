@@ -833,11 +833,14 @@ class MoEGateSpGradSyncCallBack(TrainerCallback):
             hcg = fleet.get_hybrid_communicate_group()
             pg = hcg.get_model_parallel_group().process_group
             for param in model.parameters():
-                if getattr(param, "is_gate", False):
-                    if hasattr(param, "main_grad"):
-                        pg.allreduce(param.main_grad).wait()
-                    else:
-                        pg.allreduce(param.grad).wait()
+                if not getattr(param, "is_gate", False):
+                    continue
+                grad = getattr(param, "main_grad", None)
+                if grad is None:
+                    grad = getattr(param, "grad", None)
+                if grad is None:
+                    continue
+                pg.allreduce(grad).wait()
 
             logger.info("MoEGate grad allreduced done")
 
