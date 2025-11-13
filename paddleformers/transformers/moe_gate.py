@@ -143,16 +143,16 @@ class MoEGateMixin:
             )
 
         # all_probs and routing_map should be computed using the runtime local sequence length on each worker.
-        if self.config.tensor_parallel_degree > 1 or self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_parallel_degree > 1 or self.config.context_parallel_degree > 1:
             local_seq_len = sub_max_seq_len
-            if self.config.tensor_parallel_degree > 1:
-                assert self.config.sequence_parallel and max_seq_len % self.config.tensor_parallel_degree == 0
+            if self.config.sequence_parallel and self.config.tensor_parallel_degree > 1:
+                assert max_seq_len % self.config.tensor_parallel_degree == 0
                 local_seq_len = sub_max_seq_len // self.config.tensor_parallel_degree
             if self.config.context_parallel_degree > 1:
                 assert local_seq_len % self.config.context_parallel_degree == 0
                 local_seq_len = local_seq_len // self.config.context_parallel_degree
             # [B*S, E]
-            if self.config.tensor_parallel_degree > 1:
+            if self.config.sequence_parallel and self.config.tensor_parallel_degree > 1:
                 all_probs = AllGatherOp.apply(probs)
             else:
                 all_probs = probs
