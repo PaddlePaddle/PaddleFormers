@@ -937,20 +937,26 @@ class Qwen3NextPretrainedModel(PretrainedModel):
                         for k in LAYER_ROWWISE
                     }
                 )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=True)
-                        for e in range(config.num_experts)
-                        for k in EXPERT_LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=False)
-                        for e in range(config.num_experts)
-                        for k in EXPERT_LAYER_ROWWISE
-                    }
-                )
+                try:
+                    moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+                except Exception:
+                    moe_group = None
+                expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+                if expert_parallel_degree <= 1:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=True)
+                            for e in range(config.num_experts)
+                            for k in EXPERT_LAYER_COLWISE
+                        }
+                    )
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=False)
+                            for e in range(config.num_experts)
+                            for k in EXPERT_LAYER_ROWWISE
+                        }
+                    )
                 actions.update(
                     {
                         f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_expert.{k}": partial(fn, is_column=True)
