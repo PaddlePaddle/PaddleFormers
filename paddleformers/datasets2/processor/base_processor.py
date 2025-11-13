@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
-    from transformers import PreTrainedTokenizer
+    from paddleformers.transformers.processing_utils import ProcessorMixin
 
     from .auto_processor import AutoProcessor
     from .vision_processor import VisionProcessor
@@ -28,7 +28,7 @@ class DatasetProcessor(ABC):
     r"""A class for data processors."""
 
     auto_processor: "AutoProcessor"
-    tokenizer: "PreTrainedTokenizer"
+    processor: "ProcessorMixin"
     vision_processor: Optional["VisionProcessor"]
     data_args: "DataArguments"
 
