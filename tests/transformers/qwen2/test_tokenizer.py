@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import shutil
+import tempfile
 import unittest
 
 from paddleformers.transformers import Qwen2Tokenizer, Qwen2TokenizerFast
@@ -28,42 +28,33 @@ class TestTokenizer(unittest.TestCase):
     from_pretrained_kwargs = None
     test_seq2seq = False
 
-    def setUp(self):
-        self.test_dirs = ["./slow_tokenizer", "./fast_tokenizer"]
-        for test_dir in self.test_dirs:
-            if os.path.exists(test_dir):
-                shutil.rmtree(test_dir)
-
-    def tearDown(self):
-        for test_dir in self.test_dirs:
-            if os.path.exists(test_dir):
-                shutil.rmtree(test_dir)
-
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = Qwen2Tokenizer.from_pretrained(self.from_pretrained_id, download_hub="aistudio")
         self.assertTrue(tokenizer is not None)
 
     def test_slow_tokenizer_save_pretrained(self):
-        tokenizer = Qwen2Tokenizer.from_pretrained(self.from_pretrained_id)
-        special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
-        tokenizer.add_special_tokens(special_tokens_dict)
-        tokenizer.add_tokens(["new_word", "another_word"])
-        tokenizer.model_max_length = 512
-        tokenizer.save_pretrained("./slow_tokenizer")
-        self.assertTrue(os.path.exists("./slow_tokenizer/tokenizer_config.json"))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tokenizer = Qwen2Tokenizer.from_pretrained(self.from_pretrained_id)
+            special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+            tokenizer.add_special_tokens(special_tokens_dict)
+            tokenizer.add_tokens(["new_word", "another_word"])
+            tokenizer.model_max_length = 512
+            tokenizer.save_pretrained(tmpdir)
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "tokenizer_config.json")))
 
     def test_fast_tokenizer_from_pretrained(self):
         tokenizer = Qwen2TokenizerFast.from_pretrained(self.from_pretrained_id, download_hub="aistudio")
         self.assertTrue(tokenizer is not None)
 
     def test_fast_tokenizer_save_pretrained(self):
-        tokenizer = Qwen2TokenizerFast.from_pretrained(self.from_pretrained_id, download_hub="aistudio")
-        special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
-        tokenizer.add_special_tokens(special_tokens_dict)
-        tokenizer.add_tokens(["new_word", "another_word"])
-        tokenizer.model_max_length = 512
-        tokenizer.save_pretrained("./fast_tokenizer")
-        self.assertTrue(os.path.exists("./fast_tokenizer/tokenizer_config.json"))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tokenizer = Qwen2TokenizerFast.from_pretrained(self.from_pretrained_id, download_hub="aistudio")
+            special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+            tokenizer.add_special_tokens(special_tokens_dict)
+            tokenizer.add_tokens(["new_word", "another_word"])
+            tokenizer.model_max_length = 512
+            tokenizer.save_pretrained(tmpdir)
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "tokenizer_config.json")))
 
     def test_tokenize(self):
         tokenizer = Qwen2TokenizerFast.from_pretrained(self.from_pretrained_id, download_hub="aistudio")

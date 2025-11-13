@@ -135,3 +135,31 @@ class ReshardLayer(paddle.nn.Layer):
             )
             reshard_tensor.reshape_(shape)
         return reshard_tensor
+
+
+def auto_split_inputs_sequence_dim(inputs):
+    def do_split_sequence_dim(data):
+        if data is None:
+            return None
+
+        data_mesh = data.process_mesh
+        data_placements = data.placements
+        sep_axis = data_mesh.dim_names.index("sep")
+        # shard along sep axis
+        data_placements[sep_axis] = dist.Shard(1)
+        data = dist.reshard(data, data_mesh, data_placements)
+        return data
+
+    if isinstance(inputs, paddle.Tensor):
+        return do_split_sequence_dim(inputs)
+    elif isinstance(inputs, dict):
+        res = {}
+        for k, tensor in inputs.items():
+            res[k] = do_split_sequence_dim(tensor)
+    elif isinstance(inputs, list):
+        res = []
+        for tensor in inputs:
+            res.append(do_split_sequence_dim(tensor))
+    else:
+        raise ValueError(f"the inputs should be a tensor, list or dict, but is type: {type(inputs)}")
+    return res

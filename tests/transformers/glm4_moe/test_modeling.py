@@ -372,50 +372,38 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         pass
 
     def test_save_load(self):
-        # test save/from_pretrained using flex_checkpoint
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
-
-        def check_save_load(out1, out2):
-            # make sure we don't have nans
-            out_2 = out2.numpy()
-            out_2[np.isnan(out_2)] = 0
-
-            out_1 = out1.numpy()
-            out_1[np.isnan(out_1)] = 0
-            max_diff = np.amax(np.abs(out_1 - out_2))
-            self.assertLessEqual(max_diff, 1e-5)
-
         for model_class in self.all_model_classes:
-            model = model_class(config)
-            model.eval()
+            # test from_pretrained
+            model1 = model_class.from_pretrained(
+                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=True
+            )
 
-            model_state = model.state_dict()
-            if model_class is Glm4MoeModel:
-                gate_weight_key = "layers.1.mlp.gate.weight"
-            elif model_class is Glm4MoeForCausalLM:
-                gate_weight_key = "model.layers.1.mlp.gate.weight"
-            else:
-                raise NotImplementedError
+            model2 = model_class.from_pretrained(
+                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", load_checkpoint_format="flex_checkpoint"
+            )
 
-            gate_weight = model_state[gate_weight_key]
+            model_state_1 = model1.state_dict()
+            model_state_2 = model2.state_dict()
 
-            paddle.assign(gate_weight.cast("bfloat16").cast("float32"), gate_weight)
-            with paddle.no_grad():
-                first = model(**self._prepare_for_class(inputs_dict, model_class))[0]
+            for k, v in model_state_1.items():
+                md51 = v._md5sum()
+                md52 = model_state_2[k]._md5sum()
+                assert md51 == md52
 
+            # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
-                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
-                model.eval()
-                with paddle.no_grad():
-                    second = model(**self._prepare_for_class(inputs_dict, model_class))[0]
+                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
+                model_state_3 = model3.state_dict()
 
-            # support tuple of tensor
-            if isinstance(first, tuple) and isinstance(second, tuple):
-                for tensor1, tensor2 in zip(first, second):
-                    check_save_load(tensor1, tensor2)
-            else:
-                check_save_load(first, second)
+                for k, v in model_state_3.items():
+                    md53 = v._md5sum()
+                    md52 = model_state_2[k]._md5sum()
+                    if k.endswith(".mlp.gate.weight"):
+                        md52 = model_state_2[k].cast("bfloat16")._md5sum()
+                        md53 = model_state_3[k].cast("bfloat16")._md5sum()
+                    print(k)
+                    assert md52 == md53
 
     def test_hidden_states_output(self):
         pass
