@@ -321,6 +321,7 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
 
+<<<<<<< HEAD
     # def test_save_load(self):
     #     for model_class in self.all_model_classes:
     #         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -340,6 +341,8 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     #                 md52 = model_state_2[k]._md5sum()
     #                 assert md51 == md52
 
+=======
+>>>>>>> parent of 0278de3 (【FlexCheckpoint】Fix fc adaptation logic and support qwen3moe (#2892))
 
 class Qwen3MoeIntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
