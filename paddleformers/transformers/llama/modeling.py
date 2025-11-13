@@ -39,6 +39,7 @@ from ..refined_recompute import (
     get_skip_recompute_ops,
 )
 from ..refined_recompute import recompute as rr_recompute
+from .auto_dist_config import get_dist_config
 
 try:
     from paddle.incubate.nn.functional import fused_rotary_position_embedding
@@ -178,22 +179,16 @@ def assign_kv_heads(num_kv_heads: int, num_gpus: int):
     return assignment_list
 
 
-def parallel_matmul(x: Tensor, y: Tensor, transpose_y=False, tensor_parallel_output=True):
-    is_fleet_init = True
-    tensor_parallel_degree = 1
-    try:
-        hcg = fleet.get_hybrid_communicate_group()
-        model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
-    except:
-        is_fleet_init = False
-
+def parallel_matmul(
+    x: Tensor, y: Tensor, transpose_y=False, tensor_parallel_degree=1, tensor_parallel_output=True, args=None
+):
     if paddle.in_dynamic_mode():
         y_is_distributed = y.is_distributed
     else:
         y_is_distributed = tensor_parallel_degree > 1
-
-    if is_fleet_init and tensor_parallel_degree > 1 and y_is_distributed:
+    if tensor_parallel_degree > 1 and y_is_distributed:
+        hcg = fleet.get_hybrid_communicate_group()
+        model_parallel_group = hcg.get_model_parallel_group()
         # if not running under distributed.launch, it will raise AttributeError: 'Fleet' object has no attribute '_hcg'
         input_parallel = paddle.distributed.collective._c_identity(x, group=model_parallel_group)
         logits = paddle.matmul(input_parallel, y, transpose_y=transpose_y)
@@ -1974,17 +1969,24 @@ class LlamaLMHead(nn.Layer):
         if tensor_parallel_output is None:
             tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1
 
+        tensor_parallel_degree = self.config.tensor_parallel_degree
         if get_env_device() == "xpu" and self.xpu_parallel_matmul is not None:
             logits = self.xpu_parallel_matmul(
                 hidden_states,
                 self.weight,
                 transpose_y=self.transpose_y,
+                tensor_parallel_degree=tensor_parallel_degree,
                 tensor_parallel_output=tensor_parallel_output,
                 training=self.training,
             )
         else:
             logits = parallel_matmul(
-                hidden_states, self.weight, transpose_y=self.transpose_y, tensor_parallel_output=tensor_parallel_output
+                hidden_states,
+                self.weight,
+                transpose_y=self.transpose_y,
+                tensor_parallel_degree=tensor_parallel_degree,
+                tensor_parallel_output=tensor_parallel_output,
+                args=self.config,
             )
         return logits
 
@@ -2156,3 +2158,7 @@ class LlamaForCausalLM(LlamaPretrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+    def auto_dist_config(self, prefix=""):
+        assert self.config.run_single_model, "Use `get_dist_config` only in single card mode."
+        return get_dist_config(self, prefix)
