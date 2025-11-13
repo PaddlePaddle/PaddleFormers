@@ -262,6 +262,8 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           files: coverage.xml
+          commit_parent: ${{ github.event.pull_request.base.sha }}
+          commit: ${{ github.event.pull_request.head.sha }}
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
