@@ -1090,6 +1090,10 @@ class TrainingArguments:
         default=1,
         metadata={"help": "Interval between updating EMA parameters."},
     )
+    zcc_ema_loss_threshold: Optional[float] = field(
+        default=None,
+        metadata={"help": "If set not None, only do EMA when the training loss is smaller than the threshold value"},
+    )
     save_tokenizer: Optional[bool] = field(
         default=True,
         metadata={"help": "Save tokenizer to output_dir."},
@@ -2099,7 +2103,7 @@ class TrainingArguments:
         assert (
             self.save_steps % self.zcc_ema_interval == 0
         ), f"save_steps[{self.save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
-        if self.zcc_save_ema_coef is not None:
+        if self.enable_zero_cost_checkpoint and self.zcc_save_ema_coef is not None:
             assert (
                 self.zcc_workers_num == 1
             ), "EMA function in zero cost checkpoint mode does not support zcc_workers_num > 1 for now."
