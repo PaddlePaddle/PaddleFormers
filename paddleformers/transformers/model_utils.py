@@ -2974,6 +2974,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 safetensors=True,
                 offload=load_via_cpu,
             )
+            for v in sharded_state_dict.values():
+                if hasattr(v.local_tensor, "target_tensor"):
+                    del v.local_tensor.target_tensor
+
             return model
 
         if not is_sharded and state_dict is None:

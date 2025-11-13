@@ -415,6 +415,21 @@ class TrainingArguments:
             Defaults to False.
         save_hf_steps (`int`, *optional*, defaults to 500):
             Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
+        hybrid_parallel_expert_grad_scale (float, optional, defaults to None)(
+            Scaling factor for expert gradients when Expert Parallel is enabled.
+
+            When Expert Parallel is enabled, the number of tokens processed by each MoE expert
+            may change due to variations in context parallel degree, tensor parallel degree, or
+            expert parallel degree. To ensure that the gradient scale for each expert remains
+            consistent and is not affected by such changes, this factor should be applied to
+            the expert gradients.
+
+            The value is defined as the ratio of the current configuration to a reference (base) configuration:
+
+            .. math::
+                hybrid\\_parallel\\_expert\\_grad\\_scale} =
+                    \\frac{tensor\\_parallel\\_degree}{expert\\_parallel\\_degree}
+        )
     """
 
     output_dir: str = field(
@@ -1075,6 +1090,10 @@ class TrainingArguments:
         default=1,
         metadata={"help": "Interval between updating EMA parameters."},
     )
+    zcc_ema_loss_threshold: Optional[float] = field(
+        default=None,
+        metadata={"help": "If set not None, only do EMA when the training loss is smaller than the threshold value"},
+    )
     save_tokenizer: Optional[bool] = field(
         default=True,
         metadata={"help": "Save tokenizer to output_dir."},
@@ -1174,6 +1193,11 @@ class TrainingArguments:
     )
 
     save_hf_steps: int = field(default=500, metadata={"help": "Save huggingface checkpoint every X updates steps."})
+
+    hybrid_parallel_expert_grad_scale: Optional[float] = field(
+        default=None,
+        metadata={"help": ("Scaling factor for expert gradients.")},
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -2079,10 +2103,18 @@ class TrainingArguments:
         assert (
             self.save_steps % self.zcc_ema_interval == 0
         ), f"save_steps[{self.save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
-        if self.zcc_save_ema_coef is not None:
+        if self.enable_zero_cost_checkpoint and self.zcc_save_ema_coef is not None:
             assert (
                 self.zcc_workers_num == 1
             ), "EMA function in zero cost checkpoint mode does not support zcc_workers_num > 1 for now."
+
+        if self.hybrid_parallel_expert_grad_scale is None:
+            tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
+            expert_parallel_degree = max(self.expert_parallel_degree, 1)
+            self.hybrid_parallel_expert_grad_scale = tensor_parallel_degree / expert_parallel_degree
+            logger.info(f"Auto set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
+        else:
+            logger.info(f"Set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
 
     def _post_init_parallel_degree(self):
         self.use_hybrid_parallel = False

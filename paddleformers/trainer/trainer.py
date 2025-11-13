@@ -195,12 +195,13 @@ from .utils.async_save import AsyncSaver
 
 try:
     from .utils.zero_cost_checkpoint import (
+        NonZCCEMACallback,
         ZeroCostCheckpointCallback,
         ZeroCostCheckpointManager,
         get_fused_param_mappings,
     )
 except (ImportError, ModuleNotFoundError):
-    ZeroCostCheckpointManager, get_fused_param_mappings = None, None
+    ZeroCostCheckpointManager, NonZCCEMACallback, get_fused_param_mappings = None, None, None
 from .utils.helper import (  # nested_truncate,
     broadcast_dataset_rank0_model,
     broadcast_dp_optimizer,
@@ -873,6 +874,9 @@ class Trainer:
 
         logger.info("Create zero cost checkpoint manager done.")
 
+    def add_non_zcc_ema_callback(self, resume_from_checkpoint):
+        self.add_callback(NonZCCEMACallback(resume_from_checkpoint, self.args, self.sharding_io))
+
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
         model_state_dict_path = os.path.join(output_dir, MODEL_STATE_DIC)
@@ -957,6 +961,10 @@ class Trainer:
                 offload=self.args.load_via_cpu,
             )
 
+            for v in optimizer_sharded_state_dict.values():
+                if hasattr(v.local_tensor, "target_tensor"):
+                    del v.local_tensor.target_tensor
+
             self._load_scheduler(resume_from_checkpoint)
 
         dist.load_state_dict(
@@ -965,6 +973,10 @@ class Trainer:
             aoa_config=self.args.aoa_config,
             offload=self.args.load_via_cpu,
         )
+
+        for v in model_sharded_state_dict.values():
+            if hasattr(v.local_tensor, "target_tensor"):
+                del v.local_tensor.target_tensor
 
     def train(
         self,
@@ -1127,6 +1139,8 @@ class Trainer:
 
         if self.args.enable_zero_cost_checkpoint:
             self.create_zcc_manager(model, resume_from_checkpoint)
+        elif self.args.zcc_save_ema_coef is not None:
+            self.add_non_zcc_ema_callback(resume_from_checkpoint)
 
         logger.info(f"{self.runtime_timer.log()}")
         logger.info("***** Running training *****")
@@ -1357,6 +1371,16 @@ class Trainer:
                         self._skip_steps_since_last_logged += 1
 
                         self.state.epoch = epoch + (step + 1) / steps_in_epoch
+
+                        # For ZCC EMA
+                        if self.args.enable_zero_cost_checkpoint or self.args.zcc_save_ema_coef is not None:
+                            tr_loss_for_zcc = tr_loss.clone()
+                            dist.all_reduce(
+                                tr_loss_for_zcc, dist.ReduceOp.SUM
+                            )  # 3级并行时，每个pp下的loss会广播，全局reduce-mean的时候，分子分母都会乘以pp_world_size，结果会被约掉
+                            tr_loss_for_zcc_scalar = tr_loss_for_zcc.item() / dist.get_world_size()
+                            self.state.loss = tr_loss_for_zcc_scalar
+
                         self.state.consumed_samples = (
                             self.state.global_step
                             * args.per_device_train_batch_size
@@ -1432,6 +1456,26 @@ class Trainer:
                         logger.warning("found `no sync` param when `use_expert_parallel=False`")
                     fused_allreduce_gradients(nonmoe_list, hcg)
 
+                def hybrid_parallel_scale_param_grad(paramlist, hcg):
+                    if not hasattr(hcg, "get_context_parallel_world_size"):
+                        cp_worldsize = 1
+                    else:
+                        cp_worldsize = hcg.get_context_parallel_world_size()
+
+                    if cp_worldsize > 1:
+                        raise ValueError(
+                            "hybrid_parallel_scale_param_grad is not supported when Context Parallel is enable"
+                        )
+
+                    for p in paramlist:
+                        color = getattr(p, "color", -1)
+                        is_expert = isinstance(color, dict) and color.get("color", -1) == "moe_expert"
+                        if is_expert and self.args.hybrid_parallel_expert_grad_scale != 1.0:
+                            grad = getattr(p, "main_grad", p.grad)
+                            if grad is not None:
+                                coeff = self.args.hybrid_parallel_expert_grad_scale
+                                grad.scale_(coeff)
+
                 if (step_control + 1) % args.gradient_accumulation_steps == 0 or (
                     # last step in epoch but step is always smaller than gradient_accumulation_steps
                     steps_in_epoch <= args.gradient_accumulation_steps
@@ -1450,6 +1494,8 @@ class Trainer:
                     # Case 3: Pipeline or sharding overlap
                     # local_rank != -1 don't means dp in networks.
                     self.timers and self.timers("all-reduce").start()
+                    if hasattr(self.optimizer, "_hcg"):
+                        hybrid_parallel_scale_param_grad(list(model.parameters()), self.optimizer._hcg)
 
                     # Case 1: Use recompute and dp / sharding stage1,
                     # manually collect gradient for dp.
