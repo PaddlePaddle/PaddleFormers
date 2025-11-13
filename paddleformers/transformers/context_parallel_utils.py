@@ -29,6 +29,7 @@ import paddle
 from paddle import distributed as dist
 from paddle.autograd.py_layer import PyLayer
 from paddle.distributed import fleet
+from paddle.distributed.auto_parallel.ring_attention import shard_seq_load_balance
 from paddle.nn.functional.flash_attention import flashmask_attention
 
 
@@ -953,3 +954,22 @@ def flashmask_attention_cp(
         mode,
     )
     return output
+
+
+def auto_split_sequence_dim_load_balance(inputs):
+    """
+    for auto_parallel mode
+    """
+    if isinstance(inputs, paddle.Tensor):
+        return shard_seq_load_balance(inputs, 1)
+    elif isinstance(inputs, dict):
+        res = {}
+        for k, tensor in inputs.items():
+            res[k] = shard_seq_load_balance(tensor, 1)
+    elif isinstance(inputs, list):
+        res = []
+        for tensor in inputs:
+            res.append(shard_seq_load_balance(tensor, 1))
+    else:
+        raise ValueError(f"the inputs should be a list or a dict, but is type: {type(inputs)}")
+    return res
