@@ -1495,7 +1495,7 @@ class Trainer:
 
     def optimizer_step(self, args, model, parameters_list=[]):
         optimizer_was_run = True
-        if args.enable_auto_parallel and self.args.offload_optim:
+        if not args.enable_auto_parallel and self.args.offload_optim:
             self._reload_optimizer()
 
         if self.do_grad_scaling:
