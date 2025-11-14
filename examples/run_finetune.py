@@ -248,7 +248,11 @@ def main():
     if tokenizer.chat_template is not None:
         data_args.eval_with_do_generation = False
 
-    if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
+    if (
+        isinstance(tokenizer, LlamaTokenizer)
+        or isinstance(tokenizer, Llama3Tokenizer)
+        or tokenizer.pad_token_id is None
+    ):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
     dataset_config = {

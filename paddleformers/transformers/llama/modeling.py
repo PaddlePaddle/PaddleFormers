@@ -327,7 +327,7 @@ class LlamaPretrainedModel(PretrainedModel):
 
         def make_base_actions():
             actions = {
-                "lm_head.weight": partial(fn, is_column=not config.tie_word_embeddings),
+                "lm_head.weight": partial(fn, is_column=False),
                 f"{cls.base_model_prefix}.embed_tokens.weight": partial(fn, is_column=False),
             }
             for layer_idx in range(config.num_hidden_layers):
@@ -473,7 +473,7 @@ class LlamaModel(LlamaPretrainedModel):
                     use_cache=use_cache,
                 )
 
-            hidden_states = layer_outputs[0] if isinstance(layer_outputs, tuple) else layer_outputs
+            hidden_states = layer_outputs[0] if isinstance(layer_outputs, tuple | list) else layer_outputs
             if use_cache:
                 next_key_values.append(layer_outputs[1])
 
