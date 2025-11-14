@@ -321,28 +321,6 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
 
-<<<<<<< HEAD
-    # def test_save_load(self):
-    #     for model_class in self.all_model_classes:
-    #         with tempfile.TemporaryDirectory() as tmpdirname:
-    #             config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-    #             model = model_class(config)
-    #             model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-
-    #             model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
-
-    #             model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
-
-    #             model_state_1 = model1.state_dict()
-    #             model_state_2 = model2.state_dict()
-
-    #             for k, v in model_state_1.items():
-    #                 md51 = v._md5sum()
-    #                 md52 = model_state_2[k]._md5sum()
-    #                 assert md51 == md52
-
-=======
->>>>>>> parent of 0278de3 (【FlexCheckpoint】Fix fc adaptation logic and support qwen3moe (#2892))
 
 class Qwen3MoeIntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
@@ -361,12 +339,14 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
 
         # slicing logits[0, 0, 0:30]
-        EXPECTED_SLICE = paddle.to_tensor([0.30254516, -0.30803320, -0.38494134, -0.47322115, -0.21808594,
-                                           0.13004600, -0.13100961, 0.08265260, 0.19084544, -0.27980503,
-                                           0.14799611, 0.08284992, -0.19547234, -0.16578345, -0.16760986,
-                                           -0.04950186, 0.02147415, -0.51295358, 0.08290517, -0.31099084,
-                                           0.12259193, -0.07422141, 0.10754116, 0.00818088, -0.18319097,
-                                           0.01319447, 0.13641201, -0.26029447, -0.33172122, 0.05208641])  # fmt: skip
+        EXPECTED_SLICE = paddle.to_tensor(
+            [0.30254516, -0.30803320, -0.38494134, -0.47322115, -0.21808594,
+            0.13004600, -0.13100961, 0.08265260, 0.19084544, -0.27980503,
+            0.14799611, 0.08284992, -0.19547234, -0.16578345, -0.16760986,
+            -0.04950186, 0.02147415, -0.51295358, 0.08290517, -0.31099084,
+            0.12259193, -0.07422141, 0.10754116, 0.00818088, -0.18319097,
+            0.01319447, 0.13641201, -0.26029447, -0.33172122, 0.05208641]
+            )  # fmt: skip
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2))
 
 

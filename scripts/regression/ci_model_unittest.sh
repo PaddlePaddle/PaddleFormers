@@ -18,7 +18,7 @@ set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
-export log_path=/workspace/PaddleFormers/model_unittest_logs
+export log_path=/workspace/PaddleFormers/unittest_logs
 export model_unittest_path=/workspace/PaddleFormers/scripts/regression
 cd $nlp_dir
 mkdir -p $log_path

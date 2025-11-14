@@ -114,17 +114,18 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
     set +e
+    export PYTHONUNBUFFERED=1
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    python -m pytest -v -s -n 8 \
+    python -u -m pytest -v -s -n 8 \
         --dist no \
         --maxfail=1 \
         --retries 3 --retry-delay 1 \
         --timeout 200 --durations 20 \
         --alluredir=result \
         --cov=paddleformers \
-        --cov-report=xml:coverage.xml > ${log_path}/unittest.log 2>&1
+        --cov-report=xml:coverage.xml
     exit_code=$?
     print_info $exit_code unittest
     echo -e "\033[35m ---- Set PYTEST_EXECUTE_FLAG_FILE  \033[0m"
