@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import standardize_rope_params, rope_config_validation
 
 __all__ = ["QWenConfig"]
 
@@ -76,6 +77,8 @@ class QWenConfig(PretrainedConfig):
         self.long_sequence_init_args = {} if long_sequence_init_args is None else long_sequence_init_args
         self.use_long_sequence_strategies = use_long_sequence_strategies
         self.dpo_config = dpo_config
+        standardize_rope_params(self, rope_theta=rotary_emb_base)
+        rope_config_validation(self)
 
         super().__init__(
             pad_token_id=pad_token_id,

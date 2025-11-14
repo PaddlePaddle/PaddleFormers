@@ -15,6 +15,7 @@
 """ Llama model configuration"""
 
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import standardize_rope_params, rope_config_validation
 
 __all__ = [
     "LLAMA_PRETRAINED_INIT_CONFIGURATION",
@@ -197,6 +198,8 @@ class LlamaConfig(PretrainedConfig):
         self.use_last_token_for_generation = use_last_token_for_generation
         self.immediate_clear_past_key_value = immediate_clear_past_key_value
         self.dpo_config = dpo_config
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
         super().__init__(
             pad_token_id=pad_token_id,
