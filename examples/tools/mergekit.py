@@ -117,6 +117,7 @@ def merge():
         if args.copy_tokenizer:
             config["copy_file_list"] = [
                 "tokenizer.model",
+                "tokenizer.json",
                 "tokenizer_config.json",
                 "special_tokens_map.json",
             ]
@@ -146,6 +147,7 @@ def merge():
             if args.copy_tokenizer:
                 config["copy_file_list"] = [
                     "tokenizer.model",
+                    "tokenizer.json",
                     "tokenizer_config.json",
                     "special_tokens_map.json",
                 ]
