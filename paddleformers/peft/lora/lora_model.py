@@ -452,8 +452,7 @@ class LoRAModel(nn.Layer):
         sharded_state_dict = self.model.sharded_state_dict()
         lora_sharded_state_dict = {}
         for name, weight in sharded_state_dict.items():
-            if not weight.local_tensor.stop_gradient or "activation_quanter" in name or "weight_quanter" in name:
-                lora_sharded_state_dict[name] = weight
+            lora_sharded_state_dict[name] = weight
         return lora_sharded_state_dict
 
     def save_pretrained(self, save_directory: str, merge_tensor_parallel: bool = False, **kwargs):
