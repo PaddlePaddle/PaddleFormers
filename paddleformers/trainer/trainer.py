@@ -1484,7 +1484,7 @@ class Trainer:
                 raise ValueError(f"unsupported type: {type(dtensors)}")
         return global_micro_batchs
 
-    def optimizer_step(self, args, model, parameters_list=None):
+    def optimizer_step(self, args, model, parameters_list=[]):
         optimizer_was_run = True
         if args.enable_auto_parallel and self.args.offload_optim:
             self._reload_optimizer()
@@ -1874,7 +1874,7 @@ class Trainer:
 
                         self.timers and self.timers("forward-backward").stop()
 
-                        parameters_list = None
+                        parameters_list = []
                         if not args.enable_auto_parallel:
                             # Manually collect gradients
                             # Case 1: Use recompute and dp
