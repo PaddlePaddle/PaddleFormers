@@ -14,9 +14,11 @@
 
 import copy
 import gc
+import json
 import math
 import os
 import re
+import sys
 import tempfile
 from collections import OrderedDict
 from functools import partial
@@ -32,6 +34,7 @@ from paddle.distributed.fleet.meta_parallel import (
     RowParallelLinear,
 )
 
+from ...trainer.argparser import strtobool
 from ...transformers import linear_utils
 from ...transformers.conversion_utils import ConversionMixin
 from ...transformers.model_utils import (
@@ -42,7 +45,6 @@ from ...transformers.model_utils import (
     dtype_guard,
     load_state_dict,
     prepare_safe_save_state_dict,
-    replace_name_and_gen_index_lora,
 )
 from ...transformers.utils import (
     dtype_byte_size,
@@ -58,6 +60,11 @@ from .lora_config import LoRAAutoConfig, LoRAConfig
 
 if is_safetensors_available():
     from safetensors.numpy import save_file as safe_save_file
+
+    if sys.platform.startswith("win"):
+        from safetensors import safe_open
+    else:
+        from ...utils.safetensors import fast_safe_open as safe_open
 
 
 def get_lora_layers():
@@ -513,10 +520,6 @@ class LoRAModel(nn.Layer):
             logger.info(f"Total size of LoRA weights: {total_size} bytes")
             weight_filename = os.path.join(save_directory, lora_weight_name)
             if total_size != 0:
-                transpose_weight_keys = getattr(self.model.config, "transpose_weight_keys", None)
-                tensor_state_dict = ConversionMixin.convert_transpose_selected_weights(
-                    tensor_state_dict, transpose_weight_keys
-                )
                 logger.info(f"Saving LoRA weights to {weight_filename}")
                 tensor_state_dict, metadata = prepare_safe_save_state_dict(tensor_state_dict, save_to_hf=safetensors)
                 safe_save_file(tensor_state_dict, weight_filename, metadata=metadata)
@@ -524,6 +527,39 @@ class LoRAModel(nn.Layer):
             lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, variant)
             weight_filename = os.path.join(save_directory, lora_weight_name)
             paddle.save(trainable_state_dict, weight_filename, safetensors=safetensors)
+
+        def replace_name_and_gen_index_lora(path):
+            index_mapping = {}
+            safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".pdparams")]
+            total_files_num = len(safetensor_files)
+            cur_file_index = 0
+            total_size = 0
+            for file in safetensor_files:
+                single_size = 0
+                cur_file_index += 1
+                file_path = os.path.join(path, file)
+                new_file_name = f"peft_model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
+
+                with safe_open(file_path, framework="np") as f:
+                    for key in f.keys():
+                        index_mapping[key] = new_file_name
+                        single_size += f.get_tensor(key).nbytes
+                total_size += single_size
+                new_file_path = os.path.join(path, new_file_name)
+                os.rename(file_path, new_file_path)
+            index_file_name = SAFE_PEFT_WEIGHTS_INDEX_NAME
+            index_infos = {}
+            index_infos["metadata"] = {}
+            index_infos["metadata"]["total_size"] = total_size
+            index_infos["weight_map"] = index_mapping
+            index_infos["type"] = "lora"
+            with open(os.path.join(path, index_file_name), "w") as f:
+                json.dump(index_infos, f, indent=4)
+            # For PDC signal
+            if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
+                for i in range(paddle.distributed.get_world_size()):
+                    saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
+                    paddle.save(i, saved_signal_path)
 
         # save lora config
         if paddle.distributed.get_world_size() > 1:
