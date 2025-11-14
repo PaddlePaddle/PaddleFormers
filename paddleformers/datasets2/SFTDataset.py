@@ -16,8 +16,8 @@ import numpy as np
 from paddle.io import IterableDataset
 
 from paddleformers.datasets2.processor import SupervisedDatasetProcessor
-from paddleformers.datasets2.processor.encoder import Qwen2VLProcessor
-from paddleformers.datasets2.processor.vision_loader import Qwen2VLVisionProcessor
+from paddleformers.datasets2.processor.encoder import Qwen2VLEncoder
+from paddleformers.datasets2.processor.vision_loader import Qwen2VLVisionLoader
 from paddleformers.datasets2.reader.mix_datasets import (
     MultiSourceDataset,
     create_dataset_instance,
@@ -70,12 +70,12 @@ class SFTDataSet(IterableDataset):
         #     video_max_frames=768,
         #     render_timestamp=True,
         # )
-        # auto_processor = Qwen2VLProcessor(data_args=data_args)
-        # vision_processor = Qwen2VLVisionProcessor(data_args=data_args)
+        # encoder = Qwen2VLEncoder(data_args=data_args)
+        # vision_loader = Qwen2VLVisionLoader(data_args=data_args)
         # self.processor = SupervisedDatasetProcessor(
-        #     auto_processor=auto_processor,
+        #     encoder=encoder,
         #     tokenizer=dataset_config["tokenizer"],
-        #     vision_processor=vision_processor,
+        #     vision_loader=vision_loader,
         #     data_args=data_args,
         # )
 
