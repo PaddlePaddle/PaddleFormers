@@ -18,7 +18,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Vision processor class for Qwen2-VL.
+Vision loader class for Qwen2-VL.
 """
 
 import io
@@ -26,16 +26,16 @@ import os
 import sys
 import copy
 import math
-import decord
 import requests
 import numpy as np
 
 from PIL import Image
+from decord import VideoReader, cpu
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional, Union, Tuple
 
-from .vision_processor import VisionProcessor
+from .vision_loader import VisionLoader
 from paddleformers.hparams.data_args import DataArguments
 from paddleformers.utils.log import logger
 
@@ -43,8 +43,8 @@ if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer
 
 @dataclass
-class Qwen2VLVisionProcessor(VisionProcessor):
-    r"""A processor for Qwen2-VL vision models."""
+class Qwen2VLVisionLoader(VisionLoader):
+    r"""A loader for Qwen2-VL vision models."""
 
     def __init__(self, data_args: "DataArguments"):
         super().__init__(data_args)
@@ -100,19 +100,13 @@ class Qwen2VLVisionProcessor(VisionProcessor):
         return nframes
 
     def get_image_info(self, url: str) -> dict:
-        if url.startswith("http://") or url.startswith("https://"):
-            with requests.get(url, stream=True) as response:
-                response.raise_for_status()
-                with BytesIO(response.content) as bio:
-                    image_obj = copy.deepcopy(Image.open(bio))
-        elif os.path.isfile(url):
-            image_obj = Image.open(url)
-        else:
-            raise ValueError(f"{url} is not a valid url or file path.")
+        bytes_content = self.file_download(url)
+        image_obj = Image.open(bytes_content)
         return {"image": image_obj}
 
     def get_video_info(self, url: str) -> list[dict]:
-        vr = decord.VideoReader(url)
+        bytes_content = self.file_download(url)
+        vr = VideoReader(bytes_content, ctx=cpu(0), num_threads=1)
         total_frames, video_fps = len(vr), vr.get_avg_fps()
         start_frame, end_frame = 0, total_frames - 1
         nframes = self.smart_nframes(total_frames=total_frames, video_fps=video_fps)

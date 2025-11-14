@@ -19,17 +19,17 @@ from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
     from paddleformers.transformers.processing_utils import ProcessorMixin
 
-    from .auto_processor import AutoProcessor
-    from .vision_processor import VisionProcessor
+    from .encoder import BaseEncoder
+    from .vision_loader import VisionLoader
     from ...hparams import DataArguments
 
 @dataclass
 class DatasetProcessor(ABC):
     r"""A class for data processors."""
 
-    auto_processor: "AutoProcessor"
+    encoder: "BaseEncoder"
     processor: "ProcessorMixin"
-    vision_processor: Optional["VisionProcessor"]
+    vision_loader: Optional["VisionLoader"]
     data_args: "DataArguments"
 
     @abstractmethod

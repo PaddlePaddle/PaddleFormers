@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .vision_processor import VisionProcessor, ErnieVisionProcessor
-from .qwen_vision_processor import Qwen2VLVisionProcessor
+from .base_encoder import BaseEncoder, Ernie45VLEncoder
+from .qwen_encoder import Qwen2VLEncoder
 
 __all__ = [
-    "VisionProcessor",
-    "ErnieVisionProcessor",
-    "Qwen2VLVisionProcessor",
+    "BaseEncoder",
+    "Ernie45VLEncoder",
+    "Qwen2VLEncoder",
 ]

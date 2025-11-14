@@ -1,10 +1,11 @@
 if __name__ == "__main__":
+    import os
     import json
     import numpy as np
     from pprint import pprint
-    from paddleformers.datasets2.processor.vision_processor import ErnieVisionProcessor
-    from paddleformers.datasets2.processor.auto_processor import Ernie45VLProcessor
-    from paddleformers.transformers import AutoTokenizer
+    from paddleformers.datasets2.processor.vision_loader import ErnieVisionLoader
+    from paddleformers.datasets2.processor.encoder import Ernie45VLEncoder
+    from paddleformers.transformers import AutoTokenizer, Ernie4_5_VLTokenizer
     from paddleformers.hparams.data_args import DataArguments
     from paddleformers.datasets2.processor import SupervisedDatasetProcessor
 
@@ -16,47 +17,75 @@ if __name__ == "__main__":
     )
     print(data_args)
     
-    auto_processor = Ernie45VLProcessor(data_args=data_args)
+    encoder = Ernie45VLEncoder(data_args=data_args)
+
+    # prepare chat_template for method 1/2
+    # model_name_or_path = "/root/paddlejob/workspace/env_run/peiziliang/baidu/ernie/ERNIE_4p5_VL_28B_A3B_Thinking"
+    # config_json = os.path.join(model_name_or_path, "tokenizer_config.json")
+    # with open(config_json) as f:
+    #     config_dict = json.load(f)
+    # chat_template = config_dict.get("chat_template", None)
+
+    # method 1
+    # tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
+    #     "/root/paddlejob/workspace/env_run/peiziliang/baidu/ernie/ERNIE_4p5_VL_28B_A3B_Thinking",
+    # )
+    # method 2
+    # special_tokens_map_json = os.path.join(model_name_or_path, "special_tokens_map.json")
+    # with open(special_tokens_map_json) as f:
+    #     special_tokens_map = json.load(f)
+    # tokenizer = Ernie4_5_VLTokenizer(
+    #     "/root/paddlejob/workspace/env_run/peiziliang/baidu/ernie/ERNIE_4p5_VL_28B_A3B_Thinking/tokenizer.model",
+    #     **special_tokens_map
+    # # )
+    # tokenizer.chat_template = chat_template
+    # print("tokenizer.cls_token: ", tokenizer.cls_token)
+    
+    # method 3
     tokenizer = AutoTokenizer.from_pretrained(
-        "/root/paddlejob/workspace/env/output/peiziliang/baidu/paddle_internal/ernie-4_5-vl-28b-a3b-bf16-tokenizer",
-        trust_remote_code=True,    
+        "/root/paddlejob/workspace/env_run/peiziliang/baidu/ernie/tokenizer",
+        trust_remote_code=True,
     )
     # tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B-Base")
 
-    vision_processor = ErnieVisionProcessor(data_args=data_args)
+    vision_loader = ErnieVisionLoader(data_args=data_args)
     processor = SupervisedDatasetProcessor(
-        auto_processor=auto_processor,
-        tokenizer=tokenizer,
-        vision_processor=vision_processor,
+        encoder=encoder,
+        processor=tokenizer,
+        vision_loader=vision_loader,
         data_args=data_args,
     )
 
-    # dataset = []
-    # data1 = {
-    #     "messages": [{"role": "system", "content": "这是system中的内容。"}, 
-    #                 {"role": "user", "content": "<image>你好呀！"}, 
-    #                 {"role": "assistant", "content": "您好，很高兴为您服务！"}, 
-    #                 {"role": "user", "content": "<video>今天天气怎么样？"}, 
-    #                 {"role": "assistant", "content": "<think>\n这个问题我不会\n</think>\n\n不知道啊"}],
-    #     "images": ["/root/paddlejob/workspace/env/output/peiziliang/ERNIE/examples/data/DoclingMatix/44/0.png"],
-    #     "videos": ["/root/paddlejob/workspace/env/output/peiziliang/ERNIE/examples/data/NExTVideo/0008/2403134475.mp4"],
-    # }
-    # dataset.append(data1)
+    dataset = []
+    data1 = {
+        "messages": [{"role": "system", "content": "这是system中的内容。"}, 
+                    {"role": "user", "content": "<image>你好呀！"}, 
+                    {"role": "assistant", "content": "您好，很高兴为您服务！"}, 
+                    {"role": "user", "content": "<video>今天天气怎么样？"}, 
+                    {"role": "assistant", "content": "<think>\n这个问题我不会\n</think>\n\n不知道啊"}],
+        "images": ["/root/paddlejob/workspace/env_run/peiziliang/ERNIE/examples/data/DoclingMatix/44/0.png"],
+        "videos": ["/root/paddlejob/workspace/env_run/peiziliang/ERNIE/examples/data/NExTVideo/0008/2403134475.mp4"],
+    }
+    dataset.append(data1)
     # data2 = {
     #     "messages": [{"role": "system", "content": "这是system中的内容。"}, 
     #                 {"role": "user", "content": "<image>你好呀！"}, 
     #                 {"role": "assistant", "content": "您好，很高兴为您服务！"}, 
     #                 {"role": "user", "content": "<video>今天天气怎么样？"}, 
     #                 {"role": "assistant", "content": "不知道啊"}],
-    #     "images": ["/root/paddlejob/workspace/env/output/peiziliang/ERNIE/examples/data/DoclingMatix/44/0.png"],
-    #     "videos": ["/root/paddlejob/workspace/env/output/peiziliang/ERNIE/examples/data/NExTVideo/0008/2403134475.mp4"],
+    #     "images": ["/root/paddlejob/workspace/env_run/peiziliang/ERNIE/examples/data/DoclingMatix/44/0.png"],
+    #     "videos": ["/root/paddlejob/workspace/env_run/peiziliang/ERNIE/examples/data/NExTVideo/0008/2403134475.mp4"],
     # }
     # dataset.append(data2)
-    # print("Input:")
+    print("Input:")
+    pprint(dataset)
+    print("\nOutput:")
+    dataset = processor.preprocess_dataset(dataset[0])
     # pprint(dataset)
-    # print("\nOutput:")
-    # dataset = processor.preprocess_dataset(dataset)
-    # pprint(dataset)
+    print(tokenizer.encode(tokenizer.cls_token))
+    print(dataset["input_ids"][:8])
+    print(tokenizer.decode(dataset["input_ids"][:8]))
+    exit()
     with open("/root/paddlejob/workspace/env/output/peiziliang/ERNIE/examples/data/sft_vl-train_process_messages_format.jsonl", "r") as f:
         input_datas = f.readlines()
 
@@ -105,7 +134,7 @@ if __name__ == "__main__":
                 print("len(model_input['token_type_ids']) == len(model_input['input_ids']): ",
                       len(model_input["token_type_ids"]) == len(model_input["input_ids"]))
                 print("-------------------")
-                # break
+                break
             except Exception as e:
                 print(e)
                 # break

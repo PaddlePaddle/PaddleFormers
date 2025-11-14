@@ -16,8 +16,8 @@ import numpy as np
 from paddle.io import IterableDataset
 
 from paddleformers.datasets2.processor import SupervisedDatasetProcessor
-from paddleformers.datasets2.processor.auto_processor import Qwen2VLProcessor
-from paddleformers.datasets2.processor.vision_processor import Qwen2VLVisionProcessor
+from paddleformers.datasets2.processor.encoder import Qwen2VLProcessor
+from paddleformers.datasets2.processor.vision_loader import Qwen2VLVisionProcessor
 from paddleformers.datasets2.reader.mix_datasets import (
     MultiSourceDataset,
     create_dataset_instance,

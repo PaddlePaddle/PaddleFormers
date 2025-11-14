@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .auto_processor import AutoProcessor, Ernie45VLProcessor
-from .qwen_processor import Qwen2VLProcessor
+from .vision_loader import VisionLoader, ErnieVisionLoader
+from .qwen_vision_loader import Qwen2VLVisionLoader
 
 __all__ = [
-    "AutoProcessor",
-    "Ernie45VLProcessor",
-    "Qwen2VLProcessor",
+    "VisionLoader",
+    "ErnieVisionLoader",
+    "Qwen2VLVisionLoader",
 ]

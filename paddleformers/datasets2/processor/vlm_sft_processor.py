@@ -26,8 +26,8 @@ class SupervisedDatasetProcessor(DatasetProcessor):
         images = example.get("images", [])
         videos = example.get("videos", [])
 
-        image_inputs, video_inputs = self.vision_processor(images=images, videos=videos)
-        model_input = self.auto_processor.encode(messages=messages, image_inputs=image_inputs, video_inputs=video_inputs, processor=self.processor)
+        image_inputs, video_inputs = self.vision_loader(images=images, videos=videos)
+        model_input = self.encoder(messages=messages, image_inputs=image_inputs, video_inputs=video_inputs, processor=self.processor)
 
         return model_input
 

@@ -37,14 +37,14 @@ if TYPE_CHECKING:
 from paddleformers.utils.log import logger
 
 @dataclass
-class AutoProcessor:
+class BaseEncoder:
     def __init__(self, data_args: "DataArguments", **kwargs):
         """
         init
         """
         self.data_args = data_args
 
-    def encode(self, messages: list[dict], tokenizer: "PreTrainedTokenizer") -> dict:
+    def __call__(self, messages: list[dict], tokenizer: "PreTrainedTokenizer") -> dict:
         raise NotImplementedError()
 
     def valid_data(self, messages: list[dict]) -> bool:
@@ -63,7 +63,7 @@ class AutoProcessor:
 
 
 @dataclass
-class Ernie45VLProcessor(AutoProcessor):
+class Ernie45VLEncoder(BaseEncoder):
     ignored_index = -100
     image_placeholder = '<image>'
     video_placeholder = '<video>'
@@ -664,7 +664,8 @@ class Ernie45VLProcessor(AutoProcessor):
         return position_ids
 
     @override
-    def encode(self, messages: list[dict], image_inputs: list[dict], video_inputs: list[list[dict]], tokenizer: "PreTrainedTokenizer") -> dict:
+    def __call__(self, messages: list[dict], image_inputs: list[dict], video_inputs: list[list[dict]], processor: "PreTrainedTokenizer") -> dict:
+        tokenizer = processor
         self.valid_data(messages, image_inputs, video_inputs)
         
         history_str = tokenizer.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True, enable_thinking=self.is_thinking_data(messages))

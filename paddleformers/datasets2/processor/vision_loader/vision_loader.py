@@ -16,6 +16,7 @@ import io
 import os
 import copy
 import math
+import random
 import requests
 import numpy as np
 
@@ -33,14 +34,25 @@ if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer
 
 @dataclass
-class VisionProcessor(ABC):
-    r"""A class for vision processors."""
+class VisionLoader(ABC):
+    r"""A class for vision loaders."""
 
     def __init__(self, data_args: "DataArguments"):
         """
         init
         """
         self.data_args = data_args
+
+    def file_download(self, url: str) -> bytes:
+        if url.startswith("http"):
+            response = requests.get(url)
+            bytes_data = response.content
+        elif os.path.isfile(url):
+            bytes_data = open(url, "rb").read()
+        else:
+            raise ValueError(f"{url} is not a valid url or file path.")
+        bytes_content = io.BytesIO(bytes_data)
+        return bytes_content
 
     def get_image_info(self, url: str) -> dict:
         raise NotImplementedError
@@ -66,8 +78,8 @@ class VisionProcessor(ABC):
         return image_inputs, video_inputs
 
 @dataclass
-class ErnieVisionProcessor(VisionProcessor):
-    r"""A processor for ERNIE vision models."""
+class ErnieVisionLoader(VisionLoader):
+    r"""A loader for ERNIE vision models."""
 
     def __init__(self, data_args: "DataArguments"):
         super().__init__(data_args)
@@ -77,16 +89,6 @@ class ErnieVisionProcessor(VisionProcessor):
         self.video_target_frames = data_args.video_target_frames
         self.video_frames_sample = data_args.video_frames_sample
         self.temporal_conv_size = data_args.temporal_conv_size
-
-    def file_download(self, url: str) -> bytes:
-        if url.startswith("http"):
-            response = requests.get(url)
-            bytes_data = response.content
-        elif os.path.isfile(url):
-            bytes_data = open(url, "rb").read()
-        else:
-            raise ValueError(f"{url} is not a valid url or file path.")
-        return bytes_data
 
     def get_target_frames(self, duration: float) -> int:
         video_frame_args = dict()
@@ -187,7 +189,7 @@ class ErnieVisionProcessor(VisionProcessor):
             frames = video_reader.get_batch(frame_indices).asnumpy()
             video_reader.seek(0)
         except Exception as _:
-            logger.info(f"get {frame_indices} frames error in {video_path}")
+            logger.info(f"get {frame_indices} frames error")
 
         assert len(frames) == len(
             frame_indices
@@ -208,9 +210,8 @@ class ErnieVisionProcessor(VisionProcessor):
         return ret, time_stamps
 
     def get_image_info(self, url: str) -> dict:
-        bytes_data = self.file_download(url)
-        img = io.BytesIO(bytes_data)
-        img = Image.open(img)
+        bytes_content = self.file_download(url)
+        img = Image.open(bytes_content)
 
         image_width = img.width
         image_height = img.height
@@ -222,8 +223,7 @@ class ErnieVisionProcessor(VisionProcessor):
         return img_one
 
     def get_video_info(self, url: str) -> list[dict]:
-        bytes_data = self.file_download(url)
-        bytes_content = io.BytesIO(bytes_data)
+        bytes_content = self.file_download(url)
         video_reader = VideoReader(bytes_content, ctx=cpu(0), num_threads=1)
 
         tmp_frame = Image.fromarray(video_reader[0].asnumpy(), "RGB")

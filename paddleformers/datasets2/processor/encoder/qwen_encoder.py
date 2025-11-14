@@ -23,7 +23,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .auto_processor import AutoProcessor
+from .base_encoder import BaseEncoder
 from paddleformers.transformers.processing_utils import ProcessorMixin
 
 from typing_extensions import override
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 from paddleformers.utils.log import logger
 
 @dataclass
-class Qwen2VLProcessor(AutoProcessor):
+class Qwen2VLEncoder(BaseEncoder):
     ignored_index = -100
     image_placeholder = '<image>'
     video_placeholder = '<video>'
@@ -249,7 +249,7 @@ class Qwen2VLProcessor(AutoProcessor):
             return position_ids
 
     @override
-    def encode(self, messages: list[dict], image_inputs: list[dict], video_inputs: list[list[dict]], processor: "ProcessorMixin") -> dict:
+    def __call__(self, messages: list[dict], image_inputs: list[dict], video_inputs: list[list[dict]], processor: "ProcessorMixin") -> dict:
         history_str = processor.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True)
         all_str = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
 
