@@ -9,7 +9,7 @@ sentencepiece
 huggingface_hub>=0.19.2
 protobuf>=3.20.2
 visualdl
-safetensors @ https://paddle-whl.bj.bcebos.com/nightly/cu126/safetensors/safetensors-0.6.2.dev0-cp38-abi3-linux_x86_64.whl
+safetensors
 fast_dataindex>=0.1.1 ; platform_system == "Linux"
 aistudio-sdk>=0.3.0
 jinja2
