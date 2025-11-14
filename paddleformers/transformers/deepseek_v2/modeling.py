@@ -139,7 +139,7 @@ def _compute_yarn_parameters(
     seq_len=None,
 ):
     base = config["rope_theta"]
-    rope_parameters_dict = config["rope_scaling"]
+    rope_parameters_dict = config["rope_parameters"]
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "qk_rope_head_dim", config.hidden_size // config.num_attention_heads)
     dim = int(head_dim * partial_rotary_factor)
@@ -216,7 +216,8 @@ class DeepseekV2YarnRotaryEmbedding(nn.Layer):
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
 
-        self.rope_type = self.config.rope_scaling["type"]
+        rope_parameters = self.config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
         assert self.rope_type == "yarn"
 
         self.inv_freq, self.attention_scaling = _compute_yarn_parameters(config)
@@ -669,9 +670,9 @@ class DeepseekV2Attention(nn.Layer):
                 mark_as_sequence_parallel_parameter(self.q_a_proj.bias)
 
         self.softmax_scale = self.q_head_dim ** (-0.5)
-        if self.config.rope_scaling is not None:
-            mscale_all_dim = self.config.rope_scaling.get("mscale_all_dim", 0)
-            scaling_factor = self.config.rope_scaling["factor"]
+        if self.config.rope_parameters is not None:
+            mscale_all_dim = self.config.rope_parameters.get("mscale_all_dim", 0)
+            scaling_factor = self.config.rope_parameters["factor"]
             if mscale_all_dim:
                 mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
                 self.softmax_scale = self.softmax_scale * mscale * mscale

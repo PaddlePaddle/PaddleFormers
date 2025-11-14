@@ -314,18 +314,18 @@ class LlamaAttentionNet(nn.Layer):
 
     def _init_rope(self):
         if (
-            hasattr(self.config, "rope_scaling")
-            and self.config.rope_scaling is not None
-            and self.config.rope_scaling.get("rope_type", None) == "llama3"
+            hasattr(self.config, "rope_parameters")
+            and self.config.rope_parameters is not None
+            and self.config.rope_parameters.get("rope_type", None) == "llama3"
         ):
             self.rotary_emb = Llama3RotaryEmbedding(
                 self.head_dim,
                 max_position_embeddings=self.max_position_embeddings,
                 base=self.config.rope_theta,
-                factor=self.config.rope_scaling["factor"],
-                high_freq_factor=self.config.rope_scaling["high_freq_factor"],
-                low_freq_factor=self.config.rope_scaling["low_freq_factor"],
-                original_max_position_embeddings=self.config.rope_scaling["original_max_position_embeddings"],
+                factor=self.config.rope_parameters["factor"],
+                high_freq_factor=self.config.rope_parameters["high_freq_factor"],
+                low_freq_factor=self.config.rope_parameters["low_freq_factor"],
+                original_max_position_embeddings=self.config.rope_parameters["original_max_position_embeddings"],
             )
 
         elif self.config.rope_scaling_type is None:
