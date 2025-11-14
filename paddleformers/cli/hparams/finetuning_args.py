@@ -449,8 +449,6 @@ class FinetuningArguments(
             self.weight_quantize_algo = "nf4"
         else:
             raise ValueError(f"Unknown compute_type: {self.compute_type}")
-        self.per_device_train_batch_size = self.batch_size
-        self.per_device_eval_batch_size = self.batch_size
         self.server_tp_degree = self.tensor_parallel_degree
 
         super().__post_init__()
