@@ -272,7 +272,7 @@ class LlmMetaConfig:
             "full",
             "Recompute granularity, Choose among ['full', 'core_attn', 'full_attn']",
         ),
-        ("recompute_use_reentrant", bool, False, "recompute_use_reentrant"),
+        ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
         # refined_recompute attributes
         (
             "refined_recompute",
@@ -304,6 +304,7 @@ class LlmMetaConfig:
         ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
         ("using_fake_gate", bool, False, "Whether to fake gate."),
         ("ep_communication_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
+        ("use_unified_moe", bool, False, "Whether to use unified moe."),
     ]
 
     mtp_attributes = [
@@ -512,6 +513,8 @@ class PretrainedConfig:
             The number of tokens in a subbatch for MoE.
         ep_communication_type (`str`, *optional*, defaults to `deepep`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
+        use_unified_moe (`bool`, *optional*, defaults to `False`):
+            Whether to use unified MoE.
         > Parameters for general components
 
         _attn_implementation (`str`, defaults to `eager`)
@@ -584,6 +587,7 @@ class PretrainedConfig:
         llm_meta = LlmMetaConfig._get_defaults()
         self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
         self._unsavable_keys.remove("tensor_parallel_degree")
+        self._unsavable_keys.add("_attn_implementation")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
@@ -657,6 +661,7 @@ class PretrainedConfig:
 
         self.moe_subbatch_token_num = kwargs.pop("moe_subbatch_token_num", 0)
         self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
+        self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.using_fake_gate = kwargs.pop("using_fake_gate", False)
 
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config

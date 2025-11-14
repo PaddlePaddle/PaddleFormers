@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
+import logging
 import sys
 from contextlib import suppress
 from typing import TYPE_CHECKING
@@ -50,7 +50,8 @@ import_structure = {
     "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
-    "image_processing_utils": ["ImageProcessingMixin"],
+    "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
+    "video_processing_utils": ["BaseVideoProcessor"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": ["_DispatchManager"],
     "moe_layer": [
@@ -80,7 +81,7 @@ import_structure = {
         "BERT_PRETRAINED_RESOURCE_FILES_MAP",
     ],
     "auto.configuration": ["AutoConfig"],
-    "auto.image_processing": ["AutoImageProcessor"],
+    "auto.image_processing": ["AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
     "auto.modeling": [
         "AutoTokenizer",
         "AutoBackbone",
@@ -100,11 +101,14 @@ import_structure = {
     ],
     "tokenizer_utils_base": [
         "PaddingStrategy",
+        "PreTokenizedInput",
         "TextInput",
         "TensorType",
+        "TruncationStrategy",
     ],
     "auto.processing": ["AutoProcessor"],
-    "auto.tokenizer": ["AutoTokenizer"],
+    "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
+    "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "deepseek_v2.configuration": ["DeepseekV2Config"],
     "deepseek_v2.modeling": [
         "masked_fill",
@@ -117,7 +121,6 @@ import_structure = {
         "DeepseekV2MoE",
         "DeepseekV2MoEFlexToken",
         "scaled_dot_product_attention",
-        "DeepseekV2RotaryEmbedding",
         "rotate_half",
         "DeepseekV2MTPLayer",
         "DeepseekV2RMSNorm",
@@ -131,15 +134,10 @@ import_structure = {
         "_expand_2d_mask",
         "DeepseekV2Model",
         "repeat_kv",
-        "yarn_find_correction_dim",
-        "yarn_linear_ramp_mask",
-        "DeepseekV2DynamicNTKScalingRotaryEmbedding",
         "DeepseekV2MLP",
         "yarn_get_mscale",
         "DeepseekV2DecoderLayer",
-        "yarn_find_correction_range",
         "get_triangle_upper_mask",
-        "DeepseekV2LinearScalingRotaryEmbedding",
         "DeepseekV2ForCausalLMPipe",
     ],
     "deepseek_v2.modeling_auto": [
@@ -187,11 +185,13 @@ import_structure = {
     ],
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
     "ernie4_5_moe.configuration": ["Ernie4_5_MoeConfig"],
-    "ernie4_5_moe.modeling": [
-        "Ernie4_5_MoeModel",
-        "Ernie4_5_MoeForCausalLM",
-        "Ernie4_5_MoeForCausalLMPipe",
+    "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"],
+    "ernie4_5_moe_vl.configuration": ["Ernie4_5_VLConfig"],
+    "ernie4_5_moe_vl.modeling": [
+        "Ernie4_5_VLMoeForConditionalGenerationModel",
+        "Ernie4_5_VLMoeForConditionalGenerationPipe",
     ],
+    "ernie4_5_moe_vl.tokenizer": ["Ernie4_5_VLTokenizer"],
     "export": ["export_model"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
@@ -250,6 +250,7 @@ import_structure = {
     ],
     "qwen2.tokenizer": ["Qwen2Tokenizer"],
     "qwen2.tokenizer_fast": ["Qwen2TokenizerFast"],
+    "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -258,6 +259,10 @@ import_structure = {
         "Qwen2MoeForCausalLMPipe",
         "Qwen2MoePretrainingCriterion",
     ],
+    "qwen2_vl.image_processor": ["Qwen2VLImageProcessor"],
+    "qwen2_vl.processor": ["Qwen2VLProcessor"],
+    "qwen2_vl.video_processor": ["Qwen2VLVideoProcessor"],
+    "qwen2_vl.vision_process": ["process_vision_info"],
     "qwen3.configuration": ["Qwen3Config"],
     "qwen3.modeling": [
         "Qwen3Model",
@@ -277,8 +282,6 @@ import_structure = {
         "Qwen3MoeForCausalLMPipe",
         "Qwen3MoePretrainingCriterion",
     ],
-    "ernie4_5vl.tokenizer": ["Ernie4_5_VLTokenizer"],
-    "ernie4_5vl": [],
     "bert": [],
     "llama": [],
     "qwen2": [],
@@ -287,13 +290,12 @@ import_structure = {
     "deepseek_v2": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
-    "ernie4_5_moe": [
-        "Ernie4_5_MoeDecoderLayer",
-        "Ernie4_5_MoeModel",
-        "Ernie4_5_MoeForCausalLM",
-    ],
+    "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
+    "ernie4_5_moe_vl": [],
     "qwen2_moe": [],
+    "qwen2_vl": [],
     "qwen3_moe": [],
+    "glm4_moe.configuration": ["Glm4MoeConfig"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"],
     "auto": ["AutoModelForCausalLM"],
     "legacy.tokenizer_utils_base": ["EncodingFast"],
@@ -316,7 +318,8 @@ if TYPE_CHECKING:
     from .tokenizer_utils_fast import PretrainedTokenizerFast
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
-    from .image_processing_utils import ImageProcessingMixin
+    from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
+    from .video_processing_utils import BaseVideoProcessor
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
     from .tensor_parallel_utils import parallel_matmul, fused_head_and_loss_fn
@@ -347,15 +350,19 @@ if TYPE_CHECKING:
     from .auto.modeling import *
     from .auto.processing import *
     from .auto.tokenizer import *
+    from .auto.video_processing import *
     from .deepseek_v2 import *
     from .deepseek_v3 import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
+    from .ernie4_5_moe_vl import *
     from .llama import *
     from .optimization import *
     from .qwen import *
     from .qwen2 import *
+    from .qwen2_5_vl import *
     from .qwen2_moe import *
+    from .qwen2_vl import *
     from .qwen3 import *
     from .qwen3_moe import *
     from .glm4_moe import *
@@ -367,3 +374,7 @@ else:
         import_structure,
         module_spec=__spec__,
     )
+
+logging.getLogger("transformers").addFilter(
+    lambda record: "None of PyTorch, TensorFlow >= 2.0, or Flax have been found." not in str(record.getMessage())
+)

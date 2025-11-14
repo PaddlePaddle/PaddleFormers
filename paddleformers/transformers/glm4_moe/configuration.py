@@ -158,6 +158,7 @@ class Glm4MoeConfig(PretrainedConfig):
         topk_method="noaux_tc",
         using_flex_token=True,
         moe_subbatch_token_num=0,
+        sliding_window=None,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -177,6 +178,7 @@ class Glm4MoeConfig(PretrainedConfig):
         self.rope_scaling = rope_scaling
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
+        self.sliding_window = sliding_window
         # Validate the correctness of rotary position embeddings parameters
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
