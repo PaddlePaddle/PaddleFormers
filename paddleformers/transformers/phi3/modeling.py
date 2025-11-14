@@ -120,7 +120,7 @@ class Phi3Attention(nn.Layer):
         hidden_states: paddle.Tensor,
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor],
         attention_mask: Optional[paddle.Tensor],
-        past_key_values: Optional[paddle.Tensor] = None,
+        past_key_value: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         use_cache: bool = False,
@@ -154,10 +154,10 @@ class Phi3Attention(nn.Layer):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        if past_key_values is not None:
-            key_states = paddle.cat([past_key_values[0], key_states], axis=1)
-            value_states = paddle.cat([past_key_values[1], value_states], axis=1)
-        past_key_values = (key_states, value_states) if use_cache else None
+        if past_key_value is not None:
+            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
+        past_key_value = (key_states, value_states) if use_cache else None
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
         attn_output, attn_weights = attention_interface(
@@ -180,7 +180,7 @@ class Phi3Attention(nn.Layer):
 
         if not output_attentions:
             attn_weights = None
-        return attn_output, attn_weights, past_key_values
+        return attn_output, attn_weights, past_key_value
 
 
 class Phi3DecoderLayer(nn.Layer):
@@ -221,7 +221,7 @@ class Phi3DecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         output_attentions: Optional[bool] = False,
@@ -235,7 +235,7 @@ class Phi3DecoderLayer(nn.Layer):
             position_embeddings=position_embeddings,
             position_ids=position_ids,
             attention_mask=attention_mask,
-            past_key_values=past_key_values,
+            past_key_value=past_key_value,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             use_cache=use_cache,
             output_attentions=output_attentions,
@@ -428,13 +428,11 @@ class Phi3Model(Phi3PreTrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        seq_length_with_past = seq_length
         cache_length = 0
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
         else:
             cache_length = past_key_values[0][0].shape[1]
-            seq_length_with_past += cache_length
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
