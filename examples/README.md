@@ -39,7 +39,7 @@ export DOWNLOAD_SOURCE=aistudio
 
 ```shell
 wget https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz
-mkdir -p data/pt && tar -xf pt_data.tar.gz -C data/sft/
+mkdir -p data/pt && tar -xf pt_data.tar.gz -C data/pt/
 ```
 
 #### 1.1.2. 离线数据流
