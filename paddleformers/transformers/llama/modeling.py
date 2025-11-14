@@ -257,25 +257,73 @@ class LlamaDecoderLayer(nn.Layer):
         return outputs  # type: ignore[return-value]
 
 
+def _compute_default_parameters(config):
+    head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+    base = config.rope_theta
+
+    indices = paddle.arange(0, head_dim, 2, dtype="float32")
+    inv_freq = 1.0 / (base ** (indices / head_dim))
+    attention_factor = 1.0
+    return inv_freq, attention_factor
+
+
+def _compute_llama3_parameters(config):
+    inv_freq, attention_factor = _compute_default_parameters(config)
+
+    factor = config.rope_scaling["factor"]
+    low_freq_factor = config.rope_scaling["low_freq_factor"]
+    high_freq_factor = config.rope_scaling["high_freq_factor"]
+    old_context_len = config.rope_scaling["original_max_position_embeddings"]
+
+    low_freq_wavelen = old_context_len / low_freq_factor
+    high_freq_wavelen = old_context_len / high_freq_factor
+    wavelen = 2 * paddle.pi / inv_freq
+
+    inv_freq_llama = paddle.where(wavelen > low_freq_wavelen, inv_freq / factor, inv_freq)
+
+    smooth_factor = (old_context_len / wavelen - low_freq_factor) / (high_freq_factor - low_freq_factor)
+
+    smoothed_inv_freq = (1 - smooth_factor) * inv_freq_llama / factor + smooth_factor * inv_freq_llama
+
+    is_medium_freq = paddle.logical_and(
+        wavelen >= high_freq_wavelen,
+        wavelen <= low_freq_wavelen,
+    )
+    inv_freq_llama = paddle.where(is_medium_freq, smoothed_inv_freq, inv_freq_llama)
+
+    return inv_freq_llama, attention_factor
+
+
 class LlamaRotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.head_dim = config.head_dim
-        self.base = config.rope_theta
-        indices = paddle.arange(0, self.head_dim, 2, dtype="float32")
-        inv_freq = 1.0 / (self.base ** (indices / self.head_dim))
-        self.register_buffer("inv_freq", inv_freq, persistable=True)
+        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+
+        self.rope_type = "default"
+        if hasattr(config, "rope_scaling") and isinstance(config.rope_scaling, dict):
+            self.rope_type = config.rope_scaling.get("rope_type", "default")
+
+        if self.rope_type == "llama3":
+            inv_freq, attention_scaling = _compute_llama3_parameters(config)
+        else:
+            inv_freq, attention_scaling = _compute_default_parameters(config)
+
+        self.attention_scaling = attention_scaling
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
 
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
+
             position_ids_expanded = position_ids[:, None, :].float()
 
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
-            emb = paddle.cat((freqs, freqs), dim=-1)
-            cos = emb.cos()
-            sin = emb.sin()
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose([0, 2, 1])
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
 
             return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
