@@ -31,7 +31,7 @@ processed_video = video_processor(video[0], return_tensors="pd")    # return Pad
 >
 > You can specify the model download source in two ways:
 >
-> - Via the `download_hub` parameter, passed directly in the `from_pretrained` method.。
+> - Via the `download_hub` parameter, passed directly in the `from_pretrained` method.
 >
 > ```python
 > video_processor = AutoVideoProcessor.from_pretrained(
@@ -40,7 +40,7 @@ processed_video = video_processor(video[0], return_tensors="pd")    # return Pad
 > )
 > ```
 >
-> - Via the `DOWNLOAD_SOURCE` environment variable, to change the default download source.。
+> - Via the `DOWNLOAD_SOURCE` environment variable, to change the default download source.
 > ```bash
 > export DOWNLOAD_SOURCE=aistudio
 > ```
