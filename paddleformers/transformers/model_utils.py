@@ -1298,6 +1298,40 @@ def replace_name_and_gen_index(path, total_size):
             paddle.save(i, saved_signal_path)
 
 
+def replace_name_and_gen_index_lora(path):
+    index_mapping = {}
+    safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".pdparams")]
+    total_files_num = len(safetensor_files)
+    cur_file_index = 0
+    total_size = 0
+    for file in safetensor_files:
+        single_size = 0
+        cur_file_index += 1
+        file_path = os.path.join(path, file)
+        new_file_name = f"peft_model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
+
+        with safe_open(file_path, framework="np") as f:
+            for key in f.keys():
+                index_mapping[key] = new_file_name
+                single_size += f.get_tensor(key).nbytes
+        total_size += single_size
+        new_file_path = os.path.join(path, new_file_name)
+        os.rename(file_path, new_file_path)
+    index_file_name = SAFE_PEFT_WEIGHTS_INDEX_NAME
+    index_infos = {}
+    index_infos["metadata"] = {}
+    index_infos["metadata"]["total_size"] = total_size
+    index_infos["weight_map"] = index_mapping
+    index_infos["type"] = "lora"
+    with open(os.path.join(path, index_file_name), "w") as f:
+        json.dump(index_infos, f, indent=4)
+    # For PDC signal
+    if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
+        for i in range(paddle.distributed.get_world_size()):
+            saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
+            paddle.save(i, saved_signal_path)
+
+
 def get_common_folder(file_list):
     dirnames = [os.path.dirname(f) for f in file_list]
     common_folder = dirnames[0]
