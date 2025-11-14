@@ -1187,6 +1187,77 @@ class LlamaForCausalLMNet(LlamaPretrainedModelNet):
 
         return config
 
+    @classmethod
+    def _gen_aoa_config(cls, config: LlamaConfig):
+        aoa_config = {
+            "aoa_statements": [
+                "llama.layers.$LAYER_ID.mlp.down_proj.weight^T -> llama.layers.$LAYER_ID.mlp.down_proj.weight",
+                "lm_head.weight^T -> lm_head.weight",
+            ]
+        }
+        # attention qkv
+        if not config.fuse_attention_qkv:
+            aoa_config["aoa_statements"] += [
+                f"llama.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> llama.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"llama.layers.$LAYER_ID.self_attn.q_proj.weight^T, llama.layers.$LAYER_ID.self_attn.k_proj.weight^T, llama.layers.$LAYER_ID.self_attn.v_proj.weight^T -> llama.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+                f"llama.layers.$LAYER_ID.self_attn.q_proj.bias, llama.layers.$LAYER_ID.self_attn.k_proj.bias, llama.layers.$LAYER_ID.self_attn.v_proj.bias -> llama.layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+            ]
+        # FFN
+        if not config.fuse_attention_ffn:
+            aoa_config["aoa_statements"] += [
+                f"llama.layers.$LAYER_ID.mlp.{y}_proj.weight^T -> llama.layers.$LAYER_ID.mlp.{y}_proj.weight"
+                for y in ("gate", "up")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                "llama.layers.$LAYER_ID.mlp.gate_proj.weight^T, llama.layers.$LAYER_ID.mlp.up_proj.weight^T -> llama.layers.$LAYER_ID.mlp.gate_up_fused_proj.weight, fused_ffn",
+            ]
+        return aoa_config
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: LlamaConfig):
+        aoa_config = {
+            "aoa_statements": [
+                "llama.layers.$LAYER_ID.mlp.gate_proj.weight^T -> llama.layers.$LAYER_ID.mlp.gate_proj.weight",
+                "llama.layers.$LAYER_ID.mlp.up_proj.weight^T -> llama.layers.$LAYER_ID.mlp.up_proj.weight",
+                "llama.layers.$LAYER_ID.mlp.down_proj.weight^T -> llama.layers.$LAYER_ID.mlp.down_proj.weight",
+                "lm_head.weight^T -> lm_head.weight",
+            ]
+        }
+        # attention qkv
+        if not config.fuse_attention_qkv:
+            aoa_config["aoa_statements"] += [
+                f"llama.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> llama.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"llama.layers.$LAYER_ID.self_attn.qkv_proj.weight -> llama.layers.$LAYER_ID.self_attn.q_proj.weight, llama.layers.$LAYER_ID.self_attn.k_proj.weight, llama.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+                f"llama.layers.$LAYER_ID.self_attn.qkv_proj.bias -> llama.layers.$LAYER_ID.self_attn.q_proj.bias, llama.layers.$LAYER_ID.self_attn.k_proj.bias, llama.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
+            ]
+            aoa_config["aoa_statements"] += [
+                f"llama.layers.{layer_id}.self_attn.{x}_proj.weight^T -> llama.layers.{layer_id}.self_attn.{x}_proj.weight"
+                for layer_id in range(config.num_hidden_layers)
+                for x in ("q", "k", "v")
+            ]
+        # FFN
+        if not config.fuse_attention_ffn:
+            aoa_config["aoa_statements"] += [
+                f"llama.layers.$LAYER_ID.mlp.{y}_proj.weight^T -> llama.layers.$LAYER_ID.mlp.{y}_proj.weight"
+                for y in ("gate", "up")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                "llama.layers.$LAYER_ID.mlp.gate_up_fused_proj.weight -> llama.layers.$LAYER_ID.mlp.gate_proj.weight, llama.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
+                "llama.layers.$LAYER_ID.mlp.gate_proj.weight^T -> llama.layers.$LAYER_ID.mlp.gate_proj.weight",
+                "llama.layers.$LAYER_ID.mlp.up_proj.weight^T -> llama.layers.$LAYER_ID.mlp.up_proj.weight",
+            ]
+        return aoa_config
+
 
 class LlamaForCausalLMNetDPO(LlamaForCausalLMNet):
     def __init__(self, config):

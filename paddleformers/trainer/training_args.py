@@ -415,6 +415,25 @@ class TrainingArguments:
             Defaults to False.
         save_hf_steps (`int`, *optional*, defaults to 500):
             Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
+        hybrid_parallel_expert_grad_scale (float, optional, defaults to None)(
+            Scaling factor for expert gradients when Expert Parallel is enabled.
+
+            When Expert Parallel is enabled, the number of tokens processed by each MoE expert
+            may change due to variations in context parallel degree, tensor parallel degree, or
+            expert parallel degree. To ensure that the gradient scale for each expert remains
+            consistent and is not affected by such changes, this factor should be applied to
+            the expert gradients.
+
+            The value is defined as the ratio of the current configuration to a reference (base) configuration:
+
+            .. math::
+                hybrid\\_parallel\\_expert\\_grad\\_scale} =
+                    \\frac{tensor\\_parallel\\_degree}{expert\\_parallel\\_degree}
+        )
+        enable_auto_parallel (`bool`, *optional*, defaults to `False`):
+            whether to run distributed training in auto parallel mode.
+        use_intermediate_api (`bool`, *optional*, defaults to `True`):
+            whether to use auto_parallel intermediate API if `enable_auto_parallel=True`.
     """
 
     output_dir: str = field(
@@ -619,6 +638,17 @@ class TrainingArguments:
                 "Set the size of the fuse gradient in sharding communication. This option only takes effect when "
                 "the sharding option is turned on.The default value is -1, which means that the gradient size of "
                 "all communication fuses follows the default configuration, which is 256MB. "
+            )
+        },
+    )
+
+    sharding_offload_opt_buffersize_GB: int = field(
+        default=-1,
+        metadata={
+            "help": (
+                "Set the size of the optimizer offload buffer when need_hack_offload_optimizer() is True. This option only takes effect when "
+                "use DygraphShardingOptimizerV2. The default value is -1, which means that all of the optimizer states will be offloaded. Only "
+                "works when export HACK_OFFLOAD_OPTIMIZER=1. "
             )
         },
     )
@@ -1075,6 +1105,10 @@ class TrainingArguments:
         default=1,
         metadata={"help": "Interval between updating EMA parameters."},
     )
+    zcc_ema_loss_threshold: Optional[float] = field(
+        default=None,
+        metadata={"help": "If set not None, only do EMA when the training loss is smaller than the threshold value"},
+    )
     save_tokenizer: Optional[bool] = field(
         default=True,
         metadata={"help": "Save tokenizer to output_dir."},
@@ -1174,6 +1208,15 @@ class TrainingArguments:
     )
 
     save_hf_steps: int = field(default=500, metadata={"help": "Save huggingface checkpoint every X updates steps."})
+
+    hybrid_parallel_expert_grad_scale: Optional[float] = field(
+        default=None,
+        metadata={"help": ("Scaling factor for expert gradients.")},
+    )
+    use_intermediate_api: bool = field(
+        default=True,
+        metadata={"help": "whether to use auto_parallel intermediate API."},
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1634,6 +1677,11 @@ class TrainingArguments:
                                 self.sharding_comm_buffer_size_MB
                             )
 
+                        if hasattr(strategy.hybrid_configs["sharding_configs"], "offload_opt_buffer_size"):
+                            strategy.hybrid_configs["sharding_configs"].offload_opt_buffer_size = int(
+                                self.sharding_offload_opt_buffersize_GB
+                            )
+
                         if "split_param" in sharding_parallel_config:
                             strategy.hybrid_configs["sharding_configs"].split_param = True
                             assert self.amp_master_grad, "Currently sharding stage1 v2 only support amp_master_grad"
@@ -1709,11 +1757,19 @@ class TrainingArguments:
                         self.add_moe_comm_group()
 
         elif self.enable_auto_parallel:
+
+            assert paddle.distributed.get_world_size() > 1, "Auto parallel mode needs world size > 1."
+            assert self.use_intermediate_api, "Auto parallel is only supported with intermediate API now."
+            assert (
+                not self.to_static
+            ), "Auto parallel only support dyanmic parallel now. Static parallel will be supported later."
+
             self.tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
             self.sep_parallel_degree = max(self.sep_parallel_degree, 1)
             self.context_parallel_degree = max(self.context_parallel_degree, 1)
             self.pipeline_parallel_degree = max(self.pipeline_parallel_degree, 1)
 
+            assert self.pipeline_parallel_degree == 1, "Current not support pipeline parallel in auto parallel mode."
             assert (
                 world_size % (self.tensor_parallel_degree * self.pipeline_parallel_degree) == 0
             ), f"Total world_size:{world_size} should be divided by tensor_parallel_degree: {self.tensor_parallel_degree} and pipeline_parallel_degree: {self.pipeline_parallel_degree}."
@@ -2079,10 +2135,18 @@ class TrainingArguments:
         assert (
             self.save_steps % self.zcc_ema_interval == 0
         ), f"save_steps[{self.save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
-        if self.zcc_save_ema_coef is not None:
+        if self.enable_zero_cost_checkpoint and self.zcc_save_ema_coef is not None:
             assert (
                 self.zcc_workers_num == 1
             ), "EMA function in zero cost checkpoint mode does not support zcc_workers_num > 1 for now."
+
+        if self.hybrid_parallel_expert_grad_scale is None:
+            tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
+            expert_parallel_degree = max(self.expert_parallel_degree, 1)
+            self.hybrid_parallel_expert_grad_scale = tensor_parallel_degree / expert_parallel_degree
+            logger.info(f"Auto set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
+        else:
+            logger.info(f"Set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
 
     def _post_init_parallel_degree(self):
         self.use_hybrid_parallel = False
@@ -2581,6 +2645,20 @@ class TrainingArguments:
                 return True
             else:
                 return False
+
+    def get_auto_dist_flag(self):
+        """
+        Get the auto distributed flags for auto_parallel intermediate API.
+        """
+        auto_dist_flag = {
+            "tensor_parallel": self.tensor_parallel_degree > 1,
+            "sequence_parallel": self.sequence_parallel,
+            "pipeline_parallel": self.pipeline_parallel_degree > 1,
+            "data_sharding_parallel": self.dataset_world_size > 1,
+            "sharding": self.sharding,
+            "sharding_mesh_dim": self.sharding_parallel_mesh_dimension,
+        }
+        return auto_dist_flag
 
     @contextlib.contextmanager
     def main_process_first(self, local=True, desc="work"):

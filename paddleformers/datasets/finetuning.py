@@ -722,7 +722,7 @@ class SequenceDataset(IterableDataset):
             oral_tokens = tokens
             tokens = oral_tokens[:-1]
             labels = oral_tokens[1:]
-            loss_mask = loss_mask[1:]
+            loss_mask = loss_mask[:-1]
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
@@ -750,9 +750,15 @@ class SequenceDataset(IterableDataset):
             logger.info("[dataset debug] Debug mode enabled")
 
             if hasattr(self, "tokenizer"):
+                print("========================================")
                 print_debug_info(self.tokenizer, tokens, "input")
-                labels = [x for x in labels if x != -100]  # remove -100
-                print_debug_info(self.tokenizer, labels, "labels")
+                print("========================================\n")
+
+                filtered_labels = [label if mask == 1 else -100 for label, mask in zip(labels, loss_mask)]
+                filtered_labels = [x for x in filtered_labels if x != -100]  # remove -100
+                print("========================================")
+                print_debug_info(self.tokenizer, filtered_labels, "labels")
+                print("========================================\n")
                 logger.info(f"[dataset debug] loss mask: {loss_mask}")
             else:
                 logger.info("[dataset debug] Tokenizer not available")

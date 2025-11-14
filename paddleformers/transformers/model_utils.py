@@ -26,7 +26,6 @@ import tempfile
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
-from copy import deepcopy
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
@@ -2974,6 +2973,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 safetensors=True,
                 offload=load_via_cpu,
             )
+            for v in sharded_state_dict.values():
+                if hasattr(v.local_tensor, "target_tensor"):
+                    del v.local_tensor.target_tensor
+
             return model
 
         if not is_sharded and state_dict is None:
@@ -3176,6 +3179,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         save_to_hf = kwargs.get("save_to_hf", False)
 
         save_checkpoint_format = kwargs.get("save_checkpoint_format", "")
+
+        if kwargs.get("enable_auto_parallel", ""):
+            # use flex_checkpoint as the default format in auto_parallel
+            save_checkpoint_format = "flex_checkpoint"
+
         safe_serialization = safe_serialization or save_to_hf
 
         save_directory = save_dir
@@ -3212,7 +3220,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if dtype is not None:
                 model_to_save.config.dtype = str(dtype).split(".")[1]
             if config_to_save is None:
-                config_to_save = deepcopy(model_to_save.config)
+                config_to_save = copy.deepcopy(model_to_save.config)
 
             # Attach architecture to the config
             config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
