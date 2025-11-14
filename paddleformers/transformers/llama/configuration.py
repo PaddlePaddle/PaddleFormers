@@ -15,7 +15,7 @@
 """ Llama model configuration"""
 
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import standardize_rope_params, rope_config_validation
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 __all__ = [
     "LLAMA_PRETRAINED_INIT_CONFIGURATION",

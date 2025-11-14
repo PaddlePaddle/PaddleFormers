@@ -18,7 +18,7 @@ from typing import Optional, Union
 
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import standardize_rope_params, rope_config_validation
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 __all__ = ["Ernie4_5_MoeConfig"]
 

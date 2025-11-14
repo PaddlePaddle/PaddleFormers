@@ -15,7 +15,7 @@
 """Qwen2 model configuration"""
 
 from ..configuration_utils import PretrainedConfig, layer_type_validation
-from ..modeling_rope_utils import standardize_rope_params, rope_config_validation
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
 class Qwen2Config(PretrainedConfig):

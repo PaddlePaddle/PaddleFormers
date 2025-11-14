@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import math
-import paddle
 from typing import Optional
+
+import paddle
 
 from ..utils.log import logger
 from .configuration_utils import PretrainedConfig
+
 
 def standardize_rope_params(config, rope_theta: float | dict[str, float] | None = None):
     """
@@ -68,6 +70,7 @@ def standardize_rope_params(config, rope_theta: float | dict[str, float] | None 
                         "rope_theta": rope_theta[layer_type],
                     }
             config.rope_parameters = rope_parameters_per_layer_type
+
 
 def _compute_linear_scaling_rope_parameters(
     config: Optional[PretrainedConfig] = None,
@@ -416,7 +419,7 @@ def _compute_longrope_parameters(
     else:
         ext_factors = paddle.to_tensor(short_factor, dtype=paddle.float32, place=device)
     inv_freq_shape = paddle.arange(0, dim, 2, dtype="int64", device=device).float() / dim
-    inv_freq = 1.0 / (ext_factors * base ** inv_freq_shape)
+    inv_freq = 1.0 / (ext_factors * base**inv_freq_shape)
 
     return inv_freq, attention_factor
 
@@ -511,6 +514,7 @@ ROPE_INIT_FUNCTIONS = {
     "llama3": _compute_llama3_parameters,
 }
 
+
 def _check_received_keys(
     rope_type: str,
     received_keys: set,
@@ -539,6 +543,7 @@ def _check_received_keys(
     if unused_keys:
         logger.warning(f"Unrecognized keys in `rope_parameters` for 'rope_type'='{rope_type}': {unused_keys}")
 
+
 def _validate_default_rope_parameters(
     rope_parameters: dict, config: Optional[PretrainedConfig] = None, ignore_keys: Optional[set] = None
 ):
@@ -546,6 +551,7 @@ def _validate_default_rope_parameters(
     received_keys = set(rope_parameters.keys())
     rope_type = rope_parameters["rope_type"]
     _check_received_keys(rope_type, received_keys, required_keys, ignore_keys=ignore_keys)
+
 
 def _validate_linear_scaling_rope_parameters(
     rope_parameters: dict, config: Optional[PretrainedConfig] = None, ignore_keys: Optional[set] = None
@@ -558,6 +564,7 @@ def _validate_linear_scaling_rope_parameters(
     factor = rope_parameters["factor"]
     if factor is None or not isinstance(factor, float) or factor < 1.0:
         logger.warning(f"`rope_parameters`'s factor field must be a float >= 1, got {factor}")
+
 
 def _validate_dynamic_scaling_rope_parameters(
     rope_parameters: dict, config: Optional[PretrainedConfig] = None, ignore_keys: Optional[set] = None
@@ -584,7 +591,7 @@ def _validate_yarn_parameters(
         "original_max_position_embeddings",
         "mscale",
         "mscale_all_dim",
-        "truncate"
+        "truncate",
     }
     received_keys = set(rope_parameters.keys())
     rope_type = rope_parameters["rope_type"]
@@ -729,6 +736,7 @@ def _validate_llama3_parameters(rope_parameters: dict, config: PretrainedConfig,
             f"{original_max_position_embeddings} and max_position_embeddings={config.max_position_embeddings}"
         )
 
+
 # Like `ROPE_INIT_FUNCTIONS`, this validation function mapping can be dynamically updated for custom RoPE types.
 ROPE_VALIDATION_FUNCTIONS = {
     "default": _validate_default_rope_parameters,
@@ -738,6 +746,7 @@ ROPE_VALIDATION_FUNCTIONS = {
     "longrope": _validate_longrope_parameters,
     "llama3": _validate_llama3_parameters,
 }
+
 
 def rope_config_validation(config: PretrainedConfig, ignore_keys: Optional[set] = None):
     """
