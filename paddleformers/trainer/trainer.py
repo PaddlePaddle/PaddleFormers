@@ -1114,12 +1114,7 @@ class Trainer:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
                 if resume_from_checkpoint is not None:
-                    if isinstance(self.model, LoRAModel):
-                        self.model.from_pretrained(
-                            self.model, resume_from_checkpoint, load_checkpoint_format=self.args.load_checkpoint_format
-                        )
-                    else:
-                        self._load_flex_checkpoint(resume_from_checkpoint)
+                    self._load_flex_checkpoint(resume_from_checkpoint)
             else:
                 model = self._wrap_model(self.model_wrapped)
                 # for the rest of this function `model` is the outside model, whether it was wrapped or not
@@ -3029,13 +3024,12 @@ class Trainer:
                             self.args.optim_shard_num,
                         )
                     elif self.args.save_checkpoint_format == "flex_checkpoint":
-                        if not isinstance(self.model, LoRAModel):
-                            self._save_flex_optimizer_state(output_dir)
-                            if self.args.should_save:
-                                if self.tokenizer is not None and self.args.save_tokenizer:
-                                    self.tokenizer.save_pretrained(output_dir)
-                                # Good practice: save your training arguments together with the trained model
-                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+                        self._save_flex_optimizer_state(output_dir)
+                        if self.args.should_save:
+                            if self.tokenizer is not None and self.args.save_tokenizer:
+                                self.tokenizer.save_pretrained(output_dir)
+                            # Good practice: save your training arguments together with the trained model
+                            paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                     else:
                         if self.dp_group.rank > 0:  # this should only work for MoE saving
                             self._save_ckpt_func(
@@ -3081,16 +3075,13 @@ class Trainer:
                             signal_dir,
                         )
                     elif self.args.save_checkpoint_format == "flex_checkpoint":
-                        if isinstance(self.model, LoRAModel):
-                            self.save_model(output_dir)
-                        else:
-                            self._save_flex_model_state(output_dir)
-                            self._save_flex_optimizer_state(output_dir)
-                            if self.args.should_save:
-                                if self.tokenizer is not None and self.args.save_tokenizer:
-                                    self.tokenizer.save_pretrained(output_dir)
-                                # Good practice: save your training arguments together with the trained model
-                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+                        self._save_flex_model_state(output_dir)
+                        self._save_flex_optimizer_state(output_dir)
+                        if self.args.should_save:
+                            if self.tokenizer is not None and self.args.save_tokenizer:
+                                self.tokenizer.save_pretrained(output_dir)
+                            # Good practice: save your training arguments together with the trained model
+                            paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                     else:
                         if self.args.data_parallel_rank > 0 and self.args.use_expert_parallel:
                             self._save_ckpt_func(
@@ -3293,16 +3284,7 @@ class Trainer:
                         output_dir, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
                     )
             else:
-                is_main_process = paddle.distributed.get_rank() == 0
-                if isinstance(self.model, LoRAModel):
-                    self.model.save_pretrained(
-                        output_dir,
-                        merge_tensor_parallel=True,
-                        variant=self.args.weight_name_suffix,
-                        save_checkpoint_format=self.args.save_checkpoint_format,
-                    )
-                else:
-                    self._save_flex_model_state(output_dir)
+                self._save_flex_model_state(output_dir)
 
             if self.tokenizer is not None and self.args.save_tokenizer:
                 self.tokenizer.save_pretrained(output_dir)
