@@ -32,7 +32,7 @@ except ImportError:
 import paddle
 import paddle.distributed as dist
 from paddlefleet import parallel_state, tensor_parallel
-from paddlefleet.enums import ModelType
+from paddlefleet.transformer.enums import ModelType
 
 # TODO(pkuzyc): Support model_parallel_cuda_manual_seed for PaddleFleet
 # from paddlefleet.tensor_parallel.random import model_parallel_cuda_manual_seed
