@@ -1,5 +1,21 @@
 # Data Format Specification
 
+## Pre-training offline dataset
+
+- **CLI**: Modify the following fields in the YAML configuration file:
+  - `input_dir` specify the prefix of the dataset, for example: dataset `data-1-part0.bin` need to be set to `input_dir: "1.0 ./data-1-part0"`，`1.0` is the dataset prob
+  - `split` specify `train/eval` distribution ratio, such as: `split: "998,2"`, `train` is the training set, `eval` for the evaluation set
+  - `dataset_type` specify as`pretrain`, such as: `dataset_type: "pretrain"`
+
+- Example:
+```yaml
+dataset_type: "pretrain"
+input_dir: "1.0 ./data/pre-training/demo_data/data-1-part0"
+split: "998,2"
+```
+
+## Pre-training online dataset + others
+
 - **CLI**: Modify the following fields in the YAML config file:
   - Set `train_dataset_path` / `eval_dataset_path` to the absolute or relative path of your local dataset file
   - Set `train_dataset_type` / `eval_dataset_type` to the dataset format (erniekit/chatml)

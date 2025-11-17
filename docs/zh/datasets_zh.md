@@ -18,7 +18,7 @@ split: "998,2"
 
 - **CLI**：修改 YAML 配置文件中的以下字段：
   - `train_dataset_path` / `eval_dataset_path` 指定本地数据集文件的绝对或相对路径
-  - `train_dataset_type` / `eval_dataset_type` 指定数据集格式 (`erniekit`/`chatml`)
+  - `train_dataset_type` / `eval_dataset_type` 指定数据集格式 (`erniekit` / `chatml`)
   - `train_dataset_prob` / `eval_dataset_prob` 指定用于多源数据集混合概率
 
 - 示例：
@@ -38,7 +38,7 @@ train_dataset_prob: "0.8,0.2"
 
 `packing` 是一种优化批处理的技术，将多个短输入序列输入大语言模型（LLM）之前，先将它们合并成一个更长的序列，这能减少填充开销，并提高硬件利用率（例如，提升GPU/TPU的效率）。
 
-`The greedy intokens strategy` 是一种`token`层面的优化方法，在批量处理过程中，以贪婪的方式优先填满可用的`token budget`（例如，最大序列长度）。该策略确保模型在约束条件下生成尽可能多的`token`，最大程度减少容量浪费。
+`The greedy intokens strategy` 是一种`token`级别的优化方法，在批量处理过程中，以贪婪的方式优先填满可用的 `token budget`（例如，最大序列长度）。该策略确保模型在约束条件下生成尽可能多的`token`，最大程度减少容量浪费。
 
 | packing      | greedy_intokens | Packing Strategy |
 |--------------|-----------------|------------------|
