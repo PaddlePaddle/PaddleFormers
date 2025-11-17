@@ -35,6 +35,7 @@ from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
+from ..cache_utils import DynamicCache
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -207,7 +208,7 @@ class Glm4MoeAttention(nn.Layer):
     def forward(
         self,
         hidden_states,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
@@ -260,10 +261,8 @@ class Glm4MoeAttention(nn.Layer):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        if past_key_value is not None:
-            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
-        past_key_value = (key_states, value_states) if use_cache else None
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
@@ -284,7 +283,7 @@ class Glm4MoeAttention(nn.Layer):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
 
-        return attn_output, past_key_value
+        return attn_output, past_key_values
 
 
 class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
@@ -604,7 +603,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -617,7 +616,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
             attn_outputs = recompute(
                 self.attn,
                 hidden_states,
-                past_key_value=past_key_value,
+                past_key_values=past_key_values,
                 attention_mask=attention_mask,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 position_ids=position_ids,
@@ -628,7 +627,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         else:
             attn_outputs = self.attn(
                 hidden_states,
-                past_key_value=past_key_value,
+                past_key_values=past_key_values,
                 attention_mask=attention_mask,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 position_ids=position_ids,
@@ -687,7 +686,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -705,7 +704,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
                 hidden_states=hidden_states,
                 position_ids=position_ids,
                 attention_mask=attention_mask,
-                past_key_value=past_key_value,
+                past_key_values=past_key_values,
                 use_cache=use_cache,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 position_embeddings=position_embeddings,
@@ -716,7 +715,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
                 hidden_states=hidden_states,
                 position_ids=position_ids,
                 attention_mask=attention_mask,
-                past_key_value=past_key_value,
+                past_key_values=past_key_values,
                 use_cache=use_cache,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 position_embeddings=position_embeddings,
@@ -760,7 +759,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
@@ -769,7 +768,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
 
         attn_outputs = self.attn(
             hidden_states,
-            past_key_value=past_key_value,
+            past_key_values=past_key_values,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_ids=position_ids,
@@ -1272,7 +1271,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         hidden_states: Tensor,
         position_ids: Optional[Tensor],
         attention_mask: Tensor,
-        past_key_value: Tensor,
+        past_key_values: Tensor,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
@@ -1288,7 +1287,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             hidden_states,
             position_ids,
             attention_mask,
-            past_key_value,
+            past_key_values,
             use_cache,
             position_embeddings,
             attn_mask_startend_row_indices,
@@ -1326,12 +1325,11 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
         seq_length_with_past = seq_length
-        cache_length = 0
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-        else:
-            cache_length = past_key_values[0][0].shape[1]
-            seq_length_with_past += cache_length
+
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
+        seq_length_with_past += cache_length
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
@@ -1375,7 +1373,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         for idx, (decoder_layer) in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
 
             has_gradient = not hidden_states.stop_gradient
             if moelayer_use_subbatch_recompute:
@@ -1383,7 +1380,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
                     hidden_states,
                     position_ids,
                     causal_mask,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                     attn_mask_startend_row_indices,
                     position_embeddings,
@@ -1395,7 +1392,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
                     attention_mask=causal_mask,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     position_ids=position_ids,
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     use_cache=use_cache,
                     position_embeddings=position_embeddings,
                 )
@@ -1405,12 +1402,11 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
                     attention_mask=causal_mask,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     position_ids=position_ids,
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     use_cache=use_cache,
                     position_embeddings=position_embeddings,
                 )
-            # # NOTE: clear outdate cache after it has been used for memory saving
-            # past_key_value = past_key_values[idx] = None
+
             if isinstance(layer_outputs, (tuple, list)):
                 hidden_states = layer_outputs[0]
             else:
@@ -1425,12 +1421,11 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
-        next_cache = next_decoder_cache if use_cache else None
         if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache] if v is not None)
+            return tuple(v for v in [hidden_states, past_key_values] if v is not None)
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
-            past_key_values=next_cache,
+            past_key_values=past_key_values,
         )
 
 

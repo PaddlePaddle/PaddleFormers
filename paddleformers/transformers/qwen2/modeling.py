@@ -38,6 +38,7 @@ from ...nn.mlp import MLP as Qwen2MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
+from ..cache_utils import DynamicCache
 from ..contrastive_loss import SimpleContrastiveLoss
 from ..embedding_utils import dist_gather_tensor_with_gradient
 from ..masking_utils import create_causal_masks_and_row_indices
@@ -147,7 +148,7 @@ class Qwen2Attention(nn.Layer):
         hidden_states,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: bool = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
@@ -173,10 +174,8 @@ class Qwen2Attention(nn.Layer):
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         # [bs, seq_len, num_head, head_dim]
-        if past_key_value is not None:
-            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
-        past_key_value = (key_states, value_states) if use_cache else None
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
@@ -197,7 +196,7 @@ class Qwen2Attention(nn.Layer):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
 
-        return attn_output, past_key_value
+        return attn_output, past_key_values
 
 
 class Qwen2DecoderLayer(nn.Layer):
@@ -233,7 +232,7 @@ class Qwen2DecoderLayer(nn.Layer):
         self,
         hidden_states: paddle.Tensor,
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
@@ -248,7 +247,7 @@ class Qwen2DecoderLayer(nn.Layer):
             hidden_states=hidden_states,
             position_embeddings=position_embeddings,
             attention_mask=attention_mask,
-            past_key_value=past_key_value,
+            past_key_values=past_key_values,
             use_cache=use_cache,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             batch_size=batch_size,
@@ -404,7 +403,7 @@ class Qwen2Model(Qwen2PretrainedModel):
         layer_module: nn.Layer,
         hidden_states: Tensor,
         attention_mask: Tensor,
-        past_key_value: Tensor,
+        past_key_values: Tensor,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
@@ -420,7 +419,7 @@ class Qwen2Model(Qwen2PretrainedModel):
             create_custom_forward(layer_module),
             hidden_states,
             attention_mask,
-            past_key_value,
+            past_key_values,
             use_cache,
             position_embeddings,
             attn_mask_startend_row_indices,
@@ -458,11 +457,9 @@ class Qwen2Model(Qwen2PretrainedModel):
             # [bs, seq_len, dim]
             inputs_embeds = self.embed_tokens(input_ids)
 
-        cache_length = 0
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-        else:
-            cache_length = past_key_values[0][0].shape[1]
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
@@ -494,18 +491,14 @@ class Qwen2Model(Qwen2PretrainedModel):
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
-        # decoder layers
-        next_cache = () if use_cache else None
-
         for idx, (decoder_layer) in enumerate(self.layers):
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
                     causal_mask_mapping[decoder_layer.attention_type],
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                     position_embeddings,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
@@ -517,7 +510,7 @@ class Qwen2Model(Qwen2PretrainedModel):
                 layer_outputs = decoder_layer(
                     hidden_states,
                     causal_mask_mapping[decoder_layer.attention_type],
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                     position_embeddings,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
@@ -528,17 +521,16 @@ class Qwen2Model(Qwen2PretrainedModel):
 
             if use_cache:
                 hidden_states = layer_outputs[0]
-                next_cache += (layer_outputs[1],)
             else:
                 hidden_states = layer_outputs
 
         hidden_states = self.norm(hidden_states)
 
         if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache] if v is not None)
+            return tuple(v for v in [hidden_states, past_key_values] if v is not None)
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
-            past_key_values=next_cache,
+            past_key_values=past_key_values,
         )
 
 
