@@ -45,8 +45,8 @@ class MoECommunicationInterface(ABC):
         """
         Args:
             hidden_states: Input hidden states, shape: [batch_size*seq_len, hidden_size] or [batch_size, seq_len, hidden_size]
-            topk_indices: Indices of selected experts for each token, shape: [num_tokens, num_experts_per_token]
-            topk_weights: Weights of selected experts for each token, shape: [num_tokens, num_experts_per_token]
+            topk_indices: Indices of selected experts for each token. Shape: [num_tokens, num_experts_per_token]
+            topk_weights: Weights of selected experts for each token, sorted from high to low inside a row. Shape: [num_tokens, num_experts_per_token]
             gates_masked: Masked gates. For each token(row), the selected experts are remainded with their normalized gate values, others are 0. Shape: [num_tokens, num_experts]
             mask: Mask. For each token(row), the selected experts are marked with 1, others are 0. Shape: [num_tokens, num_experts]
             priorities: Token priorities, shape: [num_tokens, num_experts]
@@ -88,7 +88,7 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         num_experts: int,
         topk: int,
         token_dispatcher,
-    ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+    ) -> paddle.Tensor:
         """
         Forward propagation for EP (Expert Parallelism) communication
 
@@ -107,8 +107,6 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
 
         Returns:
             output: Output hidden states
-            aux_loss: Auxiliary loss
-            z_loss: Z-loss
         """
         if expert_parallel_degree <= 1:
             return hidden_states
@@ -125,15 +123,18 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         combined_key = expert_indices * seq_len + token_indices
         sort_indices = paddle.argsort(combined_key)
         sorted_token_indices = token_indices[sort_indices]
-        sorted_tokens = reshaped_input[
-            sorted_token_indices
-        ]  # Tokens that sorted by expert id. First `tokens_per_expert[0]` tokens belong to expert 0, next `tokens_per_expert[1]` tokens belong to expert 1, etc. Shape: [batch_size * seq_len * num_experts_per_token, d_model]
+        sorted_expert_indices = expert_indices[sort_indices]
+        # `sorted_tokens` are tokens that sorted by expert id.
+        # First `tokens_per_expert[0]` tokens belong to expert 0, next `tokens_per_expert[1]` tokens belong to expert 1, etc.
+        # Shape: [batch_size * seq_len * num_experts_per_token, d_model]
+        sorted_tokens = reshaped_input[sorted_token_indices]
 
         tokens_per_expert = tokens_per_expert.detach()
         sorted_tokens_shape = sorted_tokens.shape
 
         tokens_per_ep_rank = tokens_per_expert.reshape([expert_parallel_degree, -1]).sum(axis=1)
         # First All-to-All: Exchange expert token counts across ranks
+        # Returns `tokens_per_expert_group` is for current rank
         tokens_per_expert_group = _AllToAll.apply([tokens_per_expert.shape[0]], tokens_per_expert, group=moe_group)
 
         tokens_per_expert_group_sum = tokens_per_expert_group.reshape([expert_parallel_degree, -1])
@@ -150,6 +151,7 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
             group=moe_group,
         )
 
+        # Next, we should sort `gathered_tokens` by expert ids, so that the tokens for the same expert are contiguous.
         tokens_per_expert_post_gather = tokens_per_expert_group.reshape(
             [expert_parallel_degree, num_experts_per_device]
         ).sum(axis=0)
@@ -175,10 +177,11 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
             start_idx = end_idx
         outs = paddle.concat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
 
-        # Third All-to-All: Exchange expert outputs back to original rank. `gathered_tokens` are the tokens that originally belong to current rank
+        # Restore the original order of tokens, prepare for the third All-to-All.
         new_x = paddle.empty_like(outs)
         new_x[gatherd_idxs] = outs
 
+        # Third All-to-All: Exchange expert outputs back to original rank. `gathered_tokens` are the tokens that originally belong to current rank
         gathered_tokens = _AllToAll.apply(
             sorted_tokens_shape,
             new_x,
@@ -188,21 +191,21 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         )
 
         # For every processed token, need to multiply the expert weight.
-        num_all_tokens = tokens_per_expert.sum().item()  # i.e. batch_size * seq_len * num_experts_per_token
-        boundaries = paddle.cumsum(tokens_per_expert, dim=0)
-        token_indices = paddle.arange(num_all_tokens)
-        expert_ids = paddle.searchsorted(boundaries, token_indices, right=False)  # shape [num_all_tokens]
-        expert_major_weights = gates_masked[sorted_token_indices, expert_ids]  # shape [num_all_tokens]
+        expert_major_weights = gates_masked[
+            sorted_token_indices, sorted_expert_indices
+        ]  # shape [batch_size * seq_len * num_experts_per_token]
         weighted_gathered_tokens = gathered_tokens * expert_major_weights.unsqueeze(-1).to(
             gathered_tokens.dtype
-        )  # shape [num_all_tokens, d_model]
+        )  # shape [batch_size * seq_len * num_experts_per_token, d_model]
 
         final_output_empty = paddle.zeros(reshaped_input.shape, dtype=gathered_tokens.dtype)
         token_indices_for_scatter = sorted_token_indices.unsqueeze(-1).expand(
             -1, d_model
-        )  # shape [num_all_tokens, d_model]
+        )  # shape [batch_size * seq_len * num_experts_per_token, d_model]
 
-        token_indices_for_scatter_single = token_indices_for_scatter[:, 0:1].squeeze()  # shape [num_all_tokens, 1]
+        token_indices_for_scatter_single = token_indices_for_scatter[
+            :, 0:1
+        ].squeeze()  # shape [batch_size * seq_len * num_experts_per_token, 1]
 
         final_output = paddle.index_add(
             final_output_empty, index=token_indices_for_scatter_single, axis=0, value=weighted_gathered_tokens
