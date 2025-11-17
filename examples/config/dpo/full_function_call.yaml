@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: chatml
 eval_dataset_type: chatml
-train_dataset_path: ./data/fc/function-call-train.jsonl
+train_dataset_path: ./data/dpo_fc/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./data/fc/function-call-eval.jsonl
+eval_dataset_path: ./data/dpo_fc/test.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false
@@ -12,7 +12,7 @@ mix_strategy: concat
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
 attn_impl: flashmask
-use_fused_head_and_loss_fn: True
+use_fused_head_and_loss_fn: true
 loss_subbatch_sequence_length: 8192
 
 ### finetuning
@@ -33,7 +33,7 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3_hf_0p6b_dpo_ckpts
+output_dir: ./checkpoints/qwen3_hf_0p6b_dpo_fc_ckpts
 disable_tqdm: true
 eval_accumulation_steps: 16
 

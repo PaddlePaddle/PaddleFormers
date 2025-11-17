@@ -37,7 +37,7 @@ from .moe.utils import _parse_moe_group
 from .norm import LayerNorm, RMSNorm
 
 
-def parse_args(args, mtp_enable=False):
+def parse_args(args, mtp_enable=False, is_embed=False):
     """
     Parses input arguments and converts them into model-ready format.
     Processes different input argument patterns into standardized hidden states,
@@ -50,6 +50,9 @@ def parse_args(args, mtp_enable=False):
             - Tuple containing 1 element: (hidden_states)
             - Single tensor: hidden_states
             If rope_embeddings are provided, they should be included in the tuple.
+        mtp_enable (bool): Flag for Multi-Token Prediction.
+        is_embed (bool): Flag to indicate if processing is for EmbeddingPipe,
+                                  affects 3-argument tuple parsing.
     Returns:
         Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[paddle.Tensor]]:
             Returns a tuple containing:
@@ -70,6 +73,8 @@ def parse_args(args, mtp_enable=False):
             if mtp_enable:
                 hidden_states, attention_mask, nbatch_pack_offset = args
                 position_ids = None
+            elif is_embed:
+                hidden_states, attention_mask, position_ids = args
             else:
                 hidden_states, position_ids, position_embeddings = args
                 attention_mask = None
@@ -257,7 +262,9 @@ class EmbeddingPipe(nn.Layer):
         num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
         enable_mtp_magic_send = self.config.get("enable_mtp_magic_send", False)
 
-        input_ids, attention_mask, position_ids, _, nbatch_pack_offset = parse_args(args, num_nextn_predict_layers > 0)
+        input_ids, attention_mask, position_ids, _, nbatch_pack_offset = parse_args(
+            args, num_nextn_predict_layers > 0, is_embed=True
+        )
         input_ids.stop_gradient = True
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         if position_ids is None and not self.config.fuse_rope:
@@ -427,10 +434,6 @@ def make_decoder_layer_pipe(decoder_layer):
             attn_mask_startend_row_indices = None
             assert len(tgt_mask.shape) == 4, f"Attention mask should be 4D tensor, but got {tgt_mask.shape}."
 
-        position_ids_decoder = None
-        if position_ids is not None:
-            position_ids_decoder = position_ids[:, :max_seq_len]
-
         if position_embeddings is not None:
             position_embeddings = position_embeddings[..., :max_seq_len, :]
             tuple_position_embeddings = (position_embeddings[0], position_embeddings[1])
@@ -445,7 +448,6 @@ def make_decoder_layer_pipe(decoder_layer):
                 hidden_states,
                 attention_mask=tgt_mask,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                position_ids=position_ids_decoder,
                 position_embeddings=tuple_position_embeddings,
                 use_reentrant=self.config.recompute_use_reentrant,
             )
@@ -455,7 +457,6 @@ def make_decoder_layer_pipe(decoder_layer):
                 hidden_states=hidden_states,
                 attention_mask=tgt_mask,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                position_ids=position_ids_decoder,
                 position_embeddings=tuple_position_embeddings,
             )
 

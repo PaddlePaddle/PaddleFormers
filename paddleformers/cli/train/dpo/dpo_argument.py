@@ -103,7 +103,8 @@ class DPOConfig:
     reference_free: bool = field(default=False, metadata={"help": "No reference model."})
     lora: bool = field(default=False, metadata={"help": "Use LoRA model."})
     offset_alpha: float = field(default=0.0, metadata={"help": "offset alpha"})
-    normalize_logps: bool = field(default=True, metadata={"help": "normalize logps"})
+    normalize_logps: bool = field(default=False, metadata={"help": "normalize logps"})
+    ignore_eos_token: bool = field(default=False, metadata={"help": "ignore eos token"})
 
 
 @dataclass

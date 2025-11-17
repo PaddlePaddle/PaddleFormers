@@ -39,6 +39,11 @@ class Example:
     is_function_call: bool = False
 
 
+def round_up_to_multiple_of_8(n):
+    """round up to multiple of 8"""
+    return (n + 7) & ~7
+
+
 def pad_batch_data(
     insts,
     pad_idx=0,

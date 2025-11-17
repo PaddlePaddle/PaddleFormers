@@ -148,8 +148,10 @@ class MoEGateMixin:
             routing_map = routing_map.reshape([batch_size, local_seq_len, -1])
         else:
             # [B, S, E]
-            all_probs = probs
+            if len(probs.shape) == 2:
+                probs = probs.reshape([1] + probs.shape)
             batch_size, local_seq_len, _ = probs.shape
+            all_probs = probs
             routing_map = routing_map.reshape([batch_size, local_seq_len, -1])
 
         seq_axis = 1

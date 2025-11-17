@@ -173,10 +173,11 @@ class ZeroCostCheckpointEMAProcessor:
         self.ema_buffer_modele_params = None
 
     @imperative_base.no_grad()
-    def ema_accumulate(self):
+    def ema_accumulate(self, global_step, loss, zcc_ema_loss_threshold):
         """
         perform ema update : ` \alpha * EMA + (1-\alpha) + model`
         build `self.ema_buffer` if necessary
+        when loss < threshold, do ema update
         """
         # logger.info(f'[ZCC EMA] wait all done, doing EMA w/ coef: {self.ema_coef}, status:{self.status()}')
         # do update: ema = alpha * ema + (1-alpha) * model
@@ -185,14 +186,19 @@ class ZeroCostCheckpointEMAProcessor:
             cpu_master_weights = self.optimizer_fusion_storage_helper.cpu_buffer._slice(
                 self.master_min_offset, self.master_max_offset
             ).cpu()
-            self.ema_buffer = self.ema_coef * self.ema_buffer + (1 - self.ema_coef) * cpu_master_weights
-            # logger.info(f'[ZCC EMA2] wait all done, doing EMA w/ coef: {self.ema_coef}, status:{self.status()}')
-            for index, ema_buf in self.ema_buffer_model_params.items():
-                _, cpu_buf = self.param_fusion_storage_helper.inited_buffers[index]
-                updated_ema = self.ema_coef * ema_buf + (1 - self.ema_coef) * cpu_buf
-                self.ema_buffer_model_params[index] = updated_ema
-
-        logger.info(f"[ZCC EMA] accumulating, buffer type:{self.ema_buffer.place} {self.ema_buffer.dtype}, done")
+            if zcc_ema_loss_threshold is None or loss < zcc_ema_loss_threshold:
+                self.ema_buffer = self.ema_coef * self.ema_buffer + (1 - self.ema_coef) * cpu_master_weights
+                for index, ema_buf in self.ema_buffer_model_params.items():
+                    _, cpu_buf = self.param_fusion_storage_helper.inited_buffers[index]
+                    updated_ema = self.ema_coef * ema_buf + (1 - self.ema_coef) * cpu_buf
+                    self.ema_buffer_model_params[index] = updated_ema
+                logger.info(
+                    f"[ZCC EMA] accmulating, buffer type:{self.ema_buffer.place} {self.ema_buffer.dtype}, done"
+                )
+            else:
+                logger.info(
+                    f"[ZCC EMA] accmulating SKIP for global_step:{global_step}, because loss:{loss} > threshold:{zcc_ema_loss_threshold}"
+                )
 
     @imperative_base.no_grad()
     def ema_state_dict(self):
@@ -214,36 +220,34 @@ class ZeroCostCheckpointEMAProcessor:
                 ema_state_dict[k] = tensor
             ema_state_dict_master_weights = {}
             for k, meta in self.optimizer_fusion_storage_helper.master_weights_meta.items():
-                t = self.ema_buffer._slice(
-                    meta["start"] - self.master_min_offset, meta["end"] - self.master_min_offset
-                ).clone()
+                s = meta["start"] - self.master_min_offset
+                e = meta["end"] - self.master_min_offset
+                t = self.ema_buffer._slice(s, e).clone()
                 t.get_tensor()._set_dims(meta["shape"])
                 t.name = meta["name"]
                 ema_state_dict_master_weights[k] = t
             ema_state_dict["master_weights"] = ema_state_dict_master_weights
         return ema_state_dict
 
-    def load_ema_state_dict(self, path):
-        with device_guard("cpu"):
-            logger.info(f"[ZCC EMA] load state dict from {path}")
-            state_dict = paddle.load(path)
-            for k, tensor_meta in self.param_fusion_storage_helper.model_weights_metas.items():
-                logger.info(f"[ZCC EMA] load model weight key={k}")
-                start = tensor_meta["start"]
-                end = tensor_meta["end"]
-                if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
-                    continue  # non fp32 has no `self.ema_buffer_model_params`
+    def load_ema_state_dict(self, state_dict):
+        for k, tensor_meta in self.param_fusion_storage_helper.model_weights_metas.items():
+            logger.info(f"[ZCC EMA] load model weight key={k}")
+            start = tensor_meta["start"]
+            end = tensor_meta["end"]
+            if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
+                continue  # non fp32 has no `self.ema_buffer_model_params`
+            if k in state_dict:
                 cpu_buffer = self.ema_buffer_model_params[tensor_meta["buffer_index"]]
                 tensor = state_dict[k].flatten()
                 cpu_buffer[start:end] = tensor
 
-            ema_master = state_dict["master_weights"]
-            for k, meta in self.optimizer_fusion_storage_helper.master_weights_meta.items():
-                logger.info(f"[ZCC EMA] load optimizer weight key={k}")
-                s = meta["start"] - self.master_min_offset
-                e = meta["end"] - self.master_min_offset
-                self.ema_buffer[s:e] = ema_master[k]
-            logger.info("[ZCC EMA] done loading")
+        ema_master = state_dict["master_weights"]
+        for k, meta in self.optimizer_fusion_storage_helper.master_weights_meta.items():
+            logger.info(f"[ZCC EMA] load optimizer weight key={k}")
+            s = meta["start"] - self.master_min_offset
+            e = meta["end"] - self.master_min_offset
+            if k in ema_master:  # state-dict is filtered
+                self.ema_buffer[s:e] = ema_master[k].flatten()
 
 
 class ParamFusionStorageHelper:
@@ -402,11 +406,6 @@ class ZeroCostCheckpointCallback(TrainerCallback):
             logger.info("[ZCC manager] Synced checkpoints.")
 
     def on_step_end(self, args, state, control, model, lr_scheduler, optimizer, **kwargs):
-        if not isinstance(model, PipelineLayer):
-            self.manager.zcc_pipeline_hook(0)
-        # logger.info(
-        #     f"check coef: {args.zcc_save_ema_coef} {control.should_save}, {state.global_step}, {self.zcc_ema_interval}"
-        # )
         if not control.should_save:
             if args.zcc_save_ema_coef is not None and state.global_step % self.zcc_ema_interval == 0:
                 self.maybe_update_zcc_worker(args, model, optimizer, state.global_step)
@@ -419,6 +418,8 @@ class ZeroCostCheckpointCallback(TrainerCallback):
             non_cached_objects = (lr_scheduler.state_dict(), state, self.get_rng_states(args))
             self.manager.get_idle_worker_for_saving((save_infos, non_cached_objects))
             self.runtime_timer.stop()
+            if not isinstance(model, PipelineLayer):
+                self.manager.zcc_pipeline_hook(0)
 
     def get_rng_states(self, args):
         if not args.save_rng_states:
@@ -790,7 +791,11 @@ class ZeroCostCheckpointWorker:
             self.global_step.value = global_step
 
             if self.ema_coef is not None:
-                self.zcc_ema_processor.ema_accumulate()
+                self.zcc_ema_processor.ema_accumulate(
+                    self.trainer_state.global_step,
+                    self.trainer_state.loss,
+                    self.training_args_content.zcc_ema_loss_threshold,
+                )
 
         # continue to process dumping task at the last chunk
         if self.offloaded_numels == self.all_numel:
@@ -949,7 +954,15 @@ class ZeroCostCheckpointWorker:
                             self.optimizer_fusion_storage_helper, self.param_fusion_storage_helper, self.ema_coef
                         )
                         if ema_ckpt_path is not None:  # update ema if needed
-                            self.zcc_ema_processor.load_ema_state_dict(ema_ckpt_path)
+                            logger.info(f"[ZCC EMA] load state dict from {ema_ckpt_path}")
+                            with device_guard("cpu"):
+                                state_dict = paddle.load(ema_ckpt_path)
+                                if self.use_expert_parallel and self.dp_rank > 0:
+                                    state_dict = self._filter_moe_no_sync_optimizer_params(
+                                        self.model_meta_content, state_dict
+                                    )
+                                self.zcc_ema_processor.load_ema_state_dict(state_dict)
+                            logger.info("[ZCC EMA] done loading")
                         ema_ckpt_path = None
                 elif task_type == ZCCTaskType.PREPARE:
                     start_time = time.time()
@@ -1006,3 +1019,86 @@ class ZeroCostCheckpointWorker:
         logger.info(
             f"[ZCC Worker{self.worker_id}] All numel: {self.all_numel}, Offload chunks: {self.offload_chunks}, Chunk size: {self.chunk_size_in_numel}]"
         )
+
+
+class EMABuffer:
+    def __init__(self, resume_from_checkpoint, args, sharding_io, offload=True):
+        assert sharding_io is not None, "EMA should be only enabled when save_sharded_model is True"
+        self.master_weights = {}
+        self.model_params = {}
+        self.args = args
+        self.sharding_io = sharding_io
+        self.offload = offload
+        if resume_from_checkpoint is not None:
+            self._load(resume_from_checkpoint)
+
+    def _ema_path(self, base_path):
+        path = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
+        path = path.replace("optimizer", "ema")
+        return os.path.join(base_path, path)
+
+    def _load(self, resume_from_checkpoint):
+        ema_path = self._ema_path(resume_from_checkpoint)
+        if not os.path.exists(ema_path):
+            return
+
+        logger.info(f"Loading EMA checkpoint from {resume_from_checkpoint} ...")
+        with device_guard("cpu"):
+            ema_state_dict = paddle.load(ema_path)
+        logger.info(f"Load EMA checkpoint from {resume_from_checkpoint} done")
+
+        self.master_weights = ema_state_dict.pop("master_weights")
+        self.model_params = ema_state_dict
+
+    def save(self, global_step):
+        base_path = os.path.join(self.args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{global_step}")
+        ema_path = self._ema_path(base_path)
+        ema_state_dict = {"master_weights": self.master_weights}
+        ema_state_dict.update(self.model_params)
+        os.makedirs(base_path, exist_ok=True)
+        logger.info(f"Saving EMA checkpoint to {base_path} ...")
+        paddle.save(ema_state_dict, ema_path)
+        logger.info(f"Save EMA checkpoint to {base_path} done")
+
+    def ema_accumulate(self, global_step, loss, ema_loss_threshold):
+        if ema_loss_threshold is None or loss < ema_loss_threshold:
+            logger.info(f"EMA accumulating for step {global_step} ...")
+            self._ema_impl(
+                state_dict=self.sharding_io.optimizer.state_dict()["master_weights"],
+                ema_state_dict=self.master_weights,
+            )
+            self._ema_impl(
+                state_dict=self.sharding_io.manipulate_state_dict_and_config(
+                    unwrap_model(self.sharding_io.model),
+                    merge_tensor_parallel=False,
+                )[0],
+                ema_state_dict=self.model_params,
+            )
+            logger.info(f"EMA accumulate done for step {global_step}")
+
+    def _ema_impl(self, state_dict, ema_state_dict):
+        ema_coef = self.args.zcc_save_ema_coef
+        for k, v in state_dict.items():
+            if k in ema_state_dict:
+                ema_tensor = ema_state_dict[k]
+                ema_tensor = ema_coef * ema_tensor.cuda() + (1 - ema_coef) * v.cuda()
+                ema_tensor.name = v.name
+                v = ema_tensor
+                del ema_tensor
+
+            if self.offload:
+                v_pin = v.pin_memory()
+                v_pin.name = v.name
+                v = v_pin
+            ema_state_dict[k] = v
+
+
+class NonZCCEMACallback(TrainerCallback):
+    def __init__(self, resume_from_checkpoint, args, sharding_io, offload=True):
+        self.buffer = EMABuffer(resume_from_checkpoint, args, sharding_io, offload)
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if state.global_step % args.zcc_ema_interval == 0:
+            self.buffer.ema_accumulate(state.global_step, state.loss, args.zcc_ema_loss_threshold)
+        if control.should_save:
+            self.buffer.save(state.global_step)
