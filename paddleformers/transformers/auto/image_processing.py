@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import json
 import os
 from typing import Optional, Union
@@ -25,11 +26,12 @@ from transformers.dynamic_module_utils import (
 )
 from transformers.models.auto.configuration_auto import (
     CONFIG_MAPPING_NAMES,
+    model_type_to_module_name,
     replace_list_option_in_docstrings,
 )
+from transformers.models.auto.image_processing_auto import IMAGE_PROCESSOR_MAPPING_NAMES
 from transformers.models.auto.image_processing_auto import (
-    IMAGE_PROCESSOR_MAPPING_NAMES,
-    get_image_processor_class_from_name,
+    get_image_processor_class_from_name as get_image_processor_class_from_name_hf,
 )
 from transformers.models.auto.image_processing_auto import (
     get_image_processor_config as get_image_processor_config_hf,
@@ -47,6 +49,30 @@ from ..image_processing_utils import PaddleImageProcessingMixin
 from .factory import _LazyAutoMapping
 
 IMAGE_PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, IMAGE_PROCESSOR_MAPPING_NAMES)
+
+
+def get_image_processor_class_from_name(class_name: str):
+    for module_name, extractors in IMAGE_PROCESSOR_MAPPING_NAMES.items():
+        if class_name in extractors:
+            module_name = model_type_to_module_name(module_name)
+
+            module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
+            try:
+                return getattr(module, class_name)
+            except AttributeError:
+                continue
+
+    for extractor in IMAGE_PROCESSOR_MAPPING._extra_content.values():
+        if getattr(extractor, "__name__", None) == class_name:
+            return extractor
+
+    # We did not find the class, but maybe it's because a dep is missing. In that case, the class will be in the main
+    # init and we return the proper dummy to get an appropriate error message.
+    main_module = importlib.import_module("paddleformers.transformers")
+    if hasattr(main_module, class_name):
+        return getattr(main_module, class_name)
+
+    return None
 
 
 def get_image_processor_config(
@@ -304,7 +330,11 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                 use_fast = False
             if not use_fast:
                 image_processor_type_slow = image_processor_type.removesuffix("Fast")
-                image_processor_class = get_image_processor_class_from_name(image_processor_type_slow)
+                image_processor_class = get_image_processor_class_from_name_hf(image_processor_type_slow)
+
+                # Not found in Transformers, try local PaddleFormers registry
+                if image_processor_class is None:
+                    image_processor_class = get_image_processor_class_from_name(image_processor_type_slow)
 
                 if image_processor_class is None:
                     if image_processor_type.endswith("Fast"):
