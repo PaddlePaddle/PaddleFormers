@@ -63,9 +63,9 @@ export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 ## 1.2.模型预训练
 
 ```bash
-# Example 1: SFT-Full using online dataset
+# Example 1: PT-Full using online dataset
 paddleformers-cli train examples/config/pt/full.yaml
-# Example 2: SFT-Full using offline dataset
+# Example 2: PT-Full using offline dataset
 paddleformers-cli train examples/config/pt/full_offline_data.yaml
 ```
 
