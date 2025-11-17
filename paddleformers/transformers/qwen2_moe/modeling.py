@@ -959,6 +959,7 @@ class Qwen2MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _get_tensor_parallel_mappings = Qwen2MoeModel._get_tensor_parallel_mappings
     _init_weights = Qwen2MoeModel._init_weights
     _keep_in_fp32_modules = Qwen2MoeModel._keep_in_fp32_modules
+    _rotary_emb_cls = Qwen2MoeRotaryEmbedding
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen2MoeModel.transpose_weight_keys
 

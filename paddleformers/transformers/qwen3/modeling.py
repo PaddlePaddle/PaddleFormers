@@ -951,6 +951,7 @@ class Qwen3ForCausalLMPipe(GeneralModelForCausalLMPipe):
     _get_tensor_parallel_mappings = Qwen3Model._get_tensor_parallel_mappings
     _init_weights = Qwen3Model._init_weights
     _keep_in_fp32_modules = Qwen3Model._keep_in_fp32_modules
+    _rotary_emb_cls = Qwen3RotaryEmbedding
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen3Model.transpose_weight_keys
 

@@ -342,6 +342,9 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
                         if len(files) == 1:
                             tensor0 = f.get_tensor(hf_name[0])
                             tensor1 = f.get_tensor(hf_name[1])
+                            target_shape = model.state_dict()[pd_param].shape
+                            prepared_tensor = prepare_tensor([tensor0, tensor1], target_shape)
+                            model.state_dict()[pd_param].set_value(prepared_tensor)
                         else:
                             if weight_map[hf_name[0]] == filename:
                                 tensor0 = f.get_tensor(hf_name[0])
@@ -349,15 +352,18 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
                                     ckpt_pre + weight_map[hf_name[1]], framework="paddle", device="cpu"
                                 ) as f_other:
                                     tensor1 = f_other.get_tensor(hf_name[1])
+                                    target_shape = model.state_dict()[pd_param].shape
+                                    prepared_tensor = prepare_tensor([tensor0, tensor1], target_shape)
+                                    model.state_dict()[pd_param].set_value(prepared_tensor)
                             else:
                                 with safe_open(
                                     ckpt_pre + weight_map[hf_name[0]], framework="paddle", device="cpu"
                                 ) as f_other:
                                     tensor0 = f_other.get_tensor(hf_name[0])
-                                tensor1 = f.get_tensor(hf_name[1])
-                        model.state_dict()[pd_param].set_value(
-                            prepare_tensor([tensor0, tensor1], model.state_dict()[pd_param].shape)
-                        )
+                                    tensor1 = f.get_tensor(hf_name[1])
+                                    model.state_dict()[pd_param].set_value(
+                                        prepare_tensor([tensor0, tensor1], model.state_dict()[pd_param].shape)
+                                    )
                     check_list.append(pd_param)
 
         except Exception as e:

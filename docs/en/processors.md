@@ -74,7 +74,7 @@ inputs = processor(
 >
 > You can specify the model download source in two ways:
 >
-> - Via the `download_hub` parameter, passed directly in the `from_pretrained` method.。
+> - Via the `download_hub` parameter, passed directly in the `from_pretrained` method.
 >
 > ```python
 > processor = AutoProcessor.from_pretrained(
@@ -83,7 +83,7 @@ inputs = processor(
 > )
 > ```
 >
-> - Via the `DOWNLOAD_SOURCE` environment variable, to change the default download source.。
+> - Via the `DOWNLOAD_SOURCE` environment variable, to change the default download source.
 > ```bash
 > export DOWNLOAD_SOURCE=aistudio
 > ```

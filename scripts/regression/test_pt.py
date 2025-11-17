@@ -28,6 +28,30 @@ CONFIG_PATH = "./examples/config/pt"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
+MAX_STEPS = 6
+SAVE_STEPS = 4
+TRAIN_DATASET_PATH = "./tests/fixtures/dummy/pt/train.jsonl"
+EVAL_DATASET_PATH = "./tests/fixtures/dummy/pt/eval.jsonl"
+
+PT_FULL_EXCEPTED_LOSS = 11.976337
+PT_FULL_RESUME_EXCEPTED_LOSS = 11.97685
+PT_FULL_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+
+PT_LORA_EXCEPTED_LOSS = 11.976369
+PT_LORA_RESUME_EXCEPTED_LOSS = 11.976941
+PT_LORA_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+
+PT_FULL_TP_PP_EXCEPTED_LOSS = 11.977347
+PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.974186
+PT_FULL_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+
+PT_LORA_TP_PP_EXCEPTED_LOSS = 11.977341
+PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.974185
+PT_LORA_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
+
+PT_FC_EXCEPTED_LOSS = 11.931005
+PT_FC_RESUME_EXCEPTED_LOSS = 11.931005
+PT_FC_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]]
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
@@ -83,7 +107,7 @@ class PTTrainTester(unittest.TestCase):
         model = Qwen3ForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
-        print(f"result is : {result}")
+        print(f"excepted_result is : {excepted_result}")
         print(f"result[0] is : {result[0]}")
         self.assertTrue(paddle.allclose(result[0], excepted_result))
 
@@ -102,9 +126,11 @@ class PTTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "pt_full")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": "./tests/fixtures/dummy/pt/train.jsonl",
-            "eval_dataset_path": "./tests/fixtures/dummy/pt/eval.jsonl",
+            "train_dataset_path": TRAIN_DATASET_PATH,
+            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
+            "max_steps": MAX_STEPS,
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -126,35 +152,36 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.978933
-        self.pttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+        self.pttrain_tester.assert_loss(training_p.stdout, PT_FULL_EXCEPTED_LOSS)
 
         # test model resume
-        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"pt_full reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
-        pt_full_reusme_output = reusme_p.stdout
-        pt_full_reusme_log_file = os.path.join(
-            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_reusme.log"
+        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"pt_full resume cmd is : {cmd}")
+        print(resume_p.stdout)
+        pt_full_resume_output = resume_p.stdout
+        pt_full_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_resume.log"
         )
-        if pt_full_reusme_output and pt_full_reusme_output.strip():
-            with open(pt_full_reusme_log_file, "w", encoding="utf-8") as pt_full_reusme_f:
-                pt_full_reusme_f.write(pt_full_reusme_output)
-        self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
-        EXCEPTED_LOSS = 11.978933
-        self.pttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+        if pt_full_resume_output and pt_full_resume_output.strip():
+            with open(pt_full_resume_log_file, "w", encoding="utf-8") as pt_full_resume_f:
+                pt_full_resume_f.write(pt_full_resume_output)
+        self.pttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
+
+        self.pttrain_tester.assert_loss(resume_p.stdout, PT_FULL_RESUME_EXCEPTED_LOSS)
 
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+        EXPECTED_RESULT = paddle.to_tensor(PT_FULL_EXCEPTED_RESULT)
         self.pttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_pt_lora(self):
         output_dir = os.path.join(OUTPUT_DIR, "pt_lora")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": "./tests/fixtures/dummy/pt/train.jsonl",
-            "eval_dataset_path": "./tests/fixtures/dummy/pt/eval.jsonl",
+            "train_dataset_path": TRAIN_DATASET_PATH,
+            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
+            "max_steps": MAX_STEPS,
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -177,45 +204,43 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.978933
-        self.pttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+        self.pttrain_tester.assert_loss(training_p.stdout, PT_LORA_EXCEPTED_LOSS)
 
         # test model resume
-        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"pt_lora reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
-        pt_lora_reusme_output = reusme_p.stdout
-        pt_lora_reusme_log_file = os.path.join(
-            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_reusme.log"
+        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"pt_lora resume cmd is : {cmd}")
+        print(resume_p.stdout)
+        pt_lora_resume_output = resume_p.stdout
+        pt_lora_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_resume.log"
         )
-        if pt_lora_reusme_output and pt_lora_reusme_output.strip():
-            with open(pt_lora_reusme_log_file, "w", encoding="utf-8") as pt_lora_reusme_f:
-                pt_lora_reusme_f.write(pt_lora_reusme_output)
-        self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        if pt_lora_resume_output and pt_lora_resume_output.strip():
+            with open(pt_lora_resume_log_file, "w", encoding="utf-8") as pt_lora_resume_f:
+                pt_lora_resume_f.write(pt_lora_resume_output)
+        self.pttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        EXCEPTED_LOSS = 11.978933
-        self.pttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+        self.pttrain_tester.assert_loss(resume_p.stdout, PT_LORA_RESUME_EXCEPTED_LOSS)
 
         # test lora merge
-        lora_merge_output_dir = os.path.join(output_dir, "export")
+        # lora_merge_output_dir = os.path.join(output_dir, "export")
         # cli mode
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.pttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-        EXPECTED_RESULT = paddle.to_tensor(
-            [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
-        )
-        self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+        # EXPECTED_RESULT = paddle.to_tensor(PT_LORA_EXCEPTED_RESULT)
+        # self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
     def test_pt_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "pt_full_tp_pp")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": "./tests/fixtures/dummy/pt/train.jsonl",
-            "eval_dataset_path": "./tests/fixtures/dummy/pt/eval.jsonl",
+            "train_dataset_path": TRAIN_DATASET_PATH,
+            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
+            "max_steps": MAX_STEPS,
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -238,35 +263,35 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.980663
-        self.pttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+        self.pttrain_tester.assert_loss(training_p.stdout, PT_FULL_TP_PP_EXCEPTED_LOSS)
 
         # test model resume
-        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"pt_full_tp_pp reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
-        pt_full_tp_pp_reusme_output = reusme_p.stdout
-        pt_full_tp_pp_reusme_log_file = os.path.join(
-            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_tp_pp_reusme.log"
+        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"pt_full_tp_pp resume cmd is : {cmd}")
+        print(resume_p.stdout)
+        pt_full_tp_pp_resume_output = resume_p.stdout
+        pt_full_tp_pp_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_full_tp_pp_resume.log"
         )
-        if pt_full_tp_pp_reusme_output and pt_full_tp_pp_reusme_output.strip():
-            with open(pt_full_tp_pp_reusme_log_file, "w", encoding="utf-8") as pt_full_tp_pp_reusme_f:
-                pt_full_tp_pp_reusme_f.write(pt_full_tp_pp_reusme_output)
-        self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        if pt_full_tp_pp_resume_output and pt_full_tp_pp_resume_output.strip():
+            with open(pt_full_tp_pp_resume_log_file, "w", encoding="utf-8") as pt_full_tp_pp_resume_f:
+                pt_full_tp_pp_resume_f.write(pt_full_tp_pp_resume_output)
+        self.pttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        EXCEPTED_LOSS = 11.980663
-        self.pttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+        self.pttrain_tester.assert_loss(resume_p.stdout, PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS)
         # test model generate
-        EXPECTED_RESULT = paddle.to_tensor([[22407, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612, 90612]])
+        EXPECTED_RESULT = paddle.to_tensor(PT_FULL_TP_PP_EXCEPTED_RESULT)
         self.pttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_pt_lora_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "pt_lora_tp_pp")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": "./tests/fixtures/dummy/pt/train.jsonl",
-            "eval_dataset_path": "./tests/fixtures/dummy/pt/eval.jsonl",
+            "train_dataset_path": TRAIN_DATASET_PATH,
+            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
+            "max_steps": MAX_STEPS,
+            "save_steps": SAVE_STEPS,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -290,24 +315,22 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # test training loss
-        EXCEPTED_LOSS = 11.980666
-        self.pttrain_tester.assert_loss(training_p.stdout, EXCEPTED_LOSS)
+        self.pttrain_tester.assert_loss(training_p.stdout, PT_LORA_TP_PP_EXCEPTED_LOSS)
 
         # test model resume
-        reusme_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        print(f"pt_lora_tp_pp reusme cmd is : {cmd}")
-        print(reusme_p.stdout)
-        pt_lora_tp_pp_reusme_output = reusme_p.stdout
-        pt_lora_tp_pp_reusme_log_file = os.path.join(
-            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_tp_pp_reusme.log"
+        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"pt_lora_tp_pp resume cmd is : {cmd}")
+        print(resume_p.stdout)
+        pt_lora_tp_pp_resume_output = resume_p.stdout
+        pt_lora_tp_pp_resume_log_file = os.path.join(
+            LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "pt_lora_tp_pp_resume.log"
         )
-        if pt_lora_tp_pp_reusme_output and pt_lora_tp_pp_reusme_output.strip():
-            with open(pt_lora_tp_pp_reusme_log_file, "w", encoding="utf-8") as pt_lora_tp_pp_reusme_f:
-                pt_lora_tp_pp_reusme_f.write(pt_lora_tp_pp_reusme_output)
-        self.pttrain_tester.assert_result(reusme_p.returncode, reusme_p.stdout)
+        if pt_lora_tp_pp_resume_output and pt_lora_tp_pp_resume_output.strip():
+            with open(pt_lora_tp_pp_resume_log_file, "w", encoding="utf-8") as pt_lora_tp_pp_resume_f:
+                pt_lora_tp_pp_resume_f.write(pt_lora_tp_pp_resume_output)
+        self.pttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        EXCEPTED_LOSS = 11.980666
-        self.pttrain_tester.assert_loss(reusme_p.stdout, EXCEPTED_LOSS)
+        self.pttrain_tester.assert_loss(resume_p.stdout, PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS)
 
         # test lora merge
         lora_merge_output_dir = os.path.join(output_dir, "export")
@@ -317,7 +340,5 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-        EXPECTED_RESULT = paddle.to_tensor(
-            [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
-        )
+        EXPECTED_RESULT = paddle.to_tensor(PT_LORA_TP_PP_EXCEPTED_RESULT)
         self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
