@@ -70,16 +70,13 @@ from paddleformers.transformers.conversion_utils import (
     StateDictNameMapping,
     init_name_mappings,
 )
-from paddleformers.transformers.deepseek_v2 import (
-    yarn_get_mscale,
-    _expand_2d_mask,
-    _make_causal_mask,
-)
+from paddleformers.transformers.deepseek_v2 import _expand_2d_mask, _make_causal_mask
 from paddleformers.transformers.deepseek_v2 import fp8_linear as linear_utils
 from paddleformers.transformers.deepseek_v2 import (
     is_casual_mask,
     rotate_half,
     scaled_dot_product_attention,
+    yarn_get_mscale,
 )
 from paddleformers.transformers.deepseek_v2.fp8_linear import Linear as Linear_
 from paddleformers.transformers.fp8_utils import (
@@ -629,6 +626,7 @@ class DeepseekV2RotaryEmbedding(nn.Layer):
             cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
             sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
         )
+
 
 # Copied from transformers.models.llama.modeling_llama.LlamaAttention with Llama->DeepseekV2
 class DeepseekV2Attention(nn.Layer):
@@ -1966,11 +1964,11 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
-        q (`torch.Tensor`): The query tensor.
-        k (`torch.Tensor`): The key tensor.
-        cos (`torch.Tensor`): The cosine part of the rotary embedding.
-        sin (`torch.Tensor`): The sine part of the rotary embedding.
-        position_ids (`torch.Tensor`):
+        q (`paddle.Tensor`): The query tensor.
+        k (`paddle.Tensor`): The key tensor.
+        cos (`paddle.Tensor`): The cosine part of the rotary embedding.
+        sin (`paddle.Tensor`): The sine part of the rotary embedding.
+        position_ids (`paddle.Tensor`):
             The position indices of the tokens corresponding to the query and key tensors. For example, this can be
             used to pass offsetted position ids when working with a KV-cache.
         unsqueeze_dim (`int`, *optional*, defaults to 1):
@@ -1981,7 +1979,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
             cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
             the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
     Returns:
-        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+        `tuple(paddle.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
     b, s, h, d = q.shape
     q = q.reshape([b, s, h, d // 2, 2]).transpose([0, 1, 2, 4, 3]).reshape([b, s, h, d])

@@ -748,12 +748,12 @@ class GptOssModel(GptOssPreTrainedModel):
             position_ids,
             attention_mask,
             output_attentions,
-            # output_router_logits,
+            output_router_logits,
             past_key_value,
             use_cache,
             position_embeddings,
             attn_mask_startend_row_indices,
-            # use_reentrant=self.config.recompute_use_reentrant,
+            use_reentrant=self.config.recompute_use_reentrant,
         )
 
         return hidden_states
