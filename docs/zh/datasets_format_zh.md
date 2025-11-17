@@ -1,10 +1,14 @@
 # 数据流格式说明文档
 
+## 数据流文件格式支持
+
+当前预训练、后训练数据流只支持`jsonl`格式的数据
+
 ## 1. 预训练数据流
 
 ### 1.1. 在线数据流
 
-我们支持的预训练数据格式是每行包含一个字典的 json 文件，每个字典包含以下字段：
+预训练数据流中，每条数据都是一个字典，包含以下字段：
 
 - `text` : `str, List(str)`, 预训练文本。
 
@@ -63,7 +67,7 @@ python -u examples/tools/create_pretraining_data.py \
 | 参数名              | 类型        | 说明                 |
 |--------------------|----------- |-----------------|
 | `--model_name_or_path`     | string     | 模型路径  |
-| `--data_format`    | string     | 支持的文件格式，之前只支持 json |
+| `--data_format`    | string     | 支持的文件格式，当前只支持 JSON |
 | `--input_path`     | string     | 输入的json文件的路径  |
 | `--append_eos`     | store_true | 是否在document的结尾添加eos token  |
 | `--output_prefix`  | str        | 输出文件的前缀    |
@@ -77,12 +81,13 @@ python -u examples/tools/create_pretraining_data.py \
 
 使用 `erniekit` 格式需要在 `train(/eval)_dataset_type` 处指定为 `erniekit`
 
-我们支持的精调数据格式是每行包含一个字典的 json 文件，每个字典包含以下字段：
+SFT数据流中，每条数据都是一个字典，包含以下字段：
 
 - `src` : `str, List(str)`, 模型的输入指令（instruction）、提示（prompt），模型应该执行的任务。
 - `tgt` : `str, List(str)`, 模型的输出。
 - `system(optional)` : 系统配置
 - `label(optional)`: Training flag (1=参与训练, 0=不参与训练)
+- `is_system(optional)` : 标志src的第一条数据是否是system
 
 Notes:
 * `src` 和 `tgt` 为支持多轮对话的列表（List）对象
@@ -116,13 +121,14 @@ mkdir -p data/sft && tar -xf alpaca_demo.gz -C data/sft/ --strip-components=1
 
 使用 `chatml` 格式需要在 `train(/eval)_dataset_type` 处指定为 `chatml`
 
-我们支持的精调数据格式是每行包含一个字典的 json 文件，每个字典包含以下字段：
+SFT数据流中，每条数据都是一个字典，包含以下字段：
 
 - `messages` : `List(Dict)`, 每个字典包含 `role`、`content`、`tool_calls(optional)` 三种key。
     - `role` 的值可以选择 `system`, `user`, `assistant` 或 `tool(optional)`。
     - `content`为具体的对话内容。
     - `tool_calls(optional)` 为申请工具调用。
 - `tools(optional)` : `List(Dict)`, 表示工具信息。
+- `label(optional)`: Training flag (1=参与训练, 0=不参与训练)
 
 Notes:
 * 每个训练样本均为JSON格式，多个样本以换行符分隔
@@ -162,19 +168,27 @@ Notes:
 ]
 ```
 
+为了方便测试，我们也提供了 `chatml` function call SFT 数据集可以直接使用：
+```bash
+wget https://paddleformers.bj.bcebos.com/datasets/sft_function_call_demo.tar.gz
+
+mkdir -p data/sft && tar -zxf sft_function_call_demo.tar.gz -C data/sft/
+```
+
 ## 3. DPO数据流
 
 ### erniekit格式
 
 使用 `erniekit` 格式需要在 `train(/eval)_dataset_type` 处指定为 `erniekit`
 
-我们支持的精调数据格式是每行包含一个字典的 json 文件，每个字典包含以下字段：
+DPO数据流中，每条数据都是一个字典，包含以下字段：
 
 - `system(optional)`: 系统配置
 - `src` : `str, List(str)`, 用户对话内容
 - `tgt` : `str, List(str)`, 系统回复内容（比src少一个）
 - `response` : `str, List(str)`, 包含 chosen 和 rejected 回复。
 - `sort` : `List(int)`, sort 值用于区分 response 中 chosen 和 rejected（sort 值小的是 rejected，sort 值大的是 chosen）。
+- `is_system(optional)` : 标志src的第一条数据是否是system
 
 Notes:
 * 每个训练样本均为JSON格式，多个样本以换行符分隔
@@ -216,7 +230,7 @@ mkdir -p data/dpo && tar -zxf ultrafeedback_binarized.tar.gz -C data/dpo/ --stri
 
 使用 `chatml` 格式需要在 `train(/eval)_dataset_type` 处指定为 `chatml`
 
-我们支持的 `chatml` 训练数据格式是每行包含一个字典的 json 文件，每个字典包含以下字段：
+DPO数据流中，每条数据都是一个字典，包含以下字段：
 - `messages` : `List(dict)`, 对话历史列表。
   - 普通轮次：包含 `role` (`"user"` 或 `"assistant"`) 和 `content` (`str`) 字段。
   - 偏好/非偏好轮次（用于偏好学习）：包含以下两个关键字段，用于表示对同一用户查询的不同系统回复的偏好排序。

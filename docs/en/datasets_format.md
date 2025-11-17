@@ -1,21 +1,25 @@
 # Data Stream Format Documentation
 
+## Data Stream File Format Support
+
+Currently, pre-training and post-training data streams only support the `jsonl` format.
+
 ## 1. Pre-training Data Stream
 
 ### 1.1. Online Data Stream
 
-The supported pre-training data format is a JSON file where each line contains a dictionary. Each dictionary includes the following fields:
+In the pre-training data stream, each data entry is a dictionary containing the following fields:
 
 - `text` : `str, List(str)`, pre-training text.
 
 Sample data:
 
 ```text
-{"text": ["An example of a classification problem that requires continuous input values is house price prediction. The price of a house is often based on factors such as square footage, location, number of bedrooms and bathrooms, and features like a backyard or garage. To accurately predict house prices, these criteria must be entered into the classification model as continuous input values."]}
+{"text": ["An example of a classification problem that requires continuous input values is house price prediction. The price of a house is usually based on factors such as square footage, location, number of bedrooms and bathrooms, and features like a backyard or garage. To accurately predict house prices, these criteria must be entered into the classification model as continuous input values."]}
 ...
 ```
 
-For easy testing, we also provide a [demo dataset](https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz) that can be used directly:
+For ease of testing, we also provide a [demo dataset](https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz) that can be used directly:
 
 ```shell
 wget https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz
@@ -26,7 +30,7 @@ mkdir -p data/pt && tar -xf pt_data.tar.gz -C data/pt/
 
 We can also choose to use offline bit pre-training data streams, which saves more memory.
 
-For easy testing, we also provide an [offline pre-training demo dataset](https://paddleformers.bj.bcebos.com/datasets/pretrain_offline_data.tar.gz) that can be used directly:
+For ease of testing, we also provide an [offline pre-training demo dataset](https://paddleformers.bj.bcebos.com/datasets/pretrain_offline_data.tar.gz) that can be used directly:
 
 ```shell
 wget https://paddleformers.bj.bcebos.com/datasets/pretrain_offline_data.tar.gz
@@ -37,12 +41,12 @@ You can also create your own offline data stream. The method for creating an off
 
 Download a text dataset, such as https://modelscope.cn/datasets/BazingaLyn/mini_pretrain_dataset
 
-The format should be jsonl, and the format of each line is like BazingaLyn/mini_pretrain_dataset/pretrain_hq_v7.jsonl:
+The format must be jsonl, and the format of each line is like BazingaLyn/mini_pretrain_dataset/pretrain_hq_v7.jsonl:
 ```text
 {"text": "Scrambled eggs with tomatoes\nIngredients:\n3 eggs, 1 tomato, oil, salt, sugar, cornstarch\nInstructions:..."}
-{"text": "Please describe how to properly plan personal finances. Properly planning personal finances requires the following steps..."}
+{"text": "Please describe how to properly plan personal finance. Properly planning personal finance requires the following steps..."}
 {"text": "Please enter a scene dialogue about marine conservation. Person A: Wow, this beach is really..."}
-{"text": "Identify two different types of wine. The method of identifying wine varies depending on its type and variety, and..."}
+{"text": "Identify two different types of wine. The method of identifying wine varies depending on its type and variety, below..."}
 ```
 
 Run `examples/tools/create_pretraining_data.py`, and the generated data will be saved in `./pretrain_data.bin` and `./pretrain_data.idx` in the current directory.
@@ -63,13 +67,13 @@ python -u examples/tools/create_pretraining_data.py \
 | Parameter Name              | Type        | Description                 |
 |--------------------|----------- |-----------------|
 | `--model_name_or_path`     | string     | Model path  |
-| `--data_format`    | string     | Supported file format, previously only supported json |
+| `--data_format`    | string     | Supported file format, currently only supports JSON |
 | `--input_path`     | string     | Path to the input json file  |
 | `--append_eos`     | store_true | Whether to add an eos token at the end of the document  |
 | `--output_prefix`  | str        | Prefix of the output file    |
-| `--workers`        | int        | Number of processes running     |
+| `--workers`        | int        | Number of processes to run     |
 | `--log_interval`   | int        | Log printing interval   |
-| `--data_impl`      | str        | Type of dataset created, default is mmap, can also choose lazy |
+| `--data_impl`      | str        | Type of dataset to create, default is mmap, can also choose lazy |
 
 ## 2. SFT Data Stream
 
@@ -77,34 +81,35 @@ python -u examples/tools/create_pretraining_data.py \
 
 To use the `erniekit` format, specify `erniekit` at `train(/eval)_dataset_type`.
 
-The supported fine-tuning data format is a JSON file where each line contains a dictionary. Each dictionary includes the following fields:
+In the SFT data stream, each data entry is a dictionary containing the following fields:
 
-- `src` : `str, List(str)`, model input instructions, prompts, and the task the model should perform.
-- `tgt` : `str, List(str)`, model output.
+- `src` : `str, List(str)`, the model's input instructions, prompts, and the task the model should perform.
+- `tgt` : `str, List(str)`, the model's output.
 - `system(optional)` : System configuration
 - `label(optional)`: Training flag (1=participate in training, 0=do not participate in training)
+- `is_system(optional)` : Indicates whether the first piece of data in src is system
 
 Notes:
 * `src` and `tgt` are list objects that support multi-turn conversations.
-* Each training sample is in JSON format, and multiple samples are separated by line breaks.
+* Each training sample is in JSON format, with multiple samples separated by line breaks.
 
 Sample data:
 ```json
 {
-    "system": "You are a small life assistant",
+    "system": "You are a life assistant",
     "src": [
         "How can we reduce water consumption in our daily lives?",
         "Any other suggestions?"
     ],
     "tgt": [
         "1. Use water-saving devices, such as water-saving shower heads and faucets.",
-        "2. Use tanks or buckets to collect household wastewater, such as dishwashing and bathing. \n3. Raise awareness of water conservation in the community. \n4. Check water pipes and irrigation systems for leaks and repair them in a timely manner. \n5. Shorten shower time and use low-flow shower heads to save water. \n6. Collect rainwater for gardening or other non-drinking purposes. \n7. Turn off the faucet when brushing your teeth or wiping your hands. \n8. Reduce the time spent watering lawns. \n9. Reuse gray water (water from washing machines, bathroom sinks, and showers) as much as possible. \n10. Only buy energy-efficient dishwashers and washing machines."
+        "2. Use tanks or buckets to collect household wastewater, such as dishwashing and bathing. \n3. Raise awareness of water conservation in the community. \n4. Check water pipes and irrigation systems for leaks and repair them promptly. \n5. Shorten shower time and use low-flow shower heads to save water. \n6. Collect rainwater for gardening or other non-drinking purposes. \n7. Turn off the faucet when brushing your teeth or wiping your hands. \n8. Reduce the time spent watering lawns. \n9. Reuse gray water (water from washing machines, bathroom sinks, and showers) as much as possible. \n10. Only buy energy-efficient dishwashers and washing machines."
     ],
     "label": [0, 1],
 }
 ```
 
-For easy testing, we also provide the [tatsu-lab/alpaca](https://huggingface.co/datasets/tatsu-lab/alpaca) demo dataset that can be used directly:
+For ease of testing, we also provide the [tatsu-lab/alpaca](https://huggingface.co/datasets/tatsu-lab/alpaca) demo dataset that can be used directly:
 
 ```shell
 wget https://bj.bcebos.com/paddlenlp/datasets/examples/alpaca_demo.gz
@@ -115,16 +120,17 @@ mkdir -p data/sft && tar -xf alpaca_demo.gz -C data/sft/ --strip-components=1
 
 To use the `chatml` format, specify `chatml` at `train(/eval)_dataset_type`.
 
-The supported fine-tuning data format is a JSON file where each line contains a dictionary. Each dictionary includes the following fields:
+In the SFT data stream, each data entry is a dictionary containing the following fields:
 
 - `messages` : `List(Dict)`, each dictionary contains three keys: `role`, `content`, and `tool_calls(optional)`.
     - The value of `role` can be `system`, `user`, `assistant` or `tool(optional)`.
     - `content` is the specific dialogue content.
-    - `tool_calls(optional)` is for applying for tool calls.
+    - `tool_calls(optional)` is for requesting tool calls.
 - `tools(optional)` : `List(Dict)`, represents tool information.
+- `label(optional)`: Training flag (1=participate in training, 0=do not participate in training)
 
 Notes:
-* Each training sample is in JSON format, and multiple samples are separated by line breaks.
+* Each training sample is in JSON format, with multiple samples separated by line breaks.
 
 Sample data:
 
@@ -161,33 +167,41 @@ Demo data for function call training:
 ]
 ```
 
+For ease of testing, we also provide a `chatml` function call SFT dataset that can be used directly:
+```bash
+wget https://paddleformers.bj.bcebos.com/datasets/sft_function_call_demo.tar.gz
+
+mkdir -p data/sft && tar -zxf sft_function_call_demo.tar.gz -C data/sft/
+```
+
 ## 3. DPO Data Stream
 
 ### erniekit format
 
 To use the `erniekit` format, specify `erniekit` at `train(/eval)_dataset_type`.
 
-The supported fine-tuning data format is a JSON file where each line contains a dictionary. Each dictionary includes the following fields:
+In the DPO data stream, each data entry is a dictionary containing the following fields:
 
 - `system(optional)`: System configuration
 - `src` : `str, List(str)`, User dialogue content
 - `tgt` : `str, List(str)`, System reply content (one less than src)
 - `response` : `str, List(str)`, Contains chosen and rejected replies.
 - `sort` : `List(int)`, The sort value is used to distinguish between chosen and rejected in the response (the smaller sort value is rejected, and the larger sort value is chosen).
+- `is_system(optional)` : Indicates whether the first piece of data in src is system
 
 Notes:
-* Each training sample is in JSON format, and multiple samples are separated by line breaks.
+* Each training sample is in JSON format, with multiple samples separated by line breaks.
 
 Sample data:
 
 ```json
 {
-    "system": "You are a small life assistant",
+    "system": "You are a life assistant",
     "src": [
         "Hello.",
         "Which is richer in protein, a bed or a wall?"
     ],
-    "tgt": ["Hello, I am your small life assistant."],
+    "tgt": ["Hello, I am your life assistant."],
     "response": [
         [
             "Neither beds nor walls are sources of protein, as they are both inanimate objects. Protein is usually found in foods such as meat, dairy products, beans, and nuts."
@@ -204,7 +218,7 @@ Sample data:
 ...
 ```
 
-For easy testing, we also provide a preference dataset that can be used directly:
+For ease of testing, we also provide a preference dataset that can be used directly:
 
 ```bash
 wget https://bj.bcebos.com/paddlenlp/datasets/examples/ultrafeedback_binarized.tar.gz
@@ -215,14 +229,14 @@ mkdir -p data/dpo && tar -zxf ultrafeedback_binarized.tar.gz -C data/dpo/ --stri
 
 To use the `chatml` format, specify `chatml` at `train(/eval)_dataset_type`.
 
-The supported `chatml` training data format is a JSON file where each line contains a dictionary. Each dictionary includes the following fields:
-- `messages` : `List(dict)`, Dialogue history list.
+In the DPO data stream, each data entry is a dictionary containing the following fields:
+- `messages` : `List(dict)`, a list of dialogue history.
   - Normal rounds: Contains `role` (`"user"` or `"assistant"`) and `content` (`str`) fields.
-  - Preference/Non-preference rounds (for preference learning): Contains the following two key fields to indicate the preference ranking of different system replies to the same user query.
-    - `preferred_output` : `dict`, Preferred (chosen) system reply, including fields such as `role` (`"assistant"`) and `content` (`str`), and may include tool call information (`tool_calls`) depending on whether the tool is called.
-    - `non_preferred_output` : `dict`, Non-preferred (rejected) system reply, including fields such as `role` (`"assistant"`) and `content` (`str`).
-- `tools` : `List(dict)`, A list of definitions of tools (functions) that may be used in the dialogue.
-- `label` : `List(int)`, A sorting label used to distinguish between `preferred_output` and `non_preferred_output`. Where 0 corresponds to `non_preferred_output` (rejected) and 1 corresponds to `preferred_output` (chosen).
+  - Preference/Non-preference rounds (for preference learning): Contains the following two key fields to represent the preference ranking of different system responses to the same user query.
+    - `preferred_output` : `dict`, the preferred (chosen) system response, including fields such as `role` (`"assistant"`) and `content` (`str`), and may include tool call information (`tool_calls`) depending on whether the tool is called.
+    - `non_preferred_output` : `dict`, the non-preferred (rejected) system response, including fields such as `role` (`"assistant"`) and `content` (`str`).
+- `tools` : `List(dict)`, a list of definitions of tools (functions) that may be used in the dialogue.
+- `label` : `List(int)`, a sorting label used to distinguish between `preferred_output` and `non_preferred_output`. Where 0 corresponds to `non_preferred_output` (rejected) and 1 corresponds to `preferred_output` (chosen).
 
 Detailed data format can be found in [function call instructions](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/examples/best_practices/function_call.md)
 
@@ -288,7 +302,7 @@ Sample data
 }
 ```
 
-For easy testing, we also provide a `chatml` function call DPO dataset that can be used directly:
+For ease of testing, we also provide a `chatml` function call DPO dataset that can be used directly:
 ```bash
 wget https://paddleformers.bj.bcebos.com/datasets/dpo_function_call_1k.tar.gz
 
