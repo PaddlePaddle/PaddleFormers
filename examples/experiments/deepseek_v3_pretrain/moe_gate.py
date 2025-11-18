@@ -350,6 +350,8 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         else:
             # [bs, seq_len, dim]
             batch_size, seq_len, num_experts = gates.shape
+            gates = gates / (gates.sum(axis=-1, keepdim=True) + 1e-20)
+            _, topk_idx = paddle.topk(gates, top_k, axis=-1)
             ce = paddle.zeros([batch_size, self.num_experts])
             topk_idx = topk_idx.reshape([batch_size, -1])
             ce.put_along_axis_(

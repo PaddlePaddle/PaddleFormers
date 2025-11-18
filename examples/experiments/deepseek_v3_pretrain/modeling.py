@@ -70,21 +70,13 @@ from paddleformers.transformers.conversion_utils import (
     StateDictNameMapping,
     init_name_mappings,
 )
-from paddleformers.transformers.deepseek_v2 import (
-    DeepseekV2DynamicNTKScalingRotaryEmbedding,
-    DeepseekV2LinearScalingRotaryEmbedding,
-    DeepseekV2RotaryEmbedding,
-    _expand_2d_mask,
-    _make_causal_mask,
-)
+from paddleformers.transformers.deepseek_v2 import _expand_2d_mask, _make_causal_mask
 from paddleformers.transformers.deepseek_v2 import fp8_linear as linear_utils
 from paddleformers.transformers.deepseek_v2 import (
     is_casual_mask,
     rotate_half,
     scaled_dot_product_attention,
-    yarn_find_correction_range,
     yarn_get_mscale,
-    yarn_linear_ramp_mask,
 )
 from paddleformers.transformers.deepseek_v2.fp8_linear import Linear as Linear_
 from paddleformers.transformers.fp8_utils import (
@@ -423,6 +415,9 @@ class DeepseekV2MoE(MoELayer):
         if self.using_post_norm_recompute:
             assert norm_weight is not None and norm_eps is not None
 
+        hcg = fleet.get_hybrid_communicate_group()
+        moe_grad_group = hcg.get_moe_sharding_parallel_group()
+
         gate = MoEGate(
             config=config,
             num_experts=config.n_routed_experts,
@@ -438,6 +433,8 @@ class DeepseekV2MoE(MoELayer):
             norm_weight=norm_weight,
             norm_eps=norm_eps,
         )
+        self.is_mp_moe = False
+        self.is_ep_moe = True
         DeepseekV2MLPClass = FP8Mlp if config.dsv3_use_fp8_gemm else DeepseekV2MLP
 
         super().__init__(
@@ -456,13 +453,20 @@ class DeepseekV2MoE(MoELayer):
         )
 
         if config.offline_quant_expert_weight and config.clear_origin_weight_when_offline_quant:
-            moe_grad_group = fleet.get_hybrid_communicate_group().expert_grad_comm_group
             expert_w1_list = [expert.w1 for expert in self.experts if expert is not None]
             expert_w2_list = [expert.w2 for expert in self.experts if expert is not None]
             for p in expert_w1_list:
+                setattr(p, "is_moe_param", True)
                 setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
+                p.no_sync = not self.is_mp_moe
+                p.expert = not self.is_mp_moe
+                logger.info(f"expert no-sync={p.no_sync}-{p.name}")
             for p in expert_w2_list:
+                setattr(p, "is_moe_param", True)
                 setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
+                p.no_sync = not self.is_mp_moe
+                p.expert = not self.is_mp_moe
+                logger.info(f"expert no-sync={p.no_sync}-{p.name}")
 
         self.alpha = config.aux_loss_alpha
         if config.n_shared_experts is not None:
@@ -581,6 +585,47 @@ class DeepseekV2MoE(MoELayer):
             shared_expert_output = self.shared_experts(hidden_states)
             final_hidden_states = final_hidden_states + shared_expert_output
         return final_hidden_states
+
+
+class DeepseekV2RotaryEmbedding(nn.Layer):
+    def __init__(self, dim, max_position_embeddings=2048, base=10000):
+        super().__init__()
+
+        self.dim = dim
+        self.max_position_embeddings = max_position_embeddings
+        self.base = base
+        # [dim / 2]
+        with device_guard("cpu"):
+            self.inv_freq = 1.0 / (
+                self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim)
+            )
+            self._set_cos_sin_cache(seq_len=max_position_embeddings)
+
+        self.max_seq_len_cached = None
+
+    def _set_cos_sin_cache(self, seq_len):
+        self.max_seq_len_cached = seq_len
+        # [seq_len]
+        t = paddle.arange(seq_len, dtype="float32")
+        # [seq_len, axis/2]
+        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
+        # Different from paper, but it uses a different permutation in order to obtain the same calculation
+        # [seq_len, axis]
+        emb = paddle.cat([freqs, freqs], axis=-1)
+        # [1, seqlen, 1, axis]
+        self.cos_cached = emb.cos()[None, :, None, :]
+        self.sin_cached = emb.sin()[None, :, None, :]
+
+    def forward(self, x, seq_len=None):
+        # x: [bs, num_attention_heads, seq_len, head_size]
+        if self.max_seq_len_cached is None or seq_len > self.max_seq_len_cached:
+            self._set_cos_sin_cache(seq_len)
+        cos = self.cos_cached[:seq_len]
+        sin = self.sin_cached[:seq_len]
+        return (
+            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
+            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
+        )
 
 
 # Copied from transformers.models.llama.modeling_llama.LlamaAttention with Llama->DeepseekV2
@@ -714,21 +759,7 @@ class DeepseekV2Attention(nn.Layer):
         else:
             scaling_type = self.config.rope_scaling["type"]
             scaling_factor = self.config.rope_scaling["factor"]
-            if scaling_type == "linear":
-                self.rotary_emb = DeepseekV2LinearScalingRotaryEmbedding(
-                    self.qk_rope_head_dim,
-                    max_position_embeddings=self.max_position_embeddings,
-                    scaling_factor=scaling_factor,
-                    base=self.rope_theta,
-                )
-            elif scaling_type == "dynamic":
-                self.rotary_emb = DeepseekV2DynamicNTKScalingRotaryEmbedding(
-                    self.qk_rope_head_dim,
-                    max_position_embeddings=self.max_position_embeddings,
-                    scaling_factor=scaling_factor,
-                    base=self.rope_theta,
-                )
-            elif scaling_type == "yarn":
+            if scaling_type == "yarn":
                 kwargs = {
                     key: self.config.rope_scaling[key]
                     for key in [
@@ -1811,6 +1842,27 @@ class DeepseekV2PretrainingCriterionFast(nn.Layer):
         return loss
 
 
+# Inverse axis formula to find dim based on number of rotations
+def yarn_find_correction_dim(num_rotations, dim, base=10000, max_position_embeddings=2048):
+    return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
+
+
+# Find axis range bounds based on rotations
+def yarn_find_correction_range(low_rot, high_rot, dim, base=10000, max_position_embeddings=2048):
+    low = math.floor(yarn_find_correction_dim(low_rot, dim, base, max_position_embeddings))
+    high = math.ceil(yarn_find_correction_dim(high_rot, dim, base, max_position_embeddings))
+    return max(low, 0), min(high, dim - 1)  # Clamp values just in case
+
+
+def yarn_linear_ramp_mask(min, max, dim):
+    if min == max:
+        max += 0.001  # Prevent singularity
+
+    linear_func = (paddle.arange(dim, dtype=paddle.float32) - min) / (max - min)
+    ramp_func = paddle.clip(linear_func, 0, 1)
+    return ramp_func
+
+
 class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
     def __init__(
         self,
@@ -1908,56 +1960,15 @@ class DeepseekV2RMSNorm(nn.Layer):
         return f"hidden_size={self.hidden_size}, dtype={self.weight.dtype}"
 
 
-class DeepseekV2RotaryEmbedding(nn.Layer):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000):
-        super().__init__()
-
-        self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        # [dim / 2]
-        with device_guard("cpu"):
-            self.inv_freq = 1.0 / (
-                self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim)
-            )
-            self._set_cos_sin_cache(seq_len=max_position_embeddings)
-
-        self.max_seq_len_cached = None
-
-    def _set_cos_sin_cache(self, seq_len):
-        self.max_seq_len_cached = seq_len
-        # [seq_len]
-        t = paddle.arange(seq_len, dtype="float32")
-        # [seq_len, axis/2]
-        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        # [seq_len, axis]
-        emb = paddle.cat([freqs, freqs], axis=-1)
-        # [1, seqlen, 1, axis]
-        self.cos_cached = emb.cos()[None, :, None, :]
-        self.sin_cached = emb.sin()[None, :, None, :]
-
-    def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        if self.max_seq_len_cached is None or seq_len > self.max_seq_len_cached:
-            self._set_cos_sin_cache(seq_len)
-        cos = self.cos_cached[:seq_len]
-        sin = self.sin_cached[:seq_len]
-        return (
-            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
-            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
-        )
-
-
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
-        q (`torch.Tensor`): The query tensor.
-        k (`torch.Tensor`): The key tensor.
-        cos (`torch.Tensor`): The cosine part of the rotary embedding.
-        sin (`torch.Tensor`): The sine part of the rotary embedding.
-        position_ids (`torch.Tensor`):
+        q (`paddle.Tensor`): The query tensor.
+        k (`paddle.Tensor`): The key tensor.
+        cos (`paddle.Tensor`): The cosine part of the rotary embedding.
+        sin (`paddle.Tensor`): The sine part of the rotary embedding.
+        position_ids (`paddle.Tensor`):
             The position indices of the tokens corresponding to the query and key tensors. For example, this can be
             used to pass offsetted position ids when working with a KV-cache.
         unsqueeze_dim (`int`, *optional*, defaults to 1):
@@ -1968,7 +1979,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
             cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
             the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
     Returns:
-        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+        `tuple(paddle.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
     b, s, h, d = q.shape
     q = q.reshape([b, s, h, d // 2, 2]).transpose([0, 1, 2, 4, 3]).reshape([b, s, h, d])
@@ -3038,7 +3049,8 @@ class FusedRMSLinearSingle(paddle.nn.Layer):
 class FastCrossEntropyFunction(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, preds, labels):
-        softmax_val, loss = paddle._C_ops.cross_entropy_with_softmax(preds, labels, False, True, False, -100, -1)
+        preds = preds.cast(paddle.float32)
+        softmax_val, loss = paddle._C_ops.cross_entropy_with_softmax(preds, labels, False, True, True, -100, -1)
         loss = loss.cast(paddle.float32)
         ctx.save_for_backward(labels, softmax_val)
         return loss

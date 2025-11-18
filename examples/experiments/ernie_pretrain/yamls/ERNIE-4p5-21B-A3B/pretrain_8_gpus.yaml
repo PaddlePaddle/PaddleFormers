@@ -1,0 +1,105 @@
+# -----------环境变量----------------------#
+env:
+    HOME: null
+
+# ---------------------------model args-------------------------------------------------#
+model_args:
+    model_name_or_path: model_configs/ERNIE-4p5-21B-A3B/
+    tokenizer_name: ./ernie/src/tokenizers/tokenizer_model
+    output_dir: ./output/
+    data_load_process_num: 40
+    max_seq_length: 4096
+    base_seq_length: 4096
+    num_consecutive: 32
+
+    enable_global_training_logs: False
+    enable_mtp_magic_send: True
+    moe_use_aux_free_update_coef: 0.001
+    global_logging_interval: 1
+
+    model_config:
+        use_quant_before_a2a: true
+        use_async_a2a: false
+        use_rms_qkv_recompute: true
+        moe_logging: true
+        use_recompute: false
+        multi_token_pred_depth: 1
+        use_fp8_mlp: true
+        num_hidden_layers: 28
+        remove_tail_layer: 0
+        use_fp8_fuse_node: true
+        use_ep_comm_overlap: false
+        fp8_mem_configs:
+            recompute_fwd_gate_up: false
+            dequant_input: true
+            shared_expert: false
+        fp8_fused_ops_configs:
+            stack_quant: true
+            swiglu_probs_bwd: true
+            split_group_gemm: true
+            spaq: true
+            transpose_split_quant: true
+        use_combine_before_a2a: true
+
+# ---------------------------trainer args-------------------------------------------------#
+trainer_args:
+    input_dir: "0.4 ./demo_data/data-1-part0 0.6 ./demo_data/data-1-part0"
+    split: "998,1,1"
+    gc_interval: 100000
+    use_ortho_loss_callback: true
+    do_train: True
+    dataloader_num_workers: 8
+    prefetch_factor: 32
+    overwrite_output_dir: 1
+    disable_tqdm: 1
+    report_to: none
+    logging_steps: 1
+    eval_steps: 1000000
+    eval_iters: -1
+    save_steps: 20
+    max_steps: 100
+    adam_beta1: 0.9
+    adam_beta2: 0.95
+    adam_epsilon: 1e-8
+    learning_rate: 3.14e-4
+    min_lr: 3.14e-6
+    global_batch_size: 128
+    gradient_accumulation_steps: 8
+    per_device_train_batch_size: 2
+
+    lr_scheduler: wsd:603000
+    decay_function: 1-sqrt
+    max_grad_norm: 1.0
+    weight_decay: 0.1
+    warmup_steps: 2000
+    save_total_limit: 5
+    bf16: True
+    fp16_opt_level: "O2"
+    scale_loss: 4096
+    seed: 42
+    use_train_part_sharding: 1
+    pre_alloc_memory: 60
+    sharding_comm_buffer_size_MB: 2048
+    offload_optim: true
+
+    expert_parallel_degree: 8
+    sharding: "stage1"
+    sharding_parallel_degree: 8
+    sharding_parallel_config: split_param
+    amp_master_grad: 1
+
+    ignore_data_skip: 0
+    same_data: True
+    enable_timer: 1
+    skip_profile_timer: False
+    skip_load_data_seq_cache: 1
+
+    load_sharded_model: True
+    save_sharded_model: True
+    ignore_load_lr_and_optim: False
+    moe_with_send_router_loss: False
+
+    use_moe: true
+    moe_group: ep
+    from_scratch: 1
+    enable_optimizer_timer: False

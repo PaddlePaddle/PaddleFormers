@@ -15,11 +15,16 @@
 """Training Ernie Model."""
 
 import gc
+import math
 import os
 from functools import partial
 
 import paddle
 
+from paddleformers.data.causal_dataset import (
+    build_train_valid_test_datasets,
+    check_data_split,
+)
 from paddleformers.datasets.data_utils import estimate_training
 from paddleformers.datasets.finetuning import collate_fn
 from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
@@ -57,6 +62,60 @@ from paddleformers.cli.hparams import (
 )
 
 
+def create_pretrained_dataset(training_args, data_args):
+    assert data_args.input_dir is not None and len(data_args.input_dir.split()) > 1
+
+    check_data_split(
+        data_args.split,
+        training_args.do_train,
+        training_args.do_eval,
+        training_args.do_predict,
+    )
+
+    if training_args.max_steps < 0:
+        raise ValueError(
+            f"max_steps mush be larger than 0 when using pretrain offline dataset, but get {training_args.max_steps}."
+        )
+
+    train_val_test_num_samples = [
+        training_args.per_device_train_batch_size
+        * training_args.dataset_world_size
+        * training_args.max_steps
+        * training_args.gradient_accumulation_steps,
+        training_args.per_device_eval_batch_size
+        * training_args.dataset_world_size
+        * training_args.eval_iters
+        * (training_args.max_steps // training_args.eval_steps + 1),
+        training_args.per_device_eval_batch_size * training_args.dataset_world_size * training_args.test_iters,
+    ]
+
+    train_dataset, valid_dataset, test_dataset = build_train_valid_test_datasets(
+        data_prefix=data_args.input_dir.split(),
+        data_impl="mmap",
+        splits_string=data_args.split,
+        train_val_test_num_samples=train_val_test_num_samples,
+        seq_length=data_args.max_seq_len + training_args.num_nextn_predict_layers,
+        seed=training_args.seed,
+        skip_warmup=True,
+        data_cache_path=None,
+    )
+
+    from paddleformers.data import Stack
+
+    def _collate_data(data, stack_fn=Stack()):
+        tokens_ = stack_fn([x["text"] for x in data])
+
+        labels = tokens_[:, 1:]
+        tokens = tokens_[:, :-1]
+
+        return {
+            "input_ids": tokens,
+            "labels": labels,
+        }
+
+    return train_dataset, valid_dataset, test_dataset, _collate_data
+
+
 def run_sft(
     model_args: "ModelArguments",
     data_args: "DataArguments",
@@ -81,6 +140,7 @@ def run_sft(
     training_args.max_seq_len = data_args.max_seq_len
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
+    training_args.print_config(training_args, "Train")
 
     if training_args.pre_alloc_memory > 0:
         memory_size = int(training_args.pre_alloc_memory * 1024 * 1024 * 1024)
@@ -173,6 +233,8 @@ def run_sft(
             model_args.model_name_or_path,
             config=model_config,
             convert_from_hf=training_args.convert_from_hf,
+            load_via_cpu=training_args.load_via_cpu,
+            load_checkpoint_format=training_args.load_checkpoint_format,
         )
     else:
         model = model_class.from_config(model_config, dtype=dtype)
@@ -197,10 +259,6 @@ def run_sft(
 
     # Load tokenizer & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
-    # tokenizer.chat_template = None
-
-    # init chat_template for tokenizer
-    # init_chat_template(tokenizer, model_args.model_name_or_path, data_args.chat_template)
 
     # if using chat_template, data_args.eval_with_do_generation must be false
     if tokenizer.chat_template is not None:
@@ -222,21 +280,26 @@ def run_sft(
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
         "use_template": data_args.use_template,
+        "is_pretraining": True if model_args.stage.lower() == "pt" else False,
     }
 
-    train_dataset = create_dataset_sft(
-        task_group=data_args.train_dataset_path,
-        task_group_prob=data_args.train_dataset_prob,
-        sub_dataset_type=data_args.train_dataset_type,
-        **dataset_config,
-    )
-    eval_dataset = create_dataset_sft(
-        task_group=data_args.eval_dataset_path,
-        task_group_prob=data_args.eval_dataset_prob,
-        sub_dataset_type=data_args.eval_dataset_type,
-        is_valid=True,
-        **dataset_config,
-    )
+    if data_args.dataset_type == "pretrain":
+        training_args.test_iters = training_args.eval_iters * 10
+        train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(training_args, data_args)
+    else:
+        train_dataset = create_dataset_sft(
+            task_group=data_args.train_dataset_path,
+            task_group_prob=data_args.train_dataset_prob,
+            sub_dataset_type=data_args.train_dataset_type,
+            **dataset_config,
+        )
+        eval_dataset = create_dataset_sft(
+            task_group=data_args.eval_dataset_path,
+            task_group_prob=data_args.eval_dataset_prob,
+            sub_dataset_type=data_args.eval_dataset_type,
+            is_valid=True,
+            **dataset_config,
+        )
 
     model = create_peft_model(model_args, training_args, dtype, model)
 
@@ -253,13 +316,14 @@ def run_sft(
         if (data_args.packing or training_args.sequence_parallel)
         else None
     )
-    data_collator = partial(
-        collate_fn,
-        tokenizer=tokenizer,
-        training_args=training_args,
-        model_args=model_args,
-        max_seq_len=max_seq_len,
-    )
+    if data_args.dataset_type != "pretrain":
+        data_collator = partial(
+            collate_fn,
+            tokenizer=tokenizer,
+            training_args=training_args,
+            model_args=model_args,
+            max_seq_len=max_seq_len,
+        )
 
     if training_args.max_steps == -1:
         if data_args.mix_strategy == "random":
@@ -267,7 +331,7 @@ def run_sft(
                 "When using 'random' mix_strategy, max_steps must be explicitly set (cannot be -1). "
                 "Random mixing requires a fixed number of training steps to properly sample data."
             )
-        if paddle.distributed.get_rank() == 0:
+        if data_args.dataset_type != "pretrain":
             training_args.max_steps = estimate_training(train_dataset, data_args, training_args, model_args)
             del train_dataset
             gc.collect()
@@ -277,6 +341,13 @@ def run_sft(
                 sub_dataset_type=data_args.train_dataset_type,
                 **dataset_config,
             )
+        else:
+            global_batch_size = (
+                training_args.per_device_train_batch_size
+                * training_args.gradient_accumulation_steps
+                * training_args.dataset_world_size
+            )
+            training_args.max_steps = math.ceil(len(train_dataset) / global_batch_size)
 
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()
@@ -308,7 +379,7 @@ def run_sft(
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
 
-    if training_args.sequence_parallel:
+    if training_args.sequence_parallel and not model_args.lora:
         callbacks += [MoEGateSpGradSyncCallBack()]
 
     print("callbacks:", callbacks, flush=True)
@@ -340,15 +411,20 @@ def run_sft(
         if model_args.neftune:
             neft_post_hook_handle.remove()
         if training_args.benchmark:
-            total_effective_tokens = (
-                sum([len(i["input_ids"]) for i in trainer.train_dataset]) * train_result.metrics["progress_or_epoch"]
+            total_tokens = (
+                data_args.max_seq_len
+                * training_args.dataset_world_size
+                * training_args.gradient_accumulation_steps
+                * training_args.max_steps
             )
-            effective_tokens_per_second = total_effective_tokens / train_result.metrics["train_runtime"]
-            logger.info(f"Effective_Tokens_per_second: {effective_tokens_per_second} ")
+            total_tokens_per_second_per_gpu = (
+                total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
+            )
+            logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
             logger.info("Benchmark done.")
         else:
             if not training_args.autotuner_benchmark:
-                trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1)
+                trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1, last_fc_to_hf=True)
                 trainer.log_metrics("train", train_result.metrics)
                 trainer.save_metrics("train", train_result.metrics)
                 trainer.save_state()

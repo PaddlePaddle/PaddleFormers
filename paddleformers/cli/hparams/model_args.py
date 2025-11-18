@@ -62,10 +62,6 @@ class ModelArguments:
         default="SFT",
         metadata={"help": "The type of training, including SFT, DPO, VL-SFT."},
     )
-    use_flash_attention: bool = field(
-        default=True,
-        metadata={"help": "Whether to use flash attention"},
-    )
     use_mem_eff_attn: Optional[bool] = field(default=True, metadata={"help": "use use_mem_eff_attn"})
     use_flash_attn_with_mask: Optional[bool] = field(default=True, metadata={"help": "use use_flash_attn_with_mask"})
     use_attn_mask_startend_row_indices: bool = field(
@@ -76,23 +72,7 @@ class ModelArguments:
         default=True,
         metadata={"help": "Under use attn_mask_start_row_indices=True, whether use sparse flash attention or not."},
     )
-    use_sparse_head_and_loss_fn: bool = field(
-        default=False,
-        metadata={"help": "Whether to use sparse LM Head and loss function."},
-    )
-    use_fused_head_and_loss_fn: bool = field(
-        default=False,
-        metadata={"help": "Whether to fuse LM Head and loss function."},
-    )
-    fuse_linear: bool = field(
-        default=False,
-        metadata={"help": "Whether to use fused_gemm_epilogue"},
-    )
     rope_3d: Optional[bool] = field(default=True, metadata={"help": "use rope3d"})
-    fuse_rope: bool = field(
-        default=False,
-        metadata={"help": "Whether to fuse rotary postition embedding"},
-    )
     fuse_softmax_mask: bool = field(
         default=False,
         metadata={"help": "Whether to fuse softmax and add"},
@@ -111,10 +91,6 @@ class ModelArguments:
         metadata={"help": "whether to fuse first up and gate proj in mlp block"},
     )
     attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
-    fuse_swiglu: bool = field(
-        default=True,
-        metadata={"help": "Whether to fuse SwiGLU projection and activation for efficiency"},
-    )
     fuse_gate_detach_matmul: bool = field(
         default=True,
         metadata={"help": "Whether to use the fused gate-detach matmul implementation."},
@@ -130,24 +106,9 @@ class ModelArguments:
     pissa: bool = field(default=False, metadata={"help": "Whether to use Pissa: https://arxiv.org/pdf/2404.02948.pdf"})
 
     # performance
-    virtual_pp_degree: int = field(
-        default=1,
-        metadata={"help": "virtual_pp_degree"},
-    )
     pp_seg_method: str = field(
         default="layer:DecoderLayer|EmptyLayer",
         metadata={"help": ("The method used to segment the pipeline layers among pipeline stages. ")},
-    )
-    tensor_parallel_output: bool = field(
-        default=True,
-        metadata={
-            "help": "If set to True, this option is used with fleet.meta_parallel. "
-            "ParallelCrossEntropy to calculate cross-entropy loss for parallel model."
-        },
-    )
-    add_tail_layers: int = field(
-        default=False,
-        metadata={"help": ("Add EmptyLayer after Ernie4_5_DecoderLayerPipe. Only for Pipeline Parallel")},
     )
 
     # MoE
@@ -236,40 +197,6 @@ class ModelArguments:
         default=False, metadata={"help": "Whether to use MoRA: https://arxiv.org/pdf/2405.12130.pdf"}
     )
 
-    # recompute
-    recompute_granularity: str = field(
-        default="full",
-        metadata={
-            "help": "The granularity of recompute training can be selected as `full` or `full_attn` or `core_attn`. "
-            " `full` means complete all transformers, `full_attn` indicates only recompute all self attention parts,"
-            " `core_attn` indicates that only the `softmax (qkT) v` part is recomputed. Note: In terms of memory usage,"
-            " `core_attn` > `full_attn` > `full`, if the selected policy generates an OOM error, the recompute can be"
-            " changed appropriately recompute_granularity. (default: `full`)"
-        },
-    )
-    no_recompute_layers: Optional[int] = field(
-        default=None,
-        metadata={"help": "Specify the full transformer layers that should not be recomputed."},
-    )
-    offload_recompute_inputs: bool = field(
-        default=False,
-        metadata={"help": "Whether to offload input Tensors of recompute to Pinned-Memory/CPU."},
-    )
-    recompute_use_reentrant: bool = field(
-        default=True,
-        metadata={
-            "help": (
-                "If it is True, it means that recompute is implemented using the PyLayer method. "
-                "If it is False, recompute internally implements it using the hook method, "
-                "and the default value is True. In some scenarios, "
-                "such as when recompute is combined with data parallelism, "
-                "the no_sync function needs to be called separately. "
-                "At this time, use_reentrant=False can be set. "
-                "Using the hook method of recompute can avoid calling the no_sync function separately"
-            )
-        },
-    )
-
     # criterion
     model_with_dpo_criterion: bool = field(
         default=False, metadata={"help": "Whether the model contains dpo criterion"}
@@ -283,6 +210,11 @@ class ModelArguments:
     moe_gate: str = field(default="top2_fused", metadata={"help": "MoE gate type"})
     use_recompute_loss_fn: bool = field(default=True, metadata={"help": "Whether to recompute loss function"})
     loss_subbatch_seqlen: int = field(default=32768, metadata={"help": "Sub batch size for loss calculation"})
+
+    num_hidden_layers: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_hidden_layers."},
+    )
 
     def __post_init__(self):
         if self.fine_tuning.lower() == "LoRA".lower():

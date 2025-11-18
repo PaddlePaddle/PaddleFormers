@@ -152,9 +152,9 @@ def _bind_paddle_mixin_if_available(tokenizer_class):
     Returns:
         The tokenizer class bound with PaddleTokenizerMixin, or the original class.
     """
-    # Check if the class already has PaddleTokenizerMixin
     if issubclass(tokenizer_class, PaddleTokenizerMixin):
         return tokenizer_class
+
     return type(tokenizer_class.__name__, (PaddleTokenizerMixin, tokenizer_class), {})
 
 
@@ -393,3 +393,6 @@ class AutoTokenizer(hf.AutoTokenizer):
             f"Unrecognized configuration class {config.__class__} to build an AutoTokenizer.\n"
             f"Model type should be one of {', '.join(c.__name__ for c in TOKENIZER_MAPPING)}."
         )
+
+
+__all__ = ["AutoTokenizer", "TOKENIZER_MAPPING"]
