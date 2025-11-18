@@ -210,6 +210,9 @@ def _bind_paddle_mixin_if_available(image_processor_class):
     Returns:
         The tokenizer class bound with PaddleImageProcessingMixin, or the original class.
     """
+    if issubclass(image_processor_class, PaddleImageProcessingMixin):
+        return image_processor_class
+
     return type(image_processor_class.__name__, (PaddleImageProcessingMixin, image_processor_class), {})
 
 
