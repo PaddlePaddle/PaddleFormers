@@ -210,7 +210,7 @@ def is_paddle_cuda_available() -> bool:
     if is_paddle_available():
         import paddle
 
-        return paddle.device.cuda.device_count() > 0
+        return paddle.device.device_count() > 0
     else:
         return False
 

@@ -2265,8 +2265,8 @@ class Trainer:
                 if is_paddle_cuda_available():
                     logs.update(
                         {
-                            "gpu_max_memory_allocated": paddle.device.cuda.max_memory_allocated() >> 20,
-                            "gpu_max_memory_reserved": paddle.device.cuda.max_memory_reserved() >> 20,
+                            "gpu_max_memory_allocated": paddle.device.max_memory_allocated() >> 20,
+                            "gpu_max_memory_reserved": paddle.device.max_memory_reserved() >> 20,
                         }
                     )
 

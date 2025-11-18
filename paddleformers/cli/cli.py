@@ -70,7 +70,7 @@ def main():
     master_port = os.getenv("MASTER_PORT", "8080")
     current_device = detect_device()
     if current_device == "xpu":
-        num_xpus = paddle.device.xpu.device_count()
+        num_xpus = paddle.device.device_count()
         default_xpus = ",".join(map(str, range(0, num_xpus)))
         visible_cards = os.getenv("XPU_VISIBLE_DEVICES", default_xpus)
     elif current_device == "npu":

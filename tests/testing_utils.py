@@ -226,8 +226,8 @@ def slow(test):
     else:
         import paddle
 
-        if paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
-            paddle.device.cuda.empty_cache()
+        if paddle.device.is_compiled_with_cuda() and paddle.device.device_count() > 0:
+            paddle.device.empty_cache()
         return test
 
 
@@ -458,7 +458,7 @@ def require_paddle_multi_gpu(test_case):
 
     import paddle
 
-    return unittest.skipUnless(paddle.device.cuda.device_count() > 1, "test requires multiple GPUs")(test_case)
+    return unittest.skipUnless(paddle.device.device_count() > 1, "test requires multiple GPUs")(test_case)
 
 
 def require_paddle_non_multi_gpu(test_case):
@@ -470,7 +470,7 @@ def require_paddle_non_multi_gpu(test_case):
 
     import paddle
 
-    return unittest.skipUnless(paddle.device.cuda.device_count() < 2, "test requires 0 or 1 GPU")(test_case)
+    return unittest.skipUnless(paddle.device.device_count() < 2, "test requires 0 or 1 GPU")(test_case)
 
 
 def require_paddle_at_least_2_gpu(test_case):
@@ -482,7 +482,7 @@ def require_paddle_at_least_2_gpu(test_case):
 
     import paddle
 
-    return unittest.skipUnless(paddle.device.cuda.device_count() >= 2, "test requires at least 2 GPUs")(test_case)
+    return unittest.skipUnless(paddle.device.device_count() >= 2, "test requires at least 2 GPUs")(test_case)
 
 
 def require_paddle_at_least_8_gpu(test_case):
@@ -494,7 +494,7 @@ def require_paddle_at_least_8_gpu(test_case):
 
     import paddle
 
-    return unittest.skipUnless(paddle.device.cuda.device_count() >= 8, "test requires at least 8 GPUs")(test_case)
+    return unittest.skipUnless(paddle.device.device_count() >= 8, "test requires at least 8 GPUs")(test_case)
 
 
 def require_paddle_up_to_2_gpus(test_case):
@@ -506,12 +506,12 @@ def require_paddle_up_to_2_gpus(test_case):
 
     import paddle
 
-    return unittest.skipUnless(paddle.device.cuda.device_count() < 3, "test requires 0 or 1 or 2 GPUs")(test_case)
+    return unittest.skipUnless(paddle.device.device_count() < 3, "test requires 0 or 1 or 2 GPUs")(test_case)
 
 
 def require_gpu(min_gpus: int = 1):
     def actual_decorator(func):
-        gpu_count = paddle.device.cuda.device_count()
+        gpu_count = paddle.device.device_count()
         print("gpu count: ", gpu_count)
         if gpu_count < min_gpus:
             return unittest.skip(f"test requires {min_gpus} GPUs")(func)

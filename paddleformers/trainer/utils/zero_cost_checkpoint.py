@@ -87,10 +87,10 @@ class ZCCWorkerStatus(Enum):
 
 def showmem(msg):
     return (
-        f"{msg} mem_alloc: {paddle.device.cuda.memory_allocated():.3e}"
-        f" Bytes/{paddle.device.cuda.max_memory_allocated():.3e} Bytes"
-        f"mem_reserv: {paddle.device.cuda.memory_reserved():.3e} "
-        f"Bytes/{paddle.device.cuda.max_memory_reserved():.3e} Bytes"
+        f"{msg} mem_alloc: {paddle.device.memory_allocated():.3e}"
+        f" Bytes/{paddle.device.max_memory_allocated():.3e} Bytes"
+        f"mem_reserv: {paddle.device.memory_reserved():.3e} "
+        f"Bytes/{paddle.device.max_memory_reserved():.3e} Bytes"
     )
 
 

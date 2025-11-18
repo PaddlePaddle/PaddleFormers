@@ -48,10 +48,10 @@ def showmem(msg):
     """
     logger.info(
         f" [Mem]: {msg} "
-        f"Activated: {paddle.device.cuda.memory_allocated()/1024/1024:.3f} MB, "
-        f"Reserved: {paddle.device.cuda.memory_reserved()/1024/1024:.3f} MB, "
-        f"max-Activated: {paddle.device.cuda.max_memory_allocated()/1024/1024:.3f} MB, "
-        f"max-Reserved: {paddle.device.cuda.max_memory_reserved()/1024/1024:.3f} MB "
+        f"Activated: {paddle.device.memory_allocated()/1024/1024:.3f} MB, "
+        f"Reserved: {paddle.device.memory_reserved()/1024/1024:.3f} MB, "
+        f"max-Activated: {paddle.device.max_memory_allocated()/1024/1024:.3f} MB, "
+        f"max-Reserved: {paddle.device.max_memory_reserved()/1024/1024:.3f} MB "
     )
 
 

@@ -25,10 +25,8 @@ __all__ = [
 
 def empty_device_cache():
     device = get_env_device()
-    if device == "gpu":
-        paddle.device.cuda.empty_cache()
-    elif device == "xpu":
-        paddle.device.xpu.empty_cache()
+    if device == "gpu" or device == "xpu":
+        paddle.device.empty_cache()
     else:
         if not getattr(empty_device_cache, "has_warned", False):
             logger.warning(
