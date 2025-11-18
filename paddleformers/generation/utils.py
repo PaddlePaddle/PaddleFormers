@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import copy
 import inspect
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 import paddle
 import paddle.distributed as dist
@@ -641,10 +641,9 @@ class GenerationMixin(object):
 
     def prepare_inputs_for_generation(
         self,
-        input_ids,
-        use_cache=True,
-        past_key_values=None,
-        inputs_embeds=None,
+        input_ids: paddle.Tensor,
+        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        inputs_embeds: Optional[paddle.Tensor] = None,
         **kwargs,
     ):
         """Prepares model inputs for generation in PaddlePaddle models.
@@ -652,9 +651,6 @@ class GenerationMixin(object):
         Args:
             input_ids (paddle.Tensor):
                 The input token IDs with shape [batch_size, sequence_length].
-            use_cache (bool, optional):
-                Whether to use cached key-value states for faster generation.
-                Defaults to False.
             past_key_values (Optional[Tuple[paddle.Tensor]]):
                 Cached past key-value states from previous generation steps.
                 If provided, the input_ids will be truncated to only keep the last token.
@@ -675,10 +671,16 @@ class GenerationMixin(object):
                 - "return_dict": Always set to True for consistent output format
 
         """
+        model_inputs = {}
+        model_inputs["past_key_values"] = past_key_values
+        model_inputs["cache_position"] = kwargs.get("cache_position", None)
+
         if past_key_values:
             input_ids = input_ids[:, -1:]
 
-        attention_mask = kwargs.get("attention_mask", None)
+        use_cache = kwargs.get("use_cache", None)
+        if use_cache is None:
+            use_cache = getattr(self.config, "use_cache", False)
 
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
         if inputs_embeds is not None and past_key_values is None:
@@ -686,15 +688,35 @@ class GenerationMixin(object):
         else:
             model_inputs = {"input_ids": input_ids}
 
-        model_inputs.update(
-            {
-                "past_key_values": past_key_values,
-                "use_cache": use_cache,
-                "attention_mask": attention_mask,
-                "return_dict": True,
-            }
-        )
+        attention_mask = kwargs.get("attention_mask", None)
+        if (
+            attention_mask is not None
+            and kwargs.get("position_ids") is None
+            and "position_ids" in set(inspect.signature(self.forward).parameters.keys())
+        ):
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            kwargs["position_ids"] = position_ids  # placed in kwargs for further processing (see below)
 
+        model_input = kwargs.get("position_ids")
+        if model_input is not None:
+            if past_key_values is not None or use_cache:
+                current_input_length = (
+                    model_inputs["inputs_embeds"].shape[1]
+                    if model_inputs.get("inputs_embeds") is not None
+                    else model_inputs["input_ids"].shape[1]
+                )
+                model_input = model_input[:, -current_input_length:]
+            model_inputs["position_ids"] = model_input
+
+        model_inputs["return_dict"] = kwargs.get("return_dict", True)
+
+        for key, value in kwargs.items():
+            if key not in model_inputs:
+                model_inputs[key] = value
+
+        # Remove unexpected `generate` inputs
+        model_inputs.pop("labels", None)
         return model_inputs
 
     def adjust_logits_during_generation(self, logits):

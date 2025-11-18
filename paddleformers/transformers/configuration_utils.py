@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
+from transformers.utils import PushToHubMixin
 
 from .. import __version__
 from ..quantization.quantization_config import QuantizationConfig
@@ -362,7 +363,7 @@ class LlmMetaConfig:
             setattr(config, key, getattr(args, key, value))
 
 
-class PretrainedConfig:
+class PretrainedConfig(PushToHubMixin):
     r"""
     Base class for all configuration classes. Handles a few parameters common to all models' configurations as well as
     methods for loading/downloading/saving configurations.
@@ -549,6 +550,8 @@ class PretrainedConfig:
             versions. But we can already start preparing for the future by saving the dtype with save_pretrained.
     """
     model_type: str = ""
+    base_config_key: str = ""
+    sub_configs: dict[str, type["PretrainedConfig"]] = {}
     is_composition: bool = False
 
     pretrained_init_configuration = {}
@@ -599,6 +602,7 @@ class PretrainedConfig:
         self.return_dict = kwargs.pop("return_dict", False)
         self.output_hidden_states = kwargs.pop("output_hidden_states", False)
         self.output_attentions = kwargs.pop("output_attentions", False)
+        self.dtype = kwargs.pop("dtype", None)
         self.use_cache = kwargs.pop("use_cache", False)
         self.tie_word_embeddings = kwargs.pop("tie_word_embeddings", True)
 
@@ -619,10 +623,10 @@ class PretrainedConfig:
         # parameter for model dtype
         if "torch_dtype" in kwargs:
             self.dtype = kwargs.pop("torch_dtype")
-        else:
-            import paddle
+        # else:
+        #     import paddle
 
-            self.dtype = kwargs.pop("dtype", paddle.get_default_dtype())
+        #     self.dtype = kwargs.pop("dtype", paddle.get_default_dtype())
 
         # Is decoder is used in encoder-decoder models to differentiate encoder from decoder
         self.is_encoder_decoder = kwargs.pop("is_encoder_decoder", False)
@@ -856,6 +860,22 @@ class PretrainedConfig:
         assert unused_kwargs == {"foo": False}
         ```"""
         config_dict, kwargs = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
+        if cls.base_config_key and cls.base_config_key in config_dict:
+            config_dict = config_dict[cls.base_config_key]
+
+        if "model_type" in config_dict and hasattr(cls, "model_type") and config_dict["model_type"] != cls.model_type:
+            # sometimes the config has no `base_config_key` if the config is used in several composite models
+            # e.g. LlamaConfig. In that case we try to see if there is match in `model_type` before raising a warning
+            for v in config_dict.values():
+                if isinstance(v, dict) and v.get("model_type") == cls.model_type:
+                    config_dict = v
+
+            # raise warning only if we still can't see a match in `model_type`
+            if config_dict["model_type"] != cls.model_type:
+                logger.warning(
+                    f"You are using a model of type {config_dict['model_type']} to instantiate a model of type "
+                    f"{cls.model_type}. This is not supported for all configurations of models and can yield errors."
+                )
 
         return cls.from_dict(config_dict, **kwargs)
 
@@ -1072,12 +1092,27 @@ class PretrainedConfig:
                     serializable_config_dict[key] = quantization_diff_dict
                 continue
             if (
+                isinstance(getattr(self, key, None), PretrainedConfig)
+                and key in class_config_dict
+                and isinstance(class_config_dict[key], dict)
+                or key in self.sub_configs
+            ):
+                # For nested configs we need to clean the diff recursively
+                diff = recursive_diff_dict(value, default_config_dict, config_obj=getattr(self, key, None))
+                if "model_type" in value:
+                    # Needs to be set even if it's not in the diff
+                    diff["model_type"] = value["model_type"]
+
+                serializable_config_dict[key] = diff
+            elif (
                 key not in default_config_dict
                 or key == "paddleformers_version"
                 or value != default_config_dict[key]
                 or (key in class_config_dict and value != class_config_dict[key])
             ):
                 serializable_config_dict[key] = value
+
+        self._remove_keys_not_serialized(serializable_config_dict, saving_file)
 
         return serializable_config_dict
 
@@ -1227,6 +1262,25 @@ class PretrainedConfig:
 
             setattr(self, k, v)
 
+    def _remove_keys_not_serialized(self, d: dict[str, Any], saving_file: bool = False) -> None:
+        """
+        Checks and removes if there are any keys in the dict that should not be serialized when saving the config.
+        Runs recursive check on the dict, to remove from all sub configs.
+        """
+        if "_auto_class" in d:
+            del d["_auto_class"]
+        if "_output_attentions" in d:
+            d["output_attentions"] = d.pop("_output_attentions")
+        if "_commit_hash" in d:
+            del d["_commit_hash"]
+        if saving_file:
+            for unsavable_ke in self._unsavable_keys:
+                if unsavable_ke in d:
+                    del d[unsavable_ke]
+        for value in d.values():
+            if isinstance(value, dict):
+                self._remove_keys_not_serialized(value, saving_file)
+
     @classmethod
     def register_for_auto_class(cls, auto_class="AutoConfig"):
         """
@@ -1304,6 +1358,24 @@ def get_configuration_file(configuration_files: List[str]) -> str:
             break
 
     return configuration_file
+
+
+def recursive_diff_dict(dict_a, dict_b, config_obj=None):
+    """
+    Helper function to recursively take the diff between two nested dictionaries. The resulting diff only contains the
+    values from `dict_a` that are different from values in `dict_b`.
+    dict_b : the default config dictionary. We want to remove values that are in this one
+    """
+    diff = {}
+    default = config_obj.__class__().to_dict() if config_obj is not None else {}
+    for key, value in dict_a.items():
+        obj_value = getattr(config_obj, str(key), None)
+        if isinstance(obj_value, PretrainedConfig) and key in dict_b and isinstance(dict_b[key], dict):
+            diff_value = recursive_diff_dict(value, dict_b[key], config_obj=obj_value)
+            diff[key] = diff_value
+        elif key not in dict_b or (value != default[key]):
+            diff[key] = value
+    return diff
 
 
 ALLOWED_LAYER_TYPES = (

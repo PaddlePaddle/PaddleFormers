@@ -105,9 +105,10 @@ class ConfigTester(object):
         config = self.config_class(**self.inputs_dict)
         common_properties = (
             ["hidden_size", "num_attention_heads", "num_hidden_layers"]
-            if self.common_properties is None
+            if self.common_properties is None and not self.config_class.sub_configs
             else self.common_properties
         )
+        common_properties = [] if common_properties is None else common_properties
 
         # Add common fields for text models
         if self.has_text_modality:

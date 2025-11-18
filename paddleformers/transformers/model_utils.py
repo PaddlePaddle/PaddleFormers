@@ -1370,6 +1370,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
     _keys_to_ignore_on_save = None
     _tied_weights_keys = None
 
+    # Attributes used mainly in multimodal LLMs, though all models contain a valid field for these
+    # Possible values are: text, image, video
+    input_modalities: Union[str, list[str]] = "text"  # most models are text
+
     def __init__(self, *args, **kwargs):
         super(PretrainedModel, self).__init__()
 
