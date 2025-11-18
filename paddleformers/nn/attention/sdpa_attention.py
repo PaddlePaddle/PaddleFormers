@@ -34,7 +34,11 @@ def sdpa_attention_forward(
     is_causal: Optional[bool] = None,
     **kwargs,
 ):
-    # query: b l h d
+    # b h l d -> b l h d
+    perm = [0, 2, 1, 3]
+    query = paddle.transpose(x=query, perm=perm)
+    key = paddle.transpose(x=key, perm=perm)
+    value = paddle.transpose(x=value, perm=perm)
     if is_causal is None and attn_mask_startend_row_indices is None:
         is_causal = query.shape[1] > 1 and attention_mask is None and getattr(module, "is_causal", True)
     elif attn_mask_startend_row_indices is not None:

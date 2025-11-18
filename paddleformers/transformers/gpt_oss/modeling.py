@@ -354,10 +354,10 @@ def _apply_rotary_emb(
     cos: paddle.Tensor,
     sin: paddle.Tensor,
 ) -> paddle.Tensor:
-    first_half, second_half = paddle.chunk(x.transpose([0, 2, 1, 3]), 2, axis=-1)
+    first_half, second_half = paddle.chunk(x, 2, axis=-1)
     first_ = first_half * cos - second_half * sin
     second_ = second_half * cos + first_half * sin
-    return paddle.cat((first_, second_), axis=-1).transpose([0, 2, 1, 3])
+    return paddle.cat((first_, second_), axis=-1)
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
@@ -497,12 +497,19 @@ class GptOssAttention(nn.Layer):
         query_states = query_states.reshape(target_query_shape)
         key_states = key_states.reshape(target_key_value_shape)
         value_states = value_states.reshape(target_key_value_shape)
+
+        # b l h d -> b h l d
+        perm = [0, 2, 1, 3]
+        query_states = paddle.transpose(x=query_states, perm=perm)
+        key_states = paddle.transpose(x=key_states, perm=perm)
+        value_states = paddle.transpose(x=value_states, perm=perm)
+
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
         if past_key_value is not None:
-            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=2)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=2)
         past_key_value = (key_states, value_states) if use_cache else None
 
         attn_output, attn_weights = attention_interface(

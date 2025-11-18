@@ -89,10 +89,10 @@ def scaled_dot_product_attention(
     training=True,
     sequence_parallel=False,
 ):
-    bsz, q_len, num_heads, head_dim = query_states.shape
-    _, kv_seq_len, v_num_heads, v_head_dim = value_states.shape
+    bsz, num_heads, q_len, head_dim = query_states.shape
+    _, v_num_heads, kv_seq_len, v_head_dim = value_states.shape
 
-    # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
+    # Attention Interface input [bz, nhead, seqlen, headdim]
     q_head_dim = query_states.shape[-1]
     softmax_scale = softmax_scale * (q_head_dim**0.5)
     query_states = query_states * softmax_scale
@@ -266,6 +266,11 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
     Returns:
         `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
+    # [bs, num_head, seq_len, head_dim] -> [bs, seq_len, num_head, head_dim]
+    perm = [0, 2, 1, 3]
+    q = paddle.transpose(x=q, perm=perm)
+    k = paddle.transpose(x=k, perm=perm)
+
     b, s, h, d = q.shape
     q = q.reshape([b, s, h, d // 2, 2]).transpose([0, 1, 2, 4, 3]).reshape([b, s, h, d])
 
@@ -286,7 +291,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
         sin = sin.unsqueeze(2).contiguous()  # [bs, seq_len, 1, axis]
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed, k_embed
+    return q_embed.transpose(perm), k_embed.transpose(perm)
 
 
 class FakeGate(paddle.autograd.PyLayer):
@@ -743,11 +748,17 @@ class DeepseekV2Attention(nn.Layer):
         query_states = paddle.cat([q_nope, q_pe], axis=-1)
         key_states = paddle.cat([k_nope, k_pe], axis=-1)
 
-        # [bs, seq_len, num_head, head_dim]
+        # [bz, seqlen, num_head, head_dim] -> [bz, num_head, seqlen, head_dim]
+        perm = [0, 2, 1, 3]
+        query_states = paddle.transpose(x=query_states, perm=perm)
+        key_states = paddle.transpose(x=key_states, perm=perm)
+        value_states = paddle.transpose(x=value_states, perm=perm)
+
+        # [bs, num_head, seqlen, head_dim]
         if past_key_value is not None:
             # reuse k, v, self_attention
-            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=2)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=2)
         past_key_value = (key_states, value_states) if use_cache else None
 
         has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)

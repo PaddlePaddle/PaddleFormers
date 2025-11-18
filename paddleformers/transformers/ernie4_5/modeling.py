@@ -52,7 +52,7 @@ def rotate_half(x):
     return paddle.stack((-x2, x1), axis=-1).flatten(-2)
 
 
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
@@ -72,6 +72,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
     Returns:
         `tuple(paddle.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
+    # shape of q: batch_size, num_heads, seq_len, head_dim
     # glm rope style (with full dim) and full precision
     original_dtype = q.dtype
 
@@ -89,6 +90,10 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
 
 
 def apply_fused_rope(query_states, key_states, rope_theta):
+    # b h l d -> b l h d
+    perm = [0, 2, 1, 3]
+    query_states = paddle.transpose(x=query_states, perm=perm)
+    key_states = paddle.transpose(x=key_states, perm=perm)
     _, _, num_heads, _ = query_states.shape
     _, kv_seq_len, num_key_value_heads, _ = key_states.shape
     if num_heads != num_key_value_heads:
@@ -247,6 +252,13 @@ class Ernie4_5Attention(nn.Layer):
         query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
         key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
         value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
+
+        # b l h d -> b h l d
+        perm = [0, 2, 1, 3]
+        query_states = paddle.transpose(x=query_states, perm=perm)
+        key_states = paddle.transpose(x=key_states, perm=perm)
+        value_states = paddle.transpose(x=value_states, perm=perm)
+
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
         if self.config.fuse_rope:
@@ -257,8 +269,8 @@ class Ernie4_5Attention(nn.Layer):
 
         if past_key_value is not None:
             # reuse k, v, self_attention
-            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=2)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=2)
 
         # NOTE(for generation): use list instead of tuple to store the cache
         # tensors, so that we can clear the cache tensors for memory efficiency.
