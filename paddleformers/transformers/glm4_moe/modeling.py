@@ -14,7 +14,7 @@
 
 from copy import deepcopy
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import paddle
 import paddle.distributed as dist
@@ -35,7 +35,7 @@ from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
-from ..cache_utils import DynamicCache
+from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -208,7 +208,7 @@ class Glm4MoeAttention(nn.Layer):
     def forward(
         self,
         hidden_states,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
@@ -603,7 +603,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -686,7 +686,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -759,7 +759,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
@@ -1271,7 +1271,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         hidden_states: Tensor,
         position_ids: Optional[Tensor],
         attention_mask: Tensor,
-        past_key_values: Tensor,
+        past_key_values: Cache,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
@@ -1302,7 +1302,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
@@ -1500,7 +1500,7 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,

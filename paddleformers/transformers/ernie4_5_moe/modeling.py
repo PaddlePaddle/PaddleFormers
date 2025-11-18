@@ -46,7 +46,7 @@ from ...nn.moe.utils import _parse_moe_group
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..cache_utils import DynamicCache
+from ..cache_utils import Cache, DynamicCache
 from ..ernie4_5.modeling import Ernie4_5Attention
 from ..model_outputs import MoECausalLMOutputWithPast, MoECausalLMOutputWithPastAndMTP
 from ..model_utils import PretrainedModel, register_base_model
@@ -355,7 +355,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
         output_attentions: Optional[bool] = False,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         output_gate_logits=False,  # PP model should not output gate logits,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
@@ -367,7 +367,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
             attn_mask_startend_row_indices (Optional[paddle.Tensor]): Indices for variable length attention
             position_ids (Optional[paddle.Tensor]): Position indices for rotary embeddings
             output_attentions (Optional[bool]): Whether to return attention weights
-            past_key_values (Optional[Tuple[paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             use_cache (Optional[bool]): Whether to cache key/value states
             output_gate_logits (bool): Whether to return MoE gate logits
 
@@ -720,7 +720,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             attn_mask_startend_row_indices (paddle.Tensor): Variable length indices
             position_ids (paddle.Tensor): Position indices
             output_attentions (bool): Whether to output attention weights
-            past_key_values (Optional[Tuple[paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             use_cache (bool): Whether to cache key/value states
 
         Returns:
@@ -769,7 +769,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             attn_mask_startend_row_indices (Optional[paddle.Tensor]): Variable length attention indices
             inputs_embeds (Optional[paddle.Tensor]): Precomputed embeddings
             use_cache (Optional[bool]): Whether to cache key/value states
-            past_key_values (Optional[Tuple[Tuple[paddle.Tensor]]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             output_attentions (Optional[bool]): Whether to output attention weights
             output_hidden_states (Optional[bool]): Whether to output all hidden states
             return_dict (Optional[bool]): Whether to return dict or tuple
@@ -1097,7 +1097,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
             labels (paddle.Tensor): Target labels.
             loss_mask (paddle.Tensor): Loss mask.
             use_cache (bool): Whether to use cached hidden states.
-            past_key_values (dict): Pre-computed hidden states.
+            past_key_values (Cache): Pre-computed hidden states.
             output_attentions (bool): Whether to output attentions.
             output_hidden_states (bool): Whether to output hidden states.
             return_dict (bool): Whether to return a dictionary.

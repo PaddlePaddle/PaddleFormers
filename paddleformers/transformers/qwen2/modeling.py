@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import paddle
 import paddle.distributed as dist
@@ -38,7 +38,7 @@ from ...nn.mlp import MLP as Qwen2MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..cache_utils import DynamicCache
+from ..cache_utils import Cache, DynamicCache
 from ..contrastive_loss import SimpleContrastiveLoss
 from ..embedding_utils import dist_gather_tensor_with_gradient
 from ..masking_utils import create_causal_masks_and_row_indices
@@ -148,7 +148,7 @@ class Qwen2Attention(nn.Layer):
         hidden_states,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: bool = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
@@ -232,7 +232,7 @@ class Qwen2DecoderLayer(nn.Layer):
         self,
         hidden_states: paddle.Tensor,
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
@@ -403,7 +403,7 @@ class Qwen2Model(Qwen2PretrainedModel):
         layer_module: nn.Layer,
         hidden_states: Tensor,
         attention_mask: Tensor,
-        past_key_values: Tensor,
+        past_key_values: Cache,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
@@ -433,7 +433,7 @@ class Qwen2Model(Qwen2PretrainedModel):
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         return_dict: Optional[bool] = None,
@@ -612,7 +612,7 @@ class Qwen2ForCausalLM(Qwen2PretrainedModel):
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
@@ -701,7 +701,7 @@ class Qwen2ForSequenceClassification(Qwen2PretrainedModel):
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
@@ -802,7 +802,7 @@ class Qwen2ForTokenClassification(Qwen2PretrainedModel):
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,

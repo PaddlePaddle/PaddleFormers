@@ -14,7 +14,7 @@
 
 import math
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import paddle
 from paddle import Tensor, nn
@@ -30,7 +30,7 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..cache_utils import DynamicCache
+from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -454,7 +454,7 @@ class GptOssAttention(nn.Layer):
     def forward(
         self,
         hidden_states,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
@@ -467,7 +467,7 @@ class GptOssAttention(nn.Layer):
 
         Args:
             hidden_states (paddle.Tensor): Input tensor [bsz, seq_len, hidden_size]
-            past_key_values (Optional[Tuple[paddle.Tensor, paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             attention_mask (Optional[paddle.Tensor]): Attention mask tensor
             attn_mask_startend_row_indices (Optional[paddle.Tensor]): Variable length attention indices
             position_ids (Optional[paddle.Tensor]): Position indices for RoPE
@@ -565,7 +565,7 @@ class GptOssDecoderLayer(nn.Layer):
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
         output_router_logits: Optional[bool] = False,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
@@ -582,7 +582,7 @@ class GptOssDecoderLayer(nn.Layer):
             use_cache (`bool`, *optional*):
                 If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
                 (see `past_key_values`).
-            past_key_values (`Tuple(paddle.Tensor)`, *optional*): cached past key and value object
+            past_key_values (`Cache`, *optional*): cached past key and value object
         """
         # [bs * seq_len, embed_dim] -> [seq_len * bs / n, embed_dim] (sequence_parallel)
         residual = hidden_states
@@ -764,7 +764,7 @@ class GptOssModel(GptOssPreTrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         output_router_logits: Optional[bool] = None,
@@ -1079,7 +1079,7 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
         labels: Optional[paddle.Tensor] = None,
         loss_mask: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         output_router_logits: Optional[bool] = None,

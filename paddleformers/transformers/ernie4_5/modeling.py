@@ -36,7 +36,7 @@ from ...nn.mlp import MLP as Ernie4_5MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..cache_utils import DynamicCache
+from ..cache_utils import Cache, DynamicCache
 from ..model_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     CausalLMOutputWithCrossAttentions,
@@ -214,7 +214,7 @@ class Ernie4_5Attention(nn.Layer):
     def forward(
         self,
         hidden_states,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
@@ -225,7 +225,7 @@ class Ernie4_5Attention(nn.Layer):
 
         Args:
             hidden_states (paddle.Tensor): Input tensor [bsz, seq_len, hidden_size]
-            past_key_values (Optional[Tuple[paddle.Tensor, paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             attention_mask (Optional[paddle.Tensor]): Attention mask tensor
             attn_mask_startend_row_indices (Optional[paddle.Tensor]): Variable length attention indices
             position_ids (Optional[paddle.Tensor]): Position indices for RoPE
@@ -333,7 +333,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         """Forward pass through the decoder layer.
@@ -345,7 +345,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
             position_ids (Optional[paddle.Tensor]): Position indices for rotary embeddings
             position_embeddings (Optional[paddle.Tensor]): Position embeddings tensor
             output_attentions (Optional[bool]): Whether to return attention weights
-            past_key_values (Optional[Tuple[paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             use_cache (Optional[bool]): Whether to cache key/value states
 
         Returns:
@@ -517,7 +517,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             position_ids (paddle.Tensor): Position indices
             position_embeddings (paddle.Tensor): Position embeddings
             output_attentions (bool): Whether to output attention weights
-            past_key_values (Optional[Tuple[paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             use_cache (bool): Whether to cache key/value states
 
         Returns:
@@ -565,7 +565,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             attn_mask_startend_row_indices (Optional[paddle.Tensor]): Variable length attention indices
             inputs_embeds (Optional[paddle.Tensor]): Precomputed embeddings
             use_cache (Optional[bool]): Whether to cache key/value states
-            past_key_values (Optional[Tuple[Tuple[paddle.Tensor]]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             output_attentions (Optional[bool]): Whether to output attention weights
             output_hidden_states (Optional[bool]): Whether to output all hidden states
             return_dict (Optional[bool]): Whether to return dict or tuple
@@ -751,7 +751,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
             labels (paddle.Tensor): Target labels.
             loss_mask (paddle.Tensor): Loss mask.
             use_cache (bool): Whether to use cached hidden states.
-            past_key_values (dict): Pre-computed hidden states.
+            past_key_values (Cache): Pre-computed hidden states.
             output_attentions (bool): Whether to output attentions.
             output_hidden_states (bool): Whether to output hidden states.
             return_dict (bool): Whether to return a dictionary.

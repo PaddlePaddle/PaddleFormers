@@ -25,7 +25,7 @@ import math
 import warnings
 from copy import deepcopy
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import paddle
 import paddle.distributed as dist
@@ -57,7 +57,7 @@ from ...utils.masking_utils import (
     get_use_casual_mask,
     is_casual_mask,
 )
-from ..cache_utils import DynamicCache
+from ..cache_utils import Cache, DynamicCache
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..model_outputs import (
     BaseModelOutputWithPastAndMTP,
@@ -686,7 +686,7 @@ class DeepseekV2Attention(nn.Layer):
         self,
         hidden_states: paddle.Tensor,
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
@@ -853,7 +853,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
@@ -912,7 +912,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
@@ -1002,7 +1002,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
@@ -1067,7 +1067,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
@@ -1104,7 +1104,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
@@ -1360,7 +1360,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         position_ids: Optional[Tensor],
         attention_mask: Tensor,
         output_attentions: bool,
-        past_key_values: Tensor,
+        past_key_values: Cache,
         use_cache: bool,
         attn_mask_startend_row_indices: Optional[Tensor] = None,
     ):
@@ -1391,7 +1391,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
@@ -1764,7 +1764,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PretrainedModel):
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
@@ -1966,7 +1966,7 @@ class DeepseekV2ForSequenceClassification(DeepseekV2PretrainedModel):
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
