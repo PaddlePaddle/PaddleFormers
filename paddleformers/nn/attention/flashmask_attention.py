@@ -38,13 +38,21 @@ def flashmask_attention_forward(
         attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
     if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
         is_causal = True
+    if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 4:
+        is_causal = False
+    
+    if is_causal is None:
+        raise ValueError(
+            f"The `is_causal` argument must be specified when using the Flash Mask Attention kernel."
+        )
+
     if sink is None:
         out = flashmask_attention(
             query,
             key,
             value,
             startend_row_indices=attn_mask_startend_row_indices,
-            causal=True,
+            causal=is_causal,
         )
     else:
         out = sink_attention_forward(
@@ -55,7 +63,7 @@ def flashmask_attention_forward(
             startend_row_indices=attn_mask_startend_row_indices,
             dropout_p=dropout,
             softmax_scale=scaling,
-            causal=is_causal if is_causal is not None else False,
+            causal=is_causal,
         )
     out = paddle.reshape(x=out, shape=[0, 0, out.shape[2] * out.shape[3]])
 

@@ -12,28 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections import OrderedDict
+import transformers as hf
 
-import paddle.nn as nn
+from ..tokenizer_utils import warp_tokenizer
 
-
-class ClassInstantier(OrderedDict):
-    def __getitem__(self, key):
-        content = super().__getitem__(key)
-        cls, kwargs = content if isinstance(content, tuple) else (content, {})
-        return cls(**kwargs)
+__all__ = ["Ernie4_5Tokenizer"]
 
 
-ACT2CLS = {
-    "gelu": nn.GELU,
-    "gelu_tanh": (nn.GELU, {"approximate": 'tanh'}),
-    "gelu_pytorch_tanh": (nn.GELU, {"approximate": 'tanh'}),
-    "relu": nn.ReLU,
-    "relu6": nn.ReLU6,
-    "sigmoid": nn.Sigmoid,
-    "silu": nn.Silu,
-    "tanh": nn.Tanh,
-    "prelu": nn.PReLU,
-}
-
-ACT2FN = ClassInstantier(ACT2CLS)
+Ernie4_5Tokenizer = warp_tokenizer(hf.LlamaTokenizer)
