@@ -97,7 +97,7 @@ def scaled_dot_product_attention(
     softmax_scale = softmax_scale * (q_head_dim**0.5)
     query_states = query_states * softmax_scale
     value_padding = paddle.zeros(
-        [bsz, kv_seq_len, v_num_heads, head_dim - v_head_dim],
+        [bsz, v_num_heads, kv_seq_len, head_dim - v_head_dim],
         dtype=value_states.dtype,
     )
     value_states = paddle.cat([value_states, value_padding], axis=-1)
@@ -266,11 +266,6 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
     Returns:
         `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
-    # [bs, num_head, seq_len, head_dim] -> [bs, seq_len, num_head, head_dim]
-    perm = [0, 2, 1, 3]
-    q = paddle.transpose(x=q, perm=perm)
-    k = paddle.transpose(x=k, perm=perm)
-
     b, s, h, d = q.shape
     q = q.reshape([b, s, h, d // 2, 2]).transpose([0, 1, 2, 4, 3]).reshape([b, s, h, d])
 
@@ -291,7 +286,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
         sin = sin.unsqueeze(2).contiguous()  # [bs, seq_len, 1, axis]
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed.transpose(perm), k_embed.transpose(perm)
+    return q_embed, k_embed
 
 
 class FakeGate(paddle.autograd.PyLayer):
