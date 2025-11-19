@@ -205,13 +205,13 @@ from .utils.ckpt_converter import CheckpointConverter
 
 try:
     from .utils.zero_cost_checkpoint import (
+        DistInfoCollectorValidator,
         NonZCCEMACallback,
         ZeroCostCheckpointCallback,
+        ZeroCostCheckpointCallbackFcBased,
         ZeroCostCheckpointManager,
         ZeroCostCheckpointWorker,
-        ZeroCostCheckpointCallbackFcBased,
         ZeroCostCheckpointWorkerFcBased,
-        DistInfoCollectorValidator,
     )
 except (ImportError, ModuleNotFoundError):
     ZeroCostCheckpointManager, NonZCCEMACallback = None, None
@@ -920,19 +920,19 @@ class Trainer:
         """Create ZCC manager instance with appropriate configuration."""
         if isinstance(self.model, PipelineLayer):
             pipeline_hooks_capacity = (
-                unwrapped_model.forward_pipeline_parallel_hook_capacity +
-                unwrapped_model.backward_pipeline_parallel_hook_capacity
+                unwrapped_model.forward_pipeline_parallel_hook_capacity
+                + unwrapped_model.backward_pipeline_parallel_hook_capacity
             )
         else:
             pipeline_hooks_capacity = self.args.gradient_accumulation_steps
-        
+
         return ZeroCostCheckpointManager(
             worker_num=self.args.zcc_workers_num,
             pipeline_hooks_capacity=pipeline_hooks_capacity,
             capacity_usage=self.args.zcc_pipeline_hooks_capacity_usage,
             use_expert_parallel=self.args.use_expert_parallel,
             ema_coef=self.args.zcc_save_ema_coef,
-            zcc_worker_class=zcc_worker_class
+            zcc_worker_class=zcc_worker_class,
         )
 
     def _register_pipeline_hooks(self, unwrapped_model):
@@ -942,7 +942,7 @@ class Trainer:
             unwrapped_model.register_forward_pipeline_parallel_hook(
                 location=i, hook=self.zcc_manager.zcc_pipeline_hook
             )
-        
+
         # Register backward hooks
         for i in range(unwrapped_model.backward_pipeline_parallel_hook_capacity):
             unwrapped_model.register_backward_pipeline_parallel_hook(
@@ -951,28 +951,23 @@ class Trainer:
 
     def _setup_zcc_callback(self, zcc_callback_class):
         """Setup ZCC callback with required dependencies."""
-        callback = zcc_callback_class(
-            self.args, 
-            self.zcc_manager, 
-            self.runtime_timer, 
-            self.sharding_io
-        )
+        callback = zcc_callback_class(self.args, self.zcc_manager, self.runtime_timer, self.sharding_io)
         self.add_callback(callback)
 
     def _handle_checkpoint_resume(self, resume_from_checkpoint):
         """Handle resumption from previous checkpoint if provided."""
         if resume_from_checkpoint is None:
             return
-        
+
         ema_state_path = self._get_ema_state_path(resume_from_checkpoint)
-        
+
         if not os.path.exists(ema_state_path):
             logger.info(f"ZCC EMA state dict not found at: {ema_state_path}")
             return
-        
+
         # Validate distributed strategy compatibility
         should_load_ema = self._should_load_ema_state(resume_from_checkpoint, ema_state_path)
-        
+
         if should_load_ema:
             logger.info(f"Loading ZCC EMA state from: {ema_state_path}")
             self.zcc_manager.set_ema_state_dict(ema_state_path)
@@ -982,10 +977,7 @@ class Trainer:
         if self.args.save_checkpoint_format == "flex_checkpoint":
             return os.path.join(checkpoint_path, "ema_state", f"{dist.get_rank()}_0.distcp")
         else:
-            optimizer_name = _add_variant(
-                PADDLE_OPTIMIZER_NAME, 
-                self.args.optimizer_name_suffix
-            )
+            optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
             return os.path.join(checkpoint_path, optimizer_name).replace("optimizer", "ema")
 
     def _should_load_ema_state(self, checkpoint_path, ema_state_path):
@@ -993,15 +985,13 @@ class Trainer:
         if self.args.zcc_save_ema_coef is None:
             logger.info("EMA coefficient is None, skipping EMA state loading")
             return False
-        
-        success, err_msg = DistInfoCollectorValidator(
-            self.args, self.hcg
-        ).check_same_strategy(checkpoint_path)
-        
+
+        success, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(checkpoint_path)
+
         if not success:
             logger.warning(f"Cannot load EMA state due to strategy mismatch: {err_msg}")
             return False
-        
+
         return True
 
     def create_zcc_manager(self, unwrapped_model, resume_from_checkpoint=None):
@@ -1019,7 +1009,7 @@ class Trainer:
 
         # Create ZCC manager with appropriate configuration
         self.zcc_manager = self._create_zcc_manager_instance(unwrapped_model, zcc_worker_class)
-        
+
         # Register pipeline hooks if using pipeline parallelism
         if isinstance(self.model, PipelineLayer):
             self._register_pipeline_hooks(unwrapped_model)
@@ -1028,7 +1018,7 @@ class Trainer:
         self._setup_zcc_callback(zcc_callback_class)
 
         self._handle_checkpoint_resume(resume_from_checkpoint)
-        
+
         logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint):

@@ -18,7 +18,6 @@ import hashlib
 import json
 import multiprocessing
 import os
-import re
 import random
 import time
 from collections import OrderedDict
@@ -29,31 +28,36 @@ import paddle
 import paddle.autograd as imperative_base
 import paddle.distributed as dist
 from paddle.base import core
+from paddle.distributed.communication.group import is_initialized
 from paddle.distributed.fleet import fleet
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
-from paddle.incubate.tensor.manipulation import (
-    async_offload_with_offset,
-    create_async_load,
+from paddle.distributed.flex_checkpoint.dcp.metadata import (
+    LocalTensorIndex,
+    LocalTensorMetadata,
+    Metadata,
 )
-from paddle.distributed.communication.group import is_initialized
+from paddle.distributed.flex_checkpoint.dcp.save_state_dict import (
+    balanced_dedup_key_in_dict,
+    dedup_key_in_dict,
+)
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import ShardedWeight
 from paddle.distributed.flex_checkpoint.dcp.utils import (
     flatten_state_dict,
     merge_state_dict_metadata,
 )
-from paddle.distributed.flex_checkpoint.dcp.sharded_weight import ShardedWeight
-from paddle.distributed.flex_checkpoint.dcp.save_state_dict import balanced_dedup_key_in_dict, dedup_key_in_dict
+from paddle.incubate.tensor.manipulation import (
+    async_offload_with_offset,
+    create_async_load,
+)
 from paddle.optimizer.fusion_utils import FusionStorageHelper
-from paddle.distributed.flex_checkpoint.dcp.metadata import LocalTensorMetadata, LocalTensorIndex, Metadata
+
 from paddleformers.trainer.utils.sharding_io import (
     GroupGetter,
+    exclude_parameters_in_state_dict,
     filter_sharded_params,
-    exclude_parameters_in_state_dict
 )
-from paddleformers.trainer.utils.reshard.common import (
-    split_model_state,
-    merge_model_state,
-    split_opt_state
-)
+
+from ...transformers.model_utils import unwrap_optimizer
 from . import reshard as reshard_util
 from .reshard import (
     SHARDING_STRATEGY_V1,
@@ -61,11 +65,7 @@ from .reshard import (
     split_model_state,
     split_opt_state,
 )
-from ...transformers.model_utils import (
-    _add_variant,
-    get_parameter_dtype,
-    unwrap_optimizer,
-)
+
 try:
     from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
         DygraphShardingOptimizerV2,
@@ -85,17 +85,17 @@ from ...transformers.model_utils import (
 from ...transformers.utils import device_guard
 from ...utils.env import (
     CONFIG_NAME,
+    EMA_STATE_DIC,
+    MASTER_WEIGHT_DIC,
     MODEL_META_NAME,
+    MODEL_STATE_DIC,
+    OPTIMIZER_STATE_DIC,
     PADDLE_OPTIMIZER_NAME,
     PADDLE_WEIGHTS_NAME,
     PREFIX_CHECKPOINT_DIR,
     SCHEDULER_NAME,
     TRAINER_STATE_NAME,
     TRAINING_ARGS_NAME,
-    MODEL_STATE_DIC,
-    OPTIMIZER_STATE_DIC,
-    MASTER_WEIGHT_DIC,
-    EMA_STATE_DIC
 )
 from ...utils.fault_tolerance import FC_DUMP_ERROR, PC_DUMP_ERROR
 from ...utils.log import logger
@@ -552,7 +552,15 @@ class ZeroCostCheckpointCallback(TrainerCallback):
 
 
 class ZeroCostCheckpointManager:
-    def __init__(self, worker_num, pipeline_hooks_capacity, capacity_usage, use_expert_parallel, ema_coef=None, zcc_worker_class=None):
+    def __init__(
+        self,
+        worker_num,
+        pipeline_hooks_capacity,
+        capacity_usage,
+        use_expert_parallel,
+        ema_coef=None,
+        zcc_worker_class=None,
+    ):
         assert worker_num > 0, "worker_num must be greater than 0"
         assert capacity_usage <= 1.0, "capacity_usage must be less than or equal to 1.0"
         self.cache_version = 0
@@ -936,7 +944,7 @@ class ZeroCostCheckpointWorker:
         for (file_name, file_content) in self.user_file_list:
             file_path = os.path.join(output_dir, file_name)
             with open(file_path, "w") as f:
-                f.write(file_content)  
+                f.write(file_content)
 
     def _dump_states(self, output_dir):
         # Step2.1: save model states
@@ -984,11 +992,11 @@ class ZeroCostCheckpointWorker:
         # Step1: save static objects
         if self.device_id == 0:
             self._dump_static_objects(output_dir)
-            logger.info(f"[ZCC worker] dump static objec done.")
+            logger.info("[ZCC worker] dump static objec done.")
 
         # Step2: save dynamic objects
         self._dump_states(output_dir)
-        logger.info(f"[ZCC worker] dump model state done.")
+        logger.info("[ZCC worker] dump model state done.")
 
         self._dump_args_and_state(output_dir)
 
@@ -996,7 +1004,7 @@ class ZeroCostCheckpointWorker:
         saved_signal_path = os.path.join(output_dir, f"saved_signal_{self.global_rank}")
         with open(saved_signal_path, mode="w+") as f:
             f.write("1")
-        logger.info(f"[ZCC worker] dump save signal done.")
+        logger.info("[ZCC worker] dump save signal done.")
 
     def run(self):
         core.set_cuda_current_device_id(self.device_id)
@@ -1087,6 +1095,7 @@ class ZeroCostCheckpointWorker:
             f"[ZCC Worker{self.worker_id}] All numel: {self.all_numel}, Offload chunks: {self.offload_chunks}, Chunk size: {self.chunk_size_in_numel}]"
         )
 
+
 class EMABuffer:
     def __init__(self, resume_from_checkpoint, args, sharding_io, offload=True):
         assert sharding_io is not None, "EMA should be only enabled when save_sharded_model is True"
@@ -1173,6 +1182,7 @@ class NonZCCEMACallback(TrainerCallback):
             self.buffer.ema_accumulate(state.global_step, state.loss, args.zcc_ema_loss_threshold)
         if control.should_save:
             self.buffer.save(state.global_step)
+
 
 class DistInfoCollectorValidator:
     def __init__(self, args, hcg=None):
@@ -1305,7 +1315,7 @@ class DistInfoCollectorValidator:
         model_meta["sharding_metas"] = self._gather_sharding_metas(model, optimizer)
 
         return model_meta
-    
+
     def check_same_strategy(self, resume_from_checkpoint=None):
         if resume_from_checkpoint:
             cur_config = self._get_distributed_strategy()
@@ -1321,17 +1331,16 @@ class DistInfoCollectorValidator:
                         return False, f"{key} not match: {old_value} vs {cur_value}"
         return True, None
 
+
 def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None):
     with paddle.base.dygraph.guard():
-        assert isinstance(state_dict, dict), (
-            "The state_dict should be a dictionary."
-        )
+        assert isinstance(state_dict, dict), "The state_dict should be a dictionary."
         flat_state_dict, mapping = flatten_state_dict(state_dict)
         if len(flat_state_dict) > 0:
             for val in flat_state_dict.values():
-                assert isinstance(val, (paddle.Tensor, ShardedWeight)), (
-                    f"The value of state_dict should be a paddle.Tensor or ShardedWeight, but got: {val}."
-                )
+                assert isinstance(
+                    val, (paddle.Tensor, ShardedWeight)
+                ), f"The value of state_dict should be a paddle.Tensor or ShardedWeight, but got: {val}."
 
         use_dist = True if paddle.distributed.get_world_size() > 1 else False
 
@@ -1352,7 +1361,7 @@ def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None):
             is_flattened = val.is_flattened
             flattened_range = val.flattened_range
 
-            local_tensor_dtype = str(local_tensor.dtype).split('.')[1]
+            local_tensor_dtype = str(local_tensor.dtype).split(".")[1]
             if flattened_range is not None:
                 flattened_range = (flattened_range.start, flattened_range.stop)
             else:
@@ -1383,23 +1392,15 @@ def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None):
                 local_state_dict_metadata,
                 process_group,
             )
-            paddle.distributed.all_gather_object(
-                global_storage_metadata, local_storage_metadata, process_group
-            )
-            paddle.distributed.all_gather_object(
-                global_flatten_mapping, mapping, process_group
-            )
+            paddle.distributed.all_gather_object(global_storage_metadata, local_storage_metadata, process_group)
+            paddle.distributed.all_gather_object(global_flatten_mapping, mapping, process_group)
         else:
             global_state_dict_metadata.append(local_state_dict_metadata)
             global_storage_metadata.append(local_storage_metadata)
             global_flatten_mapping.append(mapping)
 
-        metadata.state_dict_metadata = merge_state_dict_metadata(
-            global_state_dict_metadata
-        )
-        metadata.storage_metadata = balanced_dedup_key_in_dict(
-            global_storage_metadata
-        )
+        metadata.state_dict_metadata = merge_state_dict_metadata(global_state_dict_metadata)
+        metadata.storage_metadata = balanced_dedup_key_in_dict(global_storage_metadata)
         metadata.flat_mapping = dedup_key_in_dict(global_flatten_mapping)
         logger.debug(f"metadata:{metadata}")
         return metadata
@@ -1414,7 +1415,9 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
         self.zcc_ema_interval = args.zcc_ema_interval
         self.args = args
 
-    def manipulate_state_dict_and_config(self, model_to_save, optimizer, merge_tensor_parallel=False, state_dict=None, hcg=None):
+    def manipulate_state_dict_and_config(
+        self, model_to_save, optimizer, merge_tensor_parallel=False, state_dict=None, hcg=None
+    ):
         if hcg is None and paddle.distributed.get_world_size() > 1 and self.args.use_hybrid_parallel:
             self.hcg = fleet.get_hybrid_communicate_group()
             self.sharding_group = self.hcg.get_sharding_parallel_group()
@@ -1487,13 +1490,15 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             self.manipulated_config_to_save = self.manipulated_config_to_save.to_json_string(use_diff=True)
             logger.info("Cache manipulated model config done")
 
-        self.model_meta = DistInfoCollectorValidator(self.args, self.hcg).gather_distributed_model_meta(model, optimizer)
+        self.model_meta = DistInfoCollectorValidator(self.args, self.hcg).gather_distributed_model_meta(
+            model, optimizer
+        )
 
         def create_ckpt_file_name():
             data_file_name = f"{paddle.distributed.get_rank()}_0.distcp"
             meta_file_name = "0.metadata"
             return (data_file_name, meta_file_name)
-        
+
         self.ckpt_data_name, self.ckpt_meta_name = create_ckpt_file_name()
         self.model_ckpt_meta = saved_ckptmeta(model.sharded_state_dict(), self.ckpt_data_name)
 
@@ -1505,7 +1510,7 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
                 master_weights[k] = v
             else:
                 opt_state_dict[k] = v
-    
+
         self.opt_ckpt_meta = saved_ckptmeta(opt_state_dict, self.ckpt_data_name)
         self.master_weight_ckpt_meta = saved_ckptmeta(master_weights, self.ckpt_data_name)
 
@@ -1527,7 +1532,7 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
         # logger.info(f"check should update :{optimizer.fused_buffer_version} vs {self.manager.cache_version}")
         if optimizer.fused_buffer_version == self.manager.cache_version:
             return
-        
+
         logger.info("ZCC checkpoint workers need upgrade.")
         self._cache_meta_for_sharded_save(model, optimizer)
         param_mappings, ipc_meta_mappings = get_fused_param_mappings(optimizer, self.manipulated_state_dict)
@@ -1545,11 +1550,12 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
         self.manager.update_zcc_workers(optimizer.fused_buffer_version, dynamic_objects, static_objects, global_step)
         logger.info(f"[ZCC Callback] after first update:{optimizer.fused_states_buffer_ipc_meta}")
 
+
 class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
     def process_update_task(self, updates):
         """
         sync operation, main process should wait
-        """ 
+        """
         version, dynamic_objecs, static_objects = updates
         self.distcp_file_name = dynamic_objecs["distcp_file_name"]
         self.model_ckpt_meta = dynamic_objecs["model_ckpt_meta"]
@@ -1575,7 +1581,7 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
         self.model_states_meta_path = os.path.join(output_dir, MODEL_STATE_DIC, meta_file_name)
 
         if self.dp_rank <= 0 or self.use_expert_parallel:
-            with device_guard("cpu"):   
+            with device_guard("cpu"):
                 state_dict = self.param_fusion_storage_helper.state_dict()
                 paddle.save(state_dict, self.model_states_path)
                 if self.device_id == 0:
@@ -1618,7 +1624,7 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
             if self.dp_rank > 0:
                 ema_state_dict = self._filter_moe_no_sync_optimizer_params(self.model_meta_content, ema_state_dict)
             paddle.save(ema_state_dict, self.ema_name_path)
-            
+
     def _dump_states(self, output_dir):
         self._save_model_state(output_dir)
         self._save_opt_state(output_dir)
