@@ -56,7 +56,7 @@ class AixcoderModelTest(unittest.TestCase):
         self.assertEqual(model.config.num_hidden_layers, 2)
 
         # Check base model name
-        self.assertEqual(model.base_model_prefix, "aixcoder")
+        self.assertEqual(model.base_model_prefix, "model")
 
     def test_aixcoder_model_forward(self):
         """Test AixcoderModel forward pass."""
