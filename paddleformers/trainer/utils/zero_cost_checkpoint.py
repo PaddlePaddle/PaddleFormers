@@ -23,7 +23,6 @@ import random
 import time
 from collections import OrderedDict
 from enum import Enum
-from multiprocessing import Lock
 
 import numpy as np
 import paddle
