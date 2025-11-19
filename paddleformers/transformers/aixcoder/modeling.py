@@ -38,7 +38,7 @@ class AixcoderPretrainedModel(PretrainedModel):
     """
 
     config_class = AixcoderConfig
-    base_model_prefix = "aixcoder"
+    base_model_prefix = "model"
     _no_split_modules = ["AixcoderDecoderLayer"]
     _supports_sdp = True
 
