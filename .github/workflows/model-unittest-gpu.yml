@@ -148,8 +148,8 @@ jobs:
             bos_prefix="schedule/$(date +%Y%m%d)"
           fi
           # logs
-          cd /workspace/PaddleFormers/model_unittest_logs
-          for FILE in /workspace/PaddleFormers/model_unittest_logs/*; do
+          cd /workspace/PaddleFormers/pytest_logs
+          for FILE in /workspace/PaddleFormers/pytest_logs/*; do
             file=$(basename "$FILE")
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"

@@ -148,15 +148,15 @@ jobs:
           # python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
           # echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
           # logs
-          cd /workspace/PaddleFormers/unittest_logs
-          for FILE in /workspace/PaddleFormers/unittest_logs/*; do
+          cd /workspace/PaddleFormers/pytest_logs
+          for FILE in /workspace/PaddleFormers/pytest_logs/*; do
             file=$(basename "$FILE")
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
           done
           # cd /workspace/PaddleFormers/
           # ${{ env.allure_file }} generate result -o report
-          # tar -czf products.tar.gz report unittest_logs
+          # tar -czf products.tar.gz report pytest_logs
           # python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
           # echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz"
           '

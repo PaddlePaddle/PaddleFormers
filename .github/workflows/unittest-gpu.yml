@@ -134,6 +134,7 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
+          mkdir -p test_report
           timeout 50m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
           
@@ -150,10 +151,10 @@ jobs:
             mkdir ${{ env.home_path }}/bos
             tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
           fi
-          # if [ ! -f "${{ env.allure_file }}" ]; then
-          #   wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
-          #   unzip -q ${{ env.home_path }}/allure-2.19.0.zip
-          # fi
+          if [ ! -f "${{ env.allure_file }}" ]; then
+            wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://paddle-qa.bj.bcebos.com/paddleformers/tools/allure-2.19.0.tar.gz --no-check-certificate
+            tar xf ${{ env.home_path }}/allure-2.19.0.tar.gz -C ${{ env.home_path }}/allure-2.19.0
+          fi
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
@@ -169,8 +170,8 @@ jobs:
             echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml upload."
           fi
           # logs
-          cd /workspace/PaddleFormers/unittest_logs
-          for FILE in /workspace/PaddleFormers/unittest_logs/*; do
+          cd /workspace/PaddleFormers/pytest_logs
+          for FILE in /workspace/PaddleFormers/pytest_logs/*; do
             file=$(basename "$FILE")
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"

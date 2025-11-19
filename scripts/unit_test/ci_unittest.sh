@@ -18,10 +18,10 @@ set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
-export log_path=/workspace/PaddleFormers/unittest_logs
+export log_path=/workspace/PaddleFormers/pytest_logs
 cd $nlp_dir
-if [ ! -d "unittest_logs" ];then
-    mkdir unittest_logs
+if [ ! -d "pytest_logs" ];then
+    mkdir pytest_logs
 fi
 mkdir -p $log_path
 export PYTEST_EXECUTE_FLAG_FILE=${3}
@@ -48,6 +48,7 @@ install_requirements() {
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
+    python -m pip install colorlog python-json-logger >> ${log_path}/commit_info.txt
 }
 
 set_env() {
@@ -67,21 +68,23 @@ set_env() {
 
 print_info() {
     if [ $1 -ne 0 ]; then
-        cat ${log_path}/unittest.log | grep -v "Fail to fscanf: Success" \
-            | grep -v "SKIPPED" | grep -v "warning" > ${log_path}/unittest_FAIL.log
-        tail -n 1 ${log_path}/unittest.log >> ${log_path}/unittest_FAIL.log
-        echo -e "\033[31m ${log_path}/unittest_FAIL \033[0m"
-        cat ${log_path}/unittest_FAIL.log
+        # cat ${log_path}/pytest_all.log | grep -v "Fail to fscanf: Success" \
+        #     | grep -v "SKIPPED" | grep -v "warning" > ${log_path}/pytest_error.log
+        tail -n 1 ${log_path}/pytest_all.log >> ${log_path}/pytest_error.log
+        echo -e "\033[31m ${log_path}/TEST_FAIL \033[0m"
+        cat ${log_path}/pytest_error.log
         if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-            cp ${log_path}/unittest_FAIL.log ${PPNLP_HOME}/upload/unittest_FAIL.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
+            cp ${log_path}/pytest_error.log ${PPNLP_HOME}/upload/pytest_error.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
             cd ${PPNLP_HOME} && python upload.py ${PPNLP_HOME}/upload 'paddlenlp/PaddleNLP_CI/PaddleNLP-CI-Unittest-GPU'
             rm -rf upload/* && cd -
         fi
         if [ $1 -eq 124 ]; then
+            echo "\033[32m [failed-timeout] >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\033[0m"
             echo "\033[32m [failed-timeout] Test case execution was terminated after exceeding the ${running_time} min limit."
+            echo "\033[32m [failed-timeout] <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\033[0m"
         fi
     else
-        tail -n 1 ${log_path}/unittest.log
+        tail -n 1 ${log_path}/pytest_all.log
         echo -e "\033[32m ${log_path}/unittest_SUCCESS \033[0m"
     fi
 }
@@ -114,17 +117,15 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
     set +e
-    DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True \
-    PYTHONPATH=$(pwd) \
-    COVERAGE_SOURCE=paddleformers \
     python -m pytest -v -s -n 8 \
-        --dist no \
-        --maxfail=1 \
+        --dist loadgroup \
         --retries 3 --retry-delay 1 \
-        --timeout 200 --durations 20 \
-        --alluredir=result \
+        --log-cli-level=DEBUG \
+        --html=html-report.html --self-contained-html \
+        --timeout 200 --durations=0 \
+        --alluredir=allure-result \
         --cov=paddleformers \
-        --cov-report=xml:coverage.xml > ${log_path}/unittest.log 2>&1
+        --cov-report=xml:coverage.xml
     exit_code=$?
     print_info $exit_code unittest
     echo -e "\033[35m ---- Set PYTEST_EXECUTE_FLAG_FILE  \033[0m"
