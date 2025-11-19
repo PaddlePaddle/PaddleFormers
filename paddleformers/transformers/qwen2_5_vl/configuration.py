@@ -154,10 +154,6 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
                     Only used with 'llama3'. Scaling factor applied to low frequency components of the RoPE
                 `high_freq_factor` (`float`, *optional*):
                     Only used with 'llama3'. Scaling factor applied to high frequency components of the RoPE
-        image_token_id (`int`, *optional*):
-            Token index used as placeholder for image embeddings.
-        video_token_id (`int`, *optional*):
-            Token index used as placeholder for video embeddings.
 
     ```python
     >>> from paddleformers.transformers import Qwen2_5_VLTextModel, Qwen2_5_VLConfig
@@ -197,8 +193,6 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
         layer_types=None,
         attention_dropout=0.0,
         rope_scaling=None,
-        image_token_id=None,
-        video_token_id=None,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -241,9 +235,6 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
                 self.rope_scaling["type"] = "default"
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
         # rope_config_validation(self, ignore_keys={"mrope_section"})
-        self.image_token_id = image_token_id
-        self.video_token_id = video_token_id
-
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
 
@@ -291,8 +282,15 @@ class Qwen2_5_VLConfig(PretrainedConfig):
         vision_config=None,
         image_token_id=151655,
         video_token_id=151656,
+        vision_start_token_id=151652,
+        vision_end_token_id=151653,
         **kwargs,
     ):
+        # We need to init super() here so that it does not reset values
+        # that are in text config to the BaseClass defaults. The Base
+        # config has many text related defaults and not all defaults are same as for `Qwen2_5_VLTextConfig`
+        super().__init__(**kwargs)
+
         if isinstance(vision_config, dict):
             self.vision_config = self.sub_configs["vision_config"](**vision_config)
         elif vision_config is None:
@@ -306,8 +304,31 @@ class Qwen2_5_VLConfig(PretrainedConfig):
 
         self.image_token_id = image_token_id
         self.video_token_id = video_token_id
+        self.vision_start_token_id = vision_start_token_id
+        self.vision_end_token_id = vision_end_token_id
 
-        super().__init__(**kwargs)
+    def __setattr__(self, key, value):
+        if (
+            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
+            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+            and key in text_config.__dict__
+        ):
+            setattr(text_config, key, value)
+        else:
+            super().__setattr__(key, value)
+
+    def __getattribute__(self, key):
+        if "text_config" in super().__getattribute__("__dict__") and key not in [
+            "_name_or_path",
+            "model_type",
+            "dtype",
+            "_attn_implementation_internal",
+        ]:
+            text_config = super().__getattribute__("text_config")
+            if key in text_config.__dict__:
+                return getattr(text_config, key)
+
+        return super().__getattribute__(key)
 
 
 __all__ = ["Qwen2_5_VLConfig", "Qwen2_5_VLTextConfig"]

@@ -199,6 +199,7 @@ class ConfigTester(object):
         self.create_and_test_config_to_json_file()
         self.create_and_test_config_from_and_save_pretrained()
         self.create_and_test_config_with_num_classes()
+        self.create_and_test_config_with_num_labels()
         self.check_config_can_be_init_without_params()
         self.check_config_arguments_init()
 

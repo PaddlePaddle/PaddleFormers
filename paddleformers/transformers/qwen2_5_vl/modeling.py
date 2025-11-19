@@ -179,51 +179,28 @@ class Qwen2_5_VLVisionAttention(nn.Layer):
         key_states = key_states.unsqueeze(0)
         value_states = value_states.unsqueeze(0)
 
-        # testing #
-        self.config._attn_implementation = "sdpa"
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        if self.config._attn_implementation == "flash_attention_2":
-            # Flash Attention 2: Use cu_seqlens for variable length attention
-            # NOTE: FA2 implementation is not currently supported.
-            max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max()
-            attn_output, _ = attention_interface(
+        lengths = cu_seqlens[1:] - cu_seqlens[:-1]
+        splits = [
+            paddle.split(tensor, lengths.tolist(), axis=1) for tensor in (query_states, key_states, value_states)
+        ]
+        attn_outputs = [
+            attention_interface(
                 self,
-                query_states,
-                key_states,
-                value_states,
+                q,
+                k,
+                v,
                 attention_mask=None,
+                attn_mask_startend_row_indices=None,
                 scaling=self.scaling,
                 dropout=0.0 if not self.training else self.attention_dropout,
-                cu_seq_lens_q=cu_seqlens,
-                cu_seq_lens_k=cu_seqlens,
-                max_length_q=max_seqlen,
-                max_length_k=max_seqlen,
                 is_causal=False,
                 **kwargs,
-            )
-        else:
-            # Other implementations: Process each chunk separately
-            lengths = cu_seqlens[1:] - cu_seqlens[:-1]
-            splits = [
-                paddle.split(tensor, lengths.tolist(), axis=1) for tensor in (query_states, key_states, value_states)
-            ]
-            attn_outputs = [
-                attention_interface(
-                    self,
-                    q,
-                    k,
-                    v,
-                    attention_mask=None,
-                    attn_mask_startend_row_indices=None,
-                    scaling=self.scaling,
-                    dropout=0.0 if not self.training else self.attention_dropout,
-                    is_causal=False,
-                    **kwargs,
-                )[0]
-                for q, k, v in zip(*splits)
-            ]
-            attn_output = paddle.cat(attn_outputs, axis=-2)
+            )[0]
+            for q, k, v in zip(*splits)
+        ]
+        attn_output = paddle.cat(attn_outputs, axis=-2)
 
         attn_output = attn_output.reshape([seq_length, -1]).contiguous()
         attn_output = self.proj(attn_output)
@@ -593,7 +570,7 @@ class Qwen2_5_VLRotaryEmbedding(nn.Layer):
                 .expand([3, position_ids.shape[1], -1, 1])
                 .to(x.place)
             )
-            position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
+            position_ids_expanded = position_ids.unsqueeze(2).cast(paddle.float32)
 
             freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 1, 3, 2])
             emb = paddle.cat((freqs, freqs), axis=-1)
@@ -770,7 +747,6 @@ class Qwen2_5_VLAttention(nn.Layer):
             value_states = paddle.cat([past_key_value[1], value_states], axis=1)
         past_key_value = (key_states, value_states) if use_cache else None
 
-        self.config._attn_implementation = "sdpa"
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, attn_weights = attention_interface(

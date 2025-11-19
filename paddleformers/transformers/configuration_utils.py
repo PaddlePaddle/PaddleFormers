@@ -714,6 +714,10 @@ class PretrainedConfig(PushToHubMixin):
                 logger.error(f"Can't set {key} with value {value} for {self}")
                 raise err
 
+    def _create_id_label_maps(self, num_labels: int):
+        self.id2label = {i: f"LABEL_{i}" for i in range(num_labels)}
+        self.label2id = dict(zip(self.id2label.values(), self.id2label.keys()))
+
     @staticmethod
     def _get_generation_defaults() -> Dict[str, Any]:
         return {
@@ -777,9 +781,8 @@ class PretrainedConfig(PushToHubMixin):
 
     @num_labels.setter
     def num_labels(self, num_labels: int):
-        if not hasattr(self, "id2label") or self.id2label is None or len(self.id2label) != num_labels:
-            self.id2label = {i: f"LABEL_{i}" for i in range(num_labels)}
-            self.label2id = dict(zip(self.id2label.values(), self.id2label.keys()))
+        if self.id2label is None or self.num_labels != num_labels:
+            self._create_id_label_maps(num_labels)
 
     def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
         """
@@ -1318,6 +1321,78 @@ class PretrainedConfig(PushToHubMixin):
             return default
         else:
             return value
+
+    def get_text_config(self, decoder=None, encoder=None) -> "PretrainedConfig":
+        """
+        Returns the text config related to the text input (encoder) or text output (decoder) of the model. The
+        `decoder` and `encoder` input arguments can be used to specify which end of the model we are interested in,
+        which is useful on models that have both text input and output modalities.
+
+        Args:
+            decoder (`Optional[bool]`, *optional*):
+                If set to `True`, then only search for decoder config names.
+            encoder (`Optional[bool]`, *optional*):
+                If set to `True`, then only search for encoder config names.
+        """
+        return_both = decoder == encoder  # both unset or both set -> search all possible names
+
+        decoder_possible_text_config_names = ("decoder", "generator", "text_config")
+        encoder_possible_text_config_names = ("text_encoder",)
+        if return_both:
+            possible_text_config_names = encoder_possible_text_config_names + decoder_possible_text_config_names
+        elif decoder:
+            possible_text_config_names = decoder_possible_text_config_names
+        else:
+            possible_text_config_names = encoder_possible_text_config_names
+
+        valid_text_config_names = []
+        for text_config_name in possible_text_config_names:
+            if hasattr(self, text_config_name):
+                text_config = getattr(self, text_config_name, None)
+                if text_config is not None:
+                    valid_text_config_names += [text_config_name]
+
+        if len(valid_text_config_names) > 1:
+            raise ValueError(
+                f"Multiple valid text configs were found in the model config: {valid_text_config_names}. In this "
+                "case, using `get_text_config()` would be ambiguous. Please specify the desired text config directly, "
+                "e.g. `text_config = config.sub_config_name`"
+            )
+        elif len(valid_text_config_names) == 1:
+            config_to_return = getattr(self, valid_text_config_names[0])
+        else:
+            config_to_return = self
+
+        # handle legacy models with flat config structure, when we only want one of the configs
+        if not return_both and len(valid_text_config_names) == 0 and config_to_return.is_encoder_decoder:
+            config_to_return = copy.deepcopy(config_to_return)
+            prefix_to_discard = "encoder" if decoder else "decoder"
+            prefix_to_keep = "decoder" if decoder else "encoder"
+            for key in config_to_return.to_dict():
+                # NOTE: We don't want to discard the key if it is mapped from a different attribute name at read time
+                if key.startswith(prefix_to_discard) and key not in config_to_return.attribute_map.values():
+                    delattr(config_to_return, key)
+                if key.startswith(prefix_to_keep):
+                    # [encoder/decoder]_layers -> num_hidden_layers
+                    if key == prefix_to_keep + "_layers":
+                        new_key = "num_hidden_layers"
+                    # [encoder/decoder]_attention_heads -> num_attention_heads
+                    elif key == prefix_to_keep + "_attention_heads":
+                        new_key = "num_attention_heads"
+                    # e.g. encoder_hidden_act -> hidden_act
+                    else:
+                        new_key = key[len(prefix_to_keep) + 1 :]
+
+                    # Does the class map the new key into a different attribute name at read time? if so, let's write
+                    # into that attribute instead
+                    if new_key in config_to_return.attribute_map:
+                        new_key = config_to_return.attribute_map[new_key]
+
+                    value = getattr(config_to_return, key)
+                    delattr(config_to_return, key)
+                    setattr(config_to_return, new_key, value)
+
+        return config_to_return
 
 
 def get_configuration_file(configuration_files: List[str]) -> str:
