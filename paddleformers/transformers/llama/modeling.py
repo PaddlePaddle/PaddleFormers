@@ -184,8 +184,6 @@ class LLamaAttention(nn.Layer):
         )
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
-        else:
-            attn_output = attn_output.reshape([batch_size, seq_len, -1]).contiguous()
         attn_output = self.o_proj(attn_output)
         return attn_output, past_key_value
 
