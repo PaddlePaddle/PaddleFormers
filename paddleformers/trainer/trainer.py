@@ -1296,12 +1296,7 @@ class Trainer:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
                 if resume_from_checkpoint is not None:
-                    if isinstance(self.model, LoRAModel):
-                        self.model.from_pretrained(
-                            self.model, resume_from_checkpoint, load_checkpoint_format=self.args.load_checkpoint_format
-                        )
-                    else:
-                        self._load_flex_checkpoint(resume_from_checkpoint)
+                    self._load_flex_checkpoint(resume_from_checkpoint)
             else:
                 if delay_optimizer_creation:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
@@ -1493,9 +1488,12 @@ class Trainer:
                 raise ValueError(f"unsupported type: {type(dtensors)}")
         return global_micro_batchs
 
-    def optimizer_step(self, args, parameters_list=None):
+    def optimizer_step(self, args, model, parameters_list=None):
+        if parameters_list is None:
+            parameters_list = []
+
         optimizer_was_run = True
-        if args.enable_auto_parallel and self.args.offload_optim:
+        if not args.enable_auto_parallel and self.args.offload_optim:
             self._reload_optimizer()
 
         if self.do_grad_scaling:
@@ -1515,11 +1513,12 @@ class Trainer:
                     f"optimizer not run, scale_before: {scale_before_value[0]}, scale_after: {scale_after_value[0]}"
                 )
         elif isinstance(self.optimizer, HybridParallelOptimizer):
+            parameters_list = [t if t.is_contiguous() else t.contiguous() for t in parameters_list]
             self.optimizer._step(parameters_list)
         else:
             self.optimizer.step()
 
-        if args.enable_auto_parallel and self.args.offload_optim:
+        if not args.enable_auto_parallel and self.args.offload_optim:
             self._offload_optimizer()
 
         if optimizer_was_run:
@@ -1533,6 +1532,10 @@ class Trainer:
 
         if not args.enable_auto_parallel and (args.release_grads or enable_release_grads):
             self.optimizer.clear_grad(set_to_zero=False)
+            if args.pipeline_parallel_degree > 1:
+                for _, buffers in model._chunk_2_comm_buffers.items():
+                    for buffer in buffers:
+                        buffer._clear_grad_storage()
         else:
             self.optimizer.clear_grad()
 
@@ -1819,6 +1822,8 @@ class Trainer:
                     if not self.args.enable_auto_parallel:
                         with sync_context:
                             if "step_control" in inspect.signature(self.training_step).parameters:
+                                tr_loss_step = self.training_step(model, inputs, step_control=step_control)
+                            else:
                                 tr_loss_step = self.training_step(model, inputs)
                     else:
                         tr_loss_step = self.training_step(model, inputs)
@@ -1943,7 +1948,7 @@ class Trainer:
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
 
-                        self.optimizer_step(args, parameters_list=parameters_list)
+                        self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
                         self.timers and self.timers("optimizer-step").stop()
 
@@ -2120,7 +2125,7 @@ class Trainer:
         if self.args.enable_auto_parallel or self.args.world_size <= 1:
             return paddle.io.BatchSampler(
                 dataset=self.train_dataset,
-                shuffle=False,
+                shuffle=shuffle,
                 batch_size=total_batch_size,
                 drop_last=self.args.dataloader_drop_last,
             )
@@ -2801,7 +2806,6 @@ class Trainer:
             and self.args.moe_sharding_parallel_degree >= 1
             and self.args.expert_parallel_degree > 1
             and self.args.sharding_parallel_degree > 1
-            and not self.args.reorder_pipeline_priority
         ):
             from ..utils import MoEHybridParallelOptimizer
 
@@ -3518,13 +3522,12 @@ class Trainer:
                                 self.args.optim_shard_num,
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
-                            if not isinstance(self.model, LoRAModel):
-                                self._save_flex_optimizer_state(output_dir)
-                                if self.args.should_save:
-                                    if self.tokenizer is not None and self.args.save_tokenizer:
-                                        self.tokenizer.save_pretrained(output_dir)
-                                    # Good practice: save your training arguments together with the trained model
-                                    paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+                            self._save_flex_optimizer_state(output_dir)
+                            if self.args.should_save:
+                                if self.tokenizer is not None and self.args.save_tokenizer:
+                                    self.tokenizer.save_pretrained(output_dir)
+                                # Good practice: save your training arguments together with the trained model
+                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                         else:
                             if self.dp_group.rank > 0:  # this should only work for MoE saving
                                 self._save_ckpt_func(
@@ -3576,16 +3579,13 @@ class Trainer:
                                 signal_dir,
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
-                            if isinstance(self.model, LoRAModel):
-                                self.save_model(output_dir)
-                            else:
-                                self._save_flex_model_state(output_dir)
-                                self._save_flex_optimizer_state(output_dir)
-                                if self.args.should_save:
-                                    if self.tokenizer is not None and self.args.save_tokenizer:
-                                        self.tokenizer.save_pretrained(output_dir)
-                                    # Good practice: save your training arguments together with the trained model
-                                    paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+                            self._save_flex_model_state(output_dir)
+                            self._save_flex_optimizer_state(output_dir)
+                            if self.args.should_save:
+                                if self.tokenizer is not None and self.args.save_tokenizer:
+                                    self.tokenizer.save_pretrained(output_dir)
+                                # Good practice: save your training arguments together with the trained model
+                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                         else:
                             if self.args.data_parallel_rank > 0 and self.args.use_expert_parallel:
                                 self._save_ckpt_func(
@@ -3812,16 +3812,7 @@ class Trainer:
                             output_dir, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
                         )
                 else:
-                    is_main_process = paddle.distributed.get_rank() == 0
-                    if isinstance(self.model, LoRAModel):
-                        self.model.save_pretrained(
-                            output_dir,
-                            merge_tensor_parallel=True,
-                            variant=self.args.weight_name_suffix,
-                            save_checkpoint_format=self.args.save_checkpoint_format,
-                        )
-                    else:
-                        self._save_flex_model_state(output_dir)
+                    self._save_flex_model_state(output_dir)
 
                 if self.tokenizer is not None and self.args.save_tokenizer:
                     self.tokenizer.save_pretrained(output_dir)
