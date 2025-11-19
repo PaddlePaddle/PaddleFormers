@@ -281,6 +281,7 @@ def run_sft(
         "encode_one_turn": data_args.encode_one_turn,
         "use_template": data_args.use_template,
         "is_pretraining": True if model_args.stage.lower() == "pt" else False,
+        "truncate_packing": data_args.truncate_packing,
     }
 
     if data_args.dataset_type == "pretrain":
