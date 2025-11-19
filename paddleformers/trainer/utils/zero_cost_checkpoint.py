@@ -538,8 +538,6 @@ class ZeroCostCheckpointCallback(TrainerCallback):
             self.manipulated_config_to_save,
             self.manipulated_weight_suffix,
         ) = self.sharding_io.manipulate_state_dict_and_config(model, merge_tensor_parallel=False)
-        logger.info(f"origin_state_dict legnth = {len(model.state_dict())}")
-        logger.info(f"manipulate_state_dict legnth = {len(self.manipulated_state_dict)}")
         logger.info("Cache manipulated static dict done.")
         if self.manipulated_config_to_save is None:
             model_to_save = unwrap_model(model)
@@ -1479,8 +1477,6 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             self.manipulated_config_to_save,
         ) = self.manipulate_state_dict_and_config(model, optimizer, merge_tensor_parallel=False)
         logger.info("Cache manipulated static dict done.")
-        logger.info(f"origin_state_dict legnth = {len(model.state_dict())}")
-        logger.info(f"manipulate_state_dict legnth = {len(self.manipulated_state_dict)}")
 
         if self.manipulated_config_to_save is None:
             model_to_save = unwrap_model(model)
