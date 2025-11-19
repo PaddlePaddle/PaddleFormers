@@ -14,24 +14,21 @@
 
 """Image processor class for PaddleOCR-VL."""
 
+import io
 import json
 import math
+import random
 from pathlib import Path
 from typing import Dict, List, Optional, Union
-import random
-import io
 
 import numpy as np
-from PIL import Image, ImageOps
 from paddle.vision import transforms
+from PIL import Image, ImageOps
 
 from ...utils.log import logger
 from ..feature_extraction_utils import BatchFeature
 from ..image_processing_utils import BaseImageProcessor
-from ..image_transforms import (
-    convert_to_rgb,
-    to_channel_dimension_format,
-)
+from ..image_transforms import convert_to_rgb, to_channel_dimension_format
 from ..image_utils import (
     ChannelDimension,
     ImageInput,
@@ -106,7 +103,6 @@ class RandomScale:
 
 
 class RandomSingleSidePadding:
-
     def __init__(self, padding_range=(0, 20), fill="white"):
         assert (
             isinstance(padding_range, (tuple, list)) and len(padding_range) == 2
@@ -156,21 +152,15 @@ def get_ocr_augmentations(
         augmentations.append(RandomApply([scale_transform], p=scale_p))
 
     if padding_p > 0:
-        padding_transform = RandomSingleSidePadding(
-            padding_range=padding_range, fill="white"
-        )
+        padding_transform = RandomSingleSidePadding(padding_range=padding_range, fill="white")
         augmentations.append(RandomApply([padding_transform], p=padding_p))
 
     if rotation_p > 0 and rotation_degrees:
-        rotation_transform = RandomDiscreteRotation(
-            degrees=rotation_degrees, interpolation="nearest", expand=True
-        )
+        rotation_transform = RandomDiscreteRotation(degrees=rotation_degrees, interpolation="nearest", expand=True)
         augmentations.append(RandomApply([rotation_transform], p=rotation_p))
 
     if color_jitter_p > 0:
-        color_jitter = transforms.ColorJitter(
-            brightness=0.3, contrast=0.3, saturation=0.2, hue=0.1
-        )
+        color_jitter = transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.1)
         augmentations.append(RandomApply([color_jitter], p=color_jitter_p))
 
     if jpeg_p > 0:
@@ -215,11 +205,7 @@ def make_batched_images(images) -> List[List[ImageInput]]:
     Returns:
         list: A list of images.
     """
-    if (
-        isinstance(images, (list, tuple))
-        and isinstance(images[0], (list, tuple))
-        and is_valid_image(images[0][0])
-    ):
+    if isinstance(images, (list, tuple)) and isinstance(images[0], (list, tuple)) and is_valid_image(images[0][0]):
         return [img for img_list in images for img in img_list]
 
     elif isinstance(images, (list, tuple)) and is_valid_image(images[0]):
@@ -256,16 +242,12 @@ def smart_resize(
     """
 
     if height < factor:
-        logger.debug(
-            f"smart_resize: height={height} < factor={factor}, reset height=factor"
-        )
+        logger.debug(f"smart_resize: height={height} < factor={factor}, reset height=factor")
         width = round((width * factor) / height)
         height = factor
 
     if width < factor:
-        logger.debug(
-            f"smart_resize: width={width} < factor={factor}, reset width=factor"
-        )
+        logger.debug(f"smart_resize: width={width} < factor={factor}, reset width=factor")
         height = round((height * factor) / width)
         width = factor
 
@@ -339,16 +321,12 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
     def set_pixels(self, min_pixels=None, max_pixels=None, msg=""):
         """set_pixels"""
         if min_pixels is not None:
-            assert (
-                isinstance(min_pixels, int) and min_pixels >= 0
-            ), "min_pixels must be positive int"
+            assert isinstance(min_pixels, int) and min_pixels >= 0, "min_pixels must be positive int"
             logger.info(f"{msg} PaddleOCRImageProcessor set min_pixels = {min_pixels}")
             self.min_pixels = min_pixels
             self.size["min_pixels"] = int(min_pixels)
         if max_pixels is not None:
-            assert (
-                isinstance(max_pixels, int) and max_pixels > 0
-            ), "max_pixels must be positive int"
+            assert isinstance(max_pixels, int) and max_pixels > 0, "max_pixels must be positive int"
             logger.info(f"{msg} PaddleOCRImageProcessor set max_pixels = {max_pixels}")
             self.max_pixels = max_pixels
             self.size["max_pixels"] = int(max_pixels)
@@ -428,9 +406,7 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
             if input_data_format is None:
                 input_data_format = infer_channel_dimension_format(images[0])
 
-            image = to_channel_dimension_format(
-                image, data_format, input_channel_dim=input_data_format
-            )
+            image = to_channel_dimension_format(image, data_format, input_channel_dim=input_data_format)
 
             processed_images.append(image)
 
@@ -457,9 +433,7 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
         )
         patches = patches.transpose(0, 3, 5, 2, 1, 4, 6)
         assert self.temporal_patch_size == 1
-        flatten_patches = patches.reshape(
-            grid_t * grid_h * grid_w, channel, self.patch_size, self.patch_size
-        )
+        flatten_patches = patches.reshape(grid_t * grid_h * grid_w, channel, self.patch_size, self.patch_size)
         return flatten_patches, (grid_t, grid_h, grid_w)
 
     def preprocess(
@@ -484,15 +458,11 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
         size = size if size is not None else self.size
         resample = resample if resample is not None else self.resample
         do_rescale = do_rescale if do_rescale is not None else self.do_rescale
-        rescale_factor = (
-            rescale_factor if rescale_factor is not None else self.rescale_factor
-        )
+        rescale_factor = rescale_factor if rescale_factor is not None else self.rescale_factor
         do_normalize = do_normalize if do_normalize is not None else self.do_normalize
         image_mean = image_mean if image_mean is not None else self.image_mean
         image_std = image_std if image_std is not None else self.image_std
-        do_convert_rgb = (
-            do_convert_rgb if do_convert_rgb is not None else self.do_convert_rgb
-        )
+        do_convert_rgb = do_convert_rgb if do_convert_rgb is not None else self.do_convert_rgb
 
         if images is not None:
             images = make_batched_images(images)
@@ -500,10 +470,7 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
             raise NotImplementedError("Videos are not yet supported")
 
         if images is not None and not valid_images(images):
-            raise ValueError(
-                "Invalid image type. Must be of type PIL.Image.Image, numpy.ndarray, "
-                "paddle.Tensor."
-            )
+            raise ValueError("Invalid image type. Must be of type PIL.Image.Image, numpy.ndarray, " "paddle.Tensor.")
 
         if images is not None:
             pixel_values, vision_grid_thws = [], []

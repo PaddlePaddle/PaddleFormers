@@ -27,9 +27,9 @@ import_structure = {
 
 if TYPE_CHECKING:
     from .configuration import *
+    from .image_processor import *
     from .modeling import *
     from .tokenizer import *
-    from .image_processor import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

@@ -18,6 +18,7 @@ from ..configuration_utils import PretrainedConfig
 
 __all__ = ["PaddleOCRVLConfig", "PaddleOCRVisionConfig"]
 
+
 class PaddleOCRVisionConfig(PretrainedConfig):
 
     model_type = "paddleocr_vl"
@@ -207,4 +208,3 @@ class PaddleOCRVLConfig(PretrainedConfig):
                 "max_sequence_length",
             ]
         )
-
