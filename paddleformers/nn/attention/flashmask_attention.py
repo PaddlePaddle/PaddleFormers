@@ -40,11 +40,9 @@ def flashmask_attention_forward(
         is_causal = True
     if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 4:
         is_causal = False
-    
+
     if is_causal is None:
-        raise ValueError(
-            f"The `is_causal` argument must be specified when using the Flash Mask Attention kernel."
-        )
+        raise ValueError("The `is_causal` argument must be specified when using the Flash Mask Attention.")
 
     if sink is None:
         out = flashmask_attention(
