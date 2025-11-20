@@ -33,7 +33,7 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./output/glm4moe_3layers_model
+output_dir: ./checkpoints/qwen3-dpo-lora-tp-pp-ep
 disable_tqdm: true
 eval_accumulation_steps: 16
 
