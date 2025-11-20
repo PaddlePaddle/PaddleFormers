@@ -30,10 +30,10 @@ OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
 MAX_STEPS = 6
 SAVE_STEPS = 4
-TRAIN_DATASET_PATH = "./tests/fixtures/dummy/ernie/sft-train.jsonl"
-EVAL_DATASET_PATH = "./tests/fixtures/dummy/ernie/sft-train.jsonl"
-FC_TRAIN_DATASET_PATH = "./tests/fixtures/dummy/function-call/function-call-eval.jsonl"
-FC_EVAL_DATASET_PATH = "./tests/fixtures/dummy/function-call/function-call-eval.jsonl"
+TRAIN_DATASET_PATH = "./tests/fixtures/dummy/sft/train.jsonl"
+EVAL_DATASET_PATH = "./tests/fixtures/dummy/sft/eval.jsonl"
+FC_TRAIN_DATASET_PATH = "./tests/fixtures/dummy/function-call/train.jsonl"
+FC_EVAL_DATASET_PATH = "./tests/fixtures/dummy/function-call/eval.jsonl"
 
 SFT_FULL_EXCEPTED_LOSS = 11.944916
 SFT_FULL_RESUME_EXCEPTED_LOSS = 11.946712
@@ -51,8 +51,8 @@ SFT_LORA_TP_PP_EXCEPTED_LOSS = 11.956645
 SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.956057
 SFT_LORA_TP_PP_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 11806]]
 
-SFT_FC_EXCEPTED_LOSS = 11.941753
-SFT_FC_RESUME_EXCEPTED_LOSS = 11.936615
+SFT_FC_EXCEPTED_LOSS = 11.95681
+SFT_FC_RESUME_EXCEPTED_LOSS = 11.960528
 SFT_FC_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"

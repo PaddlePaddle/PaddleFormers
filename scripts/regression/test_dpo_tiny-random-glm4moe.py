@@ -30,8 +30,8 @@ OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
 MAX_STEPS = 6
 SAVE_STEPS = 4
-TRAIN_DATASET_PATH = "./tests/fixtures/dummy/ernie/dpo-train.jsonl"
-EVAL_DATASET_PATH = "./tests/fixtures/dummy/ernie/dpo-train.jsonl"
+TRAIN_DATASET_PATH = "./tests/fixtures/dummy/dpo/train.jsonl"
+EVAL_DATASET_PATH = "./tests/fixtures/dummy/dpo/eval.jsonl"
 
 DPO_FULL_EXCEPTED_LOSS = 0.69318
 DPO_FULL_RESUME_EXCEPTED_LOSS = 0.69372
