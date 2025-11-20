@@ -598,11 +598,11 @@ class MergeModel:
                     is_bf16 = str(tensor.dtype) in ["uint16", "bfloat16"]
                     if self.is_xpu:
                         if str(tensor.dtype) == "bfloat16":
-                            tensor = tensor.astype("uint16")
+                            tensor = tensor.view("uint16")
                         if str(lora_A_tensor.dtype) == "bfloat16":
-                            lora_A_tensor = lora_A_tensor.astype("uint16")
+                            lora_A_tensor = lora_A_tensor.view("uint16")
                         if str(lora_B_tensor.dtype) == "bfloat16":
-                            lora_B_tensor = lora_B_tensor.astype("uint16")
+                            lora_B_tensor = lora_B_tensor.view("uint16")
 
                     tensor = paddle.Tensor.__call__(tensor, zero_copy=True)
                     lora_A_tensor = paddle.Tensor.__call__(lora_A_tensor, zero_copy=True)
@@ -612,10 +612,7 @@ class MergeModel:
                         lora_A_tensor = lora_A_tensor.astype("float32")
                         lora_B_tensor = lora_B_tensor.astype("float32")
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
-                        if self.is_xpu:
-                            tensor = tensor.cpu().numpy().astype("uint16")
-                        else:
-                            tensor = tensor.cpu().numpy().astype(ml_dtypes.bfloat16)
+                        tensor = tensor.cpu().numpy().astype(ml_dtypes.bfloat16)
                     else:
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
                         tensor = tensor.cpu().numpy()
@@ -765,11 +762,11 @@ class MergeModel:
                     is_bf16 = str(tensor.dtype) in ["uint16", "bfloat16"]
                     if self.is_xpu:
                         if str(tensor.dtype) == "bfloat16":
-                            tensor = tensor.astype("uint16")
+                            tensor = tensor.view("uint16")
                         if str(lora_A_tensor.dtype) == "bfloat16":
-                            lora_A_tensor = lora_A_tensor.astype("uint16")
+                            lora_A_tensor = lora_A_tensor.view("uint16")
                         if str(lora_B_tensor.dtype) == "bfloat16":
-                            lora_B_tensor = lora_B_tensor.astype("uint16")
+                            lora_B_tensor = lora_B_tensor.view("uint16")
 
                     tensor = paddle.Tensor.__call__(tensor, zero_copy=True)
                     lora_A_tensor = paddle.Tensor.__call__(lora_A_tensor, zero_copy=True)
@@ -779,10 +776,7 @@ class MergeModel:
                         lora_A_tensor = lora_A_tensor.astype("float32")
                         lora_B_tensor = lora_B_tensor.astype("float32")
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
-                        if self.is_xpu:
-                            tensor = tensor.cpu().numpy().astype("uint16")
-                        else:
-                            tensor = tensor.cpu().numpy().astype(ml_dtypes.bfloat16)
+                        tensor = tensor.cpu().numpy().astype(ml_dtypes.bfloat16)
                     else:
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
                         tensor = tensor.cpu().numpy()
