@@ -28,6 +28,7 @@ from paddleformers.transformers import (
     process_vision_info,
 )
 from paddleformers.transformers.video_utils import load_video
+from paddleformers.utils import logger
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -776,6 +777,7 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
                 1.14062500,
             ]
         )
+        logger.info(f"output: {output[0, 150, 10000:10030]}")
         self.assertTrue(paddle.allclose(output[0, 150, 10000:10030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
 
