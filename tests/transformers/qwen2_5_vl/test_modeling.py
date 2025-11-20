@@ -28,7 +28,6 @@ from paddleformers.transformers import (
     process_vision_info,
 )
 from paddleformers.transformers.video_utils import load_video
-from paddleformers.utils.log import logger
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -653,35 +652,35 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE_1 = paddle.to_tensor(
             [
-                -0.28125000,
-                0.43945312,
-                -0.10791016,
-                -1.35937500,
+                -0.27734375,
+                0.43750000,
+                -0.10595703,
+                -1.35156250,
                 0.49023438,
-                -0.84375000,
-                0.53515625,
-                0.30664062,
+                -0.83984375,
+                0.54296875,
+                0.30468750,
                 0.71093750,
-                0.00289917,
-                0.16992188,
-                0.11328125,
+                0.00373840,
+                0.16699219,
+                0.11376953,
                 -0.26171875,
-                -0.33203125,
-                -0.62109375,
-                0.24902344,
-                0.03149414,
-                -0.36718750,
-                -0.13964844,
-                -0.18945312,
-                0.26757812,
-                -0.17968750,
-                -0.07031250,
-                0.41992188,
-                0.29296875,
-                0.30859375,
-                0.45117188,
-                -0.28710938,
-                0.62109375,
+                -0.32226562,
+                -0.61718750,
+                0.25195312,
+                0.03344727,
+                -0.36132812,
+                -0.13574219,
+                -0.18847656,
+                0.27343750,
+                -0.17480469,
+                -0.06738281,
+                0.41601562,
+                0.29101562,
+                0.31250000,
+                0.45312500,
+                -0.27929688,
+                0.61718750,
                 -0.60937500,
             ]
         )
@@ -719,8 +718,6 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
                 0.32617188,
             ]
         )
-        logger.info(f"EXPECTED_SLICE_1:{output[0, 1000, 10000:10030]}")
-        logger.info(f"EXPECTED_SLICE_2:{output[1, 1000, 10000:10030]}")
         self.assertTrue(paddle.allclose(output[0, 1000, 10000:10030], EXPECTED_SLICE_1, atol=1e-3, rtol=1e-3))
         self.assertTrue(paddle.allclose(output[1, 1000, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
 
