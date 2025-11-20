@@ -824,7 +824,7 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
         model.save_pretrained(cls.torch_model_path)
 
     @require_package("transformers", "torch")
-    def test_Qwen3_converter(self):
+    def test_Qwen2_5_VL_converter(self):
 
         # 1. forward the paddle model
         from paddleformers.transformers import Qwen2_5_VLModel
@@ -854,7 +854,7 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
         )
 
     @require_package("transformers", "torch")
-    def test_Qwen3_converter_from_local_dir(self):
+    def test_Qwen2_5_VL_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
 
             # 1. forward the torch  model
@@ -887,7 +887,7 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
 
     @parameterized.expand([("Qwen2_5_VLModel",), ("Qwen2_5_VLForConditionalGeneration",)])
     @require_package("transformers", "torch")
-    def test_Qwen3_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
+    def test_Qwen2_5_VL_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
         pytorch_class_name = pytorch_class_name or class_name
         with tempfile.TemporaryDirectory() as tempdir:
 
