@@ -31,7 +31,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
-from transformers.utils import PushToHubMixin
 
 from .. import __version__
 from ..quantization.quantization_config import QuantizationConfig
@@ -363,7 +362,7 @@ class LlmMetaConfig:
             setattr(config, key, getattr(args, key, value))
 
 
-class PretrainedConfig(PushToHubMixin):
+class PretrainedConfig:
     r"""
     Base class for all configuration classes. Handles a few parameters common to all models' configurations as well as
     methods for loading/downloading/saving configurations.
