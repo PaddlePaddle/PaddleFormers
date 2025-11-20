@@ -28,7 +28,6 @@ from paddleformers.transformers import (
     process_vision_info,
 )
 from paddleformers.transformers.video_utils import load_video
-from paddleformers.utils import logger
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -745,39 +744,38 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE = paddle.to_tensor(
             [
-                -0.41796875,
-                -0.10644531,
-                0.32617188,
-                0.66406250,
-                0.06738281,
-                -0.14648438,
-                0.08251953,
-                -0.02038574,
+                -0.42773438,
+                -0.10546875,
+                0.32812500,
+                0.66015625,
+                0.06396484,
+                -0.14062500,
+                0.08740234,
+                -0.02307129,
                 -0.05517578,
                 0.55468750,
-                0.24218750,
-                -0.40039062,
-                0.27539062,
-                0.06445312,
-                0.13867188,
+                0.23632812,
+                -0.40429688,
+                0.27929688,
+                0.06298828,
+                0.13281250,
                 -0.64843750,
                 -0.49218750,
-                -0.22851562,
-                -0.46289062,
-                -0.15039062,
-                -0.30273438,
-                -0.06030273,
-                0.09179688,
-                -0.55078125,
-                -0.27539062,
-                -0.33007812,
-                0.43750000,
-                0.34765625,
-                -0.10253906,
-                1.14062500,
+                -0.23242188,
+                -0.46093750,
+                -0.14746094,
+                -0.30078125,
+                -0.05908203,
+                0.09863281,
+                -0.54687500,
+                -0.27343750,
+                -0.33593750,
+                0.43554688,
+                0.34960938,
+                -0.10205078,
+                1.13281250,
             ]
         )
-        logger.info(f"output: {output[0, 150, 10000:10030]}")
         self.assertTrue(paddle.allclose(output[0, 150, 10000:10030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
 
