@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ./data/dpo/train.jsonl
+train_dataset_path: ./tests/fixtures/dummy/dpo/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./data/dpo/dev.jsonl
+eval_dataset_path: ./tests/fixtures/dummy/dpo/eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false

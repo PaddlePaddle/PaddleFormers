@@ -25,7 +25,7 @@ do_eval: true
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 1
 num_train_epochs: 1
-max_steps: -1
+max_steps: 10
 eval_steps: 100
 evaluation_strategy: steps
 save_steps: 100
@@ -33,21 +33,24 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3_hf_0p6b_dpo_lora_ckpts_parallel
+output_dir: ./output/glm4moe_3layers_model
 disable_tqdm: true
 eval_accumulation_steps: 16
 
 # train
 warmup_steps: 20
-learning_rate: 1.0e-5
+learning_rate: 1.0e-4
 
 # performance
-tensor_parallel_degree: 2
+tensor_parallel_degree: 4
 pipeline_parallel_degree: 2
-pipeline_parallel_config: enable_clear_every_step_cache disable_partial_send_recv
+expert_parallel_degree: 4
+use_expert_parallel: true
 sequence_parallel: true
+pipeline_parallel_config: enable_clear_every_step_cache disable_partial_send_recv
 sharding: stage1
 recompute: true
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: true
+amp_master_grad: true

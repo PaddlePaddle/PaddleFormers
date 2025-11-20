@@ -30,10 +30,10 @@ OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
 MAX_STEPS = 6
 SAVE_STEPS = 4
-TRAIN_DATASET_PATH = "./tests/fixtures/dummy/ernie/sft-train.jsonl"
-EVAL_DATASET_PATH = "./tests/fixtures/dummy/ernie/sft-train.jsonl"
-FC_TRAIN_DATASET_PATH = "./tests/fixtures/dummy/function-call/function-call-train.jsonl"
-FC_EVAL_DATASET_PATH = "./tests/fixtures/dummy/function-call/function-call-eval.jsonl"
+TRAIN_DATASET_PATH = "./tests/fixtures/dummy/sft/train.jsonl"
+EVAL_DATASET_PATH = "./tests/fixtures/dummy/sft/eval.jsonl"
+FC_TRAIN_DATASET_PATH = "./tests/fixtures/dummy/function-call/train.jsonl"
+FC_EVAL_DATASET_PATH = "./tests/fixtures/dummy/function-call/eval.jsonl"
 
 SFT_FULL_EXCEPTED_LOSS = 13.091749
 SFT_FULL_RESUME_EXCEPTED_LOSS = 13.079882
