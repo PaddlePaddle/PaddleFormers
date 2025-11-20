@@ -612,7 +612,10 @@ class MergeModel:
                         lora_A_tensor = lora_A_tensor.astype("float32")
                         lora_B_tensor = lora_B_tensor.astype("float32")
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
-                        tensor = tensor.cpu().numpy().astype(ml_dtypes.bfloat16)
+                        if self.is_xpu:
+                            tensor = tensor.cpu().numpy().astype("uint16")
+                        else:
+                            tensor = tensor.cpu().numpy().astype(ml_dtypes.bfloat16)
                     else:
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
                         tensor = tensor.cpu().numpy()
@@ -776,7 +779,10 @@ class MergeModel:
                         lora_A_tensor = lora_A_tensor.astype("float32")
                         lora_B_tensor = lora_B_tensor.astype("float32")
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
-                        tensor = tensor.cpu().numpy().astype(ml_dtypes.bfloat16)
+                        if self.is_xpu:
+                            tensor = tensor.cpu().numpy().astype("uint16")
+                        else:
+                            tensor = tensor.cpu().numpy().astype(ml_dtypes.bfloat16)
                     else:
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
                         tensor = tensor.cpu().numpy()
