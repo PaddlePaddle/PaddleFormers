@@ -718,6 +718,8 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
                 0.32617188,
             ]
         )
+        print("EXPECTED_SLICE_1:", EXPECTED_SLICE_1)
+        print("EXPECTED_SLICE_2:", EXPECTED_SLICE_2)
         self.assertTrue(paddle.allclose(output[0, 1000, 10000:10030], EXPECTED_SLICE_1, atol=1e-3, rtol=1e-3))
         self.assertTrue(paddle.allclose(output[1, 1000, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
 
