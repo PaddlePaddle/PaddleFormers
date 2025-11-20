@@ -114,6 +114,9 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
     # When resuming modelopt_state, we also change the transformer_layer_spec to `paddlefleet.post_training.modelopt.gpt.model_specs` which is a combination of local spec + TEDotProductAttention.
     restore_modelopt_state: bool = False
 
+    def get(self, key: str, default=None):
+        return getattr(self, key, default)
+
     def provide(self, pre_process=None, post_process=None, vp_stage=None) -> GPTModel:
         """Configure and instantiate a PaddleFleet GPT model based on this configuration.
 
