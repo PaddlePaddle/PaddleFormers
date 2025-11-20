@@ -99,7 +99,9 @@ def create_causal_masks_and_row_indices(
                 Start/end row indices mapping for full and sliding attention.
     """
 
-    has_sliding_layers = config.sliding_window is not None and "sliding_attention" in config.layer_types
+    has_sliding_layers = (
+        getattr(config, "sliding_window", None) is not None and "sliding_attention" in config.layer_types
+    )
 
     if attn_mask_startend_row_indices is not None:
         attention_mask = None

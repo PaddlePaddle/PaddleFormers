@@ -28,6 +28,8 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...utils.log import logger
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import LlamaConfig
@@ -481,13 +483,19 @@ class LlamaModel(LlamaPretrainedModel):
             )
 
         # TODO(littleherozzzx): check self.config.fuse_rope
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": bsz,
+            "seq_length": seq_length,
+            "cache_length": kv_seq_len,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+            "return_mapping": False,
+        }
+        causal_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
         position_embeddings = self.rotary_emb(inputs_embeds, position_ids)
-        causal_mask = self._prepare_decoder_attention_mask(
-            attention_mask=attention_mask,
-            input_shape=inputs_embeds.shape[:2],
-            past_key_values_length=kv_seq_len,
-            dtype=inputs_embeds.dtype,
-        )
         all_hidden_states = [] if output_hidden_states else None
 
         hidden_states = inputs_embeds
@@ -607,6 +615,13 @@ class LlamaForCausalLM(LlamaPretrainedModel):
 
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
+
+        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+            logger.warning(
+                "You have provided both attn_mask_startend_row_indices and attention_mask. "
+                "The attn_mask_startend_row_indices will be used."
+            )
+            attention_mask = None
 
         outputs = self.model(
             input_ids,
