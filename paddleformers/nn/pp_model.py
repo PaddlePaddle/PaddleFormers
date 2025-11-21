@@ -61,12 +61,12 @@ def parse_args(args):
             - position_ids (Optional[paddle.Tensor]): Position IDs if provided
             All returned tensors have stop_gradient=True.
     """
-    if isinstance(args, dict):
-        hidden_states = args.get("hidden_states", None)
-        attention_mask = args.get("attention_mask", None)
-        position_ids = args.get("position_ids", None)
-        position_embeddings = args.get("position_embeddings", None)
-        nbatch_pack_offset = args.get("nbatch_pack_offset", None)
+    # if isinstance(args, dict):
+    hidden_states = args.get("hidden_states", None)
+    attention_mask = args.get("attention_mask", None)
+    position_ids = args.get("position_ids", None)
+    position_embeddings = args.get("position_embeddings", None)
+    nbatch_pack_offset = args.get("nbatch_pack_offset", None)
 
     # need position_ids to compute value for PPO.
     if position_ids is not None:
