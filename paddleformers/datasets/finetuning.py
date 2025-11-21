@@ -427,6 +427,7 @@ class SequenceDataset(IterableDataset):
         # set max estimate samples
         if not self.is_valid:
             self.max_estimate_samples = len(self.mix_datasets)
+        self.last_printed_percent = 0
 
     def __iter_func(self):
         """Core iterator function for sequence generation.
@@ -479,6 +480,7 @@ class SequenceDataset(IterableDataset):
 
                     if self.estimate:
                         self.used_estimate_samples += actual_example_num
+                        self.print_max_steps_estimate_progress()
                         if self.used_estimate_samples >= self.max_estimate_samples:
                             self.used_estimate_samples = 0
                             # Set flag to False and yield empty list to signal the end of estimation
@@ -527,6 +529,7 @@ class SequenceDataset(IterableDataset):
 
                     if self.estimate:
                         self.used_estimate_samples += actual_example_num
+                        self.print_max_steps_estimate_progress()
                         if self.used_estimate_samples >= self.max_estimate_samples:
                             self.used_estimate_samples = 0
                             # Set flag to False and yield empty list to signal the end of estimation
@@ -556,6 +559,7 @@ class SequenceDataset(IterableDataset):
 
                         if self.estimate:
                             self.used_estimate_samples += actual_example_num
+                            self.print_max_steps_estimate_progress()
                             if self.used_estimate_samples >= self.max_estimate_samples:
                                 # Yield left batch sequence before estimation ends
                                 if len(batch_sequence) > 0:
@@ -590,6 +594,7 @@ class SequenceDataset(IterableDataset):
 
                         if self.estimate:
                             self.used_estimate_samples += actual_example_num
+                            self.print_max_steps_estimate_progress()
                             # Stop estimation if the number of samples used in estimation is larger than max_estimate_samples
                             if self.used_estimate_samples >= self.max_estimate_samples:
                                 # Yield left packs before estimation ends
@@ -665,7 +670,13 @@ class SequenceDataset(IterableDataset):
             if len(tokens_src) + len(tokens_target) > (
                 self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
             ):
-                break
+                # If the source (src) exceeds length limit, discard this round of conversation data
+                # If the target (tgt) exceeds length limit, truncate it
+                if len(tokens_src) > self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn:
+                    break
+                else:
+                    reverse_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
+                    tokens_target = tokens_target[:reverse_len]
 
             tokens = tokens_src + tokens_target + tokens
 
@@ -682,12 +693,12 @@ class SequenceDataset(IterableDataset):
         if len(tokens) <= num_reserved_tokens_for_each_dialog + num_reserved_tokens_for_each_turn:
             try:
                 # For print log
-                sub_src = example.src[0].strip()[:5]
-                sub_tgt = example.tgt[-1].strip()[-5:]
-                global LOGGER_COUNT
-                LOGGER_COUNT += 1
-                if LOGGER_COUNT <= 5:
-                    logger.warning(f"even one turn, example_output:'{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
+                sub_src = example.request["messages"][0]["content"].strip()[:50]
+                sub_tgt = example.request["messages"][-1]["content"].strip()[-50:]
+                if len(tokens) > 0:
+                    logger.warning(f"This data is too short: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
+                else:
+                    logger.warning(f"This data is too long: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
             except Exception:
                 logger.warning("[SKIP] wrong example")
 
@@ -810,6 +821,13 @@ class SequenceDataset(IterableDataset):
                 left_len[left_index] = self.max_seq_len
 
         return generate_packs
+
+    def print_max_steps_estimate_progress(self):
+        current_percent = (self.used_estimate_samples / self.max_estimate_samples) * 100
+        # Print progress at every 5% interval.
+        if int(current_percent) // 5 > self.last_printed_percent // 5:
+            print(f"[Estimate Max Steps Progress]: {current_percent:.0f}%")
+            self.last_printed_percent = current_percent
 
 
 def gen_self_attn_mask(batch_token_ids: List[List[int]], max_seq_len: int):

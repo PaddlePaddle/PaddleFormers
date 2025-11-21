@@ -53,25 +53,32 @@ export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 * Note: In `Chat` module, the number of gpus configured by CUDA_VISIBLE_DEVICES should be equal to `tensor_parallel_degree` in the config.
 Alternatively, you can also unset CUDA_VISIBLE_DEVICES.
 
-# 1. CLI Usage
-
-Examples using **Qwen/Qwen3-0.6B-Base** model:
-
-## 1.1. Chat
-待补充
-
-## 1.2. Model Pre-training
+**Proxy Configuration**
 
 ```bash
-# Example 1: SFT-Full using online dataset
+export HTTPS_PROXY={your_proxy}
+export HTTP_PROXY={your_proxy}
+```
+
+## CLI Specific Usage
+
+Example using the **Qwen/Qwen3-0.6B-Base** model:
+
+### 1. Chat
+To be supplemented
+
+### 2. Model Pre-training
+
+```bash
+# Example 1: PT-Full using online dataset
 paddleformers-cli train examples/config/pt/full.yaml
-# Example 2: SFT-Full using offline dataset
+# Example 2: PT-Full using offline dataset
 paddleformers-cli train examples/config/pt/full_offline_data.yaml
 ```
 
-## 1.3. Model Fine-tuning
+### 3. Model Fine-tuning
 
-### 1.3.1. SFT & LoRA Fine-tuning
+#### 3.1. SFT and LoRA Fine-tuning
 ```bash
 # Example 1: SFT
 paddleformers-cli train examples/config/sft/lora.yaml
@@ -79,7 +86,7 @@ paddleformers-cli train examples/config/sft/lora.yaml
 paddleformers-cli train examples/config/sft/full.yaml
 ```
 
-### 1.3.2. DPO & LoRA Fine-tuning
+#### 3.2. DPO and LoRA Fine-tuning
 ```bash
 # Example 1: 8K seq length, DPO
 paddleformers-cli train examples/config/dpo/full.yaml
@@ -87,15 +94,30 @@ paddleformers-cli train examples/config/dpo/full.yaml
 paddleformers-cli train examples/config/dpo/lora.yaml
 ```
 
-## 1.4. Model Eval
-待补充
+### 4. Model Evaluation
+To be supplemented
 
-## 1.5. Model Export
+### 5. Model Export
 ```bash
 paddleformers-cli export examples/config/run_export.yaml
 ```
 
-## 1.6. Multi-Node Training
+### 6. Multi-node Training
+
+#### 6.1. Method 1
+
 ```bash
 NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
+```
+
+#### 6.2. Method 2 (mpirun)
+
+First, write a script, such as `scripts/train_96_gpus.sh`, with the following content:
+```bash
+NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
+```
+
+Then:
+```bash
+mpirun bash scripts/train_96_gpus.sh
 ```
