@@ -34,5 +34,7 @@
   "bf16": true,
   "fp16_opt_level": "O2",
   "load_via_cpu": true,
-  "save_to_hf": false
+  "save_to_hf": false,
+  "save_checkpoint_format": "flex_checkpoint",
+  "load_checkpoint_format": "flex_checkpoint"
 }
