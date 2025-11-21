@@ -120,7 +120,7 @@ __all__ = [
 
 def fit_bf16_to_uint16_np(tensor):
     if "xpu" in paddle.device.get_device() and isinstance(tensor, np.ndarray) and str(tensor.dtype) == "bfloat16":
-        return tensor.astype("uint16")
+        return tensor.view("uint16")
     return tensor
 
 
