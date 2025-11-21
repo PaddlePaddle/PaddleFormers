@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ./tests/fixtures/dummy/sft/train.json
+train_dataset_path: ./tests/fixtures/dummy/sft/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./tests/fixtures/dummy/sft/eval.json
+eval_dataset_path: ./tests/fixtures/dummy/sft/eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: true
@@ -42,7 +42,7 @@ warmup_steps: 20
 learning_rate: 1.0e-4
 
 # performance
-tensor_parallel_degree: 4
+tensor_parallel_degree: 2
 pipeline_parallel_degree: 2
 expert_parallel_degree: 4
 use_expert_parallel: true
@@ -51,5 +51,6 @@ sharding: stage1
 recompute: true
 bf16: true
 fp16_opt_level: O2
-unified_checkpoint: true
 amp_master_grad: true
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
