@@ -30,8 +30,6 @@ OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
 MAX_STEPS = 6
 SAVE_STEPS = 4
-TRAIN_DATASET_PATH = "./tests/fixtures/dummy/dpo/train.jsonl"
-EVAL_DATASET_PATH = "./tests/fixtures/dummy/dpo/eval.jsonl"
 
 DPO_FULL_EXCEPTED_LOSS = 0.69318
 DPO_FULL_RESUME_EXCEPTED_LOSS = 0.69372
@@ -126,12 +124,12 @@ class DPOTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_full")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -195,8 +193,6 @@ class DPOTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_lora")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": 10,
             "save_steps": SAVE_STEPS,
@@ -254,11 +250,11 @@ class DPOTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_full_tp_pp")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -306,11 +302,11 @@ class DPOTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_lora_tp_pp")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
