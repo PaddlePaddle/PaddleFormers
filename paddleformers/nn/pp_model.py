@@ -705,10 +705,10 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 ]
         last_stage_keys = ["labels", "loss_mask"]
 
-        def get_expected_keys(inputs, keys):
-            ret = tuple([inputs.pop(k) for k in keys if k in inputs])
-            if len(ret) == 1:
-                ret = ret[0]
+        def get_expected_keys(inputs, keys):  # 顺序从inputs中提取keys对应的值
+            ret = {}
+            for key in keys:
+                ret = inputs.get(key, None)
             return ret
 
         if type(inputs) is dict or type(inputs) is OrderedDict:
