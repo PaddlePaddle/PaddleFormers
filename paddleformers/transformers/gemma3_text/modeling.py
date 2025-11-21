@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 from functools import partial
 from typing import Optional, Tuple, Union
 
@@ -499,12 +498,6 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         self.norm = Gemma3RMSNormPipe(config)
         self.rotary_emb = Gemma3RotaryEmbedding(config=config)
 
-        # TODO: usage might be modified in the future
-        config = copy.deepcopy(config)
-        config.rope_theta = config.rope_local_base_freq
-        config.rope_scaling = {"rope_type": "default"}
-        self.rotary_emb_local = Gemma3RotaryEmbedding(config=config)
-
         if config.sequence_parallel:
             self.norm.enable_sequence_parallel()
 
@@ -617,9 +610,8 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
 
-        # Compute position embeddings
-        position_embeddings_global = self.rotary_emb(inputs_embeds, position_ids)
-        position_embeddings_local = self.rotary_emb_local(inputs_embeds, position_ids)
+        # TODO: apply different RoPE settings based on 'layer_type'
+        position_embeddings = self.rotary_emb(inputs_embeds, position_ids)
 
         # decoder layers
         hidden_states = inputs_embeds
@@ -628,12 +620,6 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         next_decoder_cache = () if use_cache else None
 
         for idx, (decoder_layer) in enumerate(self.layers):
-            # apply global RoPE to non-sliding layer only
-            if decoder_layer.self_attn.is_sliding:
-                position_embeddings = position_embeddings_local
-            else:
-                position_embeddings = position_embeddings_global
-
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             past_key_value = past_key_values[idx] if past_key_values is not None else None
