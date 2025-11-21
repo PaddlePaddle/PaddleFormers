@@ -18,7 +18,9 @@ import copy
 import tempfile
 import unittest
 
+import numpy as np
 import paddle
+from parameterized import parameterized
 
 from paddleformers.transformers import (
     AutoProcessor,
@@ -28,6 +30,7 @@ from paddleformers.transformers import (
     process_vision_info,
 )
 from paddleformers.transformers.video_utils import load_video
+from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -779,144 +782,149 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
         self.assertTrue(paddle.allclose(output[0, 150, 10000:10030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
 
-# class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
-#     @classmethod
-#     @require_package("transformers", "torch")
-#     def setUpClass(cls) -> None:
-#         from transformers import Qwen2_5_VLConfig, Qwen2_5_VLForConditionalGeneration
+class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
+    @classmethod
+    @require_package("transformers", "torch")
+    def setUpClass(cls) -> None:
+        from transformers import Qwen2_5_VLConfig, Qwen2_5_VLForConditionalGeneration
 
-#         # when python application is done, `TemporaryDirectory` will be free
-#         cls.torch_model_path = tempfile.TemporaryDirectory().name
-#         tiny_vision_config = {
-#             "depth": 4,
-#             "intermediate_size": 95,
-#             "hidden_size": 64,
-#             "out_hidden_size": 128,
-#             "fullatt_block_indexes": [1, 3],
-#         }
-#         tiny_rope_scaling = {"type": "mrope", "mrope_section": [1]}
-#         config = Qwen2_5_VLConfig(
-#             hidden_size=64,
-#             intermediate_size=344,
-#             num_hidden_layers=2,
-#             vision_config=tiny_vision_config,
-#             rope_scaling=tiny_rope_scaling,
-#         )
+        # when python application is done, `TemporaryDirectory` will be free
+        cls.torch_model_path = tempfile.TemporaryDirectory().name
+        tiny_vision_config = {
+            "depth": 4,
+            "intermediate_size": 95,
+            "hidden_size": 64,
+            "out_hidden_size": 128,
+            "fullatt_block_indexes": [1, 3],
+        }
+        tiny_rope_scaling = {"type": "mrope", "mrope_section": [1]}
+        config = Qwen2_5_VLConfig(
+            hidden_size=64,
+            intermediate_size=344,
+            num_hidden_layers=2,
+            vision_config=tiny_vision_config,
+            rope_scaling=tiny_rope_scaling,
+            vision_start_token_id=151652,
+            vision_end_token_id=151653,
+            image_token_id=151655,
+        )
 
-#         input_ids = np.random.randint(100, 200, [1, 20]).astype("int64")
-#         visual_token_ids = [config.vision_start_token_id] + [config.image_token_id] * 2 + [config.vision_end_token_id]
-#         input_ids[:, 10 : 10 + len(visual_token_ids)] = visual_token_ids
+        input_ids = np.random.randint(0, 200, [1, 20]).astype("int64")
+        visual_token_ids = (
+            [config.vision_start_token_id] + [config.image_token_id] * 2 + [config.vision_start_token_id]
+        )
+        input_ids[:, 10 : 10 + len(visual_token_ids)] = visual_token_ids
 
-#         attention_mask = np.ones([1, 20], dtype="int64")
-#         pixel_values = np.random.randn(2 * 2, 1176).astype("float32")
-#         image_grid_thw = np.array([[1, 2, 2]], dtype="int64")
-#         cls.inputs = {
-#             "input_ids": input_ids,
-#             "pixel_values": pixel_values,
-#             "image_grid_thw": image_grid_thw,
-#             "attention_mask": attention_mask,
-#         }
+        attention_mask = np.ones([1, 20], dtype="int64")
+        pixel_values = np.random.randn(2 * 2, 1176).astype("float32")
+        image_grid_thw = np.array([[1, 2, 2]], dtype="int64")
+        cls.inputs = {
+            "input_ids": input_ids,
+            "pixel_values": pixel_values,
+            "image_grid_thw": image_grid_thw,
+            "attention_mask": attention_mask,
+        }
 
-#         model = Qwen2_5_VLForConditionalGeneration(config)
-#         model.save_pretrained(cls.torch_model_path)
+        model = Qwen2_5_VLForConditionalGeneration(config)
+        model.save_pretrained(cls.torch_model_path)
 
-#     @require_package("transformers", "torch")
-#     def test_Qwen2_5_VL_converter(self):
+    @require_package("transformers", "torch")
+    def test_Qwen2_5_VL_converter(self):
 
-#         # 1. forward the paddle model
-#         from paddleformers.transformers import Qwen2_5_VLModel
+        # 1. forward the paddle model
+        from paddleformers.transformers import Qwen2_5_VLModel
 
-#         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-#         paddle_model = Qwen2_5_VLModel.from_pretrained(
-#             self.torch_model_path, convert_from_hf=True, dtype="float32"
-#         ).eval()
-#         paddle_logit = paddle_model(**paddle_inputs)[0]
+        paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
+        paddle_model = Qwen2_5_VLModel.from_pretrained(
+            self.torch_model_path, convert_from_hf=True, dtype="float32"
+        ).eval()
+        paddle_logit = paddle_model(**paddle_inputs)[0]
 
-#         # 2. forward the torch  model
-#         import torch
-#         from transformers import Qwen2_5_VLModel
+        # 2. forward the torch  model
+        import torch
+        from transformers import Qwen2_5_VLModel
 
-#         torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
-#         torch_model = Qwen2_5_VLModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32).eval()
-#         torch_logit = torch_model(**torch_inputs)[0]
+        torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
+        torch_model = Qwen2_5_VLModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32).eval()
+        torch_logit = torch_model(**torch_inputs)[0]
 
-#         # 3. compare the result between paddle and torch
-#         self.assertTrue(
-#             np.allclose(
-#                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-#                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-#                 atol=1e-2,
-#                 rtol=1e-2,
-#             )
-#         )
+        # 3. compare the result between paddle and torch
+        self.assertTrue(
+            np.allclose(
+                paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                atol=1e-2,
+                rtol=1e-2,
+            )
+        )
 
-#     @require_package("transformers", "torch")
-#     def test_Qwen2_5_VL_converter_from_local_dir(self):
-#         with tempfile.TemporaryDirectory() as tempdir:
+    @require_package("transformers", "torch")
+    def test_Qwen2_5_VL_converter_from_local_dir(self):
+        with tempfile.TemporaryDirectory() as tempdir:
 
-#             # 1. forward the torch  model
-#             import torch
-#             from transformers import Qwen2_5_VLModel
+            # 1. forward the torch  model
+            import torch
+            from transformers import Qwen2_5_VLModel
 
-#             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
-#             torch_model = Qwen2_5_VLModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-#             torch_model.eval()
-#             torch_model.save_pretrained(tempdir)
-#             torch_logit = torch_model(**torch_inputs)[0]
+            torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
+            torch_model = Qwen2_5_VLModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model.eval()
+            torch_model.save_pretrained(tempdir)
+            torch_logit = torch_model(**torch_inputs)[0]
 
-#             # 2. forward the paddle model
-#             from paddleformers.transformers import Qwen2_5_VLModel
+            # 2. forward the paddle model
+            from paddleformers.transformers import Qwen2_5_VLModel
 
-#             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-#             paddle_model = Qwen2_5_VLModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
-#             paddle_model.eval()
-#             paddle_logit = paddle_model(**paddle_inputs)[0]
+            paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
+            paddle_model = Qwen2_5_VLModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model.eval()
+            paddle_logit = paddle_model(**paddle_inputs)[0]
 
-#             # 3. compare the result between paddle and torch
-#             self.assertTrue(
-#                 np.allclose(
-#                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-#                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-#                     atol=1e-2,
-#                     rtol=1e-2,
-#                 )
-#             )
+            # 3. compare the result between paddle and torch
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    atol=1e-2,
+                    rtol=1e-2,
+                )
+            )
 
-#     @parameterized.expand([("Qwen2_5_VLModel",), ("Qwen2_5_VLForConditionalGeneration",)])
-#     @require_package("transformers", "torch")
-#     def test_Qwen2_5_VL_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-#         pytorch_class_name = pytorch_class_name or class_name
-#         with tempfile.TemporaryDirectory() as tempdir:
+    @parameterized.expand([("Qwen2_5_VLModel",), ("Qwen2_5_VLForConditionalGeneration",)])
+    @require_package("transformers", "torch")
+    def test_Qwen2_5_VL_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
+        pytorch_class_name = pytorch_class_name or class_name
+        with tempfile.TemporaryDirectory() as tempdir:
 
-#             # 1. forward the torch model
-#             import torch
-#             import transformers
+            # 1. forward the torch model
+            import torch
+            import transformers
 
-#             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
-#             torch_model_class = getattr(transformers, pytorch_class_name)
-#             torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32).eval()
+            torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
+            torch_model_class = getattr(transformers, pytorch_class_name)
+            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32).eval()
 
-#             torch_model.save_pretrained(tempdir)
-#             torch_logit = torch_model(**torch_inputs)[0]
+            torch_model.save_pretrained(tempdir)
+            torch_logit = torch_model(**torch_inputs)[0]
 
-#             # 2. forward the paddle model
-#             from paddleformers import transformers
+            # 2. forward the paddle model
+            from paddleformers import transformers
 
-#             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-#             paddle_model_class = getattr(transformers, class_name)
-#             paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32").eval()
+            paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
+            paddle_model_class = getattr(transformers, class_name)
+            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32").eval()
 
-#             if class_name == "Qwen2_5_VLModel":
-#                 paddle_logit = paddle_model(**paddle_inputs)[0]
-#             else:
-#                 paddle_logit = paddle_model(**paddle_inputs)["logits"]
+            if class_name == "Qwen2_5_VLModel":
+                paddle_logit = paddle_model(**paddle_inputs)[0]
+            else:
+                paddle_logit = paddle_model(**paddle_inputs)["logits"]
 
-#             # 3. compare the result between paddle and torch
-#             self.assertTrue(
-#                 np.allclose(
-#                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-#                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-#                     atol=1e-2,
-#                     rtol=1e-2,
-#                 )
-#             )
+            # 3. compare the result between paddle and torch
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    atol=1e-2,
+                    rtol=1e-2,
+                )
+            )

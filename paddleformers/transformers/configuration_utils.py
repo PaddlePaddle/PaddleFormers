@@ -622,10 +622,6 @@ class PretrainedConfig:
         # parameter for model dtype
         if "torch_dtype" in kwargs:
             self.dtype = kwargs.pop("torch_dtype")
-        # else:
-        #     import paddle
-
-        #     self.dtype = kwargs.pop("dtype", paddle.get_default_dtype())
 
         # Is decoder is used in encoder-decoder models to differentiate encoder from decoder
         self.is_encoder_decoder = kwargs.pop("is_encoder_decoder", False)
