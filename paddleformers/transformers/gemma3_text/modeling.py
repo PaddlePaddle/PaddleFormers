@@ -483,6 +483,59 @@ class Gemma3PreTrainedModel(PretrainedModel):
         mappings = make_base_actions()
         return mappings
 
+    @classmethod
+    def _gen_aoa_config(cls, config: Gemma3TextConfig):
+        model_prefix = "" if cls == cls.base_model_prefix else "model."
+        aoa_config = {
+            "aoa_statements": [
+                # load tied weight
+                "model.embed_tokens.weight -> lm_head.weight",
+                # others
+                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+                f"model.norm.weight -> {model_prefix}norm.weight",
+                f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.layers.$LAYER_ID.pre_feedforward_layernorm.weight -> {model_prefix}layers.$LAYER_ID.pre_feedforward_layernorm.weight",
+                f"model.layers.$LAYER_ID.post_feedforward_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight",
+                # do transpose
+                f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight",
+                f"model.layers.$LAYER_ID.self_attn.k_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight",
+                f"model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight",
+                f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+            ]
+        }
+        return aoa_config
+
+    # NOTE: These aoa_config items will be removed later. The subsequent AOA parsing module will automatically generate the reverse AOA based on the forward (from_pretrained) AOA.
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: Gemma3TextConfig):
+        model_prefix = "" if cls == cls.base_model_prefix else "model."
+        aoa_statements = [
+            # ignore tied weights
+            "lm_head.weight -> _",
+            # do transpose
+            f"{model_prefix}layers.$LAYER_ID.mlp.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.gate_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.up_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight^T -> model.layers.$LAYER_ID.self_attn.q_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight^T -> model.layers.$LAYER_ID.self_attn.k_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight^T -> model.layers.$LAYER_ID.self_attn.v_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+            # others
+            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            f"{model_prefix}norm.weight -> model.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.pre_feedforward_layernorm.weight -> model.layers.$LAYER_ID.pre_feedforward_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight -> model.layers.$LAYER_ID.post_feedforward_layernorm.weight",
+        ]
+
+        aoa_config = {"aoa_statements": aoa_statements}
+        return aoa_config
+
 
 class Gemma3TextModel(Gemma3PreTrainedModel):
     config_class = Gemma3TextConfig
@@ -869,6 +922,8 @@ class Gemma3ForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = Gemma3TextModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Gemma3TextModel.transpose_weight_keys
+    _gen_aoa_config = Gemma3ForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = Gemma3ForCausalLM._gen_inv_aoa_config
 
 
 __all__ = [
