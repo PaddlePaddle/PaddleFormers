@@ -329,6 +329,57 @@ class Phi3PreTrainedModel(PretrainedModel):
         mappings = make_base_actions()
         return mappings
 
+    @classmethod
+    def _gen_aoa_config(cls, config: Phi3Config):
+        model_prefix = "" if cls == cls.base_model_class else "model."
+        aoa_config = {
+            "aoa_statements": [
+                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+                f"model.norm.weight -> {model_prefix}norm.weight",
+                f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+                f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+            ]
+        }
+
+        # attention qkv
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.self_attn.qkv_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv_old, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_attention_heads // config.num_key_value_heads}",
+        ]
+
+        # FFN
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.mlp.gate_up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate_up_proj.weight, fused_ffn",
+        ]
+
+        return aoa_config
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: Phi3Config):
+        model_prefix = "" if cls == cls.base_model_class else "model."
+
+        aoa_statements = [
+            # do transpose
+            f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            f"{model_prefix}norm.weight -> model.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+        ]
+
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight^T -> model.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv_old, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_attention_heads // config.num_key_value_heads}"
+        ]
+
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.mlp.gate_up_proj.weight^T -> model.layers.$LAYER_ID.mlp.gate_up_proj.weight, fused_ffn",
+        ]
+
+        aoa_config = {"aoa_statements": aoa_statements}
+        return aoa_config
+
 
 @register_base_model
 class Phi3Model(Phi3PreTrainedModel):
@@ -667,6 +718,8 @@ class Phi3ForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = Phi3Model._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Phi3Model.transpose_weight_keys
+    _gen_aoa_config = Phi3ForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = Phi3ForCausalLM._gen_inv_aoa_config
 
 
 __all__ = [

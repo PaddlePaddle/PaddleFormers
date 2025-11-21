@@ -45,6 +45,7 @@ class MLP(nn.Layer):
         self.act_type = config.get("hidden_act", "silu")
         self.act_fn = ACT2FN[self.act_type]
         self.fuse_up_gate = fuse_up_gate
+        self._gate_up_proj_name = gate_up_proj_name
 
         if self.fuse_up_gate:
             setattr(
@@ -59,7 +60,6 @@ class MLP(nn.Layer):
                     tp_plan="colwise",
                 ),
             )
-            self.up_gate_proj = getattr(self, gate_up_proj_name)
         else:
             # set attr for gate_proj
             setattr(
@@ -105,6 +105,10 @@ class MLP(nn.Layer):
             ),
         )
         self.down_proj = getattr(self, down_proj_name)
+
+    @property
+    def up_gate_proj(self):
+        return getattr(self, self._gate_up_proj_name)
 
     def forward(self, x):
         if self.fuse_up_gate:
