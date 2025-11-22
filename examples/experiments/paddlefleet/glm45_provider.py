@@ -47,7 +47,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     seq_length: int = 131072
     init_method_std: int = 0.02
     hidden_dropout: float = 0.0
-    vocab_size: int = 151552
+    vocab_size: int = 37888
     share_embeddings_and_output_weights: Optional[bool] = False
     layernorm_epsilon: float = 1e-5
     autocast_dtype: paddle.dtype = paddle.bfloat16
