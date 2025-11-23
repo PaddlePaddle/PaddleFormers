@@ -1,8 +1,8 @@
 {
-  "input_dir": "1.0 /root/paddlejob/gpfs/xuxinyi/workspace/PaddleFormers/examples/experiments/paddlefleet/data/pre-training/llama_openwebtext_100k",
+  "input_dir": "1.0 ./data/pre-training/llama_openwebtext_100k",
   "split": "998,1,1",
   "max_seq_len": 8192,
-  "model_name_or_path": "/root/paddlejob/gpfs/zhangyichen03/huggingface_model/GLM-4.5-Air",
+  "model_name_or_path": "zai-org/GLM-4.5-Air",
   "seed": 23,
   "do_train": true,
   "do_eval": true,
@@ -36,6 +36,5 @@
   "load_via_cpu": true,
   "save_to_hf": false,
   "save_checkpoint_format": "flex_checkpoint",
-  "load_checkpoint_format": "flex_checkpoint",
-  "tensorwise_offload_optimizer": true
+  "load_checkpoint_format": "flex_checkpoint"
 }
