@@ -6,40 +6,40 @@ train_dataset_prob: "1.0"
 eval_dataset_path: ./tests/fixtures/dummy/sft/eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
+num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
 
 ### model
-model_name_or_path: Qwen/Qwen3-0.6B-Base
+model_name_or_path:  Qwen/Qwen3-0.6B-Base
 attn_impl: flashmask
-lora: true
-lora_rank: 8
 
 ### finetuning
 # base
 stage: SFT
-fine_tuning: lora
+fine_tuning: full
 seed: 23
 do_train: true
 do_eval: true
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 1
 num_train_epochs: 1
-max_steps: -1
+max_steps: 10
 eval_steps: 100
 evaluation_strategy: steps
 save_steps: 100
+save_total_limit: 1
 save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3-lora-tp-pp
+output_dir: ./checkpoints/qwen3-sft-full-tp-pp-ep
 disable_tqdm: true
 eval_accumulation_steps: 16
 
 # train
 warmup_steps: 20
-learning_rate: 1.0e-4
+learning_rate: 1.0e-5
 
 # performance
 tensor_parallel_degree: 2
@@ -49,4 +49,11 @@ sharding: stage1
 recompute: true
 bf16: true
 fp16_opt_level: O2
-unified_checkpoint: true
+use_expert_parallel: true
+expert_parallel_degree: 4
+sharding_parallel_config: "split_param"
+amp_master_grad: true
+pipeline_parallel_config: enable_clear_every_step_cache disable_partial_send_recv disable_batch_p2p_comm
+tensor_parallel_config: enable_delay_scale_loss sync_param sync_grad
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint

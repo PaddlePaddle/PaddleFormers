@@ -47,6 +47,7 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..ernie4_5.modeling import Ernie4_5Attention
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoECausalLMOutputWithPastAndMTP
 from ..model_utils import PretrainedModel, register_base_model
 from ..tensor_parallel_utils import model_parallel_dropout
@@ -800,6 +801,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             bsz, seq_length, _ = inputs_embeds.shape
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
+        full_seq_length = seq_length
 
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
@@ -815,10 +817,19 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
 
-        if attention_mask is not None:
-            attention_mask = self._prepare_decoder_attention_mask(
-                attention_mask, inputs_embeds.shape[:2], kv_seq_len, inputs_embeds.dtype
-            )
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": bsz,
+            "seq_length": full_seq_length,
+            "cache_length": kv_seq_len,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+            "return_mapping": False,
+        }
+
+        attention_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
 
         if self.training and self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]

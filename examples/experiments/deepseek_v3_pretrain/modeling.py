@@ -70,10 +70,8 @@ from paddleformers.transformers.conversion_utils import (
     StateDictNameMapping,
     init_name_mappings,
 )
-from paddleformers.transformers.deepseek_v2 import _expand_2d_mask, _make_causal_mask
 from paddleformers.transformers.deepseek_v2 import fp8_linear as linear_utils
 from paddleformers.transformers.deepseek_v2 import (
-    is_casual_mask,
     rotate_half,
     scaled_dot_product_attention,
     yarn_get_mscale,
@@ -98,6 +96,11 @@ from paddleformers.transformers.model_utils import (
 from paddleformers.transformers.utils import device_guard
 from paddleformers.utils.initializer import kaiming_uniform_
 from paddleformers.utils.log import logger
+from paddleformers.utils.masking_utils import (
+    _expand_2d_mask,
+    _make_causal_mask,
+    is_casual_mask,
+)
 
 try:
     import fused_ln
