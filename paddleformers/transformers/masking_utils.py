@@ -252,7 +252,6 @@ def create_causal_mask_and_row_indices(
                 input_shape=(batch_size, seq_length),
                 past_key_values_length=cache_length,
                 dtype=inputs_embeds.dtype,
-                sliding_window_size=None,
                 or_mask_function=or_mask_function,
             )
             row_indices = None
