@@ -357,7 +357,7 @@ def scaled_dot_product_attention(
             value_states.astype(value_states.dtype),
             startend_row_indices=startend_row_indices,
             dropout=config.attention_probs_dropout_prob,
-            causal=False,
+            causal=True,
         )
         attn_output = attn_output.reshape([bsz, q_len, head_dim * num_heads])
         return attn_output, None
@@ -1104,6 +1104,7 @@ class ErnieAttention(nn.Layer):
         past_key_value=None,
         use_cache=False,
         inbatch_pack_offset=None,
+        attn_mask_startend_row_indices=None,
     ):
         if mix_layer is not None:
             query_states, key_states, value_states = paddle.split(mix_layer, 3, axis=-1)
@@ -1186,6 +1187,7 @@ class ErnieAttention(nn.Layer):
             config=self.config,
             inbatch_pack_offset=inbatch_pack_offset,
             training=self.training,
+            startend_row_indices=attn_mask_startend_row_indices,
         )
         return attn_output, attn_weights, past_key_value
 
