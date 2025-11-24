@@ -319,6 +319,174 @@ class Qwen2_5_VLPretrainedModel(PretrainedModel):
         mappings = make_base_actions()
         return mappings
 
+    @classmethod
+    def _gen_aoa_config(cls, config: Qwen2_5_VLConfig):
+        mapping = cls._checkpoint_conversion_mapping
+        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
+        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
+        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+
+        # language model
+        aoa_config = {
+            "aoa_statements": [
+                f"model.embed_tokens.weight -> {llm_prefix}embed_tokens.weight",
+                f"model.norm.weight -> {llm_prefix}norm.weight",
+                f"model.layers.$LAYER_ID.input_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+            ]
+        }
+
+        # visual model
+        aoa_config["aoa_statements"] += (
+            [
+                f"visual.blocks.$LAYER_ID.attn.{x}.weight^T -> {visual_prefix}blocks.$LAYER_ID.attn.{x}.weight"
+                for x in ("qkv", "proj")
+            ]
+            + [
+                f"visual.blocks.$LAYER_ID.attn.{x}.bias -> {visual_prefix}blocks.$LAYER_ID.attn.{x}.bias"
+                for x in ("qkv", "proj")
+            ]
+            + [
+                f"visual.blocks.$LAYER_ID.mlp.{x}_proj.weight^T -> {visual_prefix}blocks.$LAYER_ID.mlp.{x}_proj.weight"
+                for x in ("up", "gate", "down")
+            ]
+            + [
+                f"visual.blocks.$LAYER_ID.mlp.{x}_proj.bias -> {visual_prefix}blocks.$LAYER_ID.mlp.{x}_proj.bias"
+                for x in ("up", "gate", "down")
+            ]
+        )
+        aoa_config["aoa_statements"] += [
+            f"visual.patch_embed.proj.weight -> {visual_prefix}patch_embed.proj.weight",
+            f"visual.merger.ln_q.weight -> {visual_prefix}merger.ln_q.weight",
+            f"visual.blocks.$LAYER_ID.norm1.weight -> {visual_prefix}blocks.$LAYER_ID.norm1.weight",
+            f"visual.blocks.$LAYER_ID.norm2.weight -> {visual_prefix}blocks.$LAYER_ID.norm2.weight",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"visual.merger.mlp.{x}.weight^T -> {visual_prefix}merger.mlp.{x}.weight" for x in ("0", "2")
+        ] + [f"visual.merger.mlp.{x}.bias -> {visual_prefix}merger.mlp.{x}.bias" for x in ("0", "2")]
+
+        # attention qkv
+        if not config.text_config.fuse_attention_qkv:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}",
+                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}, axis=0",
+            ]
+
+        # FFN
+        if not config.text_config.fuse_attention_ffn:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
+                for p in ("gate", "up")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+            ]
+
+        # Qwen2_5_VLModel without lm_head
+        if cls.base_model_prefix:
+            aoa_config["aoa_statements"] += [
+                f"{'model.embed_tokens.weight' if config.tie_word_embeddings else 'lm_head.weight'} -> lm_head.weight",
+            ]
+
+        return aoa_config
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: Qwen2_5_VLConfig):
+        mapping = cls._checkpoint_conversion_mapping
+        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
+        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
+        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+
+        # language model
+        aoa_config = {
+            "aoa_statements": [
+                f"{llm_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+                f"{llm_prefix}norm.weight -> model.norm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+            ]
+        }
+
+        # visual model
+        aoa_config["aoa_statements"] += (
+            [
+                f"{visual_prefix}blocks.$LAYER_ID.attn.{x}.weight^T -> visual.blocks.$LAYER_ID.attn.{x}.weight"
+                for x in ("qkv", "proj")
+            ]
+            + [
+                f"{visual_prefix}blocks.$LAYER_ID.attn.{x}.bias -> visual.blocks.$LAYER_ID.attn.{x}.bias"
+                for x in ("qkv", "proj")
+            ]
+            + [
+                f"{visual_prefix}blocks.$LAYER_ID.mlp.{x}_proj.weight^T -> visual.blocks.$LAYER_ID.mlp.{x}_proj.weight"
+                for x in ("up", "gate", "down")
+            ]
+            + [
+                f"{visual_prefix}blocks.$LAYER_ID.mlp.{x}_proj.bias -> visual.blocks.$LAYER_ID.mlp.{x}_proj.bias"
+                for x in ("up", "gate", "down")
+            ]
+        )
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}patch_embed.proj.weight -> visual.patch_embed.proj.weight",
+            f"{visual_prefix}merger.ln_q.weight -> visual.merger.ln_q.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.norm1.weight -> visual.blocks.$LAYER_ID.norm1.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.norm2.weight -> visual.blocks.$LAYER_ID.norm2.weight",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}merger.mlp.{x}.weight^T -> visual.merger.mlp.{x}.weight" for x in ("0", "2")
+        ] + [f"{visual_prefix}merger.mlp.{x}.bias -> visual.merger.mlp.{x}.bias" for x in ("0", "2")]
+
+        # attention qkv
+        if not config.text_config.fuse_attention_qkv:
+            aoa_config["aoa_statements"] += [
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+            aoa_config["aoa_statements"] += [
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias -> model.layers.$LAYER_ID.self_attn.{x}_proj.bias"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight^T, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads} -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}, axis=0 -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias",
+            ]
+
+        # FFN
+        if not config.text_config.fuse_attention_ffn:
+            aoa_config["aoa_statements"] += [
+                f"{llm_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{p}_proj.weight"
+                for p in ("gate", "up")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"{llm_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight^T, fused_ffn -> model.layers.$LAYER_ID.mlp.gate_proj.weight, model.layers.$LAYER_ID.mlp.up_proj.weight",
+            ]
+
+        # Qwen2_5_VLModel without lm_head
+        if cls.base_model_prefix:
+            aoa_config["aoa_statements"] += [
+                f"lm_head.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
+            ]
+
+        return aoa_config
+
 
 class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPretrainedModel):
     config_class = Qwen2_5_VLVisionConfig
