@@ -68,9 +68,18 @@ class TestFromPretrained(unittest.TestCase):
             "Paddleformers/tiny-random-llama3-shard",
             "Paddleformers/tiny-random-llama3",
         ]
-        for mname in mnames:
-            m1 = LlamaModel.from_pretrained(mname, low_cpu_mem_usage=True)
-            m2 = LlamaModel.from_pretrained(mname, low_cpu_mem_usage=False)
+        convert_from_hf = [False, True]
+        for mname, convert in zip(mnames, convert_from_hf):
+            m1 = LlamaModel.from_pretrained(
+                mname,
+                low_cpu_mem_usage=True,
+                convert_from_hf=convert,
+            )
+            m2 = LlamaModel.from_pretrained(
+                mname,
+                low_cpu_mem_usage=False,
+                convert_from_hf=convert,
+            )
             for p1, p2 in zip(m1.parameters(), m2.parameters()):
                 self.assertTrue(paddle.allclose(p1, p2))
 
