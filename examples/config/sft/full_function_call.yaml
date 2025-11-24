@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: chatml
 eval_dataset_type: chatml
-train_dataset_path: ./data/fc/function-call-train.jsonl
+train_dataset_path: ./tests/fixtures/dummy/function-call/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./data/fc/function-call-eval.jsonl
+eval_dataset_path: ./tests/fixtures/dummy/function-call/eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false
@@ -33,7 +33,7 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3_hf_0p6b_sft_ckpts
+output_dir: ./checkpoints/qwen3-sft-full-fc
 disable_tqdm: true
 eval_accumulation_steps: 16
 

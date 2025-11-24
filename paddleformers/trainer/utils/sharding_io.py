@@ -408,7 +408,7 @@ class ShardingIO:
         if not os.path.isfile(file_path):
             raise ValueError(f"Can't find a valid checkpoint at {resume_from_checkpoint}, no {file_path}")
 
-        logger.info(f"Loading model from {resume_from_checkpoint} .")
+        logger.info(f"Loading model from {file_path} .")
         # We load the model state dict on the CPU to avoid an OOM error.
         state_dict = paddle.load(file_path, return_numpy=True)
         if self.is_ema:
@@ -908,6 +908,10 @@ class ShardingIO:
         sharding_meta["param_meta_keys"] = ["shape", "dtype", "is_distributed", "no_sync"]
         sharding_meta["sharding_strategy"] = sharding_strategy
         sharding_meta["enable_overlap"] = pp_overlap
+        dp_metas_list = self._all_gather_simple_object(sharding_meta, self.hcg.get_data_parallel_group())
+        for e in dp_metas_list:
+            for key in ["structure_name_mapping", "param_meta"]:
+                sharding_meta[key].update(e[key])
         suffix = self._sharding_meta_suffix()
         sharding_metas[suffix] = sharding_meta
         sharding_metas_list = self._all_gather_simple_object(sharding_metas, self.hcg.get_model_parallel_group())

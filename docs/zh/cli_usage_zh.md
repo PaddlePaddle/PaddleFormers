@@ -53,25 +53,32 @@ export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 * 注：在`Chat`模块，CUDA_VISIBLE_DEVICES配置的GPU数量应该等于`tensor_parallel_degree`在配置中。
 或者，您也可以取消设置 CUDA_VISIBLE_DEVICES。
 
-# 1. CLI 用法
+**代理配置**
+
+```bash
+export HTTPS_PROXY={your_proxy}
+export HTTP_PROXY={your_proxy}
+```
+
+## CLI 具体用法
 
 使用 **Qwen/Qwen3-0.6B-Base** 模型的示例：
 
-## 1.1.聊天
+### 1. 聊天
 待补充
 
-## 1.2.模型预训练
+### 2. 模型预训练
 
 ```bash
-# Example 1: SFT-Full using online dataset
+# Example 1: PT-Full using online dataset
 paddleformers-cli train examples/config/pt/full.yaml
-# Example 2: SFT-Full using offline dataset
+# Example 2: PT-Full using offline dataset
 paddleformers-cli train examples/config/pt/full_offline_data.yaml
 ```
 
-## 1.3.模型微调
+### 3. 模型微调
 
-### 1.3.1. SFT 和 LoRA 微调
+#### 3.1. SFT 和 LoRA 微调
 ```bash
 # Example 1: SFT
 paddleformers-cli train examples/config/sft/lora.yaml
@@ -79,7 +86,7 @@ paddleformers-cli train examples/config/sft/lora.yaml
 paddleformers-cli train examples/config/sft/full.yaml
 ```
 
-### 1.3.2. DPO 和 LoRA 微调
+#### 3.2. DPO 和 LoRA 微调
 ```bash
 # Example 1: 8K seq length, DPO
 paddleformers-cli train examples/config/dpo/full.yaml
@@ -87,15 +94,30 @@ paddleformers-cli train examples/config/dpo/full.yaml
 paddleformers-cli train examples/config/dpo/lora.yaml
 ```
 
-## 1.4.模型评估
+### 4. 模型评估
 待补充
 
-## 1.5.模型导出
+### 5. 模型导出
 ```bash
 paddleformers-cli export examples/config/run_export.yaml
 ```
 
-## 1.6.多节点训练
+### 6. 多节点训练
+
+#### 6.1. 方式一
+
 ```bash
 NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
+```
+
+#### 6.2. 方式二 (mpirun)
+
+先写一个脚本，例如`scripts/train_96_gpus.sh`，内容为：
+```bash
+NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
+```
+
+然后：
+```bash
+mpirun bash scripts/train_96_gpus.sh
 ```

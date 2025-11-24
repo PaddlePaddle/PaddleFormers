@@ -30,22 +30,18 @@ OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
 MAX_STEPS = 6
 SAVE_STEPS = 4
-TRAIN_DATASET_PATH = "./tests/fixtures/dummy/ernie/sft-train.jsonl"
-EVAL_DATASET_PATH = "./tests/fixtures/dummy/ernie/sft-train.jsonl"
-FC_TRAIN_DATASET_PATH = "./tests/fixtures/dummy/function-call/function-call-train.jsonl"
-FC_EVAL_DATASET_PATH = "./tests/fixtures/dummy/function-call/function-call-eval.jsonl"
 
 SFT_FULL_EXCEPTED_LOSS = 13.091749
-SFT_FULL_RESUME_EXCEPTED_LOSS = 13.079882
-SFT_FULL_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]]
+SFT_FULL_RESUME_EXCEPTED_LOSS = 13.080153
+SFT_FULL_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
-SFT_LORA_EXCEPTED_LOSS = 13.092247
-SFT_LORA_RESUME_EXCEPTED_LOSS = 13.081569
+SFT_LORA_EXCEPTED_LOSS = 13.09203
+SFT_LORA_RESUME_EXCEPTED_LOSS = 13.080741
 SFT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 SFT_FULL_TP_PP_EXCEPTED_LOSS = 11.92912
 SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.928993
-SFT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 74061, 74061, 74061, 74061, 74061, 74061, 74061, 74061, 74061]]
+SFT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 132047, 132047, 119194, 128575, 128575, 3315, 132047, 71148, 128575]]
 
 SFT_LORA_TP_PP_EXCEPTED_LOSS = 11.929121
 SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.929088
@@ -53,7 +49,7 @@ SFT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27
 
 SFT_FC_EXCEPTED_LOSS = 12.862782
 SFT_FC_RESUME_EXCEPTED_LOSS = 12.867558
-SFT_FC_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]]
+SFT_FC_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
@@ -128,12 +124,12 @@ class SFTTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -179,12 +175,12 @@ class SFTTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "sft_lora")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -239,11 +235,11 @@ class SFTTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_tp_pp")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -290,11 +286,11 @@ class SFTTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "sft_lora_tp_pp")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -350,12 +346,12 @@ class SFTTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_function_call")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": FC_TRAIN_DATASET_PATH,
-            "eval_dataset_path": FC_EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)

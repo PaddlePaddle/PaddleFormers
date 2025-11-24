@@ -30,20 +30,18 @@ OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
 MAX_STEPS = 6
 SAVE_STEPS = 4
-TRAIN_DATASET_PATH = "./tests/fixtures/dummy/pt/train.jsonl"
-EVAL_DATASET_PATH = "./tests/fixtures/dummy/pt/eval.jsonl"
 
 PT_FULL_EXCEPTED_LOSS = 12.741729
 PT_FULL_RESUME_EXCEPTED_LOSS = 12.747096
-PT_FULL_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380, 99380]]
+PT_FULL_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 PT_LORA_EXCEPTED_LOSS = 12.741831
-PT_LORA_RESUME_EXCEPTED_LOSS = 12.747286
+PT_LORA_RESUME_EXCEPTED_LOSS = 12.747501
 PT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
 PT_FULL_TP_PP_EXCEPTED_LOSS = 11.932426
 PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.932665
-PT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 74061, 74061, 74061, 74061, 74061, 74061, 74061, 74061, 74061]]
+PT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 132047, 132047, 119194, 128575, 128575, 3315, 132047, 71148, 128575]]
 
 PT_LORA_TP_PP_EXCEPTED_LOSS = 11.93247
 PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.932783
@@ -127,12 +125,12 @@ class PTTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "pt_full")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -179,12 +177,12 @@ class PTTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "pt_lora")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -239,11 +237,11 @@ class PTTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "pt_full_tp_pp")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -290,11 +288,11 @@ class PTTrainTest(unittest.TestCase):
         output_dir = os.path.join(OUTPUT_DIR, "pt_lora_tp_pp")
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
-            "train_dataset_path": TRAIN_DATASET_PATH,
-            "eval_dataset_path": EVAL_DATASET_PATH,
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "fuse_attention_qkv": "true",
+            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)

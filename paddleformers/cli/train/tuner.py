@@ -17,6 +17,7 @@ from typing import Any, Optional
 import paddle
 
 from ..hparams import get_train_args, read_args
+from .auto_parallel import run_auto_parallel
 from .dpo import run_dpo
 from .pretrain import run_dsv3_pretrain
 from .sft import run_sft
@@ -56,6 +57,8 @@ def _training_function(config: dict[str, Any]) -> None:
             run_dpo(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "dsv3_pretrain":
         run_dsv3_pretrain(model_args, data_args, generating_args, finetuning_args)
+    elif model_args.stage == "auto-parallel":
+        run_auto_parallel(model_args, data_args, generating_args, finetuning_args)
     else:
         raise ValueError(f"Unknown task: {model_args.stage}.")
 

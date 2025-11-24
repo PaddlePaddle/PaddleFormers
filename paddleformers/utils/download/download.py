@@ -200,6 +200,8 @@ def resolve_file_path(
             return cache_file_name
 
     # download file from different origins
+    os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
+    os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
     try:
         if download_hub == DownloadSource.MODELSCOPE:
             for index, filename in enumerate(filenames):
