@@ -12,42 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#START_RANK=0 # 改成真正执行的机器号
-#END_RANK=4 # 改成真正执行的机器号
+START_RANK=0 # 改成真正执行的机器号
+END_RANK=2 # 改成真正执行的机器号
 
-#if [[ $rank -lt $START_RANK ]]; then
-#    exit 0
-#fi
+if [[ $rank -lt $START_RANK ]]; then
+   exit 0
+fi
 
-#if [[ $rank -ge $END_RANK ]]; then
-#    exit 0
-#fi
-#nnodes=$(($END_RANK-$START_RANK))
-#master=`cat /root/paddlejob/workspace/hostfile | head -n $(($START_RANK+1)) | tail -n 1 | awk '{print $1}'`
-# master=10.54.107.148
-#port=36677
+if [[ $rank -ge $END_RANK ]]; then
+   exit 0
+fi
+nnodes=$(($END_RANK-$START_RANK))
+master=`cat /root/paddlejob/workspace/hostfile | head -n $(($START_RANK+1)) | tail -n 1 | awk '{print $1}'`
+port=36677
 
-#rank=$(($rank-$START_RANK))
+rank=$(($rank-$START_RANK))
 #bash script/kill_process.sh 
 #sleep 5
 
-#rm core.* -rf
-# rank_id=$(echo "$LAUNCH_CMD" | sed -n 's/.*--rank \([0-9]*\).*/\1/p')
-#rm -rf /root/paddlejob/share-storage/gpfs/system-public/path/to/your/outputs # 改成自己的输出目录
-
-# ls /root/paddlejob/share-storage/gpfs/system-public/huggingface_model/GLM-4.5-Air
-
-export PYTHONPATH=/workspace/PaddleFleet:/workspace/PaddleFleet/examples/experiments/paddlefleet #修改为自己的paddlefleet路径
-export CUDA_VISIBLE_DEVICES=0
-
-python run_pretrain.py glm45.json \
-  --output_dir /workspace/PaddleFormers/examples/experiments/paddlefleet/outputs # 改成自己的保存模型目录
-
-#python3.10 -m paddle.distributed.launch \
-#    --log_dir /root/paddlejob/share-storage/gpfs/system-public/zhangyichen/outputs/output_$rank/paddle_distributed_logs \ # 改成自己的保存日志目录
-#    --master $master:$port \
-#    --nnodes $nnodes \
-#    --rank $rank \
-#    --run_mode=collective \
-#    ${script:-run_finetune.py}  \
-#    $@
+python -m paddle.distributed.launch \
+   --log_dir ./outputs/output_$rank/paddle_distributed_logs \
+   --master $master:$port \
+   --nnodes $nnodes \
+   --rank $rank \
+   --run_mode=collective \
+   run_pretrain.py glm45.json \
+   --output_dir . # 改成自己的保存模型目录

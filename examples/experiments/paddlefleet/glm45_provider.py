@@ -130,20 +130,16 @@ class GLM45AirModelProvider106B(GLMMoEModelProvider):
 
 
 @dataclass
-class GLM45AirModelDebugProvider(GLMMoEModelProvider):
+class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     """
     Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
     """
 
-    num_layers: int = 1
-    # num_moe_experts: int = 128
-    hidden_size: int = 512
-    ffn_hidden_size: int = 512
-    moe_layer_freq: Union[int, List[int]] = field(
-        default_factory=lambda: [0] * 1 + [1] * 45
-    )  # first one layer is dense
-    moe_ffn_hidden_size: int = 1408
-    moe_shared_expert_intermediate_size: int = 1408
-    qk_layernorm: bool = False
-    moe_router_topk_scaling_factor: float = 1.0
+    num_layers: int = 10
+    moe_num_shared_experts: int = 1
+    hidden_size: int = 128
+    ffn_hidden_size: int = 128
+    moe_intermediate_size: int = 1408
     mtp_num_layers: Optional[int] = 0
+    use_bias: bool = False
+    vocab_size: int = 37888

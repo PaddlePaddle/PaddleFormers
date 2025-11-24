@@ -14,12 +14,15 @@
 import copy
 import math
 import os
+import random
 import sys
 import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+import numpy as np
 import paddle
+import paddlefleet
 
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
@@ -34,7 +37,6 @@ from paddleformers.trainer import (
     StepFlexToken,
     TrainingArguments,
     get_last_checkpoint,
-    set_seed,
     speed_metrics,
 )
 from paddleformers.trainer.trainer import Trainer
@@ -350,6 +352,31 @@ class PretrainingTrainer(Trainer):
         )
 
 
+def _set_random_seed(
+    seed_: int,
+    data_parallel_random_init: bool = False,
+    te_rng_tracker: bool = False,
+    inference_rng_tracker: bool = False,
+    use_cudagraphable_rng: bool = False,
+):
+    """Set random seed for reproducability."""
+    if seed_ is not None and seed_ > 0:
+        # Ensure that different pipeline MP stages get different seeds.
+        seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
+        # Ensure different data parallel ranks get different seeds
+        if data_parallel_random_init:
+            seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
+        random.seed(seed)
+        np.random.seed(seed)
+        paddle.manual_seed(seed)
+        if paddle.cuda.device_count() > 0:
+            paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
+                seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
+            )
+    else:
+        raise ValueError("Seed ({}) should be a positive integer.".format(seed_))
+
+
 def main():
     parser = PdArgumentParser((ModelArguments, DataArguments, PreTrainingArguments))
     # Support format as "args.json --arg1 value1 --arg2 value2.”
@@ -374,7 +401,7 @@ def main():
         os.makedirs(data_args.data_cache, exist_ok=True)
 
     paddle.set_device(training_args.device)
-    set_seed(seed=training_args.seed)
+    _set_random_seed(seed_=training_args.seed)
 
     training_args.eval_iters = 10
     training_args.test_iters = training_args.eval_iters * 10
