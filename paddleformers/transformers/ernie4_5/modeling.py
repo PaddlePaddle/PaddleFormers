@@ -36,7 +36,10 @@ from ...nn.mlp import MLP as Ernie4_5MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     CausalLMOutputWithCrossAttentions,
@@ -498,6 +501,9 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         )
 
         self.rotary_emb = Ernie4_5RotaryEmbedding(config)
+        self.has_sliding_layers = getattr(
+            self.config, "sliding_window", None
+        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @paddle.jit.not_to_static
     def recompute_training(
@@ -627,8 +633,12 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
             "return_mapping": False,
         }
-
-        causal_attention_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
+        if self.has_sliding_layers:
+            causal_attention_mask, attn_mask_startend_row_indices = create_sliding_window_causal_mask_and_row_indices(
+                **mask_kwargs
+            )
+        else:
+            causal_attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         if position_ids is None:
             position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))

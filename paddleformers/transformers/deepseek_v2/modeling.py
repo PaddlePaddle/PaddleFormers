@@ -53,7 +53,10 @@ from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_arg
 from ...utils.log import logger
 from ...utils.masking_utils import _expand_2d_mask, _make_causal_mask
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import (
     BaseModelOutputWithPastAndMTP,
     CausalLMOutputWithPast,
@@ -1321,6 +1324,9 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
 
         self.enable_recompute = False
         self.rotary_emb = DeepseekV2YarnRotaryEmbedding(config=config)
+        self.has_sliding_layers = getattr(
+            self.config, "sliding_window", None
+        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @staticmethod
     def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
@@ -1482,10 +1488,13 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
             "attention_mask": attention_mask,
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
-            "return_mapping": False,
         }
-
-        attention_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
+        if self.has_sliding_layers:
+            attention_mask, attn_mask_startend_row_indices = create_sliding_window_causal_mask_and_row_indices(
+                **mask_kwargs
+            )
+        else:
+            attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         if self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]  # [B, S, D]

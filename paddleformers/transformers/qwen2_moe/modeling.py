@@ -34,7 +34,10 @@ from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..moe_gate import PretrainedMoEGate
@@ -579,6 +582,9 @@ class Qwen2MoeModel(Qwen2MoePretrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = Qwen2MoeRotaryEmbedding(config=config)
+        self.has_sliding_layers = getattr(
+            self.config, "sliding_window", None
+        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -667,10 +673,14 @@ class Qwen2MoeModel(Qwen2MoePretrainedModel):
             "attention_mask": attention_mask,
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
-            "return_mapping": False,
         }
         # Create the causal mask and row indices
-        causal_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
+        if self.has_sliding_layers:
+            causal_mask, attn_mask_startend_row_indices = create_sliding_window_causal_mask_and_row_indices(
+                **mask_kwargs
+            )
+        else:
+            causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         hidden_states = inputs_embeds
 
