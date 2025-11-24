@@ -98,7 +98,7 @@ class GLM45ModelProvider355B(GLMMoEModelProvider):
     """
 
     num_layers: int = 92
-    num_moe_experts: int = 160
+    moe_num_experts: int = 160
     hidden_size: int = 5120
     ffn_hidden_size: int = 12288
     moe_layer_freq: Union[int, List[int]] = field(
