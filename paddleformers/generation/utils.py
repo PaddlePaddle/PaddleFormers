@@ -384,7 +384,7 @@ class GenerationMixin(object):
 
     @staticmethod
     def _prepare_decoder_attention_mask(
-        attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None
+        attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None, or_mask_function=None
     ):
         # Step 1: Process input mask to generate basic expanded mask
         if attention_mask is not None:
@@ -428,6 +428,23 @@ class GenerationMixin(object):
                 expanded_attn_mask = causal_mask & window_mask
             else:
                 expanded_attn_mask = causal_mask  # Use causal mask directly when sliding window is disabled
+
+        if or_mask_function is not None:
+            bsz = input_shape[0]
+            tgt_len = input_shape[1]
+            src_len = past_key_values_length + tgt_len
+
+            batch_idx = paddle.arange(bsz, dtype="int64").reshape((bsz, 1, 1, 1))
+            head_idx = paddle.zeros((1, 1, 1, 1), dtype="int64")
+            q_idx = paddle.arange(tgt_len, dtype="int64").reshape((1, 1, tgt_len, 1)) + past_key_values_length
+            kv_idx = paddle.arange(src_len, dtype="int64").reshape((1, 1, 1, src_len))
+
+            # Call the user function to get the additional mask
+            # The function expects (batch_idx, head_idx, q_idx, kv_idx)
+            extra_mask = or_mask_function(batch_idx, head_idx, q_idx, kv_idx)
+            # Apply Union: If extra_mask says True, we allow attention regardless of previous restrictions
+            # Ensure dtypes match
+            expanded_attn_mask = expanded_attn_mask.cast("bool") | extra_mask.cast("bool")
 
         # Step 2: Convert boolean mask to numerical mask (adapt to different devices)
         if get_env_device() in ["npu", "mlu", "intel_hpu"]:

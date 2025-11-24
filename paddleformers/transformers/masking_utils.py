@@ -200,6 +200,7 @@ def create_causal_mask_and_row_indices(
     attention_mask: Optional[paddle.Tensor] = None,
     attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     prepare_decoder_attention_mask: Optional[Callable] = None,
+    or_mask_function: Optional[Callable] = None,
 ):
     """
         Prepare causal attention mask and optional start/end row indices for full attention.
@@ -252,6 +253,7 @@ def create_causal_mask_and_row_indices(
                 past_key_values_length=cache_length,
                 dtype=inputs_embeds.dtype,
                 sliding_window_size=None,
+                or_mask_function=or_mask_function,
             )
             row_indices = None
 
@@ -267,6 +269,7 @@ def create_sliding_window_causal_mask_and_row_indices(
     attention_mask: Optional[paddle.Tensor] = None,
     attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     prepare_decoder_attention_mask: Optional[Callable] = None,
+    or_mask_function: Optional[Callable] = None,
 ):
     """
         Prepare causal attention mask and optional start/end row indices for sliding window attention.
@@ -306,7 +309,7 @@ def create_sliding_window_causal_mask_and_row_indices(
         attn_impl = getattr(config, "_attn_implementation", "eager")
         is_flash_backend = attn_impl in FLASH_BACKENDS
 
-        if attention_mask is None and is_flash_backend:
+        if attention_mask is None and is_flash_backend and or_mask_function is None:
             causal_mask = None
             row_indices = None
         else:
@@ -323,6 +326,7 @@ def create_sliding_window_causal_mask_and_row_indices(
                 past_key_values_length=cache_length,
                 dtype=inputs_embeds.dtype,
                 sliding_window_size=sliding_window_val,
+                or_mask_function=or_mask_function,
             )
             row_indices = None
 
