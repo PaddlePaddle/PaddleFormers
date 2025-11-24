@@ -1329,7 +1329,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @staticmethod
-    def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
+    def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype, **kwargs):
         if attention_mask is not None:
             # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
             if len(attention_mask.shape) == 2:
