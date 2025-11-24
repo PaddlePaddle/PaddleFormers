@@ -1750,6 +1750,11 @@ class TrainingArguments:
                     strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
 
                 fleet.init(is_collective=True, strategy=strategy)
+
+                # In PaddleFleet, we should use the following code to initialize.
+
+                # from paddlefleet.training.initialize import initialize_fleet
+                # initialize_fleet(strategy)
                 logger.info(strategy)
 
                 if self.reorder_pipeline_priority:
