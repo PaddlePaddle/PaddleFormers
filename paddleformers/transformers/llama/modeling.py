@@ -412,6 +412,68 @@ class LlamaPretrainedModel(PretrainedModel):
         mappings = make_base_actions()
         return mappings
 
+    @classmethod
+    def _gen_aoa_config(cls, config: LlamaConfig):
+        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+
+        aoa_statements = [
+            f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+            f"model.norm.weight -> {model_prefix}norm.weight",
+            f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
+            f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+        ]
+
+        aoa_statements.extend(
+            [
+                f"model.layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{proj_name}.weight"
+                for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]
+            ]
+        )
+
+        aoa_statements.extend(
+            [
+                f"model.layers.$LAYER_ID.mlp.{PROJECTOR_NAME}.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{PROJECTOR_NAME}.weight"
+                for PROJECTOR_NAME in ["gate_proj", "up_proj", "down_proj"]
+            ]
+        )
+
+        if config.tie_word_embeddings:
+            aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
+        else:
+            aoa_statements.append("lm_head.weight -> lm_head.weight")
+
+        return {"aoa_statements": aoa_statements}
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: LlamaConfig):
+        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+
+        aoa_statements = [
+            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            f"{model_prefix}norm.weight -> model.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+        ]
+
+        aoa_statements.extend(
+            [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> model.layers.$LAYER_ID.self_attn.{proj_name}.weight"
+                for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]
+            ]
+        )
+
+        aoa_statements.extend(
+            [
+                f"{model_prefix}layers.$LAYER_ID.mlp.{PROJECTOR_NAME}.weight^T -> model.layers.$LAYER_ID.mlp.{PROJECTOR_NAME}.weight"
+                for PROJECTOR_NAME in ["gate_proj", "up_proj", "down_proj"]
+            ]
+        )
+
+        if not config.tie_word_embeddings:
+            aoa_statements.append("lm_head.weight -> lm_head.weight")
+
+        return {"aoa_statements": aoa_statements}
+
 
 @register_base_model
 class LlamaModel(LlamaPretrainedModel):
@@ -655,77 +717,6 @@ class LlamaForCausalLM(LlamaPretrainedModel):
             attentions=outputs.attentions,
         )
 
-    @classmethod
-    def _gen_aoa_config(cls, config: LlamaConfig):
-        aoa_config = {
-            "aoa_statements": [
-                "llama.layers.$LAYER_ID.mlp.down_proj.weight^T -> llama.layers.$LAYER_ID.mlp.down_proj.weight",
-                "lm_head.weight^T -> lm_head.weight",
-            ]
-        }
-        # attention qkv
-        if not config.fuse_attention_qkv:
-            aoa_config["aoa_statements"] += [
-                f"llama.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> llama.layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                f"llama.layers.$LAYER_ID.self_attn.q_proj.weight^T, llama.layers.$LAYER_ID.self_attn.k_proj.weight^T, llama.layers.$LAYER_ID.self_attn.v_proj.weight^T -> llama.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-                f"llama.layers.$LAYER_ID.self_attn.q_proj.bias, llama.layers.$LAYER_ID.self_attn.k_proj.bias, llama.layers.$LAYER_ID.self_attn.v_proj.bias -> llama.layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
-            ]
-        # FFN
-        if not config.fuse_attention_ffn:
-            aoa_config["aoa_statements"] += [
-                f"llama.layers.$LAYER_ID.mlp.{y}_proj.weight^T -> llama.layers.$LAYER_ID.mlp.{y}_proj.weight"
-                for y in ("gate", "up")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                "llama.layers.$LAYER_ID.mlp.gate_proj.weight^T, llama.layers.$LAYER_ID.mlp.up_proj.weight^T -> llama.layers.$LAYER_ID.mlp.gate_up_fused_proj.weight, fused_ffn",
-            ]
-        return aoa_config
-
-    @classmethod
-    def _gen_inv_aoa_config(cls, config: LlamaConfig):
-        aoa_config = {
-            "aoa_statements": [
-                "llama.layers.$LAYER_ID.mlp.gate_proj.weight^T -> llama.layers.$LAYER_ID.mlp.gate_proj.weight",
-                "llama.layers.$LAYER_ID.mlp.up_proj.weight^T -> llama.layers.$LAYER_ID.mlp.up_proj.weight",
-                "llama.layers.$LAYER_ID.mlp.down_proj.weight^T -> llama.layers.$LAYER_ID.mlp.down_proj.weight",
-                "lm_head.weight^T -> lm_head.weight",
-            ]
-        }
-        # attention qkv
-        if not config.fuse_attention_qkv:
-            aoa_config["aoa_statements"] += [
-                f"llama.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> llama.layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                f"llama.layers.$LAYER_ID.self_attn.qkv_proj.weight -> llama.layers.$LAYER_ID.self_attn.q_proj.weight, llama.layers.$LAYER_ID.self_attn.k_proj.weight, llama.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-                f"llama.layers.$LAYER_ID.self_attn.qkv_proj.bias -> llama.layers.$LAYER_ID.self_attn.q_proj.bias, llama.layers.$LAYER_ID.self_attn.k_proj.bias, llama.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
-            ]
-            aoa_config["aoa_statements"] += [
-                f"llama.layers.{layer_id}.self_attn.{x}_proj.weight^T -> llama.layers.{layer_id}.self_attn.{x}_proj.weight"
-                for layer_id in range(config.num_hidden_layers)
-                for x in ("q", "k", "v")
-            ]
-        # FFN
-        if not config.fuse_attention_ffn:
-            aoa_config["aoa_statements"] += [
-                f"llama.layers.$LAYER_ID.mlp.{y}_proj.weight^T -> llama.layers.$LAYER_ID.mlp.{y}_proj.weight"
-                for y in ("gate", "up")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                "llama.layers.$LAYER_ID.mlp.gate_up_fused_proj.weight -> llama.layers.$LAYER_ID.mlp.gate_proj.weight, llama.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
-                "llama.layers.$LAYER_ID.mlp.gate_proj.weight^T -> llama.layers.$LAYER_ID.mlp.gate_proj.weight",
-                "llama.layers.$LAYER_ID.mlp.up_proj.weight^T -> llama.layers.$LAYER_ID.mlp.up_proj.weight",
-            ]
-        return aoa_config
-
 
 class LlamaForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = LlamaConfig
@@ -735,3 +726,5 @@ class LlamaForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = LlamaModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = LlamaModel.transpose_weight_keys
+    _gen_aoa_config = LlamaForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = LlamaForCausalLM._gen_inv_aoa_config

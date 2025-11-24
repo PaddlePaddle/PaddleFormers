@@ -316,6 +316,44 @@ class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
 
         return config, input_ids, attention_mask, max_length
 
+    def test_save_load(self):
+        for model_class in self.all_model_classes:
+            model1 = model_class.from_pretrained(
+                "Paddleformers/tiny-random-llama3",
+                download_hub="aistudio",
+                convert_from_hf=True,
+            )
+            model2 = model_class.from_pretrained(
+                "Paddleformers/tiny-random-llama3",
+                download_hub="aistudio",
+                load_checkpoint_format="flex_checkpoint",
+            )
+
+            model_state_1 = model1.state_dict()
+            model_state_2 = model2.state_dict()
+
+            for k, v in model_state_1.items():
+                md51 = v._md5sum()
+                md52 = model_state_2[k]._md5sum()
+                assert md51 == md52
+
+            # test save_pretrained
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model3 = model_class.from_pretrained(
+                    tmpdirname,
+                    convert_from_hf=True,
+                )
+                model_state_3 = model3.state_dict()
+
+                for k, v in model_state_3.items():
+                    md53 = v._md5sum()
+                    md52 = model_state_2[k]._md5sum()
+                    if k.endswith(".mlp.gate.weight"):
+                        md52 = model_state_2[k].cast("bfloat16")._md5sum()
+                        md53 = model_state_3[k].cast("bfloat16")._md5sum()
+                    assert md52 == md53
+
     def test_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model(*config_and_inputs)
@@ -370,7 +408,7 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_with_attention(self):
-        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama")
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -397,7 +435,11 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_no_attention(self):
-        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3")
+        model = LlamaModel.from_pretrained(
+            "Paddleformers/tiny-random-llama3",
+            download_hub="aistudio",
+            convert_from_hf=True,
+        )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -410,9 +452,9 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [0.54044795, -0.56001222, 0.31749421],
-                    [1.23107874, -0.61449337, 0.75768954],
-                    [1.02047992, -0.82791269, 0.71952438],
+                    [0.02366970, -0.42482421, 0.47202760],
+                    [-0.12180223, 0.00559035, 0.83846688],
+                    [0.45073321, 0.25703996, 1.36826384],
                 ]
             ],
             dtype=output.dtype,
@@ -421,7 +463,11 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_with_attention(self):
-        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3")
+        model = LlamaModel.from_pretrained(
+            "Paddleformers/tiny-random-llama3",
+            download_hub="aistudio",
+            convert_from_hf=True,
+        )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -433,9 +479,9 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [0.54044795, -0.56001222, 0.31749421],
-                    [1.23107874, -0.61449337, 0.75768954],
-                    [1.02047992, -0.82791269, 0.71952438],
+                    [0.02366970, -0.42482421, 0.47202760],
+                    [-0.12180223, 0.00559035, 0.83846688],
+                    [0.45073321, 0.25703996, 1.36826384],
                 ]
             ],
             dtype=output.dtype,
