@@ -251,6 +251,13 @@ import_structure = {
     ],
     "qwen2.tokenizer": ["Qwen2Tokenizer"],
     "qwen2.tokenizer_fast": ["Qwen2TokenizerFast"],
+    "qwen2_5_vl.configuration": ["Qwen2_5_VLConfig", "Qwen2_5_VLTextConfig"],
+    "qwen2_5_vl.modeling": [
+        "Qwen2_5_VLForConditionalGeneration",
+        "Qwen2_5_VLModel",
+        "Qwen2_5_VLPretrainedModel",
+        "Qwen2_5_VLTextModel",
+    ],
     "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
@@ -293,6 +300,7 @@ import_structure = {
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "ernie4_5_moe_vl": [],
+    "qwen2_5_v;": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
@@ -301,6 +309,9 @@ import_structure = {
     "auto": ["AutoModelForCausalLM"],
     "legacy.tokenizer_utils_base": ["EncodingFast"],
     "legacy": [],
+    "phi3.configuration": ["Phi3Config"],
+    "phi3.tokenizer": ["Phi3Tokenizer"],
+    "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
 }
 
 if TYPE_CHECKING:
@@ -369,6 +380,7 @@ if TYPE_CHECKING:
     from .qwen3_moe import *
     from .glm4_moe import *
     from .gpt_oss import *
+    from .phi3 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

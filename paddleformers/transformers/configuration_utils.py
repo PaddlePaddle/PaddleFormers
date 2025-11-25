@@ -549,6 +549,8 @@ class PretrainedConfig:
             versions. But we can already start preparing for the future by saving the dtype with save_pretrained.
     """
     model_type: str = ""
+    base_config_key: str = ""
+    sub_configs: dict[str, type["PretrainedConfig"]] = {}
     is_composition: bool = False
 
     pretrained_init_configuration = {}
@@ -599,6 +601,7 @@ class PretrainedConfig:
         self.return_dict = kwargs.pop("return_dict", False)
         self.output_hidden_states = kwargs.pop("output_hidden_states", False)
         self.output_attentions = kwargs.pop("output_attentions", False)
+        self.dtype = kwargs.pop("dtype", None)
         self.use_cache = kwargs.pop("use_cache", False)
         self.tie_word_embeddings = kwargs.pop("tie_word_embeddings", True)
 
@@ -619,10 +622,6 @@ class PretrainedConfig:
         # parameter for model dtype
         if "torch_dtype" in kwargs:
             self.dtype = kwargs.pop("torch_dtype")
-        else:
-            import paddle
-
-            self.dtype = kwargs.pop("dtype", paddle.get_default_dtype())
 
         # Is decoder is used in encoder-decoder models to differentiate encoder from decoder
         self.is_encoder_decoder = kwargs.pop("is_encoder_decoder", False)
@@ -710,6 +709,10 @@ class PretrainedConfig:
                 logger.error(f"Can't set {key} with value {value} for {self}")
                 raise err
 
+    def _create_id_label_maps(self, num_labels: int):
+        self.id2label = {i: f"LABEL_{i}" for i in range(num_labels)}
+        self.label2id = dict(zip(self.id2label.values(), self.id2label.keys()))
+
     @staticmethod
     def _get_generation_defaults() -> Dict[str, Any]:
         return {
@@ -773,9 +776,8 @@ class PretrainedConfig:
 
     @num_labels.setter
     def num_labels(self, num_labels: int):
-        if not hasattr(self, "id2label") or self.id2label is None or len(self.id2label) != num_labels:
-            self.id2label = {i: f"LABEL_{i}" for i in range(num_labels)}
-            self.label2id = dict(zip(self.id2label.values(), self.id2label.keys()))
+        if self.id2label is None or self.num_labels != num_labels:
+            self._create_id_label_maps(num_labels)
 
     def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
         """
@@ -856,6 +858,22 @@ class PretrainedConfig:
         assert unused_kwargs == {"foo": False}
         ```"""
         config_dict, kwargs = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
+        if cls.base_config_key and cls.base_config_key in config_dict:
+            config_dict = config_dict[cls.base_config_key]
+
+        if "model_type" in config_dict and hasattr(cls, "model_type") and config_dict["model_type"] != cls.model_type:
+            # sometimes the config has no `base_config_key` if the config is used in several composite models
+            # e.g. LlamaConfig. In that case we try to see if there is match in `model_type` before raising a warning
+            for v in config_dict.values():
+                if isinstance(v, dict) and v.get("model_type") == cls.model_type:
+                    config_dict = v
+
+            # raise warning only if we still can't see a match in `model_type`
+            if config_dict["model_type"] != cls.model_type:
+                logger.warning(
+                    f"You are using a model of type {config_dict['model_type']} to instantiate a model of type "
+                    f"{cls.model_type}. This is not supported for all configurations of models and can yield errors."
+                )
 
         return cls.from_dict(config_dict, **kwargs)
 
@@ -1072,12 +1090,27 @@ class PretrainedConfig:
                     serializable_config_dict[key] = quantization_diff_dict
                 continue
             if (
+                isinstance(getattr(self, key, None), PretrainedConfig)
+                and key in class_config_dict
+                and isinstance(class_config_dict[key], dict)
+                or key in self.sub_configs
+            ):
+                # For nested configs we need to clean the diff recursively
+                diff = recursive_diff_dict(value, default_config_dict, config_obj=getattr(self, key, None))
+                if "model_type" in value:
+                    # Needs to be set even if it's not in the diff
+                    diff["model_type"] = value["model_type"]
+
+                serializable_config_dict[key] = diff
+            elif (
                 key not in default_config_dict
                 or key == "paddleformers_version"
                 or value != default_config_dict[key]
                 or (key in class_config_dict and value != class_config_dict[key])
             ):
                 serializable_config_dict[key] = value
+
+        self._remove_keys_not_serialized(serializable_config_dict, saving_file)
 
         return serializable_config_dict
 
@@ -1227,6 +1260,25 @@ class PretrainedConfig:
 
             setattr(self, k, v)
 
+    def _remove_keys_not_serialized(self, d: dict[str, Any], saving_file: bool = False) -> None:
+        """
+        Checks and removes if there are any keys in the dict that should not be serialized when saving the config.
+        Runs recursive check on the dict, to remove from all sub configs.
+        """
+        if "_auto_class" in d:
+            del d["_auto_class"]
+        if "_output_attentions" in d:
+            d["output_attentions"] = d.pop("_output_attentions")
+        if "_commit_hash" in d:
+            del d["_commit_hash"]
+        if saving_file:
+            for unsavable_ke in self._unsavable_keys:
+                if unsavable_ke in d:
+                    del d[unsavable_ke]
+        for value in d.values():
+            if isinstance(value, dict):
+                self._remove_keys_not_serialized(value, saving_file)
+
     @classmethod
     def register_for_auto_class(cls, auto_class="AutoConfig"):
         """
@@ -1264,6 +1316,78 @@ class PretrainedConfig:
             return default
         else:
             return value
+
+    def get_text_config(self, decoder=None, encoder=None) -> "PretrainedConfig":
+        """
+        Returns the text config related to the text input (encoder) or text output (decoder) of the model. The
+        `decoder` and `encoder` input arguments can be used to specify which end of the model we are interested in,
+        which is useful on models that have both text input and output modalities.
+
+        Args:
+            decoder (`Optional[bool]`, *optional*):
+                If set to `True`, then only search for decoder config names.
+            encoder (`Optional[bool]`, *optional*):
+                If set to `True`, then only search for encoder config names.
+        """
+        return_both = decoder == encoder  # both unset or both set -> search all possible names
+
+        decoder_possible_text_config_names = ("decoder", "generator", "text_config")
+        encoder_possible_text_config_names = ("text_encoder",)
+        if return_both:
+            possible_text_config_names = encoder_possible_text_config_names + decoder_possible_text_config_names
+        elif decoder:
+            possible_text_config_names = decoder_possible_text_config_names
+        else:
+            possible_text_config_names = encoder_possible_text_config_names
+
+        valid_text_config_names = []
+        for text_config_name in possible_text_config_names:
+            if hasattr(self, text_config_name):
+                text_config = getattr(self, text_config_name, None)
+                if text_config is not None:
+                    valid_text_config_names += [text_config_name]
+
+        if len(valid_text_config_names) > 1:
+            raise ValueError(
+                f"Multiple valid text configs were found in the model config: {valid_text_config_names}. In this "
+                "case, using `get_text_config()` would be ambiguous. Please specify the desired text config directly, "
+                "e.g. `text_config = config.sub_config_name`"
+            )
+        elif len(valid_text_config_names) == 1:
+            config_to_return = getattr(self, valid_text_config_names[0])
+        else:
+            config_to_return = self
+
+        # handle legacy models with flat config structure, when we only want one of the configs
+        if not return_both and len(valid_text_config_names) == 0 and config_to_return.is_encoder_decoder:
+            config_to_return = copy.deepcopy(config_to_return)
+            prefix_to_discard = "encoder" if decoder else "decoder"
+            prefix_to_keep = "decoder" if decoder else "encoder"
+            for key in config_to_return.to_dict():
+                # NOTE: We don't want to discard the key if it is mapped from a different attribute name at read time
+                if key.startswith(prefix_to_discard) and key not in config_to_return.attribute_map.values():
+                    delattr(config_to_return, key)
+                if key.startswith(prefix_to_keep):
+                    # [encoder/decoder]_layers -> num_hidden_layers
+                    if key == prefix_to_keep + "_layers":
+                        new_key = "num_hidden_layers"
+                    # [encoder/decoder]_attention_heads -> num_attention_heads
+                    elif key == prefix_to_keep + "_attention_heads":
+                        new_key = "num_attention_heads"
+                    # e.g. encoder_hidden_act -> hidden_act
+                    else:
+                        new_key = key[len(prefix_to_keep) + 1 :]
+
+                    # Does the class map the new key into a different attribute name at read time? if so, let's write
+                    # into that attribute instead
+                    if new_key in config_to_return.attribute_map:
+                        new_key = config_to_return.attribute_map[new_key]
+
+                    value = getattr(config_to_return, key)
+                    delattr(config_to_return, key)
+                    setattr(config_to_return, new_key, value)
+
+        return config_to_return
 
 
 def get_configuration_file(configuration_files: List[str]) -> str:
@@ -1304,6 +1428,24 @@ def get_configuration_file(configuration_files: List[str]) -> str:
             break
 
     return configuration_file
+
+
+def recursive_diff_dict(dict_a, dict_b, config_obj=None):
+    """
+    Helper function to recursively take the diff between two nested dictionaries. The resulting diff only contains the
+    values from `dict_a` that are different from values in `dict_b`.
+    dict_b : the default config dictionary. We want to remove values that are in this one
+    """
+    diff = {}
+    default = config_obj.__class__().to_dict() if config_obj is not None else {}
+    for key, value in dict_a.items():
+        obj_value = getattr(config_obj, str(key), None)
+        if isinstance(obj_value, PretrainedConfig) and key in dict_b and isinstance(dict_b[key], dict):
+            diff_value = recursive_diff_dict(value, dict_b[key], config_obj=obj_value)
+            diff[key] = diff_value
+        elif key not in dict_b or (value != default[key]):
+            diff[key] = value
+    return diff
 
 
 ALLOWED_LAYER_TYPES = (

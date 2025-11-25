@@ -1370,6 +1370,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
     _keys_to_ignore_on_save = None
     _tied_weights_keys = None
 
+    # Attributes used mainly in multimodal LLMs, though all models contain a valid field for these
+    # Possible values are: text, image, video
+    input_modalities: Union[str, list[str]] = "text"  # most models are text
+
     def __init__(self, *args, **kwargs):
         super(PretrainedModel, self).__init__()
 
@@ -1697,20 +1701,19 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         Raises:
             NotImplementedError: Model has not implement `set_input_embeddings` method
         """
-        base_model = getattr(self, self.base_model_prefix, None)
-
         name = getattr(self, "_input_embed_layer", "embed_tokens")
-        if base_model is not None and hasattr(base_model, name):
-            setattr(base_model, name, value)
+        if hasattr(self, "model") and hasattr(self.model, name):
+            setattr(self.model, name, value)
         # 2) as well as vanilla decoder‑only architectures
         elif hasattr(self, name):
             setattr(self, name, value)
-        elif base_model is not None:
+        # 3) recurse once into the registered *base* model (e.g. for encoder/decoder)
+        elif getattr(self, self.base_model_prefix, self) is not self:
+            base_model = getattr(self, self.base_model_prefix, self)
             base_model.set_input_embeddings(value)
         else:
             raise NotImplementedError(
-                f"model of {type(base_model)} has not implemented the `get_input_embeddings`"
-                " or `set_input_embeddings` method"
+                f"`set_input_embeddings` not auto‑handled for {self.__class__.__name__}; please override in the subclass."
             )
 
     def get_output_embeddings(self) -> Optional[Embedding]:
@@ -1978,7 +1981,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         self.set_input_embeddings(new_embeddings)
 
         # 2. Update vocab_size
-        self.base_model.config["vocab_size"] = new_num_tokens
+        self.config.get_text_config()["vocab_size"] = new_num_tokens
         self.vocab_size = new_num_tokens
 
         # update init_config
@@ -2544,6 +2547,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 )
             else:
                 # Have loaded all state_dict, no resume state_dict
+                if key_mapping is not None:
+                    state_dict = {key_renaming_mapping[key]: value for key, value in state_dict.items()}
                 state_dict, _, fused_keys, new_keys = _fuse_or_split_keys(
                     state_dict,
                     config,
@@ -2919,7 +2924,17 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             )
 
         if dtype is None:
-            dtype = config.dtype
+            if config.dtype is not None:
+                dtype = config.dtype
+            else:
+                dtype = paddle.get_default_dtype()
+                for key in config.sub_configs:
+                    if (sub_config := getattr(config, key)) is not None:
+                        sub_config.dtype = dtype
+        else:
+            for sub_config_key in config.sub_configs:
+                if (sub_config := getattr(config, sub_config_key)) is not None:
+                    sub_config.dtype = dtype
 
         config.dtype = dtype
 
