@@ -68,7 +68,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     # MoE specific parameters
     moe_router_topk: int = 8
     moe_shared_expert_overlap: bool = True
-    moe_token_dispatcher_type: str = "alltoall"
+    moe_token_dispatcher_type: str = "deepep"
     moe_router_load_balancing_type: str = "seq_aux_loss"
     moe_aux_loss_coeff: float = 1e-3
     moe_router_pre_softmax: bool = False
@@ -98,7 +98,7 @@ class GLM45ModelProvider355B(GLMMoEModelProvider):
     """
 
     num_layers: int = 92
-    num_moe_experts: int = 160
+    moe_num_experts: int = 160
     hidden_size: int = 5120
     ffn_hidden_size: int = 12288
     moe_layer_freq: Union[int, List[int]] = field(
@@ -117,7 +117,7 @@ class GLM45AirModelProvider106B(GLMMoEModelProvider):
     """
 
     num_layers: int = 46
-    num_moe_experts: int = 128
+    moe_num_experts: int = 128
     hidden_size: int = 4096
     ffn_hidden_size: int = 10944
     moe_layer_freq: Union[int, List[int]] = field(
