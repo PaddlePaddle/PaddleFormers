@@ -152,6 +152,9 @@ def _bind_paddle_mixin_if_available(tokenizer_class):
     Returns:
         The tokenizer class bound with PaddleTokenizerMixin, or the original class.
     """
+    if issubclass(tokenizer_class, PaddleTokenizerMixin):
+        return tokenizer_class
+
     return type(tokenizer_class.__name__, (PaddleTokenizerMixin, tokenizer_class), {})
 
 

@@ -612,7 +612,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 LayerDesc(
                     EmptyLayer,
                 ),
-                f"empty.layers.{i+config.num_hidden_layers}",
+                f"empty.layers.{i + config.num_hidden_layers}",
             )
 
         self.add_sequential_layer(

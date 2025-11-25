@@ -23,6 +23,9 @@ from paddle.distributed.fleet.meta_parallel import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 
 from ...transformers import linear_utils
 
@@ -365,6 +368,13 @@ class RowParallelLoRALinear(RowParallelLinear):
         self._use_quick_lora = use_quick_lora and lora_dropout == 0.0
         self.disable_lora = False
 
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
+
     @property
     def use_quick_lora(self):
         return self._use_quick_lora and self.training and not self.merged
@@ -514,6 +524,13 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
         self._use_quick_lora = use_quick_lora and lora_dropout == 0.0
         self.disable_lora = False
 
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
+
     @property
     def use_quick_lora(self):
         # TODO(@gexiao): support qlora
@@ -628,6 +645,13 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
         self.weight.stop_gradient = True
         self._use_quick_lora = use_quick_lora and lora_dropout == 0.0
         self.disable_lora = False
+
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
 
     @property
     def use_quick_lora(self):
@@ -760,6 +784,13 @@ class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
         self.weight.stop_gradient = True
         self._use_quick_lora = use_quick_lora and lora_dropout == 0.0
         self.disable_lora = False
+
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
 
     @property
     def use_quick_lora(self):

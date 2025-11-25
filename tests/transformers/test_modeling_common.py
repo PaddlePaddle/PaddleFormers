@@ -607,13 +607,11 @@ class ModelTesterMixin:
             model(**self._prepare_for_class(inputs_dict, model_class))
 
             # Check that adding and removing tokens has not modified the first part of the embedding matrix.
-            models_equal = True
-            for p1, p2 in zip(cloned_embeddings, model_embed.weight):
-                if not paddle.equal_all(p1, p2).item():
-                    models_equal = False
-                    break
-
-            self.assertTrue(models_equal)
+            # Get the new vocab size from the resized embedding matrix
+            new_vocab_size = model_embed.weight.shape[0]
+            original_slice_to_compare = cloned_embeddings[0:new_vocab_size]
+            models_equal_tensor = paddle.equal_all(original_slice_to_compare, model_embed.weight)
+            self.assertTrue(models_equal_tensor.item())
 
     def _compare_tensor(self, tensor1, tensor2, rtol=1e-04, atol=1e-04):
         if tensor1.dtype != tensor2.dtype:

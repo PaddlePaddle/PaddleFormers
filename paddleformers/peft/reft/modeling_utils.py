@@ -37,7 +37,7 @@ def getattr_for_paddle_module(model, parameter_name):
 def get_module_hook(model, representation) -> nn.Layer:
     """Render the intervening module with a hook."""
     hook_type = "register_forward_post_hook"
-    parameter_name = f'llama.layers[{representation["layer"]}]'
+    parameter_name = f"model.layers[{representation['layer']}]"
     module = getattr_for_paddle_module(model, parameter_name)
     module_hook = getattr(module, hook_type)
     return module_hook
