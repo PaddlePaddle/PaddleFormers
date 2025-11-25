@@ -46,6 +46,12 @@ train_dataset_prob: "0.8,0.2"
 | true  | false | 开`packing`，但不使用贪心策略|
 | true  | true  | 开`packing`，同时使用贪心策略 |
 
+- 补充：在线预训练数据流中另外支持了`truncate_packing`的策略，支持将数据进行截断，有效降低padding token，`truncate_packing`设置为`True`即可使用，具体如下图所示：
+
+<div align="center">
+<img src="https://github.com/user-attachments/assets/f7ec5b76-aee7-4f64-8331-ca00cac5339a">
+</div>
+
 # 数据采样策略
 
 目前支持四种数据采样策略：`random`, `concat`, `interleave_under`, `interleave_over`
@@ -58,3 +64,28 @@ train_dataset_prob: "0.8,0.2"
 | `interleave_over`|当小数据集很重要但样本有限时 |无 |`interleave`表示根据数据比例对多个数据集进行交叉拼接。`interleave_over`表示过采样，意味着只有在所有数据集耗尽后才停止采样。 |
 
 - 注意：`num_samples_each_epoch`只适用于`random`数据采样策略。
+
+# Attention Mask
+
+数据流默认会传入一个因果的Attention Mask，在packing情况下，当`use_global_causal_attn`为true的时候，对应下图所示的`Causal Attention`，一个`Sequence`内的不同sample是可见的，当`use_global_causal_attn`为false的时候，对应下图所示的`Causal Document Attention`，一个`Sequence`内的不同sample是不可见的
+
+<div align="center" style="display: flex; justify-content: center; gap: 20px;">
+  <div>
+    <img 
+      src="https://github.com/user-attachments/assets/57c414e3-6783-4a40-a5bf-eb67c6129b06" 
+      width="200px"
+      alt="Causal Attention"
+    >
+    <br>
+    <em>Causal Attention</em>
+  </div>
+  <div>
+    <img 
+      src="https://github.com/user-attachments/assets/ffd61730-32f0-4d25-8558-086d2d43aa1f" 
+      width="200px"
+      alt="Causal Document Attention"
+    >
+    <br>
+    <em>Causal Document Attention</em>
+  </div>
+</div>
