@@ -42,6 +42,7 @@ from transformers.utils import cached_file
 
 from ...utils.download import DownloadSource, resolve_file_path
 from ...utils.log import logger
+from ..llama.tokenizer import Llama3Tokenizer
 from ..tokenizer_utils import PaddleTokenizerMixin
 
 
@@ -328,6 +329,9 @@ class AutoTokenizer(hf.AutoTokenizer):
             if tokenizer_class is None:
                 tokenizer_class_candidate = config_tokenizer_class
                 tokenizer_class = tokenizer_class_from_name(tokenizer_class_candidate)
+            if tokenizer_class is None:
+                if tokenizer_class_candidate == "Llama3Tokenizer":
+                    tokenizer_class = Llama3Tokenizer
             if tokenizer_class is None:
                 raise ValueError(
                     f"Tokenizer class {tokenizer_class_candidate} does not exist or is not currently imported."

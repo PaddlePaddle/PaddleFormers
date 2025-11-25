@@ -907,6 +907,22 @@ class Trainer:
                     logger.info(f"not loading ckpt :{self.args.dataset_rank}")
             self.runtime_timer.stop()
 
+    def _wrap_model_and_load_sharded_checkpoint(self, resume_from_checkpoint):
+        # In the sharded mode, should invoke _load_from_checkpoint after _wrap_model.
+        # In this mode, each sharding rank load sharded params, do not need to implement the broadcast logic.
+        model = self._wrap_model(self.model_wrapped)
+        if self.sharding_io is not None:
+            # the self.optimizer should be wrapped and it is done in _wrap_model
+            self.sharding_io.set_optimizer(self.optimizer)
+        if model is not self.model:
+            self.model_wrapped = model
+        # Should invoke _load_from_checpoint after _load_optimizer_and_scheduler
+        # because the _load_from_checkpoint method rely on the optimizer in the shareded mode.
+        if resume_from_checkpoint:
+            self._load_optimizer_and_scheduler(resume_from_checkpoint)
+            self._load_from_checkpoint(resume_from_checkpoint)
+        return model
+
     def create_zcc_manager(self, unwrapped_model, resume_from_checkpoint=None):
         """
         Create zero cost checkpoint manager.
@@ -2117,7 +2133,7 @@ class Trainer:
         if self.train_dataset is None or not has_length(self.train_dataset):
             return None
 
-        shuffle = True if self.args.enable_auto_parallel else self.args.dataloader_shuffle
+        shuffle = False if self.args.enable_auto_parallel else self.args.dataloader_shuffle
         total_batch_size = self.args.per_device_train_batch_size
         if self.args.enable_auto_parallel:
             total_batch_size = total_batch_size * self.args.dataset_world_size * self.args.gradient_accumulation_steps
