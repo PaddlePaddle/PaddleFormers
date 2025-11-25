@@ -333,7 +333,6 @@ class FinetuningArguments(
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
     # base
-    batch_size: int = field(default=1, metadata={"help": "Batch size per GPU."})
     layerwise_lr_decay_bound: Optional[float] = field(
         default=1.0,
         metadata={

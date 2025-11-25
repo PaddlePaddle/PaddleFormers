@@ -81,6 +81,7 @@ except ImportError:
 
 
 input_ids_for_mtp = deque()
+attn_mask_startend_row_indices_for_mtp = deque()
 NativeLinear = nn.Linear
 
 logger = logging.getLogger(__name__)
@@ -108,9 +109,12 @@ class ErnieEmbeddingPipe(nn.Layer):
 
     def forward(self, args):
         if isinstance(args, tuple):
-            if len(args) == 3:
+            if len(args) == 4:
+                input_ids, _, _, attn_mask_startend_row_indices = args
+                attention_mask, position_ids, inbatch_pack_offset = None, None, None
+            elif len(args) == 3:
                 input_ids, attention_mask, position_ids = args
-                inbatch_pack_offset = None
+                inbatch_pack_offset, attn_mask_startend_row_indices = None, None
             elif len(args) == 2:
                 if self.use_mem_eff_attn:
                     input_ids, inbatch_pack_offset = args
@@ -120,10 +124,12 @@ class ErnieEmbeddingPipe(nn.Layer):
                     input_ids, attention_mask = args
                     position_ids = None
                     inbatch_pack_offset = None
+                attn_mask_startend_row_indices = None
 
         else:
             input_ids = args
             attention_mask, position_ids, inbatch_pack_offset = None, None, None
+            attn_mask_startend_row_indices = None
 
         if position_ids is not None:
             position_ids.stop_gradient = True
@@ -172,6 +178,12 @@ class ErnieEmbeddingPipe(nn.Layer):
             )
             attention_mask.stop_gradient = True
 
+        if attn_mask_startend_row_indices is not None:
+            if self.config.multi_token_pred_depth > 0:
+                attn_mask_startend_row_indices = attn_mask_startend_row_indices[
+                    :, :, : -self.config.multi_token_pred_depth
+                ].contiguous()
+
         ret = (emb,)
         if attention_mask is not None:
             ret += (attention_mask.clone(),)
@@ -179,6 +191,8 @@ class ErnieEmbeddingPipe(nn.Layer):
             ret += (position_ids.clone(),)
         if inbatch_pack_offset is not None:
             ret += (inbatch_pack_offset.clone(),)
+        if attn_mask_startend_row_indices is not None:
+            ret += (paddle.empty(0), paddle.empty(0), attn_mask_startend_row_indices)
         if self.config.multi_token_pred_depth > 0 and not self.config.enable_mtp_magic_send:
             ret += (input_ids,)
             assert len(ret) == 2, "mtp only support one input which is input_ids"
@@ -200,13 +214,18 @@ class MTPEmbeddingPipe(ErnieEmbeddingPipe):
             self.config.enable_mtp_magic_send
         ), "MTPEmbedding can only be added into model only support enable_mtp_magic_send=True"
 
-        global input_ids_for_mtp
+        global input_ids_for_mtp, attn_mask_startend_row_indices_for_mtp
         assert len(input_ids_for_mtp) > 0, "input_ids for mtp is empty"
         hidden_states = args[0]
         input_ids = input_ids_for_mtp.popleft()
         input_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
+        ret = (hidden_states, input_embeds)
 
-        return (hidden_states, input_embeds)
+        if len(args) == 4:
+            assert len(attn_mask_startend_row_indices_for_mtp) > 0, "attn_mask_startend_row_indices for mtp is empty"
+            attn_mask_startend_row_indices = attn_mask_startend_row_indices_for_mtp.popleft()
+            ret += (attn_mask_startend_row_indices,)
+        return ret
 
 
 class EmptyLayer(nn.Layer):
@@ -235,8 +254,12 @@ class ErnieDecoderLayerPipe(ErnieDecoderLayer):
             res = None
 
         if isinstance(args, tuple):
-            if len(args) == 3:
+            if len(args) == 4:
+                hidden_states, _, _, attn_mask_startend_row_indices = args
+                attention_mask, position_ids, inbatch_pack_offset = None, None, None
+            elif len(args) == 3:
                 hidden_states, attention_mask, position_ids = args
+                attn_mask_startend_row_indices = None
             elif len(args) == 2:
                 if self.use_mem_eff_attn:
                     hidden_states, inbatch_pack_offset = args
@@ -245,12 +268,15 @@ class ErnieDecoderLayerPipe(ErnieDecoderLayer):
                 else:
                     hidden_states, attention_mask = args
                     position_ids, inbatch_pack_offset = None, None
+                attn_mask_startend_row_indices = None
             elif len(args) == 1:
                 (hidden_states,) = args
                 attention_mask, position_ids, inbatch_pack_offset = None, None, None
+                attn_mask_startend_row_indices = None
         else:
             hidden_states = args
             attention_mask, position_ids, inbatch_pack_offset = None, None, None
+            attn_mask_startend_row_indices = None
 
         if position_ids is not None:
             position_ids.stop_gradient = True
@@ -286,6 +312,7 @@ class ErnieDecoderLayerPipe(ErnieDecoderLayer):
                 False,
                 inbatch_pack_offset,
                 False,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 **offload_kwargs,
             )
         else:
@@ -299,6 +326,7 @@ class ErnieDecoderLayerPipe(ErnieDecoderLayer):
                 False,
                 inbatch_pack_offset,
                 False,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             )
         if isinstance(ret, paddle.Tensor):
             ret = (ret,)
@@ -308,11 +336,13 @@ class ErnieDecoderLayerPipe(ErnieDecoderLayer):
             ret += (position_ids.clone(),)
         if inbatch_pack_offset is not None:
             ret += (inbatch_pack_offset.clone(),)
+        if attn_mask_startend_row_indices is not None:
+            ret += (paddle.empty(0), paddle.empty(0), attn_mask_startend_row_indices)
         if len(ret) == 1:
             (ret,) = ret
         if self.config.multi_token_pred_depth > 0:
             if self.config.enable_mtp_magic_send:
-                ret = (ret,)
+                ret = (ret,) if isinstance(ret, paddle.Tensor) else ret
             else:
                 ret = (paddle.concat([ret, *inputs_embeds]),)
         return ret
@@ -409,7 +439,11 @@ class MTPLayer(nn.Layer):
     def forward_impl(self, *args):
         if self.config.enable_mtp_magic_send:
             assert isinstance(args, tuple), "Input for MTPLayer must be tuple"
-            hidden_states, inputs_embeds = args
+            if len(args) == 3:
+                hidden_states, inputs_embeds, attn_mask_startend_row_indices = args
+            else:
+                hidden_states, inputs_embeds = args
+                attn_mask_startend_row_indices = None
             inputs_embeds_extra = inputs_embeds[:, -self.config.multi_token_pred_depth :, :]
             inputs_embeds = inputs_embeds[:, : -self.config.multi_token_pred_depth, :]
             inputs_embeds_ori = inputs_embeds
@@ -418,6 +452,7 @@ class MTPLayer(nn.Layer):
             tensor_list = paddle.split(res, self.config.multi_token_pred_depth + 1)
             hidden_states = tensor_list[0]
             inputs_embeds_cur_depth_list = tensor_list[1:]
+            attn_mask_startend_row_indices = None
 
         output_list = [hidden_states]
         for depth in range(self.config.multi_token_pred_depth):
@@ -443,6 +478,12 @@ class MTPLayer(nn.Layer):
                 paddle.concat([inputs_embeds_cur_depth_norm, hidden_states_norm], axis=-1)
             )
 
+            attn_mask_startend_row_indices_cur_depth = None
+            if attn_mask_startend_row_indices is not None:
+                attn_mask_startend_row_indices_cur_depth = attn_mask_startend_row_indices[
+                    :, :, (depth + 1) : inputs_embeds_ori.shape[1] + (depth + 1)
+                ] - (depth + 1)
+
             decoder_layer = self.mtp_block[depth]
 
             layer_outputs = decoder_layer(
@@ -455,6 +496,7 @@ class MTPLayer(nn.Layer):
                 False,
                 None,
                 False,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices_cur_depth,
             )
 
             if isinstance(layer_outputs, (tuple, list)):
@@ -764,13 +806,24 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
 
     @classmethod
     def _prepare_pipeline_inputs_func(cls, data):
-        global input_ids_for_mtp
+        global input_ids_for_mtp, attn_mask_startend_row_indices_for_mtp
         input_ids_for_mtp.clear()
+        attn_mask_startend_row_indices_for_mtp.clear()
         for d in data:
             assert "input_ids" in d
             input_ids_for_mtp.append(d["input_ids"])
-        inputs = tuple(
-            [
+            if "attn_mask_startend_row_indices" in d:
+                attn_mask_startend_row_indices_for_mtp.append(d["attn_mask_startend_row_indices"])
+
+        if "attn_mask_startend_row_indices" in data[0]:
+            inputs = (
+                [d["input_ids"] for d in data],
+                [paddle.empty(0) for _ in data],  # placeholder
+                [paddle.empty(0) for _ in data],  # placeholder
+                [d["attn_mask_startend_row_indices"] for d in data],
+            )
+        else:
+            inputs = tuple(
                 [d[k] for d in data]
                 for k in [
                     "input_ids",
@@ -779,8 +832,8 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     "inbatch_pack_offset",
                 ]
                 if k in data[0]
-            ]
-        )
+            )
+
         if len(inputs) == 1:
             inputs = inputs[0]
         labels = [d["labels"] for d in data]

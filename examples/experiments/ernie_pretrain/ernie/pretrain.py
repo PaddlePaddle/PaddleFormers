@@ -18,6 +18,7 @@ import random
 import re
 import time
 from dataclasses import dataclass
+from functools import partial
 
 import numpy as np
 import paddle
@@ -60,6 +61,10 @@ from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
 )
+from paddleformers.datasets.finetuning import collate_fn
+from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
+from paddleformers.trainer import TrainingArguments
+from paddleformers.trl import ModelConfig
 
 try:
     from paddleformers.trainer.trainer_utils import log_trainer_start
@@ -459,7 +464,47 @@ def main():
 
     logger.info(f"using model={type(model)}, cfg={cfg}")
 
-    train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(args)
+    dataset_config = {
+        "tokenizer": tokenizer,
+        "max_seq_len": args.max_seq_length + 1,
+        "random_seed": args.seed,
+        "num_replicas": args.dataset_world_size,
+        "rank": args.dataset_rank,
+        "num_samples_each_epoch": trainer_args.get("num_samples_each_epoch", 6000000),
+        "random_shuffle": True,
+        "greedy_intokens": True,
+        "packing": True,
+        "mix_strategy": "concat",
+        "encode_one_turn": True,
+        "use_template": True,
+        "is_pretraining": False,
+    }
+
+    if trainer_args.get("stage") == "sft":
+        train_dataset = create_dataset_sft(
+            task_group=trainer_args["train_dataset_path"],
+            task_group_prob=trainer_args.get("train_dataset_prob", 1.0),
+            sub_dataset_type=trainer_args.get("train_dataset_type", "erniekit"),
+            **dataset_config,
+        )
+        eval_dataset = create_dataset_sft(
+            task_group=trainer_args["eval_dataset_path"],
+            task_group_prob=trainer_args.get("eval_dataset_prob", 1.0),
+            sub_dataset_type=trainer_args.get("eval_dataset_type", "erniekit"),
+            is_valid=True,
+            **dataset_config,
+        )
+        data_collator = partial(
+            collate_fn,
+            tokenizer=tokenizer,
+            training_args=TrainingArguments(
+                output_dir=args.output_dir, num_nextn_predict_layers=args.multi_token_pred_depth
+            ),
+            model_args=ModelConfig(stage="SFT", use_attn_mask_startend_row_indices=True),
+            max_seq_len=args.max_seq_length + 1,
+        )
+    else:
+        train_dataset, eval_dataset, _, data_collator = create_pretrained_dataset(args)
 
     callbacks = []
     callbacks += [GlobalRNGCallback()]

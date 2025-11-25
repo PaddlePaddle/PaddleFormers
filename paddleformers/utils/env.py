@@ -169,6 +169,7 @@ PREFILL_USE_SAGE_ATTN: bool = _get_bool_env("PREFILL_USE_SAGE_ATTN", "false")
 MODEL_STATE_DIC = "model_state"
 OPTIMIZER_STATE_DIC = "optimizer_state"
 MASTER_WEIGHT_DIC = "master_weight"
+EMA_STATE_DIC = "ema_state"
 
 # hf checkpoint dir name
 PREFIX_HF_CHECKPOINT_DIR = "hf_checkpoint"

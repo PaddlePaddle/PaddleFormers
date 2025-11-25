@@ -205,13 +205,16 @@ from .utils.ckpt_converter import CheckpointConverter
 
 try:
     from .utils.zero_cost_checkpoint import (
+        DistInfoCollectorValidator,
         NonZCCEMACallback,
         ZeroCostCheckpointCallback,
+        ZeroCostCheckpointCallbackFcBased,
         ZeroCostCheckpointManager,
-        get_fused_param_mappings,
+        ZeroCostCheckpointWorker,
+        ZeroCostCheckpointWorkerFcBased,
     )
 except (ImportError, ModuleNotFoundError):
-    ZeroCostCheckpointManager, NonZCCEMACallback, get_fused_param_mappings = None, None, None
+    ZeroCostCheckpointManager, NonZCCEMACallback = None, None
 from .utils.helper import (  # nested_truncate,
     broadcast_dataset_rank0_model,
     broadcast_dp_optimizer,
@@ -907,6 +910,90 @@ class Trainer:
                     logger.info(f"not loading ckpt :{self.args.dataset_rank}")
             self.runtime_timer.stop()
 
+    def _get_zcc_implementation_classes(self):
+        """Get appropriate ZCC implementation classes based on checkpoint format."""
+        if self.args.save_checkpoint_format == "flex_checkpoint":
+            return ZeroCostCheckpointCallbackFcBased, ZeroCostCheckpointWorkerFcBased
+        return ZeroCostCheckpointCallback, ZeroCostCheckpointWorker
+
+    def _create_zcc_manager_instance(self, unwrapped_model, zcc_worker_class):
+        """Create ZCC manager instance with appropriate configuration."""
+        if isinstance(self.model, PipelineLayer):
+            pipeline_hooks_capacity = (
+                unwrapped_model.forward_pipeline_parallel_hook_capacity
+                + unwrapped_model.backward_pipeline_parallel_hook_capacity
+            )
+        else:
+            pipeline_hooks_capacity = self.args.gradient_accumulation_steps
+
+        return ZeroCostCheckpointManager(
+            worker_num=self.args.zcc_workers_num,
+            pipeline_hooks_capacity=pipeline_hooks_capacity,
+            capacity_usage=self.args.zcc_pipeline_hooks_capacity_usage,
+            use_expert_parallel=self.args.use_expert_parallel,
+            ema_coef=self.args.zcc_save_ema_coef,
+            zcc_worker_class=zcc_worker_class,
+        )
+
+    def _register_pipeline_hooks(self, unwrapped_model):
+        """Register forward and backward pipeline hooks."""
+        # Register forward hooks
+        for i in range(unwrapped_model.forward_pipeline_parallel_hook_capacity):
+            unwrapped_model.register_forward_pipeline_parallel_hook(
+                location=i, hook=self.zcc_manager.zcc_pipeline_hook
+            )
+
+        # Register backward hooks
+        for i in range(unwrapped_model.backward_pipeline_parallel_hook_capacity):
+            unwrapped_model.register_backward_pipeline_parallel_hook(
+                location=i, hook=self.zcc_manager.zcc_pipeline_hook
+            )
+
+    def _setup_zcc_callback(self, zcc_callback_class):
+        """Setup ZCC callback with required dependencies."""
+        callback = zcc_callback_class(self.args, self.zcc_manager, self.runtime_timer, self.sharding_io)
+        self.add_callback(callback)
+
+    def _handle_checkpoint_resume(self, resume_from_checkpoint):
+        """Handle resumption from previous checkpoint if provided."""
+        if resume_from_checkpoint is None:
+            return
+
+        ema_state_path = self._get_ema_state_path(resume_from_checkpoint)
+
+        if not os.path.exists(ema_state_path):
+            logger.info(f"ZCC EMA state dict not found at: {ema_state_path}")
+            return
+
+        # Validate distributed strategy compatibility
+        should_load_ema = self._should_load_ema_state(resume_from_checkpoint, ema_state_path)
+
+        if should_load_ema:
+            logger.info(f"Loading ZCC EMA state from: {ema_state_path}")
+            self.zcc_manager.set_ema_state_dict(ema_state_path)
+
+    def _get_ema_state_path(self, checkpoint_path):
+        """Get the path to EMA state based on checkpoint format."""
+        if self.args.save_checkpoint_format == "flex_checkpoint":
+            return os.path.join(checkpoint_path, "ema_state", f"{dist.get_rank()}_0.distcp")
+        else:
+            optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
+            return os.path.join(checkpoint_path, optimizer_name).replace("optimizer", "ema")
+
+    def _should_load_ema_state(self, checkpoint_path, ema_state_path):
+        """Determine if EMA state should be loaded based on configuration and compatibility."""
+        if self.args.zcc_save_ema_coef is None:
+            logger.info("EMA coefficient is None, skipping EMA state loading")
+            return False
+
+        success, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(checkpoint_path)
+
+        if not success:
+            logger.warning(f"Cannot load EMA state due to strategy mismatch: {err_msg}")
+            return False
+
+        return True
+
     def create_zcc_manager(self, unwrapped_model, resume_from_checkpoint=None):
         """
         Create zero cost checkpoint manager.
@@ -917,55 +1004,22 @@ class Trainer:
             self.model, PretrainedModel
         ), "model should be a PretrainedModel when using zero cost checkpoint"
         logger.info("Create zero cost checkpoint manager...")
+
+        zcc_callback_class, zcc_worker_class = self._get_zcc_implementation_classes()
+
+        # Create ZCC manager with appropriate configuration
+        self.zcc_manager = self._create_zcc_manager_instance(unwrapped_model, zcc_worker_class)
+
+        # Register pipeline hooks if using pipeline parallelism
         if isinstance(self.model, PipelineLayer):
-            pipeline_hooks_capacity = (
-                unwrapped_model.forward_pipeline_parallel_hook_capacity
-                + unwrapped_model.backward_pipeline_parallel_hook_capacity
-            )
-            self.zcc_manager = ZeroCostCheckpointManager(
-                worker_num=self.args.zcc_workers_num,
-                pipeline_hooks_capacity=pipeline_hooks_capacity,
-                capacity_usage=self.args.zcc_pipeline_hooks_capacity_usage,
-                use_expert_parallel=self.args.use_expert_parallel,
-                ema_coef=self.args.zcc_save_ema_coef,
-            )
-            for i in range(unwrapped_model.forward_pipeline_parallel_hook_capacity):
-                unwrapped_model.register_forward_pipeline_parallel_hook(
-                    location=i, hook=self.zcc_manager.zcc_pipeline_hook
-                )
-            for i in range(unwrapped_model.backward_pipeline_parallel_hook_capacity):
-                unwrapped_model.register_backward_pipeline_parallel_hook(
-                    location=i, hook=self.zcc_manager.zcc_pipeline_hook
-                )
-        else:
-            pipeline_hooks_capacity = self.args.gradient_accumulation_steps
-            self.zcc_manager = ZeroCostCheckpointManager(
-                worker_num=self.args.zcc_workers_num,
-                pipeline_hooks_capacity=pipeline_hooks_capacity,
-                capacity_usage=self.args.zcc_pipeline_hooks_capacity_usage,
-                use_expert_parallel=self.args.use_expert_parallel,
-                ema_coef=self.args.zcc_save_ema_coef,
-            )
-        _callback = ZeroCostCheckpointCallback(self.args, self.zcc_manager, self.runtime_timer, self.sharding_io)
-        self.add_callback(_callback)
+            self._register_pipeline_hooks(unwrapped_model)
 
-        if resume_from_checkpoint is not None:
-            path = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
-            path = os.path.join(resume_from_checkpoint, path).replace("optimizer", "ema")
-            if self.args.zcc_save_ema_coef is not None and self.sharding_io is not None:
-                success, err_msg = self.sharding_io.check_same_strategy(resume_from_checkpoint)
-            else:
-                success, err_msg = True, None
-            if os.path.exists(path):
-                if success:
-                    logger.info(f"ZCC EMA load from {path}")
-                    self.zcc_manager.set_ema_state_dict(path)
-                else:
-                    logger.info(f"ZCC EMA does not load {path} because {err_msg}")
-            else:
-                logger.info(f"ZCC EMA state dict not found, in: {path}")
+        # Add callback and handle checkpoint resumption
+        self._setup_zcc_callback(zcc_callback_class)
 
-        logger.info("Create zero cost checkpoint manager done.")
+        self._handle_checkpoint_resume(resume_from_checkpoint)
+
+        logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint):
         self.add_callback(NonZCCEMACallback(resume_from_checkpoint, self.args, self.sharding_io))
@@ -1296,12 +1350,7 @@ class Trainer:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
                 if resume_from_checkpoint is not None:
-                    if isinstance(self.model, LoRAModel):
-                        self.model.from_pretrained(
-                            self.model, resume_from_checkpoint, load_checkpoint_format=self.args.load_checkpoint_format
-                        )
-                    else:
-                        self._load_flex_checkpoint(resume_from_checkpoint)
+                    self._load_flex_checkpoint(resume_from_checkpoint)
             else:
                 if delay_optimizer_creation:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
@@ -1493,9 +1542,12 @@ class Trainer:
                 raise ValueError(f"unsupported type: {type(dtensors)}")
         return global_micro_batchs
 
-    def optimizer_step(self, args, parameters_list=None):
+    def optimizer_step(self, args, model, parameters_list=None):
+        if parameters_list is None:
+            parameters_list = []
+
         optimizer_was_run = True
-        if args.enable_auto_parallel and self.args.offload_optim:
+        if not args.enable_auto_parallel and self.args.offload_optim:
             self._reload_optimizer()
 
         if self.do_grad_scaling:
@@ -1515,11 +1567,12 @@ class Trainer:
                     f"optimizer not run, scale_before: {scale_before_value[0]}, scale_after: {scale_after_value[0]}"
                 )
         elif isinstance(self.optimizer, HybridParallelOptimizer):
+            parameters_list = [t if t.is_contiguous() else t.contiguous() for t in parameters_list]
             self.optimizer._step(parameters_list)
         else:
             self.optimizer.step()
 
-        if args.enable_auto_parallel and self.args.offload_optim:
+        if not args.enable_auto_parallel and self.args.offload_optim:
             self._offload_optimizer()
 
         if optimizer_was_run:
@@ -1533,6 +1586,10 @@ class Trainer:
 
         if not args.enable_auto_parallel and (args.release_grads or enable_release_grads):
             self.optimizer.clear_grad(set_to_zero=False)
+            if args.pipeline_parallel_degree > 1:
+                for _, buffers in model._chunk_2_comm_buffers.items():
+                    for buffer in buffers:
+                        buffer._clear_grad_storage()
         else:
             self.optimizer.clear_grad()
 
@@ -1819,6 +1876,8 @@ class Trainer:
                     if not self.args.enable_auto_parallel:
                         with sync_context:
                             if "step_control" in inspect.signature(self.training_step).parameters:
+                                tr_loss_step = self.training_step(model, inputs, step_control=step_control)
+                            else:
                                 tr_loss_step = self.training_step(model, inputs)
                     else:
                         tr_loss_step = self.training_step(model, inputs)
@@ -1943,7 +2002,7 @@ class Trainer:
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
 
-                        self.optimizer_step(args, parameters_list=parameters_list)
+                        self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
                         self.timers and self.timers("optimizer-step").stop()
 
@@ -2120,7 +2179,7 @@ class Trainer:
         if self.args.enable_auto_parallel or self.args.world_size <= 1:
             return paddle.io.BatchSampler(
                 dataset=self.train_dataset,
-                shuffle=False,
+                shuffle=shuffle,
                 batch_size=total_batch_size,
                 drop_last=self.args.dataloader_drop_last,
             )
@@ -2801,7 +2860,6 @@ class Trainer:
             and self.args.moe_sharding_parallel_degree >= 1
             and self.args.expert_parallel_degree > 1
             and self.args.sharding_parallel_degree > 1
-            and not self.args.reorder_pipeline_priority
         ):
             from ..utils import MoEHybridParallelOptimizer
 
@@ -3518,13 +3576,12 @@ class Trainer:
                                 self.args.optim_shard_num,
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
-                            if not isinstance(self.model, LoRAModel):
-                                self._save_flex_optimizer_state(output_dir)
-                                if self.args.should_save:
-                                    if self.tokenizer is not None and self.args.save_tokenizer:
-                                        self.tokenizer.save_pretrained(output_dir)
-                                    # Good practice: save your training arguments together with the trained model
-                                    paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+                            self._save_flex_optimizer_state(output_dir)
+                            if self.args.should_save:
+                                if self.tokenizer is not None and self.args.save_tokenizer:
+                                    self.tokenizer.save_pretrained(output_dir)
+                                # Good practice: save your training arguments together with the trained model
+                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                         else:
                             if self.dp_group.rank > 0:  # this should only work for MoE saving
                                 self._save_ckpt_func(
@@ -3576,16 +3633,13 @@ class Trainer:
                                 signal_dir,
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
-                            if isinstance(self.model, LoRAModel):
-                                self.save_model(output_dir)
-                            else:
-                                self._save_flex_model_state(output_dir)
-                                self._save_flex_optimizer_state(output_dir)
-                                if self.args.should_save:
-                                    if self.tokenizer is not None and self.args.save_tokenizer:
-                                        self.tokenizer.save_pretrained(output_dir)
-                                    # Good practice: save your training arguments together with the trained model
-                                    paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+                            self._save_flex_model_state(output_dir)
+                            self._save_flex_optimizer_state(output_dir)
+                            if self.args.should_save:
+                                if self.tokenizer is not None and self.args.save_tokenizer:
+                                    self.tokenizer.save_pretrained(output_dir)
+                                # Good practice: save your training arguments together with the trained model
+                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                         else:
                             if self.args.data_parallel_rank > 0 and self.args.use_expert_parallel:
                                 self._save_ckpt_func(
@@ -3812,16 +3866,7 @@ class Trainer:
                             output_dir, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
                         )
                 else:
-                    is_main_process = paddle.distributed.get_rank() == 0
-                    if isinstance(self.model, LoRAModel):
-                        self.model.save_pretrained(
-                            output_dir,
-                            merge_tensor_parallel=True,
-                            variant=self.args.weight_name_suffix,
-                            save_checkpoint_format=self.args.save_checkpoint_format,
-                        )
-                    else:
-                        self._save_flex_model_state(output_dir)
+                    self._save_flex_model_state(output_dir)
 
                 if self.tokenizer is not None and self.args.save_tokenizer:
                     self.tokenizer.save_pretrained(output_dir)
