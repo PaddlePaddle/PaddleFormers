@@ -68,7 +68,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     # MoE specific parameters
     moe_router_topk: int = 8
     moe_shared_expert_overlap: bool = True
-    moe_token_dispatcher_type: str = "alltoall"
+    moe_token_dispatcher_type: str = "deepep"
     moe_router_load_balancing_type: str = "seq_aux_loss"
     moe_aux_loss_coeff: float = 1e-3
     moe_router_pre_softmax: bool = False
@@ -98,7 +98,7 @@ class GLM45ModelProvider355B(GLMMoEModelProvider):
     """
 
     num_layers: int = 92
-    num_moe_experts: int = 160
+    moe_num_experts: int = 160
     hidden_size: int = 5120
     ffn_hidden_size: int = 12288
     moe_layer_freq: Union[int, List[int]] = field(
@@ -117,7 +117,7 @@ class GLM45AirModelProvider106B(GLMMoEModelProvider):
     """
 
     num_layers: int = 46
-    num_moe_experts: int = 128
+    moe_num_experts: int = 128
     hidden_size: int = 4096
     ffn_hidden_size: int = 10944
     moe_layer_freq: Union[int, List[int]] = field(
@@ -130,20 +130,16 @@ class GLM45AirModelProvider106B(GLMMoEModelProvider):
 
 
 @dataclass
-class GLM45AirModelDebugProvider(GLMMoEModelProvider):
+class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     """
     Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
     """
 
-    num_layers: int = 1
-    # num_moe_experts: int = 128
-    hidden_size: int = 512
-    ffn_hidden_size: int = 512
-    moe_layer_freq: Union[int, List[int]] = field(
-        default_factory=lambda: [0] * 1 + [1] * 45
-    )  # first one layer is dense
-    moe_ffn_hidden_size: int = 1408
-    moe_shared_expert_intermediate_size: int = 1408
-    qk_layernorm: bool = False
-    moe_router_topk_scaling_factor: float = 1.0
+    num_layers: int = 10
+    moe_num_shared_experts: int = 1
+    hidden_size: int = 128
+    ffn_hidden_size: int = 128
+    moe_intermediate_size: int = 1408
     mtp_num_layers: Optional[int] = 0
+    use_bias: bool = False
+    vocab_size: int = 37888
