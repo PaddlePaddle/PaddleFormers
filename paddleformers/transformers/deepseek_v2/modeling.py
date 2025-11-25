@@ -51,12 +51,7 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.norm import RMSNorm
 from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
-from ...utils.masking_utils import (
-    _expand_2d_mask,
-    _make_causal_mask,
-    get_use_casual_mask,
-    is_casual_mask,
-)
+from ...utils.masking_utils import _expand_2d_mask, _make_causal_mask
 from ..cache_utils import Cache, DynamicCache
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..masking_utils import create_causal_masks_and_row_indices
