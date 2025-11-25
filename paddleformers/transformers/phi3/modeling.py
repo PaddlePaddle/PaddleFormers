@@ -345,12 +345,14 @@ class Phi3PreTrainedModel(PretrainedModel):
 
         # attention qkv
         aoa_config["aoa_statements"] += [
-            f"model.layers.$LAYER_ID.self_attn.qkv_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv_old, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_attention_heads // config.num_key_value_heads}",
+            f"model.layers.{layer_id}.self_attn.qkv_proj.weight^T -> {model_prefix}layers.{layer_id}.self_attn.qkv_proj.weight, fused_qkv_old, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=1"
+            for layer_id in range(config.num_hidden_layers)
         ]
 
         # FFN
         aoa_config["aoa_statements"] += [
-            f"model.layers.$LAYER_ID.mlp.gate_up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate_up_proj.weight, fused_ffn",
+            f"model.layers.{layer_id}.mlp.gate_up_proj.weight^T -> {model_prefix}layers.{layer_id}.mlp.gate_up_proj.weight, fused_ffn"
+            for layer_id in range(config.num_hidden_layers)
         ]
 
         return aoa_config
@@ -370,11 +372,18 @@ class Phi3PreTrainedModel(PretrainedModel):
         ]
 
         aoa_statements += [
-            f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight^T -> model.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv_old, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_attention_heads // config.num_key_value_heads}"
+            f"{model_prefix}layers.{layer_id}.self_attn.qkv_proj.weight -> model.layers.{layer_id}.self_attn.qkv_proj.weight, fused_qkv_old, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis=1"
+            for layer_id in range(config.num_hidden_layers)
         ]
 
         aoa_statements += [
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate_up_proj.weight^T -> model.layers.$LAYER_ID.mlp.gate_up_proj.weight, fused_ffn",
+            f"model.layers.{layer_id}.self_attn.qkv_proj.weight^T -> model.layers.{layer_id}.self_attn.qkv_proj.weight"
+            for layer_id in range(config.num_hidden_layers)
+        ]
+
+        aoa_statements += [
+            f"{model_prefix}layers.{layer_id}.mlp.gate_up_proj.weight^T -> model.layers.{layer_id}.mlp.gate_up_proj.weight, fused_ffn"
+            for layer_id in range(config.num_hidden_layers)
         ]
 
         aoa_config = {"aoa_statements": aoa_statements}
