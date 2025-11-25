@@ -36,6 +36,7 @@ import_structure = {
     "tokenizer_utils": [
         "PreTrainedTokenizer",
         "PretrainedTokenizer",
+        "PreTrainedTokenizerBase",
         "BPETokenizer",
         "tokenize_chinese_chars",
         "is_chinese_char",
@@ -307,6 +308,7 @@ if TYPE_CHECKING:
     from .model_utils import PretrainedModel, register_base_model
     from .tokenizer_utils import (
         PretrainedTokenizer,
+        PreTrainedTokenizerBase,
         BPETokenizer,
         tokenize_chinese_chars,
         is_chinese_char,
