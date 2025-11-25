@@ -537,7 +537,7 @@ class LlamaModel(LlamaPretrainedModel):
             kv_seq_len = 0
         else:
             assert past_key_values[0] is not None, "past_key_values[0] should not be None if provided"
-            kv_seq_len = past_key_values[0][0].shape[1]
+            kv_seq_len = past_key_values[0][0].shape[2]
 
         if position_ids is None:
             position_ids = (
