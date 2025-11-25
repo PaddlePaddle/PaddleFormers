@@ -64,10 +64,22 @@ class TestFromPretrained(unittest.TestCase):
     def test_from_pretrained_low_cpu_mem_usage_functional(self):
         # test that we can use `from_pretrained(..., low_cpu_mem_usage=True)` with normal and
         # sharded models
-        mnames = ["Paddleformers/tiny-random-llama-shard", "Paddleformers/tiny-random-llama"]
-        for mname in mnames:
-            m1 = LlamaModel.from_pretrained(mname, low_cpu_mem_usage=True)
-            m2 = LlamaModel.from_pretrained(mname, low_cpu_mem_usage=False)
+        mnames = [
+            "Paddleformers/tiny-random-llama3-shard",
+            "Paddleformers/tiny-random-llama3",
+        ]
+        convert_from_hf = [False, True]
+        for mname, convert in zip(mnames, convert_from_hf):
+            m1 = LlamaModel.from_pretrained(
+                mname,
+                low_cpu_mem_usage=True,
+                convert_from_hf=convert,
+            )
+            m2 = LlamaModel.from_pretrained(
+                mname,
+                low_cpu_mem_usage=False,
+                convert_from_hf=convert,
+            )
             for p1, p2 in zip(m1.parameters(), m2.parameters()):
                 self.assertTrue(paddle.allclose(p1, p2))
 
@@ -90,8 +102,8 @@ class TestFromPretrained(unittest.TestCase):
             self.assertEqual(new_model.norm.weight.dtype, paddle.float32)
 
     def test_load_sharded_checkpoint(self):
-        config = AutoConfig.from_pretrained("Paddleformers/tiny-random-llama-shard")
-        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama-shard")
+        config = AutoConfig.from_pretrained("Paddleformers/tiny-random-llama3-shard")
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3-shard")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, max_shard_size="200kiB")
@@ -210,7 +222,7 @@ class TestShardCheckpoint(unittest.TestCase):
             )
 
     def test_checkpoint_sharding_local(self):
-        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama-shard")
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3-shard")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             # We use the same folder for various sizes to make sure a new save erases the old checkpoint.
@@ -255,10 +267,10 @@ class TestShardCheckpoint(unittest.TestCase):
                     self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_sharding_from_hub(self):
-        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama-shard")
+        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3-shard")
 
         # the model above is the same as the model below, just a sharded version.
-        ref_model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama-shard")
+        ref_model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3-shard")
         for p1, p2 in zip(model.parameters(), ref_model.parameters()):
             self.assertTrue(paddle.allclose(p1, p2))
 
