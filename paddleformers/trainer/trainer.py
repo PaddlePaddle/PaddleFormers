@@ -910,7 +910,6 @@ class Trainer:
                     logger.info(f"not loading ckpt :{self.args.dataset_rank}")
             self.runtime_timer.stop()
 
-
     def _wrap_model_and_load_sharded_checkpoint(self, resume_from_checkpoint):
         # In the sharded mode, should invoke _load_from_checkpoint after _wrap_model.
         # In this mode, each sharding rank load sharded params, do not need to implement the broadcast logic.
@@ -1010,7 +1009,6 @@ class Trainer:
             return False
 
         return True
-
 
     def create_zcc_manager(self, unwrapped_model, resume_from_checkpoint=None):
         """
