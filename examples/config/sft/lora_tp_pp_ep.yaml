@@ -25,7 +25,7 @@ do_eval: true
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 1
 num_train_epochs: 1
-max_steps: -1
+max_steps: 10
 eval_steps: 100
 evaluation_strategy: steps
 save_steps: 100
@@ -33,7 +33,7 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3-lora-tp-pp
+output_dir: ./checkpoints/qwen3-sft-lora-tp-pp-ep
 disable_tqdm: true
 eval_accumulation_steps: 16
 
@@ -44,9 +44,13 @@ learning_rate: 1.0e-4
 # performance
 tensor_parallel_degree: 2
 pipeline_parallel_degree: 2
+expert_parallel_degree: 4
+use_expert_parallel: true
 sequence_parallel: true
 sharding: stage1
 recompute: true
 bf16: true
 fp16_opt_level: O2
-unified_checkpoint: true
+amp_master_grad: true
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint

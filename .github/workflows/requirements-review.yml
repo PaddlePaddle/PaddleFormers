@@ -1,0 +1,36 @@
+name: Check Requirements Changes
+
+on:
+  pull_request:
+    paths:
+      - 'requirements.txt'
+
+jobs:
+  review_request:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Detect changes in requirements.txt
+        id: check_diff
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+          git diff origin/${{ github.base_ref }} -- requirements.txt > diff.txt
+          if [ -s diff.txt ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Add reviewers if requirements changed
+        if: steps.check_diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          reviewers: |
+            nepeplwu
+            lugimzzz
+            zjjlivein
+            huanghengheng
+
