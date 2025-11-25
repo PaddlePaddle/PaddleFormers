@@ -387,6 +387,8 @@ class MoEFlexTokenLayer(nn.Layer):
             chunk = chunk.contiguous()
             expert = self.experts[i + self.moe_rank * self.moe_num_experts_per_device]
             outputs += [expert(chunk)]
+        if not outputs:
+            outputs = dispatched_input
 
         return paddle.cat(outputs, axis=0)
 
