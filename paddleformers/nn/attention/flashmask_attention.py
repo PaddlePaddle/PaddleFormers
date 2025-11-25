@@ -44,7 +44,7 @@ def flashmask_attention_forward(
             key,
             value,
             startend_row_indices=attn_mask_startend_row_indices,
-            causal=True,
+            causal=is_causal if is_causal is not None else True,
         )
     else:
         out = sink_attention_forward(
