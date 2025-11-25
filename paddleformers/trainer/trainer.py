@@ -1908,13 +1908,16 @@ class Trainer:
                             )
 
                         for p in paramlist:
+                            if not getattr(p, "no_sync", False):
+                                continue
                             color = getattr(p, "color", -1)
                             is_expert = isinstance(color, dict) and color.get("color", -1) == "moe_expert"
                             if is_expert and self.args.hybrid_parallel_expert_grad_scale != 1.0:
                                 grad = getattr(p, "main_grad", p.grad)
                                 if grad is not None:
-                                    coeff = self.args.hybrid_parallel_expert_grad_scale
-                                    grad.scale_(coeff)
+                                    with paddle.no_grad():
+                                        coeff = self.args.hybrid_parallel_expert_grad_scale
+                                        grad.scale_(coeff)
 
                     disable_accumulation = False
 
