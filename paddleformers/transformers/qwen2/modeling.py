@@ -97,6 +97,8 @@ class Qwen2Attention(nn.Layer):
         assert config.num_attention_heads // config.num_key_value_heads
 
         self.sequence_parallel = config.sequence_parallel
+        self.fuse_attention_qkv = config.fuse_attention_qkv
+        self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         if config.tensor_parallel_degree > 1:
             assert (
@@ -112,27 +114,36 @@ class Qwen2Attention(nn.Layer):
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
 
-        self.q_proj = GeneralLinear.create(
-            config.hidden_size,
-            q_hidden_size,
-            has_bias=True,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.k_proj = GeneralLinear.create(
-            config.hidden_size,
-            kv_hidden_size,
-            has_bias=True,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.v_proj = GeneralLinear.create(
-            config.hidden_size,
-            kv_hidden_size,
-            has_bias=True,
-            config=config,
-            tp_plan="colwise",
-        )
+        if not self.fuse_attention_qkv:
+            self.q_proj = GeneralLinear.create(
+                config.hidden_size,
+                q_hidden_size,
+                has_bias=True,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.k_proj = GeneralLinear.create(
+                config.hidden_size,
+                kv_hidden_size,
+                has_bias=True,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.v_proj = GeneralLinear.create(
+                config.hidden_size,
+                kv_hidden_size,
+                has_bias=True,
+                config=config,
+                tp_plan="colwise",
+            )
+        else:
+            self.qkv_proj = GeneralLinear.create(
+                config.hidden_size,
+                q_hidden_size + 2 * kv_hidden_size,
+                has_bias=True,
+                config=config,
+                tp_plan="colwise",
+            )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
             config.hidden_size,
@@ -155,19 +166,42 @@ class Qwen2Attention(nn.Layer):
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         """Input shape: Batch x Time x Channel"""
         # [bs, seq_len, num_head * head_dim] -> [seq_len / n, bs, num_head * head_dim] (n is model parallelism)
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
+        if not self.fuse_attention_qkv:
+            query_states = self.q_proj(hidden_states)
+            key_states = self.k_proj(hidden_states)
+            value_states = self.v_proj(hidden_states)
 
-        if self.sequence_parallel:
-            max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
-            q_len = max_sequence_length
+            if self.sequence_parallel:
+                max_sequence_length = self.config.max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                q_len = max_sequence_length
+            else:
+                bsz, q_len, _ = hidden_states.shape
+            query_states = query_states.reshape([bsz, q_len, -1, self.head_dim])
+            key_states = key_states.reshape([bsz, q_len, -1, self.head_dim])
+            value_states = value_states.reshape([bsz, q_len, -1, self.head_dim])
         else:
-            bsz, q_len, _ = hidden_states.shape
-        query_states = query_states.reshape([bsz, q_len, -1, self.head_dim])
-        key_states = key_states.reshape([bsz, q_len, -1, self.head_dim])
-        value_states = value_states.reshape([bsz, q_len, -1, self.head_dim])
+            mix_layer = self.qkv_proj(hidden_states)
+            if self.sequence_parallel:
+                max_sequence_length = self.config.max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                q_len = max_sequence_length
+                target_shape = [
+                    bsz,
+                    q_len,
+                    self.num_key_value_heads,
+                    (self.num_key_value_groups + 2) * self.head_dim,
+                ]
+            else:
+                target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
+            mix_layer = paddle.reshape_(mix_layer, target_shape)
+            query_states, key_states, value_states = paddle.split(
+                mix_layer,
+                num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
+                axis=-1,
+            )
+            if self.gqa_or_mqa:
+                query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -208,7 +242,7 @@ class Qwen2DecoderLayer(nn.Layer):
 
         self.self_attn = Qwen2Attention(config, layer_idx)
 
-        self.mlp = Qwen2MLP(config)
+        self.mlp = Qwen2MLP(config, fuse_up_gate=config.fuse_attention_ffn)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -294,8 +328,17 @@ class Qwen2PretrainedModel(PretrainedModel):
             "self_attn.q_proj.weight",
             "self_attn.k_proj.weight",
             "self_attn.v_proj.weight",
+        ]
+        FUSE_LAYER_COLWISE = [
+            "self_attn.qkv_proj.weight",
+        ]
+
+        UP_GATE_PROJ_LAYER_COLWISE = [
             "mlp.up_proj.weight",
             "mlp.gate_proj.weight",
+        ]
+        UP_GATE_PROJ_FUSE_LAYER_COLWISE = [
+            "mlp.up_gate_proj.weight",
         ]
 
         LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
@@ -305,6 +348,9 @@ class Qwen2PretrainedModel(PretrainedModel):
             "self_attn.k_proj.bias",
             "self_attn.v_proj.bias",
         ]
+        FUSE_BIAS_KEYS = [
+            "self_attn.qkv_proj.bias",
+        ]
 
         def make_base_actions():
             actions = {
@@ -312,27 +358,131 @@ class Qwen2PretrainedModel(PretrainedModel):
                 "embed_tokens.weight": partial(fn, is_column=False),
             }
             for layer_idx in range(config.num_hidden_layers):
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                        for k in LAYER_COLWISE
-                    }
-                )
+                if not config.fuse_attention_qkv:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                            for k in LAYER_COLWISE
+                        }
+                    )
+                else:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                            for k in FUSE_LAYER_COLWISE
+                        }
+                    )
+
                 actions.update(
                     {
                         f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
                         for k in LAYER_ROWWISE
                     }
                 )
+                if not config.fuse_attention_ffn:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                            for k in UP_GATE_PROJ_LAYER_COLWISE
+                        }
+                    )
+                else:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(
+                                fn, is_column=True, is_naive_2fuse=True
+                            )
+                            for k in UP_GATE_PROJ_FUSE_LAYER_COLWISE
+                        }
+                    )
                 # bias
-                actions.update(
-                    {f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
-                )
-
+                if not config.fuse_attention_qkv:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                            for b in BIAS_KEYS
+                        }
+                    )
+                else:
+                    actions.update(
+                        {
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                            for b in FUSE_BIAS_KEYS
+                        }
+                    )
             return actions
 
         mappings = make_base_actions()
         return mappings
+
+    @classmethod
+    def _get_fuse_or_split_param_mappings(cls, config: Qwen2Config, is_fuse=False):
+        # return parameter fuse utils
+        from ..conversion_utils import split_or_fuse_func
+
+        fn = split_or_fuse_func(is_fuse=is_fuse)
+
+        # last key is fused key, other keys are to be fused.
+        fuse_qkv_keys = [
+            (
+                "layers.0.self_attn.q_proj.weight",
+                "layers.0.self_attn.k_proj.weight",
+                "layers.0.self_attn.v_proj.weight",
+                "layers.0.self_attn.qkv_proj.weight",
+            ),
+            (
+                "layers.0.self_attn.q_proj.bias",
+                "layers.0.self_attn.k_proj.bias",
+                "layers.0.self_attn.v_proj.bias",
+                "layers.0.self_attn.qkv_proj.bias",
+            ),
+        ]
+        fuse_gate_up_keys = [
+            (
+                "layers.0.mlp.gate_proj.weight",
+                "layers.0.mlp.up_proj.weight",
+                "layers.0.mlp.up_gate_proj.weight",
+            ),
+        ]
+        num_heads = config.num_attention_heads
+        num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
+        fuse_attention_qkv = getattr(config, "fuse_attention_qkv", False)
+        fuse_attention_ffn = getattr(config, "fuse_attention_ffn", False)
+
+        final_actions = {}
+        if is_fuse:
+            if fuse_attention_qkv:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_qkv_keys:
+                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
+                        final_actions[keys] = partial(
+                            fn, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
+                        )
+
+            if fuse_attention_ffn:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_gate_up_keys:
+                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
+                        final_actions[keys] = fn
+
+        else:
+            if not fuse_attention_qkv:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_qkv_keys:
+                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
+                        final_actions[keys] = partial(
+                            fn,
+                            split_nums=3,
+                            is_qkv=True,
+                            num_heads=num_heads,
+                            num_key_value_heads=num_key_value_heads,
+                        )
+            if not fuse_attention_ffn:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_gate_up_keys:
+                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
+                        final_actions[keys] = partial(fn, split_nums=2)
+        return final_actions
 
 
 class Qwen2RotaryEmbedding(nn.Layer):
@@ -932,6 +1082,7 @@ class Qwen2ForCausalLMPipe(GeneralModelForCausalLMPipe):
     _decoder_layer_cls = Qwen2DecoderLayer
     _get_tensor_parallel_mappings = Qwen2Model._get_tensor_parallel_mappings
     _init_weights = Qwen2Model._init_weights
+    _get_fuse_or_split_param_mappings = Qwen2Model._get_fuse_or_split_param_mappings
     _keep_in_fp32_modules = Qwen2Model._keep_in_fp32_modules
     _rotary_emb_cls = Qwen2RotaryEmbedding
     _tied_weights_keys = ["lm_head.weight"]
