@@ -2963,7 +2963,12 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         with ContextManagers(init_contexts):
             model = cls(config, *init_args, **model_kwargs)
 
-        if hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
+        if load_checkpoint_format == "flex_checkpoint":
+            if not hasattr(cls, "_gen_aoa_config"):
+                raise RuntimeError(
+                    "When using flex_checkpoint to load Hugging Face open-source weights, "
+                    "the model must implement the _gen_aoa_config function to provide checkpoint conversion rules."
+                )
             aoa_config = cls._gen_aoa_config(config)
             sharded_state_dict = model.sharded_state_dict()
             dist.load_state_dict(
@@ -3201,7 +3206,12 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
-        if hasattr(self.__class__, "_gen_inv_aoa_config") and save_checkpoint_format == "flex_checkpoint":
+        if save_checkpoint_format == "flex_checkpoint":
+            if not hasattr(self.__class__, "_gen_inv_aoa_config"):
+                raise RuntimeError(
+                    "When using flex_checkpoint to save Hugging Face weights, "
+                    "the model must implement the _gen_inv_aoa_config function to provide checkpoint conversion rules."
+                )
             aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
 
             clean_unrelated_safetensors(save_dir)

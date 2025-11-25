@@ -592,13 +592,15 @@ class Qwen3MoePretrainedModel(PretrainedModel):
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_config = {
             "aoa_statements": [
-                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
                 f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.norm.weight -> {model_prefix}norm.weight",
+                f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
+                f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
             ]
         }
 
@@ -612,6 +614,10 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
             ]
+            if config.attention_bias:
+                aoa_config["aoa_statements"] += [
+                    f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads} , axis=0",
+                ]
 
         # FFN
         if not config.fuse_attention_ffn:
@@ -631,7 +637,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_statements = [
             # do cast
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
+            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight",
             # do transpose
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
@@ -639,6 +645,8 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
         ]
 
         if not config.fuse_attention_qkv:
@@ -649,12 +657,16 @@ class Qwen3MoePretrainedModel(PretrainedModel):
         else:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
             ]
             aoa_statements += [
-                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                f"model.layers.{layer_idx}.self_attn.{x}_proj.weight^T -> model.layers.{layer_idx}.self_attn.{x}_proj.weight"
+                for layer_idx in range(config.num_hidden_layers)
                 for x in ("q", "k", "v")
             ]
+            if config.attention_bias:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis=0",
+                ]
 
         if not config.fuse_attention_ffn:
             aoa_statements += [
@@ -664,8 +676,12 @@ class Qwen3MoePretrainedModel(PretrainedModel):
         else:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
-                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight",
-                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight",
+            ]
+            aoa_statements += [
+                f"model.layers.{layer_idx}.mlp.experts.{e}.{y}_proj.weight^T -> model.layers.{layer_idx}.mlp.experts.{e}.{y}_proj.weight"
+                for layer_idx in range(config.num_hidden_layers)
+                for e in range(config.num_experts)
+                for y in ("gate", "up")
             ]
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config

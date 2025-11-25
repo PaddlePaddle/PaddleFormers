@@ -21,7 +21,12 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
-from paddleformers.transformers import Glm4MoeConfig, Glm4MoeForCausalLM, Glm4MoeModel
+from paddleformers.transformers import (
+    AutoConfig,
+    Glm4MoeConfig,
+    Glm4MoeForCausalLM,
+    Glm4MoeModel,
+)
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -372,14 +377,13 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         pass
 
     def test_save_load(self):
+        model_path = "PaddleFormers/tiny-random-glm4moe"
         for model_class in self.all_model_classes:
             # test from_pretrained
-            model1 = model_class.from_pretrained(
-                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=True
-            )
+            model1 = model_class.from_pretrained(model_path, download_hub="aistudio", convert_from_hf=True)
 
             model2 = model_class.from_pretrained(
-                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", load_checkpoint_format="flex_checkpoint"
+                model_path, download_hub="aistudio", load_checkpoint_format="flex_checkpoint"
             )
 
             model_state_1 = model1.state_dict()
@@ -402,7 +406,42 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                     if k.endswith(".mlp.gate.weight"):
                         md52 = model_state_2[k].cast("bfloat16")._md5sum()
                         md53 = model_state_3[k].cast("bfloat16")._md5sum()
-                    print(k)
+                    assert md52 == md53
+        # test fused_qkv and fused_ffn
+        for model_class in self.all_model_classes:
+            model_config = AutoConfig.from_pretrained(model_path)
+
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
+
+            model1 = model_class.from_pretrained(
+                model_path, config=model_config, download_hub="aistudio", convert_from_hf=True
+            )
+
+            model2 = model_class.from_pretrained(
+                model_path, config=model_config, download_hub="aistudio", load_checkpoint_format="flex_checkpoint"
+            )
+
+            model_state_1 = model1.state_dict()
+            model_state_2 = model2.state_dict()
+
+            for k, v in model_state_1.items():
+                md51 = v._md5sum()
+                md52 = model_state_2[k]._md5sum()
+                assert md51 == md52
+
+            # test save_pretrained
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model3 = model_class.from_pretrained(tmpdirname, config=model_config, convert_from_hf=True)
+                model_state_3 = model3.state_dict()
+
+                for k, v in model_state_3.items():
+                    md53 = v._md5sum()
+                    md52 = model_state_2[k]._md5sum()
+                    if k.endswith(".mlp.gate.weight"):
+                        md52 = model_state_2[k].cast("bfloat16")._md5sum()
+                        md53 = model_state_3[k].cast("bfloat16")._md5sum()
                     assert md52 == md53
 
     def test_hidden_states_output(self):
