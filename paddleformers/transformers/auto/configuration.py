@@ -49,6 +49,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3_moe", "Qwen3MoeConfig"),
         ("glm4_moe", "Glm4MoeConfig"),
         ("gpt_oss", "GptOssConfig"),
+        ("phi3", "Phi3Config"),
     ]
 )
 

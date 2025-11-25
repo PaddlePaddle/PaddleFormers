@@ -309,6 +309,9 @@ import_structure = {
     "auto": ["AutoModelForCausalLM"],
     "legacy.tokenizer_utils_base": ["EncodingFast"],
     "legacy": [],
+    "phi3.configuration": ["Phi3Config"],
+    "phi3.tokenizer": ["Phi3Tokenizer"],
+    "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
 }
 
 if TYPE_CHECKING:
@@ -377,6 +380,7 @@ if TYPE_CHECKING:
     from .qwen3_moe import *
     from .glm4_moe import *
     from .gpt_oss import *
+    from .phi3 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
