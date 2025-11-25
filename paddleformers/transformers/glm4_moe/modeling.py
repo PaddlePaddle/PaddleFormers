@@ -192,14 +192,14 @@ class Glm4MoeAttention(nn.Layer):
             self.q_norm = GeneralNorm.create(
                 config=config,
                 norm_type="rms_norm",
-                hidden_size=config.hidden_size,
+                hidden_size=self.head_dim,
                 norm_eps=config.rms_norm_eps,
                 input_is_parallel=self.tensor_parallel,
             )
             self.k_norm = GeneralNorm.create(
                 config=config,
                 norm_type="rms_norm",
-                hidden_size=config.hidden_size,
+                hidden_size=self.head_dim,
                 norm_eps=config.rms_norm_eps,
                 input_is_parallel=self.tensor_parallel,
             )
