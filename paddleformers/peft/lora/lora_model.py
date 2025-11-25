@@ -18,6 +18,7 @@ import json
 import math
 import os
 import re
+import sys
 import tempfile
 from collections import OrderedDict
 from functools import partial
@@ -43,10 +44,12 @@ from ...transformers.model_utils import (
     clean_unrelated_safetensors,
     dtype_guard,
     load_state_dict,
+    prepare_safe_save_state_dict,
 )
 from ...transformers.utils import (
     dtype_byte_size,
     get_checkpoint_shard_files,
+    is_safetensors_available,
     weight_name_suffix,
 )
 from ...utils.distributed import distributed_allgather, distributed_gather
@@ -54,6 +57,14 @@ from ...utils.env import LORA_WEIGHTS_NAME, SAFE_PEFT_WEIGHTS_INDEX_NAME
 from ...utils.log import logger
 from ...utils.tools import get_env_device
 from .lora_config import LoRAAutoConfig, LoRAConfig
+
+if is_safetensors_available():
+    from safetensors.numpy import save_file as safe_save_file
+
+    if sys.platform.startswith("win"):
+        from safetensors import safe_open
+    else:
+        from ...utils.safetensors import fast_safe_open as safe_open
 
 
 def get_lora_layers():
@@ -255,7 +266,6 @@ class LoRAModel(nn.Layer):
     @classmethod
     def from_pretrained(cls, model, lora_path, **kwargs):
         lora_config = kwargs.pop("lora_config", None)
-        load_checkpoint_format = kwargs.pop("load_checkpoint_format", None)
         # init lora config & lora model
         if not isinstance(lora_config, LoRAConfig):
             lora_config = LoRAConfig.from_pretrained(lora_path)
@@ -273,7 +283,7 @@ class LoRAModel(nn.Layer):
             loaded_keys = sharded_metadata["all_checkpoint_keys"]
             expected_keys = set(lora_model.get_trainable_state_dict().keys())
             missing_keys = expected_keys - set(loaded_keys)
-            if len(missing_keys) > 0 and load_checkpoint_format != "flex_checkpoint":
+            if len(missing_keys) > 0:
                 raise ValueError(f"missing_keys: {missing_keys}")
 
             error_msgs = []
@@ -438,6 +448,13 @@ class LoRAModel(nn.Layer):
                 logger.warning(f"{name} not found in lora_state_dict!")
         return lora_state_dict
 
+    def sharded_state_dict(self, *args, **kwargs):
+        sharded_state_dict = self.model.sharded_state_dict()
+        lora_sharded_state_dict = {}
+        for name, weight in sharded_state_dict.items():
+            lora_sharded_state_dict[name] = weight
+        return lora_sharded_state_dict
+
     def save_pretrained(self, save_directory: str, merge_tensor_parallel: bool = False, **kwargs):
         save_model_config = kwargs.get("save_model_config", True)
         save_checkpoint_format = kwargs.get("save_checkpoint_format", None)
@@ -503,13 +520,14 @@ class LoRAModel(nn.Layer):
             weight_filename = os.path.join(save_directory, lora_weight_name)
             if total_size != 0:
                 logger.info(f"Saving LoRA weights to {weight_filename}")
-                paddle.save(tensor_state_dict, weight_filename, safetensors=safetensors)
+                tensor_state_dict, metadata = prepare_safe_save_state_dict(tensor_state_dict, save_to_hf=safetensors)
+                safe_save_file(tensor_state_dict, weight_filename, metadata=metadata)
         else:
             lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, variant)
             weight_filename = os.path.join(save_directory, lora_weight_name)
             paddle.save(trainable_state_dict, weight_filename, safetensors=safetensors)
 
-        def replace_name_and_gen_index(path):
+        def replace_name_and_gen_index_lora(path):
             index_mapping = {}
             safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".pdparams")]
             total_files_num = len(safetensor_files)
@@ -520,12 +538,11 @@ class LoRAModel(nn.Layer):
                 cur_file_index += 1
                 file_path = os.path.join(path, file)
                 new_file_name = f"peft_model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
-                from safetensors.paddle import safe_open
 
-                with safe_open(file_path, framework="paddle") as f:
+                with safe_open(file_path, framework="np") as f:
                     for key in f.keys():
                         index_mapping[key] = new_file_name
-                        single_size += f.get_tensor(key).numel().item() * dtype_byte_size(f.get_tensor(key).dtype)
+                        single_size += f.get_tensor(key).nbytes
                 total_size += single_size
                 new_file_path = os.path.join(path, new_file_name)
                 os.rename(file_path, new_file_path)
@@ -554,7 +571,7 @@ class LoRAModel(nn.Layer):
                     model_config_to_save.tensor_parallel_degree = -1
                 model_config_to_save.save_pretrained(save_directory)
             if safetensors:
-                replace_name_and_gen_index(save_directory)
+                replace_name_and_gen_index_lora(save_directory)
 
     def _find_and_replace_module(self, model, module_name, lora_config):
         parent_module = model

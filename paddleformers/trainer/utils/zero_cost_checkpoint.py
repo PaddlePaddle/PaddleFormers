@@ -1042,6 +1042,11 @@ class EMABuffer:
         if not os.path.exists(ema_path):
             return
 
+        success, err_msg = self.sharding_io.check_same_strategy(resume_from_checkpoint)
+        if not success:
+            logger.info(f"Cannot load EMA because: {err_msg}")
+            return
+
         logger.info(f"Loading EMA checkpoint from {resume_from_checkpoint} ...")
         with device_guard("cpu"):
             ema_state_dict = paddle.load(ema_path)
