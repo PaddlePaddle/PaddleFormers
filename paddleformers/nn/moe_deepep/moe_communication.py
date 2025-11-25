@@ -182,9 +182,7 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         if not outputs:
             outs = sorted_tokens
         else:
-            outs = (
-                paddle.concat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
-            )
+            outs = paddle.concat(outputs, axis=0)
 
         # Third All-to-All: Exchange expert outputs back to original rank. `gathered_tokens` are the tokens that originally belong to current rank
         if self.is_empty_tokens:
