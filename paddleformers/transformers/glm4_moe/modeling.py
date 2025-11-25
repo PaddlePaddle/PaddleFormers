@@ -83,15 +83,6 @@ def rotate_half(x):
     return paddle.cat((-x2, x1), axis=-1)
 
 
-def _apply_rotary_emb(
-    x: paddle.Tensor,
-    cos: paddle.Tensor,
-    sin: paddle.Tensor,
-) -> paddle.Tensor:
-    x_embed = (x * cos) + (rotate_half(x) * sin)
-    return x_embed
-
-
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors."""
     cos = cos.unsqueeze(unsqueeze_dim)
@@ -103,8 +94,8 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     k_rot, k_pass = k[..., :rotary_dim], k[..., rotary_dim:]
 
     # Apply rotary embeddings on the first half or full tensor
-    q_embed = _apply_rotary_emb(q_rot, cos, sin)
-    k_embed = _apply_rotary_emb(k_rot, cos, sin)
+    q_embed = (q_rot * cos) + (rotate_half(q_rot) * sin)
+    k_embed = (k_rot * cos) + (rotate_half(k_rot) * sin)
 
     # Concatenate back to full shape
     q_embed = paddle.cat([q_embed, q_pass], axis=-1)
@@ -258,10 +249,9 @@ class Glm4MoeAttention(nn.Layer):
             key_states = self.k_norm(key_states)
 
         # b l h d -> b h l d
-        perm = [0, 2, 1, 3]
-        query_states = paddle.transpose(x=query_states, perm=perm)
-        key_states = paddle.transpose(x=key_states, perm=perm)
-        value_states = paddle.transpose(x=value_states, perm=perm)
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)

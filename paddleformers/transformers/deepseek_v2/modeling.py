@@ -740,7 +740,11 @@ class DeepseekV2Attention(nn.Layer):
         query_states = paddle.cat([q_nope, q_pe], axis=-1)
         key_states = paddle.cat([k_nope, k_pe], axis=-1)
 
-        # [bs, seq_len, num_head, head_dim]
+        # [bz, seqlen, num_head, head_dim] -> [bz, num_head, seqlen, head_dim]
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
+
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 

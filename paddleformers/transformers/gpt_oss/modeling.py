@@ -495,15 +495,10 @@ class GptOssAttention(nn.Layer):
         else:
             target_query_shape = [0, 0, self.num_heads, self.head_dim]
             target_key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
-        query_states = query_states.reshape(target_query_shape)
-        key_states = key_states.reshape(target_key_value_shape)
-        value_states = value_states.reshape(target_key_value_shape)
-
         # b l h d -> b h l d
-        perm = [0, 2, 1, 3]
-        query_states = paddle.transpose(x=query_states, perm=perm)
-        key_states = paddle.transpose(x=key_states, perm=perm)
-        value_states = paddle.transpose(x=value_states, perm=perm)
+        query_states = query_states.reshape(target_query_shape).transpose(1, 2)
+        key_states = key_states.reshape(target_key_value_shape).transpose(1, 2)
+        value_states = value_states.reshape(target_key_value_shape).transpose(1, 2)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
         cos, sin = position_embeddings

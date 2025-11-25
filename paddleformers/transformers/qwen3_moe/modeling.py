@@ -65,8 +65,8 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors."""
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
-    q_embed = _apply_rotary_emb(q, cos, sin)
-    k_embed = _apply_rotary_emb(k, cos, sin)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed.astype(q.dtype), k_embed.astype(k.dtype)
 
 
@@ -215,10 +215,9 @@ class Qwen3MoeAttention(nn.Layer):
             key_states = self.k_norm(key_states)
 
         # [bs, seq_len, num_head, head_dim] -> [bs, num_head, seq_len, head_dim]
-        perm = [0, 2, 1, 3]
-        query_states = paddle.transpose(x=query_states, perm=perm)
-        key_states = paddle.transpose(x=key_states, perm=perm)
-        value_states = paddle.transpose(x=value_states, perm=perm)
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
