@@ -32,6 +32,12 @@ train_dataset_path: "./examples/data/sft-train1.jsonl,./examples/data/sft-train2
 train_dataset_prob: "0.8,0.2"
 ```
 
+- Supplement: The `truncate_packing` strategy is also supported in the online pre-training data stream, which supports truncating the data to effectively reduce padding tokens. You can use `truncate_packing` by setting it to `True`, as shown in the figure below:
+
+<div align="center">
+<img src="https://github.com/user-attachments/assets/f7ec5b76-aee7-4f64-8331-ca00cac5339a">
+</div>
+
 # Data Packing Strategy
 
 `Packing` is a technique used to optimize batch processing by combining multiple short input sequences into a single longer sequence before feeding them into the LLM. This reduces padding overhead and improves hardware utilization (e.g., GPU/TPU efficiency).
@@ -56,3 +62,28 @@ Currently, four data sampling strategies are supported: `random`, `concat`, `int
 | `interleave_over`  | When small datasets are important but have limited samples | None | The `interleave` strategy involves cross-concatenating multiple datasets according to data proportioning. `interleave_over` indicates oversampling, meaning that sampling stops only after all datasets have been exhausted. |
 
 - Note: `num_samples_each_epoch` only works in `random` data sampling strategy.
+
+# Attention Mask
+
+The data stream defaults to passing in a causal Attention Mask. In the packing case, when `use_global_causal_attn` is true, it corresponds to the `Causal Attention` shown in the figure below. Different samples within a `Sequence` are visible. When `use_global_causal_attn` is false, it corresponds to the `Causal Document Attention` shown in the figure below. Different samples within a `Sequence` are not visible.
+
+<div align="center" style="display: flex; justify-content: center; gap: 20px;">
+  <div>
+    <img 
+      src="https://github.com/user-attachments/assets/57c414e3-6783-4a40-a5bf-eb67c6129b06" 
+      width="200px"
+      alt="Causal Attention"
+    >
+    <br>
+    <em>Causal Attention</em>
+  </div>
+  <div>
+    <img 
+      src="https://github.com/user-attachments/assets/ffd61730-32f0-4d25-8558-086d2d43aa1f" 
+      width="200px"
+      alt="Causal Document Attention"
+    >
+    <br>
+    <em>Causal Document Attention</em>
+  </div>
+</div>

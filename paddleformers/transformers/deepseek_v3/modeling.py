@@ -21,12 +21,13 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import paddle
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ..cache_utils import Cache
 from ..deepseek_v2.modeling import (
     DeepseekV2ForCausalLMPipe,
     DeepseekV2ForSequenceClassification,
@@ -103,7 +104,7 @@ class DeepseekV3ForCausalLM(DeepseekV3PretrainedModel):
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,

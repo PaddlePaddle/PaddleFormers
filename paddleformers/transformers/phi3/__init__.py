@@ -1,5 +1,4 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,28 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+"""Package"""
 import sys
 from typing import TYPE_CHECKING
 
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["Qwen2_5_VLConfig", "Qwen2_5_VLTextConfig"],
-    "modeling": [
-        "Qwen2_5_VLForConditionalGeneration",
-        "Qwen2_5_VLModel",
-        "Qwen2_5_VLPretrainedModel",
-        "Qwen2_5_VLTextModel",
-    ],
-    "processor": ["Qwen2_5_VLProcessor"],
+    "tokenizer": ["Phi3Tokenizer"],
+    "configuration": ["Phi3Config"],
+    "modeling": ["Phi3PreTrainedModel", "Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
     from .modeling import *
-    from .processor import *
-
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

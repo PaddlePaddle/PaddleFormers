@@ -72,6 +72,9 @@ class ModelArguments:
         default=True,
         metadata={"help": "Under use attn_mask_start_row_indices=True, whether use sparse flash attention or not."},
     )
+    use_global_causal_attn: bool = field(
+        default=False, metadata={"help": "Whether to use global causal attention in packing data"}
+    )
     rope_3d: Optional[bool] = field(default=True, metadata={"help": "use rope3d"})
     fuse_softmax_mask: bool = field(
         default=False,
