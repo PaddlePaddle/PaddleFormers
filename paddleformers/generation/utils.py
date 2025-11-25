@@ -684,9 +684,11 @@ class GenerationMixin(object):
 
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
         if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
+            model_inputs["inputs_embeds"] = inputs_embeds
+            model_inputs["input_ids"] = None
         else:
-            model_inputs = {"input_ids": input_ids}
+            model_inputs["inputs_embeds"] = None
+            model_inputs["input_ids"] = input_ids
 
         attention_mask = kwargs.get("attention_mask", None)
         if (
