@@ -30,6 +30,9 @@ rank=$(($rank-$START_RANK))
 #bash script/kill_process.sh 
 #sleep 5
 
+# 使用标准的FP32格式计算, 提升精度
+export NVIDIA_TF32_OVERRIDE=0
+
 python -m paddle.distributed.launch \
    --log_dir ./outputs/output_$rank/paddle_distributed_logs \
    --master $master:$port \
