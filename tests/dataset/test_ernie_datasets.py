@@ -44,6 +44,7 @@ class TestPTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": True,
+            "truncate_packing": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -75,6 +76,7 @@ class TestPTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": True,
+            "truncate_packing": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -106,6 +108,7 @@ class TestPTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": True,
+            "truncate_packing": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -137,6 +140,7 @@ class TestPTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": True,
+            "truncate_packing": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -172,6 +176,7 @@ class TestSFTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": False,
+            "truncate_packing": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -203,6 +208,7 @@ class TestSFTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": False,
+            "truncate_packing": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -234,6 +240,7 @@ class TestSFTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": False,
+            "truncate_packing": True,
         }
 
         train_dataset = create_dataset_sft(
@@ -265,6 +272,7 @@ class TestSFTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": False,
+            "truncate_packing": True,
         }
 
         train_dataset = create_dataset_sft(
