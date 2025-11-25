@@ -200,6 +200,7 @@ def set_seed(seed: int = 1234, topo=None):
         "random seed is set to {}.".format(global_seed, local_seed, random_seed)
     )
 
+
 def set_random_seed(
     seed_: int,
     data_parallel_random_init: bool = False,
@@ -210,6 +211,7 @@ def set_random_seed(
     """Set random seed for reproducability."""
     if seed_ is not None and seed_ > 0:
         import paddlefleet
+
         # Ensure that different pipeline MP stages get different seeds.
         seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
         # Ensure different data parallel ranks get different seeds
@@ -224,6 +226,7 @@ def set_random_seed(
             )
     else:
         raise ValueError("Seed ({}) should be a positive integer.".format(seed_))
+
 
 def _switch_mode(mode="dynamic"):
     assert mode in ["dynamic", "static"]

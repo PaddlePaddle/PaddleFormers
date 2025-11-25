@@ -35,8 +35,8 @@ from paddle.distributed.fleet.meta_parallel import (
 )
 from paddlefleet.tensor_parallel import (
     ColumnParallelLinear as FleetColumnParallelLinear,
-    RowParallelLinear as FleetRowParallelLinear,
 )
+from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
 
 from ...trainer.argparser import strtobool
 from ...transformers import linear_utils
@@ -96,12 +96,12 @@ def get_lora_layers():
         from .lora_layers import (
             ColumnParallelLoRALinear,
             ColumnSequenceParallelLoRALinear,
+            FleetColumnParallelLoRALinear,
+            FleetRowParallelLoRALinear,
             LoRAConv2D,
             LoRALinear,
             RowParallelLoRALinear,
             RowSequenceParallelLoRALinear,
-            FleetColumnParallelLoRALinear,
-            FleetRowParallelLoRALinear,
         )
 
     return {
@@ -654,7 +654,7 @@ class LoRAModel(nn.Layer):
                 self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
                 self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
 
-            elif isinstance(module, FleetColumnParallelLinear):
+        elif isinstance(module, FleetColumnParallelLinear):
             # recover the original output_features
             output_features = module.weight.shape[1] * module.world_size
             lora_module = FleetColumnParallelLoRALinear(
@@ -681,7 +681,7 @@ class LoRAModel(nn.Layer):
                 self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=True)
                 self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
                 self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
-        
+
         elif isinstance(module, RowParallelLinear):
             # recover the original output_features
             lora_module = RowParallelLoRALinear(
@@ -795,6 +795,7 @@ class LoRAModel(nn.Layer):
             if module.bias is not None:
                 lora_module.bias = module.bias
         setattr(parent_module, attribute_chain[-1], lora_module)
+
     def _find_and_restore_module(self, module_name):
         parent_module = self.model
         attribute_chain = module_name.split(".")

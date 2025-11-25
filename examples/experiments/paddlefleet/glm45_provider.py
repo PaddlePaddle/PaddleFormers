@@ -134,7 +134,8 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     """
     Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
     """
-    model_type="glm4_moe"
+
+    model_type = "glm4_moe"
     num_layers: int = 10
     moe_num_shared_experts: int = 1
     hidden_size: int = 128

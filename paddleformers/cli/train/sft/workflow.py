@@ -36,8 +36,8 @@ from paddleformers.trainer import (
     MoeExpertsGradScaleCallback,
     MoEGateSpGradSyncCallBack,
     get_last_checkpoint,
-    set_seed,
     set_random_seed,
+    set_seed,
 )
 from paddleformers.transformers import (
     AutoConfig,
@@ -51,7 +51,7 @@ from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import SFTTrainer
 from paddleformers.trl.llm_utils import compute_metrics, get_lora_target_modules
 from paddleformers.utils.log import logger
-from glm45_provider import GLM45AirModelDebugProvider
+
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "False"
 
