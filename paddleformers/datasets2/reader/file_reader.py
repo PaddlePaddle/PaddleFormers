@@ -114,7 +114,9 @@ class HuggingFaceReader(BaseReader):
         # download
         config_map = get_hf_dataset_config(file_path)
         if config_map is not None:
+            # download hf dataset
             HuggingFaceDownload(file_path)
+            # read hf data file
             download_dir = os.path.join(DATASET_DOWNLOAD_ROOT, file_path)
             file_name = config_map.get("file_name", "")
             download_file_path = os.path.join(download_dir, file_name)

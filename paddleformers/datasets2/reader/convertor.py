@@ -81,7 +81,7 @@ def convert_mm_data(item):
             mm_type = "video"
         order_type = ["text"] * len(item.get("text_info", []))
         order_index = list(range(len(order_type)))
-        
+
         matched_text_index_list = []
         for i, info in enumerate(mm_info):
             matched_text_index_list.append((info["matched_text_index"], i))
@@ -91,7 +91,7 @@ def convert_mm_data(item):
             order_type.insert(idx + idx_shift, mm_type)
             order_index.insert(idx + idx_shift, i)
             idx_shift += 1
-    
+
     data_info = {
         "text_info": item.get("text_info", []),
         "image_info": item.get("image_info", []),
@@ -131,13 +131,13 @@ def convert_mm_data(item):
         messages.append({"role": "user", "content": content})
     elif tag == "no_mask":
         messages.append({"role": "assistant", "content": content})
-    res = { "messages": messages}
+    res = {"messages": messages}
     if len(images) > 0:
         res["images"] = images
     if len(videos) > 0:
         res["videos"] = videos
     return res
-    
+
 
 def erniekit_convertor(datas):
     all_data = []

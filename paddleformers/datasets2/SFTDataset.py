@@ -14,27 +14,56 @@
 
 import numpy as np
 from paddle.io import IterableDataset
+from dataclasses import dataclass
+from typing import List
 
-from paddleformers.datasets2.processor import SupervisedDatasetProcessor
-from paddleformers.datasets2.processor.encoder import Qwen2VLEncoder
-from paddleformers.datasets2.processor.vision_loader import Qwen2VLVisionLoader
+# from paddleformers.datasets2.processor import SupervisedDatasetProcessor
+# from paddleformers.datasets2.processor.encoder import Qwen2VLEncoder
+# from paddleformers.datasets2.processor.vision_loader import Qwen2VLVisionLoader
 from paddleformers.datasets2.reader.mix_datasets import (
     MultiSourceDataset,
     create_dataset_instance,
 )
-from paddleformers.hparams.data_args import DataArguments
-from paddleformers.transformers import AutoTokenizer
+from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 
 from paddleformers.datasets2.template.template import get_template_and_fix_tokenizer
+from paddleformers.hparams.data_args import DataArguments
+from paddleformers.transformers import AutoProcessor, AutoTokenizer
 
-from transformers import AutoProcessor
+# from paddleformers.utils.log import logger
+
+@dataclass
+class Sequence:
+    """Encapsulated sequence class."""
+
+    token_ids: List[int]
+    position_ids: List[int]
+    labels: List[int]
+    loss_mask: List[int]
+    num_examples: int
+
 
 class SFTDataSet(IterableDataset):
     def __init__(self, **dataset_config):
 
         self.tokenizer = dataset_config["tokenizer"]
-        # self.reader = dataset_config["data_reader"]
-        # self.processor = dataset_config["data_processor"]
+        self.processor = dataset_config["processor"]
+
+        # For new data concatenation mode
+        self.begin_of_query = self.tokenizer.tokenize("User: ")
+        self.begin_of_response = self.tokenizer.tokenize("\nAssistant: ")
+        self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
+        self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
+        self.newline_token = self.tokenizer.tokenize("\n")  # Same effect as sys_end_token
+        if isinstance(self.tokenizer, PretrainedTokenizer):
+            self.end_of_response_id = self.tokenizer._convert_token_to_id([self.end_of_response])[0]
+            self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
+        else:
+            self.end_of_response_id = self.tokenizer.convert_tokens_to_ids([self.end_of_response])[0]
+            self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
+
+
+        self.max_seq_len = dataset_config["max_seq_len"]
 
         # data loader
         multi_source_dataset = MultiSourceDataset(**dataset_config)
@@ -52,7 +81,7 @@ class SFTDataSet(IterableDataset):
             break
 
         data_args = DataArguments(
-            template="ernie",
+            template="qwen2_vl",
             train_on_prompt=False,
             tool_format=None,
             default_system=None,
@@ -62,73 +91,112 @@ class SFTDataSet(IterableDataset):
         # 得到register的template
         self.template = get_template_and_fix_tokenizer(dataset_config["tokenizer"], data_args)
 
-        # data_args = DataArguments(
-        #     max_seq_len=16384,
-        #     min_pixels=3136,
-        #     max_pixels=4816896,
-        #     video_min_frames=4,
-        #     video_max_frames=768,
-        #     render_timestamp=True,
-        # )
-        # encoder = Qwen2VLEncoder(data_args=data_args)
-        # vision_loader = Qwen2VLVisionLoader(data_args=data_args)
-        # self.processor = SupervisedDatasetProcessor(
-        #     encoder=encoder,
-        #     tokenizer=dataset_config["tokenizer"],
-        #     vision_loader=vision_loader,
-        #     data_args=data_args,
-        # )
-
     def __len__(self):
         return self.mix_datasets.__len__()
 
     def __iter__(self):
 
         for item in self.mix_datasets:
-            # res = self.processor.preprocess_dataset(item)
-
-            # import pdb
-            # pdb.set_trace()
-
-
-            # 使用self.processor处理多模输入，得到拼接后的结果
-            images = item['images']
-            videos = []
-            audios = []
-            try:
-                self.processor = AutoProcessor.from_pretrained(
-                    '/root/paddlejob/workspace/env/output/lrl/PaddleFormers/models/Qwen2.5-VL-3B-Instruct',
-                    use_fast=True,
-                )
-            except ValueError:  # try another one
-                self.processor = AutoProcessor.from_pretrained(
-                    '/root/paddlejob/workspace/env/output/lrl/PaddleFormers/models/Qwen2.5-VL-3B-Instruct',
-                    use_fast=False,
-                )
-            except Exception as e:
-                logger.info(f"Failed to load processor: {e}.")
-                processor = None
-            
-            messages = self.template.mm_plugin.process_messages(item["messages"], images, videos, audios, self.processor)
-
-            input_ids, labels = self.template.mm_plugin.process_token_ids(
-                [], [], images, videos, audios, self.tokenizer, self.processor
+            system = item.get("system", None)
+            tools = item.get("tools", None)
+            images = item.get("images", [])
+            videos = item.get("videos", [])
+            audios = item.get("audios", [])
+            # 对多模信息做处理，将messages里面的占位符替换
+            messages = self.template.mm_plugin.process_messages(
+                item["messages"], images, videos, audios, self.processor
             )
-            
             # 套template，转ids
-            system = None
-            tools = None
             encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
 
-            import pdb
-            pdb.set_trace()
-            
-            total_length = len(input_ids) + (1 if self.template.efficient_eos else 0)
+            # 转input_ids, labels
+            num_reserved_tokens_for_each_dialog = 1  # only break_turn_token or end_token
+            num_reserved_tokens_for_each_turn = 8
 
-            # debug
-            print(res)
+            cur_len = num_reserved_tokens_for_each_dialog
 
-            yield res
+            turn_index = len(encoded_pairs) - 1
+
+            tokens = []
+            loss_mask = []
+            while turn_index >= 0:
+                tokens_src, tokens_target = encoded_pairs[turn_index]
+                if len(tokens_src) + len(tokens_target) > (
+                    self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
+                ):
+                    # If the source (src) exceeds length limit, discard this round of conversation data
+                    # If the target (tgt) exceeds length limit, truncate it
+                    if len(tokens_src) > self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn:
+                        break
+                    else:
+                        reverse_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
+                        tokens_target = tokens_target[:reverse_len]
+
+                tokens = tokens_src + tokens_target + tokens
+
+                loss_mask = (
+                    [0] * (len(tokens_src) - 1) + [1] * (len(tokens_target) + 1) + loss_mask
+                )
+                assert len(tokens) == len(loss_mask), f"{len(tokens)}-{len(loss_mask)}"
+
+                cur_len = len(tokens)
+
+                turn_index -= 1
+
+            # Not even one turn can be added, so need to do warning and skip this example
+            if len(tokens) <= num_reserved_tokens_for_each_dialog + num_reserved_tokens_for_each_turn:
+                try:
+                    # For print log
+                    sub_src = item["messages"][0]["content"].strip()[:50]
+                    sub_tgt = item["messages"][-1]["content"].strip()[-50:]
+                    if len(tokens) > 0:
+                        logger.warning(f"This data is too short: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
+                    else:
+                        logger.warning(f"This data is too long: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
+                except Exception:
+                    logger.warning("[SKIP] wrong example")
+
+            if self.begin_token_id is not None and self.end_of_response_id is not None:
+                # Maybe left truncated, so need to add begin_token
+                if tokens[0] != self.begin_token_id:
+                    tokens = [self.begin_token_id] + tokens
+                    loss_mask = [0] + loss_mask
+
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+
+                # Add EOS token at the end
+                del tokens[-1]
+                del loss_mask[-1]
+                labels = tokens[1:] + [self.tokenizer.eos_token_id]
+
+                # end_of_response is a special token that indicates the end of the turn.
+                # end_token is a special token that indicates the end of the answer.
+                labels = [
+                    label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
+                ]
+            else:
+                tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
+                labels = tokens[1:] + [-100]
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+
+            pos_ids = list(range(len(tokens)))
+
+            if sum(loss_mask) == 0:
+                logger.warning(f"[SKIP] all labels set to 0: {example}")
+                return None
+
+            assert len(tokens) == len(loss_mask), f"{len(tokens)}-{len(loss_mask)}"
+            assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
+
+            yield Sequence(
+                token_ids=tokens,
+                position_ids=pos_ids,
+                labels=labels,
+                loss_mask=loss_mask,
+                num_examples=1,
+            )
 
 
 class SFTPackingDataset(IterableDataset):
@@ -166,7 +234,7 @@ class SFTPackingDataset(IterableDataset):
                     continue
                 if self.estimate:
                     self.used_samples += actual_example_num
-                batch_sequence, cur_len = [sequence], len(sequence["input_ids"])
+                batch_sequence, cur_len = [sequence], len(sequence.token_ids)
                 yield batch_sequence
 
                 if self.estimate:
@@ -191,12 +259,12 @@ class SFTPackingDataset(IterableDataset):
                         continue
                     if self.estimate:
                         self.used_samples += actual_example_num
-                    if cur_len + len(sequence["input_ids"]) <= self.max_seq_len:
+                    if cur_len + len(sequence.token_ids) <= self.max_seq_len:
                         batch_sequence.append(sequence)
-                        cur_len += len(sequence["input_ids"])
+                        cur_len += len(sequence.token_ids)
                     else:
                         yield batch_sequence
-                        batch_sequence, cur_len = [sequence], len(sequence["input_ids"])
+                        batch_sequence, cur_len = [sequence], len(sequence.token_ids)
 
                     if self.estimate:
                         self.used_estimate_samples += actual_example_num
@@ -279,9 +347,9 @@ class SFTPackingDataset(IterableDataset):
 
             max_left_index = left_len.argmax()
             # Put the current sequence into the largest left space valid pack.
-            if len(sequence["input_ids"]) <= left_len[max_left_index]:
+            if len(sequence.token_ids) <= left_len[max_left_index]:
                 generate_packs[max_left_index].append(sequence)
-                left_len[max_left_index] -= len(sequence["input_ids"])
+                left_len[max_left_index] -= len(sequence.token_ids)
                 if self.estimate:
                     self.used_samples += actual_example_num_list[index]
                 index += 1
@@ -294,26 +362,33 @@ class SFTPackingDataset(IterableDataset):
 
 if __name__ == "__main__":
     # Load tokenizer & dataset
-    tokenizer = AutoTokenizer.from_pretrained("/root/paddlejob/workspace/env/output/lrl/PaddleFormers/models/Qwen2.5-VL-3B-Instruct")
 
+    model_path = "/root/paddlejob/workspace/env/output/lrl/PaddleFormers/models/Qwen2.5-VL-3B-Instruct"
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    processor = AutoProcessor.from_pretrained(model_path)
     dataset_config = {
         "tokenizer": tokenizer,
-        "max_seq_len": 8192,
+        "processor": processor,
         "random_seed": 42,
+        "random_shuffle": True,
         "num_replicas": 1,
         "rank": 0,
-        "num_samples_each_epoch": 6000000,
-        "random_shuffle": True,
-        "greedy_intokens": True,
-        "packing": True,
         "mix_strategy": "concat",
+        "num_samples_each_epoch": 6000000,
+        "packing": True,
+        "greedy_intokens": True,
+        "max_seq_len": 8192,
         "encode_one_turn": True,
         "use_template": True,
         "reverse": True,
-        "task_group": "/root/paddlejob/workspace/env/output/lrl/PaddleFormers/data/vl/sft_vl-train_demo1.jsonl",
-        "task_group_prob": "1.0",
-        "sub_dataset_type": "erniekit",
     }
+    dataset_config.update(
+        {
+            "task_group": "/root/paddlejob/workspace/env/output/lrl/PaddleFormers/data/vl/experiment.jsonl",
+            "task_group_prob": "1.0",
+            "sub_dataset_type": "erniekit",
+        }
+    )
 
     train_dataset = SFTDataSet(**dataset_config)
     train_packing_dataset = SFTPackingDataset(train_dataset, **dataset_config)

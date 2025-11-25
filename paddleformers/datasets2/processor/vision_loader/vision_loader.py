@@ -44,6 +44,8 @@ class VisionLoader(ABC):
         self.data_args = data_args
 
     def file_download(self, url: str) -> bytes:
+        os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
+        os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
         if url.startswith("http"):
             response = requests.get(url)
             bytes_data = response.content
