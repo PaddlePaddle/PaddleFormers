@@ -14,7 +14,7 @@
 
 """ Training DPO """
 
-from glm45_provider import GLM45AirModelDebugProvider
+from glm45_provider import GLM45AirModelDebugProvider, GLMMoEModelProvider
 import os
 import sys
 import copy
@@ -170,13 +170,23 @@ def main():
     else:
         model_class = AutoModelForCausalLM
 
-    model_provider = GLM45AirModelDebugProvider()
+    model_provider_class = GLMMoEModelProvider
+    model_provider_class1 = GLM45AirModelDebugProvider
     # Set MoE layer frequency configuration
-    print(model_config)
-    if hasattr(model_config, "n_routed_experts") and model_config.n_routed_experts > 0:
-        model_provider.moe_layer_freq = 1  # Default to expert layer every layer
 
     if True:
+        model_config = AutoConfig.from_pretrained(
+            model_args.model_name_or_path,
+            dtype=dtype,
+        )
+        if hasattr(model_config, "n_routed_experts") and model_config.n_routed_experts > 0:
+            model_config.moe_layer_freq = 1  # Default to expert layer every layer
+        print(model_config.to_diff_dict())
+        model_provider = model_provider_class.from_config(model_config.to_diff_dict())
+        print(model_provider)
+        print("=================================")
+        print(model_provider_class1())
+        #exit()
         model = model_provider.provide()
         ref_model = model_provider.provide()
         model.config.dpo_config = copy.deepcopy(dpo_config)
