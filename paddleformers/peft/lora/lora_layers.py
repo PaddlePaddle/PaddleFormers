@@ -461,16 +461,6 @@ class RowParallelLoRALinear(RowParallelLinear):
         return f"in_features={self.weight.shape[0]}, out_features={self.weight.shape[1]}, rank={self.r}{name}"
 
 
-class FleetRowParallelLoRALinear(RowParallelLoRALinear):
-    def __init__(self, in_features, out_features, **kwargs):
-        super().__init__(in_features, out_features, **kwargs)
-
-    def forward(self, input: paddle.Tensor):
-        output = super().forward(input)
-        bias = self.bias if self.bias is not None else None
-        return output, bias
-
-
 class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
     def __init__(
         self,
@@ -730,17 +720,6 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
     def extra_repr(self):
         name = f", name={self.name}" if self.name else ""
         return f"in_features={self.weight.shape[0]}, out_features={self.weight.shape[1]}, rank={self.r}{name}"
-
-
-class FleetColumnParallelLoRALinear(ColumnParallelLoRALinear):
-    def __init__(self, in_features, out_features, **kwargs):
-        super().__init__(in_features, out_features, **kwargs)
-
-    def forward(self, input: paddle.Tensor):
-        print("FleetColumnParallelLoRALinear forward")
-        output = super().forward(input)
-        bias = self.bias if self.bias is not None else None
-        return output, bias
 
 
 class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
