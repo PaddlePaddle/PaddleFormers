@@ -383,7 +383,6 @@ if TYPE_CHECKING:
     from .glm4_moe import *
     from .gpt_oss import *
     from .phi3 import *
-    from .gemma3 import *
     from .gemma3_text import *
 else:
     sys.modules[__name__] = _LazyModule(

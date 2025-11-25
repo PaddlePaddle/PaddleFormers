@@ -68,7 +68,6 @@ MAPPING_NAMES = OrderedDict(
         ("Glm4Moe", "glm4_moe"),
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
-        ("Gemma3", "gemma3"),
         ("Gemma3", "gemma3_text"),
     ]
 )

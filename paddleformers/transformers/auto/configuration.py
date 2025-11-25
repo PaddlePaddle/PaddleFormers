@@ -50,7 +50,6 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm4_moe", "Glm4MoeConfig"),
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
-        ("gemma3", "Gemma3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
     ]
 )
