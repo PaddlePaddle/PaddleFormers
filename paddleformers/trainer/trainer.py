@@ -354,7 +354,7 @@ class Trainer:
 
         # Seed must be set before instantiating the model when using model
         set_seed(seed=self.args.seed)
-        set_random_seed(seed=self.args.seed)
+        set_random_seed(seed_=self.args.seed)
         self._skip_global_steps = 0  # total skip global steps
         self._skip_steps_since_last_logged = 0  # skip steps since last logged
         if model is None:
