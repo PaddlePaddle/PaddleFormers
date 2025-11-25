@@ -25,7 +25,7 @@ from gpt_provider import GPTModelProvider
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
 
 if TYPE_CHECKING:
-    from paddlefleet.transformer import LayerSpec
+    from paddlefleet.spec_utils import LayerSpec
 
 
 logger = logging.getLogger(__name__)

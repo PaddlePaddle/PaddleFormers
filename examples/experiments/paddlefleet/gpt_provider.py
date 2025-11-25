@@ -27,7 +27,7 @@ from model_provider import ModelProviderMixin
 from paddlefleet import parallel_state
 from paddlefleet.models.gpt import GPTModel
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
-from paddlefleet.transformer import LayerSpec
+from paddlefleet.spec_utils import LayerSpec
 from paddlefleet.transformer.transformer_config import TransformerConfig
 from vocab_utils import calculate_padded_vocab_size
 
