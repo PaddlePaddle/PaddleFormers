@@ -124,7 +124,7 @@ class _AllToAll(paddle.autograd.PyLayer):
         if dist.get_world_size(group) <= 1:
             return input
 
-        output = paddle.empty(output_shape, dtype=input.dtype)
+        output = paddle.empty(output_shape, dtype=input.dtype, requires_grad=True)
         task = dist.alltoall_single(
             output,
             input,
