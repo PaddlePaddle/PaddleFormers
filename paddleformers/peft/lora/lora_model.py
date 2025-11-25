@@ -33,6 +33,10 @@ from paddle.distributed.fleet.meta_parallel import (
     PipelineLayer,
     RowParallelLinear,
 )
+from paddlefleet.tensor_parallel import (
+    ColumnParallelLinear as FleetColumnParallelLinear,
+    RowParallelLinear as FleetRowParallelLinear,
+)
 
 from ...trainer.argparser import strtobool
 from ...transformers import linear_utils
@@ -96,14 +100,18 @@ def get_lora_layers():
             LoRALinear,
             RowParallelLoRALinear,
             RowSequenceParallelLoRALinear,
+            FleetColumnParallelLoRALinear,
+            FleetRowParallelLoRALinear,
         )
 
     return {
         "ColumnParallelLoRALinear": ColumnParallelLoRALinear,
+        "FleetColumnParallelLoRALinear": FleetColumnParallelLoRALinear,
         "ColumnSequenceParallelLoRALinear": ColumnSequenceParallelLoRALinear,
         "LoRAConv2D": LoRAConv2D,
         "LoRALinear": LoRALinear,
         "RowParallelLoRALinear": RowParallelLoRALinear,
+        "FleetRowParallelLoRALinear": FleetRowParallelLoRALinear,
         "RowSequenceParallelLoRALinear": RowSequenceParallelLoRALinear,
     }
 
@@ -115,6 +123,8 @@ LoRAConv2D = lora_layers["LoRAConv2D"]
 LoRALinear = lora_layers["LoRALinear"]
 RowParallelLoRALinear = lora_layers["RowParallelLoRALinear"]
 RowSequenceParallelLoRALinear = lora_layers["RowSequenceParallelLoRALinear"]
+FleetRowParallelLoRALinear = lora_layers["FleetRowParallelLoRALinear"]
+FleetColumnParallelLoRALinear = lora_layers["FleetColumnParallelLoRALinear"]
 
 from ...quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
@@ -167,6 +177,8 @@ class LoRAModel(nn.Layer):
             self.lora_config.lora_use_mixer or self.lora_config.use_mora
         ):
             raise NotImplementedError("lora_use_mixer or mora is not supported in tensor parallel mode.")
+        if hasattr(self.model.config, "tensor_model_parallel_size"):
+            self.model.config.tensor_parallel_degree = self.model.config.tensor_model_parallel_size
         if self.lora_config.tensor_parallel_degree != self.model.config.tensor_parallel_degree:
             self.lora_config.tensor_parallel_degree = self.model.config.tensor_parallel_degree
             logger.warning(
@@ -641,9 +653,61 @@ class LoRAModel(nn.Layer):
                 self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=True)
                 self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
                 self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
+
+            elif isinstance(module, FleetColumnParallelLinear):
+            # recover the original output_features
+            output_features = module.weight.shape[1] * module.world_size
+            lora_module = FleetColumnParallelLoRALinear(
+                in_features=module.weight.shape[0],
+                out_features=output_features,
+                gather_output=module.gather_output,
+                has_bias=module.bias is not None,
+                r=lora_config.r,
+                lora_alpha=lora_config.lora_alpha,
+                lora_dropout=lora_config.lora_dropout,
+                rslora=lora_config.rslora,
+                lora_plus_scale=lora_config.lora_plus_scale,
+                pissa=lora_config.pissa,
+                lora_A_weight_attr=paddle.ParamAttr(
+                    initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu")
+                ),
+                use_quick_lora=lora_config.use_quick_lora,
+            )
+            # Lora column parallel will spilt lora B matrix
+            self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
+
+            # for lora qat
+            if self.lora_config.do_qat:
+                self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=True)
+                self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
+                self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
+        
         elif isinstance(module, RowParallelLinear):
             # recover the original output_features
             lora_module = RowParallelLoRALinear(
+                in_features=module.weight.shape[0] * module.world_size,
+                out_features=module.weight.shape[1],
+                has_bias=module.bias is not None,
+                input_is_parallel=module.input_is_parallel,
+                r=lora_config.r,
+                lora_alpha=lora_config.lora_alpha,
+                lora_dropout=lora_config.lora_dropout,
+                rslora=lora_config.rslora,
+                lora_plus_scale=lora_config.lora_plus_scale,
+                pissa=lora_config.pissa,
+                use_quick_lora=lora_config.use_quick_lora,
+            )
+            # Lora column parallel will spilt lora A matrix
+            self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
+
+            # for lora qat
+            if self.lora_config.do_qat:
+                self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=False)
+                self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
+                self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
+        elif isinstance(module, FleetRowParallelLinear):
+            # recover the original output_features
+            lora_module = FleetRowParallelLoRALinear(
                 in_features=module.weight.shape[0] * module.world_size,
                 out_features=module.weight.shape[1],
                 has_bias=module.bias is not None,
@@ -731,7 +795,6 @@ class LoRAModel(nn.Layer):
             if module.bias is not None:
                 lora_module.bias = module.bias
         setattr(parent_module, attribute_chain[-1], lora_module)
-
     def _find_and_restore_module(self, module_name):
         parent_module = self.model
         attribute_chain = module_name.split(".")

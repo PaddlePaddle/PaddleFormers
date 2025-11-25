@@ -1753,8 +1753,8 @@ class TrainingArguments:
 
                 # In PaddleFleet, we should use the following code to initialize.
 
-                # from paddlefleet.training.initialize import initialize_fleet
-                # initialize_fleet(strategy)
+                from paddlefleet.training.initialize import initialize_fleet
+                initialize_fleet(strategy)
                 logger.info(strategy)
 
                 if self.reorder_pipeline_priority:
