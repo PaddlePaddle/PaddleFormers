@@ -139,41 +139,31 @@ def convert_mm_data(item):
     return res
 
 
-def erniekit_convertor(datas):
-    all_data = []
-    for item in datas:
-        if "src" in item and "tgt" in item:
-            res = convert_txt_data(item)
-        else:
-            res = convert_mm_data(item)
-        if res is None:
-            continue
-        all_data.append(res)
-
-    return all_data
+def erniekit_convertor(item):
+    if "src" in item and "tgt" in item:
+        res = convert_txt_data(item)
+    else:
+        res = convert_mm_data(item)
+    return res
 
 
-def query_response_convertor(datas):
-    all_data = []
-    for item in datas:
-        res = {}
-        # convert to OpenAI format
-        res["messages"] = []
-        if len(item.get("system", "")) > 0:
-            res["messages"].append({"role": "system", "content": item["system"]})
-        for q, a in item.get("history", []):
-            res["messages"].append({"role": "user", "content": q})
-            res["messages"].append({"role": "assistant", "content": a})
-        res["messages"].append({"role": "user", "content": item.get("query", "")})
-        res["messages"].append({"role": "assistant", "content": item.get("response", "")})
+def query_response_convertor(item):
+    res = {}
+    # convert to OpenAI format
+    res["messages"] = []
+    if len(item.get("system", "")) > 0:
+        res["messages"].append({"role": "system", "content": item["system"]})
+    for q, a in item.get("history", []):
+        res["messages"].append({"role": "user", "content": q})
+        res["messages"].append({"role": "assistant", "content": a})
+    res["messages"].append({"role": "user", "content": item.get("query", "")})
+    res["messages"].append({"role": "assistant", "content": item.get("response", "")})
 
-        images = item.get("images", [])
-        videos = item.get("videos", [])
-        if len(images) > 0:
-            res["images"] = images
-        if len(videos) > 0:
-            res["videos"] = videos
+    images = item.get("images", [])
+    videos = item.get("videos", [])
+    if len(images) > 0:
+        res["images"] = images
+    if len(videos) > 0:
+        res["videos"] = videos
 
-        all_data.append(res)
-
-    return all_data
+    return res

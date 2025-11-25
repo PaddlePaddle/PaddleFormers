@@ -12,25 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
-from paddle.io import IterableDataset
 from dataclasses import dataclass
 from typing import List
 
-# from paddleformers.datasets2.processor import SupervisedDatasetProcessor
-# from paddleformers.datasets2.processor.encoder import Qwen2VLEncoder
-# from paddleformers.datasets2.processor.vision_loader import Qwen2VLVisionLoader
+import numpy as np
+from paddle.io import IterableDataset
+
 from paddleformers.datasets2.reader.mix_datasets import (
     MultiSourceDataset,
     create_dataset_instance,
 )
-from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
-
 from paddleformers.datasets2.template.template import get_template_and_fix_tokenizer
 from paddleformers.hparams.data_args import DataArguments
 from paddleformers.transformers import AutoProcessor, AutoTokenizer
+from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
+from paddleformers.utils.log import logger
 
-# from paddleformers.utils.log import logger
 
 @dataclass
 class Sequence:
@@ -46,15 +43,23 @@ class Sequence:
 class SFTDataSet(IterableDataset):
     def __init__(self, **dataset_config):
 
+        # parameter init
+        dataset_config.update({
+            "template": "qwen2_vl",
+            "train_on_prompt": False,
+            "tool_format": None,
+            "default_system": None,
+            "enable_thinking": True,
+        })
         self.tokenizer = dataset_config["tokenizer"]
         self.processor = dataset_config["processor"]
+        self.max_seq_len = dataset_config["max_seq_len"]
+        self.template = get_template_and_fix_tokenizer(dataset_config)
 
-        # For new data concatenation mode
-        self.begin_of_query = self.tokenizer.tokenize("User: ")
-        self.begin_of_response = self.tokenizer.tokenize("\nAssistant: ")
+        # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
         self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
-        self.newline_token = self.tokenizer.tokenize("\n")  # Same effect as sys_end_token
+        self.newline_token = self.tokenizer.tokenize("\n")
         if isinstance(self.tokenizer, PretrainedTokenizer):
             self.end_of_response_id = self.tokenizer._convert_token_to_id([self.end_of_response])[0]
             self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
@@ -62,55 +67,37 @@ class SFTDataSet(IterableDataset):
             self.end_of_response_id = self.tokenizer.convert_tokens_to_ids([self.end_of_response])[0]
             self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
 
-
-        self.max_seq_len = dataset_config["max_seq_len"]
-
-        # data loader
+        # data loader + multisource dataset mix
         multi_source_dataset = MultiSourceDataset(**dataset_config)
-
-        # data mix
         self.mix_datasets = create_dataset_instance(
             dataset_config["mix_strategy"],
             multi_source_dataset,
             **dataset_config,
         )
-
         # debug
         for item in self.mix_datasets:
             print(item)
             break
 
-        data_args = DataArguments(
-            template="qwen2_vl",
-            train_on_prompt=False,
-            tool_format=None,
-            default_system=None,
-            enable_thinking=True,
-        )
-
-        # 得到register的template
-        self.template = get_template_and_fix_tokenizer(dataset_config["tokenizer"], data_args)
-
     def __len__(self):
-        return self.mix_datasets.__len__()
+        return len(self.mix_datasets)
 
     def __iter__(self):
-
-        for item in self.mix_datasets:
-            system = item.get("system", None)
-            tools = item.get("tools", None)
-            images = item.get("images", [])
-            videos = item.get("videos", [])
-            audios = item.get("audios", [])
+        for example in self.mix_datasets:
+            system = example.get("system", None)
+            tools = example.get("tools", None)
+            images = example.get("images", [])
+            videos = example.get("videos", [])
+            audios = example.get("audios", [])
             # 对多模信息做处理，将messages里面的占位符替换
             messages = self.template.mm_plugin.process_messages(
-                item["messages"], images, videos, audios, self.processor
+                example["messages"], images, videos, audios, self.processor
             )
             # 套template，转ids
             encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
 
             # 转input_ids, labels
-            num_reserved_tokens_for_each_dialog = 1  # only break_turn_token or end_token
+            num_reserved_tokens_for_each_dialog = 1
             num_reserved_tokens_for_each_turn = 8
 
             cur_len = num_reserved_tokens_for_each_dialog
@@ -129,14 +116,14 @@ class SFTDataSet(IterableDataset):
                     if len(tokens_src) > self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn:
                         break
                     else:
-                        reverse_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
+                        reverse_len = (
+                            self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
+                        )
                         tokens_target = tokens_target[:reverse_len]
 
                 tokens = tokens_src + tokens_target + tokens
 
-                loss_mask = (
-                    [0] * (len(tokens_src) - 1) + [1] * (len(tokens_target) + 1) + loss_mask
-                )
+                loss_mask = [0] * (len(tokens_src) - 1) + [example["label"][turn_index]] * (len(tokens_target) + 1) + loss_mask
                 assert len(tokens) == len(loss_mask), f"{len(tokens)}-{len(loss_mask)}"
 
                 cur_len = len(tokens)
@@ -147,8 +134,8 @@ class SFTDataSet(IterableDataset):
             if len(tokens) <= num_reserved_tokens_for_each_dialog + num_reserved_tokens_for_each_turn:
                 try:
                     # For print log
-                    sub_src = item["messages"][0]["content"].strip()[:50]
-                    sub_tgt = item["messages"][-1]["content"].strip()[-50:]
+                    sub_src = example["messages"][0]["content"].strip()[:50]
+                    sub_tgt = example["messages"][-1]["content"].strip()[-50:]
                     if len(tokens) > 0:
                         logger.warning(f"This data is too short: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
                     else:
@@ -157,7 +144,6 @@ class SFTDataSet(IterableDataset):
                     logger.warning("[SKIP] wrong example")
 
             if self.begin_token_id is not None and self.end_of_response_id is not None:
-                # Maybe left truncated, so need to add begin_token
                 if tokens[0] != self.begin_token_id:
                     tokens = [self.begin_token_id] + tokens
                     loss_mask = [0] + loss_mask
@@ -204,6 +190,8 @@ class SFTPackingDataset(IterableDataset):
         self.processed_dataset = processed_dataset
         self.packing = dataset_config["packing"]
         self.greedy_intokens = dataset_config["greedy_intokens"]
+        self.max_seq_len = dataset_config["max_seq_len"]
+        self.is_valid = dataset_config["is_valid"]
 
         self.estimate = False
         # The number of valid samples and skipped samples in estimation
@@ -213,10 +201,8 @@ class SFTPackingDataset(IterableDataset):
         self.used_estimate_samples = 0
         self.max_estimate_samples = 0
         # set max estimate samples
-        # if not self.is_valid:
-        #     self.max_estimate_samples = len(self.mix_datasets)
-
-        self.max_seq_len = dataset_config["max_seq_len"]
+        if not self.is_valid:
+            self.max_estimate_samples = len(self.processed_dataset)
 
     def __iter__(self):
 
@@ -361,7 +347,6 @@ class SFTPackingDataset(IterableDataset):
 
 
 if __name__ == "__main__":
-    # Load tokenizer & dataset
 
     model_path = "/root/paddlejob/workspace/env/output/lrl/PaddleFormers/models/Qwen2.5-VL-3B-Instruct"
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -381,6 +366,7 @@ if __name__ == "__main__":
         "encode_one_turn": True,
         "use_template": True,
         "reverse": True,
+        "is_valid": False,
     }
     dataset_config.update(
         {

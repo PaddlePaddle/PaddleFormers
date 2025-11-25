@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Optional, Union
 
 from typing_extensions import override
 
-from paddleformers.hparams.data_args import DataArguments
 from paddleformers.utils.log import logger
 
 from .formatter import EmptyFormatter, FunctionFormatter, StringFormatter, ToolFormatter
@@ -540,9 +539,10 @@ def parse_template(tokenizer: "PreTrainedTokenizer") -> "Template":
     )
 
 
-def get_template_and_fix_tokenizer(tokenizer: "PreTrainedTokenizer", data_args: "DataArguments") -> "Template":
+def get_template_and_fix_tokenizer(dataset_config) -> "Template":
     r"""Get chat template and fixes the tokenizer."""
-    if data_args.template is None:
+    tokenizer = dataset_config["tokenizer"]
+    if dataset_config["template"] is None:
         if isinstance(tokenizer.chat_template, str):
             # logger.warning_rank0("`template` was not specified, try parsing the chat template from the tokenizer.")
             template = parse_template(tokenizer)
@@ -550,25 +550,25 @@ def get_template_and_fix_tokenizer(tokenizer: "PreTrainedTokenizer", data_args: 
             # logger.warning_rank0("`template` was not specified, use `empty` template.")
             template = TEMPLATES["empty"]  # placeholder
     else:
-        if data_args.template not in TEMPLATES:
-            raise ValueError(f"Template {data_args.template} does not exist.")
+        if dataset_config["template"] not in TEMPLATES:
+            raise ValueError(f"Template {dataset_config['template']} does not exist.")
 
-        template = TEMPLATES[data_args.template]
+        template = TEMPLATES[dataset_config["template"]]
 
-    if data_args.train_on_prompt and template.efficient_eos:
+    if dataset_config["train_on_prompt"] and template.efficient_eos:
         raise ValueError("Current template does not support `train_on_prompt`.")
 
-    if data_args.tool_format is not None:
-        # logger.info_rank0(f"Using tool format: {data_args.tool_format}.")
+    if dataset_config["tool_format"] is not None:
+        # logger.info_rank0(f"Using tool format: {dataset_config['tool_format']}.")
         default_slots = ["{{content}}"] if template.efficient_eos else ["{{content}}", {"eos_token"}]
-        template.format_function = FunctionFormatter(slots=default_slots, tool_format=data_args.tool_format)
-        template.format_tools = ToolFormatter(tool_format=data_args.tool_format)
+        template.format_function = FunctionFormatter(slots=default_slots, tool_format=dataset_config["tool_format"])
+        template.format_tools = ToolFormatter(tool_format=dataset_config["tool_format"])
 
-    if data_args.default_system is not None:
-        # logger.info_rank0(f"Using default system message: {data_args.default_system}.")
-        template.default_system = data_args.default_system
+    if dataset_config["default_system"] is not None:
+        # logger.info_rank0(f"Using default system message: {dataset_config['default_system']}.")
+        template.default_system = dataset_config["default_system"]
 
-    template.enable_thinking = data_args.enable_thinking
+    template.enable_thinking = dataset_config["enable_thinking"]
     template.fix_special_tokens(tokenizer)
     template.fix_jinja_template(tokenizer)
     return template

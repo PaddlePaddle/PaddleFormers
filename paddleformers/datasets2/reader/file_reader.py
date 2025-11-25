@@ -68,18 +68,37 @@ class FileReader(BaseReader):
         # data preprocess
         if self._file_type not in self.convertor_map:
             raise ValueError(f"Unsupported file type: {self._file_type}")
-        for item in self.convertor_map[self._file_type](res):
-            # ignore invalid example
-            if item is None:
+        for item in res:
+            convert_data = self.convertor_map[self._file_type](item)
+            checked_data = self.data_check(convert_data)
+            if not checked_data:
+                # ignore invalid example
                 continue
-            elif isinstance(item, list) or isinstance(item, collections.abc.Generator):
-                yield from item
             else:
-                yield item
+                yield checked_data
 
     def _get_extension(self):
         _, ext = os.path.splitext(self._file_path)
         return ext.lower()
+
+    def data_check(self, data):
+        if not data:
+            return None
+
+        if len(data["messages"]) == 0:
+            raise ValueError("Ignore example with empty messages.")
+
+        if "label" not in data:
+            data["label"] = [1 for turn in data["messages"] if "assistant" in turn["role"]]
+
+        system = ""
+        if "system" in data["messages"][0]["role"]:
+            system = data["messages"][0]["content"]
+            if not isinstance(system, str):
+                raise ValueError("System field must be a string.")
+        data["system"] = system
+
+        return data
 
 
 class FileListReader(BaseReader):
