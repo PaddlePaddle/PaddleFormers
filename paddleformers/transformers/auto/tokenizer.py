@@ -288,11 +288,22 @@ class AutoTokenizer(hf.AutoTokenizer):
                 tokenizer_auto_map = config.auto_map["AutoTokenizer"]
 
         has_remote_code = tokenizer_auto_map is not None
+        # Check if it's a paddleformers custom tokenizer
+        paddleformers_tokenizer_class = None
+        if config_tokenizer_class == "AixcoderTokenizerFast":
+            try:
+                from ..aixcoder import (
+                    AixcoderTokenizerFast as paddleformers_tokenizer_class,
+                )
+            except ImportError:
+                pass
+
         has_local_code = type(config) in TOKENIZER_MAPPING or (
             config_tokenizer_class is not None
             and (
                 tokenizer_class_from_name(config_tokenizer_class) is not None
                 or tokenizer_class_from_name(config_tokenizer_class + "Fast") is not None
+                or paddleformers_tokenizer_class is not None
             )
         )
 
@@ -328,6 +339,16 @@ class AutoTokenizer(hf.AutoTokenizer):
             if tokenizer_class is None:
                 tokenizer_class_candidate = config_tokenizer_class
                 tokenizer_class = tokenizer_class_from_name(tokenizer_class_candidate)
+
+            # Try to import PaddleFormers custom tokenizers if not found
+            if tokenizer_class is None and config_tokenizer_class == "AixcoderTokenizerFast":
+                try:
+                    from ..aixcoder import AixcoderTokenizerFast
+
+                    tokenizer_class = AixcoderTokenizerFast
+                except ImportError:
+                    pass
+
             if tokenizer_class is None:
                 raise ValueError(
                     f"Tokenizer class {tokenizer_class_candidate} does not exist or is not currently imported."

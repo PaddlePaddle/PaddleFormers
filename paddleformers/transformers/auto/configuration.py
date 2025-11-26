@@ -33,6 +33,7 @@ __all__ = [
 
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
+        ("aixcoder", "AixcoderConfig"),
         ("bert", "BertConfig"),
         ("deepseek_v2", "DeepseekV2Config"),
         ("deepseek_v3", "DeepseekV3Config"),
