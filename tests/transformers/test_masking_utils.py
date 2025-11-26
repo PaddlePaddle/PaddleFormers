@@ -365,6 +365,79 @@ class MaskingUtilsTest(unittest.TestCase):
             msg="Failed combining constraints: Padding mask should mask index 3.",
         )
 
+    def test_full_mask_optimization_returns_none(self):
+        """
+        Test the optimization: If attention_mask is all ones (no padding) and
+        no or_mask_function is present, it should return None to verify
+        backend optimization (avoiding unnecessary mask creation).
+        """
+        # Case 1: All Ones Mask (No Padding)
+        all_ones_mask = paddle.ones((self.batch_size, self.seq_length), dtype="int64")
+
+        full_mask, indices = create_causal_mask_and_row_indices(
+            config=self.config,
+            inputs_embeds=self.inputs_embeds,
+            batch_size=self.batch_size,
+            seq_length=self.seq_length,
+            cache_length=0,
+            attention_mask=all_ones_mask,
+            prepare_decoder_attention_mask=self.prepare_fn,
+        )
+
+        self.assertIsNone(full_mask, "Should return None for all-ones mask (optimization)")
+        self.assertIsNone(indices)
+
+        self.config.sliding_window = 2
+        sw_mask, sw_indices = create_sliding_window_causal_mask_and_row_indices(
+            config=self.config,
+            inputs_embeds=self.inputs_embeds,
+            batch_size=self.batch_size,
+            seq_length=self.seq_length,
+            cache_length=0,
+            attention_mask=all_ones_mask,
+            prepare_decoder_attention_mask=self.prepare_fn,
+        )
+        self.assertIsNone(sw_mask, "Should return None for all-ones mask in sliding window (optimization)")
+
+    def test_full_mask_optimization_bypassed_conditions(self):
+        """
+        Test that the optimization is SKIPPED (returns Tensor) when:
+        1. or_mask_function is provided (even if mask is full).
+        2. attention_mask contains zeros (padding).
+        """
+        all_ones_mask = paddle.ones((self.batch_size, self.seq_length), dtype="int64")
+
+        # Case 2: All Ones Mask + or_mask_function
+        def dummy_or_fn(b, h, q, k):
+            return paddle.zeros((self.batch_size, 1, self.seq_length, self.seq_length), dtype="bool")
+
+        full_mask, _ = create_causal_mask_and_row_indices(
+            config=self.config,
+            inputs_embeds=self.inputs_embeds,
+            batch_size=self.batch_size,
+            seq_length=self.seq_length,
+            cache_length=0,
+            attention_mask=all_ones_mask,
+            prepare_decoder_attention_mask=self.prepare_fn,
+            or_mask_function=dummy_or_fn,
+        )
+        self.assertIsNotNone(full_mask, "Should NOT optimize to None if or_mask_function is present")
+
+        # Case 3: Mixed Mask (Has Padding)
+        mixed_mask = all_ones_mask.clone()
+        mixed_mask[0, -1] = 0
+
+        full_mask_padded, _ = create_causal_mask_and_row_indices(
+            config=self.config,
+            inputs_embeds=self.inputs_embeds,
+            batch_size=self.batch_size,
+            seq_length=self.seq_length,
+            cache_length=0,
+            attention_mask=mixed_mask,
+            prepare_decoder_attention_mask=self.prepare_fn,
+        )
+        self.assertIsNotNone(full_mask_padded, "Should NOT optimize to None if mask contains padding (0s)")
+
 
 if __name__ == "__main__":
     unittest.main()

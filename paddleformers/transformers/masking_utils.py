@@ -141,6 +141,10 @@ def create_causal_masks_and_row_indices(
             return causal_mask_mapping, attn_mask_startend_row_indices_mapping
         else:
             return None, None
+    # We only return an actual mask if there is at least 1 padding token,
+    # otherwise we return `None` and use `is_causal` in FA2
+    if attention_mask.cast("bool").all():
+        attention_mask = None
 
     seq_length_with_past = seq_length + cache_length
     attention_mask = (
@@ -243,6 +247,9 @@ def create_causal_mask_and_row_indices(
         if attention_mask is None and is_flash_backend:
             causal_mask = None
             row_indices = None
+        elif attention_mask is not None and attention_mask.cast("bool").all() and or_mask_function is None:
+            causal_mask = None
+            row_indices = None
         else:
             seq_length_with_past = seq_length + cache_length
             attention_mask = (
@@ -316,6 +323,9 @@ def create_sliding_window_causal_mask_and_row_indices(
         is_flash_backend = attn_impl in FLASH_BACKENDS
 
         if attention_mask is None and is_flash_backend and or_mask_function is None:
+            causal_mask = None
+            row_indices = None
+        elif attention_mask is not None and attention_mask.cast("bool").all() and or_mask_function is None:
             causal_mask = None
             row_indices = None
         else:
