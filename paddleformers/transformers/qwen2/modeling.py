@@ -49,6 +49,7 @@ from ..model_outputs import (
     TokenClassifierOutput,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from .auto_dist_config import get_dist_config
 from .configuration import Qwen2Config
 
 
@@ -814,6 +815,10 @@ class Qwen2ForCausalLM(Qwen2PretrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+    def auto_dist_config(self, prefix=""):
+        assert self.config.run_single_model, "Use `get_dist_config` only in single card mode."
+        return get_dist_config(self, prefix)
 
 
 class Qwen2ForSequenceClassification(Qwen2PretrainedModel):
