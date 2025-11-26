@@ -32,6 +32,7 @@ from ...utils.log import logger
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from .configuration import LlamaConfig
 
 
@@ -312,6 +313,7 @@ class LlamaRotaryEmbedding(nn.Layer):
         self.attention_scaling = attention_scaling
         self.register_buffer("inv_freq", inv_freq, persistable=False)
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(enable=False):
             inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])

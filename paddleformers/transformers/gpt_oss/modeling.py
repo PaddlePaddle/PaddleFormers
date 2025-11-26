@@ -34,6 +34,7 @@ from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from .configuration import GptOssConfig
 
 
@@ -332,6 +333,7 @@ class GptOssRotaryEmbedding(nn.Layer):
         self.original_inv_freq = self.inv_freq
 
     @paddle.no_grad()
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         inv_freq_expanded = (
             self.inv_freq.unsqueeze(0)

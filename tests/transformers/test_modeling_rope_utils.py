@@ -16,6 +16,7 @@ import math
 import unittest
 
 import paddle
+from paddle import nn
 
 from paddleformers.transformers.configuration_utils import PretrainedConfig
 from paddleformers.transformers.modeling_rope_utils import (
@@ -25,6 +26,7 @@ from paddleformers.transformers.modeling_rope_utils import (
     _compute_llama3_parameters,
     _compute_longrope_parameters,
     _compute_yarn_parameters,
+    dynamic_rope_update,
     rope_config_validation,
     standardize_rope_params,
 )
@@ -36,6 +38,38 @@ class FakePretrainedConfig(PretrainedConfig):
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+
+class FakeRotaryEmbedding(nn.Layer):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        base = config.rope_theta
+        partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
+        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        rope_parameters = self.config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        dim = int(head_dim * partial_rotary_factor)
+
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        self.attention_scaling = 1.0
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = self.inv_freq
+
+    @dynamic_rope_update
+    def forward(self, x, position_ids, layer_type=None):
+        inv_freq = getattr(self, f"{layer_type}_inv_freq", self.inv_freq)
+        attention_scaling = getattr(self, f"{layer_type}_attention_scaling", 1.0)
+
+        inv_freq_expanded = inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.place)
+        position_ids_expanded = position_ids[:, None, :].float()
+
+        freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+        emb = paddle.cat((freqs, freqs), dim=-1)
+        cos = emb.cos() * attention_scaling
+        sin = emb.sin() * attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class RoPEUtilsTest(unittest.TestCase):
@@ -534,6 +568,88 @@ class RoPEUtilsTest(unittest.TestCase):
         self.assertTrue(
             any("`rope_parameters`'s attention_factor field must be a float greater than 0" in msg for msg in messages)
         )
+
+    def test_dynamic_rope_grows_cache(self):
+        config = FakePretrainedConfig(
+            hidden_size=256,
+            num_attention_heads=4,
+            rope_theta=10000.0,
+            max_position_embeddings=64,
+            rope_parameters={"rope_type": "dynamic", "factor": 2.0},
+        )
+        standardize_rope_params(config)
+        model = FakeRotaryEmbedding(config)
+        model.max_seq_len_cached = 80
+        model.original_max_seq_len = 64
+
+        # short sequence length < max_position_embeddings
+        x = paddle.randn([1, 10, 64])  # (batch, seq_len, head_dim)
+        pos_ids_short = paddle.arange(10).unsqueeze(0)  # [1, 10]
+
+        cos1, sin1 = model(x, pos_ids_short)
+
+        # long sequence length > max_position_embeddings
+        pos_ids_long = paddle.arange(100).unsqueeze(0)  # [1, 100]
+        cos2, sin2 = model(x, pos_ids_long)
+
+        self.assertFalse(paddle.allclose(cos1, cos2[:1, :10, :]), msg="Dynamic RoPE should change output for long seq")
+
+    def test_longrope_switches_freq(self):
+        config = FakePretrainedConfig(
+            hidden_size=256,
+            num_attention_heads=4,
+            rope_theta=10000.0,
+            max_position_embeddings=256,
+            original_max_position_embeddings=64,
+            rope_parameters={"rope_type": "longrope", "long_factor": [2.0] * 32, "short_factor": [2.0] * 32},
+        )
+        standardize_rope_params(config)
+        model = FakeRotaryEmbedding(config)
+
+        x = paddle.randn([1, 10, 64])
+        pos_ids_short = paddle.arange(10).unsqueeze(0)
+        pos_ids_long = paddle.arange(100).unsqueeze(0)
+
+        cos1, _ = model(x, pos_ids_short)
+        original_inv_freq_copy = model.original_inv_freq.clone()
+
+        cos2, _ = model(x, pos_ids_long)
+
+        self.assertTrue(hasattr(model, "long_inv_freq"))
+        self.assertFalse(paddle.allclose(model.inv_freq, original_inv_freq_copy))
+
+        cos3, _ = model(x, pos_ids_short)
+        self.assertTrue(paddle.allclose(model.inv_freq, original_inv_freq_copy.to(model.inv_freq.place)))
+
+    def test_rope_with_layer_type(self):
+        config = FakePretrainedConfig(
+            hidden_size=256,
+            num_attention_heads=4,
+            rope_theta=10000.0,
+            max_position_embeddings=64,
+            rope_parameters={
+                "full_attention": {"rope_theta": 10000.0, "factor": 2.0},
+                "sliding_attention": {"rope_theta": 15000.0, "long_factor": [2.0] * 32, "short_factor": [2.0] * 32},
+            },
+        )
+        standardize_rope_params(config)
+        model = FakeRotaryEmbedding(config)
+        model.max_seq_len_cached = 32
+        model.original_max_seq_len = 64
+        model.rope_type = {"full_attention": "dynamic", "sliding_attention": "longrope"}
+        model.full_attention_original_inv_freq = model.inv_freq.clone()
+        model.sliding_attention_original_inv_freq = model.inv_freq.clone()
+
+        x = paddle.randn([1, 50, 64])
+        pos_ids = paddle.arange(50).unsqueeze(0)
+
+        cos, sin = model(x, pos_ids, layer_type="full_attention")
+
+        self.assertTrue(hasattr(model, "full_attention_inv_freq"))
+        self.assertGreater(getattr(model, "full_attention_max_seq_len_cached", 0), 32)
+
+        cos, sin = model(x, pos_ids, layer_type="sliding_attention")
+        self.assertTrue(hasattr(model, "sliding_attention_inv_freq"))
 
 
 if __name__ == "__main__":

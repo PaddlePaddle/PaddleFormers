@@ -43,6 +43,7 @@ from ..model_outputs import (
     CausalLMOutputWithCrossAttentions,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from ..tensor_parallel_utils import model_parallel_dropout
 from .configuration import Ernie4_5Config
 
@@ -112,7 +113,10 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
         self.config = config
         self.head_dim = config.head_dim
         self.base = config.rope_theta
+        rope_parameters = config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         """
         Compute rotary position embeddings for given sequence length.

@@ -61,6 +61,7 @@ from ..model_outputs import (
     SequenceClassifierOutputWithPast,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import DeepseekV2Config
@@ -221,6 +222,7 @@ class DeepseekV2YarnRotaryEmbedding(nn.Layer):
         self.register_buffer("inv_freq", self.inv_freq, persistable=False)
         # self.original_inv_freq = self.inv_freq
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
         position_ids_expanded = position_ids[:, None, :].float()
