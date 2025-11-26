@@ -99,7 +99,6 @@ class _LazyModule(ModuleType):
     def _get_module(self, module_name: str):
         """Internal helper for safely importing submodules."""
         try:
-            print(module_name, self.__name__)
             return importlib.import_module(f".{module_name}", self.__name__)
         except Exception as e:
             raise e
