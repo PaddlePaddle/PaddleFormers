@@ -51,6 +51,7 @@ from ..ernie4_5.modeling import Ernie4_5Attention
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoECausalLMOutputWithPastAndMTP
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from ..tensor_parallel_utils import model_parallel_dropout
 from .configuration import Ernie4_5_MoeConfig
 
@@ -94,7 +95,10 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
         self.config = config
         self.head_dim = config.head_dim
         self.base = config.rope_theta
+        rope_parameters = config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         """
         Compute rotary position embeddings for given sequence length.

@@ -96,8 +96,8 @@ class DynamicLayer(CacheLayerMixin):
 
     def lazy_initialization(self, key_states: paddle.Tensor):
         self.dtype, self.place = key_states.dtype, key_states.place
-        B, _, N, H = key_states.shape
-        initial_shape = [B, 0, N, H]
+        B, N, _, H = key_states.shape
+        initial_shape = [B, N, 0, H]
         self.keys = paddle.empty(initial_shape, dtype=self.dtype, device=self.place)
         self.values = paddle.empty(initial_shape, dtype=self.dtype, device=self.place)
         self.is_initialized = True
@@ -122,9 +122,9 @@ class DynamicLayer(CacheLayerMixin):
         # Lazy initialization
         if not self.is_initialized:
             self.lazy_initialization(key_states)
-        # the shape of the key and value states is [B,S,N,H].
-        self.keys = paddle.concat([self.keys, key_states], axis=1)
-        self.values = paddle.concat([self.values, value_states], axis=1)
+        # the shape of the key and value states is [B,N,S,H].
+        self.keys = paddle.concat([self.keys, key_states], axis=-2)
+        self.values = paddle.concat([self.values, value_states], axis=-2)
         return self.keys, self.values
 
     def get_mask_sizes(self, cache_position: paddle.Tensor) -> tuple[int, int]:
@@ -138,7 +138,7 @@ class DynamicLayer(CacheLayerMixin):
         """Returns the sequence length of the cached states."""
         if not self.is_initialized or self.keys.numel() == 0:
             return 0
-        return self.keys.shape[1]
+        return self.keys.shape[-2]
 
     def get_max_cache_shape(self) -> int:
         """Returns the maximum sequence length of the cache object. DynamicLayer does not have a maximum length."""
@@ -155,8 +155,8 @@ class DynamicLayer(CacheLayerMixin):
         if self.get_seq_length() <= max_length:
             return
 
-        self.keys = self.keys[:, :max_length, :, :]
-        self.values = self.values[:, :max_length, :, :]
+        self.keys = self.keys[..., :max_length, :]
+        self.values = self.values[..., :max_length, :]
 
     def batch_repeat_interleave(self, repeats: int) -> None:
         """Repeat the cache `repeats` times in the batch dimension."""
@@ -543,14 +543,14 @@ class DynamicSlidingWindowLayer(DynamicLayer):
         if not self.is_initialized:
             self.lazy_initialization(key_states)
 
-        self.cumulative_length += key_states.shape[1]
+        self.cumulative_length += key_states.shape[-2]
 
         # Compute the full states
-        full_key_states = paddle.concat([self.keys, key_states], axis=1)
-        full_value_states = paddle.concat([self.values, value_states], axis=1)
+        full_key_states = paddle.concat([self.keys, key_states], axis=-2)
+        full_value_states = paddle.concat([self.values, value_states], axis=-2)
         # Only cache the last `self.sliding_window - 1` tokens (or all of them if lower than that)
-        self.keys = full_key_states[:, -self.sliding_window + 1 :, :, :]
-        self.values = full_value_states[:, -self.sliding_window + 1 :, :, :]
+        self.keys = full_key_states[:, :, -self.sliding_window + 1 :, :]
+        self.values = full_value_states[:, :, -self.sliding_window + 1 :, :]
 
         # Return the full states
         return full_key_states, full_value_states
@@ -587,4 +587,4 @@ class DynamicSlidingWindowLayer(DynamicLayer):
                 "sliding window (otherwise some states are lost)"
             )
         super().crop(max_length)
-        self.cumulative_length = self.keys.shape[1]
+        self.cumulative_length = self.keys.shape[-2]

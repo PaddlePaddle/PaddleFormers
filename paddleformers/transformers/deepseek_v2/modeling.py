@@ -61,6 +61,7 @@ from ..model_outputs import (
     SequenceClassifierOutputWithPast,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import DeepseekV2Config
@@ -86,15 +87,15 @@ def scaled_dot_product_attention(
     training=True,
     sequence_parallel=False,
 ):
-    bsz, q_len, num_heads, head_dim = query_states.shape
-    _, kv_seq_len, v_num_heads, v_head_dim = value_states.shape
+    bsz, num_heads, q_len, head_dim = query_states.shape
+    _, v_num_heads, kv_seq_len, v_head_dim = value_states.shape
 
-    # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
+    # Attention Interface input [bz, nhead, seqlen, headdim]
     q_head_dim = query_states.shape[-1]
     softmax_scale = softmax_scale * (q_head_dim**0.5)
     query_states = query_states * softmax_scale
     value_padding = paddle.zeros(
-        [bsz, kv_seq_len, v_num_heads, head_dim - v_head_dim],
+        [bsz, v_num_heads, kv_seq_len, head_dim - v_head_dim],
         dtype=value_states.dtype,
     )
     value_states = paddle.cat([value_states, value_padding], axis=-1)
@@ -136,7 +137,7 @@ def _compute_yarn_parameters(
     seq_len=None,
 ):
     base = config["rope_theta"]
-    rope_parameters_dict = config["rope_scaling"]
+    rope_parameters_dict = config["rope_parameters"]
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "qk_rope_head_dim", config.hidden_size // config.num_attention_heads)
     dim = int(head_dim * partial_rotary_factor)
@@ -213,13 +214,15 @@ class DeepseekV2YarnRotaryEmbedding(nn.Layer):
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
 
-        self.rope_type = self.config.rope_scaling["type"]
+        rope_parameters = self.config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
         assert self.rope_type == "yarn"
 
         self.inv_freq, self.attention_scaling = _compute_yarn_parameters(config)
         self.register_buffer("inv_freq", self.inv_freq, persistable=False)
         # self.original_inv_freq = self.inv_freq
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
         position_ids_expanded = position_ids[:, None, :].float()
@@ -666,9 +669,9 @@ class DeepseekV2Attention(nn.Layer):
                 mark_as_sequence_parallel_parameter(self.q_a_proj.bias)
 
         self.softmax_scale = self.q_head_dim ** (-0.5)
-        if self.config.rope_scaling is not None:
-            mscale_all_dim = self.config.rope_scaling.get("mscale_all_dim", 0)
-            scaling_factor = self.config.rope_scaling["factor"]
+        if self.config.rope_parameters is not None:
+            mscale_all_dim = self.config.rope_parameters.get("mscale_all_dim", 0)
+            scaling_factor = self.config.rope_parameters["factor"]
             if mscale_all_dim:
                 mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
                 self.softmax_scale = self.softmax_scale * mscale * mscale
@@ -740,7 +743,11 @@ class DeepseekV2Attention(nn.Layer):
         query_states = paddle.cat([q_nope, q_pe], axis=-1)
         key_states = paddle.cat([k_nope, k_pe], axis=-1)
 
-        # [bs, seq_len, num_head, head_dim]
+        # [bz, seqlen, num_head, head_dim] -> [bz, num_head, seqlen, head_dim]
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
+
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
