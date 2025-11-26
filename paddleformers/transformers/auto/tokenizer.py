@@ -46,7 +46,6 @@ from transformers.utils import cached_file
 
 from ...utils.download import DownloadSource, resolve_file_path
 from ...utils.log import logger
-from ..llama.tokenizer import Llama3Tokenizer
 from ..tokenizer_utils import PaddleTokenizerMixin
 
 
