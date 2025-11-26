@@ -325,13 +325,13 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         for model_class in self.all_model_classes:
             # test from_pretrained
             model1 = model_class.from_pretrained(
-                "/root/paddlejob/gpfs/zhuxinming/fix_qwen_aoa/PaddleFormers/tiny-random-qwen3moev2",
+                "PaddleFormers/tiny-random-qwen3moev2",
                 download_hub="aistudio",
                 convert_from_hf=True,
             )
 
             model2 = model_class.from_pretrained(
-                "/root/paddlejob/gpfs/zhuxinming/fix_qwen_aoa/PaddleFormers/tiny-random-qwen3moev2",
+                "PaddleFormers/tiny-random-qwen3moev2",
                 download_hub="aistudio",
                 load_checkpoint_format="flex_checkpoint",
             )
