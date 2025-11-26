@@ -222,6 +222,9 @@ def create_causal_mask_and_row_indices(
                 Pre-computed start and end row indices for efficient attention. If provided, causal mask is skipped.
             prepare_decoder_attention_mask (`Callable`, *optional*):
                 Function that creates causal attention masks.
+            or_mask_function (`Callable`, optional):
+                An optional mask function to combine with the causal mask function (by doing the union of both). This is
+                useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
 
     Returns:
             Tuple[paddle.Tensor, paddle.Tensor]:
@@ -290,6 +293,9 @@ def create_sliding_window_causal_mask_and_row_indices(
                 Pre-computed start and end row indices. If provided, they are adapted for sliding window.
             prepare_decoder_attention_mask (`Callable`, *optional*):
                 Function that creates causal attention masks.
+            or_mask_function (`Callable`, optional):
+                An optional mask function to combine with the causal mask function (by doing the union of both). This is
+                useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
 
     Returns:
             Tuple[paddle.Tensor, paddle.Tensor]:

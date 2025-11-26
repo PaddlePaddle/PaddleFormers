@@ -384,7 +384,7 @@ class GenerationMixin(object):
 
     @staticmethod
     def _prepare_decoder_attention_mask(
-        attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None, or_mask_function=None
+        attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None, **kwargs
     ):
         # Step 1: Process input mask to generate basic expanded mask
         if attention_mask is not None:
@@ -429,6 +429,7 @@ class GenerationMixin(object):
             else:
                 expanded_attn_mask = causal_mask  # Use causal mask directly when sliding window is disabled
 
+        or_mask_function = kwargs.pop("or_mask_function", None)
         if or_mask_function is not None:
             bsz = input_shape[0]
             tgt_len = input_shape[1]
