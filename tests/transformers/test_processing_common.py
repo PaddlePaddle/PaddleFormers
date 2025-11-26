@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -37,6 +38,15 @@ MODALITY_INPUT_DATA = {
         "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4",
     ],
 }
+
+
+def url_to_local_path(url, return_url_if_not_found=True):
+    filename = url.split("/")[-1]
+
+    if not os.path.exists(filename) and return_url_if_not_found:
+        return url
+
+    return filename
 
 
 def prepare_image_inputs():
