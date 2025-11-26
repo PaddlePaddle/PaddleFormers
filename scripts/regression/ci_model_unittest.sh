@@ -115,7 +115,7 @@ done
 
 # 默认使用 glm
 if [[ "$models" == "" ]]; then
-    models="glm"
+    models="glm_moe"
 fi
 }
 echo "models: $models"

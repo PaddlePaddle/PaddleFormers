@@ -19,10 +19,11 @@ import re
 import shutil
 import subprocess
 import tempfile
-import pytest
-import yaml
 from dataclasses import dataclass
 from typing import Any, Dict
+
+import pytest
+import yaml
 
 CONFIG_PATH = "./examples/config/"
 LOG_PATH = "./model_unittest_logs"
@@ -53,7 +54,7 @@ class TrainTester:
             name=model_key,
             repo_id=model_cfg.get("repo_id"),
             cli_args=model_cfg.get("cli_args", {}),
-            base_loss=model_cfg.get("base_loss", {})
+            base_loss=model_cfg.get("base_loss", {}),
         )
 
     def update_training_args(self, yaml_path, tmp_dir, updates) -> str:
@@ -84,7 +85,6 @@ class TrainTester:
         if abs(avg_loss - base_loss) > 0.0001:
             return f"{resume_flag} loss: {avg_loss}, base_loss: {base_loss}, exist diff!"
         return None
-
 
     def assert_result(self, ret_code, log_output):
         if ret_code != 0:
@@ -129,7 +129,7 @@ class TestTrain:
         ]
 
         # train
-        
+
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         full_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full.log")
         os.makedirs(LOG_PATH, exist_ok=True)
@@ -137,10 +137,9 @@ class TestTrain:
             with open(full_log_file, "w", encoding="utf-8") as f:
                 f.write(training_p.stdout)
 
-        
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
-        
-        # resume 
+
+        # resume
         resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         full_resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full_resume.log")
         if resume_p.stdout and resume_p.stdout.strip():
@@ -185,7 +184,7 @@ class TestTrain:
 
         # 训练
         cmd = ["paddleformers-cli", "train", updated_config_path]
-        
+
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
         # 保存日志
@@ -195,10 +194,9 @@ class TestTrain:
                 f.write(training_p.stdout)
 
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
-        
 
         # resume 测试
-        
+
         resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         lora_resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_lora_resume.log")
         if resume_p.stdout.strip():
@@ -219,7 +217,6 @@ class TestTrain:
 
         if errors:
             raise AssertionError(errors)
-
 
         # merge 测试
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
@@ -244,11 +241,11 @@ class TestTrain:
         }
         update_args.update(cli_args)
 
-        config_path = os.path.join(CONFIG_PATH, train_type, f"full_tp_pp.yaml")
+        config_path = os.path.join(CONFIG_PATH, train_type, "full_tp_pp.yaml")
         updated_config_path = self.train_tester.update_training_args(config_path, output_dir, update_args)
 
         # 训练
-        
+
         cmd = ["paddleformers-cli", "train", updated_config_path]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -260,7 +257,7 @@ class TestTrain:
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # resume 测试
-        
+
         resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         full_tp_pp_resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full_tp_pp_resume.log")
         if resume_p.stdout.strip():
@@ -305,7 +302,7 @@ class TestTrain:
         updated_config_path = self.train_tester.update_training_args(config_path, output_dir, update_args)
 
         # 训练
-        
+
         cmd = ["paddleformers-cli", "train", updated_config_path]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -315,10 +312,9 @@ class TestTrain:
                 f.write(training_p.stdout)
 
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
-        
 
         # resume 测试
-        
+
         resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_lora_tp_pp_resume.log")
         if resume_p.stdout.strip():
@@ -326,7 +322,7 @@ class TestTrain:
                 f.write(resume_p.stdout)
 
         self.train_tester.assert_result(resume_p.returncode, resume_p.stdout)
-        
+
         # check loss diff
         errors = []
         msg = self.train_tester.assert_loss(training_p.stdout, lora_tp_pp_loss, "Fisrt-Training")
@@ -368,7 +364,7 @@ class TestTrain:
         updated_config_path = self.train_tester.update_training_args(config_path, output_dir, update_args)
 
         # 训练
-        
+
         cmd = ["paddleformers-cli", "train", updated_config_path]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -378,10 +374,9 @@ class TestTrain:
                 f.write(training_p.stdout)
 
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
-        
 
         # resume 测试
-        
+
         resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full_function_call_resume.log")
         if resume_p.stdout.strip():
