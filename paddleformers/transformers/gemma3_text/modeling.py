@@ -188,22 +188,12 @@ def rotate_half(x):
     return paddle.cat([-x2, x1], axis=-1)
 
 
-def _apply_rotary_emb(
-    x: paddle.Tensor,
-    cos: paddle.Tensor,
-    sin: paddle.Tensor,
-) -> paddle.Tensor:
-    x = x.transpose([0, 2, 1, 3])
-    x_embed = (x * cos) + (rotate_half(x) * sin)
-    return x_embed.transpose([0, 2, 1, 3])
-
-
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors."""
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
-    q_embed = _apply_rotary_emb(q, cos, sin)
-    k_embed = _apply_rotary_emb(k, cos, sin)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed.astype(q.dtype), k_embed.astype(k.dtype)
 
 
@@ -299,9 +289,9 @@ class Gemma3Attention(nn.Layer):
 
         hidden_shape = (bsz, q_len, -1, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).reshape(hidden_shape)
-        key_states = self.k_proj(hidden_states).reshape(hidden_shape)
-        value_states = self.v_proj(hidden_states).reshape(hidden_shape)
+        query_states = self.q_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
 
         query_states = self.q_norm(query_states)
         key_states = self.k_norm(key_states)
@@ -310,8 +300,8 @@ class Gemma3Attention(nn.Layer):
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
         if past_key_value is not None:
-            key_states = paddle.concat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.concat([past_key_value[0], key_states], axis=2)
+            value_states = paddle.concat([past_key_value[1], value_states], axis=2)
         past_key_value = (key_states, value_states) if use_cache else None
 
         if attn_mask_startend_row_indices is None and attention_mask is None:
