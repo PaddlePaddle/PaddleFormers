@@ -1073,7 +1073,6 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
         output_attentions: bool,
         use_cache: bool,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-        batch_size: int = None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -1085,13 +1084,12 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
             create_custom_forward(layer_module),
             hidden_states,
             attention_mask,
-            position_embeddings,
             position_ids,
             past_key_value,
             output_attentions,
             use_cache,
+            position_embeddings,
             attn_mask_startend_row_indices,
-            batch_size,
         )
 
         return hidden_states
@@ -1211,7 +1209,6 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
                         decoder_layer.attention_type
                     ],
-                    batch_size=batch_size,
                     **kwargs,
                 )
             else:
@@ -1226,7 +1223,6 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
                         decoder_layer.attention_type
                     ],
-                    batch_size=batch_size,
                     **kwargs,
                 )
 
