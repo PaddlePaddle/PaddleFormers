@@ -811,7 +811,6 @@ class Qwen2_5_VLAttention(nn.Layer):
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.is_causal = True
         self.attention_dropout = config.attention_dropout
-        self.rope_scaling = config.rope_scaling
         self.scaling = self.head_dim**-0.5
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
@@ -896,7 +895,7 @@ class Qwen2_5_VLAttention(nn.Layer):
 
         cos, sin = position_embeddings
         query_states, key_states = apply_multimodal_rotary_pos_emb(
-            query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
+            query_states, key_states, cos, sin, self.config.rope_parameters["mrope_section"]
         )
 
         # [bs, num_head, seq_len, head_dim]
