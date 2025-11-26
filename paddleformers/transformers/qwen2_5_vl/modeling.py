@@ -115,16 +115,6 @@ def rotate_half(x):
     return paddle.cat([-x2, x1], axis=-1)
 
 
-def _apply_rotary_emb(
-    x: paddle.Tensor,
-    cos: paddle.Tensor,
-    sin: paddle.Tensor,
-) -> paddle.Tensor:
-    x = x.transpose([0, 2, 1, 3])
-    x_embed = (x * cos) + (rotate_half(x) * sin)
-    return x_embed.transpose([0, 2, 1, 3])
-
-
 def apply_rotary_pos_emb_vision(q, k, cos, sin):
     """Applies Rotary Position Embedding to the query and key tensors."""
     orig_q_dtype = q.dtype
@@ -175,15 +165,15 @@ class Qwen2_5_VLVisionAttention(nn.Layer):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb_vision(query_states, key_states, cos, sin)
 
-        query_states = query_states.unsqueeze(0)
-        key_states = key_states.unsqueeze(0)
-        value_states = value_states.unsqueeze(0)
+        query_states = query_states.transpose(0, 1).unsqueeze(0)
+        key_states = key_states.transpose(0, 1).unsqueeze(0)
+        value_states = value_states.transpose(0, 1).unsqueeze(0)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         lengths = cu_seqlens[1:] - cu_seqlens[:-1]
         splits = [
-            paddle.split(tensor, lengths.tolist(), axis=1) for tensor in (query_states, key_states, value_states)
+            paddle.split(tensor, lengths.tolist(), axis=2) for tensor in (query_states, key_states, value_states)
         ]
         attn_outputs = [
             attention_interface(
@@ -792,8 +782,8 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim
         axis=unsqueeze_dim
     )
 
-    q_embed = _apply_rotary_emb(q, cos, sin)
-    k_embed = _apply_rotary_emb(k, cos, sin)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
 
 
@@ -900,19 +890,19 @@ class Qwen2_5_VLAttention(nn.Layer):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.view(bsz, q_len, -1, self.head_dim)
-        key_states = key_states.view(bsz, q_len, -1, self.head_dim)
-        value_states = value_states.view(bsz, q_len, -1, self.head_dim)
+        query_states = query_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        key_states = key_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        value_states = value_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_multimodal_rotary_pos_emb(
             query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
         )
 
-        # [bs, seq_len, num_head, head_dim]
+        # [bs, num_head, seq_len, head_dim]
         if past_key_value is not None:
-            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.cat([past_key_value[0], key_states], axis=2)
+            value_states = paddle.cat([past_key_value[1], value_states], axis=2)
         past_key_value = (key_states, value_states) if use_cache else None
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
