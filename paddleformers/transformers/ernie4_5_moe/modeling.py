@@ -47,10 +47,7 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..ernie4_5.modeling import Ernie4_5Attention
-from ..masking_utils import (
-    create_causal_mask_and_row_indices,
-    create_sliding_window_causal_mask_and_row_indices,
-)
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoECausalLMOutputWithPastAndMTP
 from ..model_utils import PretrainedModel, register_base_model
 from ..tensor_parallel_utils import model_parallel_dropout
@@ -635,9 +632,6 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         )
 
         self.layers = nn.LayerList([Ernie4_5_MoeDecoderLayer(config, i) for i in range(config.num_hidden_layers)])
-        self.has_sliding_layers = getattr(
-            self.config, "sliding_window", None
-        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
         self.norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -833,12 +827,8 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
-        if self.has_sliding_layers:
-            attention_mask, attn_mask_startend_row_indices = create_sliding_window_causal_mask_and_row_indices(
-                **mask_kwargs
-            )
-        else:
-            attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+
+        attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         if self.training and self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]
