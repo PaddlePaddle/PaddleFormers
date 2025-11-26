@@ -745,7 +745,6 @@ class DeepseekV3Attention(nn.Layer):
         # if sequence_parallel is true, out shape are [q_len / n, bs, num_head * head_dim]
         # else their shape are [bs, q_len, num_head * head_dim], n is mp parallelism.
         attn_output = self.o_proj(attn_output)
-
         if attn_output.shape != ori_shape:
             attn_output = attn_output.reshape(ori_shape)
 
@@ -1357,7 +1356,6 @@ class DeepseekV3Model(DeepseekV3PretrainedModel):
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
-
         use_cache = use_cache if use_cache is not None else self.config.use_cache
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
@@ -1696,10 +1694,10 @@ class DeepseekV3ForCausalLM(DeepseekV3PretrainedModel):
         self.criterion = CriterionLayer(config)
 
     def get_input_embeddings(self):
-        return self.model.embed_tokens
+        return self.deepseek_v3.embed_tokens
 
     def set_input_embeddings(self, value):
-        self.model.embed_tokens = value
+        self.deepseek_v3.embed_tokens = value
 
     def get_output_embeddings(self):
         return self.lm_head
@@ -1711,7 +1709,7 @@ class DeepseekV3ForCausalLM(DeepseekV3PretrainedModel):
         self.model = decoder
 
     def get_decoder(self):
-        return self.model
+        return self.deepseek_v3
 
     def forward(
         self,
@@ -1765,7 +1763,7 @@ class DeepseekV3ForCausalLM(DeepseekV3PretrainedModel):
             attention_mask = None
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-        outputs = self.model(
+        outputs = self.deepseek_v3(
             input_ids=input_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,
