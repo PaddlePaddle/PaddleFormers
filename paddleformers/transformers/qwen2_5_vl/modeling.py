@@ -900,9 +900,9 @@ class Qwen2_5_VLAttention(nn.Layer):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.view(bsz, q_len, -1, self.head_dim)
-        key_states = key_states.view(bsz, q_len, -1, self.head_dim)
-        value_states = value_states.view(bsz, q_len, -1, self.head_dim)
+        query_states = query_states.reshape(bsz, q_len, -1, self.head_dim)
+        key_states = key_states.reshape(bsz, q_len, -1, self.head_dim)
+        value_states = value_states.reshape(bsz, q_len, -1, self.head_dim)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_multimodal_rotary_pos_emb(

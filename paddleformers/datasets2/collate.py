@@ -16,12 +16,13 @@ from typing import Dict, List
 
 import numpy as np
 
+from .SFTDataset import Sequence
 
-def collate_fn(batch: List[List[Dict]], tokenizer, model_args, max_seq_len: int):
-    """Convert batch of Dict into training tensors.
+def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int):
+    """Convert batch of sequences into training tensors.
 
     Args:
-        batch (List[List[Dict]]): Batch of input dicts
+        batch (List[List[Sequence]]): Batch of input sequences
         tokenizer: Tokenizer for text conversion
         model_args: Model configuration parameters
         max_seq_len (int): Maximum sequence length for padding
@@ -30,25 +31,28 @@ def collate_fn(batch: List[List[Dict]], tokenizer, model_args, max_seq_len: int)
         dict: Dictionary containing:
             - input_ids: Padded token IDs
             - labels: Shifted labels for prediction
+            - loss_mask: Mask for computing loss
     """
     input_keys = ["input_ids", "labels"]
-    if model_args.num_nextn_predict_layers > 0:
+    if training_args.num_nextn_predict_layers > 0:
         input_keys.append("nbatch_pack_offset")
     if model_args.use_attn_mask_startend_row_indices:
         input_keys.append("attn_mask_startend_row_indices")
     else:
         input_keys.append("attention_mask")
     return_list = []
-
     if max_seq_len is None:
-        max_seq_len = max(len(item["input_ids"]) for sequence in batch for item in sequence)
+        max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
-        original_token_ids = [seq["input_ids"] for seq in batch_sequence]
+        original_token_ids = [seq.token_ids for seq in batch_sequence]
         token_ids = [sum(original_token_ids, [])]
-        labels = [sum([seq["labels"] for seq in batch_sequence], [])]
+        loss_mask = [sum([seq.loss_mask for seq in batch_sequence], [])]
+        labels = [sum([seq.labels for seq in batch_sequence], [])]
         # padding
         padded_token_ids = pad_batch_data(token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
         padded_labels = pad_batch_data(labels, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
+        padded_loss_mask = pad_batch_data(loss_mask, pad_idx=0, max_seq_len=max_seq_len)
+        padded_labels = np.where(padded_loss_mask == 1, padded_labels, -100)
         return_list.append(
             [
                 padded_token_ids,
@@ -56,7 +60,7 @@ def collate_fn(batch: List[List[Dict]], tokenizer, model_args, max_seq_len: int)
             ]
         )
 
-        if model_args.num_nextn_predict_layers > 0:
+        if training_args.num_nextn_predict_layers > 0:
             # each sequence end index
             batch_sequence_len = [len(sequence) for sequence in original_token_ids]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)
@@ -67,10 +71,127 @@ def collate_fn(batch: List[List[Dict]], tokenizer, model_args, max_seq_len: int)
             padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
             return_list[-1].append(padded_nbatch_pack_offset)
 
-        if model_args.use_attn_mask_startend_row_indices:
-            return_list[-1].append(gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len))
-        else:
-            return_list[-1].append(gen_self_attn_mask(original_token_ids, max_seq_len))
+        if not model_args.stage.lower() == "pt":
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_attn_mask_startend_row_indices(
+                        original_token_ids, max_seq_len, model_args.use_global_causal_attn
+                    )
+                )
+            else:
+                return_list[-1].append(
+                    gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+                )
+
+    return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
+    input_dict = dict(zip(input_keys, return_list))
+    return input_dict
+
+
+def mm_collate_fn(batch: List[List[Sequence]], template, processor, tokenizer, training_args, model_args, max_seq_len: int):
+    """Convert batch of sequences into training tensors.
+
+    Args:
+        batch (List[List[Sequence]]): Batch of input sequences
+        tokenizer: Tokenizer for text conversion
+        model_args: Model configuration parameters
+        max_seq_len (int): Maximum sequence length for padding
+
+    Returns:
+        dict: Dictionary containing:
+            - input_ids: Padded token IDs
+            - labels: Shifted labels for prediction
+            - loss_mask: Mask for computing loss
+    """
+
+    batch_images, batch_videos, batch_audios = [], [], []
+    batch_imglens, batch_vidlens, batch_audlens, batch_input_ids = [], [], [], []
+    for batch_sequence in batch:
+        images = []
+        for seq in batch_sequence:
+            images.extend(seq.images)
+        videos = []
+        for seq in batch_sequence:
+            videos.extend(seq.videos)
+        audios = []
+        for seq in batch_sequence:
+            audios.extend(seq.audios)
+        batch_images.extend(images)
+        batch_videos.extend(videos)
+        batch_audios.extend(audios)
+        batch_imglens.append(len(images))
+        batch_vidlens.append(len(videos))
+        batch_audlens.append(len(audios))
+        batch_input_ids.append([seq.token_ids for seq in batch_sequence])
+
+    mm_inputs = template.mm_plugin.get_mm_inputs(
+        batch_images,
+        batch_videos,
+        batch_audios,
+        batch_imglens,
+        batch_vidlens,
+        batch_audlens,
+        batch_input_ids,
+        processor,
+    )
+
+    input_keys = ["input_ids", "labels"]
+    if training_args.num_nextn_predict_layers > 0:
+        input_keys.append("nbatch_pack_offset")
+    if model_args.use_attn_mask_startend_row_indices:
+        input_keys.append("attn_mask_startend_row_indices")
+    else:
+        input_keys.append("attention_mask")
+    
+    input_keys.append("pixel_values")
+    input_keys.append("image_grid_thw")
+    return_list = []
+    if max_seq_len is None:
+        max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
+    for batch_sequence in batch:
+        original_token_ids = [seq.token_ids for seq in batch_sequence]
+        token_ids = [sum(original_token_ids, [])]
+        loss_mask = [sum([seq.loss_mask for seq in batch_sequence], [])]
+        labels = [sum([seq.labels for seq in batch_sequence], [])]
+        # padding
+        padded_token_ids = pad_batch_data(token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
+        padded_labels = pad_batch_data(labels, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
+        padded_loss_mask = pad_batch_data(loss_mask, pad_idx=0, max_seq_len=max_seq_len)
+        padded_labels = np.where(padded_loss_mask == 1, padded_labels, -100)
+        return_list.append(
+            [
+                padded_token_ids,
+                padded_labels,
+            ]
+        )
+
+        if training_args.num_nextn_predict_layers > 0:
+            # each sequence end index
+            batch_sequence_len = [len(sequence) for sequence in original_token_ids]
+            nbatch_pack_offset = [0] * sum(batch_sequence_len)
+            prefix_sum = 0
+            for sequence_len in batch_sequence_len[:-1]:
+                prefix_sum += sequence_len
+                nbatch_pack_offset[prefix_sum - 1] = 1
+            padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
+            return_list[-1].append(padded_nbatch_pack_offset)
+
+        if not model_args.stage.lower() == "pt":
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_attn_mask_startend_row_indices(
+                        original_token_ids, max_seq_len, model_args.use_global_causal_attn
+                    )
+                )
+            else:
+                return_list[-1].append(
+                    gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+                )
+        
+        if "pixel_values" in mm_inputs:
+            return_list[-1].append(mm_inputs["pixel_values"])
+        if "image_grid_thw" in mm_inputs:
+            return_list[-1].append(mm_inputs["image_grid_thw"])
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
     input_dict = dict(zip(input_keys, return_list))
@@ -127,7 +248,7 @@ def pad_batch_data(
     return return_list if len(return_list) > 1 else return_list[0]
 
 
-def gen_self_attn_mask(batch_token_ids: List[List[int]], max_seq_len: int):
+def gen_self_attn_mask(batch_token_ids: List[List[int]], max_seq_len: int, use_global_causal_attn: bool):
     """Generate self-attention mask for multi-sequence batches.
 
     Args:
@@ -139,15 +260,24 @@ def gen_self_attn_mask(batch_token_ids: List[List[int]], max_seq_len: int):
     """
     input_mask_data = np.zeros((1, 1, max_seq_len, max_seq_len), dtype="float32")
     offset = 0
-    for index, token_ids in enumerate(batch_token_ids):
-        cur_len = len(token_ids)
-        b = np.tril(np.ones([cur_len, cur_len]), 0)
-        input_mask_data[0, 0, offset : offset + cur_len, offset : offset + cur_len] = b
-        offset += cur_len
+    if use_global_causal_attn:
+        total_len = 0
+        for index, token_ids in enumerate(batch_token_ids):
+            total_len += len(token_ids)
+        b = np.tril(np.ones([total_len, total_len]), 0)
+        input_mask_data[0, 0, offset : offset + total_len, offset : offset + total_len] = b
+    else:
+        for index, token_ids in enumerate(batch_token_ids):
+            cur_len = len(token_ids)
+            b = np.tril(np.ones([cur_len, cur_len]), 0)
+            input_mask_data[0, 0, offset : offset + cur_len, offset : offset + cur_len] = b
+            offset += cur_len
     return input_mask_data
 
 
-def gen_attn_mask_startend_row_indices(batch_token_ids: List[List[int]], max_seq_len: int):
+def gen_attn_mask_startend_row_indices(
+    batch_token_ids: List[List[int]], max_seq_len: int, use_global_causal_attn: bool
+):
     """Generate row indices for flash attention masks.
 
     Args:
@@ -159,11 +289,20 @@ def gen_attn_mask_startend_row_indices(batch_token_ids: List[List[int]], max_seq
     """
     offset = 0
     attn_mask_startend_row_indices = []
-    for token_ids in batch_token_ids:
-        cur_len = len(token_ids)
-        attn_mask_startend_row_indices.extend([offset + cur_len] * cur_len)
-        offset += cur_len
-    if offset < max_seq_len:
-        attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
+    if use_global_causal_attn:
+        total_len = 0
+        for token_ids in batch_token_ids:
+            total_len += len(token_ids)
+        attn_mask_startend_row_indices.extend([offset + total_len] * total_len)
+        offset += total_len
+        if offset < max_seq_len:
+            attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
+    else:
+        for token_ids in batch_token_ids:
+            cur_len = len(token_ids)
+            attn_mask_startend_row_indices.extend([offset + cur_len] * cur_len)
+            offset += cur_len
+        if offset < max_seq_len:
+            attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
     # NOTE(hehuang): The dtype of attn_mask_startend_row_indices must be np.int32
     return np.array(attn_mask_startend_row_indices, dtype=np.int32)[None, None, ..., None]  # add dimension modify

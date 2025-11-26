@@ -168,14 +168,15 @@ class BaseMixDataset(IterableDataset):
         self.datasets_list = [task["dataset"] for task in multi_source_dataset._task_group]
         self.datasets_prob = [task["prob"] for task in multi_source_dataset._task_group]
         self.mode = "upsampling" if dataset_config["mix_strategy"] == "interleave_under" else "oversampling"
-        self.seed = 42
-        self.rng = random.Random(dataset_config["random_seed"])
+        seed = 23
+        self.seed = seed
+        self.rng = random.Random(seed)
         self.np_rng = np.random.default_rng(self.seed)
         self.epoch_index = 0
         self.epoch_np_rng = np.random.RandomState(self.epoch_index)
         self.random_shuffle = dataset_config["random_shuffle"]
         self.num_samples_each_epoch = dataset_config["num_samples_each_epoch"]
-        self.reverse = dataset_config["reverse"]
+        self.reverse = True
 
     @abstractmethod
     def __iter__(self):
@@ -279,8 +280,8 @@ class ConcatDataset(BaseMixDataset):
         Returns an iterator that can loop over the dataset indefinitely.
         """
         while True:
-            if self.random_shuffle:
-                self.epoch_np_rng.shuffle(self.indices)
+            # if self.random_shuffle:
+            #     self.epoch_np_rng.shuffle(self.indices)
 
             for i in self.indices:
                 yield self.data[i]

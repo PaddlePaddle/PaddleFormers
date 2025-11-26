@@ -38,19 +38,15 @@ class Sequence:
     labels: List[int]
     loss_mask: List[int]
     num_examples: int
+    images: List[str]
+    videos: List[str]
+    audios: List[str]
 
 
 class SFTDataSet(IterableDataset):
     def __init__(self, **dataset_config):
 
         # parameter init
-        dataset_config.update({
-            "template": "qwen2_vl",
-            "train_on_prompt": False,
-            "tool_format": None,
-            "default_system": None,
-            "enable_thinking": True,
-        })
         self.tokenizer = dataset_config["tokenizer"]
         self.processor = dataset_config["processor"]
         self.max_seq_len = dataset_config["max_seq_len"]
@@ -123,7 +119,9 @@ class SFTDataSet(IterableDataset):
 
                 tokens = tokens_src + tokens_target + tokens
 
-                loss_mask = [0] * (len(tokens_src) - 1) + [example["label"][turn_index]] * (len(tokens_target) + 1) + loss_mask
+                loss_mask = (
+                    [0] * (len(tokens_src) - 1) + [example["label"][turn_index]] * (len(tokens_target) + 1) + loss_mask
+                )
                 assert len(tokens) == len(loss_mask), f"{len(tokens)}-{len(loss_mask)}"
 
                 cur_len = len(tokens)
@@ -162,6 +160,7 @@ class SFTDataSet(IterableDataset):
                     label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
                 ]
             else:
+                # labels = tokens[1:] + [self.tokenizer.eos_token_id]
                 tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
                 labels = tokens[1:] + [-100]
                 if len(tokens) > self.max_seq_len:
@@ -182,6 +181,9 @@ class SFTDataSet(IterableDataset):
                 labels=labels,
                 loss_mask=loss_mask,
                 num_examples=1,
+                images=images,
+                videos=videos,
+                audios=audios,
             )
 
 
