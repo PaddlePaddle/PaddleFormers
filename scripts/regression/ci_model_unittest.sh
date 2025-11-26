@@ -113,7 +113,7 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $N
     FLAGS_enable_CI=true
 done
 
-# 默认使用 all
+# 默认使用 glm
 if [[ "$models" == "" ]]; then
     models="glm"
 fi
@@ -141,7 +141,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     export FLAGS_tcp_store_using_libuv=0
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
+    python -m pytest -s -v --models=$models ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
 
