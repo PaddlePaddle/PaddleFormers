@@ -27,7 +27,7 @@ from model_provider import ModelProviderMixin
 from paddlefleet import parallel_state
 from paddlefleet.models.gpt import GPTModel
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
-from paddlefleet.transformer import LayerSpec
+from paddlefleet.spec_utils import LayerSpec
 from paddlefleet.transformer.transformer_config import TransformerConfig
 from vocab_utils import calculate_padded_vocab_size
 
@@ -44,7 +44,7 @@ def local_layer_spec(config: "GPTModelProvider") -> LayerSpec:
         LayerSpec: Module specification for local implementation layers
     """
     return get_gpt_layer_local_spec(
-        num_experts=config.num_moe_experts,
+        num_experts=config.moe_num_experts,
         moe_grouped_gemm=config.moe_grouped_gemm,
         qk_layernorm=config.qk_layernorm,
         normalization=config.normalization,
@@ -88,7 +88,7 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
     should_pad_vocab: bool = False
 
     # MoE / FP8
-    num_moe_experts: Optional[int] = None
+    moe_num_experts: Optional[int] = None
     moe_grouped_gemm: bool = False
     qk_layernorm: bool = False
     fp8: Optional[str] = None

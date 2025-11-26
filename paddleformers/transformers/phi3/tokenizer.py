@@ -1,5 +1,5 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2022 EleutherAI and the HuggingFace Inc. team. All rights reserved.
+# # Copyright 2024 Microsoft and the HuggingFace Inc. team. All rights reserved.
+# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,4 @@ import transformers as hf
 
 from ..tokenizer_utils import warp_tokenizer
 
-__all__ = ["LlamaTokenizer", "Llama3Tokenizer"]
-
-LlamaTokenizer = warp_tokenizer(hf.LlamaTokenizer)
-Llama3Tokenizer = warp_tokenizer(hf.PreTrainedTokenizerFast)
+Phi3Tokenizer = warp_tokenizer(hf.GPT2Tokenizer)

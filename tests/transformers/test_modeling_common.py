@@ -210,7 +210,6 @@ class ModelTesterMixin:
     model_tester = None
     base_model_class: Optional[Type[PretrainedModel]] = None
     all_model_classes: Tuple[Type[PretrainedModel]] = ()
-    all_generative_model_classes = ()
     test_resize_embeddings = True
     test_resize_position_embeddings = False
     test_mismatched_shapes = True
@@ -563,12 +562,12 @@ class ModelTesterMixin:
             self.assertTrue(models_equal)
 
     def test_resize_tokens_embeddings(self):
+        if not self.test_resize_embeddings:
+            return
         (
             original_config,
             inputs_dict,
         ) = self.model_tester.prepare_config_and_inputs_for_common()
-        if not self.test_resize_embeddings:
-            return
 
         for model_class in self.all_model_classes:
             config = copy.deepcopy(original_config)
@@ -576,14 +575,15 @@ class ModelTesterMixin:
             if self.model_tester.is_training is False:
                 model.eval()
 
-            model_vocab_size = config.vocab_size
+            model_vocab_size = config.get_text_config().vocab_size
             # Retrieve the embeddings and clone theme
             model_embed = model.resize_token_embeddings(model_vocab_size)
             cloned_embeddings = model_embed.weight.clone()
 
             # Check that resizing the token embeddings with a larger vocab size increases the model's vocab size
             model_embed = model.resize_token_embeddings(model_vocab_size + 10)
-            self.assertEqual(model.base_model.config.vocab_size, model_vocab_size + 10)
+            new_model_vocab_size = model.config.get_text_config().vocab_size
+            self.assertEqual(new_model_vocab_size, model_vocab_size + 10)
             # Check that it actually resizes the embeddings matrix
             self.assertEqual(model_embed.weight.shape[0], cloned_embeddings.shape[0] + 10)
             # Check that the model can still do a forward pass successfully (every parameter should be resized)
@@ -591,7 +591,8 @@ class ModelTesterMixin:
 
             # Check that resizing the token embeddings with a smaller vocab size decreases the model's vocab size
             model_embed = model.resize_token_embeddings(model_vocab_size - 15)
-            self.assertEqual(model.base_model.config.vocab_size, model_vocab_size - 15)
+            new_model_vocab_size = model.config.get_text_config().vocab_size
+            self.assertEqual(new_model_vocab_size, model_vocab_size - 15)
             # Check that it actually resizes the embeddings matrix
             self.assertEqual(model_embed.weight.shape[0], cloned_embeddings.shape[0] - 15)
 
@@ -607,13 +608,11 @@ class ModelTesterMixin:
             model(**self._prepare_for_class(inputs_dict, model_class))
 
             # Check that adding and removing tokens has not modified the first part of the embedding matrix.
-            models_equal = True
-            for p1, p2 in zip(cloned_embeddings, model_embed.weight):
-                if not paddle.equal_all(p1, p2).item():
-                    models_equal = False
-                    break
-
-            self.assertTrue(models_equal)
+            # Get the new vocab size from the resized embedding matrix
+            new_vocab_size = model_embed.weight.shape[0]
+            original_slice_to_compare = cloned_embeddings[0:new_vocab_size]
+            models_equal_tensor = paddle.equal_all(original_slice_to_compare, model_embed.weight)
+            self.assertTrue(models_equal_tensor.item())
 
     def _compare_tensor(self, tensor1, tensor2, rtol=1e-04, atol=1e-04):
         if tensor1.dtype != tensor2.dtype:

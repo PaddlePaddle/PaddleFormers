@@ -238,6 +238,13 @@ def get_lora_target_modules(model):
             ".*temporal_linear.0.*",
             ".*temporal_linear.2.*",
         ]
+    elif model.config.model_type == "phi3":
+        target_modules = [
+            ".*qkv_proj.*",
+            ".*o_proj.*",
+            ".*gate_up_proj.*",
+            ".*down_proj.*",
+        ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")
     return target_modules

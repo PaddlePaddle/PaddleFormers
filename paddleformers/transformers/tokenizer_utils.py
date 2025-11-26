@@ -26,6 +26,7 @@ from transformers import BatchEncoding
 from transformers.tokenization_utils import (
     PreTrainedTokenizer as PreTrainedTokenizer_tf,
 )
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase  # noqa: F401
 from transformers.tokenization_utils_base import (
     ADDED_TOKENS_FILE,
     CHAT_TEMPLATE_FILE,

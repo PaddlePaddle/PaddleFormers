@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import math
+import os
 import warnings
 from functools import partial
 from typing import List, Optional, Tuple, Union
@@ -86,7 +87,6 @@ from paddleformers.transformers.fp8_utils import (
     cache_fp8_weight,
     set_parameter_color,
 )
-from paddleformers.transformers.llama.modeling import get_use_casual_mask
 from paddleformers.transformers.model_outputs import BaseModelOutputWithPastAndMTP
 from paddleformers.transformers.model_utils import (
     PretrainedModel,
@@ -129,6 +129,11 @@ __all__ = [
 ]
 
 global_step = 0
+
+
+def get_use_casual_mask():
+    """Get the value of the 'USE_CASUAL_MASK' environment variable."""
+    return os.getenv("USE_CASUAL_MASK", "False") == "True"
 
 
 def set_global_step(cur_step):
