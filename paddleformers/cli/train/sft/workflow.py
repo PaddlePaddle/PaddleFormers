@@ -199,8 +199,12 @@ def run_sft(
         and paddle.device.cuda.get_device_capability()[0] == 9
         and paddle.device.cuda.get_device_capability()[1] == 0
     )
-    if "GptOss" in str(model_config.architectures) and data_args.packing is False:
-        if is_sm90 and model_args.attn_impl == "flashmask":
+    if (
+        "GptOss" in str(model_config.architectures)
+        and data_args.packing is False
+        and model_args.attn_impl == "flashmask"
+    ):
+        if is_sm90:
             os.environ["FLAGS_flash_attn_version"] = "3"
         else:
             model_args.attn_impl = "eager"
