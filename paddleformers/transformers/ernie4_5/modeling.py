@@ -251,9 +251,9 @@ class Ernie4_5Attention(nn.Layer):
             bsz, q_len, _ = hidden_states.shape
 
         # b l h d -> b h l d
-        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transepose(1, 2)
-        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transepose(1, 2)
-        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transepose(1, 2)
+        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(1, 2)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
