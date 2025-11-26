@@ -12,31 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from dataclasses import dataclass
 from functools import partial
+from typing import TYPE_CHECKING, Callable, Union
 
-import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
-
-from ...utils.log import logger
-from ..model_utils import PretrainedModel
-from .configuration import Glm4MoeConfig
-
-
-import logging
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, List, Optional, Union
-
-import paddle
-import paddle.nn.functional as F
-from gpt_provider import GPTModelProvider
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
+
+from paddleformers.transformers.gpt_provider import GPTModelProvider
+
+from ..model_utils import PretrainedModel, register_base_model
+from .configuration import Glm4MoeConfig
 
 if TYPE_CHECKING:
     from paddlefleet.transformer import LayerSpec
-
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -461,24 +451,21 @@ class Glm4MoePreTrainedModel(PretrainedModel):
 
 
 class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
-    def __init__(self, config):
-        super().__init__(config)
+    def __new__(cls, config):
+        model_provider_class = GLMMoEModelProvider
         if hasattr(config, "n_routed_experts") and config.n_routed_experts > 0:
             config.moe_layer_freq = 1  # Default to expert layer every layer
-        print(config.to_diff_dict())
-        model_provider = model_provider_class.from_config(config.to_diff_dict())
-        print(model_provider)
-        print("=================================")
-        print(model_provider_class1())
-        exit()
-        model = model_provider.provide()
-
-        return model
+        model_provider = model_provider_class.from_config(config)
+        return model_provider.provide()
 
 
-__all__ = ["Glm4MoeForCausalLM"]
+@register_base_model
+class Glm4MoeModel(Glm4MoePreTrainedModel):
+    pass
 
 
+class Glm4MoeForCausalLMPipe:
+    pass
 
 
-
+__all__ = ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"]
