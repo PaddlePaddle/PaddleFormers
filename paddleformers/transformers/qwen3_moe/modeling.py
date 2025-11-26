@@ -41,6 +41,7 @@ from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen3MoeConfig
 
@@ -57,17 +58,16 @@ def _apply_rotary_emb(
     cos: paddle.Tensor,
     sin: paddle.Tensor,
 ) -> paddle.Tensor:
-    x = x.transpose([0, 2, 1, 3])
     x_embed = (x * cos) + (rotate_half(x) * sin)
-    return x_embed.transpose([0, 2, 1, 3])
+    return x_embed
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors."""
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
-    q_embed = _apply_rotary_emb(q, cos, sin)
-    k_embed = _apply_rotary_emb(k, cos, sin)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed.astype(q.dtype), k_embed.astype(k.dtype)
 
 
@@ -214,6 +214,11 @@ class Qwen3MoeAttention(nn.Layer):
                 query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
             query_states = self.q_norm(query_states)
             key_states = self.k_norm(key_states)
+
+        # [bs, seq_len, num_head, head_dim] -> [bs, num_head, seq_len, head_dim]
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -479,6 +484,8 @@ class Qwen3MoeRotaryEmbedding(nn.Layer):
         base = config.rope_theta
         partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
         head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        rope_parameters = self.config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
         dim = int(head_dim * partial_rotary_factor)
 
         inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
@@ -486,6 +493,7 @@ class Qwen3MoeRotaryEmbedding(nn.Layer):
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = self.inv_freq
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
         # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where

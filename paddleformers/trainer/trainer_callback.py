@@ -801,20 +801,8 @@ class MoeExpertsGradScaleCallback(TrainerCallback):
             )
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
-        model = kwargs["model"]
-        param_count = 0
-        for p in model.parameters():
-            if not getattr(p, "no_sync", False):
-                continue
-            if hasattr(p, "is_moe_param") and p.is_moe_param:
-                with paddle.no_grad():
-                    if hasattr(p, "main_grad") and p.main_grad is not None:
-                        p.main_grad.scale_(self.expert_gradient_scaling_factor)
-                        param_count += 1
-                    elif p.grad is not None:
-                        p.grad.scale_(self.expert_gradient_scaling_factor)
-                        param_count += 1
-        logger.info("correct ep grad count:{}".format(param_count))
+        # moe_param grad scale for ep and tp is moved trainer.hybrid_parallel_scale_param_grad
+        pass
 
 
 class MoEGateSpGradSyncCallBack(TrainerCallback):
