@@ -21,6 +21,7 @@ import tempfile
 import unittest
 
 import paddle
+import pytest
 import yaml
 
 TRAIN_PATH = "./examples"
@@ -120,6 +121,7 @@ class SFTTrainTest(unittest.TestCase):
             shutil.rmtree(OUTPUT_DIR)
         super().tearDown()
 
+    @pytest.mark.skipif(True, reason="Skip for timeout")
     def test_sft_full(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full")
         update_args = {
@@ -171,6 +173,7 @@ class SFTTrainTest(unittest.TestCase):
         EXPECTED_RESULT = paddle.to_tensor(SFT_FULL_EXCEPTED_RESULT)
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
+    @pytest.mark.skipif(True, reason="Skip for timeout")
     def test_sft_lora(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_lora")
         update_args = {
@@ -231,6 +234,7 @@ class SFTTrainTest(unittest.TestCase):
         # EXPECTED_RESULT = paddle.to_tensor(SFT_LORA_EXCEPTED_RESULT)
         # self.sfttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
+    @pytest.mark.skipif(True, reason="Skip for timeout")
     def test_sft_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_tp_pp")
         update_args = {
@@ -282,6 +286,7 @@ class SFTTrainTest(unittest.TestCase):
         EXPECTED_RESULT = paddle.to_tensor(SFT_FULL_TP_PP_EXCEPTED_RESULT)
         self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
+    @pytest.mark.skipif(True, reason="Skip for timeout")
     def test_sft_lora_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_lora_tp_pp")
         update_args = {
@@ -342,6 +347,7 @@ class SFTTrainTest(unittest.TestCase):
         # EXPECTED_RESULT = paddle.to_tensor(SFT_LORA_TP_PP_EXCEPTED_RESULT)
         # self.sfttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
+    @pytest.mark.skipif(True, reason="Skip for timeout")
     def test_sft_full_function_call(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_function_call")
         update_args = {

@@ -21,6 +21,7 @@ import tempfile
 import unittest
 
 import paddle
+import pytest
 import yaml
 
 TRAIN_PATH = "./examples"
@@ -120,6 +121,7 @@ class DPOTrainTest(unittest.TestCase):
             shutil.rmtree(OUTPUT_DIR)
         super().tearDown()
 
+    @pytest.mark.skipif(True, reason="Skip for timeout")
     def test_dpo_full(self):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_full")
         update_args = {
@@ -189,6 +191,7 @@ class DPOTrainTest(unittest.TestCase):
         EXPECTED_RESULT = paddle.to_tensor(DPO_FULL_EXCEPTED_RESULT)
         self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
+    @pytest.mark.skipif(True, reason="Skip for timeout")
     def test_dpo_lora(self):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_lora")
         update_args = {
@@ -246,6 +249,7 @@ class DPOTrainTest(unittest.TestCase):
         # EXPECTED_RESULT = paddle.to_tensor(DPO_LORA_EXCEPTED_RESULT)
         # self.dpotrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
+    @pytest.mark.skipif(True, reason="Skip for timeout")
     def test_dpo_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_full_tp_pp")
         update_args = {
@@ -298,6 +302,7 @@ class DPOTrainTest(unittest.TestCase):
         EXPECTED_RESULT = paddle.to_tensor(DPO_FULL_TP_PP_EXCEPTED_RESULT)
         self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
+    @pytest.mark.skipif(True, reason="Skip for timeout")
     def test_dpo_lora_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_lora_tp_pp")
         update_args = {

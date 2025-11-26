@@ -1,0 +1,206 @@
+qwen3moe:
+  repo_id: "PaddleFormers/tiny-random-qwen3moev2"
+  cli_args: 
+    fuse_attention_qkv: true
+    fuse_attention_ffn: true
+    save_checkpoint_format: flex_checkpoint
+    load_checkpoint_format: flex_checkpoint
+  base_loss: 
+    # test_full 
+    sft_full_loss: 12.85601
+    sft_full_resume_loss: 12.852545
+    dpo_full_loss: 0.691155
+    dpo_full_resume_loss: 0.687171
+    pt_full_loss: 12.886006
+    pt_full_resume_loss: 12.868313
+    # test_lora
+    sft_lora_loss: 12.753016
+    sft_lora_resume_loss: 12.885423
+    dpo_lora_loss: 0.695097
+    dpo_lora_resume_loss: 0.698996
+    pt_lora_loss: 12.914419
+    pt_lora_resume_loss: 13.035184
+    #test_tp_pp
+    sft_full_tp_pp_loss: 12.992263
+    sft_full_tp_pp_resume_loss: 12.99057
+    dpo_full_tp_pp_loss: 0.69518
+    dpo_full_tp_pp_resume_loss: 0.699244
+    pt_full_tp_pp_loss: 12.761184
+    pt_full_tp_pp_resume_loss: 12.774579
+    #test_lora_tp_pp
+    sft_lora_tp_pp_loss: 12.992616
+    sft_lora_tp_pp_resume_loss: 12.99163
+    dpo_lora_tp_pp_loss: 11.944916
+    dpo_lora_tp_pp_resume_loss: 11.946712
+    pt_lora_tp_pp_loss: 12.761208
+    pt_lora_tp_pp_resume_loss: 12.774649
+    #test_fc
+    sft_full_function_call_loss: 12.813175
+    sft_full_function_call_resume_loss: 12.821417
+qwen2_moe:
+  repo_id: "PaddleFormers/tiny-random-qwen2moe"
+  cli_args: 
+    fuse_attention_qkv: true
+    fuse_attention_ffn: true
+    save_checkpoint_format: flex_checkpoint
+    load_checkpoint_format: flex_checkpoint
+  base_loss: 
+    # test_full 
+    sft_full_loss: 12.85601
+    sft_full_resume_loss: 12.852545
+    dpo_full_loss: 0.691155
+    dpo_full_resume_loss: 0.687171
+    pt_full_loss: 12.886006
+    pt_full_resume_loss: 12.868313
+    # test_lora
+    sft_lora_loss: 12.753016
+    sft_lora_resume_loss: 12.885423
+    dpo_lora_loss: 0.695097
+    dpo_lora_resume_loss: 0.698996
+    pt_lora_loss: 12.914419
+    pt_lora_resume_loss: 13.035184
+    #test_tp_pp
+    sft_full_tp_pp_loss: 12.992263
+    sft_full_tp_pp_resume_loss: 12.99057
+    dpo_full_tp_pp_loss: 0.69518
+    dpo_full_tp_pp_resume_loss: 0.699244
+    pt_full_tp_pp_loss: 12.761184
+    pt_full_tp_pp_resume_loss: 12.774579
+    #test_lora_tp_pp
+    sft_lora_tp_pp_loss: 12.992616
+    sft_lora_tp_pp_resume_loss: 12.99163
+    dpo_lora_tp_pp_loss: 11.944916
+    dpo_lora_tp_pp_resume_loss: 11.946712
+    pt_lora_tp_pp_loss: 12.761208
+    pt_lora_tp_pp_resume_loss: 12.774649
+    #test_fc
+    sft_full_function_call_loss: 12.813175
+    sft_full_function_call_resume_loss: 12.821417
+qwen3: 
+  repo_id: "PaddleFormers/tiny-random-qwen3"
+  cli_args: 
+    fuse_attention_qkv: true
+    fuse_attention_ffn: true
+    save_checkpoint_format: flex_checkpoint
+    load_checkpoint_format: flex_checkpoint
+  base_loss: 
+    # test_full 
+    sft_full_loss: 11.944817
+    sft_full_resume_loss: 11.946183
+    dpo_full_loss: 0.693121
+    dpo_full_resume_loss: 0.693068
+    pt_full_loss: 11.975817
+    pt_full_resume_loss: 11.974206
+    # test_lora
+    sft_lora_loss: 11.944797
+    sft_lora_resume_loss: 11.946123
+    dpo_lora_loss: 0.693144
+    dpo_lora_resume_loss: 0.693138
+    pt_lora_loss: 11.975819
+    pt_lora_resume_loss: 11.97421
+    #test_tp_pp
+    sft_full_tp_pp_loss: 11.956945
+    sft_full_tp_pp_resume_loss: 11.956932
+    dpo_full_tp_pp_loss: 0.693137
+    dpo_full_tp_pp_resume_loss: 0.693116
+    pt_full_tp_pp_loss: 11.980651
+    pt_full_tp_pp_resume_loss: 11.98307
+    #test_lora_tp_pp
+    sft_lora_tp_pp_loss: 11.956937
+    sft_lora_tp_pp_resume_loss: 11.956906
+    dpo_lora_tp_pp_loss: 11.944916
+    dpo_lora_tp_pp_resume_loss: 11.946712
+    pt_lora_tp_pp_loss: 11.980649
+    pt_lora_tp_pp_resume_loss: 11.983072
+    #test_fc
+    sft_full_function_call_loss: 11.955276
+    sft_full_function_call_resume_loss: 11.950663
+
+glm_moe: 
+  repo_id: "./tiny-random-glm4moe"
+  cli_args: 
+    fuse_attention_qkv: true
+    fuse_attention_ffn: true
+    save_checkpoint_format: flex_checkpoint
+    load_checkpoint_format: flex_checkpoint
+  base_loss: 
+    # test_full 
+    sft_full_loss: 12.928021 
+    sft_full_resume_loss: 12.92828
+    dpo_full_loss: 0.691502
+    dpo_full_resume_loss: 0.688213
+    pt_full_loss: 13.030177
+    pt_full_resume_loss: 13.04020
+    # test_lora
+    sft_lora_loss: 12.928604
+    sft_lora_resume_loss: 11.946712
+    dpo_lora_loss: 0.693131
+    dpo_lora_resume_loss: 11.946712
+    pt_lora_loss: 12.738609
+    pt_lora_resume_loss: 11.946712
+    #test_tp_pp
+    sft_full_tp_pp_loss: 11.944916
+    sft_full_tp_pp_resume_loss: 11.946712
+    dpo_full_tp_pp_loss: 11.944916
+    dpo_full_tp_pp_resume_loss: 11.946712
+    pt_full_tp_pp_loss: 11.944916
+    pt_full_tp_pp_resume_loss: 11.946712
+    #test_lora_tp_pp
+    sft_lora_tp_pp_loss: 11.944916
+    sft_lora_tp_pp_resume_loss: 11.946712
+    dpo_lora_tp_pp_loss: 11.944916
+    dpo_lora_tp_pp_resume_loss: 11.946712
+    pt_lora_tp_pp_loss: 11.944916
+    pt_lora_tp_pp_resume_loss: 11.946712
+    #test_fc
+    sft_full_function_call_loss: 12.859377
+    sft_full_function_call_resume_loss: 11.946712
+
+# qwen2:
+#   repo_id: "PaddleFormers/tiny-random-qwen2"
+#   cli_args: 
+#     fuse_attention_qkv: true
+#     fuse_attention_ffn: true
+#     save_checkpoint_format: flex_checkpoint
+#     load_checkpoint_format: flex_checkpoint
+#   base_loss: 
+#     # test_full 
+#     sft_full_loss: 11.944817
+#     sft_full_resume_loss: 11.946183
+#     dpo_full_loss: 0.693121
+#     dpo_full_resume_loss: 0.693068
+#     pt_full_loss: 11.975817
+#     pt_full_resume_loss: 11.974206
+#     # test_lora
+#     sft_lora_loss: 11.944797
+#     sft_lora_resume_loss: 11.946123
+#     dpo_lora_loss: 0.693144
+#     dpo_lora_resume_loss: 0.693138
+#     pt_lora_loss: 11.975819
+#     pt_lora_resume_loss: 11.97421
+#     #test_tp_pp
+#     sft_full_tp_pp_loss: 11.956945
+#     sft_full_tp_pp_resume_loss: 11.956932
+#     dpo_full_tp_pp_loss: 0.693137
+#     dpo_full_tp_pp_resume_loss: 0.693116
+#     pt_full_tp_pp_loss: 11.980651
+#     pt_full_tp_pp_resume_loss: 11.98307
+#     #test_lora_tp_pp
+#     sft_lora_tp_pp_loss: 11.956937
+#     sft_lora_tp_pp_resume_loss: 11.956906
+#     dpo_lora_tp_pp_loss: 11.944916
+#     dpo_lora_tp_pp_resume_loss: 11.946712
+#     pt_lora_tp_pp_loss: 11.980649
+#     pt_lora_tp_pp_resume_loss: 11.983072
+#     #test_fc
+#     sft_full_function_call_loss: 11.955276
+#     sft_full_function_call_resume_loss: 11.950663
+
+# deepseek_v3: 
+#   repo_id: "PaddleFormers/tiny-random-deepseek-v3"
+# ernie4_5:
+#   repo_id: "hf-internal-testing/tiny-random-Ernie4_5Model"
+# gpt_oss:  
+#   repo_id: "PaddleFormers/tiny-random-gptoss"
+# llama: 
+#   repo_id: "Paddleformers/tiny-random-llama"
