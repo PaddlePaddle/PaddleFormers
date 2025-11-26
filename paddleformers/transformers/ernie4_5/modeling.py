@@ -54,7 +54,7 @@ def rotate_half(x):
     return paddle.stack((-x2, x1), axis=-1).flatten(-2)
 
 
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
@@ -74,6 +74,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
     Returns:
         `tuple(paddle.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
+    # shape of q: batch_size, num_heads, seq_len, head_dim
     # glm rope style (with full dim) and full precision
     original_dtype = q.dtype
 
@@ -91,6 +92,9 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
 
 
 def apply_fused_rope(query_states, key_states, rope_theta):
+    # b h l d -> b l h d
+    query_states = query_states.transpose(1, 2)
+    key_states = key_states.transpose(1, 2)
     _, _, num_heads, _ = query_states.shape
     _, kv_seq_len, num_key_value_heads, _ = key_states.shape
     if num_heads != num_key_value_heads:
@@ -246,9 +250,11 @@ class Ernie4_5Attention(nn.Layer):
         else:
             bsz, q_len, _ = hidden_states.shape
 
-        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
+        # b l h d -> b h l d
+        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(1, 2)
+
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
         if self.config.fuse_rope:

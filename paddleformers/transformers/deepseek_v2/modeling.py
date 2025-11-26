@@ -86,15 +86,15 @@ def scaled_dot_product_attention(
     training=True,
     sequence_parallel=False,
 ):
-    bsz, q_len, num_heads, head_dim = query_states.shape
-    _, kv_seq_len, v_num_heads, v_head_dim = value_states.shape
+    bsz, num_heads, q_len, head_dim = query_states.shape
+    _, v_num_heads, kv_seq_len, v_head_dim = value_states.shape
 
-    # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
+    # Attention Interface input [bz, nhead, seqlen, headdim]
     q_head_dim = query_states.shape[-1]
     softmax_scale = softmax_scale * (q_head_dim**0.5)
     query_states = query_states * softmax_scale
     value_padding = paddle.zeros(
-        [bsz, kv_seq_len, v_num_heads, head_dim - v_head_dim],
+        [bsz, v_num_heads, kv_seq_len, head_dim - v_head_dim],
         dtype=value_states.dtype,
     )
     value_states = paddle.cat([value_states, value_padding], axis=-1)
@@ -740,7 +740,11 @@ class DeepseekV2Attention(nn.Layer):
         query_states = paddle.cat([q_nope, q_pe], axis=-1)
         key_states = paddle.cat([k_nope, k_pe], axis=-1)
 
-        # [bs, seq_len, num_head, head_dim]
+        # [bz, seqlen, num_head, head_dim] -> [bz, num_head, seqlen, head_dim]
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
+
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
