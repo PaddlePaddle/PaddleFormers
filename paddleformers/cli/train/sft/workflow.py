@@ -26,7 +26,8 @@ is_sm90 = (
     and paddle.device.cuda.get_device_capability()[0] == 9
     and paddle.device.cuda.get_device_capability()[1] == 0
 )
-os.environ["FLAGS_flash_attn_version"] = "3"
+if is_sm90:
+    os.environ["FLAGS_flash_attn_version"] = "3"
 
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
