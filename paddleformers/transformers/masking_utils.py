@@ -64,6 +64,7 @@ def create_causal_masks_and_row_indices(
 ):
     """
     Prepare causal attention masks and optional start/end row indices for full and sliding attention.
+    This method is retained for compatibility and will be deprecated later
 
     This function handles both:
     1. Pre-computed start/end row indices for optimized attention.

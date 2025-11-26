@@ -436,6 +436,7 @@ class GenerationMixin(object):
             src_len = past_key_values_length + tgt_len
 
             batch_idx = paddle.arange(bsz, dtype="int64").reshape((bsz, 1, 1, 1))
+            # here we just consider 1 head
             head_idx = paddle.zeros((1, 1, 1, 1), dtype="int64")
             q_idx = paddle.arange(tgt_len, dtype="int64").reshape((1, 1, tgt_len, 1)) + past_key_values_length
             kv_idx = paddle.arange(src_len, dtype="int64").reshape((1, 1, 1, src_len))
