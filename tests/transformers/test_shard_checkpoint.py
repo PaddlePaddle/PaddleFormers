@@ -81,7 +81,12 @@ class TestFromPretrained(unittest.TestCase):
                 convert_from_hf=convert,
             )
             for p1, p2 in zip(m1.parameters(), m2.parameters()):
-                self.assertTrue(paddle.allclose(p1, p2))
+                if p1.dtype == paddle.bfloat16:
+                    p1_compare = p1.astype("float32")
+                    p2_compare = p2.astype("float32")
+                    self.assertTrue(paddle.allclose(p1_compare, p2_compare))
+                else:
+                    self.assertTrue(paddle.allclose(p1, p2))
 
     @unittest.skipIf(not is_paddle_cuda_available(), "some op is missing in cpu mode")
     def test_keep_in_fp32_modules(self):
@@ -113,7 +118,12 @@ class TestFromPretrained(unittest.TestCase):
         self.assertEqual(missing_keys, [])
         self.assertEqual(unexpected_keys, [])
         for p1, p2 in zip(model.parameters(), model_load.parameters()):
-            self.assertTrue(paddle.allclose(p1, p2))
+            if p1.dtype == paddle.bfloat16:
+                p1_compare = p1.astype("float32")
+                p2_compare = p2.astype("float32")
+                self.assertTrue(paddle.allclose(p1_compare, p2_compare))
+            else:
+                self.assertTrue(paddle.allclose(p1, p2))
 
     @unittest.skipIf(not is_paddle_cuda_available(), "some op is missing in cpu mode")
     def test_load_from_torch_dtyp_cast(self):
@@ -264,7 +274,13 @@ class TestShardCheckpoint(unittest.TestCase):
                 # Finally, check the model can be reloaded
                 new_model = LlamaModel.from_pretrained(tmp_dir)
                 for p1, p2 in zip(model.parameters(), new_model.parameters()):
-                    self.assertTrue(paddle.allclose(p1, p2))
+                    # self.assertTrue(paddle.allclose(p1, p2))
+                    if p1.dtype == paddle.bfloat16:
+                        p1_compare = p1.astype("float32")
+                        p2_compare = p2.astype("float32")
+                        self.assertTrue(paddle.allclose(p1_compare, p2_compare))
+                    else:
+                        self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_sharding_from_hub(self):
         model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3-shard")
@@ -272,7 +288,12 @@ class TestShardCheckpoint(unittest.TestCase):
         # the model above is the same as the model below, just a sharded version.
         ref_model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama3-shard")
         for p1, p2 in zip(model.parameters(), ref_model.parameters()):
-            self.assertTrue(paddle.allclose(p1, p2))
+            if p1.dtype == paddle.bfloat16:
+                p1_compare = p1.astype("float32")
+                p2_compare = p2.astype("float32")
+                self.assertTrue(paddle.allclose(p1_compare, p2_compare))
+            else:
+                self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_variant_local(self):
         model = BertModel.from_pretrained("Paddleformers/tiny-random-bert")
@@ -292,7 +313,12 @@ class TestShardCheckpoint(unittest.TestCase):
             new_model = BertModel.from_pretrained(tmp_dir, variant="v2")
 
         for p1, p2 in zip(model.parameters(), new_model.parameters()):
-            self.assertTrue(paddle.allclose(p1, p2))
+            if p1.dtype == paddle.bfloat16:
+                p1_compare = p1.astype("float32")
+                p2_compare = p2.astype("float32")
+                self.assertTrue(paddle.allclose(p1_compare, p2_compare))
+            else:
+                self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_variant_local_sharded(self):
         model = BertModel.from_pretrained("Paddleformers/tiny-random-bert")
@@ -316,7 +342,12 @@ class TestShardCheckpoint(unittest.TestCase):
             new_model = BertModel.from_pretrained(tmp_dir, variant="v2")
 
         for p1, p2 in zip(model.parameters(), new_model.parameters()):
-            self.assertTrue(paddle.allclose(p1, p2))
+            if p1.dtype == paddle.bfloat16:
+                p1_compare = p1.astype("float32")
+                p2_compare = p2.astype("float32")
+                self.assertTrue(paddle.allclose(p1_compare, p2_compare))
+            else:
+                self.assertTrue(paddle.allclose(p1, p2))
 
     @require_package("safetensors")
     def test_checkpoint_variant_local_safe(self):
@@ -338,7 +369,12 @@ class TestShardCheckpoint(unittest.TestCase):
             new_model = BertModel.from_pretrained(tmp_dir, variant="v2")
 
         for p1, p2 in zip(model.parameters(), new_model.parameters()):
-            self.assertTrue(paddle.allclose(p1, p2))
+            if p1.dtype == paddle.bfloat16:
+                p1_compare = p1.astype("float32")
+                p2_compare = p2.astype("float32")
+                self.assertTrue(paddle.allclose(p1_compare, p2_compare))
+            else:
+                self.assertTrue(paddle.allclose(p1, p2))
 
     @require_package("safetensors")
     def test_checkpoint_variant_local_sharded_safe(self):
@@ -363,7 +399,12 @@ class TestShardCheckpoint(unittest.TestCase):
             new_model = BertModel.from_pretrained(tmp_dir, variant="v2")
 
         for p1, p2 in zip(model.parameters(), new_model.parameters()):
-            self.assertTrue(paddle.allclose(p1, p2))
+            if p1.dtype == paddle.bfloat16:
+                p1_compare = p1.astype("float32")
+                p2_compare = p2.astype("float32")
+                self.assertTrue(paddle.allclose(p1_compare, p2_compare))
+            else:
+                self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_variant_hub(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
