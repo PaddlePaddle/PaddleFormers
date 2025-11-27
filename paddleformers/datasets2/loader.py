@@ -14,6 +14,7 @@
 
 
 from paddleformers.datasets2.SFTDataset import SFTDataSet, SFTPackingDataset
+from paddleformers.datasets2.DPODataset import DPODataSet, DPOPackingDataset
 
 def create_dataset(**dataset_config):
     """Create SFT dataset based on configuration parameters.
@@ -24,8 +25,11 @@ def create_dataset(**dataset_config):
     Returns:
         SequenceDataset: Configured sequence dataset for SFT tasks
     """
-    # if dataset_config["stage"].lower == "sft":
-    train_dataset = SFTDataSet(**dataset_config)
-    train_packing_dataset = SFTPackingDataset(train_dataset, **dataset_config)
+    if dataset_config["stage"].lower() == "dpo":
+        train_dataset = DPODataSet(**dataset_config)
+        train_packing_dataset = DPOPackingDataset(train_dataset, **dataset_config)
+    else:
+        train_dataset = SFTDataSet(**dataset_config)
+        train_packing_dataset = SFTPackingDataset(train_dataset, **dataset_config)
 
     return train_packing_dataset

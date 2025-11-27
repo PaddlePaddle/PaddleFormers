@@ -19,7 +19,10 @@ from functools import partial
 
 import paddle
 
-from paddleformers.datasets.dpo import collate_fn, create_dataset
+# from paddleformers.datasets.dpo import collate_fn, create_dataset
+from paddleformers.datasets2.loader import create_dataset
+from paddleformers.datasets2.collate import dpo_collate_fn as collate_fn
+from paddleformers.datasets2.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
@@ -192,6 +195,11 @@ def run_dpo(
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
 
+
+    processor = None
+    if model_args.stage == "VL-DPO":
+        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
+
     logger.info("Loading model & tokenizer successfully !")
 
     if model_args.lora:
@@ -233,6 +241,7 @@ def run_dpo(
     logger.info("Start to create dataset")
     dataset_config = {
         "tokenizer": tokenizer,
+        "processor": processor,
         "max_seq_len": data_args.max_seq_len,
         "max_prompt_len": data_args.max_prompt_len,
         "random_seed": training_args.seed,
@@ -247,7 +256,22 @@ def run_dpo(
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
+        "stage": model_args.stage,
+        "is_valid": False,
     }
+
+    dataset_config.update({
+        "template": data_args.template,
+        "train_on_prompt": False,
+        "tool_format": None,
+        "default_system": None,
+        "enable_thinking": True,
+    })
+    
+    template_instance = get_template_and_fix_tokenizer(dataset_config)
+    dataset_config.update({
+        "template_instance": template_instance,
+    })
     if training_args.max_steps == -1:
         if data_args.mix_strategy == "random":
             raise ValueError(
@@ -291,7 +315,6 @@ def run_dpo(
             task_group=data_args.eval_dataset_path,
             task_group_prob=data_args.eval_dataset_prob,
             sub_dataset_type=data_args.eval_dataset_type,
-            is_valid=True,
             **dataset_config,
         )
     else:
