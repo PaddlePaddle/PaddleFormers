@@ -28,6 +28,7 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..activations import ACT2FN
+from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
@@ -274,7 +275,7 @@ class Gemma3Attention(nn.Layer):
         hidden_states: paddle.Tensor,
         position_embeddings: Tuple[paddle.Tensor, paddle.Tensor],
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
@@ -299,10 +300,8 @@ class Gemma3Attention(nn.Layer):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
-        if past_key_value is not None:
-            key_states = paddle.concat([past_key_value[0], key_states], axis=2)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=2)
-        past_key_value = (key_states, value_states) if use_cache else None
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
         if attn_mask_startend_row_indices is None and attention_mask is None:
             self.attn_implementation = "sdpa"
@@ -327,7 +326,7 @@ class Gemma3Attention(nn.Layer):
         attn_output = self.o_proj(attn_output)
         if not output_attentions:
             attn_weights = None
-        return attn_output, attn_weights, past_key_value
+        return attn_output, attn_weights
 
 
 class Gemma3DecoderLayer(nn.Layer):
@@ -349,7 +348,7 @@ class Gemma3DecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_embeddings: Tuple[paddle.Tensor, paddle.Tensor],
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         position_ids: Optional[paddle.LongTensor] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
@@ -360,11 +359,11 @@ class Gemma3DecoderLayer(nn.Layer):
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, self_attn_weights = self.self_attn(
             hidden_states=hidden_states,
             position_embeddings=position_embeddings,
             attention_mask=attention_mask,
-            past_key_value=past_key_value,
+            past_key_values=past_key_values,
             position_ids=position_ids,
             output_attentions=output_attentions,
             use_cache=use_cache,
@@ -384,8 +383,6 @@ class Gemma3DecoderLayer(nn.Layer):
 
         if output_attentions:
             outputs += (self_attn_weights,)
-        if use_cache:
-            outputs += (present_key_value,)
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
 
@@ -551,7 +548,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor],
         attention_mask: paddle.Tensor,
-        past_key_value: paddle.Tensor,
+        past_key_values: Cache,
         output_attentions: bool,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -568,7 +565,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             hidden_states,
             position_embeddings,
             attention_mask,
-            past_key_value,
+            past_key_values,
             position_ids,
             output_attentions,
             use_cache,
@@ -583,7 +580,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.LongTensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.FloatTensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
@@ -613,11 +610,9 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             # [bs, seq_len, dim]
             inputs_embeds = self.embed_tokens(input_ids)
 
-        cache_length = 0
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-        else:
-            cache_length = past_key_values[0][0].shape[-2]
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if self.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
@@ -660,12 +655,10 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         hidden_states = inputs_embeds
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
-        next_decoder_cache = () if use_cache else None
 
         for idx, (decoder_layer) in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
 
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
@@ -674,7 +667,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
                     hidden_states,
                     position_embeddings=position_embeddings,
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     position_ids=position_ids,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
@@ -687,7 +680,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
                     hidden_states,
                     position_embeddings=position_embeddings,
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     position_ids=position_ids,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
@@ -704,24 +697,21 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
 
-            if use_cache:
-                next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
-
         # Final Norm
         hidden_states = self.norm(hidden_states)
 
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
-        next_cache = next_decoder_cache if use_cache else None
-
         # Return outputs
         if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
+            return tuple(
+                v for v in [hidden_states, past_key_values, all_hidden_states, all_self_attns] if v is not None
+            )
 
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
-            past_key_values=next_cache,
+            past_key_values=past_key_values,
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
         )
@@ -812,7 +802,7 @@ class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
         input_ids: Optional[paddle.LongTensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.LongTensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.FloatTensor] = None,
         labels: Optional[paddle.LongTensor] = None,
         use_cache: Optional[bool] = None,
