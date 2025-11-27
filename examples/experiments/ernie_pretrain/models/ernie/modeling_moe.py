@@ -821,6 +821,7 @@ class ErnieMoEAttention(ErnieAttention):
         use_cache: bool = False,
         inbatch_pack_offset: Optional[Tuple[paddle.Tensor]] = None,
         token_type_ids: Optional[Tuple[paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         if token_type_ids is not None:
             token_type_ids = token_type_ids[:, :-1]
@@ -901,6 +902,7 @@ class ErnieMoEAttention(ErnieAttention):
                 past_key_value,
                 use_cache,
                 inbatch_pack_offset,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 use_reentrant=False,
             )
         else:
@@ -915,6 +917,7 @@ class ErnieMoEAttention(ErnieAttention):
                 past_key_value=past_key_value,
                 use_cache=use_cache,
                 inbatch_pack_offset=inbatch_pack_offset,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             )
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
@@ -1152,6 +1155,7 @@ class ErnieDecoderLayer(nn.Layer):
         use_cache: Optional[bool] = False,
         inbatch_pack_offset: Optional[paddle.Tensor] = None,
         output_gate_logits=True,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         residual = hidden_states
         if token_type_ids is not None:
@@ -1178,6 +1182,7 @@ class ErnieDecoderLayer(nn.Layer):
             use_cache=use_cache,
             inbatch_pack_offset=inbatch_pack_offset,
             token_type_ids=token_type_ids,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
 
         if self.use_linear_residual_norm_recompute is True:
@@ -1660,6 +1665,7 @@ class ErnieModel(ErniePretrainedModel):
         output_hidden_states=None,
         return_dict=False,
         inbatch_pack_offset=None,
+        attn_mask_startend_row_indices=None,
         **kwargs,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -1719,6 +1725,12 @@ class ErnieModel(ErniePretrainedModel):
             )
         hidden_states = inputs_embeds
 
+        attn_mask_startend_row_indices_ori = attn_mask_startend_row_indices
+        if attn_mask_startend_row_indices is not None:
+            attn_mask_startend_row_indices = attn_mask_startend_row_indices[
+                :, :, : -self.config.multi_token_pred_depth
+            ]
+
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
         next_decoder_cache = () if use_cache else None
@@ -1743,6 +1755,7 @@ class ErnieModel(ErniePretrainedModel):
                     past_key_value,
                     use_cache,
                     inbatch_pack_offset,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -1754,6 +1767,7 @@ class ErnieModel(ErniePretrainedModel):
                     past_key_value,
                     use_cache,
                     inbatch_pack_offset,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 )
 
             if isinstance(layer_outputs, (tuple, list)):
@@ -1786,6 +1800,11 @@ class ErnieModel(ErniePretrainedModel):
                     ],
                     axis=1,
                 )
+                attn_mask_startend_row_indices_cur_depth = None
+                if attn_mask_startend_row_indices is not None:
+                    attn_mask_startend_row_indices_cur_depth = attn_mask_startend_row_indices_ori[
+                        :, :, (depth + 1) : inputs_embeds_ori.shape[1] + (depth + 1)
+                    ] - (depth + 1)
 
                 inputs_embeds_cur_depth_norm = self.mtp_emb_norm[depth](inputs_embeds_cur_depth)
                 hidden_states_norm = self.mtp_hidden_norm[depth](hidden_states)
@@ -1809,6 +1828,7 @@ class ErnieModel(ErniePretrainedModel):
                     past_key_value,
                     use_cache,
                     inbatch_pack_offset,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_cur_depth,
                 )
 
                 if isinstance(layer_outputs, (tuple, list)):
@@ -2132,6 +2152,8 @@ class ErnieMoEForCausalLM(ErniePretrainedModel):
         data_id=None,
         src_id=None,
         inbatch_pack_offset=None,
+        attn_mask_startend_row_indices=None,
+        **kwargs,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -2151,6 +2173,7 @@ class ErnieMoEForCausalLM(ErniePretrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=True,
             inbatch_pack_offset=inbatch_pack_offset,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
 
         hidden_states = outputs.last_hidden_state

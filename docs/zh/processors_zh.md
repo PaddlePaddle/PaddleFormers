@@ -14,7 +14,7 @@
 
 ### 💻 使用示例
 
-下面是一个示例，展示如何加载 `Processor` 并处理图像/视频数据（[Qwen2.5-VL-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct).
+下面是一个示例，展示如何加载 `Processor` 并处理图像/视频数据（以[Qwen2.5-VL-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)模型为例）。
 
 - 示例 1：直接处理图像与文本:
 

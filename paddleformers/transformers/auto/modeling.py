@@ -61,13 +61,23 @@ MAPPING_NAMES = OrderedDict(
         ("Llama", "llama"),
         ("QWen", "qwen"),
         ("Qwen2", "qwen2"),
-        ("Qwen3", "qwen3"),
+        ("Qwen2_5_VL", "qwen2_5_vl"),
         ("Qwen2Moe", "qwen2_moe"),
+        ("Qwen3", "qwen3"),
         ("Qwen3Moe", "qwen3_moe"),
         ("Glm4Moe", "glm4_moe"),
         ("GptOss", "gpt_oss"),
+        ("Phi3", "phi3"),
+        ("Gemma3", "gemma3_text"),
     ]
 )
+
+MAPPING_SPACIAL_KEY = OrderedDict(
+    [
+        ("Gemma3", "Gemma3Text"),
+    ]
+)
+
 
 MAPPING_TASKS = OrderedDict(
     [
@@ -124,12 +134,19 @@ def get_init_configurations():
     CONFIGURATION_MODEL_MAPPING = OrderedDict()
     for key, class_name in MAPPING_NAMES.items():
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
-        model_name = getattr(import_class, key + "Model")
+
+        if key in MAPPING_SPACIAL_KEY:
+            model_name = getattr(import_class, MAPPING_SPACIAL_KEY[key] + "Model")
+        else:
+            model_name = getattr(import_class, key + "Model")
         if key == "ErnieGen":
             name = tuple(model_name.ernie_gen_pretrained_init_configuration.keys())
         else:
             name = tuple(model_name.pretrained_init_configuration.keys())
-        CONFIGURATION_MODEL_MAPPING[name] = key + "Model"
+        if key in MAPPING_SPACIAL_KEY:
+            CONFIGURATION_MODEL_MAPPING[name] = MAPPING_SPACIAL_KEY[key] + "Model"
+        else:
+            CONFIGURATION_MODEL_MAPPING[name] = key + "Model"
 
     return CONFIGURATION_MODEL_MAPPING
 

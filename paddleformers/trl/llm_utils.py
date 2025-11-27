@@ -208,6 +208,16 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type == "gemma3_text":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "glm4_moe" or isinstance(model, Glm4MoeForCausalLMPipe):
         target_modules = [
             ".*q_proj.*",
@@ -237,6 +247,13 @@ def get_lora_target_modules(model):
             ".*spatial_linear.2.*",
             ".*temporal_linear.0.*",
             ".*temporal_linear.2.*",
+        ]
+    elif model.config.model_type == "phi3":
+        target_modules = [
+            ".*qkv_proj.*",
+            ".*o_proj.*",
+            ".*gate_up_proj.*",
+            ".*down_proj.*",
         ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")

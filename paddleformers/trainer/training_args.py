@@ -2633,7 +2633,7 @@ class TrainingArguments:
         return (
             ShardingOption.SHARD_OP in self.sharding
             and self.sharding_parallel_degree > 1
-            and self.save_checkpoint_format == "sharding_io"
+            and (self.save_checkpoint_format == "sharding_io" or self.save_checkpoint_format == "flex_checkpoint")
         )
 
     @property
