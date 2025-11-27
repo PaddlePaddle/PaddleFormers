@@ -391,27 +391,23 @@ class GenerationMixin(object):
             # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
             if len(attention_mask.shape) == 2:
                 expanded_attn_mask = _expand_2d_mask(attention_mask, dtype, tgt_length=input_shape[-1])
-                # When not generating in single step, need to combine causal mask and sliding window mask
-                if input_shape[-1] > 1:
-                    # Generate basic causal mask (prevent future information leakage)
-                    causal_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
-                    # Generate sliding window mask (limit historical attention range)
-                    if sliding_window_size is not None and sliding_window_size > 0:
-                        window_mask = _make_sliding_window_mask(
-                            input_shape, past_key_values_length=past_key_values_length, window_size=sliding_window_size
-                        )
-                        # Take intersection of sliding window mask and causal mask (satisfy both restrictions)
-                        combined_attention_mask = causal_mask & window_mask
-                    else:
-                        combined_attention_mask = (
-                            causal_mask  # Use causal mask directly when sliding window is disabled
-                        )
+                # Generate basic causal mask (prevent future information leakage)
+                causal_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
+                # Generate sliding window mask (limit historical attention range)
+                if sliding_window_size is not None and sliding_window_size > 0:
+                    window_mask = _make_sliding_window_mask(
+                        input_shape, past_key_values_length=past_key_values_length, window_size=sliding_window_size
+                    )
+                    # Take intersection of sliding window mask and causal mask (satisfy both restrictions)
+                    combined_attention_mask = causal_mask & window_mask
+                else:
+                    combined_attention_mask = causal_mask  # Use causal mask directly when sliding window is disabled
 
-                    # Combine with user-provided mask (e.g., padding mask)
-                    if get_env_device() in ["npu", "mlu", "intel_hpu"]:
-                        expanded_attn_mask = expanded_attn_mask.astype("bool") & combined_attention_mask.astype("bool")
-                    else:
-                        expanded_attn_mask = expanded_attn_mask & combined_attention_mask
+                # Combine with user-provided mask (e.g., padding mask)
+                if get_env_device() in ["npu", "mlu", "intel_hpu"]:
+                    expanded_attn_mask = expanded_attn_mask.astype("bool") & combined_attention_mask.astype("bool")
+                else:
+                    expanded_attn_mask = expanded_attn_mask & combined_attention_mask
             # [bsz, seq_len, seq_len] -> [bsz, 1, seq_len, seq_len]
             elif len(attention_mask.shape) == 3:
                 expanded_attn_mask = attention_mask.unsqueeze(1).astype("bool")
