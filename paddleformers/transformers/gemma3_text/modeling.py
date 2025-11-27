@@ -25,6 +25,7 @@ from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.mlp import MLP as BaseMLP
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..activations import ACT2FN
@@ -64,53 +65,10 @@ class Gemma3TextScaledWordEmbedding(nn.Embedding):
         return super().forward(input_ids) * self.embed_scale.to(self.weight.dtype)
 
 
-class Gemma3MLP(nn.Layer):
+class Gemma3MLP(BaseMLP):
     def __init__(self, config: Gemma3TextConfig, fuse_up_gate=False):
-        super().__init__()
-        self.config = config
-        self.hidden_size = config.hidden_size
-        self.intermediate_size = config.intermediate_size
-        self.fuse_up_gate = fuse_up_gate
-
-        if self.fuse_up_gate:
-            self.up_gate_proj = GeneralLinear.create(
-                self.hidden_size,
-                self.intermediate_size * 2,
-                has_bias=False,
-                config=config,
-                tp_plan="colwise",
-            )
-        else:
-            self.gate_proj = GeneralLinear.create(
-                self.hidden_size,
-                self.intermediate_size,
-                has_bias=False,
-                config=config,
-                tp_plan="colwise",
-            )
-            self.up_proj = GeneralLinear.create(
-                self.hidden_size,
-                self.intermediate_size,
-                has_bias=False,
-                config=config,
-                tp_plan="colwise",
-            )
-        self.down_proj = GeneralLinear.create(
-            self.intermediate_size,
-            self.hidden_size,
-            has_bias=False,
-            config=config,
-            tp_plan="rowwise",
-        )
+        super().__init__(config, fuse_up_gate=fuse_up_gate)
         self.act_fn = ACT2FN[config.hidden_activation]
-
-    def forward(self, x):
-        if self.fuse_up_gate:
-            gate, x = self.up_gate_proj(x).chunk(2, axis=-1)
-            down_proj = self.down_proj(self.act_fn(gate) * x)
-        else:
-            down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
-        return down_proj
 
 
 class Gemma3RMSNorm(nn.Layer):
