@@ -51,7 +51,7 @@ jobs:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
-          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/242fc4e5dd93f55e7b3917f963510b5a14d47bea/paddlepaddle_gpu-3.3.0.dev20251124-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
@@ -127,7 +127,7 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
-          timeout 60m bash scripts/regression/ci_model_unittest.sh ${paddle_whl} false ${AGILE_COMPILE_BRANCH}
+          timeout 30m bash scripts/regression/ci_model_unittest.sh ${paddle_whl} false ${AGILE_COMPILE_BRANCH}
           '
           
       - name: Upload Products
