@@ -32,6 +32,7 @@ from ...utils.log import logger
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from .configuration import LlamaConfig
 
 
@@ -45,18 +46,18 @@ def rotate_half(x: paddle.Tensor) -> paddle.Tensor:
     return paddle.cat((-x2, x1), axis=-1)
 
 
-def apply_rotary_pos_emb(q, k, cos, sin):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """
     Applies rotary positional embedding to query and key tensors.
 
     Args:
-        q (paddle.Tensor): Query tensor with shape [B, S, N_q, D_h].
-        k (paddle.Tensor): Key tensor with shape [B, S, N_kv, D_h].
+        q (paddle.Tensor): Query tensor with shape [B, N_q, S, D_h].
+        k (paddle.Tensor): Key tensor with shape [B, N_kv, S, D_h].
         cos (paddle.Tensor): Cosine values with shape [S, D_h].
         sin (paddle.Tensor): Sine values with shape [S, D_h].
     """
-    cos = cos.unsqueeze(2)
-    sin = sin.unsqueeze(2)
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
 
     original_dtype = q.dtype
 
@@ -158,16 +159,16 @@ class LLamaAttention(nn.Layer):
         q_shape = (batch_size, seq_len, self.num_heads, self.head_dim)
         kv_shape = (batch_size, seq_len, self.num_key_value_heads, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).view(q_shape)
-        key_states = self.k_proj(hidden_states).view(kv_shape)
-        value_states = self.v_proj(hidden_states).view(kv_shape)
+        query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         if past_key_value is not None:
-            key_states = paddle.concat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=1)
+            key_states = paddle.concat([past_key_value[0], key_states], axis=2)
+            value_states = paddle.concat([past_key_value[1], value_states], axis=2)
         past_key_value = [key_states, value_states] if use_cache else None
 
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS["sdpa"]
@@ -312,6 +313,7 @@ class LlamaRotaryEmbedding(nn.Layer):
         self.attention_scaling = attention_scaling
         self.register_buffer("inv_freq", inv_freq, persistable=False)
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(enable=False):
             inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
@@ -537,7 +539,7 @@ class LlamaModel(LlamaPretrainedModel):
             kv_seq_len = 0
         else:
             assert past_key_values[0] is not None, "past_key_values[0] should not be None if provided"
-            kv_seq_len = past_key_values[0][0].shape[1]
+            kv_seq_len = past_key_values[0][0].shape[2]
 
         if position_ids is None:
             position_ids = (
