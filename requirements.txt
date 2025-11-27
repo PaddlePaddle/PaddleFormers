@@ -17,8 +17,6 @@ regex
 numpy
 tiktoken
 ml_dtypes
-tokenizers; python_version<="3.8"
-tokenizers>=0.21; python_version>"3.8"
 omegaconf
 modelscope
 transformers>=4.55.1
