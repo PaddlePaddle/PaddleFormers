@@ -407,6 +407,40 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
     def test_hidden_states_output(self):
         pass
 
+    def test_model_with_rope_scaling(self):
+        hidden_size = self.model_tester.hidden_size
+        num_attention_heads = self.model_tester.num_attention_heads
+        partial_rotary_factor = self.model_tester.partial_rotary_factor
+
+        length = (hidden_size // num_attention_heads * int(partial_rotary_factor)) // 2
+
+        rope_scaling_config = {
+            "type": "longrope",
+            "short_factor": [1.0] * length,
+            "long_factor": [2.0] * length,
+        }
+
+        config = Phi3Config(
+            vocab_size=self.model_tester.vocab_size,
+            hidden_size=hidden_size,
+            intermediate_size=self.model_tester.intermediate_size,
+            num_hidden_layers=self.model_tester.num_hidden_layers,
+            num_attention_heads=num_attention_heads,
+            num_key_value_heads=self.model_tester.num_key_value_heads,
+            max_position_embeddings=self.model_tester.max_position_embeddings,
+            rope_scaling=rope_scaling_config,
+        )
+
+        input_ids = self.model_tester.prepare_config_and_inputs()[1]
+        model = Phi3ForCausalLM(config)
+        model.eval()
+        result = model(input_ids, return_dict=True)
+
+        self.assertEqual(
+            result.logits.shape,
+            [self.model_tester.batch_size, self.model_tester.seq_length, self.model_tester.vocab_size],
+        )
+
 
 class Phi3IntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
