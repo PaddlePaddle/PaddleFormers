@@ -61,9 +61,9 @@ class FileReader(BaseReader):
         res = self.loader_map[ext](self._file_path)
 
         # shuffle
-        if self._shuffle_file:
-            random.seed(42)
-            random.shuffle(res)
+        # if self._shuffle_file:
+        #     random.seed(42)
+        #     random.shuffle(res)
 
         # data preprocess
         if self._file_type not in self.convertor_map:

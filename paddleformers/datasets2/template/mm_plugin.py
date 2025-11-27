@@ -514,7 +514,7 @@ class Qwen2VLPlugin(BasePlugin):
         for message in messages:
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
-                image_seqlen = image_grid_thw[num_image_tokens].prod() // merge_length if self.expand_mm_tokens else 1
+                image_seqlen = image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
                 content = content.replace(
                     IMAGE_PLACEHOLDER,
                     f"{self.vision_bos_token}{self.image_token * image_seqlen}{self.vision_eos_token}",

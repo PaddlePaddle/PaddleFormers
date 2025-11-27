@@ -18,12 +18,8 @@ from typing import List
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets2.reader.mix_datasets import (
-    MultiSourceDataset,
-    create_dataset_instance,
-)
-from paddleformers.datasets2.template.template import get_template_and_fix_tokenizer
-from paddleformers.hparams.data_args import DataArguments
+from paddleformers.datasets2.reader.mix_datasets import create_dataset_instance
+from paddleformers.datasets2.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.transformers import AutoProcessor, AutoTokenizer
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from paddleformers.utils.log import logger
@@ -38,23 +34,19 @@ class Sequence:
     labels: List[int]
     loss_mask: List[int]
     num_examples: int
+    images: List[str]
+    videos: List[str]
+    audios: List[str]
 
 
 class SFTDataSet(IterableDataset):
     def __init__(self, **dataset_config):
 
         # parameter init
-        dataset_config.update({
-            "template": "qwen2_vl",
-            "train_on_prompt": False,
-            "tool_format": None,
-            "default_system": None,
-            "enable_thinking": True,
-        })
         self.tokenizer = dataset_config["tokenizer"]
         self.processor = dataset_config["processor"]
         self.max_seq_len = dataset_config["max_seq_len"]
-        self.template = get_template_and_fix_tokenizer(dataset_config)
+        self.template = dataset_config["template_instance"]
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
@@ -74,10 +66,6 @@ class SFTDataSet(IterableDataset):
             multi_source_dataset,
             **dataset_config,
         )
-        # debug
-        for item in self.mix_datasets:
-            print(item)
-            break
 
     def __len__(self):
         return len(self.mix_datasets)
@@ -123,7 +111,9 @@ class SFTDataSet(IterableDataset):
 
                 tokens = tokens_src + tokens_target + tokens
 
-                loss_mask = [0] * (len(tokens_src) - 1) + [example["label"][turn_index]] * (len(tokens_target) + 1) + loss_mask
+                loss_mask = (
+                    [0] * (len(tokens_src) - 1) + [example["label"][turn_index]] * (len(tokens_target) + 1) + loss_mask
+                )
                 assert len(tokens) == len(loss_mask), f"{len(tokens)}-{len(loss_mask)}"
 
                 cur_len = len(tokens)
@@ -162,6 +152,7 @@ class SFTDataSet(IterableDataset):
                     label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
                 ]
             else:
+                # labels = tokens[1:] + [self.tokenizer.eos_token_id]
                 tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
                 labels = tokens[1:] + [-100]
                 if len(tokens) > self.max_seq_len:
@@ -182,6 +173,9 @@ class SFTDataSet(IterableDataset):
                 labels=labels,
                 loss_mask=loss_mask,
                 num_examples=1,
+                images=images,
+                videos=videos,
+                audios=audios,
             )
 
 
