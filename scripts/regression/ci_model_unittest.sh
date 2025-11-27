@@ -138,9 +138,10 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     python -c "import paddle; print(paddle.device.device_count())"
     export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export FLAGS_tcp_store_using_libuv=0
-    export DOWNLOAD_SOURCE=aistudio
+    
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
+    DOWNLOAD_SOURCE=aistudio \
     python -m pytest -s -v --models=$models ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest

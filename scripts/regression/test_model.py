@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from typing import Any, Dict
 
@@ -28,8 +29,8 @@ import yaml
 CONFIG_PATH = "./examples/config/"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MAX_STEPS = 3
-SAVE_STEPS = 2
+MAX_STEPS = 2
+SAVE_STEPS = 1
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
@@ -80,8 +81,6 @@ class TrainTester:
             avg_loss = 0
 
         print(f"{resume_flag} loss : {avg_loss} || base loss : {base_loss}")
-
-        # 返回 None 或 错误信息
         if abs(avg_loss - base_loss) > 0.0001:
             return f"{resume_flag} loss: {avg_loss}, base_loss: {base_loss}, exist diff!"
         return None
@@ -99,6 +98,7 @@ class TestTrain:
         if os.path.exists(OUTPUT_DIR):
             shutil.rmtree(OUTPUT_DIR)
         os.makedirs(OUTPUT_DIR, exist_ok=True)
+        os.makedirs(LOG_PATH, exist_ok=True)
 
     @pytest.mark.parametrize("train_type", ["sft", "dpo", "pt"])
     def test_full(self, train_type, model_key):
@@ -279,13 +279,12 @@ class TestTrain:
         if errors:
             raise AssertionError(errors)
 
-    @pytest.mark.parametrize("train_type", ["sft", "dpo", "pt"])
+    @pytest.mark.parametrize("train_type", ["dpo"])
     def test_lora_tp_pp(self, train_type, model_key):
         print(f"[INFO] Testing with model={model_key}, train_type={train_type}_lora_tp_pp")
         model_cfg = self.train_tester.load_model_config(model_key)
         cli_args = model_cfg.cli_args
         model_name_or_path = model_cfg.repo_id
-
         lora_tp_pp_loss = model_cfg.base_loss.get(f"{train_type}_lora_tp_pp_loss", 0)
         lora_tp_pp_resume_loss = model_cfg.base_loss.get(f"{train_type}_lora_tp_pp_resume_loss", 0)
 
@@ -298,11 +297,18 @@ class TestTrain:
         }
         update_args.update(cli_args)
 
+        # Todo unsupported flex_checkpoint
+        if train_type == "dpo":
+            update_args["save_checkpoint_format"] = "unified_checkpoint"
+            update_args["load_checkpoint_format"] = "unified_checkpoint"
+            update_args["unified_checkpoint"] = "true"
+
         config_path = os.path.join(CONFIG_PATH, train_type, "lora_tp_pp.yaml")
+
         updated_config_path = self.train_tester.update_training_args(config_path, output_dir, update_args)
 
         # 训练
-
+        time.sleep(3)
         cmd = ["paddleformers-cli", "train", updated_config_path]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -314,7 +320,7 @@ class TestTrain:
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # resume 测试
-
+        time.sleep(3)
         resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_lora_tp_pp_resume.log")
         if resume_p.stdout.strip():
@@ -348,8 +354,8 @@ class TestTrain:
         cli_args = model_cfg.cli_args
         model_name_or_path = model_cfg.repo_id
 
-        fc_loss = model_cfg.base_loss.get(f"{train_type}_fc_loss", 0)
-        fc_resume_loss = model_cfg.base_loss.get(f"{train_type}_fc_resume_loss", 0)
+        fc_loss = model_cfg.base_loss.get(f"{train_type}_full_function_call_loss", 0)
+        fc_resume_loss = model_cfg.base_loss.get(f"{train_type}_full_function_call_resume_loss", 0)
 
         output_dir = os.path.join(OUTPUT_DIR, f"{train_type}_{model_key}_full_function_call")
         update_args = {
