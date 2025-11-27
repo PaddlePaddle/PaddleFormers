@@ -305,6 +305,8 @@ def run_sft(
         "truncate_packing": data_args.truncate_packing,
         "stage": model_args.stage,
         "is_valid": False,
+        "template_backend": data_args.template_backend,
+        "split_multi_turn": data_args.split_multi_turn,
     }
 
     dataset_config.update({

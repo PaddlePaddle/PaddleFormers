@@ -75,43 +75,6 @@ class DPODataSet(IterableDataset):
 
     def __iter__(self):
         for example in self.mix_datasets:
-            system = example.get("system", None)
-            tools = example.get("tools", None)
-            images = example.get("images", [])
-            videos = example.get("videos", [])
-            audios = example.get("audios", [])
-            # # 对多模信息做处理，将messages里面的占位符替换
-            # chosen_messages = self.template.mm_plugin.process_messages(
-            #     example["chosen"], images, videos, audios, self.processor
-            # )
-            # rejected_messages = self.template.mm_plugin.process_messages(
-            #     example["rejected"], images, videos, audios, self.processor
-            # )
-            # # 套template，转ids
-            # prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
-            # _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)
-            
-            # if self.template.efficient_eos:
-            #     chosen_ids += [self.tokenizer.eos_token_id]
-            #     rejected_ids += [self.tokenizer.eos_token_id]
-
-            # prompt_ids, _ = self.template.mm_plugin.process_token_ids(
-            #     prompt_ids, None, images, videos, audios, self.tokenizer, self.processor
-            # )
-            # # consider the response is more important
-            # source_len, target_len = infer_seqlen(
-            #     len(prompt_ids), max(len(chosen_ids), len(rejected_ids)), self.data_args.cutoff_len
-            # )
-            # prompt_ids = prompt_ids[:source_len]
-            # chosen_ids = chosen_ids[:target_len]
-            # rejected_ids = rejected_ids[:target_len]
-
-            # chosen_input_ids = prompt_ids + chosen_ids
-            # chosen_labels = [IGNORE_INDEX] * source_len + chosen_ids
-            # rejected_input_ids = prompt_ids + rejected_ids
-            # rejected_labels = [IGNORE_INDEX] * source_len + rejected_ids
-            # return chosen_input_ids, chosen_labels, rejected_input_ids, rejected_labels
-        
             # sequence: system + knowledge_tokens + prompt + chosen + reject
             (
                 prompt_token_ids,
@@ -197,13 +160,26 @@ class DPODataSet(IterableDataset):
 
         cur_len = 0
 
-        # encoded_messages: List[List[int]]
-        if not self.tokenizer.chat_template:
-            self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
-        
-        chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example["chosen"])
-        rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example["rejected"])
+        # 对多模信息做处理，将messages里面的占位符替换
+        system = example.get("system", None)
+        tools = example.get("tools", None)
+        images = example.get("images", [])
+        videos = example.get("videos", [])
+        audios = example.get("audios", [])
+        chosen_messages = self.template.mm_plugin.process_messages(
+            example["chosen"]["messages"], images, videos, audios, self.processor
+        )
+        rejected_messages = self.template.mm_plugin.process_messages(
+            example["rejected"]["messages"], images, videos, audios, self.processor
+        )
+        # 套template，转ids
+        prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
+        _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)
 
+        chosen_encoded_messages = []
+        rejected_encoded_messages = []
+        chosen_encoded_messages.append([prompt_ids, chosen_ids])
+        rejected_encoded_messages.append([prompt_ids, rejected_ids])
         # chosen/rejected response
         response_token_ids_list = []
         response_label_ids_list = []
