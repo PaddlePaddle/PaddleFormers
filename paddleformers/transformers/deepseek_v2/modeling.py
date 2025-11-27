@@ -400,9 +400,9 @@ class DeepseekV2TopkRouter(nn.Layer):
 
     @paddle.no_grad()
     def get_topk_indices(self, scores):
-        scores_for_choice = scores.view(-1, self.n_routed_experts) + self.e_score_correction_bias.unsqueeze(0)
+        scores_for_choice = scores.reshape(-1, self.n_routed_experts) + self.e_score_correction_bias.unsqueeze(0)
         group_scores = (
-            scores_for_choice.view(-1, self.n_group, self.n_routed_experts // self.n_group)
+            scores_for_choice.reshape(-1, self.n_group, self.n_routed_experts // self.n_group)
             .topk(2, dim=-1)[0]
             .sum(dim=-1)
         )
@@ -420,7 +420,7 @@ class DeepseekV2TopkRouter(nn.Layer):
 
     def forward(self, hidden_states):
         with paddle.amp.auto_cast(False):
-            hidden_states = hidden_states.view(-1, self.config.hidden_size)
+            hidden_states = hidden_states.reshape(-1, self.config.hidden_size)
             router_logits = F.linear(hidden_states.astype(paddle.float32), self.weight.astype(paddle.float32))
 
             scores = router_logits.sigmoid().cast(paddle.float32)
@@ -478,8 +478,8 @@ class DeepseekV2MoE(nn.Layer):
         residuals = hidden_states
         orig_shape = hidden_states.shape
         topk_indices, topk_weights = self.gate(hidden_states)
-        hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
-        hidden_states = self.moe(hidden_states, topk_indices, topk_weights).view(*orig_shape)
+        hidden_states = hidden_states.reshape(-1, hidden_states.shape[-1])
+        hidden_states = self.moe(hidden_states, topk_indices, topk_weights).reshape(*orig_shape)
         hidden_states = hidden_states + self.shared_experts(residuals)
         return hidden_states
 

@@ -219,7 +219,7 @@ class Qwen2VLVideoProcessor(BaseVideoProcessor):
             grid_t = grid_t // temporal_patch_size
             grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
 
-            patches = patches.view(
+            patches = patches.reshape(
                 grid_t,
                 temporal_patch_size,
                 channel,

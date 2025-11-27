@@ -302,7 +302,7 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
             hidden_states = GatherOp.apply(hidden_states)
         orig_shape = hidden_states.shape
 
-        hidden_states = hidden_states.view([-1, hidden_states.shape[-1]])
+        hidden_states = hidden_states.reshape([-1, hidden_states.shape[-1]])
         # router_logits: (batch * sequence_length, n_experts)
         router_logits = self.gate(hidden_states)
 
