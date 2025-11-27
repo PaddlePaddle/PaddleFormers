@@ -387,7 +387,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        (hidden_states, self_attn_weights, present_key_value, *router_loss_attn) = self.self_attn(
+        (hidden_states, self_attn_weights, *router_loss_attn) = self.self_attn(
             hidden_states=hidden_states,
             past_key_values=past_key_values,
             attention_mask=attention_mask,
@@ -417,9 +417,6 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
 
         if output_attentions:
             outputs += (self_attn_weights,)
-
-        if not self.training and use_cache:
-            outputs += (present_key_value,)
 
         # Non-empty only if `use_moe`
         if router_loss_attn:

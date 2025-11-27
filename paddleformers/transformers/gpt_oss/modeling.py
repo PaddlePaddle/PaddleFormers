@@ -528,7 +528,7 @@ class GptOssAttention(nn.Layer):
 
         if not output_attentions:
             attn_weights = None
-        return attn_output, attn_weights, past_key_values
+        return attn_output, attn_weights
 
 
 class GptOssDecoderLayer(nn.Layer):
@@ -592,7 +592,7 @@ class GptOssDecoderLayer(nn.Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, self_attn_weights = self.self_attn(
             hidden_states=hidden_states,
             past_key_values=past_key_values,
             attention_mask=attention_mask,
@@ -616,8 +616,6 @@ class GptOssDecoderLayer(nn.Layer):
         outputs = (hidden_states,)
         if output_attentions:
             outputs += (self_attn_weights,)
-        if use_cache:
-            outputs += (present_key_value,)
         if output_router_logits:
             outputs += (router_logits,)
         if type(outputs) is tuple and len(outputs) == 1:

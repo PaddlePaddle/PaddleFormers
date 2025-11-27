@@ -733,8 +733,7 @@ class DeepseekV2Attention(nn.Layer):
         kv = self.kv_b_proj(self.kv_a_layernorm(compressed_kv)).reshape(shape=target_key_value_shape)
         k_nope, value_states = paddle.split(kv, [self.qk_nope_head_dim, self.v_head_dim], axis=-1)
         kv_seq_len = value_states.shape[1]
-        if past_key_values is not None:
-            kv_seq_len += past_key_values[0].shape[-3]
+        kv_seq_len += past_key_values.get_seq_length() if past_key_values is not None else 0
 
         cos, sin = position_embeddings[0], position_embeddings[1]
         cos = cos[None, :, None, :]
@@ -798,9 +797,6 @@ class DeepseekV2Attention(nn.Layer):
 
         if output_attentions:
             outputs += (attn_weights,)
-
-        if use_cache:
-            outputs += (past_key_values,)
 
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
@@ -982,7 +978,6 @@ class DeepseekV2DecoderLayer(nn.Layer):
         output_attentions=False,
         use_cache=False,
         self_attn_weights=None,
-        present_key_value=None,
     ):
         hidden_states = residual + hidden_states
 
@@ -990,9 +985,6 @@ class DeepseekV2DecoderLayer(nn.Layer):
 
         if output_attentions:
             outputs += (self_attn_weights,)
-
-        if use_cache:
-            outputs += (present_key_value,)
 
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
@@ -1031,11 +1023,8 @@ class DeepseekV2DecoderLayer(nn.Layer):
         hidden_states = attn_outputs[0]
         residual = attn_outputs[1]
         self_attn_weights = attn_outputs[2] if output_attentions else None
-        present_key_value = attn_outputs[3] if use_cache else None
         hidden_states = self.mlp(hidden_states)
-        outputs = self.post_process(
-            hidden_states, residual, output_attentions, use_cache, self_attn_weights, present_key_value
-        )
+        outputs = self.post_process(hidden_states, residual, output_attentions, use_cache, self_attn_weights)
         return outputs
 
 
