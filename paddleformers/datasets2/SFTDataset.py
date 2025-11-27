@@ -18,12 +18,8 @@ from typing import List
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets2.reader.mix_datasets import (
-    MultiSourceDataset,
-    create_dataset_instance,
-)
-from paddleformers.datasets2.template.template import get_template_and_fix_tokenizer
-from paddleformers.hparams.data_args import DataArguments
+from paddleformers.datasets2.reader.mix_datasets import create_dataset_instance
+from paddleformers.datasets2.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.transformers import AutoProcessor, AutoTokenizer
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from paddleformers.utils.log import logger
@@ -70,10 +66,6 @@ class SFTDataSet(IterableDataset):
             multi_source_dataset,
             **dataset_config,
         )
-        # debug
-        for item in self.mix_datasets:
-            print(item)
-            break
 
     def __len__(self):
         return len(self.mix_datasets)

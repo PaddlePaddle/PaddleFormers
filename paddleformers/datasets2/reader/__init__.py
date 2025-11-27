@@ -13,13 +13,9 @@
 # limitations under the License.
 
 from .convertor import erniekit_convertor
-from .file_reader import (
-    BaseReader,
-    FileListReader,
-    FileReader,
-    HuggingFaceReader,
-)
-from .mix_datasets import MultiSourceDataset, create_dataset_instance
+from .file_reader import BaseReader, FileListReader, FileReader, HuggingFaceReader
+from .mix_datasets import create_dataset_instance
+from .multi_source_datasets import MultiSourceDataset
 
 # def _get_dataset_processor(
 #     data_args: "DataArguments"
@@ -28,7 +24,7 @@ from .mix_datasets import MultiSourceDataset, create_dataset_instance
 #     if stage == "pt":
 #         dataset_processor_class = PretrainDatasetProcessor
 #     elif stage == "sft" and not do_generate:
-        
+
 
 #     elif stage == "rm":
 #         dataset_processor_class = PairwiseDatasetProcessor
