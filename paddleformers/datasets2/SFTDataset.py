@@ -50,7 +50,7 @@ class SFTDataSet(IterableDataset):
         self.tokenizer = dataset_config["tokenizer"]
         self.processor = dataset_config["processor"]
         self.max_seq_len = dataset_config["max_seq_len"]
-        self.template = get_template_and_fix_tokenizer(dataset_config)
+        self.template = dataset_config["template_instance"]
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")

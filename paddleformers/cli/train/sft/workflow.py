@@ -29,7 +29,7 @@ from paddleformers.data.causal_dataset import (
 # from paddleformers.datasets.finetuning import collate_fn
 # from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
 from paddleformers.datasets2.template.template import get_template_and_fix_tokenizer
-from paddleformers.datasets2.builder import create_dataset as create_dataset_sft
+from paddleformers.datasets2.loader import create_dataset as create_dataset_sft
 from paddleformers.datasets2.collate import collate_fn, mm_collate_fn
 from paddleformers.datasets2.data_utils import estimate_training
 from paddleformers.nn.attention import AttentionInterface
@@ -308,11 +308,16 @@ def run_sft(
     }
 
     dataset_config.update({
-        "template": "qwen2_vl",
+        "template": data_args.template,
         "train_on_prompt": False,
         "tool_format": None,
         "default_system": None,
         "enable_thinking": True,
+    })
+
+    template_instance = get_template_and_fix_tokenizer(dataset_config)
+    dataset_config.update({
+        "template_instance": template_instance,
     })
 
     if data_args.dataset_type == "pretrain":
@@ -350,10 +355,9 @@ def run_sft(
     )
     if data_args.dataset_type != "pretrain":
         if model_args.stage == "VL-SFT":
-            template = get_template_and_fix_tokenizer(dataset_config)
             data_collator = partial(
                 mm_collate_fn,
-                template=template,
+                template=template_instance,
                 processor=processor,
                 tokenizer=tokenizer,
                 training_args=training_args,

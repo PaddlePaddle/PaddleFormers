@@ -139,6 +139,10 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether to use template in data processing."},
     )
+    template: str = field(
+        default=None,
+        metadata={"help": "The chat template used in training."},
+    )
     eval_with_do_generation: bool = field(default=False, metadata={"help": "Whether to do generation for evaluation"})
     share_folder: bool = field(
         default=False,

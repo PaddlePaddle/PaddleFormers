@@ -10,5 +10,6 @@ CUDA_VISIBLE_DEVICES=0,1 paddleformers-cli train \
     train_dataset_path=./data/vl/experiment.jsonl \
     eval_dataset_path=./data/vl/experiment.jsonl \
     stage="VL-SFT" \
-    tensor_parallel_degree=2 \
+    template="qwen2_vl" \
+    tensor_parallel_degree=1 \
     max_steps=50 random_shuffle=true recompute=false
