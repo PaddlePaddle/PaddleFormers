@@ -115,7 +115,7 @@ done
 
 # 默认使用 glm
 if [[ "$models" == "" ]]; then
-    models="glm_moe"
+    models="qwn3moe"
 fi
 }
 get_diff_TO_case

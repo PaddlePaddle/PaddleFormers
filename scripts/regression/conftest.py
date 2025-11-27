@@ -33,7 +33,7 @@ def get_all_models_from_config() -> list:
 
 
 def pytest_addoption(parser):
-    parser.addoption("--models", action="store", default="glm", help="eg: --models=llama,qwen3")
+    parser.addoption("--models", action="store", default="qwn3moe", help="eg: --models=llama,qwen3")
 
 
 @pytest.fixture
