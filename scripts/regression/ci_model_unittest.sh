@@ -141,7 +141,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    DOWNLOAD_SOURCE=aistudio \
+    PF_HOME=/home/models/ \
     python -m pytest -s -v --models=$models ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
