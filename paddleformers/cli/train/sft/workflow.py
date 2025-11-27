@@ -266,6 +266,8 @@ def run_sft(
 
     # Load tokenizer & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
 
     # if using chat_template, data_args.eval_with_do_generation must be false
     if tokenizer.chat_template is not None:
