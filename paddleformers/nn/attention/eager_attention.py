@@ -33,6 +33,10 @@ def eager_attention_forward(
     is_causal: Optional[bool] = None,
     **kwargs,
 ):
+    
+    # b h l d -> b l h d
+    key = key.transpose(1, 2)
+    value = value.transpose(1, 2)
     if hasattr(module, "num_key_value_groups"):
         num_key_value_groups = module.num_key_value_groups
         key = repeat_kv(key, num_key_value_groups)
@@ -49,12 +53,11 @@ def eager_attention_forward(
 
         attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_startend_row_indices, query.dtype, is_causal)
 
-    perm = [0, 2, 1, 3]  # b l h d -> b h l d
-    query = paddle.transpose(x=query, perm=perm)
-    key = paddle.transpose(x=key, perm=perm)
-    value = paddle.transpose(x=value, perm=perm)
-
-    attn_weights = paddle.matmul(x=query * scaling, y=key, transpose_y=True)
+    # b l h d -> b h l d
+    key = key.transpose(1, 2)
+    value = value.transpose(1, 2)
+    attn_weights = paddle.matmul(x=query, y=key, transpose_y=True) * scaling
+    
     if attention_mask is not None:
         attention_mask = attention_mask[:, :, :, : key.shape[-2]]
         attn_weights = attn_weights + attention_mask

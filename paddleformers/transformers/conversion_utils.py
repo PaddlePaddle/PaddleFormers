@@ -1282,7 +1282,7 @@ class ConversionMixin:
                 if "lora" in key or value.ndim != 2:
                     continue
                 for trans_key in transpose_weight_keys:
-                    if re.search(f"\.{trans_key}\.weight$", key) or re.fullmatch(f"^{trans_key}\.weight$", key):
+                    if re.search(rf"\.{trans_key}\.weight$", key) or re.fullmatch(rf"^{trans_key}\.weight$", key):
                         if isinstance(value, np.ndarray):
                             state_dict[key] = value.transpose([-1, -2])
                         elif isinstance(value, paddle.Tensor):

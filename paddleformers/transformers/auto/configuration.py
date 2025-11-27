@@ -43,11 +43,15 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("llama", "LlamaConfig"),
         ("qwen", "QWenConfig"),
         ("qwen2", "Qwen2Config"),
+        ("qwen2_5_vl", "Qwen2_5_VLConfig"),
+        ("qwen2_5_vl_text", "Qwen2_5_VLTextConfig"),
         ("qwen2_moe", "Qwen2MoeConfig"),
         ("qwen3", "Qwen3Config"),
         ("qwen3_moe", "Qwen3MoeConfig"),
         ("glm4_moe", "Glm4MoeConfig"),
         ("gpt_oss", "GptOssConfig"),
+        ("phi3", "Phi3Config"),
+        ("gemma3_text", "Gemma3TextConfig"),
     ]
 )
 
@@ -65,6 +69,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("llama", "Llama"),
         ("qwen", "QWen"),
         ("qwen2", "Qwen2"),
+        ("qwen2_5_vl", "Qwen2_5_VL"),
+        ("qwen2_5_vl_text", "Qwen2_5_VL"),
         ("qwen2_moe", "Qwen2Moe"),
         ("qwen3", "Qwen3"),
         ("qwen3_moe", "Qwen3Moe"),
@@ -74,6 +80,12 @@ MODEL_NAMES_MAPPING = OrderedDict(
 MULTI_MODELS_MAPPING = OrderedDict(
     # multi models mapping
     []
+)
+
+SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
+    [
+        ("qwen2_5_vl_text", "qwen2_5_vl"),
+    ]
 )
 
 
@@ -184,6 +196,11 @@ def get_configurations() -> Dict[str, List[Type[PretrainedConfig]]]:
 
 def model_type_to_module_name(key):
     """Converts a config key to the corresponding module."""
+    # Special treatment
+    if key in SPECIAL_MODEL_TYPE_TO_MODULE_NAME:
+        key = SPECIAL_MODEL_TYPE_TO_MODULE_NAME[key]
+        return key
+
     key = key.replace("-", "_")
     return key
 

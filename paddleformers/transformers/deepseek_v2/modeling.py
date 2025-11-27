@@ -25,7 +25,7 @@ import math
 import warnings
 from copy import deepcopy
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import paddle
 import paddle.distributed as dist
@@ -51,19 +51,17 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.norm import RMSNorm
 from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
-from ...utils.masking_utils import (
-    _expand_2d_mask,
-    _make_causal_mask,
-    get_use_casual_mask,
-    is_casual_mask,
-)
+from ...utils.masking_utils import _expand_2d_mask, _make_causal_mask
+from ..cache_utils import Cache, DynamicCache
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
+from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import (
     BaseModelOutputWithPastAndMTP,
     CausalLMOutputWithPast,
     SequenceClassifierOutputWithPast,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import DeepseekV2Config
@@ -89,15 +87,15 @@ def scaled_dot_product_attention(
     training=True,
     sequence_parallel=False,
 ):
-    bsz, q_len, num_heads, head_dim = query_states.shape
-    _, kv_seq_len, v_num_heads, v_head_dim = value_states.shape
+    bsz, num_heads, q_len, head_dim = query_states.shape
+    _, v_num_heads, kv_seq_len, v_head_dim = value_states.shape
 
-    # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
+    # Attention Interface input [bz, nhead, seqlen, headdim]
     q_head_dim = query_states.shape[-1]
     softmax_scale = softmax_scale * (q_head_dim**0.5)
     query_states = query_states * softmax_scale
     value_padding = paddle.zeros(
-        [bsz, kv_seq_len, v_num_heads, head_dim - v_head_dim],
+        [bsz, v_num_heads, kv_seq_len, head_dim - v_head_dim],
         dtype=value_states.dtype,
     )
     value_states = paddle.cat([value_states, value_padding], axis=-1)
@@ -139,7 +137,7 @@ def _compute_yarn_parameters(
     seq_len=None,
 ):
     base = config["rope_theta"]
-    rope_parameters_dict = config["rope_scaling"]
+    rope_parameters_dict = config["rope_parameters"]
     partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
     head_dim = getattr(config, "qk_rope_head_dim", config.hidden_size // config.num_attention_heads)
     dim = int(head_dim * partial_rotary_factor)
@@ -216,13 +214,15 @@ class DeepseekV2YarnRotaryEmbedding(nn.Layer):
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
 
-        self.rope_type = self.config.rope_scaling["type"]
+        rope_parameters = self.config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
         assert self.rope_type == "yarn"
 
         self.inv_freq, self.attention_scaling = _compute_yarn_parameters(config)
         self.register_buffer("inv_freq", self.inv_freq, persistable=False)
         # self.original_inv_freq = self.inv_freq
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
         position_ids_expanded = position_ids[:, None, :].float()
@@ -669,9 +669,9 @@ class DeepseekV2Attention(nn.Layer):
                 mark_as_sequence_parallel_parameter(self.q_a_proj.bias)
 
         self.softmax_scale = self.q_head_dim ** (-0.5)
-        if self.config.rope_scaling is not None:
-            mscale_all_dim = self.config.rope_scaling.get("mscale_all_dim", 0)
-            scaling_factor = self.config.rope_scaling["factor"]
+        if self.config.rope_parameters is not None:
+            mscale_all_dim = self.config.rope_parameters.get("mscale_all_dim", 0)
+            scaling_factor = self.config.rope_parameters["factor"]
             if mscale_all_dim:
                 mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
                 self.softmax_scale = self.softmax_scale * mscale * mscale
@@ -685,7 +685,7 @@ class DeepseekV2Attention(nn.Layer):
         self,
         hidden_states: paddle.Tensor,
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
@@ -733,8 +733,8 @@ class DeepseekV2Attention(nn.Layer):
         kv = self.kv_b_proj(self.kv_a_layernorm(compressed_kv)).reshape(shape=target_key_value_shape)
         k_nope, value_states = paddle.split(kv, [self.qk_nope_head_dim, self.v_head_dim], axis=-1)
         kv_seq_len = value_states.shape[1]
-        if past_key_value is not None:
-            kv_seq_len += past_key_value[0].shape[-3]
+        if past_key_values is not None:
+            kv_seq_len += past_key_values[0].shape[-3]
 
         cos, sin = position_embeddings[0], position_embeddings[1]
         cos = cos[None, :, None, :]
@@ -743,12 +743,13 @@ class DeepseekV2Attention(nn.Layer):
         query_states = paddle.cat([q_nope, q_pe], axis=-1)
         key_states = paddle.cat([k_nope, k_pe], axis=-1)
 
-        # [bs, seq_len, num_head, head_dim]
-        if past_key_value is not None:
-            # reuse k, v, self_attention
-            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
-        past_key_value = (key_states, value_states) if use_cache else None
+        # [bz, seqlen, num_head, head_dim] -> [bz, num_head, seqlen, head_dim]
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
+
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
         has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
         if self.enable_recompute and has_gradient and self.recompute_granularity == "core_attn":
@@ -799,7 +800,7 @@ class DeepseekV2Attention(nn.Layer):
             outputs += (attn_weights,)
 
         if use_cache:
-            outputs += (past_key_value,)
+            outputs += (past_key_values,)
 
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
@@ -855,7 +856,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
@@ -869,7 +870,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
             position_ids,
             attention_mask,
             output_attentions,
-            past_key_value,
+            past_key_values,
             use_cache,
             attn_mask_startend_row_indices,
             position_embeddings,
@@ -914,7 +915,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
@@ -933,7 +934,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
                 position_ids=position_ids,
                 attention_mask=attention_mask,
                 output_attentions=output_attentions,
-                past_key_value=past_key_value,
+                past_key_values=past_key_values,
                 use_cache=use_cache,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 position_embeddings=position_embeddings,
@@ -945,7 +946,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
                 position_ids=position_ids,
                 attention_mask=attention_mask,
                 output_attentions=output_attentions,
-                past_key_value=past_key_value,
+                past_key_values=past_key_values,
                 use_cache=use_cache,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 position_embeddings=position_embeddings,
@@ -1004,7 +1005,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
@@ -1021,7 +1022,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
             position_ids,
             attention_mask,
             output_attentions,
-            past_key_value,
+            past_key_values,
             use_cache,
             attn_mask_startend_row_indices,
             position_embeddings,
@@ -1069,7 +1070,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
@@ -1085,7 +1086,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
             position_ids,
             attention_mask,
             output_attentions,
-            past_key_value,
+            past_key_values,
             use_cache,
             attn_mask_startend_row_indices,
             position_embeddings,
@@ -1106,7 +1107,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
@@ -1122,7 +1123,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
             position_ids,
             attention_mask,
             output_attentions,
-            past_key_value,
+            past_key_values,
             use_cache,
             attn_mask_startend_row_indices,
             position_embeddings,
@@ -1362,7 +1363,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         position_ids: Optional[Tensor],
         attention_mask: Tensor,
         output_attentions: bool,
-        past_key_value: Tensor,
+        past_key_values: Cache,
         use_cache: bool,
         attn_mask_startend_row_indices: Optional[Tensor] = None,
     ):
@@ -1378,7 +1379,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
             position_ids,
             attention_mask,
             output_attentions,
-            past_key_value,
+            past_key_values,
             use_cache,
             attn_mask_startend_row_indices,
             use_reentrant=self.config.recompute_use_reentrant,
@@ -1393,7 +1394,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
@@ -1448,15 +1449,12 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                 )
                 use_cache = False
 
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-        # NOTE: to make cache can be clear in-time
-        past_key_values = list(past_key_values)
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        past_key_values_length = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         seq_length_with_past = seq_length
-        past_key_values_length = 0
-        if past_key_values[0] is not None:
-            past_key_values_length = past_key_values[0][0].shape[1]
+        if past_key_values is not None:
             seq_length_with_past += past_key_values_length
 
         if position_ids is None and not self.config.fuse_rope:
@@ -1477,21 +1475,19 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         if position_embeddings is None:
             position_embeddings = paddle.stack(self.rotary_emb(inputs_embeds, position_ids=position_ids))
 
-        # embed positions
-        if attn_mask_startend_row_indices is not None or get_use_casual_mask():
-            attention_mask = None
-        else:
-            # [bs, seq_len]
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-            attention_mask = self._prepare_decoder_attention_mask(
-                attention_mask, (batch_size, seq_length), past_key_values_length, inputs_embeds.dtype
-            )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                attention_mask = None if is_casual_mask(attention_mask) else attention_mask
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": past_key_values_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+            "return_mapping": False,
+        }
+
+        attention_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
 
         if self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]  # [B, S, D]
@@ -1509,7 +1505,6 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
-        next_decoder_cache = () if use_cache else None
         mtp_outputs = []
 
         moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num > 0
@@ -1520,8 +1515,6 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
-
             has_gradient = not hidden_states.stop_gradient
             if moelayer_use_subbatch_recompute:
                 layer_outputs = decoder_layer.subbatch_recompute_forward(
@@ -1529,7 +1522,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                     position_ids,
                     attention_mask,
                     output_attentions,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                     attn_mask_startend_row_indices,
                     position_embeddings,
@@ -1541,7 +1534,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                     position_ids,
                     attention_mask,
                     output_attentions,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                     attn_mask_startend_row_indices,
                     position_embeddings,
@@ -1552,21 +1545,16 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                     position_ids,
                     attention_mask,
                     output_attentions,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                     attn_mask_startend_row_indices,
                     position_embeddings,
                 )
 
-            # NOTE: clear outdate cache after it has been used for memory saving
-            past_key_value = past_key_values[idx] = None
             if type(layer_outputs) is tuple:
                 hidden_states = layer_outputs[0]
             else:
                 hidden_states = layer_outputs
-
-            if use_cache:
-                next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
@@ -1585,14 +1573,14 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
                     [inputs_embeds_ori[:, (nextn + 1) :, :], inputs_embeds_extra[:, : (nextn + 1), :]], axis=1
                 )
 
-                past_key_value = None
+                past_key_values = None
                 layer_outputs = decoder_layer(
                     hidden_states,
                     inputs_embeds_cur_depth,
                     position_ids,
                     attention_mask,
                     output_attentions,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                     attn_mask_startend_row_indices,
                     position_embeddings,
@@ -1613,15 +1601,15 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
-        next_cache = next_decoder_cache if use_cache else None
-
         if not return_dict:
             return tuple(
-                v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns, mtp_outputs] if v is not None
+                v
+                for v in [hidden_states, past_key_values, all_hidden_states, all_self_attns, mtp_outputs]
+                if v is not None
             )
         return BaseModelOutputWithPastAndMTP(
             last_hidden_state=hidden_states,
-            past_key_values=next_cache,
+            past_key_values=past_key_values,
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
             mtp_outputs=mtp_outputs,
@@ -1777,7 +1765,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PretrainedModel):
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
@@ -1979,7 +1967,7 @@ class DeepseekV2ForSequenceClassification(DeepseekV2PretrainedModel):
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,

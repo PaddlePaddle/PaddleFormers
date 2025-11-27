@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import math
+import os
 import warnings
 from functools import partial
 from typing import List, Optional, Tuple, Union
@@ -70,10 +71,8 @@ from paddleformers.transformers.conversion_utils import (
     StateDictNameMapping,
     init_name_mappings,
 )
-from paddleformers.transformers.deepseek_v2 import _expand_2d_mask, _make_causal_mask
 from paddleformers.transformers.deepseek_v2 import fp8_linear as linear_utils
 from paddleformers.transformers.deepseek_v2 import (
-    is_casual_mask,
     rotate_half,
     scaled_dot_product_attention,
     yarn_get_mscale,
@@ -88,7 +87,6 @@ from paddleformers.transformers.fp8_utils import (
     cache_fp8_weight,
     set_parameter_color,
 )
-from paddleformers.transformers.llama.modeling import get_use_casual_mask
 from paddleformers.transformers.model_outputs import BaseModelOutputWithPastAndMTP
 from paddleformers.transformers.model_utils import (
     PretrainedModel,
@@ -98,6 +96,11 @@ from paddleformers.transformers.model_utils import (
 from paddleformers.transformers.utils import device_guard
 from paddleformers.utils.initializer import kaiming_uniform_
 from paddleformers.utils.log import logger
+from paddleformers.utils.masking_utils import (
+    _expand_2d_mask,
+    _make_causal_mask,
+    is_casual_mask,
+)
 
 try:
     import fused_ln
@@ -126,6 +129,11 @@ __all__ = [
 ]
 
 global_step = 0
+
+
+def get_use_casual_mask():
+    """Get the value of the 'USE_CASUAL_MASK' environment variable."""
+    return os.getenv("USE_CASUAL_MASK", "False") == "True"
 
 
 def set_global_step(cur_step):

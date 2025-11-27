@@ -14,6 +14,7 @@
 
 """ Ernie4_5 model configuration."""
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
 class Ernie4_5Config(PretrainedConfig):
@@ -161,6 +162,8 @@ class Ernie4_5Config(PretrainedConfig):
                 "kto_config",
             ]
         )
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
 
 __all__ = ["Ernie4_5Config"]

@@ -454,17 +454,19 @@ class Qwen3CompatibilityTest(unittest.TestCase):
 
             # 2. forward the torch  model
             import torch
-            from transformers import Qwen3Model
+            from transformers import Qwen3ForCausalLM
 
-            torch_model = Qwen3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Qwen3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            # 2. forward the paddle model
-            from paddleformers.transformers import Qwen3Model
+            # 2. forward the paddle model with fc
+            from paddleformers.transformers import Qwen3Config, Qwen3ForCausalLM
 
-            paddle_model = Qwen3Model.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Qwen3ForCausalLM.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -472,6 +474,29 @@ class Qwen3CompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    atol=1e-2,
+                    rtol=1e-2,
+                )
+            )
+
+            # 3. fuse qkv/ffn with fc
+            model_config = Qwen3Config.from_pretrained(tempdir)
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
+            paddle_model_fused = Qwen3ForCausalLM.from_pretrained(
+                tempdir,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+            paddle_model_fused.eval()
+            paddle_fused_logit = paddle_model_fused(paddle.to_tensor(input_ids))[0]
+
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )

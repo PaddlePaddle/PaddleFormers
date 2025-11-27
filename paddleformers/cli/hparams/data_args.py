@@ -151,3 +151,7 @@ class DataArguments:
         metadata={"help": "Whether to skip the warmup process of mmap files."},
     )
     data_cache: str = field(default=None, metadata={"help": "The path of the cached dataset."})
+    truncate_packing: bool = field(
+        default=True,
+        metadata={"help": "Whether to truncate data in packing (only valid in pretrain online dataflow)."},
+    )
