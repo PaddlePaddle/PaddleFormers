@@ -1297,6 +1297,8 @@ class GptOssForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = GptOssModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = GptOssModel.transpose_weight_keys
+    _gen_aoa_config = GptOssForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = GptOssForCausalLM._gen_inv_aoa_config
 
 
 __all__ = ["GptOssForCausalLM", "GptOssModel", "GptOssPreTrainedModel", "GptOssForCausalLMPipe"]
