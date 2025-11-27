@@ -12,11 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .vision_loader import VisionLoader, ErnieVisionLoader
-from .qwen_vision_loader import Qwen2VLVisionLoader
+from .vision_loader import VisionLoader
 
 __all__ = [
     "VisionLoader",
-    "ErnieVisionLoader",
-    "Qwen2VLVisionLoader",
 ]

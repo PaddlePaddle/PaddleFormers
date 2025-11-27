@@ -19,7 +19,7 @@ from typing import Any, Literal, Optional
 @dataclass
 class DataArguments:
     r"""Arguments pertaining to what data we are going to input our model for training and evaluation."""
-    
+
     # dataset
     max_seq_len: int = field(
         default=4096,
@@ -60,29 +60,15 @@ class DataArguments:
 
     # processor
     video_fps: int = field(default=2, metadata={"help": "fps for sampling frames"})
-    video_min_frames: int = field(
-        default=16, metadata={"help": "fps for sampling frames with min"}
-    )
-    video_max_frames: int = field(
-        default=480, metadata={"help": "fps for sampling frames with max"}
-    )
-    video_target_frames: int = field(
-        default=-1, metadata={"help": "fps for sampling frames with target"}
-    )
-    video_frames_sample: str = field(
-        default="middle", metadata={"help": " middle, rand, leading"}
-    )
+    video_min_frames: int = field(default=16, metadata={"help": "fps for sampling frames with min"})
+    video_max_frames: int = field(default=480, metadata={"help": "fps for sampling frames with max"})
+    video_target_frames: int = field(default=-1, metadata={"help": "fps for sampling frames with target"})
+    video_frames_sample: str = field(default="smart", metadata={"help": " middle, rand, leading, smart"})
     max_pixels: int = field(default=28 * 28 * 1280, metadata={"help": "adaptive use max-pixels"})
     min_pixels: int = field(default=56 * 56, metadata={"help": "adaptiveuse min-pixels"})
-    video_max_pixels: int = field(
-        default=28 * 28 * 1280, metadata={"help": "video adaptive use max-pixels"}
-    )
-    video_min_pixels: int = field(
-        default=56 * 56, metadata={"help": "video adaptiveuse min-pixels"}
-    )
-    size: dict = field(
-        default=None, metadata={"help": "size for resize"}
-    )
+    video_max_pixels: int = field(default=28 * 28 * 1280, metadata={"help": "video adaptive use max-pixels"})
+    video_min_pixels: int = field(default=56 * 56, metadata={"help": "video adaptiveuse min-pixels"})
+    size: dict = field(default=None, metadata={"help": "size for resize"})
     render_timestamp: bool = field(default=False, metadata={"help": "render timestamp"})
     do_resize: bool = field(default=True, metadata={"help": "whether to resize"})
 
