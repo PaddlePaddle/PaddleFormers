@@ -81,7 +81,7 @@ class TestFromPretrained(unittest.TestCase):
                 convert_from_hf=convert,
             )
             for p1, p2 in zip(m1.parameters(), m2.parameters()):
-                self.assertTrue(paddle.allclose(p1, p2))
+                self.assertTrue(paddle.allclose(p1.float(), p2.float()))
 
     @unittest.skipIf(not is_paddle_cuda_available(), "some op is missing in cpu mode")
     def test_keep_in_fp32_modules(self):
