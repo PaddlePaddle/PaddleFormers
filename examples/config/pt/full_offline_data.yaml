@@ -38,15 +38,8 @@ learning_rate: 1.0e-5
 
 # performance
 tensor_parallel_degree: 1
-pipeline_parallel_degree: 3
-pipeline_parallel_config: enable_dynamic_shape enable_clear_every_step_cache
-expert_parallel_degree: 8
-use_expert_parallel: true
-sharding_parallel_degree: 8
-sharding_parallel_config: split_param
-amp_master_grad: true
-sharding: stage1
-offload_optim: true
+pipeline_parallel_degree: 1
+sharding: stage2
 recompute: true
 bf16: true
 fp16_opt_level: O2

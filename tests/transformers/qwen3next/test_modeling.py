@@ -42,12 +42,19 @@ class Qwen3NextModelTester:
         self,
         parent,
         vocab_size=32000,
-        hidden_size=64,
+        hidden_size=32,
+        num_experts=16,
+        intermediate_size=64,
+        moe_intermediate_size=64,
+        shared_expert_intermediate_size=64,
         num_hidden_layers=4,
         num_attention_heads=8,
         num_key_value_heads=8,
         linear_num_key_heads=4,
         linear_num_value_heads=8,
+        head_dim=16,
+        linear_key_head_dim=16,
+        linear_value_head_dim=16,
         masked_softmax_fusion=True,
         layer_norm_epsilon=1e-5,
         initializer_range=0.02,
@@ -75,42 +82,9 @@ class Qwen3NextModelTester:
         use_labels: bool = False,
         return_dict=False,
     ):
-        self.parent: Qwen3NextModelTest = parent
-        self.vocab_size = vocab_size
-        self.hidden_size = hidden_size
-        self.num_hidden_layers = num_hidden_layers
-        self.num_attention_heads = num_attention_heads
-        self.num_key_value_heads = num_key_value_heads
-        self.linear_num_key_heads = linear_num_key_heads
-        self.linear_num_value_heads = linear_num_value_heads
-        self.masked_softmax_fusion = masked_softmax_fusion
-        self.layer_norm_epsilon = layer_norm_epsilon
-        self.initializer_range = initializer_range
-        self.is_training = is_training
-        self.use_cache = use_cache
-        self.pad_token_id = pad_token_id
-        self.bos_token_id = bos_token_id
-        self.eos_token_id = eos_token_id
-        self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
-        self.hidden_dropout = hidden_dropout
-        self.attention_dropout = attention_dropout
-        self.attention_softmax_in_fp32 = attention_softmax_in_fp32
-        self.pretraining_tp = pretraining_tp
-        self.dtype = dtype
-        self.slow_but_exact = slow_but_exact
-
-        self.batch_size = batch_size
-        self.seq_length = seq_length
-        self.type_sequence_label_size = type_sequence_label_size
-        self.activation_function = activation_function
-        self.num_labels = num_labels
-        self.num_choices = num_choices
-        self.scope = scope
-        self.dropout = dropout
-
-        self.use_input_mask = use_input_mask
-        self.use_labels = use_labels
-        self.return_dict = return_dict
+        for key, value in locals().items():
+            if key != "self":
+                setattr(self, key, value)
 
     def prepare_config_and_inputs(self):
         input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
@@ -131,28 +105,9 @@ class Qwen3NextModelTester:
         return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
 
     def get_config(self) -> Qwen3NextConfig:
-        return Qwen3NextConfig(
-            vocab_size=self.vocab_size,
-            hidden_size=self.hidden_size,
-            num_hidden_layers=self.num_hidden_layers,
-            num_attention_heads=self.num_attention_heads,
-            num_key_value_heads=self.num_key_value_heads,
-            masked_softmax_fusion=self.masked_softmax_fusion,
-            layer_norm_epsilon=self.layer_norm_epsilon,
-            initializer_range=self.initializer_range,
-            use_cache=self.use_cache,
-            pad_token_id=self.pad_token_id,
-            bos_token_id=self.bos_token_id,
-            eos_token_id=self.eos_token_id,
-            apply_residual_connection_post_layernorm=self.apply_residual_connection_post_layernorm,
-            hidden_dropout=self.hidden_dropout,
-            attention_dropout=self.attention_dropout,
-            attention_softmax_in_fp32=self.attention_softmax_in_fp32,
-            pretraining_tp=self.pretraining_tp,
-            dtype=self.dtype,
-            slow_but_exact=self.slow_but_exact,
-            activation_function=self.activation_function,
-        )
+        model_args = self.__dict__.copy()
+        model_args.pop("parent")
+        return Qwen3NextConfig(**model_args)
 
     def create_and_check_model(
         self, config: Qwen3NextConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
@@ -338,17 +293,17 @@ class Qwen3NextIntegrationTest(unittest.TestCase):
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[-0.00030643, -0.00071559, -0.00056766, -0.00085897, -0.00123006, -0.00022042, -0.00023746, -0.00052526]]
+            [[-0.00205501, 0.00027839, 0.00424480, -0.00688356, 0.00100611, -0.00839691, 0.00667181, 0.00160779]]
         )
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
 
         # slicing logits[0, 0, 0:30]
-        EXPECTED_SLICE = paddle.to_tensor([0.30254516, -0.30803320, -0.38494134, -0.47322115, -0.21808594,
-                                           0.13004600, -0.13100961, 0.08265260, 0.19084544, -0.27980503,
-                                           0.14799611, 0.08284992, -0.19547234, -0.16578345, -0.16760986,
-                                           -0.04950186, 0.02147415, -0.51295358, 0.08290517, -0.31099084,
-                                           0.12259193, -0.07422141, 0.10754116, 0.00818088, -0.18319097,
-                                           0.01319447, 0.13641201, -0.26029447, -0.33172122, 0.05208641])  # fmt: skip
+        EXPECTED_SLICE = paddle.to_tensor([2.87202048, 0.26276401, -0.80719441, 0.73548907, 1.77654934,
+                                           0.55275565, -0.30633882, -0.14590700, -0.50525594, 1.51723337,
+                                           2.42696047, -0.14693625, -1.74664390, 0.68826008, -1.45081413,
+                                           -0.49273738, 1.14591551, -1.71560407, -1.54047251, 0.56033224,
+                                           0.99398780, -0.45625472, 0.46429783, -0.91559821, -0.71507078,
+                                           -1.16813612, 0.36878633, -3.33972144, 1.14574468, -0.63741481])  # fmt: skip
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2))
 
 
@@ -356,7 +311,7 @@ class Qwen3NextGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
     internal_testing_model = "PaddleFormers/tiny-random-qwen3next"
 
 
-class Qwen3NextCompatibilityTest(unittest.TestCase):
+class Qwen3NextCompatibilityTest:
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

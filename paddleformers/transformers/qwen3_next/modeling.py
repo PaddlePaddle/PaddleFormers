@@ -14,7 +14,7 @@
 """Paddle Qwen3-Next model."""
 
 from functools import partial
-from typing import Any, Callable, List, Optional
+from typing import Any, List, Optional
 
 import paddle
 import paddle.distributed as dist
@@ -33,15 +33,11 @@ from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import mark_as_sequence_parallel_parameter
 from ...nn.pp_model import GeneralModelForCausalLMPipe, RMSNormPipe, parse_args
 from ...utils.log import logger
+from ..configuration_utils import PretrainedConfig
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-
 from ..qwen2_moe.modeling import Qwen2MoeSparseMoeBlock, load_balancing_loss_func
-from ..qwen3_moe.modeling import (
-    Qwen3MoeAttention,
-    Qwen3MoeMLP,
-)
-from ..configuration_utils import PretrainedConfig
+from ..qwen3_moe.modeling import Qwen3MoeAttention, Qwen3MoeMLP
 from .configuration import Qwen3NextConfig
 
 __all__ = [
@@ -208,9 +204,7 @@ class Qwen3NextRotaryEmbedding(nn.Layer):
             self.rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
         else:
             self.rope_type = "default"
-        assert self.rope_type == "default", (
-            f"Currently only supports default rope_type, but got {self.rope_type}"
-        )
+        assert self.rope_type == "default", f"Currently only supports default rope_type, but got {self.rope_type}"
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
 
@@ -298,9 +292,7 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         else:
             bsz, q_len, _ = hidden_states.shape
 
-        query_states, gate = paddle.chunk(
-            query_states.view(bsz, q_len, -1, self.head_dim * 2), chunks=2, dim=-1
-        )
+        query_states, gate = paddle.chunk(query_states.view(bsz, q_len, -1, self.head_dim * 2), chunks=2, dim=-1)
         gate = gate.reshape(bsz, q_len, -1)
 
         query_states = self.q_norm(query_states.view(bsz, q_len, -1, self.head_dim))
@@ -308,9 +300,7 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         value_states = value_states.reshape(bsz, q_len, -1, self.head_dim)
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(
-            query_states, key_states, cos, sin, unsqueeze_dim=2
-        )
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, unsqueeze_dim=2)
 
         if past_key_values is not None:
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
@@ -321,9 +311,9 @@ class Qwen3NextAttention(Qwen3MoeAttention):
 
         attn_output, attn_weights = attention_interface(
             self,
-            query=query_states,
-            key=key_states,
-            value=value_states,
+            query=query_states.transpose(1, 2),
+            key=key_states.transpose(1, 2),
+            value=value_states.transpose(1, 2),
             attention_mask=attention_mask,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
@@ -339,7 +329,7 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         return attn_output, attn_weights
 
 
-def torch_causal_conv1d_update(
+def paddle_causal_conv1d_update(
     hidden_states,
     conv_state,
     weight,
@@ -363,7 +353,7 @@ def l2norm(x: Tensor, dim: int = -1, eps: float = 1e-6):
     return x * inv_norm
 
 
-def torch_chunk_gated_delta_rule(
+def paddle_chunk_gated_delta_rule(
     query,
     key,
     value,
@@ -443,7 +433,7 @@ def torch_chunk_gated_delta_rule(
     return core_attn_out, last_recurrent_state
 
 
-def torch_recurrent_gated_delta_rule(
+def paddle_recurrent_gated_delta_rule(
     query, key, value, g, beta, initial_state, output_final_state, use_qk_l2norm_in_kernel=False
 ):
     initial_dtype = query.dtype
@@ -489,7 +479,12 @@ def apply_mask_to_padding_states(hidden_states, attention_mask):
     """
     Tunes out the hidden states for padding tokens, see https://github.com/state-spaces/mamba/issues/66
     """
-    if attention_mask is not None and attention_mask.shape[1] > 1 and attention_mask.shape[0] > 1:
+    if (
+        attention_mask is not None
+        and attention_mask.dim() == 2
+        and attention_mask.shape[1] > 1
+        and attention_mask.shape[0] > 1
+    ):
         dtype = hidden_states.dtype
         hidden_states = (hidden_states * attention_mask[:, :, None]).to(dtype)
 
@@ -602,15 +597,15 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         self.out_proj = nn.Linear(self.value_dim, self.hidden_size, bias_attr=False)
 
         self.causal_conv1d_fn = causal_conv1d_fn
-        self.causal_conv1d_update = causal_conv1d_update or torch_causal_conv1d_update
-        self.chunk_gated_delta_rule = chunk_gated_delta_rule or torch_chunk_gated_delta_rule
-        self.recurrent_gated_delta_rule = fused_recurrent_gated_delta_rule or torch_recurrent_gated_delta_rule
+        self.causal_conv1d_update = causal_conv1d_update or paddle_causal_conv1d_update
+        self.chunk_gated_delta_rule = chunk_gated_delta_rule or paddle_chunk_gated_delta_rule
+        self.recurrent_gated_delta_rule = fused_recurrent_gated_delta_rule or paddle_recurrent_gated_delta_rule
 
         if not is_fast_path_available:
             logger.warning_once(
                 "The fast path is not available because one of the required library is not installed. Falling back to "
-                "torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and"
-                " https://github.com/Dao-AILab/causal-conv1d"
+                "paddle implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation "
+                "and https://github.com/Dao-AILab/causal-conv1d"
             )
 
     def fix_query_key_value_ordering(self, mixed_qkvz, mixed_ba):
@@ -945,27 +940,35 @@ class Qwen3NextPretrainedModel(PretrainedModel):
                 if expert_parallel_degree <= 1:
                     actions.update(
                         {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=True)
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
+                                fn, is_column=True
+                            )
                             for e in range(config.num_experts)
                             for k in EXPERT_LAYER_COLWISE
                         }
                     )
                     actions.update(
                         {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=False)
+                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
+                                fn, is_column=False
+                            )
                             for e in range(config.num_experts)
                             for k in EXPERT_LAYER_ROWWISE
                         }
                     )
                 actions.update(
                     {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_expert.{k}": partial(fn, is_column=True)
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_expert.{k}": partial(
+                            fn, is_column=True
+                        )
                         for k in EXPERT_LAYER_COLWISE
                     }
                 )
                 actions.update(
                     {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_expert.{k}": partial(fn, is_column=False)
+                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_expert.{k}": partial(
+                            fn, is_column=False
+                        )
                         for k in EXPERT_LAYER_ROWWISE
                     }
                 )
@@ -1027,9 +1030,7 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
 
         if cache_position is None:
             past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-            cache_position = paddle.arange(
-                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1]
-            )
+            cache_position = paddle.arange(past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1])
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
 
@@ -1094,10 +1095,6 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
         self.num_experts = config.num_experts
         self.num_experts_per_tok = config.num_experts_per_tok
 
-        if config.sliding_window:
-            self.config.sliding_window = False
-            logger.warning("We do not support sliding window attention for now.")
-
     def forward(
         self,
         input_ids: Tensor = None,
@@ -1111,6 +1108,7 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
         output_router_logits: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
+        **kwargs,
     ) -> MoECausalLMOutputWithPast:
         r"""
         labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):

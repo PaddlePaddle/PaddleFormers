@@ -10,7 +10,7 @@ packing: false
 mix_strategy: concat
 
 ### model
-model_name_or_path: Qwen/Qwen3-Next-80B-A3B-Instruct
+model_name_or_path: Qwen/Qwen3-0.6B-Base
 attn_impl: flashmask
 lora: true
 lora_rank: 8
@@ -44,7 +44,6 @@ learning_rate: 1.0e-4
 # performance
 tensor_parallel_degree: 1
 pipeline_parallel_degree: 1
-pipeline_parallel_config: enable_dynamic_shape enable_clear_every_step_cache
 sharding: stage2
 recompute: true
 bf16: true
