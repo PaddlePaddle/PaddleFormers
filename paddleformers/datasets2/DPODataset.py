@@ -1,0 +1,356 @@
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from dataclasses import dataclass
+from typing import List, Any, Optional, Union
+
+import numpy as np
+from paddle.io import IterableDataset
+
+from paddleformers.datasets2.reader.mix_datasets import create_dataset_instance
+from paddleformers.datasets2.reader.multi_source_datasets import MultiSourceDataset
+from paddleformers.transformers import AutoProcessor, AutoTokenizer
+from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
+from paddleformers.utils.log import logger
+from paddleformers.datasets2.data_utils import infer_seqlen
+
+
+@dataclass
+class Sequence:
+    """Sequence."""
+
+    token_ids: Optional[List[int]]
+    position_ids: Optional[List[int]]
+    attention_mask: Optional[List[List[int]]]
+    attn_mask_startend_row_indices: Optional[List[int]]
+    chosen_labels: List[int]
+    rejected_labels: List[int]
+    response_index: List[int]
+    score_delta: float
+
+
+class DPODataSet(IterableDataset):
+    def __init__(self, **dataset_config):
+
+        # parameter init
+        self.tokenizer = dataset_config["tokenizer"]
+        self.processor = dataset_config["processor"]
+        self.max_seq_len = dataset_config["max_seq_len"]
+        self.mask_out_eos_token = dataset_config["mask_out_eos_token"]
+        self.template = dataset_config["template_instance"]
+        self.use_attn_mask_startend_row_indices = dataset_config["use_attn_mask_startend_row_indices"]
+
+        # special token
+        self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
+        self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
+        self.newline_token = self.tokenizer.tokenize("\n")
+        if isinstance(self.tokenizer, PretrainedTokenizer):
+            self.end_of_response_id = self.tokenizer._convert_token_to_id([self.end_of_response])[0]
+            self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
+        else:
+            self.end_of_response_id = self.tokenizer.convert_tokens_to_ids([self.end_of_response])[0]
+            self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
+
+        # data loader + multisource dataset mix
+        multi_source_dataset = MultiSourceDataset(**dataset_config)
+        self.mix_datasets = create_dataset_instance(
+            dataset_config["mix_strategy"],
+            multi_source_dataset,
+            **dataset_config,
+        )
+
+    def __len__(self):
+        return len(self.mix_datasets)
+
+    def __iter__(self):
+        for example in self.mix_datasets:
+            # sequence: system + knowledge_tokens + prompt + chosen + reject
+            (
+                prompt_token_ids,
+                response_token_ids_list,
+                response_label_ids_list,
+                response_len_list,
+                cur_len,
+            ) = self.__postprocess_before_concat(example)
+
+            # The sequnece is too long, just return None
+            if prompt_token_ids is None:
+                return None
+            # 1.concat all tokens
+            # 1.1 input_ids
+            input_ids = prompt_token_ids + response_token_ids_list[0] + response_token_ids_list[1]
+            if cur_len != len(input_ids):
+                logger.warning(f"[SKIP] code bug: {example}")
+                return None
+
+            # 1.2. position_ids
+            prompt_len = len(prompt_token_ids)
+            chosen_len = len(response_token_ids_list[0])
+            rejected_len = len(response_token_ids_list[1])
+            position_ids = (
+                list(range(prompt_len))  # prompt
+                + list(range(prompt_len, prompt_len + chosen_len))  # chosen
+                + list(range(prompt_len, prompt_len + rejected_len))  # rejected
+            )
+
+            # 1.3 labels
+            chosen_labels = [0] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
+            rejected_labels = [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
+
+            # 1.4 response index
+            # support use_sparse_head_and_loss_fn only
+            response_index = [0, response_len_list[0], sum(response_len_list)]
+
+            # 1.5 attention mask
+            if self.use_attn_mask_startend_row_indices:
+                attn_mask_startend_row_indices = (
+                    [cur_len] * (prompt_len) + [prompt_len + chosen_len] * chosen_len + [cur_len] * rejected_len
+                )
+                attention_mask = None
+            else:
+                attention_mask = np.tri(cur_len, cur_len, dtype=bool)
+                attention_mask[
+                    (prompt_len + chosen_len) :,
+                    prompt_len : (prompt_len + chosen_len),
+                ] = False
+                attn_mask_startend_row_indices = None
+            # 2. return sequence
+            yield Sequence(
+                token_ids=input_ids,
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                chosen_labels=chosen_labels,
+                rejected_labels=rejected_labels,
+                response_index=response_index,
+                score_delta=example["score_delta"],
+            )
+
+    def __postprocess_before_concat(self, example):
+        """Process multi-turn conversation data into tokenized sequences with dynamic truncation.
+
+        Args:
+            example (Example): Input data object containing:
+                - src (List[str]): Conversation history prompts
+                - tgt (List[str]): Corresponding responses
+                - chosen/rejected (List[str]): Preferred/unpreferred response paths
+                - is_system (int): System prompt presence flag
+                - system (str): System settings
+
+        Returns:
+            tuple: (prompt_ids, response_ids_list, label_ids_list, response_lens, total_len) containing:
+                - prompt_token_ids (List[int]): Main conversation context token ids
+                - response_token_ids_list (List[List[int]]): [chosen_path, rejected_path] response token ids
+                - response_label_ids_list (List[List[int]]): Each response label ids（mask included）
+                - response_len_list (List[int]): Valid response token length（special token excluded）
+                - cur_len (int): Final input ids length
+        """
+        prompt_token_ids = []
+
+        cur_len = 0
+
+        # 对多模信息做处理，将messages里面的占位符替换
+        system = example.get("system", None)
+        tools = example.get("tools", None)
+        images = example.get("images", [])
+        videos = example.get("videos", [])
+        audios = example.get("audios", [])
+        chosen_messages = self.template.mm_plugin.process_messages(
+            example["chosen"]["messages"], images, videos, audios, self.processor
+        )
+        rejected_messages = self.template.mm_plugin.process_messages(
+            example["rejected"]["messages"], images, videos, audios, self.processor
+        )
+        # 套template，转ids
+        prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
+        _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)
+
+        chosen_encoded_messages = []
+        rejected_encoded_messages = []
+        chosen_encoded_messages.append([prompt_ids, chosen_ids])
+        rejected_encoded_messages.append([prompt_ids, rejected_ids])
+        # chosen/rejected response
+        response_token_ids_list = []
+        response_label_ids_list = []
+        response_len_list = []
+        for responses in [
+            chosen_encoded_messages[example["session_start_index"] // 2 :],
+            rejected_encoded_messages[example["session_start_index"] // 2 :],
+        ]:
+            responses_token_ids = []
+            responses_label_ids = []
+            response_len = 0
+            for i, response in enumerate(responses):
+                q, a = response
+                label_ids, res = [], []
+
+                if i != 0:
+                    # prompt
+                    label_ids += [0] * (len(q) - 1)
+                    res += q
+
+                # response
+                if self.mask_out_eos_token:
+                    label_ids += a[:-1] + [0, 0]
+                    response_len += len(a) - 1
+                    res += a
+                else:
+                    label_ids += a + [0]
+                    response_len += len(a)
+                    res += a
+                responses_token_ids += res
+                responses_label_ids += label_ids
+            response_token_ids_list.append(responses_token_ids)
+            response_label_ids_list.append(responses_label_ids)
+            response_len_list.append(response_len)
+
+        cur_len += sum(map(len, response_token_ids_list))
+
+        # create at least one turn
+        turn_index = len(chosen_encoded_messages) - 1
+        while turn_index >= 0:
+            if turn_index == len(chosen_encoded_messages) - 1:
+                cur_turn_token = chosen_encoded_messages[turn_index][0]
+            else:
+                cur_turn_token = chosen_encoded_messages[turn_index][0] + chosen_encoded_messages[turn_index][1]
+
+            if cur_len + len(cur_turn_token) > self.max_seq_len:
+                break
+
+            prompt_token_ids = cur_turn_token + prompt_token_ids
+            cur_len += len(cur_turn_token)
+            turn_index -= 1
+
+        # at least one turn
+        if turn_index == len(chosen_encoded_messages) - 1:
+            sub_src = example["chosen"]["messages"][0]["content"].strip()[:5]
+            global LOGGER_COUNT
+            LOGGER_COUNT += 1
+            if LOGGER_COUNT <= 5:
+                logger.warning(
+                    f"[SKIP] max_seq_len({self.max_seq_len}) is insufficient to include "
+                    f"even one turn, example_output:'{{'src':[{sub_src}, ……]}}'"
+                )
+            return (None,) * 5
+
+        if cur_len > self.max_seq_len:
+            logger.warning(f"[SKIP] Example is too long: {example}")
+            return (None,) * 5
+
+        return (
+            prompt_token_ids,
+            response_token_ids_list,
+            response_label_ids_list,
+            response_len_list,
+            cur_len,
+        )
+
+class DPOPackingDataset(IterableDataset):
+    def __init__(self, processed_dataset, **dataset_config):
+        self.processed_dataset = processed_dataset
+        self.packing = dataset_config["packing"]
+        self.greedy_intokens = dataset_config["greedy_intokens"]
+        self.max_seq_len = dataset_config["max_seq_len"]
+        self.is_valid = dataset_config["is_valid"]
+
+        self.estimate = False
+        # The number of valid samples and skipped samples in estimation
+        self.unused_samples = 0
+        self.used_samples = 0
+        # If used_estimate_samples exceeds max_estimate_samples,stop estimating.
+        self.used_estimate_samples = 0
+        self.max_estimate_samples = 0
+        # set max estimate samples
+        if not self.is_valid:
+            self.max_estimate_samples = len(self.processed_dataset)
+
+    def __iter__(self):
+
+        dataset_iterator = iter(self.processed_dataset)
+
+        if not self.packing:
+            for _ in range(len(self.processed_dataset)):
+                example = next(dataset_iterator)
+                sequence = example
+                if sequence is None:
+                    continue
+
+                batch_sequence, cur_len = [sequence], len(sequence.token_ids)
+                yield batch_sequence
+
+            if len(batch_sequence) > 0:
+                yield batch_sequence
+        else:
+            if not self.greedy_intokens:
+                # base
+                for _ in range(len(self.processed_dataset)):
+                    example = next(dataset_iterator)
+                    sequence = example
+                    if sequence is None:
+                        continue
+                    if cur_len + len(sequence.token_ids) <= self.max_seq_len:
+                        batch_sequence.append(sequence)
+                        cur_len += len(sequence.token_ids)
+                    else:
+                        yield batch_sequence
+                        batch_sequence, cur_len = [sequence], len(sequence.token_ids)
+
+                if len(batch_sequence) > 0:
+                    yield batch_sequence
+            else:
+                sequence_buffer = []
+                buffer_size = self.buffer_size
+                for _ in range(len(self.processed_dataset)):
+                    example = next(dataset_iterator)
+                    sequence = example
+                    if sequence is None:
+                        continue
+                    sequence_buffer.append(sequence)
+
+                    if len(sequence_buffer) == buffer_size:
+                        sequence_pack = self._generate_greedy_packs(sequence_buffer)
+                        for pack in sequence_pack:
+                            yield pack
+                        sequence_buffer = []
+                if len(sequence_buffer) > 0:
+                    sequence_pack = self._generate_greedy_packs(sequence_buffer)
+                    for pack in sequence_pack:
+                        yield pack
+
+    def _generate_greedy_packs(self, examples, actual_example_num_list):
+        """Generate packed sequences using greedy strategy.
+
+        Args:
+            examples: List of examples to pack.
+            actual_example_num_list: List of example counts.
+
+        Returns:
+            list: List of packed sequences.
+        """
+
+        left_len_list = np.array([])
+        sequence_pack = []
+        for sequence in sequences:
+            sequence_len = len(sequence.input_ids)
+            if len(left_len_list) > 0:
+                max_left_len_index = left_len_list.argmax()
+
+            if len(left_len_list) == 0 or left_len_list[max_left_len_index] < sequence_len:
+                sequence_pack.append([sequence])
+                left_len_list = np.append(left_len_list, np.array([self.max_seq_len - sequence_len]))
+            else:
+                sequence_pack[max_left_len_index].append(sequence)
+                left_len_list[max_left_len_index] -= sequence_len
+        return sequence_pack
+

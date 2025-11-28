@@ -20,6 +20,7 @@ from paddle.io import IterableDataset
 
 from paddleformers.datasets2.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets2.reader.multi_source_datasets import MultiSourceDataset
+from paddleformers.datasets2.data_utils import postprocess_fc_sequence
 from paddleformers.transformers import AutoProcessor, AutoTokenizer
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from paddleformers.utils.log import logger
@@ -47,6 +48,10 @@ class SFTDataSet(IterableDataset):
         self.processor = dataset_config["processor"]
         self.max_seq_len = dataset_config["max_seq_len"]
         self.template = dataset_config["template_instance"]
+        self.template_backend = dataset_config["template_backend"]
+        self.use_template = dataset_config["use_template"]
+        self.split_multi_turn = dataset_config["split_multi_turn"]
+        self.encode_one_turn = dataset_config["encode_one_turn"]
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
@@ -77,13 +82,27 @@ class SFTDataSet(IterableDataset):
             images = example.get("images", [])
             videos = example.get("videos", [])
             audios = example.get("audios", [])
-            # 对多模信息做处理，将messages里面的占位符替换
-            messages = self.template.mm_plugin.process_messages(
-                example["messages"], images, videos, audios, self.processor
-            )
-            # 套template，转ids
-            encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
-
+            if self.use_template:
+                if self.template_backend == "jinja":
+                    if not self.tokenizer.chat_template:
+                        self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
+                    if self.split_multi_turn:
+                        encoded_pairs = postprocess_fc_sequence(self.tokenizer, example)
+                    else:
+                        encoded_pairs = self.tokenizer.encode_chat_inputs(
+                            example, encode_one_turn=self.encode_one_turn
+                        )
+                else:
+                    # 对多模信息做处理，将messages里面的占位符替换
+                    messages = self.template.mm_plugin.process_messages(
+                        example, images, videos, audios, self.processor
+                    )
+                    # 套template，转ids
+                    encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
+            else:
+                encoded_pairs = self.tokenizer.encode_chat_inputs_with_no_template(
+                    example, encode_one_turn=self.encode_one_turn
+                )
             # 转input_ids, labels
             num_reserved_tokens_for_each_dialog = 1
             num_reserved_tokens_for_each_turn = 8

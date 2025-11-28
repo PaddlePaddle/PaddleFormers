@@ -47,12 +47,9 @@ from paddleformers.datasets2.processor.encoder import Qwen2VLEncoder
 from paddleformers.datasets2.processor.vision_loader import VisionLoader
 from paddleformers.hparams.data_args import DataArguments
 
-from ..extras.constants import (
-    AUDIO_PLACEHOLDER,
-    IGNORE_INDEX,
-    IMAGE_PLACEHOLDER,
-    VIDEO_PLACEHOLDER,
-)
+IMAGE_PLACEHOLDER = os.getenv("IMAGE_PLACEHOLDER", "<image>")
+VIDEO_PLACEHOLDER = os.getenv("VIDEO_PLACEHOLDER", "<video>")
+AUDIO_PLACEHOLDER = os.getenv("AUDIO_PLACEHOLDER", "<audio>")
 
 
 def _make_batched_images(images: list["ImageObject"], imglens: list[int]) -> list[list["ImageObject"]]:

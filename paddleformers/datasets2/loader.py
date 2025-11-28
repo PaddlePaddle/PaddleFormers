@@ -12,20 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Dict, Any
 
+from paddleformers.datasets2.DPODataset import DPODataSet, DPOPackingDataset
 from paddleformers.datasets2.SFTDataset import SFTDataSet, SFTPackingDataset
 
-def create_dataset(**dataset_config):
-    """Create SFT dataset based on configuration parameters.
+
+def create_dataset(**dataset_config: Dict[str, Any]):
+    """Create dataset based on configuration parameters.
 
     Args:
-        dataset_config (dict): Configuration dictionary containing parameters like:
+        dataset_config (dict): Configuration dictionary, required keys:
+            - stage: 'dpo', 'sft', 'pt' (case-insensitive).
+            - Other keys passed to dataset constructors.
 
     Returns:
-        SequenceDataset: Configured sequence dataset for SFT tasks
+        SequenceDataset: Configured sequence dataset
     """
-    # if dataset_config["stage"].lower == "sft":
-    train_dataset = SFTDataSet(**dataset_config)
-    train_packing_dataset = SFTPackingDataset(train_dataset, **dataset_config)
+    if dataset_config["stage"].lower() == "dpo":
+        train_dataset = DPODataSet(**dataset_config)
+        train_packing_dataset = DPOPackingDataset(train_dataset, **dataset_config)
+    else:
+        train_dataset = SFTDataSet(**dataset_config)
+        train_packing_dataset = SFTPackingDataset(train_dataset, **dataset_config)
 
     return train_packing_dataset

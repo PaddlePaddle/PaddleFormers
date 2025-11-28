@@ -18,6 +18,137 @@ import numpy as np
 
 from .SFTDataset import Sequence
 
+def dpo_collate_fn(
+    batch,
+    tokenizer,
+    max_seq_len=None,
+    use_sparse_head_and_loss_fn=True,
+    use_fused_head_and_loss_fn=True,
+    use_response_score_delta=False,
+):
+    """Convert batch data into tensor for DPO.
+
+    Args:
+        batch (List[List[Sequence]]): Batch of input sequences containing multiple data samples.
+            Each sample is a list of Sequence objects containing tokenized data components.
+        tokenizer (Tokenizer): Text tokenizer for processing sequence components.
+        max_seq_len (int, optional): Maximum sequence length for padding/truncation.
+            If None, will raise ValueError. Defaults to None.
+        use_sparse_head_and_loss_fn (bool, optional): Whether to use sparse indexing for loss calculation.
+            Enables memory-efficient indexing for large sequences. Defaults to True.
+        use_fused_head_and_loss_fn (bool, optional): Whether to use fused kernel to calculate lm head and loss.
+            Optimizes for memory access patterns. Defaults to True.
+
+    Returns:
+        Dict[str, np.ndarray]: Processed tensor dictionary containing:
+            - input_ids (int32): Padded token ids [batch_size, max_seq_len]
+            - position_ids (int32): Position ids [batch_size, max_seq_len]
+            - chosen_labels (int32): Preferred response labels [batch_size, max_seq_len]
+            - rejected_labels (int32): Unpreferred response labels [batch_size, max_seq_len]
+            - response_indexs (int32): Response span indices [batch_size, 4]
+            - attention_mask (float32, optional): Attention mask matrix [batch_size, 1, max_seq_len, max_seq_len]
+            - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
+    """
+    if max_seq_len is None:
+        max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
+
+    input_dict = {
+        "input_ids": [],
+        "position_ids": [],
+        "chosen_labels": [],
+        "rejected_labels": [],
+        "response_indexs": [],
+    }
+    if use_response_score_delta:
+        input_dict["score_deltas"] = []
+
+    sequence = batch[0][0]
+    if sequence.attn_mask_startend_row_indices is not None:
+        input_dict["attn_mask_startend_row_indices"] = []
+        use_attn_mask_startend_row_indices = True
+    elif sequence.attention_mask is not None:
+        input_dict["attention_mask"] = []
+        use_attn_mask_startend_row_indices = False
+    else:
+        raise ValueError("attention_mask and attn_mask_startend_row_indices are both None.")
+    sequence_sum_flatten = 0
+    for i, sequences in enumerate(batch):
+        difference = max_seq_len - sum([len(sequence.token_ids) for sequence in sequences])
+
+        input_dict["input_ids"].append(sum([sequence.token_ids for sequence in sequences], []) + [0] * difference)
+        input_dict["position_ids"].append(
+            sum([sequence.position_ids for sequence in sequences], []) + [0] * difference
+        )
+        input_dict["chosen_labels"].append(
+            sum([sequence.chosen_labels for sequence in sequences], []) + [0] * difference
+        )
+        input_dict["rejected_labels"].append(
+            sum([sequence.rejected_labels for sequence in sequences], []) + [0] * difference
+        )
+        if use_attn_mask_startend_row_indices:
+            start_row_indices = []
+            sequence_sum = 0
+            for sequence in sequences:
+                start_row_indices += [indice + sequence_sum for indice in sequence.attn_mask_startend_row_indices]
+                sequence_sum += len(sequence.token_ids)
+            input_dict["attn_mask_startend_row_indices"].append(
+                [start_row_indices + list(range(start_row_indices[-1], max_seq_len))]
+            )
+        else:
+            input_dict["attention_mask"].append(
+                # (s,s) -> (1,s,s)
+                np.expand_dims(
+                    # pad to max_loength
+                    np.pad(
+                        # block attention_mask
+                        block_diag(*[sequence.attention_mask for sequence in sequences]),
+                        pad_width=((0, difference), (0, difference)),
+                        mode="constant",
+                        constant_values=False,
+                    ),
+                    axis=0,
+                )
+            )
+        sequence_sum = 0
+        for sequence in sequences:
+            # bs, chosen_response_start_index, rejeted_response_start_index, rejeted_response_end_index + 1
+            if use_sparse_head_and_loss_fn:
+                response_index = [
+                    i,
+                    sequence_sum_flatten,
+                    sequence.response_index[1] - sequence.response_index[0] + sequence_sum_flatten,
+                    sequence.response_index[2] - sequence.response_index[0] + sequence_sum_flatten,
+                ]
+                sequence_sum_flatten += sequence.response_index[2] - sequence.response_index[0]
+            elif use_fused_head_and_loss_fn:
+                response_index = [
+                    i,
+                    sequence.response_index[0] + sequence_sum_flatten,
+                    sequence.response_index[1] + sequence_sum_flatten,
+                    sequence.response_index[2] + sequence_sum_flatten,
+                ]
+                sequence_sum_flatten += len(sequence.token_ids)
+            else:
+                response_index = [
+                    i,
+                    sequence.response_index[0] + sequence_sum,
+                    sequence.response_index[1] + sequence_sum,
+                    sequence.response_index[2] + sequence_sum,
+                ]
+                sequence_sum += len(sequence.token_ids)
+            input_dict["response_indexs"].append(response_index)
+            if use_response_score_delta:
+                input_dict["score_deltas"].append(sequence.score_delta)
+
+    for key in input_dict:
+        if key == "attention_mask":
+            input_dict[key] = np.array(input_dict[key], dtype=np.float32)
+        elif key == "attn_mask_startend_row_indices":
+            input_dict[key] = np.array(input_dict[key], dtype=np.int32)[..., None]
+        else:
+            input_dict[key] = np.array(input_dict[key])
+    return input_dict
+
 def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int):
     """Convert batch of sequences into training tensors.
 
