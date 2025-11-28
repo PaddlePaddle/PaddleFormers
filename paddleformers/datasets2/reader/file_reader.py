@@ -12,14 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import collections
 import json
 import os
-import random
 
 from paddle.io import IterableDataset
 
-from .convertor import erniekit_convertor, query_response_convertor
+from .convertor import erniekit_convertor, messages_convertor, query_response_convertor
 from .download_manager import HuggingFaceDownload
 from .io import load_csv, load_json, load_jsonl, load_parquet, load_txt
 
@@ -44,6 +42,7 @@ class BaseReader(IterableDataset):
         }
         self.convertor_map = {
             "erniekit": erniekit_convertor,
+            "messages": messages_convertor,
             "query_response": query_response_convertor,
         }
 
@@ -59,11 +58,6 @@ class FileReader(BaseReader):
         if ext not in self.loader_map:
             raise ValueError(f"Unsupported file extension: {ext}")
         res = self.loader_map[ext](self._file_path)
-
-        # shuffle
-        # if self._shuffle_file:
-        #     random.seed(42)
-        #     random.shuffle(res)
 
         # data preprocess
         if self._file_type not in self.convertor_map:
@@ -109,6 +103,7 @@ class FileListReader(BaseReader):
 
     def __iter__(self):
         for file_path in self._get_files():
+            # all files under the path must be of the same data type
             reader = FileReader(file_path, self._file_type, self._shuffle_file)
             yield reader
 
@@ -144,9 +139,7 @@ class HuggingFaceReader(BaseReader):
                 self.file_reader = FileListReader(download_file_path, download_file_type, shuffle_file)
             else:
                 self.file_reader = FileReader(download_file_path, download_file_type, shuffle_file)
-
             self.file_reader.__init__()
-
         else:
             raise ValueError(f"Unsupported huggingface dataset {file_path}")
 

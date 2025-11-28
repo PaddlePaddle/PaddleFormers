@@ -12,35 +12,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .convertor import erniekit_convertor
-from .file_reader import BaseReader, FileListReader, FileReader, HuggingFaceReader
-from .mix_datasets import create_dataset_instance
-from .multi_source_datasets import MultiSourceDataset
+import sys
+from contextlib import suppress
+from typing import TYPE_CHECKING
 
-# def _get_dataset_processor(
-#     data_args: "DataArguments"
-# ) -> "DatasetProcessor":
-#     r"""Return the corresponding dataset processor."""
-#     if stage == "pt":
-#         dataset_processor_class = PretrainDatasetProcessor
-#     elif stage == "sft" and not do_generate:
+from ...utils.lazy_import import _LazyModule
 
+import_structure = {
+    "convertor": [
+        "convert_dpo_txt_data",
+        "convert_txt_data",
+        "convert_mm_data",
+        "erniekit_convertor",
+        "messages_convertor",
+        "query_response_convertor",
+    ],
+    "download_manager": ["HuggingFaceDownload"],
+    "file_reader": ["BaseReader", "FileReader", "FileListReader", "get_hf_dataset_config", "HuggingFaceReader"],
+    "io": ["load_json", "load_jsonl", "load_txt", "load_parquet", "load_csv"],
+    "mix_datasets": [
+        "BaseMixDataset",
+        "RandomDataset",
+        "ConcatDataset",
+        "InterLeaveDataset",
+        "create_dataset_instance",
+    ],
+    "multi_source_datasets": ["InfiniteDataset", "get_train_args", "MultiSourceDataset"],
+}
 
-#     elif stage == "rm":
-#         dataset_processor_class = PairwiseDatasetProcessor
-#     elif stage == "kto":
-#         dataset_processor_class = FeedbackDatasetProcessor
-#     else:
-#         dataset_processor_class = UnsupervisedDatasetProcessor
-
-#     return dataset_processor_class(template=template, tokenizer=tokenizer, processor=processor, data_args=data_args)
-
-__all__ = [
-    BaseReader,
-    FileReader,
-    FileListReader,
-    HuggingFaceReader,
-    MultiSourceDataset,
-    create_dataset_instance,
-    erniekit_convertor,
-]
+if TYPE_CHECKING:
+    from .convertor import *
+    from .download_manager import *
+    from .file_reader import *
+    from .io import *
+    from .mix_datasets import *
+    from .multi_source_datasets import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )
