@@ -33,6 +33,7 @@ install_requirements() {
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
     python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off --force-reinstall
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
+    rm -rf dist/*
     python setup.py bdist_wheel > /dev/null
     python -m pip install  dist/p****.whl
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt

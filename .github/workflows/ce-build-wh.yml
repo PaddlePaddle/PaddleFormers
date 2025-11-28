@@ -1,4 +1,4 @@
-name: Build Whl CE
+name: Build dev whl from Latest commit
 
 on:
   push:
@@ -60,13 +60,15 @@ jobs:
           cd PaddleFormers
           git config --global user.name "PaddleCE"
           git config --global user.email "paddle_ce@example.com"
+          git checkout develop
+          git branch | grep -v "develop" | xargs git branch -d
           git pull
           git submodule update --init --recursive --force
-          git checkout -b $COMMIT_ID $COMMIT_ID
+          # git checkout -b $COMMIT_ID $COMMIT_ID
           git log --pretty=oneline -10
           '
 
-      - name: Test
+      - name: Build Wheels
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig

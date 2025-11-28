@@ -97,7 +97,6 @@ fi
 
 echo -e "\033[32m ---- make PaddleFormers.tar.gz  \033[0m"
 cd ${formers_dir}
-git checkout develop
 cd /workspace
 tar -zcf PaddleFormers.tar.gz PaddleFormers/
 mv PaddleFormers.tar.gz ${upload_path}/
