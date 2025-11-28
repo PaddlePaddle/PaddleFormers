@@ -82,8 +82,13 @@ class FileReader(BaseReader):
         if len(data["messages"]) == 0:
             raise ValueError("Ignore example with empty messages.")
 
+        if "tools" in data and not isinstance(data["tools"], str):
+            data["tools"] = json.dumps(data["tools"], ensure_ascii=False)
+
         if "label" not in data:
-            data["label"] = [1 for turn in data["messages"] if "assistant" in turn["role"]]
+            data["label"] = [
+                1 for turn in data["messages"] if ("assistant" in turn["role"] or "function" in turn["role"])
+            ]
 
         system = ""
         if "system" in data["messages"][0]["role"]:

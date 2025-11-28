@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+
 from copy import deepcopy
 
 def convert_dpo_txt_data(data):
@@ -197,6 +199,7 @@ def convert_mm_data(item):
         "text_info": item.get("text_info", []),
         "image_info": item.get("image_info", []),
         "video_info": item.get("video_info", []),
+        "tools": item.get("tools", []),
     }
 
     messages = []
@@ -207,6 +210,7 @@ def convert_mm_data(item):
         messages.append({"role": "system", "content": item["system"]})
 
     content = ""
+    tool_calls_str = ""
     tag = ""
     for data_type, data_idx in zip(order_type, order_index):
         if data_type == "text":
@@ -215,13 +219,26 @@ def convert_mm_data(item):
             new_tag = "mask"
         if tag != new_tag:
             if tag == "mask":
-                messages.append({"role": "user", "content": content})
+                tool_response = data_info["text_info"][data_idx].get("tool_response", False)
+                if tool_response:
+                    role = "observation"
+                else:
+                    role = "user"
+                messages.append({"role": role, "content": content})
             elif tag == "no_mask":
-                messages.append({"role": "assistant", "content": content})
+                if len(tool_calls_str) > 0:
+                    messages.append({"role": "function", "content": content + tool_calls_str})
+                else:
+                    messages.append({"role": "assistant", "content": content})
             tag = new_tag
             content = ""
+            tool_calls = ""
         if data_type == "text":
             content += data_info["text_info"][data_idx]["text"]
+            tool_calls = data_info["text_info"][data_idx].get("tool_calls", "")
+            if isinstance(tool_calls, list):
+                tool_calls = json.dumps(tool_calls)
+            tool_calls_str += tool_calls
         elif data_type == "image":
             content += "<image>"
             images.append(data_info["image_info"][data_idx]["image_url"])
@@ -229,14 +246,24 @@ def convert_mm_data(item):
             content += "<video>"
             videos.append(data_info["video_info"][data_idx]["image_url"])
     if tag == "mask":
-        messages.append({"role": "user", "content": content})
+        tool_response = data_info["text_info"][data_idx].get("tool_response", False)
+        if tool_response:
+            role = "observation"
+        else:
+            role = "user"
+        messages.append({"role": role, "content": content})
     elif tag == "no_mask":
-        messages.append({"role": "assistant", "content": content})
+        if len(tool_calls_str) > 0:
+            messages.append({"role": "function", "content": content + tool_calls_str})
+        else:
+            messages.append({"role": "assistant", "content": content})
     res = {"messages": messages}
     if len(images) > 0:
         res["images"] = images
     if len(videos) > 0:
         res["videos"] = videos
+    if len(data_info["tools"]) > 0:
+        res["tools"] = data_info["tools"]
     return res
 
 
