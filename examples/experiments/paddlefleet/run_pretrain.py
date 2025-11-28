@@ -379,7 +379,7 @@ def _set_random_seed(
         paddle.manual_seed(seed)
 
         if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
-            paddlefleet.tensor_parallel.model_parallel_cuda_qq
+            paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
                 seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
             )
     else:
