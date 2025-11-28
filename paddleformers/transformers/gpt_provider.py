@@ -23,10 +23,9 @@ from functools import partial
 from typing import Any, Callable, Literal, Optional, Union
 
 import paddle
-from paddlefleet import parallel_state
+from paddlefleet import LayerSpec, parallel_state
 from paddlefleet.models.gpt import GPTModel as FleetGPTModel
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
-from paddlefleet.transformer import LayerSpec
 from paddlefleet.transformer.transformer_config import TransformerConfig
 
 from paddleformers.transformers.model_utils import PretrainedModel
@@ -74,7 +73,7 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
     parallel_output: bool = True
     share_embeddings_and_output_weights: bool = True
     make_vocab_size_divisible_by: int = 128
-    position_embedding_type: Literal["learned_absolute", "rope"] = "learned_absolute"
+    position_embedding_type: Literal["learned_absolute", "rope"] = "rope"
     rotary_base: int = 10000
     rotary_percent: float = 1.0
     seq_len_interpolation_factor: Optional[float] = None
@@ -102,7 +101,7 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
     moe_grouped_gemm: bool = False
     qk_layernorm: bool = False
     fp8: Optional[str] = None
-    normalization: str = "LayerNorm"
+    normalization: str = "RMSNorm"
 
     # Multi-token prediction
     mtp_enabled: bool = False
