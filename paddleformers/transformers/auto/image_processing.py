@@ -256,14 +256,9 @@ class AutoImageProcessor(hf.AutoImageProcessor):
         # Load the image processor config
         try:
             # Main path for all transformers models and local TimmWrapper checkpoints
-            if download_hub == DownloadSource.HUGGINGFACE:
-                config_dict, _ = ImageProcessingMixin.get_image_processor_dict(
-                    pretrained_model_name_or_path, image_processor_filename=image_processor_filename, **kwargs
-                )
-            else:
-                config_dict, _ = PaddleImageProcessingMixin.get_image_processor_dict(
-                    pretrained_model_name_or_path, image_processor_filename=image_processor_filename, **kwargs
-                )
+            config_dict, _ = PaddleImageProcessingMixin.get_image_processor_dict(
+                pretrained_model_name_or_path, image_processor_filename=image_processor_filename, **kwargs
+            )
         except Exception as initial_exception:
             # Fallback path for Hub TimmWrapper checkpoints. Timm models' image processing is saved in `config.json`
             # instead of `preprocessor_config.json`. Because this is an Auto class and we don't have any information
