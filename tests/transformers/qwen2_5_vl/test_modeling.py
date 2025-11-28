@@ -29,7 +29,8 @@ from paddleformers.transformers import (
     Qwen2_5_VLModel,
     process_vision_info,
 )
-#from paddleformers.transformers.video_utils import load_video
+
+# from paddleformers.transformers.video_utils import load_video
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
