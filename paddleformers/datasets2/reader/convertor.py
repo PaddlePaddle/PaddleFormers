@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import json
-
 from copy import deepcopy
+
 
 def convert_dpo_txt_data(data):
     """Convert raw format example to Example.
@@ -109,12 +109,13 @@ def convert_dpo_txt_data(data):
             # user
             chosen_m.append({"role": "user", "content": chosen[idx]})
             rejected_m.append({"role": "user", "content": rejected[idx]})
-    
+
     data["chosen"] = {"messages": chosen_m}
     data["rejected"] = {"messages": rejected_m}
     data["session_start_index"] = session_start_index
     data["score_delta"] = 1.0
     return data
+
 
 def convert_txt_data(item):
     if isinstance(item["src"], str):
@@ -219,7 +220,7 @@ def convert_mm_data(item):
             new_tag = "mask"
         if tag != new_tag:
             if tag == "mask":
-                tool_response = data_info["text_info"][data_idx].get("tool_response", False)
+                tool_response = data_info["text_info"][data_idx - 1].get("tool_response", False)
                 if tool_response:
                     role = "observation"
                 else:
@@ -232,7 +233,7 @@ def convert_mm_data(item):
                     messages.append({"role": "assistant", "content": content})
             tag = new_tag
             content = ""
-            tool_calls = ""
+            tool_calls_str = ""
         if data_type == "text":
             content += data_info["text_info"][data_idx]["text"]
             tool_calls = data_info["text_info"][data_idx].get("tool_calls", "")
