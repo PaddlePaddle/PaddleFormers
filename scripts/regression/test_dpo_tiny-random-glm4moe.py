@@ -355,12 +355,8 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-<<<<<<< HEAD
         EXPECTED_RESULT = paddle.to_tensor(DPO_LORA_TP_PP_EXCEPTED_RESULT)
         self.dpotrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
-=======
-        # EXPECTED_RESULT = paddle.to_tensor(DPO_LORA_TP_PP_EXCEPTED_RESULT)
-        # self.dpotrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
     # def test_dpo_full_function_call(self):
     #     output_dir = os.path.join(OUTPUT_DIR, "dpo_full_function_call")
@@ -415,4 +411,3 @@ class DPOTrainTest(unittest.TestCase):
     #     # test model generate
     #     EXPECTED_RESULT = paddle.to_tensor(DPO_FC_EXCEPTED_RESULT)
     #     self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
->>>>>>> upstream/develop
