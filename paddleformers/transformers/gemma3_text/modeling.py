@@ -25,6 +25,7 @@ from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.mlp import MLP as BaseMLP
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..activations import ACT2FN
@@ -64,38 +65,10 @@ class Gemma3TextScaledWordEmbedding(nn.Embedding):
         return super().forward(input_ids) * self.embed_scale.to(self.weight.dtype)
 
 
-class Gemma3MLP(nn.Layer):
-    def __init__(self, config: Gemma3TextConfig):
-        super().__init__()
-        self.config = config
-        self.hidden_size = config.hidden_size
-        self.intermediate_size = config.intermediate_size
-        self.gate_proj = GeneralLinear.create(
-            self.hidden_size,
-            self.intermediate_size,
-            has_bias=False,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.up_proj = GeneralLinear.create(
-            self.hidden_size,
-            self.intermediate_size,
-            has_bias=False,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.down_proj = GeneralLinear.create(
-            self.intermediate_size,
-            self.hidden_size,
-            has_bias=False,
-            config=config,
-            tp_plan="rowwise",
-        )
+class Gemma3MLP(BaseMLP):
+    def __init__(self, config: Gemma3TextConfig, fuse_up_gate=False):
+        super().__init__(config, fuse_up_gate=fuse_up_gate)
         self.act_fn = ACT2FN[config.hidden_activation]
-
-    def forward(self, x):
-        down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
-        return down_proj
 
 
 class Gemma3RMSNorm(nn.Layer):
@@ -211,6 +184,7 @@ class Gemma3Attention(nn.Layer):
         self.attention_dropout = config.attention_dropout
         self.is_causal = not config.use_bidirectional_attention
         self.attn_implementation = config._attn_implementation
+        self.fuse_attention_qkv = config.fuse_attention_qkv
 
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
@@ -231,27 +205,36 @@ class Gemma3Attention(nn.Layer):
         kv_hidden_size = config.num_key_value_heads * self.head_dim
         q_hidden_size = config.num_attention_heads * self.head_dim
 
-        self.q_proj = GeneralLinear.create(
-            config.hidden_size,
-            q_hidden_size,
-            has_bias=config.attention_bias,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.k_proj = GeneralLinear.create(
-            config.hidden_size,
-            kv_hidden_size,
-            has_bias=config.attention_bias,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.v_proj = GeneralLinear.create(
-            config.hidden_size,
-            kv_hidden_size,
-            has_bias=config.attention_bias,
-            config=config,
-            tp_plan="colwise",
-        )
+        if not self.fuse_attention_qkv:
+            self.q_proj = GeneralLinear.create(
+                config.hidden_size,
+                q_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.k_proj = GeneralLinear.create(
+                config.hidden_size,
+                kv_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.v_proj = GeneralLinear.create(
+                config.hidden_size,
+                kv_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+        else:
+            self.qkv_proj = GeneralLinear.create(
+                config.hidden_size,
+                q_hidden_size + 2 * kv_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
             config.hidden_size,
@@ -280,21 +263,48 @@ class Gemma3Attention(nn.Layer):
         use_cache: bool = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     ) -> tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[tuple[paddle.Tensor]]]:
-        if self.config.sequence_parallel:
-            max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
-            q_len = max_sequence_length
+        if not self.fuse_attention_qkv:
+            if self.config.sequence_parallel:
+                max_sequence_length = self.config.max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                q_len = max_sequence_length
+            else:
+                bsz, q_len, _ = hidden_states.shape
+
+            hidden_shape = (bsz, q_len, -1, self.head_dim)
+
+            query_states = self.q_proj(hidden_states).reshape(hidden_shape)
+            key_states = self.k_proj(hidden_states).reshape(hidden_shape)
+            value_states = self.v_proj(hidden_states).reshape(hidden_shape)
         else:
-            bsz, q_len, _ = hidden_states.shape
-
-        hidden_shape = (bsz, q_len, -1, self.head_dim)
-
-        query_states = self.q_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
+            mix_layer = self.qkv_proj(hidden_states)
+            if self.config.sequence_parallel:
+                max_sequence_length = self.config.max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                q_len = max_sequence_length
+                target_shape = [
+                    bsz,
+                    q_len,
+                    self.num_key_value_heads,
+                    (self.num_key_value_groups + 2) * self.head_dim,
+                ]
+            else:
+                target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
+            mix_layer = paddle.reshape_(mix_layer, target_shape)
+            query_states, key_states, value_states = paddle.split(
+                mix_layer,
+                num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
+                axis=-1,
+            )
+            query_states = query_states.reshape([0, 0, -1, self.head_dim])
 
         query_states = self.q_norm(query_states)
         key_states = self.k_norm(key_states)
+
+        # b l h d -> b h l d
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
@@ -338,7 +348,7 @@ class Gemma3DecoderLayer(nn.Layer):
         self.layer_idx = layer_idx
         self.attention_type = config.layer_types[layer_idx]
         self.self_attn = Gemma3Attention(config=config, layer_idx=layer_idx)
-        self.mlp = Gemma3MLP(config)
+        self.mlp = Gemma3MLP(config, fuse_up_gate=config.fuse_attention_ffn)
         self.input_layernorm = Gemma3RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = Gemma3RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
         self.pre_feedforward_layernorm = Gemma3RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
@@ -408,70 +418,75 @@ class Gemma3PreTrainedModel(PretrainedModel):
     ]
 
     @classmethod
-    def _get_tensor_parallel_mappings(cls, config: Gemma3TextConfig, is_split=True):
-        """Generate tensor parallel mappings for model conversion."""
-        from ..conversion_utils import split_or_merge_func
+    def _get_fuse_or_split_param_mappings(cls, config: Gemma3TextConfig, is_fuse=False):
+        # return parameter fuse utils
+        from ..conversion_utils import split_or_fuse_func
 
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
+        fn = split_or_fuse_func(is_fuse=is_fuse)
 
-        LAYER_COLWISE = [
-            "self_attn.q_proj.weight",
-            "mlp.up_proj.weight",
-            "mlp.gate_proj.weight",
+        # last key is fused key, other keys are to be fused.
+        fuse_qkv_keys = [
+            (
+                "layers.0.self_attn.q_proj.weight",
+                "layers.0.self_attn.k_proj.weight",
+                "layers.0.self_attn.v_proj.weight",
+                "layers.0.self_attn.qkv_proj.weight",
+            ),
+            (
+                "layers.0.self_attn.q_proj.bias",
+                "layers.0.self_attn.k_proj.bias",
+                "layers.0.self_attn.v_proj.bias",
+                "layers.0.self_attn.qkv_proj.bias",
+            ),
         ]
-
-        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
-
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.o_proj.bias",
+        fuse_gate_up_keys = [
+            (
+                "layers.0.mlp.gate_proj.weight",
+                "layers.0.mlp.up_proj.weight",
+                "layers.0.mlp.up_gate_proj.weight",
+            ),
         ]
+        num_heads = config.num_attention_heads
+        num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
+        fuse_attention_qkv = getattr(config, "fuse_attention_qkv", False)
+        fuse_attention_ffn = getattr(config, "fuse_attention_ffn", False)
 
-        # if we have enough num_key_value_heads to split, then split it.
-        if config.num_key_value_heads % config.tensor_parallel_degree == 0:
-            LAYER_COLWISE.extend(["self_attn.k_proj.weight", "self_attn.v_proj.weight"])
-            BIAS_KEYS.extend(["self_attn.k_proj.bias", "self_attn.v_proj.bias"])
+        final_actions = {}
+        if is_fuse:
+            if fuse_attention_qkv:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_qkv_keys:
+                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
+                        final_actions[keys] = partial(
+                            fn, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
+                        )
 
-        def make_base_actions():
-            if config.vocab_size % config.tensor_parallel_degree == 0:
-                actions = {
-                    "lm_head.weight": partial(fn, is_column=False),
-                    "embed_tokens.weight": partial(fn, is_column=False),
-                }
-            else:
-                actions = {}
+            if fuse_attention_ffn:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_gate_up_keys:
+                        keys = [key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys]
+                        experts_keys = tuple(keys)
+                        final_actions[experts_keys] = fn
 
-            for layer_idx in range(config.num_hidden_layers):
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                        for k in LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
-                        for k in LAYER_ROWWISE
-                    }
-                )
-                # bias
-                if config.attention_bias:
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
-                            for b in BIAS_KEYS
-                        }
-                    )
-
-            return actions
-
-        mappings = make_base_actions()
-        return mappings
+        else:
+            if not fuse_attention_qkv:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_qkv_keys:
+                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
+                        final_actions[keys] = partial(
+                            fn,
+                            split_nums=3,
+                            is_qkv=True,
+                            num_heads=num_heads,
+                            num_key_value_heads=num_key_value_heads,
+                        )
+            if not fuse_attention_ffn:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_gate_up_keys:
+                        keys = [key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys]
+                        experts_keys = tuple(keys)
+                        final_actions[experts_keys] = partial(fn, split_nums=2)
+        return final_actions
 
     @classmethod
     def _gen_aoa_config(cls, config: Gemma3TextConfig):
@@ -488,15 +503,34 @@ class Gemma3PreTrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.pre_feedforward_layernorm.weight -> {model_prefix}layers.$LAYER_ID.pre_feedforward_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_feedforward_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight",
                 # do transpose
-                f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate_proj.weight",
-                f"model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
-                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight",
-                f"model.layers.$LAYER_ID.self_attn.k_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight",
-                f"model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
             ]
         }
+
+        # attention qkv
+        if not config.fuse_attention_qkv:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+            ]
+
+        # FFN
+        if not config.fuse_attention_ffn:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
+                for p in ("gate", "up")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+            ]
+
         return aoa_config
 
     # NOTE: These aoa_config items will be removed later. The subsequent AOA parsing module will automatically generate the reverse AOA based on the forward (from_pretrained) AOA.
@@ -507,12 +541,7 @@ class Gemma3PreTrainedModel(PretrainedModel):
             # ignore tied weights
             "lm_head.weight -> _",
             # do transpose
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.gate_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.mlp.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.up_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight^T -> model.layers.$LAYER_ID.self_attn.q_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight^T -> model.layers.$LAYER_ID.self_attn.k_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight^T -> model.layers.$LAYER_ID.self_attn.v_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             # others
             f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
@@ -522,6 +551,34 @@ class Gemma3PreTrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.pre_feedforward_layernorm.weight -> model.layers.$LAYER_ID.pre_feedforward_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight -> model.layers.$LAYER_ID.post_feedforward_layernorm.weight",
         ]
+
+        if not config.fuse_attention_qkv:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
+            ]
+            aoa_statements += [
+                f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
+                for layer_id in range(config.num_hidden_layers)
+                for x in ("q", "k", "v")
+            ]
+
+        if not config.fuse_attention_ffn:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
+                for y in ("gate", "up")
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}layers.0.mlp.up_gate_proj.weight -> model.layers.0.mlp.gate_proj.weight, model.layers.0.mlp.up_proj.weight, fused_ffn",
+                "model.layers.0.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
+                "model.layers.0.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
+            ]
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config

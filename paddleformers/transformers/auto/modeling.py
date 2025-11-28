@@ -115,7 +115,10 @@ def get_name_mapping(task="Model"):
     """
     NAME_MAPPING = OrderedDict()
     for key, value in MAPPING_NAMES.items():
-        import_class = key + task
+        if key in MAPPING_SPACIAL_KEY and task == "Model":
+            import_class = MAPPING_SPACIAL_KEY[key] + task
+        else:
+            import_class = key + task
         new_key = key + "Model_Import_Class"
         NAME_MAPPING[new_key] = import_class
         NAME_MAPPING[import_class] = value
