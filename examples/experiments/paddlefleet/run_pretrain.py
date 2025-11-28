@@ -55,7 +55,10 @@ from paddleformers.utils.tools import get_env_device
 os.environ["USE_CASUAL_MASK"] = "True"
 
 
-from glm45_provider import GLM45AirModelDebugProvider, GLM45AirModelSingleCardDebugProvider
+from glm45_provider import (
+    GLM45AirModelDebugProvider,
+    GLM45AirModelSingleCardDebugProvider,
+)
 
 from paddleformers.trainer.utils.doc import add_start_docstrings
 
@@ -373,10 +376,10 @@ def _set_random_seed(
             seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
         random.seed(seed)
         np.random.seed(seed)
-        paddle.seed(seed)
+        paddle.manual_seed(seed)
 
         if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
-            paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
+            paddlefleet.tensor_parallel.model_parallel_cuda_qq
                 seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
             )
     else:
