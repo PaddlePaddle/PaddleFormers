@@ -427,7 +427,6 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
                 "num_acc_steps",
                 "disable_ffn_model_parallel",
                 "moe_group_origin",
-                "moe_multimodal_dispatch_use_allgather",
                 "moe_rank",
                 "moe_world_size",
             ]

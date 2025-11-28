@@ -193,7 +193,14 @@ def run_sft(
     # (Liuting) Not support acc calculation now due to MTP.
     if "DeepseekV3" in str(model_config.architectures):
         training_args.prediction_loss_only = True
-
+    # sink_attention v2 not support packing=false Now
+    is_sm90 = (
+        paddle.base.core.is_compiled_with_cuda()
+        and paddle.device.cuda.get_device_capability()[0] == 9
+        and paddle.device.cuda.get_device_capability()[1] == 0
+    )
+    if "GptOss" in str(model_config.architectures) and data_args.packing is False and not is_sm90:
+        model_config.attn_impl = "eager"
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
@@ -259,6 +266,8 @@ def run_sft(
 
     # Load tokenizer & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
 
     # if using chat_template, data_args.eval_with_do_generation must be false
     if tokenizer.chat_template is not None:
@@ -281,6 +290,7 @@ def run_sft(
         "encode_one_turn": data_args.encode_one_turn,
         "use_template": data_args.use_template,
         "is_pretraining": True if model_args.stage.lower() == "pt" else False,
+        "truncate_packing": data_args.truncate_packing,
     }
 
     if data_args.dataset_type == "pretrain":

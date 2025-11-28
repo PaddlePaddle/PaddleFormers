@@ -31,8 +31,7 @@ from paddleformers.transformers import (
     CosineAnnealingWithWarmupDecay,
     LinearAnnealingWithWarmupDecay,
     LlamaConfig,
-    LlamaForCausalLMNet,
-    LlamaPretrainingCriterionNet,
+    LlamaForCausalLM,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.utils.log import logger
@@ -205,11 +204,12 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
 
     # TODO: only support llama model now
     config_class = LlamaConfig
-    model_class = LlamaForCausalLMNet
-    criterion_class = LlamaPretrainingCriterionNet
+    model_class = LlamaForCausalLM
 
     config = config_class.from_pretrained(model_args.model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
     # config = AutoConfig.from_pretrained(model_args.model_name_or_path)
     LlmMetaConfig.set_llm_config(config, training_args)
     config.use_fast_layer_norm = model_args.use_fast_layer_norm
@@ -288,7 +288,7 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
 
     with paddle.LazyGuard():
         model = model_class.from_config(config, dtype=dtype)
-        criterion = criterion_class(config)
+        criterion = model.criterion
 
     if training_args.recompute:
 
