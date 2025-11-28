@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# The file has been adapted from hiyouga LLaMA-Factory project
+# Copyright (c) 2025 LLaMA-Factory
+# Licensed under the Apache License - https://github.com/hiyouga/LLaMA-Factory/blob/main/LICENSE
+
 import re
 from copy import deepcopy
 from dataclasses import dataclass
@@ -274,76 +278,6 @@ class Template:
                 tokenizer.chat_template = self._get_jinja_template(tokenizer)
             except ValueError as e:
                 logger.warning(f"Cannot add this chat template to tokenizer: {e}.")
-
-
-@dataclass
-class Llama2Template(Template):
-    r"""A template that fuse the system message to first user message."""
-
-    @override
-    def _encode(
-        self,
-        tokenizer: "PreTrainedTokenizer",
-        messages: list[dict[str, str]],
-        system: str,
-        tools: str,
-    ) -> list[list[int]]:
-        system = system or self.default_system
-        encoded_messages = []
-        for i, message in enumerate(messages):
-            elements = []
-
-            system_text = ""
-            if i == 0:
-                elements += self.format_prefix.apply()
-                if system or tools:
-                    tool_text = self.format_tools.apply(content=tools)[0] if tools else ""
-                    system_text = self.format_system.apply(content=(system + tool_text))[0]
-
-            if message["role"] == Role.USER:
-                elements += self.format_user.apply(content=system_text + message["content"])
-            elif message["role"] == Role.ASSISTANT:
-                elements += self.format_assistant.apply(content=message["content"])
-            elif message["role"] == Role.OBSERVATION:
-                elements += self.format_observation.apply(content=message["content"])
-            elif message["role"] == Role.FUNCTION:
-                elements += self.format_function.apply(content=message["content"])
-            else:
-                raise NotImplementedError("Unexpected role: {}".format(message["role"]))
-
-            encoded_messages.append(self._convert_elements_to_ids(tokenizer, elements))
-
-        return encoded_messages
-
-    def _get_jinja_template(self, tokenizer: "PreTrainedTokenizer") -> str:
-        prefix = self._convert_slots_to_jinja(self.format_prefix.apply(), tokenizer)
-        system_message = self._convert_slots_to_jinja(
-            self.format_system.apply(), tokenizer, placeholder="system_message"
-        )
-        user_message = self._convert_slots_to_jinja(self.format_user.apply(), tokenizer)
-        assistant_message = self._convert_slots_to_jinja(self.format_assistant.apply(), tokenizer)
-        jinja_template = ""
-        if prefix:
-            jinja_template += "{{ " + prefix + " }}"
-
-        if self.default_system:
-            jinja_template += "{% set system_message = '" + self._jinja_escape(self.default_system) + "' %}"
-
-        jinja_template += (
-            "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}"
-            "{% set system_message = messages[0]['content'] %}{% else %}{% set loop_messages = messages %}{% endif %}"
-            "{% for message in loop_messages %}"
-            "{% if loop.index0 == 0 and system_message is defined %}"
-            "{% set content = " + system_message + " + message['content'] %}"
-            "{% else %}{% set content = message['content'] %}{% endif %}"
-            "{% if message['role'] == 'user' %}"
-            "{{ " + user_message + " }}"
-            "{% elif message['role'] == 'assistant' %}"
-            "{{ " + assistant_message + " }}"
-            "{% endif %}"
-            "{% endfor %}"
-        )
-        return jinja_template
 
 
 @dataclass

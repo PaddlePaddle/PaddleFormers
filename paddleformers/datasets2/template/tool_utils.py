@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# The file has been adapted from hiyouga LLaMA-Factory project
+# Copyright (c) 2025 LLaMA-Factory
+# Licensed under the Apache License - https://github.com/hiyouga/LLaMA-Factory/blob/main/LICENSE
+
+
 import json
 import re
 from abc import ABC, abstractmethod

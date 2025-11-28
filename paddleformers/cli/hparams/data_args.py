@@ -59,8 +59,6 @@ class DataArguments:
         Multi-source dataset is supported, e.g., 0.8,0.2."
         },
     )
-    text_dataset_path: str = field(default=None, metadata={"help": "sft txt data path"})
-    text_dataset_prob: str = field(default=None, metadata={"help": "sft txt data prob"})
     eval_dataset_type: str = field(default="erniekit", metadata={"help": "type of eval datasets."})
     eval_dataset_path: str = field(
         default="examples/data/sft-eval.jsonl",
