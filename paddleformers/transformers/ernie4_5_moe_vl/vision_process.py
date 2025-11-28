@@ -30,13 +30,6 @@ from decord import VideoReader, cpu
 from PIL import Image, ImageDraw, ImageFont
 from PIL.ExifTags import TAGS
 
-try:
-    # moviepy 1.0
-    import moviepy.editor as mp
-except:
-    # moviepy 2.0
-    import moviepy as mp  # noqa: F401
-
 from ...utils.log import logger
 
 RAW_VIDEO_DIR = "./download_tmp/raw_video/"
