@@ -300,6 +300,16 @@ class LoRALinear(nn.Linear):
         return f"in_features={self.weight.shape[0]}, out_features={self.weight.shape[1]}, rank={self.r}{name}"
 
 
+class FleetLoRALinear(LoRALinear):
+    def __init__(self, in_features, out_features, **kwargs):
+        super().__init__(in_features, out_features, **kwargs)
+
+    def forward(self, input: paddle.Tensor):
+        output = super().forward(input)
+        bias = self.bias if self.bias is not None else None
+        return output, bias
+
+
 class RowParallelLoRALinear(RowParallelLinear):
     def __init__(
         self,
@@ -737,7 +747,6 @@ class FleetColumnParallelLoRALinear(ColumnParallelLoRALinear):
         super().__init__(in_features, out_features, **kwargs)
 
     def forward(self, input: paddle.Tensor):
-        print("FleetColumnParallelLoRALinear forward")
         output = super().forward(input)
         bias = self.bias if self.bias is not None else None
         return output, bias

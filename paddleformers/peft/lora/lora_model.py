@@ -97,6 +97,7 @@ def get_lora_layers():
             ColumnParallelLoRALinear,
             ColumnSequenceParallelLoRALinear,
             FleetColumnParallelLoRALinear,
+            FleetLoRALinear,
             FleetRowParallelLoRALinear,
             LoRAConv2D,
             LoRALinear,
@@ -110,6 +111,7 @@ def get_lora_layers():
         "ColumnSequenceParallelLoRALinear": ColumnSequenceParallelLoRALinear,
         "LoRAConv2D": LoRAConv2D,
         "LoRALinear": LoRALinear,
+        "FleetLoRALinear": FleetLoRALinear,
         "RowParallelLoRALinear": RowParallelLoRALinear,
         "FleetRowParallelLoRALinear": FleetRowParallelLoRALinear,
         "RowSequenceParallelLoRALinear": RowSequenceParallelLoRALinear,
@@ -123,6 +125,7 @@ LoRAConv2D = lora_layers["LoRAConv2D"]
 LoRALinear = lora_layers["LoRALinear"]
 RowParallelLoRALinear = lora_layers["RowParallelLoRALinear"]
 RowSequenceParallelLoRALinear = lora_layers["RowSequenceParallelLoRALinear"]
+FleetLoRALinear = lora_layers["FleetLoRALinear"]
 FleetRowParallelLoRALinear = lora_layers["FleetRowParallelLoRALinear"]
 FleetColumnParallelLoRALinear = lora_layers["FleetColumnParallelLoRALinear"]
 
@@ -594,6 +597,26 @@ class LoRAModel(nn.Layer):
         lora_module = None
         if isinstance(module, nn.Linear):
             lora_module = LoRALinear(
+                in_features=module.weight.shape[0],
+                out_features=module.weight.shape[1],
+                r=lora_config.r,
+                lora_alpha=lora_config.lora_alpha,
+                lora_dropout=lora_config.lora_dropout,
+                rslora=lora_config.rslora,
+                lora_plus_scale=lora_config.lora_plus_scale,
+                pissa=lora_config.pissa,
+                bias_attr=False if module.bias is None else None,
+                use_quick_lora=lora_config.use_quick_lora,
+                lora_use_mixer=lora_config.lora_use_mixer,
+                use_mora=lora_config.use_mora,
+                mp_moe=getattr(module.weight, "mp_moe", False),
+                is_distributed=getattr(module.weight, "is_distributed", False),
+                lorapro=lora_config.lorapro,
+            )
+        elif (
+            isinstance(module, FleetColumnParallelLinear) or isinstance(module, FleetRowParallelLinear)
+        ) and module.world_size == 1:
+            lora_module = FleetLoRALinear(
                 in_features=module.weight.shape[0],
                 out_features=module.weight.shape[1],
                 r=lora_config.r,
