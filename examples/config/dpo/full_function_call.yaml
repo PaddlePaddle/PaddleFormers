@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: chatml
 eval_dataset_type: chatml
-train_dataset_path: ./tests/fixtures/dummy/function-call/train.jsonl
+train_dataset_path: ./tests/fixtures/dummy/dpo/function-call-train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./tests/fixtures/dummy/function-call/eval.jsonl
+eval_dataset_path: ./tests/fixtures/dummy/dpo/function-call-eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false
