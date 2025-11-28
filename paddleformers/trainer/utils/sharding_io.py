@@ -114,7 +114,9 @@ def exclude_parameters_in_state_dict(
     assert isinstance(model_state_dict, dict) and isinstance(
         param_names_in_master_weights, (list, set)
     ), "param_names_in_master_weights type:{}".format(type(param_names_in_master_weights))
-    state_param_names = [v.name for k, v in model_state_dict.items()]
+    state_param_names = [
+        v.name if isinstance(v, paddle.Tensor) else v.local_tensor.name for k, v in model_state_dict.items()
+    ]
     logger.debug(
         "param_names_in_master_weights:{}, state_param_names:{}".format(
             param_names_in_master_weights, state_param_names
@@ -130,7 +132,9 @@ def exclude_parameters_in_state_dict(
     logger.info("sharding_group_param_names:{}".format(param_names_in_master_weights))
     non_parameters_state_dict = copy.copy(model_state_dict)
     for k, v in model_state_dict.items():
-        if v.name in param_names_in_master_weights:
+        if (isinstance(v, paddle.Tensor) and v.name in param_names_in_master_weights) or (
+            v.local_tensor.name in param_names_in_master_weights
+        ):
             non_parameters_state_dict.pop(k)
 
     return non_parameters_state_dict

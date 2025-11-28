@@ -453,7 +453,7 @@ class ZeroCostCheckpointCallback(TrainerCallback):
         if not control.should_save:
             if args.zcc_save_ema_coef is not None and state.global_step % self.zcc_ema_interval == 0:
                 self.maybe_update_zcc_worker(args, model, optimizer, state.global_step)
-                self.manager.get_idle_worker_for_saving()  # prepare for dumping
+                self.manager.get_idle_worker_for_saving(((None, None), (None, state, None)))  # prepare for dumping
         else:
             self.runtime_timer.start("checkpoint saving time")
             self.maybe_update_zcc_worker(args, model, optimizer, state.global_step)

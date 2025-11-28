@@ -131,6 +131,7 @@ from ..transformers.segment_parallel_utils import (
 from ..utils import empty_device_cache
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
+    EMA_STATE_DIC,
     LOKR_WEIGHTS_NAME,
     LORA_WEIGHTS_NAME,
     MASTER_WEIGHT_DIC,
@@ -227,7 +228,15 @@ from .utils.helper import (  # nested_truncate,
     nested_numpify,
     nested_truncate,
 )
-from .utils.sharding_io import ShardingIO
+from .utils.reshard import merge_model_state
+from .utils.sharding_io import (
+    GroupGetter,
+    ShardingIO,
+    exclude_parameters_in_state_dict,
+    split_model_state,
+    split_opt_state,
+    to_device,
+)
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
@@ -1042,6 +1051,23 @@ class Trainer:
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
+        if self.args.bf16 and self.args.should_save_sharding_stage1_model:
+            group_getter = GroupGetter(self.model)
+            gids = group_getter.get_group_ids()
+            param_names_in_master_weights = []
+            optimzier_state_dict = self.optimizer.state_dict()
+            optimzier_state_dict = split_opt_state(optimzier_state_dict, group_getter)
+            model_sharded_state_dict = split_model_state(model_sharded_state_dict, group_getter)
+            for gid in gids:
+                sub_opt_state = optimzier_state_dict.get(gid, {})
+                param_names_in_master_weights = list(sub_opt_state.get("master_weights", {}).keys())
+                model_sharded_state_dict[gid] = exclude_parameters_in_state_dict(
+                    model_sharded_state_dict.get(gid, {}),
+                    param_names_in_master_weights,
+                    group_getter.get_group_by_id(gid),
+                )
+            model_sharded_state_dict = merge_model_state(model_sharded_state_dict)
+
         model_state_dict_path = os.path.join(output_dir, MODEL_STATE_DIC)
         os.makedirs(model_state_dict_path, exist_ok=True)
         dist.save_state_dict(
@@ -1130,12 +1156,30 @@ class Trainer:
 
             self._load_scheduler(resume_from_checkpoint)
 
-        dist.load_state_dict(
-            model_sharded_state_dict,
-            model_states_path,
-            aoa_config=self.args.aoa_config,
-            offload=self.args.load_via_cpu,
-        )
+        should_load_stage1 = self.args.should_load_sharding_stage1_model
+        if should_load_stage1 and self.args.sharded_model_from_ema:
+            ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
+            ema_state_dict = paddle.load(ema_states_path)
+            ema_state_dict.pop("master_weights", None)
+            ema_state_dict = reshard_util.all_gather_state_dict(ema_state_dict, lambda x: True, self.sharding_group)
+            self.model.set_state_dict(ema_state_dict)
+        else:
+            dist.load_state_dict(
+                model_sharded_state_dict,
+                model_states_path,
+                aoa_config=self.args.aoa_config,
+                offload=self.args.load_via_cpu,
+            )
+
+        if self.args.bf16 and (not self.args.ignore_load_lr_and_optim) and should_load_stage1:
+            model_state_dict = self.model.state_dict()
+            for key, param in model_state_dict.items():
+                if param.name in master_weights:
+                    assert param.shape == master_weights[param.name].shape
+                    paddle.assign(
+                        paddle.cast(to_device(master_weights[param.name]), paddle.bfloat16), model_state_dict[key]
+                    )
+            self.optimier._sharding_sync_parameters()
 
         for v in model_sharded_state_dict.values():
             if hasattr(v.local_tensor, "target_tensor"):
@@ -1340,7 +1384,7 @@ class Trainer:
                 else:
                     self._load_flex_checkpoint(resume_from_checkpoint)
         else:
-            if self.args.should_load_sharding_stage1_model:
+            if self.args.should_load_sharding_stage1_model and self.args.load_checkpoint_format != "flex_checkpoint":
                 if self.sharding_io is not None:
                     # the self.optimizer should be wrapped and it is done in _wrap_model
                     self.sharding_io.set_optimizer(self.optimizer)
@@ -2037,6 +2081,15 @@ class Trainer:
                             * args.gradient_accumulation_steps
                             * args.dataset_world_size
                         )
+                        # For ZCC EMA
+                        if self.args.enable_zero_cost_checkpoint or self.args.zcc_save_ema_coef is not None:
+                            tr_loss_for_zcc = tr_loss.clone()
+                            dist.all_reduce(
+                                tr_loss_for_zcc, dist.ReduceOp.SUM
+                            )  # 3级并行时，每个pp下的loss会广播，全局reduce-mean的时候，分子分母都会乘以pp_world_size，结果会被约掉
+                            tr_loss_for_zcc_scalar = tr_loss_for_zcc.item() / dist.get_world_size()
+                            self.state.loss = tr_loss_for_zcc_scalar
+
                         self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                         self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval, inputs=inputs)
                         self._print_timer()
