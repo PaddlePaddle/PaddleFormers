@@ -108,7 +108,7 @@ def apply_fused_rope(query_states, key_states, rope_theta):
             None,
             rotary_emb_base=rope_theta,
         )
-    return query_states, key_states
+    return query_states.transpose(1, 2), key_states.transpose(1, 2)
 
 
 class Ernie4_5RotaryEmbedding(nn.Layer):
