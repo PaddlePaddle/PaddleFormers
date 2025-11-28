@@ -17,7 +17,7 @@ import unittest
 
 import numpy as np
 import paddle
-from paddle.nn.functional.flash_attention import scaled_dot_product_attention
+from paddle.nn.functional import scaled_dot_product_attention
 
 from paddleformers.transformers.ring_flash_attention import (
     RingFlashAttention,
