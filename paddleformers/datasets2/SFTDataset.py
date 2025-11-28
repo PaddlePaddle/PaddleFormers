@@ -95,7 +95,7 @@ class SFTDataSet(IterableDataset):
                 else:
                     # 对多模信息做处理，将messages里面的占位符替换
                     messages = self.template.mm_plugin.process_messages(
-                        example, images, videos, audios, self.processor
+                        example["messages"], images, videos, audios, self.processor
                     )
                     # 套template，转ids
                     encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)

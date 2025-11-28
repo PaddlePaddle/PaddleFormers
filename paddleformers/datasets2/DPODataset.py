@@ -50,6 +50,8 @@ class DPODataSet(IterableDataset):
         self.mask_out_eos_token = dataset_config["mask_out_eos_token"]
         self.template = dataset_config["template_instance"]
         self.use_attn_mask_startend_row_indices = dataset_config["use_attn_mask_startend_row_indices"]
+        self.template_backend = dataset_config.get("template_backend", "custom")
+        self.split_multi_turn = dataset_config.get("split_multi_turn", False)
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
@@ -160,26 +162,36 @@ class DPODataSet(IterableDataset):
 
         cur_len = 0
 
-        # 对多模信息做处理，将messages里面的占位符替换
         system = example.get("system", None)
         tools = example.get("tools", None)
         images = example.get("images", [])
         videos = example.get("videos", [])
         audios = example.get("audios", [])
-        chosen_messages = self.template.mm_plugin.process_messages(
-            example["chosen"]["messages"], images, videos, audios, self.processor
-        )
-        rejected_messages = self.template.mm_plugin.process_messages(
-            example["rejected"]["messages"], images, videos, audios, self.processor
-        )
-        # 套template，转ids
-        prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
-        _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)
 
-        chosen_encoded_messages = []
-        rejected_encoded_messages = []
-        chosen_encoded_messages.append([prompt_ids, chosen_ids])
-        rejected_encoded_messages.append([prompt_ids, rejected_ids])
+        if self.template_backend == "jinja":
+            if not self.tokenizer.chat_template:
+                self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
+            if self.split_multi_turn:
+                chosen_encoded_messages = postprocess_fc_sequence(self.tokenizer, example["chosen"])
+                rejected_encoded_messages = postprocess_fc_sequence(self.tokenizer, example["rejected"])
+            else:
+                chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example["chosen"])
+                rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example["rejected"])
+        else:
+            chosen_messages = self.template.mm_plugin.process_messages(
+                example["chosen"]["messages"], images, videos, audios, self.processor
+            )
+            rejected_messages = self.template.mm_plugin.process_messages(
+                example["rejected"]["messages"], images, videos, audios, self.processor
+            )
+            prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
+            _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)
+        
+            chosen_encoded_messages = []
+            rejected_encoded_messages = []
+            chosen_encoded_messages.append([prompt_ids, chosen_ids])
+            rejected_encoded_messages.append([prompt_ids, rejected_ids])
+        
         # chosen/rejected response
         response_token_ids_list = []
         response_label_ids_list = []

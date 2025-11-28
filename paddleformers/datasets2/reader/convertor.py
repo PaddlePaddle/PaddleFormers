@@ -277,6 +277,8 @@ def erniekit_convertor(item):
         res = convert_mm_data(item)
     return res
 
+def messages_convertor(item):
+    return item
 
 def query_response_convertor(item):
     res = {}
