@@ -153,7 +153,7 @@ class SFTDataSet(IterableDataset):
                 ]
             else:
                 # labels = tokens[1:] + [self.tokenizer.eos_token_id]
-                tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
+                # tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
                 labels = tokens[1:] + [-100]
                 if len(tokens) > self.max_seq_len:
                     raise RuntimeError(f"token_ids is too long: {len(tokens)}")

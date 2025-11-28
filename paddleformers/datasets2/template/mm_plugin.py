@@ -44,9 +44,8 @@ from typing_extensions import override
 
 from paddleformers.datasets2.processor import SupervisedDatasetProcessor
 from paddleformers.datasets2.processor.encoder import Qwen2VLEncoder
-from paddleformers.datasets2.processor.vision_loader import Qwen2VLVisionLoader
+from paddleformers.datasets2.processor.vision_loader import VisionLoader
 from paddleformers.hparams.data_args import DataArguments
-
 
 from ..extras.constants import (
     AUDIO_PLACEHOLDER,
@@ -87,9 +86,7 @@ class MMPluginMixin:
     ) -> None:
         r"""Validate if this model accepts the input modalities."""
         image_processor = getattr(processor, "image_processor", None)
-        video_processor = getattr(
-            processor, "video_processor", getattr(processor, "image_processor", None)
-        )
+        video_processor = getattr(processor, "video_processor", getattr(processor, "image_processor", None))
         feature_extractor = getattr(processor, "feature_extractor", None)
         if len(images) != 0 and self.image_token is None:
             raise ValueError(
@@ -183,7 +180,9 @@ class MMPluginMixin:
         results = []
 
         image_inputs, video_inputs = self.vision_loader(images=images, videos=None)
-        results = self.encoder(messages=messages, image_inputs=image_inputs, video_inputs=video_inputs, processor=self.processor)
+        results = self.encoder(
+            messages=messages, image_inputs=image_inputs, video_inputs=video_inputs, processor=self.processor
+        )
 
         # for image in images:
         #     if isinstance(image, (str, BinaryIO)):
@@ -462,7 +461,7 @@ class Qwen2VLPlugin(BasePlugin):
                 video_max_frames=768,
                 render_timestamp=True,
             )
-            vision_loader = Qwen2VLVisionLoader(data_args=data_args)
+            vision_loader = VisionLoader(data_args=data_args)
             image_inputs, video_inputs = vision_loader(images=images, videos=videos)
             processor_res = processor(
                 text="",
@@ -514,7 +513,9 @@ class Qwen2VLPlugin(BasePlugin):
         for message in messages:
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
-                image_seqlen = image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                image_seqlen = (
+                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                )
                 content = content.replace(
                     IMAGE_PLACEHOLDER,
                     f"{self.vision_bos_token}{self.image_token * image_seqlen}{self.vision_eos_token}",
@@ -652,6 +653,7 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
             message["content"] = content
 
         return messages
+
 
 PLUGINS = {
     "base": BasePlugin,

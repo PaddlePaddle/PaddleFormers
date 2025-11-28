@@ -113,9 +113,10 @@ class FunctionFormatter(StringFormatter):
                 tool_calls = [tool_calls]
 
             for tool_call in tool_calls:
-                functions.append(
-                    FunctionCall(tool_call["name"], json.dumps(tool_call["arguments"], ensure_ascii=False))
-                )
+                arguments = tool_call["arguments"]
+                if not isinstance(arguments, str):
+                    arguments = json.dumps(arguments, ensure_ascii=False)
+                functions.append(FunctionCall(tool_call["name"], arguments))
 
         except json.JSONDecodeError:
             raise RuntimeError(f"Invalid JSON format in function message: {str([content])}.")  # flat string
