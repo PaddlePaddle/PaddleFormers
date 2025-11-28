@@ -362,7 +362,7 @@ class AlltoAllSmart(paddle.autograd.PyLayer):
                     paddle.zeros([1], dtype=recv_mask_alltoall_out.dtype),
                 )
                 distributed_input_to_alltoall_out = (
-                    distributed_input_to_alltoall_out.reshape([num_local_experts, -1, capacity])
+                    distributed_input_to_alltoall_out.view([num_local_experts, -1, capacity])
                     .transpose([1, 0, 2])
                     .reshape([-1])
                 )
@@ -627,7 +627,7 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
                     paddle.zeros([1], dtype=recv_mask_alltoall_out.dtype),
                 )
                 distributed_input_to_alltoall_out = (
-                    distributed_input_to_alltoall_out.reshape([num_local_experts, -1, capacity])
+                    distributed_input_to_alltoall_out.view([num_local_experts, -1, capacity])
                     .transpose([1, 0, 2])
                     .reshape([-1])
                 )

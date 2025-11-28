@@ -71,10 +71,10 @@ class Qwen2_5_VisionPatchEmbed(nn.Layer):
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         target_dtype = self.proj.weight.dtype
-        hidden_states = hidden_states.reshape(
+        hidden_states = hidden_states.view(
             -1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size
         )
-        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).reshape(-1, self.embed_dim)
+        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).view(-1, self.embed_dim)
         return hidden_states
 
 
@@ -104,7 +104,7 @@ class Qwen2_5_VLPatchMerger(nn.Layer):
         )
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
-        x = self.mlp(self.ln_q(x).reshape([-1, self.hidden_size]))
+        x = self.mlp(self.ln_q(x).view([-1, self.hidden_size]))
         return x
 
 
@@ -889,9 +889,9 @@ class Qwen2_5_VLAttention(nn.Layer):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        key_states = key_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        value_states = value_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        query_states = query_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        key_states = key_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        value_states = value_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_multimodal_rotary_pos_emb(
@@ -1406,9 +1406,9 @@ class Qwen2_5_VLModel(Qwen2_5_VLPretrainedModel):
                     text_len = ed - st
 
                     st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
-                    llm_pos_ids_list.append(paddle.arange(text_len).reshape(1, -1).expand(3, -1) + st_idx)
+                    llm_pos_ids_list.append(paddle.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
-                    range_tensor = paddle.arange(llm_grid_t).reshape(-1, 1)
+                    range_tensor = paddle.arange(llm_grid_t).view(-1, 1)
                     expanded_range = range_tensor.expand(-1, llm_grid_h * llm_grid_w)
 
                     time_tensor = expanded_range * second_per_grid_t * self.config.vision_config.tokens_per_second
@@ -1416,15 +1416,15 @@ class Qwen2_5_VLModel(Qwen2_5_VLPretrainedModel):
                     time_tensor_long = time_tensor.astype(dtype="int64")
                     t_index = time_tensor_long.flatten()
 
-                    h_index = paddle.arange(llm_grid_h).reshape(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
-                    w_index = paddle.arange(llm_grid_w).reshape(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
+                    h_index = paddle.arange(llm_grid_h).view(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
+                    w_index = paddle.arange(llm_grid_w).view(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
                     llm_pos_ids_list.append(paddle.stack([t_index, h_index, w_index]) + text_len + st_idx)
                     st = ed + llm_grid_t * llm_grid_h * llm_grid_w
 
                 if st < len(input_tokens):
                     st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
                     text_len = len(input_tokens) - st
-                    llm_pos_ids_list.append(paddle.arange(text_len).reshape(1, -1).expand(3, -1) + st_idx)
+                    llm_pos_ids_list.append(paddle.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
                 llm_positions = paddle.cat(llm_pos_ids_list, axis=1).reshape([3, -1])
                 if attention_mask is not None:
@@ -1442,7 +1442,7 @@ class Qwen2_5_VLModel(Qwen2_5_VLPretrainedModel):
                 max_position_ids = position_ids.max(0, keepdim=False)[0].max(-1, keepdim=True)[0]
                 mrope_position_deltas = max_position_ids + 1 - attention_mask.shape[-1]
             else:
-                position_ids = paddle.arange(input_ids.shape[1]).reshape(1, 1, -1).expand(3, input_ids.shape[0], -1)
+                position_ids = paddle.arange(input_ids.shape[1]).view(1, 1, -1).expand(3, input_ids.shape[0], -1)
                 mrope_position_deltas = paddle.zeros(
                     [input_ids.shape[0], 1],
                     dtype=input_ids.dtype,
@@ -1592,7 +1592,7 @@ class Qwen2_5_VLModel(Qwen2_5_VLPretrainedModel):
             else:
                 batch_size, seq_length, _ = inputs_embeds.shape
                 position_ids = paddle.arange(seq_length)
-                position_ids = position_ids.reshape(1, 1, -1).expand(3, batch_size, -1)
+                position_ids = position_ids.view(1, 1, -1).expand(3, batch_size, -1)
                 if cache_position is not None:
                     delta = cache_position[0] + self.rope_deltas
                 else:
@@ -1870,7 +1870,7 @@ class Qwen2_5_VLForConditionalGeneration(Qwen2_5_VLPretrainedModel):
             elif "position_ids" in model_inputs:
                 batch_size, seq_length = model_inputs["position_ids"].shape
                 position_ids = paddle.arange(seq_length)
-                position_ids = position_ids.reshape(1, 1, -1).expand(3, batch_size, -1)
+                position_ids = position_ids.view(1, 1, -1).expand(3, batch_size, -1)
                 delta = cache_position[0] + self.model.rope_deltas
                 delta = delta.repeat_interleave(batch_size // delta.shape[0], dim=0)
                 vision_positions = position_ids + delta.expand_as(position_ids)
