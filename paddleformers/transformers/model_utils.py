@@ -2978,7 +2978,12 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         with ContextManagers(init_contexts):
             model = cls(config, *init_args, **model_kwargs)
 
-        if hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
+        if load_checkpoint_format == "flex_checkpoint":
+            if not hasattr(cls, "_gen_aoa_config"):
+                raise RuntimeError(
+                    "When using flex_checkpoint to load Hugging Face open-source weights, "
+                    "the model must implement the _gen_aoa_config function to provide checkpoint conversion rules."
+                )
             aoa_config = cls._gen_aoa_config(config)
             sharded_state_dict = model.sharded_state_dict()
             dist.load_state_dict(
@@ -3216,8 +3221,20 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
-        if hasattr(self.__class__, "_gen_inv_aoa_config") and save_checkpoint_format == "flex_checkpoint":
-            aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+        if save_checkpoint_format == "flex_checkpoint":
+            if not hasattr(self.__class__, "_gen_inv_aoa_config"):
+                if hasattr(self.__class__, "_gen_aoa_config"):
+                    aoa_config = self.__class__._gen_aoa_config(model_to_save.config)
+                    aoa_config["aoa_config_reverse"] = True
+                    logger.warning("There is no _gen_inv_aoa_config, so we auto-derived it from _gen_aoa_config.")
+                else:
+                    raise RuntimeError(
+                        "When using flex_checkpoint to save Hugging Face weights, "
+                        "the model must implement either the _gen_inv_aoa_config function "
+                        "or the _gen_aoa_config function (which will be automatically used to derive _gen_inv_aoa_config)."
+                    )
+            else:
+                aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
 
             clean_unrelated_safetensors(save_dir)
 
