@@ -313,7 +313,6 @@ class ModularMoELayer(nn.Layer):
             )
             final_hidden_states = final_hidden_states + final_hidden_states_tmp
 
-
         return final_hidden_states.cast(hidden_states.dtype)
 
     def _forward_with_ep_parallel(
