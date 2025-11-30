@@ -438,11 +438,11 @@ class LlamaPretrainedModel(PretrainedModel):
                 for PROJECTOR_NAME in ["gate_proj", "up_proj", "down_proj"]
             ]
         )
-
-        if config.tie_word_embeddings:
-            aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
-        else:
-            aoa_statements.append("lm_head.weight -> lm_head.weight")
+        if cls != cls.base_model_class:
+            if config.tie_word_embeddings:
+                aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
+            else:
+                aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
 
@@ -471,7 +471,7 @@ class LlamaPretrainedModel(PretrainedModel):
             ]
         )
 
-        if not config.tie_word_embeddings:
+        if not config.tie_word_embeddings and cls != cls.base_model_class:
             aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
