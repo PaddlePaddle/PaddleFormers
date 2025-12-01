@@ -40,7 +40,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     ] = get_gpt_decoder_block_spec
 
     normalization: str = "RMSNorm"
-    activation_func: Callable = F.silu
+    act_fn: Callable = F.silu
     gated_linear_unit: bool = True
     add_bias_linear: bool = False
     add_qkv_bias: bool = True
@@ -106,7 +106,7 @@ class GLM45ModelProvider355B(GLMMoEModelProvider):
     )  # first three layers are dense
     moe_ffn_hidden_size: int = 1536
     moe_shared_expert_intermediate_size: int = 1536
-    qk_layernorm: bool = True
+    use_qk_norm: bool = True
     moe_router_topk_scaling_factor: float = 2.5
 
 
@@ -125,7 +125,7 @@ class GLM45AirModelProvider106B(GLMMoEModelProvider):
     )  # first one layer is dense
     moe_ffn_hidden_size: int = 1408
     moe_shared_expert_intermediate_size: int = 1408
-    qk_layernorm: bool = False
+    use_qk_norm: bool = False
     moe_router_topk_scaling_factor: float = 1.0
 
 
@@ -137,9 +137,43 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
 
     num_hidden_layers: int = 10
     moe_num_shared_experts: int = 1
+    moe_layer_freq: Union[int, List[int]] = field(
+        default_factory=lambda: [0] * 1 + [1] * 9
+    )  # first one layer is dense
     hidden_size: int = 128
     intermediate_size: int = 128
     moe_intermediate_size: int = 1408
     num_nextn_predict_layers: Optional[int] = 0
     use_bias: bool = False
     vocab_size: int = 37888
+
+
+@dataclass
+class GLM45AirModelSingleCardDebugProvider(GLMMoEModelProvider):
+    """
+    Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
+    """
+
+    use_bias: bool = False
+    num_hidden_layers: int = 2
+    num_attention_heads: int = 8
+    moe_aux_loss_coeff: float = 1e-4
+    num_key_value_heads: int = 8
+    seq_length: int = 8192
+    num_experts_per_tok: int = 4
+    hidden_size: int = 512
+    act_fn: Callable = F.silu
+    intermediate_size: int = 1024
+    moe_layer_freq: Union[int, List[int]] = field(
+        default_factory=lambda: [0] * 1 + [1] * 1
+    )  # first one layer is dense
+    moe_num_experts: int = 8
+    topk_method: str = "noaux_tc"
+
+    moe_intermediate_size: int = 1408
+    moe_shared_expert_intermediate_size: int = 1408
+    use_qk_norm: bool = False
+    moe_router_topk_scaling_factor: float = 1.0
+    num_nextn_predict_layers: Optional[int] = 0
+
+    transpose_gate_weight: bool = True

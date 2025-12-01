@@ -21,6 +21,14 @@ from functools import partial
 
 import paddle
 
+is_sm90 = (
+    paddle.base.core.is_compiled_with_cuda()
+    and paddle.device.cuda.get_device_capability()[0] == 9
+    and paddle.device.cuda.get_device_capability()[1] == 0
+)
+if is_sm90:
+    os.environ["FLAGS_flash_attn_version"] = "3"
+
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
@@ -199,8 +207,13 @@ def run_sft(
         and paddle.device.cuda.get_device_capability()[0] == 9
         and paddle.device.cuda.get_device_capability()[1] == 0
     )
-    if "GptOss" in str(model_config.architectures) and data_args.packing is False and not is_sm90:
-        model_config.attn_impl = "eager"
+    if (
+        "GptOss" in str(model_config.architectures)
+        and data_args.packing is False
+        and model_args.attn_impl == "flashmask"
+    ):
+        if not is_sm90:
+            model_args.attn_impl = "eager"
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
