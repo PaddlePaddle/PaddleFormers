@@ -517,8 +517,10 @@ def main():
     #        dtype = "bfloat16"
     if training_args.model_provider_type == "GLM_single_card":
         model_provider = GLM45AirModelSingleCardDebugProvider()
-    else:
+    elif training_args.model_provider_type == "GLM_muiti_cards":
         model_provider = GLM45AirModelDebugProvider()
+    else:
+        raise ValueError(f"Unsupported model provider type: {training_args.model_provider_type}")
     model = model_provider.provide()
 
     if training_args.recompute:
