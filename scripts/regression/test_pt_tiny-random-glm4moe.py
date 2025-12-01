@@ -37,7 +37,7 @@ PT_FULL_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 13
 
 PT_LORA_EXCEPTED_LOSS = 12.746171
 PT_LORA_RESUME_EXCEPTED_LOSS = 12.751431
-PT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
+PT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 PT_FULL_TP_PP_EXCEPTED_LOSS = 11.932426
 PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.932665
@@ -108,7 +108,7 @@ class PTTrainTester(unittest.TestCase):
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
         print(f"excepted_result is : {excepted_result}")
         print(f"result[0] is : {result[0]}")
-        self.assertTrue(paddle.allclose(result[0], excepted_result))
+        self.assertTrue(paddle.allclose(result[0].astype("float32"), excepted_result.astype("float32")))
 
 
 class PTTrainTest(unittest.TestCase):
@@ -223,15 +223,15 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_loss(resume_p.stdout, PT_LORA_RESUME_EXCEPTED_LOSS)
 
         # test lora merge
-        # lora_merge_output_dir = os.path.join(output_dir, "export")
+        lora_merge_output_dir = os.path.join(output_dir, "export")
         # cli mode
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.pttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-        # EXPECTED_RESULT = paddle.to_tensor(PT_LORA_EXCEPTED_RESULT)
-        # self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+        EXPECTED_RESULT = paddle.to_tensor(PT_LORA_EXCEPTED_RESULT)
+        self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
     def test_pt_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "pt_full_tp_pp")
@@ -334,12 +334,12 @@ class PTTrainTest(unittest.TestCase):
         self.pttrain_tester.assert_loss(resume_p.stdout, PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS)
 
         # test lora merge
-        # lora_merge_output_dir = os.path.join(output_dir, "export")
+        lora_merge_output_dir = os.path.join(output_dir, "export")
         # cli mode
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.pttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
         # test lora_merge_model generate
-        # EXPECTED_RESULT = paddle.to_tensor(PT_LORA_TP_PP_EXCEPTED_RESULT)
-        # self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+        EXPECTED_RESULT = paddle.to_tensor(PT_LORA_TP_PP_EXCEPTED_RESULT)
+        self.pttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
