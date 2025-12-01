@@ -32,16 +32,17 @@ def eager_attention_forward(
     is_causal: Optional[bool] = None,
     **kwargs,
 ):
+    # b h l d -> b l h d
+    key = key.transpose(1, 2)
+    value = value.transpose(1, 2)
     if hasattr(module, "num_key_value_groups"):
         num_key_value_groups = module.num_key_value_groups
         key = repeat_kv(key, num_key_value_groups)
         value = repeat_kv(value, num_key_value_groups)
 
-    perm = [0, 2, 1, 3]  # b l h d -> b h l d
-    query = paddle.transpose(x=query, perm=perm)
-    key = paddle.transpose(x=key, perm=perm)
-    value = paddle.transpose(x=value, perm=perm)
-
+    # b l h d -> b h l d
+    key = key.transpose(1, 2)
+    value = value.transpose(1, 2)
     attn_weights = paddle.matmul(query, key.transpose([0, 1, 3, 2])) * scaling
     if attention_mask is not None:
         causal_mask = attention_mask[:, :, :, : key.shape[-2]]

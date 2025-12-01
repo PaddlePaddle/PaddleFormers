@@ -26,7 +26,8 @@ is_sm90 = (
     and paddle.device.cuda.get_device_capability()[0] == 9
     and paddle.device.cuda.get_device_capability()[1] == 0
 )
-os.environ["FLAGS_flash_attn_version"] = "3"
+if is_sm90:
+    os.environ["FLAGS_flash_attn_version"] = "3"
 
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
@@ -202,11 +203,7 @@ def run_sft(
         training_args.prediction_loss_only = True
     # sink_attention v2 not support packing=false Now
 
-    if (
-        "GptOss" in str(model_config.architectures)
-        and data_args.packing is False
-        and model_args.attn_impl == "flashmask"
-    ):
+    if "GptOss" in str(model_config.architectures) and data_args.packing is False:
         if not is_sm90:
             model_args.attn_impl = "eager"
 
@@ -275,6 +272,8 @@ def run_sft(
 
     # Load tokenizer & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
 
     # if using chat_template, data_args.eval_with_do_generation must be false
     if tokenizer.chat_template is not None:

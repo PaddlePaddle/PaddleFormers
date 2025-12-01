@@ -409,6 +409,8 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
             )
 
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
     config = DeepseekV2FastConfig.from_pretrained(model_args.model_name_or_path)
 
     # set all llm config

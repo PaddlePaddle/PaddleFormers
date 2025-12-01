@@ -910,6 +910,22 @@ class Trainer:
                     logger.info(f"not loading ckpt :{self.args.dataset_rank}")
             self.runtime_timer.stop()
 
+    def _wrap_model_and_load_sharded_checkpoint(self, resume_from_checkpoint):
+        # In the sharded mode, should invoke _load_from_checkpoint after _wrap_model.
+        # In this mode, each sharding rank load sharded params, do not need to implement the broadcast logic.
+        model = self._wrap_model(self.model_wrapped)
+        if self.sharding_io is not None:
+            # the self.optimizer should be wrapped and it is done in _wrap_model
+            self.sharding_io.set_optimizer(self.optimizer)
+        if model is not self.model:
+            self.model_wrapped = model
+        # Should invoke _load_from_checpoint after _load_optimizer_and_scheduler
+        # because the _load_from_checkpoint method rely on the optimizer in the shareded mode.
+        if resume_from_checkpoint:
+            self._load_optimizer_and_scheduler(resume_from_checkpoint)
+            self._load_from_checkpoint(resume_from_checkpoint)
+        return model
+
     def _get_zcc_implementation_classes(self):
         """Get appropriate ZCC implementation classes based on checkpoint format."""
         if self.args.save_checkpoint_format == "flex_checkpoint":
@@ -1348,9 +1364,14 @@ class Trainer:
             elif self.args.load_checkpoint_format == "flex_checkpoint":
                 if delay_optimizer_creation:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
-
+                if ShardingOption.FULL_SHARD in self.args.sharding:
+                    model.init_slice_param()
+                    model.init_optimizer_for_slice_param()
                 if resume_from_checkpoint is not None:
                     self._load_flex_checkpoint(resume_from_checkpoint)
+                if ShardingOption.FULL_SHARD in self.args.sharding:
+                    model.align_param_to_buffer_and_clear_slice_param()
+
             else:
                 if delay_optimizer_creation:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
@@ -1908,13 +1929,16 @@ class Trainer:
                             )
 
                         for p in paramlist:
+                            if not getattr(p, "no_sync", False):
+                                continue
                             color = getattr(p, "color", -1)
                             is_expert = isinstance(color, dict) and color.get("color", -1) == "moe_expert"
                             if is_expert and self.args.hybrid_parallel_expert_grad_scale != 1.0:
                                 grad = getattr(p, "main_grad", p.grad)
                                 if grad is not None:
-                                    coeff = self.args.hybrid_parallel_expert_grad_scale
-                                    grad.scale_(coeff)
+                                    with paddle.no_grad():
+                                        coeff = self.args.hybrid_parallel_expert_grad_scale
+                                        grad.scale_(coeff)
 
                     disable_accumulation = False
 

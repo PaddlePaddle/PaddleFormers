@@ -21,6 +21,19 @@ import paddle.nn.functional as F
 from paddle import Tensor, nn
 
 
+class PaddleGELUTanh(nn.Layer):
+    """
+    A fast C implementation of the tanh approximation of the GeLU activation function. See
+    https://huggingface.co/papers/1606.08415.
+
+    This implementation is equivalent to NewGELU and FastGELU but much faster. However, it is not an exact numerical
+    match due to rounding errors.
+    """
+
+    def forward(self, input: paddle.Tensor) -> paddle.Tensor:
+        return nn.functional.gelu(input, approximate=True)
+
+
 class NewGELUActivation(nn.Layer):
     """
     Implementation of the GELU activation function currently in Google BERT repo (identical to OpenAI GPT). Also see
@@ -143,6 +156,7 @@ ACT2CLS = {
     "gelu_fast": FastGELUActivation,
     "gelu_new": NewGELUActivation,
     "gelu_python": (GELUActivation, {"use_gelu_python": True}),
+    "gelu_pytorch_tanh": PaddleGELUTanh,
     "linear": LinearActivation,
     "mish": MishActivation,
     "quick_gelu": QuickGELUActivation,
