@@ -244,10 +244,13 @@ def create_causal_mask_and_row_indices(
         attn_impl = getattr(config, "_attn_implementation", "eager")
         is_flash_backend = attn_impl in FLASH_BACKENDS
 
-        if attention_mask is None and is_flash_backend:
-            causal_mask = None
-            row_indices = None
-        elif attention_mask is not None and attention_mask.cast("bool").all() and or_mask_function is None:
+        # Check if the mask can be safely skipped
+        # Condition: Must be Flash Backend AND No extra mask func AND No padding (mask is None or all True)
+        is_fully_attended = attention_mask is None or (
+            attention_mask is not None and attention_mask.cast("bool").all()
+        )
+
+        if is_flash_backend and or_mask_function is None and is_fully_attended:
             causal_mask = None
             row_indices = None
         else:
@@ -318,32 +321,21 @@ def create_sliding_window_causal_mask_and_row_indices(
             attn_mask_startend_row_indices, window_size=sliding_window_val
         )
     else:
-        FLASH_BACKENDS = {"sdpa", "flashmask"}
-        attn_impl = getattr(config, "_attn_implementation", "eager")
-        is_flash_backend = attn_impl in FLASH_BACKENDS
+        seq_length_with_past = seq_length + cache_length
+        attention_mask = (
+            paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
+            if attention_mask is None
+            else attention_mask
+        )
 
-        if attention_mask is None and is_flash_backend and or_mask_function is None:
-            causal_mask = None
-            row_indices = None
-        elif attention_mask is not None and attention_mask.cast("bool").all() and or_mask_function is None:
-            causal_mask = None
-            row_indices = None
-        else:
-            seq_length_with_past = seq_length + cache_length
-            attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
-                if attention_mask is None
-                else attention_mask
-            )
-
-            causal_mask = prepare_decoder_attention_mask(
-                attention_mask=attention_mask,
-                input_shape=(batch_size, seq_length),
-                past_key_values_length=cache_length,
-                dtype=inputs_embeds.dtype,
-                sliding_window_size=sliding_window_val,
-                or_mask_function=or_mask_function,
-            )
-            row_indices = None
+        causal_mask = prepare_decoder_attention_mask(
+            attention_mask=attention_mask,
+            input_shape=(batch_size, seq_length),
+            past_key_values_length=cache_length,
+            dtype=inputs_embeds.dtype,
+            sliding_window_size=sliding_window_val,
+            or_mask_function=or_mask_function,
+        )
+        row_indices = None
 
     return causal_mask, row_indices
