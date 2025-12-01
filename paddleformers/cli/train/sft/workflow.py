@@ -203,7 +203,11 @@ def run_sft(
         training_args.prediction_loss_only = True
     # sink_attention v2 not support packing=false Now
 
-    if "GptOss" in str(model_config.architectures) and data_args.packing is False:
+    if (
+        "GptOss" in str(model_config.architectures)
+        and data_args.packing is False
+        and model_args.attn_impl == "flashmask"
+    ):
         if not is_sm90:
             model_args.attn_impl = "eager"
 
