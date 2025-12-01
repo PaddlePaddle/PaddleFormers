@@ -640,7 +640,7 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
                 alltoall_shape = [i.shape[0] for i in recv_mask_alltoall_out]
                 recv_mask_alltoall_out = paddle.concat(recv_mask_alltoall_out, 0)
                 distributed_input_to_alltoall_out = paddle.maximum(
-                    recv_mask_alltoall_out.cumsum() - 1,
+                    (recv_mask_alltoall_out.cumsum() - 1).astype(recv_mask_alltoall_out.dtype),
                     paddle.zeros([1], dtype=recv_mask_alltoall_out.dtype),
                 )
                 distributed_input_to_alltoall_out = distributed_input_to_alltoall_out.split(alltoall_shape)
