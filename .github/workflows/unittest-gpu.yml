@@ -84,7 +84,7 @@ jobs:
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
             -w /github/workspace --privileged $IMAGE_NAME
-            
+
       - name: Download Code
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -129,11 +129,35 @@ jobs:
           ls -l ./models
           timeout 50m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
+      - name: Copy coverage.xml out of container
+        run: |
+          docker cp $container_name:/github/workspace/PaddleFormers/coverage.xml coverage.xml
+        continue-on-error: true
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+
+  upload-coverage:
+    needs: unittest-gpu-ci
+    if: ${{ needs.unittest-gpu-ci.outputs.pytest_execute_flag == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           files: coverage.xml
-          fail_ci_if_error: false
+          commit: ${{ github.event.pull_request.head.sha }}
+          commit_parent: ${{ github.event.pull_request.base.sha }}
+          fail_ci_if_error: true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
