@@ -36,8 +36,8 @@ from ...nn.mlp import MLP as Ernie4_5MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..masking_utils import create_causal_mask_and_row_indices
 from ..cache_utils import Cache, DynamicCache
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     CausalLMOutputWithCrossAttentions,
