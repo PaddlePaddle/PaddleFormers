@@ -26,7 +26,7 @@ import yaml
 
 TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/sft"
-LOG_PATH = "./model_unittest_logs"
+LOG_PATH = "./pytest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-qwen3"
 MAX_STEPS = 6

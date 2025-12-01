@@ -18,7 +18,7 @@ set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
-export log_path=/workspace/PaddleFormers/model_unittest_logs
+export log_path=/workspace/PaddleFormers/pytest_logs
 export model_unittest_path=/workspace/PaddleFormers/scripts/regression
 cd $nlp_dir
 mkdir -p $log_path
@@ -38,6 +38,7 @@ install_requirements() {
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
+    python -m pip install colorlog python-json-logger >> ${log_path}/commit_info.txt
 }
 
 set_env() {
@@ -56,13 +57,13 @@ set_env() {
 
 print_info() {
     if [ $1 -ne 0 ]; then
-        cat ${log_path}/model_unittest.log | grep -v "Fail to fscanf: Success" \
-            | grep -v "SKIPPED" | grep -v "warning" > ${log_path}/model_unittest_FAIL.log
-        tail -n 1 ${log_path}/model_unittest.log >> ${log_path}/model_unittest_FAIL.log
+        # cat ${log_path}/pytest_all.log | grep -v "Fail to fscanf: Success" \
+        #     | grep -v "SKIPPED" | grep -v "warning" > ${log_path}/pytest_error.log
+        tail -n 1 ${log_path}/pytest_all.log >> ${log_path}/pytest_error.log
         echo -e "\033[31m ${log_path}/model_unittest_FAIL \033[0m"
-        cat ${log_path}/model_unittest_FAIL.log
+        cat ${log_path}/pytest_error.log
         if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-            cp ${log_path}/model_unittest_FAIL.log ${PPNLP_HOME}/upload/model_unittest_FAIL.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
+            cp ${log_path}/pytest_error.log ${PPNLP_HOME}/upload/pytest_error.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
             cd ${PPNLP_HOME} && python upload.py ${PPNLP_HOME}/upload 'paddlenlp/PaddleNLP_CI/PaddleNLP-CI-Model-Unittest-GPU'
             rm -rf upload/* && cd -
         fi
@@ -70,7 +71,7 @@ print_info() {
             echo "\033[32m [failed-timeout] Test case execution was terminated after exceeding the ${running_time} min limit."
         fi
     else
-        tail -n 1 ${log_path}/model_unittest.log
+        tail -n 1 ${log_path}/pytest_all.log
         echo -e "\033[32m ${log_path}/model_unittest_SUCCESS \033[0m"
     fi
 }
@@ -116,7 +117,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     export FLAGS_tcp_store_using_libuv=0
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
+    python -m pytest -s -v ${model_unittest_path} > ${log_path}/pytest_all.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
 
