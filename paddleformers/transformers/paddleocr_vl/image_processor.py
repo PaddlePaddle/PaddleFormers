@@ -367,6 +367,15 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
         if do_convert_rgb:
             images = [convert_to_rgb(image) for image in images]
 
+        if is_scaled_image(np.array(images[0])) and do_rescale:
+            logger.warning_once(
+                "It looks like you are trying to rescale already rescaled images. If the input"
+                " images have pixel values between 0 and 1, set `do_rescale=False` to avoid rescaling them again."
+            )
+        if input_data_format is None:
+            # We assume that all images have the same channel dimension format.
+            input_data_format = infer_channel_dimension_format(np.array(images[0]))
+
         width, height = images[0].size
         resized_height, resized_width = height, width
         processed_images = []
@@ -402,9 +411,6 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
                 image = image.astype(np.float32)
                 image -= np.array(image_mean, dtype=np.float32)
                 image /= np.array(image_std, dtype=np.float32)
-
-            if input_data_format is None:
-                input_data_format = infer_channel_dimension_format(images[0])
 
             image = to_channel_dimension_format(image, data_format, input_channel_dim=input_data_format)
 
