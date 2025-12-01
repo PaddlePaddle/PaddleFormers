@@ -43,6 +43,7 @@ from ..model_outputs import (
     CausalLMOutputWithCrossAttentions,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from ..tensor_parallel_utils import model_parallel_dropout
 from .configuration import Ernie4_5Config
 
@@ -54,7 +55,7 @@ def rotate_half(x):
     return paddle.stack((-x2, x1), axis=-1).flatten(-2)
 
 
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
@@ -74,6 +75,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
     Returns:
         `tuple(paddle.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
+    # shape of q: batch_size, num_heads, seq_len, head_dim
     # glm rope style (with full dim) and full precision
     original_dtype = q.dtype
 
@@ -91,6 +93,9 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
 
 
 def apply_fused_rope(query_states, key_states, rope_theta):
+    # b h l d -> b l h d
+    query_states = query_states.transpose(1, 2)
+    key_states = key_states.transpose(1, 2)
     _, _, num_heads, _ = query_states.shape
     _, kv_seq_len, num_key_value_heads, _ = key_states.shape
     if num_heads != num_key_value_heads:
@@ -103,7 +108,7 @@ def apply_fused_rope(query_states, key_states, rope_theta):
             None,
             rotary_emb_base=rope_theta,
         )
-    return query_states, key_states
+    return query_states.transpose(1, 2), key_states.transpose(1, 2)
 
 
 class Ernie4_5RotaryEmbedding(nn.Layer):
@@ -112,7 +117,10 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
         self.config = config
         self.head_dim = config.head_dim
         self.base = config.rope_theta
+        rope_parameters = config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         """
         Compute rotary position embeddings for given sequence length.
@@ -246,9 +254,11 @@ class Ernie4_5Attention(nn.Layer):
         else:
             bsz, q_len, _ = hidden_states.shape
 
-        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
+        # b l h d -> b h l d
+        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(1, 2)
+
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
         if self.config.fuse_rope:
