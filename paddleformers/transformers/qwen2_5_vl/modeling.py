@@ -1141,7 +1141,7 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         if cache_position is None:
-            past_seen_tokens = past_key_values[0][0].shape[2] if past_key_values[0] is not None else 0
+            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
             cache_position = paddle.arange(past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1])
 
         if position_ids is None:
