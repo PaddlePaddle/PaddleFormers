@@ -14,6 +14,7 @@
 
 import json
 from copy import deepcopy
+from typing import List
 
 
 def convert_dpo_txt_data(data):
@@ -267,12 +268,24 @@ def convert_mm_data(item):
         res["tools"] = data_info["tools"]
     return res
 
+def convert_pretraining_data(item):
+    res = {}
+    # convert to messages format
+    res["messages"] = []
+    if isinstance(item["text"], List):
+        text = item["text"][0]
+    else:
+        text = item["text"]
+    res["messages"].append({"role": "assistant", "content": text})
+    return res
 
 def erniekit_convertor(item):
     if "src" in item and "tgt" in item and "response" in item:
         res = convert_dpo_txt_data(item)
     elif "src" in item and "tgt" in item:
         res = convert_txt_data(item)
+    elif "text" in item:
+        res = convert_pretraining_data(item)
     else:
         res = convert_mm_data(item)
     return res
