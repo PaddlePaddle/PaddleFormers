@@ -44,6 +44,7 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         # recompute_use_reentrant=False,
         use_flash_attention=False,
         use_sparse_flash_attn=False,
+        _attn_implementation="eager",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -68,6 +69,7 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         # self.recompute_use_reentrant = recompute_use_reentrant
         self.use_flash_attention = use_flash_attention
         self.use_sparse_flash_attn = use_sparse_flash_attn
+        self._attn_implementation = _attn_implementation
 
         # Currently, these configuration items are hard-coded
         self.fuse_linear = False
@@ -103,6 +105,7 @@ class PaddleOCRVLConfig(PretrainedConfig):
         use_cache=False,
         use_flash_attention=False,
         use_sparse_flash_attn=False,
+        _attn_implementation="eager",
         recompute=False,
         recompute_granularity="core_attn",
         # recompute_use_reentrant=False,
@@ -147,6 +150,7 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.use_flash_attention = use_flash_attention
         self.use_sparse_flash_attn = use_sparse_flash_attn
+        self._attn_implementation = _attn_implementation
         self.recompute = recompute
         self.recompute_granularity = recompute_granularity
         # self.recompute_use_reentrant = recompute_use_reentrant
@@ -208,3 +212,16 @@ class PaddleOCRVLConfig(PretrainedConfig):
                 "max_sequence_length",
             ]
         )
+
+    def __getattribute__(self, key):
+        if "text_config" in super().__getattribute__("__dict__") and key not in [
+            "_name_or_path",
+            "model_type",
+            "dtype",
+            "_attn_implementation_internal",
+        ]:
+            text_config = super().__getattribute__("text_config")
+            if key in text_config.__dict__:
+                return getattr(text_config, key)
+
+        return super().__getattribute__(key)
