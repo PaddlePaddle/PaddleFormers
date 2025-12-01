@@ -60,6 +60,8 @@ class GLMMoEModelProvider(GPTModelProvider):
         "LayerSpec", Callable[["GPTModelProvider"], "LayerSpec"]
     ] = get_gpt_decoder_block_spec
 
+    transform_rules = {"n_routed_experts": "moe_num_experts"}
+
 
 def eager_attention_forward(
     module: nn.Layer,
@@ -1449,6 +1451,7 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         model_provider_class = GLMMoEModelProvider
         if hasattr(config, "n_routed_experts") and config.n_routed_experts > 0:
             config.moe_layer_freq = 1  # Default to expert layer every layer
+        print(config)
         model_provider = model_provider_class.from_config(config)
         return model_provider.provide()
 
