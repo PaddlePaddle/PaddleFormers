@@ -27,8 +27,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import BinaryIO, Optional
 
-import av
-import librosa
+# import av
+# import librosa
 import numpy as np
 import requests
 from PIL import Image
@@ -192,7 +192,8 @@ class MMPluginMixin:
                         raise ValueError("Invalid image found in video frames.")
                 frames = video
             else:
-                container = av.open(video, "r")
+                # container = av.open(video, "r")
+                container = None
                 video_stream = next(stream for stream in container.streams if stream.type == "video")
                 sample_indices = self._get_video_sample_indices(video_stream, **kwargs)
                 container.seek(0)
@@ -210,7 +211,8 @@ class MMPluginMixin:
         results, sampling_rates = [], []
         for audio in audios:
             if not isinstance(audio, np.ndarray):
-                audio, sampling_rate = librosa.load(audio, sr=sampling_rate)
+                # audio, sampling_rate = librosa.load(audio, sr=sampling_rate)
+                audio, sampling_rate = None, None
 
             results.append(audio)
             sampling_rates.append(sampling_rate)
@@ -337,7 +339,8 @@ class Qwen2VLPlugin(BasePlugin):
                 frames = video
                 fps_per_video.append(kwargs.get("video_fps", 2.0))
             else:
-                container = av.open(video, "r")
+                # container = av.open(video, "r")
+                container = None
                 video_stream = next(stream for stream in container.streams if stream.type == "video")
                 sample_indices = self._get_video_sample_indices(video_stream, **kwargs)
                 container.seek(0)

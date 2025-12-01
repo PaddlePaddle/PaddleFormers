@@ -52,6 +52,7 @@ class DPODataSet(IterableDataset):
         self.use_attn_mask_startend_row_indices = dataset_config.get("use_attn_mask_startend_row_indices", True)
         self.template_backend = dataset_config.get("template_backend", "jinja")
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
+        self.is_valid = dataset_config.get("is_valid", False)
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
@@ -65,12 +66,23 @@ class DPODataSet(IterableDataset):
             self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
 
         # data loader + multisource dataset mix
-        multi_source_dataset = MultiSourceDataset(**dataset_config)
-        self.mix_datasets = create_dataset_instance(
-            dataset_config["mix_strategy"],
-            multi_source_dataset,
-            **dataset_config,
-        )
+        if self.is_valid:
+            # dataset_config["random_shuffle"] = False
+            # dataset_config["greedy_intokens"] = False
+            # dataset_config["reverse"] = False
+            multi_source_dataset = MultiSourceDataset(**dataset_config)
+            self.mix_datasets = create_dataset_instance(
+                "concat",
+                multi_source_dataset,
+                **dataset_config,
+            )
+        else:
+            multi_source_dataset = MultiSourceDataset(**dataset_config)
+            self.mix_datasets = create_dataset_instance(
+                dataset_config["mix_strategy"],
+                multi_source_dataset,
+                **dataset_config,
+            )
 
     def __len__(self):
         return len(self.mix_datasets)
@@ -261,6 +273,7 @@ class DPOPackingDataset(IterableDataset):
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.max_seq_len = dataset_config.get("max_seq_len", 8192)
         self.is_valid = dataset_config.get("is_valid", False)
+        self.buffer_size = dataset_config.get("buffer_size", 500)
 
         self.estimate = False
         # The number of valid samples and skipped samples in estimation
@@ -285,6 +298,7 @@ class DPOPackingDataset(IterableDataset):
                     continue
 
                 batch_sequence, cur_len = [sequence], len(sequence.token_ids)
+                logger.info("yield sequence!!")
                 yield batch_sequence
 
             if len(batch_sequence) > 0:
@@ -340,7 +354,7 @@ class DPOPackingDataset(IterableDataset):
         left_len_list = np.array([])
         sequence_pack = []
         for sequence in sequences:
-            sequence_len = len(sequence.input_ids)
+            sequence_len = len(sequence.token_ids)
             if len(left_len_list) > 0:
                 max_left_len_index = left_len_list.argmax()
 
