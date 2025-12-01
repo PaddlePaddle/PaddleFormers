@@ -14,6 +14,7 @@
 # limitations under the License.
 """ DeepSeekV2 model configuration"""
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 __all__ = [
     "DeepseekV2Config",
@@ -222,6 +223,10 @@ class DeepseekV2Config(PretrainedConfig):
         self.rope_scaling = rope_scaling
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
+
+        self.rope_parameters = rope_scaling
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
         super().__init__(
             pad_token_id=pad_token_id,

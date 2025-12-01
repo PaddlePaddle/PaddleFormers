@@ -196,6 +196,8 @@ import_structure = {
     "export": ["export_model"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
+    "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
     "llama.configuration": [
         "LlamaConfig",
     ],
@@ -381,6 +383,7 @@ if TYPE_CHECKING:
     from .glm4_moe import *
     from .gpt_oss import *
     from .phi3 import *
+    from .gemma3_text import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

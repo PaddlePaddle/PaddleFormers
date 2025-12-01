@@ -18,6 +18,7 @@ from typing import Optional, Union
 
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 __all__ = ["Ernie4_5_MoeConfig"]
 
@@ -277,6 +278,8 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
                 "moe_multimodal_dispatch_use_allgather",
             ]
         )
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
     def to_json_string(self, use_diff: bool = True, saving_file=False) -> str:
         """

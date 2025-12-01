@@ -357,3 +357,57 @@ class DPOTrainTest(unittest.TestCase):
         # test lora_merge_model generate
         # EXPECTED_RESULT = paddle.to_tensor(DPO_LORA_TP_PP_EXCEPTED_RESULT)
         # self.dpotrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+
+    # def test_dpo_full_function_call(self):
+    #     output_dir = os.path.join(OUTPUT_DIR, "dpo_full_function_call")
+    #     update_args = {
+    #         "model_name_or_path": MODEL_NAME_OR_PATH,
+    #         "output_dir": output_dir,
+    #         "max_steps": MAX_STEPS,
+    #         "save_steps": SAVE_STEPS,
+    #     }
+    #     config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
+    #     updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
+    #     # cli mode
+    #     cmd = [
+    #         "paddleformers-cli",
+    #         "train",
+    #         updated_config_path,
+    #     ]
+    #     print(f"cmd {cmd}")
+    #     training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    #     print(f"dpo_full_function_call cmd is : {cmd}")
+    #     print(training_p.stdout)
+    #     dpo_full_function_call_output = training_p.stdout
+    #     dpo_full_function_call_log_file = os.path.join(
+    #         LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dpo_full_function_call.log"
+    #     )
+    #     if dpo_full_function_call_output and dpo_full_function_call_output.strip():
+    #         with open(dpo_full_function_call_log_file, "w", encoding="utf-8") as dpo_full_function_call_f:
+    #             dpo_full_function_call_f.write(dpo_full_function_call_output)
+    #     # test training result
+    #     self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
+
+    #     # test training loss
+    #     self.dpotrain_tester.assert_loss(training_p.stdout, DPO_FC_EXCEPTED_LOSS)
+
+    #     # test model resume
+    #     resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    #     print(f"dpo_full_function_call resume cmd is : {cmd}")
+    #     print(resume_p.stdout)
+    #     dpo_full_function_call_resume_output = resume_p.stdout
+    #     dpo_full_function_call_resume_log_file = os.path.join(
+    #         LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dpo_full_function_call_resume.log"
+    #     )
+    #     if dpo_full_function_call_resume_output and dpo_full_function_call_resume_output.strip():
+    #         with open(
+    #             dpo_full_function_call_resume_log_file, "w", encoding="utf-8"
+    #         ) as dpo_full_function_call_resume_f:
+    #             dpo_full_function_call_resume_f.write(dpo_full_function_call_resume_output)
+    #     self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
+
+    #     self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_FC_RESUME_EXCEPTED_LOSS)
+
+    #     # test model generate
+    #     EXPECTED_RESULT = paddle.to_tensor(DPO_FC_EXCEPTED_RESULT)
+    #     self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
