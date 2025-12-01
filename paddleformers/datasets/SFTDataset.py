@@ -14,11 +14,13 @@
 
 from dataclasses import dataclass
 from typing import List
+from copy import deepcopy
 
+import os
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets.data_utils import postprocess_fc_sequence
+from paddleformers.datasets.data_utils import postprocess_fc_sequence, print_debug_info
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
@@ -40,6 +42,26 @@ class Sequence:
     audios: List[str]
 
 
+def create_indexed_dataset(data_file_prefix):
+    """Create indexed dataset from raw data files.
+
+    Args:
+        data_file_prefix (str): Path prefix for raw data files
+
+    Returns:
+        IndexedDataset: Preprocessed dataset with memory-efficient indexing
+    """
+    from paddleformers.data.indexed_dataset import (
+        make_sft_dataset as make_sft_indexed_dataset,
+    )
+
+    indexed_dataset = make_sft_indexed_dataset(
+        path=data_file_prefix,
+        dataclass=Sequence,
+    )
+    return indexed_dataset
+
+
 class SFTDataSet(IterableDataset):
     def __init__(self, **dataset_config):
 
@@ -54,6 +76,7 @@ class SFTDataSet(IterableDataset):
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
         self.truncate_packing = dataset_config.get("truncate_packing", True)
+        self.is_valid = dataset_config.get("is_valid", False)
         if self.truncate_packing and not self.is_pretraining:
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
 
@@ -69,12 +92,24 @@ class SFTDataSet(IterableDataset):
             self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
 
         # data loader + multisource dataset mix
-        multi_source_dataset = MultiSourceDataset(**dataset_config)
-        self.mix_datasets = create_dataset_instance(
-            dataset_config["mix_strategy"],
-            multi_source_dataset,
-            **dataset_config,
-        )
+        if self.is_valid:
+            valid_dataset_config = deepcopy(dataset_config)
+            valid_dataset_config["random_shuffle"] = False
+            valid_dataset_config["greedy_intokens"] = False
+            valid_dataset_config["reverse"] = False
+            multi_source_dataset = MultiSourceDataset(**valid_dataset_config)
+            self.mix_datasets = create_dataset_instance(
+                "concat",
+                multi_source_dataset,
+                **valid_dataset_config,
+            )
+        else:
+            multi_source_dataset = MultiSourceDataset(**dataset_config)
+            self.mix_datasets = create_dataset_instance(
+                dataset_config["mix_strategy"],
+                multi_source_dataset,
+                **dataset_config,
+            )
 
     def __len__(self):
         return len(self.mix_datasets)
@@ -228,6 +263,25 @@ class SFTDataSet(IterableDataset):
 
         assert len(tokens) == len(loss_mask), f"{len(tokens)}-{len(loss_mask)}"
         assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
+
+        enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
+        if enable_dataset_debug:
+            logger.info("\n" + "=" * 50)
+            logger.info("[dataset debug] Debug mode enabled")
+            if hasattr(self, "tokenizer"):
+                print("========================================")
+                print_debug_info(self.tokenizer, tokens, "input")
+                print("========================================\n")
+
+                filtered_labels = [label if mask == 1 else -100 for label, mask in zip(labels, loss_mask)]
+                filtered_labels = [x for x in filtered_labels if x != -100]  # remove -100
+                print("========================================")
+                print_debug_info(self.tokenizer, filtered_labels, "labels")
+                print("========================================\n")
+                logger.info(f"[dataset debug] loss mask: {loss_mask}")
+            else:
+                logger.info("[dataset debug] Tokenizer not available")
+            logger.info("=" * 50 + "\n")
 
         return Sequence(
             token_ids=tokens,

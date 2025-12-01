@@ -24,6 +24,20 @@ from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 from ..utils.log import logger
 
 
+def round_up_to_multiple_of_8(n):
+    """round up to multiple of 8"""
+    return (n + 7) & ~7
+
+
+def print_debug_info(tokenizer, data, label):
+    """Helper function to print tokenized data debug info"""
+    try:
+        decoded = tokenizer.decode(data)
+        logger.info(f"[dataset debug] {label}: {decoded}")
+    except (TypeError, ValueError, OverflowError) as e:
+        logger.info(f"[dataset debug] tokenizer decode {label} error: {str(e)}")
+
+
 def convert_to_tokens_for_pt(
     dial: List[dict],
     tokenizer,

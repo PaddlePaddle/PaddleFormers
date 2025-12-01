@@ -44,6 +44,8 @@ import_structure = {
         "function_call_chat_template",
         "postprocess_fc_sequence",
         "estimate_training",
+        "print_debug_info",
+        "round_up_to_multiple_of_8",
     ],
     "loader": [
         "create_dataset",
