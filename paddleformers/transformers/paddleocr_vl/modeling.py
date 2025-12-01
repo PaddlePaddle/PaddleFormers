@@ -2290,11 +2290,12 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
             # Flatten the tokens
-            loss_fct = paddle.nn.CrossEntropyLoss()
+            loss_fct = paddle.nn.CrossEntropyLoss(reduction="none")
             shift_logits = shift_logits.reshape((-1, shift_logits.shape[-1]))
             shift_labels = shift_labels.reshape((-1,))
             labels_mask = shift_labels != -100
-            loss = loss_fct(shift_logits[labels_mask], shift_labels[labels_mask])
+            loss = loss_fct(shift_logits, shift_labels)
+            loss = paddle.mean(loss[labels_mask], axis=-1)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
