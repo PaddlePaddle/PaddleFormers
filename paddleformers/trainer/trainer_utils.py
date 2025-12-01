@@ -49,6 +49,9 @@ from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_sta
 )
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
+from safetensors import safe_open
+from safetensors.paddle import save_file
+from transformers.model_utils import _parse_size
 from transformers.tokenization_utils_base import BatchEncoding
 
 from ..ops import Topology
@@ -1497,9 +1500,10 @@ def init_nccl_config(nccl_comm_group_config, strategy):
     set_comm_config("default_comm_group_configs", "nccl_config", nccl_config.get("default", None))
     return strategy
 
+
 # TODO(): refine later.
 def save_full_param_tmp(
-    itr: Iterator[tuple[str, Tensor]],
+    itr,
     save_dir: str,
     rank: int,
     moe_sharding_world_size: int,
