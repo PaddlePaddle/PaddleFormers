@@ -286,8 +286,9 @@ class DPOPackingDataset(IterableDataset):
         if not self.is_valid:
             self.max_estimate_samples = len(self.processed_dataset)
 
-    def __iter__(self):
-
+    def __iter_func(self):
+        
+        batch_sequence, cur_len = [], 0
         dataset_iterator = iter(self.processed_dataset)
 
         if not self.packing:
@@ -298,7 +299,6 @@ class DPOPackingDataset(IterableDataset):
                     continue
 
                 batch_sequence, cur_len = [sequence], len(sequence.token_ids)
-                logger.info("yield sequence!!")
                 yield batch_sequence
 
             if len(batch_sequence) > 0:
@@ -339,6 +339,17 @@ class DPOPackingDataset(IterableDataset):
                     sequence_pack = self._generate_greedy_packs(sequence_buffer)
                     for pack in sequence_pack:
                         yield pack
+
+    def __iter__(self):
+        """
+        Rewrite the __iter__ method to implement dataset iteration.
+        Each iteration returns a Sequence-type element.
+        """
+        if self.is_valid:
+            yield from self.__iter_func()
+        else:
+            while True:
+                yield from self.__iter_func()
 
     def _generate_greedy_packs(self, sequences):
         """Generate packed sequences using greedy strategy.

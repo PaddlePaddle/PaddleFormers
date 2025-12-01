@@ -316,7 +316,7 @@ class SFTPackingDataset(IterableDataset):
         if not self.is_valid:
             self.max_estimate_samples = len(self.processed_dataset)
 
-    def __iter__(self):
+    def __iter_func(self):
 
         dataset_iterator = iter(self.processed_dataset)
 
@@ -493,6 +493,17 @@ class SFTPackingDataset(IterableDataset):
                         for pack in generate_packs:
                             if len(pack) > 0:
                                 yield pack
+
+    def __iter__(self):
+        """
+        Rewrite the __iter__ method to implement dataset iteration.
+        Each iteration returns a Sequence-type element.
+        """
+        if self.is_valid:
+            yield from self.__iter_func()
+        else:
+            while True:
+                yield from self.__iter_func()
 
     def _generate_greedy_packs(self, examples, actual_example_num_list):
         """Generate packed sequences using greedy strategy.
