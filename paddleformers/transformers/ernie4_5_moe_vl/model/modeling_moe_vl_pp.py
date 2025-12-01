@@ -1026,6 +1026,7 @@ def multimodal_data_provider(
     pp_stage_id = hcg.get_stage_id()
     is_first_stage = pp_stage_id == 0
     is_last_stage = pp_stage_id == pp_stages - 1
+    device = paddle.get_device()
 
     def check_len(list_of_ten, is_input, num_sample_per_pp_data=1):
         if not image_fea_concated and is_input:
@@ -1069,8 +1070,8 @@ def multimodal_data_provider(
             if start == end:
                 return None
             if image_fea_concated:
-                return x.slice((0,), start, end).clone().cuda()
-            return x.cuda()._slice(start, end)
+                return x.slice((0,), start, end).clone().to(device)
+            return x.to(device)._slice(start, end)
 
         if image_fea_concated:
             split_offset = [

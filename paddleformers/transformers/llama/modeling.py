@@ -262,10 +262,10 @@ def _compute_default_parameters(config):
 def _compute_llama3_parameters(config):
     inv_freq, attention_factor = _compute_default_parameters(config)
 
-    factor = config.rope_scaling["factor"]
-    low_freq_factor = config.rope_scaling["low_freq_factor"]
-    high_freq_factor = config.rope_scaling["high_freq_factor"]
-    old_context_len = config.rope_scaling["original_max_position_embeddings"]
+    factor = config.rope_parameters["factor"]
+    low_freq_factor = config.rope_parameters["low_freq_factor"]
+    high_freq_factor = config.rope_parameters["high_freq_factor"]
+    old_context_len = config.rope_parameters["original_max_position_embeddings"]
 
     low_freq_wavelen = old_context_len / low_freq_factor
     high_freq_wavelen = old_context_len / high_freq_factor
@@ -293,8 +293,8 @@ class LlamaRotaryEmbedding(nn.Layer):
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 
         self.rope_type = "default"
-        if hasattr(config, "rope_scaling") and isinstance(config.rope_scaling, dict):
-            self.rope_type = config.rope_scaling.get("rope_type", "default")
+        if hasattr(config, "rope_parameters") and isinstance(config.rope_parameters, dict):
+            self.rope_type = config.rope_parameters.get("rope_type", "default")
 
         if self.rope_type == "llama3":
             inv_freq, attention_scaling = _compute_llama3_parameters(config)
@@ -429,11 +429,11 @@ class LlamaPretrainedModel(PretrainedModel):
                 for PROJECTOR_NAME in ["gate_proj", "up_proj", "down_proj"]
             ]
         )
-
-        if config.tie_word_embeddings:
-            aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
-        else:
-            aoa_statements.append("lm_head.weight -> lm_head.weight")
+        if cls != cls.base_model_class:
+            if config.tie_word_embeddings:
+                aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
+            else:
+                aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
 
@@ -462,7 +462,7 @@ class LlamaPretrainedModel(PretrainedModel):
             ]
         )
 
-        if not config.tie_word_embeddings:
+        if not config.tie_word_embeddings and cls != cls.base_model_class:
             aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}

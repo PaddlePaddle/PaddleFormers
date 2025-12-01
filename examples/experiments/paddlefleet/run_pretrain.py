@@ -55,7 +55,10 @@ from paddleformers.utils.tools import get_env_device
 os.environ["USE_CASUAL_MASK"] = "True"
 
 
-from glm45_provider import GLM45AirModelDebugProvider
+from glm45_provider import (
+    GLM45AirModelDebugProvider,
+    GLM45AirModelSingleCardDebugProvider,
+)
 
 from paddleformers.trainer.utils.doc import add_start_docstrings
 
@@ -88,6 +91,11 @@ class PreTrainingArguments(TrainingArguments):
     unified_checkpoint: bool = field(
         default=True,
         metadata={"help": "Enable fused linear grad add strategy."},
+    )
+
+    model_provider_type: str = field(
+        default="GLM",
+        metadata={"help": "name of the model provider."},
     )
 
     def __post_init__(self):
@@ -507,11 +515,12 @@ def main():
     #        dtype = "float16"
     #    if training_args.bf16:
     #        dtype = "bfloat16"
-
-    model_provider = GLM45AirModelDebugProvider()
-    # Set MoE layer frequency configuration
-    if hasattr(config, "n_routed_experts") and config.n_routed_experts > 0:
-        model_provider.moe_layer_freq = 1  # Default to expert layer every layer
+    if training_args.model_provider_type == "GLM_single_card":
+        model_provider = GLM45AirModelSingleCardDebugProvider()
+    elif training_args.model_provider_type == "GLM_muiti_cards":
+        model_provider = GLM45AirModelDebugProvider()
+    else:
+        raise ValueError(f"Unsupported model provider type: {training_args.model_provider_type}")
     model = model_provider.provide()
 
     if training_args.recompute:
@@ -527,22 +536,6 @@ def main():
         warmup_steps = training_args.warmup_ratio * training_args.max_steps
 
     lr_scheduler = None
-    if training_args.lr_scheduler_type.value == "cosine":
-        lr_scheduler = CosineAnnealingWithWarmupDecay(
-            max_lr=training_args.learning_rate,
-            min_lr=training_args.min_learning_rate,
-            warmup_step=warmup_steps,
-            decay_step=training_args.decay_steps,
-            last_epoch=0,
-        )
-    elif training_args.lr_scheduler_type.value == "linear":
-        lr_scheduler = LinearAnnealingWithWarmupDecay(
-            max_lr=training_args.learning_rate,
-            min_lr=training_args.min_learning_rate,
-            warmup_step=warmup_steps,
-            decay_step=training_args.decay_steps,
-            last_epoch=0,
-        )
 
     data_file = get_train_data_file(data_args)
     train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(
