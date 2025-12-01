@@ -312,7 +312,7 @@ class ModularMoELayer(nn.Layer):
                 final_hidden_states_tmp,
                 idx.reshape([-1]),
                 current_hidden_states.to(hidden_states.dtype),
-                overwrite=False
+                overwrite=False,
             )
             final_hidden_states = final_hidden_states + final_hidden_states_tmp
 
