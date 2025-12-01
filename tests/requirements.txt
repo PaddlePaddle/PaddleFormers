@@ -25,3 +25,4 @@ pytest==8.1.1
 pytest-cov
 pytest-xdist
 pytest-timeout
+paddlefleet @https://www.paddlepaddle.org.cn/packages/nightly/cu126/paddlefleet/paddlefleet-0.0.1a0-cp310-cp310-linux_x86_64.whl
