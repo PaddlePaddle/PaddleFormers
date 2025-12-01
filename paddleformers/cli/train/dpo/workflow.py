@@ -164,7 +164,7 @@ def run_dpo(
     if not training_args.reference_free and not model_args.lora:
         ref_model_config.dpo_config = dpo_config
     model_config.dpo_config = dpo_config
-    if not training_args.autotuner_benchmark or training_args.weight_quantize_algo is not None:
+    if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
             config=model_config,
@@ -207,9 +207,6 @@ def run_dpo(
                 model_args.rslora = True
                 model_args.lora_plus_scale = 4
                 model_args.lora_alpha = 4
-            if training_args.weight_quantize_algo is not None:
-                if model_args.rslora or model_args.lora_plus_scale != 1.0:
-                    logger.info("Weight quantization is not supported in LoRA+ and RsLoRA.")
             if model_args.lora_alpha == -1:
                 if model_args.rslora:
                     model_args.lora_alpha = 4

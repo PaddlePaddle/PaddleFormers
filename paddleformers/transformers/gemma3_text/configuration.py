@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig, layer_type_validation
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 if TYPE_CHECKING:
     # TODO: Implement SiglipVisionConfig for multimodal support
@@ -174,6 +175,7 @@ class Gemma3TextConfig(PretrainedConfig):
         final_logit_softcapping=None,
         attn_logit_softcapping=None,
         rope_scaling=None,
+        rope_parameters=None,
         rope_local_base_freq=10000.0,
         use_bidirectional_attention=False,
         **kwargs
@@ -210,6 +212,18 @@ class Gemma3TextConfig(PretrainedConfig):
             self.sliding_window = self.sliding_window // 2 + 1
         self.rope_local_base_freq = rope_local_base_freq
         self.rope_scaling = rope_scaling
+
+        # Try to set `rope_scaling` if available, otherwise use `rope_parameters`
+        if rope_scaling is not None:
+            if rope_parameters is None:
+                rope_parameters = {"sliding_attention": {"rope_type": "default"}, "full_attention": rope_scaling}
+            elif "full_attention" in rope_parameters:
+                rope_parameters["full_attention"].update(rope_scaling)
+            else:
+                rope_parameters.update(rope_scaling)
+
+        self.rope_parameters = rope_parameters
+
         self._sliding_window_pattern = kwargs.get("sliding_window_pattern", 6)
         if self.layer_types is None:
             self.layer_types = [
@@ -217,6 +231,12 @@ class Gemma3TextConfig(PretrainedConfig):
                 for i in range(self.num_hidden_layers)
             ]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
+
+        # Validate the correctness of rotary position embeddings parameters
+        standardize_rope_params(
+            self, rope_theta={"full_attention": rope_theta, "sliding_attention": rope_local_base_freq}
+        )
+        rope_config_validation(self)
 
 
 class Gemma3Config(PretrainedConfig):
