@@ -14,7 +14,7 @@
 
 import unittest
 
-from paddleformers.datasets2.reader.convertor import (
+from paddleformers.datasets.reader.convertor import (
     convert_dpo_txt_data,
     convert_mm_data,
     convert_txt_data,

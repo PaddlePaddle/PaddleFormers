@@ -146,7 +146,7 @@ class DataArguments:
         metadata={"help": "Whether to split multi-round dialogues into multiple pieces of data for training"}
     )
     template_backend: str = field(
-        default="custom",
+        default="jinja",
         metadata={"help": "jinja means using apply_chat_template, custom means using a custom template"}
     )
     eval_with_do_generation: bool = field(default=False, metadata={"help": "Whether to do generation for evaluation"})

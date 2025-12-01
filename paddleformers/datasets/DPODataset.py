@@ -18,9 +18,9 @@ from typing import List, Optional
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets2.data_utils import postprocess_fc_sequence
-from paddleformers.datasets2.reader.mix_datasets import create_dataset_instance
-from paddleformers.datasets2.reader.multi_source_datasets import MultiSourceDataset
+from paddleformers.datasets.data_utils import postprocess_fc_sequence
+from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
+from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 from paddleformers.utils.log import logger
@@ -44,13 +44,13 @@ class DPODataSet(IterableDataset):
     def __init__(self, **dataset_config):
 
         # parameter init
-        self.tokenizer = dataset_config["tokenizer"]
-        self.processor = dataset_config["processor"]
-        self.max_seq_len = dataset_config["max_seq_len"]
-        self.mask_out_eos_token = dataset_config["mask_out_eos_token"]
-        self.template = dataset_config["template_instance"]
-        self.use_attn_mask_startend_row_indices = dataset_config["use_attn_mask_startend_row_indices"]
-        self.template_backend = dataset_config.get("template_backend", "custom")
+        self.tokenizer = dataset_config.get("tokenizer", None)
+        self.processor = dataset_config.get("processor", None)
+        self.max_seq_len = dataset_config.get("max_seq_len", 8192)
+        self.mask_out_eos_token = dataset_config.get("mask_out_eos_token", True)
+        self.template = dataset_config.get("template_instance", None)
+        self.use_attn_mask_startend_row_indices = dataset_config.get("use_attn_mask_startend_row_indices", True)
+        self.template_backend = dataset_config.get("template_backend", "jinja")
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
 
         # special token
@@ -143,22 +143,6 @@ class DPODataSet(IterableDataset):
 
     def __postprocess_before_concat(self, example):
         """Process multi-turn conversation data into tokenized sequences with dynamic truncation.
-
-        Args:
-            example (Example): Input data object containing:
-                - src (List[str]): Conversation history prompts
-                - tgt (List[str]): Corresponding responses
-                - chosen/rejected (List[str]): Preferred/unpreferred response paths
-                - is_system (int): System prompt presence flag
-                - system (str): System settings
-
-        Returns:
-            tuple: (prompt_ids, response_ids_list, label_ids_list, response_lens, total_len) containing:
-                - prompt_token_ids (List[int]): Main conversation context token ids
-                - response_token_ids_list (List[List[int]]): [chosen_path, rejected_path] response token ids
-                - response_label_ids_list (List[List[int]]): Each response label ids（mask included）
-                - response_len_list (List[int]): Valid response token length（special token excluded）
-                - cur_len (int): Final input ids length
         """
         prompt_token_ids = []
 
@@ -274,10 +258,10 @@ class DPODataSet(IterableDataset):
 class DPOPackingDataset(IterableDataset):
     def __init__(self, processed_dataset, **dataset_config):
         self.processed_dataset = processed_dataset
-        self.packing = dataset_config["packing"]
-        self.greedy_intokens = dataset_config["greedy_intokens"]
-        self.max_seq_len = dataset_config["max_seq_len"]
-        self.is_valid = dataset_config["is_valid"]
+        self.packing = dataset_config.get("packing", False)
+        self.greedy_intokens = dataset_config.get("greedy_intokens", True)
+        self.max_seq_len = dataset_config.get("max_seq_len", 8192)
+        self.is_valid = dataset_config.get("is_valid", False)
 
         self.estimate = False
         # The number of valid samples and skipped samples in estimation

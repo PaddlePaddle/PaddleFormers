@@ -25,7 +25,7 @@ from paddleformers.utils.log import logger
 # isort: off
 # fmt: off
 # isort: on
-from paddleformers.datasets.dpo import create_dataset
+from paddleformers.datasets.loader import create_dataset
 
 
 def calculate_acc_steps(num_samples, train_batch, dataset_world_size, per_device_train_batch_size):

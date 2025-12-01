@@ -19,10 +19,9 @@ from functools import partial
 
 import paddle
 
-# from paddleformers.datasets.dpo import collate_fn, create_dataset
-from paddleformers.datasets2.loader import create_dataset
-from paddleformers.datasets2.collate import dpo_collate_fn as collate_fn
-from paddleformers.datasets2.template.template import get_template_and_fix_tokenizer
+from paddleformers.datasets.loader import create_dataset
+from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
+from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (

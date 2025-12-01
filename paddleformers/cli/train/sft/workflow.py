@@ -25,13 +25,10 @@ from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
 )
-# from paddleformers.datasets.data_utils import estimate_training
-# from paddleformers.datasets.finetuning import collate_fn
-# from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
-from paddleformers.datasets2.template.template import get_template_and_fix_tokenizer
-from paddleformers.datasets2.loader import create_dataset as create_dataset_sft
-from paddleformers.datasets2.collate import collate_fn, mm_collate_fn
-from paddleformers.datasets2.data_utils import estimate_training
+from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
+from paddleformers.datasets.loader import create_dataset as create_dataset_sft
+from paddleformers.datasets.collate import collate_fn, mm_collate_fn
+from paddleformers.datasets.data_utils import estimate_training
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (

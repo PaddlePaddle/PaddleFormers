@@ -19,24 +19,6 @@ from typing import List
 
 def convert_dpo_txt_data(data):
     """Convert raw format example to Example.
-
-    Args:
-        data (dict): Raw session data dictionary containing:
-            - src (str/list): Multi-turn dialogue context (user inputs sequence)
-            - tgt (str/list): Assistant responses sequence (must be 1 shorter than src)
-            - response (List[List[str]]): Pair of multi-turn response candidates [each is list of strings]
-            - sort (List[int]): Ranking scores for response pairs [length must be 2]
-            - system (str, optional): System-level instruction for dialogue
-        input_file (str): Source file path for data provenance tracking
-
-    Returns:
-        Example: Standardized data container with fields:
-            - src (list): Full context sequence (with system prompt if exists)
-            - tgt (list): Expected response sequence
-            - is_system (int): System prompt presence flag (0/1)
-            - chosen/rejected (list): Selected best/worst multi-turn responses
-            - source: Original data file path
-            - data_format: Format identifier "sft"
     """
     if isinstance(data["src"], str):
         data["src"] = [data["src"]]

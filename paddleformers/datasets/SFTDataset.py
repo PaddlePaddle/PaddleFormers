@@ -18,9 +18,9 @@ from typing import List
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets2.data_utils import postprocess_fc_sequence
-from paddleformers.datasets2.reader.mix_datasets import create_dataset_instance
-from paddleformers.datasets2.reader.multi_source_datasets import MultiSourceDataset
+from paddleformers.datasets.data_utils import postprocess_fc_sequence
+from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
+from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 from paddleformers.utils.log import logger
@@ -44,16 +44,16 @@ class SFTDataSet(IterableDataset):
     def __init__(self, **dataset_config):
 
         # parameter init
-        self.tokenizer = dataset_config["tokenizer"]
-        self.processor = dataset_config["processor"]
-        self.max_seq_len = dataset_config["max_seq_len"]
-        self.template = dataset_config["template_instance"]
-        self.template_backend = dataset_config["template_backend"]
-        self.use_template = dataset_config["use_template"]
-        self.split_multi_turn = dataset_config["split_multi_turn"]
-        self.encode_one_turn = dataset_config["encode_one_turn"]
-        self.is_pretraining = dataset_config["is_pretraining"]
-        self.truncate_packing = dataset_config["truncate_packing"]
+        self.tokenizer = dataset_config.get("tokenizer", None)
+        self.processor = dataset_config.get("processor", None)
+        self.max_seq_len = dataset_config.get("max_seq_len", 8192)
+        self.template = dataset_config.get("template_instance", None)
+        self.template_backend = dataset_config.get("template_backend", "jinja")
+        self.use_template = dataset_config.get("use_template", True)
+        self.split_multi_turn = dataset_config.get("split_multi_turn", False)
+        self.encode_one_turn = dataset_config.get("encode_one_turn", True)
+        self.is_pretraining = dataset_config.get("is_pretraining", False)
+        self.truncate_packing = dataset_config.get("truncate_packing", True)
         if self.truncate_packing and not self.is_pretraining:
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
 
@@ -103,6 +103,9 @@ class SFTDataSet(IterableDataset):
             labels=res_labels,
             loss_mask=loss_mask,
             num_examples=actual_example_num,
+            images=[],
+            videos=[],
+            audios=[],
         )
         return sequence
 
@@ -129,6 +132,7 @@ class SFTDataSet(IterableDataset):
         images = example.get("images", [])
         videos = example.get("videos", [])
         audios = example.get("audios", [])
+
         if self.use_template:
             if self.template_backend == "jinja":
                 if not self.tokenizer.chat_template:
@@ -138,17 +142,15 @@ class SFTDataSet(IterableDataset):
                 else:
                     encoded_pairs = self.tokenizer.encode_chat_inputs(example, encode_one_turn=self.encode_one_turn)
             else:
-                # 对多模信息做处理，将messages里面的占位符替换
                 messages = self.template.mm_plugin.process_messages(
                     example["messages"], images, videos, audios, self.processor
                 )
-                # 套template，转ids
                 encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
         else:
             encoded_pairs = self.tokenizer.encode_chat_inputs_with_no_template(
                 example, encode_one_turn=self.encode_one_turn
             )
-        # 转input_ids, labels
+
         num_reserved_tokens_for_each_dialog = 1
         num_reserved_tokens_for_each_turn = 8
 
@@ -242,13 +244,13 @@ class SFTDataSet(IterableDataset):
 class SFTPackingDataset(IterableDataset):
     def __init__(self, processed_dataset, **dataset_config):
         self.processed_dataset = processed_dataset
-        self.packing = dataset_config["packing"]
-        self.greedy_intokens = dataset_config["greedy_intokens"]
-        self.max_seq_len = dataset_config["max_seq_len"]
-        self.is_valid = dataset_config["is_valid"]
-        self.truncate_packing = dataset_config["truncate_packing"]
-        self.tokenizer = dataset_config["tokenizer"]
-        self.is_pretraining = dataset_config["is_pretraining"]
+        self.packing = dataset_config.get("packing", False)
+        self.greedy_intokens = dataset_config.get("greedy_intokens", True)
+        self.max_seq_len = dataset_config.get("max_seq_len", 8192)
+        self.is_valid = dataset_config.get("is_valid", False)
+        self.truncate_packing = dataset_config.get("truncate_packing", True)
+        self.tokenizer = dataset_config.get("tokenizer", None)
+        self.is_pretraining = dataset_config.get("is_pretraining", False)
 
         self.estimate = False
         # The number of valid samples and skipped samples in estimation
