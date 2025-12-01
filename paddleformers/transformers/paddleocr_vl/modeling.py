@@ -18,7 +18,6 @@
 import collections
 from contextvars import ContextVar
 from dataclasses import dataclass
-from functools import partial
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -41,6 +40,7 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Ernie4_5MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
+from ..cache_utils import Cache, DynamicCache
 from ..model_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
@@ -72,7 +72,7 @@ def _ensure_cos_sin_dim(cos, sin, dim_needed):
         raise ValueError(f"Unexpected cos/sin last-dim: {last}, expected {dim_needed} or {dim_needed//2}")
 
 
-def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim=2):
+def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim=1):
     """Applies Rotary Position Embedding with Multimodal Sections to the query and key tensors (https://qwenlm.github.io/blog/qwen2-vl/)."""
     mrope_section = mrope_section * 2
     cos = paddle.concat([m[i % 3] for i, m in enumerate(cos.split(mrope_section, axis=-1))], axis=-1).unsqueeze(
@@ -202,6 +202,10 @@ class PaddleOCRAttention(nn.Layer):
         if rope_emb is not None:
             cos, sin = rope_emb
             q, k = apply_vision_rotary_pos_emb(q, k, cos, sin)
+
+        q = q.transpose(2, 1)
+        k = k.transpose(2, 1)
+        v = v.transpose(2, 1)
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -334,7 +338,9 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
 
             if interpolate_pos_encoding and image_grid_thw is not None:
                 flatten_image_grid_thw = self.flatten_list(image_grid_thw)
-                assert batch_size == 1
+                assert (
+                    batch_size == 1
+                ), f"Batch size must be 1, but received {batch_size}. This model only processes one image at a time."
                 start = 0
 
                 assert sum([np.prod(x) for x in flatten_image_grid_thw]) == embeddings.shape[1], (
@@ -723,6 +729,7 @@ class MultiHeadAttention(nn.Layer):
 
     def __init__(
         self,
+        config: PaddleOCRVisionConfig,
         embed_dim: int,
         num_heads: int,
         dropout: float = 0.0,
@@ -757,7 +764,13 @@ class MultiHeadAttention(nn.Layer):
             shape=[3 * embed_dim], default_initializer=nn.initializer.Constant(0.0)
         )
 
-        self.out_proj = nn.Linear(embed_dim, embed_dim, weight_attr, bias_attr=bias_attr)
+        self.out_proj = GeneralLinear.create(
+            embed_dim,
+            embed_dim,
+            config=config,
+            fuse_matmul_bias=config.fuse_linear,
+        )
+        # nn.Linear(embed_dim, embed_dim, weight_attr, bias_attr=bias_attr)
 
     def forward(
         self,
@@ -784,7 +797,7 @@ class PaddleOCRMultiheadAttentionPoolingHead(nn.Layer):
             shape=(1, 1, config.hidden_size),
             default_initializer=nn.initializer.Normal(),
         )
-        self.attention = MultiHeadAttention(config.hidden_size, config.num_attention_heads)
+        self.attention = MultiHeadAttention(config, config.hidden_size, config.num_attention_heads)
         self.layernorm = GeneralNorm.create(
             config=config,
             norm_type="layer_norm",
@@ -1206,7 +1219,7 @@ class Ernie4_5Attention(nn.Layer):
     def forward(
         self,
         hidden_states,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
@@ -1217,7 +1230,7 @@ class Ernie4_5Attention(nn.Layer):
 
         Args:
             hidden_states (paddle.Tensor): Input tensor [bsz, seq_len, hidden_size]
-            past_key_value (Optional[Tuple[paddle.Tensor, paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Tuple[Cache]]): Cached key/value states
             attention_mask (Optional[paddle.Tensor]): Attention mask tensor
             attn_mask_startend_row_indices (Optional[paddle.Tensor]): Variable length attention indices
             position_ids (Optional[paddle.Tensor]): Position indices for RoPE
@@ -1237,9 +1250,9 @@ class Ernie4_5Attention(nn.Layer):
         else:
             bsz, q_len, _ = hidden_states.shape
 
-        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
-        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
+        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(2, 1)
+        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(2, 1)
+        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(2, 1)
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
         if self.config.fuse_rope:
@@ -1250,14 +1263,9 @@ class Ernie4_5Attention(nn.Layer):
                 query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
             )
 
-        if past_key_value is not None:
-            # reuse k, v, self_attention
-            key_states = paddle.cat([past_key_value[0], key_states], axis=1)
-            value_states = paddle.cat([past_key_value[1], value_states], axis=1)
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
-        # NOTE(for generation): use list instead of tuple to store the cache
-        # tensors, so that we can clear the cache tensors for memory efficiency.
-        past_key_value = [key_states, value_states] if use_cache else None
         attn_output, attn_weights = attention_interface(
             self,
             query=query_states,
@@ -1275,7 +1283,7 @@ class Ernie4_5Attention(nn.Layer):
 
         if not output_attentions:
             attn_weights = None
-        return attn_output, attn_weights, past_key_value
+        return attn_output, attn_weights, past_key_values
 
 
 class Ernie4_5DecoderLayer(nn.Layer):
@@ -1332,7 +1340,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         """Forward pass through the decoder layer.
@@ -1344,7 +1352,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
             position_ids (Optional[paddle.Tensor]): Position indices for rotary embeddings
             position_embeddings (Optional[paddle.Tensor]): Position embeddings tensor
             output_attentions (Optional[bool]): Whether to return attention weights
-            past_key_value (Optional[Tuple[paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Cache]]): Cached key/value states
             use_cache (Optional[bool]): Whether to cache key/value states
 
         Returns:
@@ -1360,7 +1368,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         # Self Attention
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
             hidden_states=hidden_states,
-            past_key_value=past_key_value,
+            past_key_values=past_key_values,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_embeddings=position_embeddings,
@@ -1399,68 +1407,6 @@ class Ernie4_5PretrainedModel(PretrainedModel):
     config_class = PaddleOCRVLConfig
     base_model_prefix = "model"
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config, is_split=True):
-        """Generate tensor parallel mappings for model conversion."""
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        LAYER_COLWISE = [
-            "self_attn.q_proj.weight",
-            "self_attn.k_proj.weight",
-            "self_attn.v_proj.weight",
-            "mlp.up_proj.weight",
-            "mlp.gate_proj.weight",
-        ]
-
-        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
-
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.k_proj.bias",
-            "self_attn.v_proj.bias",
-            "mlp.gate_proj.bias",
-            "mlp.up_proj.bias",
-            "self_attn.o_proj.bias",
-            "mlp.down_proj.bias",
-            "lm_head.bias",
-        ]
-
-        def make_base_actions():
-            actions = {
-                "lm_head.weight": partial(fn, is_column=False),
-                "embed_tokens.weight": partial(fn, is_column=False),
-            }
-            for layer_idx in range(config.num_hidden_layers):
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                        for k in LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
-                        for k in LAYER_ROWWISE
-                    }
-                )
-                # bias
-                if config.use_bias:
-                    actions.update(
-                        {f"{cls.base_model_prefix}.layers.0.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
-                    )
-
-            return actions
-
-        mappings = make_base_actions()
-        return mappings
 
 
 @register_base_model
@@ -1503,7 +1449,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         position_ids,
         position_embeddings,
         output_attentions,
-        past_key_value,
+        past_key_values,
         use_cache,
     ):
         """Perform gradient checkpointing for memory-efficient training.
@@ -1516,7 +1462,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             position_ids (paddle.Tensor): Position indices
             position_embeddings (paddle.Tensor): Position embeddings
             output_attentions (bool): Whether to output attention weights
-            past_key_value (Optional[Tuple[paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             use_cache (bool): Whether to cache key/value states
 
         Returns:
@@ -1531,7 +1477,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             position_ids,
             position_embeddings,
             output_attentions,
-            past_key_value,
+            past_key_values,
             use_cache,
         )
         return hidden_states
@@ -1558,7 +1504,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             attn_mask_startend_row_indices (Optional[paddle.Tensor]): Variable length attention indices
             inputs_embeds (Optional[paddle.Tensor]): Precomputed embeddings
             use_cache (Optional[bool]): Whether to cache key/value states
-            past_key_values (Optional[Tuple[Tuple[paddle.Tensor]]]): Cached key/value states
+            past_key_values (Optional[Cache]]): Cached key/value states
             output_attentions (Optional[bool]): Whether to output attention weights
             output_hidden_states (Optional[bool]): Whether to output all hidden states
             return_dict (Optional[bool]): Whether to return dict or tuple
@@ -1589,11 +1535,9 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-            kv_seq_len = 0
-        else:
-            kv_seq_len = past_key_values[0][0].shape[1]
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
@@ -1622,13 +1566,11 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
-        next_decoder_cache = () if use_cache else None
 
         for idx, (decoder_layer) in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
                 layer_outputs = self.recompute_training(
@@ -1639,7 +1581,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
                     position_ids,
                     position_embeddings,
                     output_attentions,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                 )
             else:
@@ -1650,7 +1592,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
                     position_ids,
                     position_embeddings,
                     output_attentions,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                 )
 
@@ -1658,9 +1600,6 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
                 hidden_states = layer_outputs[0]
             else:
                 hidden_states = layer_outputs
-
-            if use_cache:
-                next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
@@ -1671,14 +1610,12 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
-        next_cache = next_decoder_cache if use_cache else None
-
         if not return_dict:
             return tuple(
                 v
                 for v in [
                     hidden_states,
-                    next_cache,
+                    past_key_values,
                     all_hidden_states,
                     all_self_attns,
                 ]
@@ -1687,7 +1624,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
 
         return BaseModelOutputWithPastAndCrossAttentions(
             last_hidden_state=hidden_states,
-            past_key_values=next_cache,
+            past_key_values=past_key_values,
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
             cross_attentions=None,
@@ -1974,7 +1911,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
                 **kwargs,
             }
         )
-
+        model_inputs.pop("labels", None)
         return model_inputs
 
     def update_model_kwargs_for_generation(self, outputs, model_kwargs, is_encoder_decoder=False):
@@ -2015,7 +1952,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         attention_mask: Optional[paddle.Tensor] = None,
         inbatch_pack_offset: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
@@ -2105,7 +2042,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
 
         if position_ids is None and (attention_mask is None or attention_mask.ndim == 2):
             # calculate RoPE index once per generation in the pre-fill stage only
-            if curr_rope_deltas is None or (past_key_values is None or past_key_values[0] is None):
+            if curr_rope_deltas is None or past_key_values is None or past_key_values.get_seq_length() == 0:
                 position_ids, rope_deltas = self.get_rope_index(
                     input_ids,
                     image_grid_thw,
@@ -2118,13 +2055,15 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
             else:
                 batch_size, seq_length, _ = inputs_embeds.shape
                 delta = (
-                    (past_key_values[0][0].shape[1] + curr_rope_deltas)
-                    if past_key_values is not None and past_key_values[0] is not None
+                    (past_key_values.get_seq_length() + curr_rope_deltas)
+                    if past_key_values is not None and past_key_values.get_seq_length() > 0
                     else 0
                 )
                 position_ids = paddle.arange(seq_length)
                 position_ids = position_ids.reshape((1, -1)).expand((batch_size, -1))
-                if past_key_values is not None and past_key_values[0] is not None:  # otherwise `deltas` is an int `0`
+                if (
+                    past_key_values is not None and past_key_values.get_seq_length() > 0
+                ):  # otherwise `deltas` is an int `0`
                     delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=0)
                 position_ids = position_ids.add(delta)
                 position_ids = position_ids.unsqueeze(0).expand((3, -1, -1))
@@ -2154,7 +2093,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
             shift_labels = labels[..., 1:].contiguous()
             # Flatten the tokens
             loss_fct = paddle.nn.CrossEntropyLoss()
-            shift_logits = shift_logits.reshape((-1, self.config.vocab_size))
+            shift_logits = shift_logits.reshape((-1, shift_logits.shape[-1]))
             shift_labels = shift_labels.reshape((-1,))
             labels_mask = shift_labels != -100
             loss = loss_fct(shift_logits[labels_mask], shift_labels[labels_mask])
@@ -2171,16 +2110,6 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
             attentions=outputs.attentions,
             rope_deltas=curr_rope_deltas,
         )
-
-    def generate(self, inputs, **kwargs):
-        gen_kwargs = {
-            "max_new_tokens": kwargs.get("max_new_tokens", 8192),
-            "use_cache": kwargs.get("use_cache", True),
-        }
-        gen_kwargs = {**inputs, **gen_kwargs}
-        with paddle.no_grad():
-            generated_ids = super().generate(**gen_kwargs)
-        return generated_ids
 
     def _get_image_nums_and_video_nums(
         self,
