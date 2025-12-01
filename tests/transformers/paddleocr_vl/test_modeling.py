@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import random
+import tempfile
 import unittest
 
 random.seed(42)
@@ -402,6 +403,46 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
+
+    def test_save_load_flex_checkpoint(self):
+        for model_class in self.all_model_classes:
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                tiny_vision_config = {
+                    "hidden_size": 144,
+                    "num_attention_heads": 4,
+                    "intermediate_size": 269,
+                    "num_hidden_layers": 2,
+                    "patch_size": 14,
+                    "image_size": 28,
+                }
+                config = PaddleOCRVLConfig(
+                    head_dim=64,
+                    num_attention_heads=4,
+                    hidden_size=128,
+                    intermediate_size=384,
+                    num_hidden_layers=2,
+                    num_key_value_heads=2,
+                    pixel_hidden_size=144,
+                    rope_scaling={
+                        "mrope_section": [8, 12, 12],
+                        "rope_type": "default",
+                    },
+                    vision_config=tiny_vision_config,
+                )
+                model = model_class(config)
+                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+
+                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
+
+                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
+
+                model_state_1 = model1.state_dict()
+                model_state_2 = model2.state_dict()
+
+                for k, v in model_state_1.items():
+                    md51 = v._md5sum()
+                    md52 = model_state_2[k]._md5sum()
+                    assert md51 == md52
 
 
 class PaddleOCRVLIntegrationTest(unittest.TestCase):

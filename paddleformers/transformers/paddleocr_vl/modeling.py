@@ -1663,6 +1663,204 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         "fc2",
     ]
 
+    @classmethod
+    def _gen_aoa_config(cls, config: PaddleOCRVLConfig):
+
+        aoa_config = {
+            "aoa_statements": [],
+        }
+
+        # language model
+        llm_prefix = "model."
+        aoa_config["aoa_statements"] += [
+            f"model.embed_tokens.weight -> {llm_prefix}embed_tokens.weight",
+            f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+            f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+            f"model.layers.$LAYER_ID.input_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.input_layernorm.weight",
+            f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+            f"model.norm.weight -> {llm_prefix}norm.weight",
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v")
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.mlp.{x}_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.{x}_proj.weight"
+            for x in ("gate", "up")
+        ]
+
+        # visual model
+        visual_prefix = "visual.vision_model."
+        aoa_config["aoa_statements"] += [
+            f"visual.vision_model.embeddings.patch_embedding.weight -> {visual_prefix}embeddings.patch_embedding.weight",
+            f"visual.vision_model.embeddings.patch_embedding.bias -> {visual_prefix}embeddings.patch_embedding.bias",
+            f"visual.vision_model.embeddings.position_embedding.weight -> {visual_prefix}embeddings.position_embedding.weight",
+            f"visual.vision_model.embeddings.packing_position_embedding.weight -> {visual_prefix}embeddings.packing_position_embedding.weight",
+            f"visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.weight^T -> {visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.weight",
+            f"visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.bias -> {visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.bias",
+            f"visual.vision_model.encoder.layers.$LAYER_ID.layer_norm1.weight -> {visual_prefix}encoder.layers.$LAYER_ID.layer_norm1.weight",
+            f"visual.vision_model.encoder.layers.$LAYER_ID.layer_norm1.bias -> {visual_prefix}encoder.layers.$LAYER_ID.layer_norm1.bias",
+            f"visual.vision_model.encoder.layers.$LAYER_ID.layer_norm2.weight -> {visual_prefix}encoder.layers.$LAYER_ID.layer_norm2.weight",
+            f"visual.vision_model.encoder.layers.$LAYER_ID.layer_norm2.bias -> {visual_prefix}encoder.layers.$LAYER_ID.layer_norm2.bias",
+            f"visual.vision_model.post_layernorm.weight -> {visual_prefix}post_layernorm.weight",
+            f"visual.vision_model.post_layernorm.bias -> {visual_prefix}post_layernorm.bias",
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"visual.vision_model.encoder.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {visual_prefix}encoder.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"visual.vision_model.encoder.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {visual_prefix}encoder.layers.$LAYER_ID.self_attn.{x}_proj.bias"
+            for x in ("q", "k", "v")
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"visual.vision_model.encoder.layers.$LAYER_ID.mlp.{x}.weight^T -> {visual_prefix}encoder.layers.$LAYER_ID.mlp.{x}.weight"
+            for x in ("fc1", "fc2")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"visual.vision_model.encoder.layers.$LAYER_ID.mlp.{x}.bias -> {visual_prefix}encoder.layers.$LAYER_ID.mlp.{x}.bias"
+            for x in ("fc1", "fc2")
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"visual.vision_model.head.probe -> {visual_prefix}head.probe",
+            f"visual.vision_model.head.attention.in_proj_weight -> {visual_prefix}head.attention.in_proj_weight",
+            f"visual.vision_model.head.attention.in_proj_bias -> {visual_prefix}head.attention.in_proj_bias",
+            f"visual.vision_model.head.attention.out_proj.weight^T -> {visual_prefix}head.attention.out_proj.weight",
+            f"visual.vision_model.head.attention.out_proj.bias -> {visual_prefix}head.attention.out_proj.bias",
+            f"visual.vision_model.head.layernorm.weight -> {visual_prefix}head.layernorm.weight",
+            f"visual.vision_model.head.layernorm.bias -> {visual_prefix}head.layernorm.bias",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"visual.vision_model.head.mlp.{x}.weight^T -> {visual_prefix}head.mlp.{x}.weight" for x in ("fc1", "fc2")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"visual.vision_model.head.mlp.{x}.bias -> {visual_prefix}head.mlp.{x}.bias" for x in ("fc1", "fc2")
+        ]
+
+        # projector
+        projector_prefix = "mlp_AR."
+        aoa_config["aoa_statements"] += [
+            f"mlp_AR.pre_norm.weight -> {projector_prefix}pre_norm.weight",
+            f"mlp_AR.pre_norm.bias -> {projector_prefix}pre_norm.bias",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"mlp_AR.{x}.weight^T -> {projector_prefix}{x}.weight" for x in ("linear_1", "linear_2")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"mlp_AR.{x}.bias -> {projector_prefix}{x}.bias" for x in ("linear_1", "linear_2")
+        ]
+
+        # lm_head
+        aoa_config["aoa_statements"] += [
+            f"{'model.embed_tokens.weight^T' if config.tie_word_embeddings else 'lm_head.weight'} -> lm_head.weight",
+        ]
+
+        return aoa_config
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: PaddleOCRVLConfig):
+
+        aoa_config = {
+            "aoa_statements": [],
+        }
+
+        # language model
+        llm_prefix = "model."
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            f"{llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+            f"{llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+            f"{llm_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+            f"{llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+            f"{llm_prefix}norm.weight -> model.norm.weight",
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v")
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}layers.$LAYER_ID.mlp.{x}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{x}_proj.weight"
+            for x in ("gate", "up")
+        ]
+
+        # visual model
+        visual_prefix = "visual.vision_model."
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}embeddings.patch_embedding.weight -> visual.vision_model.embeddings.patch_embedding.weight",
+            f"{visual_prefix}embeddings.patch_embedding.bias -> visual.vision_model.embeddings.patch_embedding.bias",
+            f"{visual_prefix}embeddings.position_embedding.weight -> visual.vision_model.embeddings.position_embedding.weight",
+            f"{visual_prefix}embeddings.packing_position_embedding.weight -> visual.vision_model.embeddings.packing_position_embedding.weight",
+            f"{visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.weight^T -> visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.weight",
+            f"{visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.bias -> visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.bias",
+            f"{visual_prefix}encoder.layers.$LAYER_ID.layer_norm1.weight -> visual.vision_model.encoder.layers.$LAYER_ID.layer_norm1.weight",
+            f"{visual_prefix}encoder.layers.$LAYER_ID.layer_norm1.bias -> visual.vision_model.encoder.layers.$LAYER_ID.layer_norm1.bias",
+            f"{visual_prefix}encoder.layers.$LAYER_ID.layer_norm2.weight -> visual.vision_model.encoder.layers.$LAYER_ID.layer_norm2.weight",
+            f"{visual_prefix}encoder.layers.$LAYER_ID.layer_norm2.bias -> visual.vision_model.encoder.layers.$LAYER_ID.layer_norm2.bias",
+            f"{visual_prefix}post_layernorm.weight -> visual.vision_model.post_layernorm.weight",
+            f"{visual_prefix}post_layernorm.bias -> visual.vision_model.post_layernorm.bias",
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}encoder.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> visual.vision_model.encoder.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}encoder.layers.$LAYER_ID.self_attn.{x}_proj.bias -> visual.vision_model.encoder.layers.$LAYER_ID.self_attn.{x}_proj.bias"
+            for x in ("q", "k", "v")
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}encoder.layers.$LAYER_ID.mlp.{x}.weight^T -> visual.vision_model.encoder.layers.$LAYER_ID.mlp.{x}.weight"
+            for x in ("fc1", "fc2")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}encoder.layers.$LAYER_ID.mlp.{x}.bias -> visual.vision_model.encoder.layers.$LAYER_ID.mlp.{x}.bias"
+            for x in ("fc1", "fc2")
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}head.probe -> visual.vision_model.head.probe",
+            f"{visual_prefix}head.attention.in_proj_weight -> visual.vision_model.head.attention.in_proj_weight",
+            f"{visual_prefix}head.attention.in_proj_bias -> visual.vision_model.head.attention.in_proj_bias",
+            f"{visual_prefix}head.attention.out_proj.weight^T -> visual.vision_model.head.attention.out_proj.weight",
+            f"{visual_prefix}head.attention.out_proj.bias -> visual.vision_model.head.attention.out_proj.bias",
+            f"{visual_prefix}head.layernorm.weight -> visual.vision_model.head.layernorm.weight",
+            f"{visual_prefix}head.layernorm.bias -> visual.vision_model.head.layernorm.bias",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}head.mlp.{x}.weight^T -> visual.vision_model.head.mlp.{x}.weight" for x in ("fc1", "fc2")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}head.mlp.{x}.bias -> visual.vision_model.head.mlp.{x}.bias" for x in ("fc1", "fc2")
+        ]
+
+        # projector
+        projector_prefix = "mlp_AR."
+        aoa_config["aoa_statements"] += [
+            f"{projector_prefix}pre_norm.weight -> mlp_AR.pre_norm.weight",
+            f"{projector_prefix}pre_norm.bias -> mlp_AR.pre_norm.bias",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{projector_prefix}{x}.weight^T -> mlp_AR.{x}.weight" for x in ("linear_1", "linear_2")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{projector_prefix}{x}.bias -> mlp_AR.{x}.bias" for x in ("linear_1", "linear_2")
+        ]
+
+        # lm_head
+        aoa_config["aoa_statements"] += [
+            f"lm_head.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
+        ]
+
+        return aoa_config
+
     def __init__(self, config: PaddleOCRVLConfig):
         super().__init__(config)
 
