@@ -259,18 +259,6 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         formatted_prompt = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
         self.assertEqual(len(formatted_prompt), 1)
 
-        formatted_prompt_tokenized = processor.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=True
-        ).tolist()
-        expected_output = processor.tokenizer(formatted_prompt, return_tensors=None).input_ids
-        self.assertListEqual(expected_output, formatted_prompt_tokenized)
-
-        out_dict = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, return_dict=True)
-        self.assertListEqual(
-            list(out_dict.keys()),
-            ["input_ids", "token_type_ids", "position_ids", "images", "grid_thw", "image_type_ids"],
-        )
-
         messages = [
             {
                 "role": "user",
@@ -285,6 +273,32 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
                 ],
             },
         ]
+        formatted_prompt_tokenized = processor.tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+        )
+        expected_output = processor.tokenizer(formatted_prompt[0], return_tensors=None).input_ids
+        self.assertListEqual(expected_output, formatted_prompt_tokenized)
+
+        text = processor.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        image_inputs, video_inputs = processor.process_vision_info(messages)
+        out_dict = processor(
+            text=[text],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pd",
+        )
+        self.assertListEqual(
+            list(out_dict.keys()),
+            ["input_ids", "token_type_ids", "position_ids", "images", "grid_thw", "image_type_ids"],
+        )
+
         # Add video URL for return dict and load with `num_frames` arg
         target_frames = 3
         messages[0]["content"][0] = {
@@ -306,7 +320,6 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             padding=True,
             return_tensors="pd",
         )
-        print("out_dict_with_video: ", out_dict_with_video)
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 231840)
 
