@@ -19,8 +19,8 @@ from functools import partial
 
 import paddle
 
-from paddleformers.datasets.loader import create_dataset
 from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
+from paddleformers.datasets.loader import create_dataset
 from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
@@ -36,6 +36,7 @@ from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
+    AutoProcessor,
     AutoTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
@@ -196,7 +197,6 @@ def run_dpo(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-
     processor = None
     if model_args.stage == "VL-DPO":
         processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
@@ -261,18 +261,22 @@ def run_dpo(
         "is_valid": False,
     }
 
-    dataset_config.update({
-        "template": data_args.template,
-        "train_on_prompt": False,
-        "tool_format": None,
-        "default_system": None,
-        "enable_thinking": True,
-    })
-    
+    dataset_config.update(
+        {
+            "template": data_args.template,
+            "train_on_prompt": False,
+            "tool_format": None,
+            "default_system": None,
+            "enable_thinking": True,
+        }
+    )
+
     template_instance = get_template_and_fix_tokenizer(dataset_config)
-    dataset_config.update({
-        "template_instance": template_instance,
-    })
+    dataset_config.update(
+        {
+            "template_instance": template_instance,
+        }
+    )
     if training_args.max_steps == -1:
         if data_args.mix_strategy == "random":
             raise ValueError(
@@ -312,6 +316,7 @@ def run_dpo(
         train_dataset = None
 
     if training_args.do_eval and training_args.should_load_dataset:
+        dataset_config["is_valid"] = True
         eval_dataset = create_dataset(
             task_group=data_args.eval_dataset_path,
             task_group_prob=data_args.eval_dataset_prob,

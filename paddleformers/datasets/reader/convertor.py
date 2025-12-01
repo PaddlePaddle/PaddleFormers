@@ -18,8 +18,7 @@ from typing import List
 
 
 def convert_dpo_txt_data(data):
-    """Convert raw format example to Example.
-    """
+    """Convert raw format example to Example."""
     if isinstance(data["src"], str):
         data["src"] = [data["src"]]
     if isinstance(data["tgt"], str):

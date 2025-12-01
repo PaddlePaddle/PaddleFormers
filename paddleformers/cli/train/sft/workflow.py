@@ -33,10 +33,10 @@ from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
 )
-from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
-from paddleformers.datasets.loader import create_dataset as create_dataset_sft
 from paddleformers.datasets.collate import collate_fn, mm_collate_fn
 from paddleformers.datasets.data_utils import estimate_training
+from paddleformers.datasets.loader import create_dataset as create_dataset_sft
+from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
@@ -52,8 +52,8 @@ from paddleformers.transformers import (
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
     AutoModelForConditionalGeneration,
-    AutoTokenizer,
     AutoProcessor,
+    AutoTokenizer,
     Llama3Tokenizer,
     LlamaTokenizer,
 )
@@ -294,7 +294,7 @@ def run_sft(
 
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
-    
+
     processor = None
     if model_args.stage == "VL-SFT":
         processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
@@ -321,18 +321,22 @@ def run_sft(
         "split_multi_turn": data_args.split_multi_turn,
     }
 
-    dataset_config.update({
-        "template": data_args.template,
-        "train_on_prompt": False,
-        "tool_format": None,
-        "default_system": None,
-        "enable_thinking": True,
-    })
+    dataset_config.update(
+        {
+            "template": data_args.template,
+            "train_on_prompt": False,
+            "tool_format": None,
+            "default_system": None,
+            "enable_thinking": True,
+        }
+    )
 
     template_instance = get_template_and_fix_tokenizer(dataset_config)
-    dataset_config.update({
-        "template_instance": template_instance,
-    })
+    dataset_config.update(
+        {
+            "template_instance": template_instance,
+        }
+    )
 
     if data_args.dataset_type == "pretrain":
         training_args.test_iters = training_args.eval_iters * 10

@@ -15,8 +15,7 @@
 """Useful data utility."""
 
 import json
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 

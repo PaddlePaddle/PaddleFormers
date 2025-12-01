@@ -142,8 +142,7 @@ class DPODataSet(IterableDataset):
             )
 
     def __postprocess_before_concat(self, example):
-        """Process multi-turn conversation data into tokenized sequences with dynamic truncation.
-        """
+        """Process multi-turn conversation data into tokenized sequences with dynamic truncation."""
         prompt_token_ids = []
 
         cur_len = 0
