@@ -447,15 +447,15 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 64]
+        expected_shape = [1, 11, 512]
         self.assertEqual(output.shape, expected_shape)
 
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [0.01802453, -0.42128855, 0.45844582],
-                    [-0.12787277, 0.00660499, 0.83033413],
-                    [0.44403678, 0.26123494, 1.36080980],
+                    [1.33794415, -0.19816241, -1.59525776],
+                    [1.69990170, -0.31080112, -1.62164509],
+                    [1.70097589, -0.30771524, -1.16779113],
                 ]
             ],
             dtype=output.dtype,
@@ -476,14 +476,14 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 64]
+        expected_shape = [1, 11, 512]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [0.01802453, -0.42128855, 0.45844582],
-                    [-0.12787277, 0.00660499, 0.83033413],
-                    [0.44403678, 0.26123494, 1.36080980],
+                    [1.33794415, -0.19816241, -1.59525776],
+                    [1.69990170, -0.31080112, -1.62164509],
+                    [1.70097589, -0.30771524, -1.16779113],
                 ]
             ],
             dtype=output.dtype,
