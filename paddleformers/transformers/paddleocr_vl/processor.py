@@ -20,7 +20,7 @@ import PIL
 
 from ..feature_extraction_utils import BatchFeature
 from ..processing_utils import ProcessingKwargs, ProcessorMixin, Unpack, VideosKwargs
-from ..tokenization_utils_base import PreTokenizedInput, TextInput
+from ..tokenizer_utils_base import PreTokenizedInput, TextInput
 
 ImageInput = Union[
     "PIL.Image.Image",
@@ -179,7 +179,7 @@ class PaddleOCRVLProcessor(ProcessorMixin):
                         self.image_token,
                         "<|placeholder|>"
                         * (
-                            image_grid_thw[index].prod()
+                            image_grid_thw[index].prod().item()
                             // self.image_processor.merge_size
                             // self.image_processor.merge_size
                         ),
