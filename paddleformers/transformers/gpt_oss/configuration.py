@@ -14,8 +14,7 @@
 
 # from ..configuration_utils import PretrainedConfig, layer_type_validation
 from ..configuration_utils import PretrainedConfig
-
-# from ...modeling_rope_utils import rope_config_validation
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
 class GptOssConfig(PretrainedConfig):
@@ -79,15 +78,17 @@ class GptOssConfig(PretrainedConfig):
                 "sliding_attention" if bool((i + 1) % 2) else "full_attention" for i in range(self.num_hidden_layers)
             ]
         # layer_type_validation(self.layer_types)
-
+        self.max_position_embeddings = max_position_embeddings
         # Validate the correctness of rotary position embeddings parameters
         # BC: if there is a 'type' field, copy it it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
-        # rope_config_validation(self)
+        self.rope_parameters = self.rope_scaling
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
         self.attention_bias = True
-        self.max_position_embeddings = max_position_embeddings
+
         self.router_aux_loss_coef = router_aux_loss_coef
         self.output_router_logits = output_router_logits
         self.use_cache = use_cache

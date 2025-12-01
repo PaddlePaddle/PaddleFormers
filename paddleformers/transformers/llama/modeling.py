@@ -32,6 +32,7 @@ from ...utils.log import logger
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from .configuration import LlamaConfig
 
 
@@ -158,9 +159,9 @@ class LLamaAttention(nn.Layer):
         q_shape = (batch_size, seq_len, self.num_heads, self.head_dim)
         kv_shape = (batch_size, seq_len, self.num_key_value_heads, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).view(q_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
+        query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -270,10 +271,10 @@ def _compute_default_parameters(config):
 def _compute_llama3_parameters(config):
     inv_freq, attention_factor = _compute_default_parameters(config)
 
-    factor = config.rope_scaling["factor"]
-    low_freq_factor = config.rope_scaling["low_freq_factor"]
-    high_freq_factor = config.rope_scaling["high_freq_factor"]
-    old_context_len = config.rope_scaling["original_max_position_embeddings"]
+    factor = config.rope_parameters["factor"]
+    low_freq_factor = config.rope_parameters["low_freq_factor"]
+    high_freq_factor = config.rope_parameters["high_freq_factor"]
+    old_context_len = config.rope_parameters["original_max_position_embeddings"]
 
     low_freq_wavelen = old_context_len / low_freq_factor
     high_freq_wavelen = old_context_len / high_freq_factor
@@ -301,8 +302,8 @@ class LlamaRotaryEmbedding(nn.Layer):
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 
         self.rope_type = "default"
-        if hasattr(config, "rope_scaling") and isinstance(config.rope_scaling, dict):
-            self.rope_type = config.rope_scaling.get("rope_type", "default")
+        if hasattr(config, "rope_parameters") and isinstance(config.rope_parameters, dict):
+            self.rope_type = config.rope_parameters.get("rope_type", "default")
 
         if self.rope_type == "llama3":
             inv_freq, attention_scaling = _compute_llama3_parameters(config)
@@ -312,6 +313,7 @@ class LlamaRotaryEmbedding(nn.Layer):
         self.attention_scaling = attention_scaling
         self.register_buffer("inv_freq", inv_freq, persistable=False)
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(enable=False):
             inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
@@ -436,11 +438,11 @@ class LlamaPretrainedModel(PretrainedModel):
                 for PROJECTOR_NAME in ["gate_proj", "up_proj", "down_proj"]
             ]
         )
-
-        if config.tie_word_embeddings:
-            aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
-        else:
-            aoa_statements.append("lm_head.weight -> lm_head.weight")
+        if cls != cls.base_model_class:
+            if config.tie_word_embeddings:
+                aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
+            else:
+                aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
 
@@ -469,7 +471,7 @@ class LlamaPretrainedModel(PretrainedModel):
             ]
         )
 
-        if not config.tie_word_embeddings:
+        if not config.tie_word_embeddings and cls != cls.base_model_class:
             aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}

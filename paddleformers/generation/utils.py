@@ -555,27 +555,39 @@ class GenerationMixin(object):
         Returns:
             dict: Updated model kwargs.
         """
-        # update cache
+        # update cache (may not be used, but retained for compatibility)
         if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
             model_kwargs["past_key_values"] = outputs[1]
 
         if isinstance(outputs, CausalLMOutputWithPast) and "past_key_values" in outputs:
             model_kwargs["past_key_values"] = outputs.past_key_values
 
+        # update position_ids
+        if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
+            position_ids = model_kwargs["position_ids"]
+            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
+
         # update token_type_ids with last value
         if "token_type_ids" in model_kwargs and model_kwargs["token_type_ids"] is not None:
             token_type_ids = model_kwargs["token_type_ids"]
             model_kwargs["token_type_ids"] = paddle.cat([token_type_ids, token_type_ids[:, -1:]], axis=-1)
+
         if not is_encoder_decoder and model_kwargs.get("attention_mask", None) is not None:
             # update attention mask
             attention_mask = model_kwargs["attention_mask"]
-            model_kwargs["attention_mask"] = paddle.cat(
-                [
-                    attention_mask,
-                    paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype),
-                ],
-                axis=-1,
-            )
+            if len(attention_mask.shape) == 2:
+                model_kwargs["attention_mask"] = paddle.cat(
+                    [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
+                    axis=-1,
+                )
+            elif len(attention_mask.shape) == 4:
+                model_kwargs["attention_mask"] = paddle.cat(
+                    [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
+                    axis=-1,
+                )[:, :, -1:, :]
+            else:
+                model_kwargs["attention_mask"] = None
+
         # update role_ids
         if "role_ids" in model_kwargs and model_kwargs["role_ids"] is not None:
             role_ids = model_kwargs["role_ids"]
