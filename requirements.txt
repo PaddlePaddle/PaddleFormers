@@ -25,3 +25,4 @@ transformers>=4.55.1
 triton >= 3.1
 use_triton_in_paddle
 GPUtil
+paddlefleet @https://www.paddlepaddle.org.cn/packages/nightly/cu129/paddlefleet/paddlefleet-0.0.1a0-cp310-cp310-linux_x86_64.whl
