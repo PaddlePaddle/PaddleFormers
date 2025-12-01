@@ -18,6 +18,7 @@ import numpy as np
 
 from .SFTDataset import Sequence
 
+
 def dpo_collate_fn(
     batch,
     tokenizer,
@@ -149,6 +150,7 @@ def dpo_collate_fn(
             input_dict[key] = np.array(input_dict[key])
     return input_dict
 
+
 def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int):
     """Convert batch of sequences into training tensors.
 
@@ -219,7 +221,9 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
     return input_dict
 
 
-def mm_collate_fn(batch: List[List[Sequence]], template, processor, tokenizer, training_args, model_args, max_seq_len: int):
+def mm_collate_fn(
+    batch: List[List[Sequence]], template, processor, tokenizer, training_args, model_args, max_seq_len: int
+):
     """Convert batch of sequences into training tensors.
 
     Args:
@@ -273,7 +277,7 @@ def mm_collate_fn(batch: List[List[Sequence]], template, processor, tokenizer, t
         input_keys.append("attn_mask_startend_row_indices")
     else:
         input_keys.append("attention_mask")
-    
+
     input_keys.append("pixel_values")
     input_keys.append("image_grid_thw")
     return_list = []
@@ -318,7 +322,7 @@ def mm_collate_fn(batch: List[List[Sequence]], template, processor, tokenizer, t
                 return_list[-1].append(
                     gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
                 )
-        
+
         if "pixel_values" in mm_inputs:
             return_list[-1].append(mm_inputs["pixel_values"])
         if "image_grid_thw" in mm_inputs:

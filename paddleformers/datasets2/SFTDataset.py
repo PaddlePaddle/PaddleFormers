@@ -18,11 +18,11 @@ from typing import List
 import numpy as np
 from paddle.io import IterableDataset
 
+from paddleformers.datasets2.data_utils import postprocess_fc_sequence
 from paddleformers.datasets2.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets2.reader.multi_source_datasets import MultiSourceDataset
-from paddleformers.datasets2.data_utils import postprocess_fc_sequence
-from paddleformers.transformers import AutoProcessor, AutoTokenizer
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
+from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 from paddleformers.utils.log import logger
 
 
@@ -82,12 +82,6 @@ class SFTDataSet(IterableDataset):
     def __iter__(self):
         for example in self.mix_datasets:
             actual_example_num = 1
-            system = example.get("system", None)
-            tools = example.get("tools", None)
-            images = example.get("images", [])
-            videos = example.get("videos", [])
-            audios = example.get("audios", [])
-
             if self.is_pretraining:
                 if self.truncate_packing:
                     # return only tokens
@@ -130,6 +124,11 @@ class SFTDataSet(IterableDataset):
         Returns:
             Sequence: Processed sequence or None if invalid.
         """
+        system = example.get("system", None)
+        tools = example.get("tools", None)
+        images = example.get("images", [])
+        videos = example.get("videos", [])
+        audios = example.get("audios", [])
         if self.use_template:
             if self.template_backend == "jinja":
                 if not self.tokenizer.chat_template:
@@ -137,9 +136,7 @@ class SFTDataSet(IterableDataset):
                 if self.split_multi_turn:
                     encoded_pairs = postprocess_fc_sequence(self.tokenizer, example)
                 else:
-                    encoded_pairs = self.tokenizer.encode_chat_inputs(
-                        example, encode_one_turn=self.encode_one_turn
-                    )
+                    encoded_pairs = self.tokenizer.encode_chat_inputs(example, encode_one_turn=self.encode_one_turn)
             else:
                 # 对多模信息做处理，将messages里面的占位符替换
                 messages = self.template.mm_plugin.process_messages(
@@ -171,9 +168,7 @@ class SFTDataSet(IterableDataset):
                 if len(tokens_src) > self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn:
                     break
                 else:
-                    reverse_len = (
-                        self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
-                    )
+                    reverse_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
                     tokens_target = tokens_target[:reverse_len]
 
             tokens = tokens_src + tokens_target + tokens
@@ -215,9 +210,7 @@ class SFTDataSet(IterableDataset):
 
             # end_of_response is a special token that indicates the end of the turn.
             # end_token is a special token that indicates the end of the answer.
-            labels = [
-                label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
-            ]
+            labels = [label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels]
         else:
             # labels = tokens[1:] + [self.tokenizer.eos_token_id]
             # tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
@@ -483,4 +476,3 @@ class SFTPackingDataset(IterableDataset):
                 left_len[left_index] = self.max_seq_len
 
         return generate_packs
-

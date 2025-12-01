@@ -299,6 +299,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
         logger.error("No valid data found, please check your dataset format.")
         return 0
 
+
 def infer_seqlen(source_len: int, target_len: int, cutoff_len: int) -> tuple[int, int]:
     r"""Compute the real sequence length after truncation by the cutoff_len."""
     if target_len * 2 < cutoff_len:  # truncate source

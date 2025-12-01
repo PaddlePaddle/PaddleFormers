@@ -268,6 +268,7 @@ def convert_mm_data(item):
         res["tools"] = data_info["tools"]
     return res
 
+
 def convert_pretraining_data(item):
     res = {}
     # convert to messages format
@@ -278,6 +279,7 @@ def convert_pretraining_data(item):
         text = item["text"]
     res["messages"].append({"role": "assistant", "content": text})
     return res
+
 
 def erniekit_convertor(item):
     if "src" in item and "tgt" in item and "response" in item:
@@ -290,8 +292,10 @@ def erniekit_convertor(item):
         res = convert_mm_data(item)
     return res
 
+
 def messages_convertor(item):
     return item
+
 
 def query_response_convertor(item):
     res = {}

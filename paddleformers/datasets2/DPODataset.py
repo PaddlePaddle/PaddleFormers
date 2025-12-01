@@ -13,17 +13,17 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import List, Any, Optional, Union
+from typing import List, Optional
 
 import numpy as np
 from paddle.io import IterableDataset
 
+from paddleformers.datasets2.data_utils import postprocess_fc_sequence
 from paddleformers.datasets2.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets2.reader.multi_source_datasets import MultiSourceDataset
-from paddleformers.transformers import AutoProcessor, AutoTokenizer
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
+from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 from paddleformers.utils.log import logger
-from paddleformers.datasets2.data_utils import infer_seqlen
 
 
 @dataclass
@@ -108,7 +108,9 @@ class DPODataSet(IterableDataset):
 
             # 1.3 labels
             chosen_labels = [0] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
-            rejected_labels = [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
+            rejected_labels = (
+                [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
+            )
 
             # 1.4 response index
             # support use_sparse_head_and_loss_fn only
@@ -186,12 +188,12 @@ class DPODataSet(IterableDataset):
             )
             prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
             _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)
-        
+
             chosen_encoded_messages = []
             rejected_encoded_messages = []
             chosen_encoded_messages.append([prompt_ids, chosen_ids])
             rejected_encoded_messages.append([prompt_ids, rejected_ids])
-        
+
         # chosen/rejected response
         response_token_ids_list = []
         response_label_ids_list = []
@@ -268,6 +270,7 @@ class DPODataSet(IterableDataset):
             cur_len,
         )
 
+
 class DPOPackingDataset(IterableDataset):
     def __init__(self, processed_dataset, **dataset_config):
         self.processed_dataset = processed_dataset
@@ -340,7 +343,7 @@ class DPOPackingDataset(IterableDataset):
                     for pack in sequence_pack:
                         yield pack
 
-    def _generate_greedy_packs(self, examples, actual_example_num_list):
+    def _generate_greedy_packs(self, sequences):
         """Generate packed sequences using greedy strategy.
 
         Args:
@@ -365,4 +368,3 @@ class DPOPackingDataset(IterableDataset):
                 sequence_pack[max_left_len_index].append(sequence)
                 left_len_list[max_left_len_index] -= sequence_len
         return sequence_pack
-

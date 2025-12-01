@@ -20,25 +20,21 @@
 # Licensed under the Apache License - https://github.com/hiyouga/LLaMA-Factory/blob/main/LICENSE
 
 import inspect
+import io
 import math
 import os
-import io
-import requests
 from copy import deepcopy
 from dataclasses import dataclass
-from io import BytesIO
 from typing import BinaryIO, Optional
 
 import av
 import librosa
 import numpy as np
+import requests
 from PIL import Image
 from PIL.Image import Image as ImageObject
 from transformers.image_utils import is_valid_image
 from typing_extensions import override
-
-from paddleformers.datasets2.processor.vision_loader import VisionLoader
-from paddleformers.hparams.data_args import DataArguments
 
 IMAGE_PLACEHOLDER = os.getenv("IMAGE_PLACEHOLDER", "<image>")
 VIDEO_PLACEHOLDER = os.getenv("VIDEO_PLACEHOLDER", "<video>")

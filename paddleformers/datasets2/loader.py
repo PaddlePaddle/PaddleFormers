@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 from paddleformers.datasets2.DPODataset import DPODataSet, DPOPackingDataset
 from paddleformers.datasets2.SFTDataset import SFTDataSet, SFTPackingDataset

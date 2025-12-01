@@ -50,7 +50,7 @@ import_structure = {
         "DefaultToolUtils",
         "QwenToolUtils",
         "get_tool_utils",
-    ]
+    ],
 }
 
 if TYPE_CHECKING:
