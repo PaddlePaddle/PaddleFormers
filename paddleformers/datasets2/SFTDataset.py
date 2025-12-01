@@ -87,9 +87,9 @@ class SFTDataSet(IterableDataset):
                     # return only tokens
                     yield self._encode_pretraining_example(example, actual_example_num)
                 else:
-                    yield self._postprocess_sequence(example, actual_example_num)
+                    yield self._postprocess_pretraining_sequence(example, actual_example_num)
             else:
-                yield self._postprocess_pretraining_sequence(example, actual_example_num)
+                yield self._postprocess_sequence(example, actual_example_num)
 
     def _postprocess_pretraining_sequence(self, example, actual_example_num):
         tokens = self._encode_pretraining_example(example, actual_example_num)
@@ -248,6 +248,7 @@ class SFTPackingDataset(IterableDataset):
         self.is_valid = dataset_config["is_valid"]
         self.truncate_packing = dataset_config["truncate_packing"]
         self.tokenizer = dataset_config["tokenizer"]
+        self.is_pretraining = dataset_config["is_pretraining"]
 
         self.estimate = False
         # The number of valid samples and skipped samples in estimation
@@ -264,7 +265,7 @@ class SFTPackingDataset(IterableDataset):
 
         dataset_iterator = iter(self.processed_dataset)
 
-        if self.truncate_packing:
+        if self.is_pretraining and self.truncate_packing:
             all_tokenized_tokens = []
             for _ in range(len(self.processed_dataset)):
                 example = next(dataset_iterator)
