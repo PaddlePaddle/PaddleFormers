@@ -53,15 +53,6 @@ def rotate_half(x):
     return paddle.cat([-x2, x1], axis=-1)
 
 
-def _apply_rotary_emb(
-    x: paddle.Tensor,
-    cos: paddle.Tensor,
-    sin: paddle.Tensor,
-) -> paddle.Tensor:
-    x_embed = (x * cos) + (rotate_half(x) * sin)
-    return x_embed
-
-
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors."""
     cos = cos.unsqueeze(unsqueeze_dim)
@@ -223,7 +214,7 @@ class Qwen3MoeAttention(nn.Layer):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        # [bs, seq_len, num_head, head_dim]
+        # [bs, num_head, seq_len, head_dim]
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 

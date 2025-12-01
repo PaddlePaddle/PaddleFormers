@@ -20,6 +20,7 @@
 """Qwen2_5_VL model configuration"""
 
 from ..configuration_utils import PretrainedConfig, layer_type_validation
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
 class Qwen2_5_VLVisionConfig(PretrainedConfig):
@@ -217,6 +218,7 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
         self.rope_theta = rope_theta
         self.attention_dropout = attention_dropout
         self.rope_scaling = rope_scaling
+        self.rope_parameters = rope_scaling
 
         self.layer_types = layer_types
         if self.layer_types is None:
@@ -229,12 +231,10 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
         layer_type_validation(self.layer_types, self.num_hidden_layers)
 
         # Validate the correctness of rotary position embeddings parameters
-        # BC: if there is a 'type' field, move it to 'rope_type'.
-        if self.rope_scaling is not None and "type" in self.rope_scaling:
-            if self.rope_scaling["type"] == "mrope":
-                self.rope_scaling["type"] = "default"
-            self.rope_scaling["rope_type"] = self.rope_scaling["type"]
-        # rope_config_validation(self, ignore_keys={"mrope_section"})
+        standardize_rope_params(self, rope_theta=rope_theta)
+        if self.rope_parameters["rope_type"] == "mrope":
+            self.rope_parameters["rope_type"] = "default"
+        rope_config_validation(self, ignore_keys={"mrope_section"})
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
 
