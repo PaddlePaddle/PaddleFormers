@@ -27,7 +27,6 @@ class ClassInstantier(OrderedDict):
 ACT2CLS = {
     "gelu": nn.GELU,
     "gelu_tanh": (nn.GELU, {"approximate": "tanh"}),
-    "gelu_pytorch_tanh": (nn.GELU, {"approximate": "tanh"}),
     "relu": nn.ReLU,
     "relu6": nn.ReLU6,
     "sigmoid": nn.Sigmoid,

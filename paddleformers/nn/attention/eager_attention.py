@@ -33,7 +33,7 @@ def eager_attention_forward(
     is_causal: Optional[bool] = None,
     **kwargs,
 ):
-    
+
     # b h l d -> b l h d
     key = key.transpose(1, 2)
     value = value.transpose(1, 2)
@@ -57,7 +57,7 @@ def eager_attention_forward(
     key = key.transpose(1, 2)
     value = value.transpose(1, 2)
     attn_weights = paddle.matmul(x=query, y=key, transpose_y=True) * scaling
-    
+
     if attention_mask is not None:
         attention_mask = attention_mask[:, :, :, : key.shape[-2]]
         attn_weights = attn_weights + attention_mask
