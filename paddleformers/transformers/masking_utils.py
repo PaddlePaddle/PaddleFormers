@@ -134,7 +134,8 @@ def create_causal_masks_and_row_indices(
     FLASH_BACKENDS = {"sdpa", "flashmask"}
     attn_impl = getattr(config, "_attn_implementation", "eager")
     is_flash_backend = attn_impl in FLASH_BACKENDS
-    if attention_mask is None and attn_mask_startend_row_indices is None and is_flash_backend:
+    is_fully_attended = attention_mask is None or (attention_mask is not None and attention_mask.cast("bool").all())
+    if is_flash_backend and is_fully_attended:
         if return_mapping:
             causal_mask_mapping = {"full_attention": None, "sliding_attention": None}
             attn_mask_startend_row_indices_mapping = {"full_attention": None, "sliding_attention": None}
