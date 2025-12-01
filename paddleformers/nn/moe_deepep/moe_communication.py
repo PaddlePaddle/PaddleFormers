@@ -204,7 +204,12 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
 
         token_indices_for_scatter_single = token_indices_for_scatter[:, 0:1].squeeze()  # shape [num_all_tokens, 1]
 
-        final_output = paddle.scatter(final_output_empty, token_indices_for_scatter_single, weighted_gathered_tokens)
+        final_output = paddle.scatter(
+            final_output_empty,
+            token_indices_for_scatter_single,
+            weighted_gathered_tokens,
+            overwrite=False
+        )
 
         return final_output
 

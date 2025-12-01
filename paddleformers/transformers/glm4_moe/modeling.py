@@ -429,7 +429,12 @@ class Glm4MoeMoE(nn.Layer):
 
                 # use scatter to replace index_add
                 final_hidden_states_tmp = paddle.zeros_like(final_hidden_states)
-                final_hidden_states_tmp = paddle.scatter(final_hidden_states_tmp, token_indices, weighted_output)
+                final_hidden_states_tmp = paddle.scatter(
+                    final_hidden_states_tmp,
+                    token_indices,
+                    weighted_output,
+                    overwrite=False,
+                )
                 final_hidden_states = final_hidden_states + final_hidden_states_tmp
 
         # in original deepseek, the output of the experts are gathered once we leave this module

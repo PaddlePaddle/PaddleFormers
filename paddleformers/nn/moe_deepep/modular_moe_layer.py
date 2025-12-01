@@ -309,7 +309,10 @@ class ModularMoELayer(nn.Layer):
             # use scatter to replace index_add
             final_hidden_states_tmp = paddle.zeros_like(final_hidden_states)
             final_hidden_states_tmp = paddle.scatter(
-                final_hidden_states_tmp, idx.reshape([-1]), current_hidden_states.to(hidden_states.dtype)
+                final_hidden_states_tmp,
+                idx.reshape([-1]),
+                current_hidden_states.to(hidden_states.dtype),
+                overwrite=False
             )
             final_hidden_states = final_hidden_states + final_hidden_states_tmp
 
