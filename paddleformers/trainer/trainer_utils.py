@@ -51,8 +51,9 @@ from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
 from safetensors import safe_open
 from safetensors.paddle import save_file
-from transformers.model_utils import _parse_size
 from transformers.tokenization_utils_base import BatchEncoding
+
+from paddleformers.transformers.model_utils import _parse_size
 
 from ..ops import Topology
 from ..trainer.argparser import strtobool
