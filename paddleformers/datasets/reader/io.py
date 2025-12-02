@@ -33,7 +33,7 @@ def load_jsonl(file_path):
         res = []
         with open(file_path, "r", encoding="utf-8") as file:
             for line in file:
-                res.append(json.loads(line.strip()))
+                res.append(json.loads(line))
             return res
     except FileNotFoundError:
         raise FileNotFoundError(f"file {file_path} not exists")

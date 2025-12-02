@@ -100,18 +100,21 @@ class MultiSourceDataset(IterableDataset):
                     file_path=task["filepath"],
                     file_type=each_sub_dataset_type,
                     shuffle_file=dataset_config["random_shuffle"],
+                    split_multi_turn=dataset_config.get("split_multi_turn", False),
                 )
             if os.path.isdir(task["filepath"]):
                 task["dataset"] = FileListReader(
                     file_path=task["filepath"],
                     file_type=each_sub_dataset_type,
                     shuffle_file=dataset_config["random_shuffle"],
+                    split_multi_turn=dataset_config.get("split_multi_turn", False),
                 )
             elif each_sub_dataset_type in supported_type:
                 task["dataset"] = FileReader(
                     file_path=task["filepath"],
                     file_type=each_sub_dataset_type,
                     shuffle_file=dataset_config["random_shuffle"],
+                    split_multi_turn=dataset_config.get("split_multi_turn", False),
                 )
             else:
                 raise NotImplementedError(f"Cannot support {each_sub_dataset_type} now.")

@@ -328,7 +328,10 @@ def run_sft(
         }
     )
 
-    template_instance = get_template_and_fix_tokenizer(dataset_config)
+    if dataset_config["template_backend"] == "custom":
+        template_instance = get_template_and_fix_tokenizer(dataset_config)
+    else:
+        template_instance = None
     dataset_config.update(
         {
             "template_instance": template_instance,

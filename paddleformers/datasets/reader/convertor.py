@@ -250,15 +250,29 @@ def convert_mm_data(item):
     return res
 
 
-def convert_pretraining_data(item):
+def convert_pretraining_data(data):
     res = {}
     # convert to messages format
-    res["messages"] = []
-    if isinstance(item["text"], List):
-        text = item["text"][0]
-    else:
-        text = item["text"]
-    res["messages"].append({"role": "assistant", "content": text})
+    if isinstance(data["text"], str):
+        data["text"] = [data["text"]]
+
+    if len(data["text"]) == 0:
+        raise ValueError("Ignore example with empty src or empty tgt.")
+
+    for item in data["text"]:
+        if len(item.strip()) == 0:
+            raise ValueError("Ignore example with empty string in str / tgt field.")
+
+    if "label" not in data:
+        data["label"] = [1] * len(data["text"])
+
+    # convert to OpenAI format
+    data["messages"] = []
+    for a in data["text"]:
+        data["messages"].append({"role": "assistant", "content": a.strip()})
+    
+    res = {"messages": data["messages"], "label": data["label"]}
+
     return res
 
 

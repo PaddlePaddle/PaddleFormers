@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import json
 import os
 
@@ -29,10 +30,11 @@ DATASET_DOWNLOAD_ROOT = os.path.join(DATASET_WORKROOT, "download")
 class BaseReader(IterableDataset):
     """Basic data reader implement."""
 
-    def __init__(self, file_path, file_type, shuffle_file=True):
+    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False):
         self._file_path = file_path
         self._file_type = file_type  # erniekit, alpaca, ...
         self._shuffle_file = shuffle_file
+        self._split_multi_turn = split_multi_turn
         self.loader_map = {
             ".json": load_json,
             ".jsonl": load_jsonl,
@@ -48,8 +50,10 @@ class BaseReader(IterableDataset):
 
 
 class FileReader(BaseReader):
-    def __init__(self, file_path, file_type, shuffle_file=True):
-        super().__init__(file_path=file_path, file_type=file_type, shuffle_file=shuffle_file)
+    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False):
+        super().__init__(
+            file_path=file_path, file_type=file_type, shuffle_file=shuffle_file, split_multi_turn=split_multi_turn
+        )
 
     def __iter__(self):
         ext = self._get_extension()
@@ -68,6 +72,16 @@ class FileReader(BaseReader):
             if not checked_data:
                 # ignore invalid example
                 continue
+
+            if self._split_multi_turn:
+                assistant_index = 0
+                for index, turn in enumerate(checked_data["messages"]):
+                    if "assistant" in turn["role"] and checked_data["label"][assistant_index]:
+                        new_data = copy.deepcopy(checked_data)
+                        new_data["messages"] = checked_data["messages"][: index + 1]
+                        new_data["label"] = [1]
+                        yield new_data
+                        assistant_index += 1
             else:
                 yield checked_data
 
@@ -101,10 +115,12 @@ class FileReader(BaseReader):
 
 
 class FileListReader(BaseReader):
-    def __init__(self, file_path, file_type, shuffle_file=True):
+    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False):
         if not os.path.isdir(file_path):
             raise ValueError(f"Directory not found: {file_path}")
-        super().__init__(file_path=file_path, file_type=file_type, shuffle_file=shuffle_file)
+        super().__init__(
+            file_path=file_path, file_type=file_type, shuffle_file=shuffle_file, split_multi_turn=split_multi_turn
+        )
 
     def __iter__(self):
         for file_path in self._get_files():
@@ -129,7 +145,7 @@ def get_hf_dataset_config(file_path):
 
 
 class HuggingFaceReader(BaseReader):
-    def __init__(self, file_path, file_type="alpaca", shuffle_file=True):
+    def __init__(self, file_path, file_type="alpaca", shuffle_file=True, split_multi_turn=False):
         # download
         config_map = get_hf_dataset_config(file_path)
         if config_map is not None:
@@ -141,9 +157,11 @@ class HuggingFaceReader(BaseReader):
             download_file_path = os.path.join(download_dir, file_name)
             download_file_type = config_map.get("formatting", file_type)
             if os.path.isdir(download_file_path):
-                self.file_reader = FileListReader(download_file_path, download_file_type, shuffle_file)
+                self.file_reader = FileListReader(
+                    download_file_path, download_file_type, shuffle_file, split_multi_turn
+                )
             else:
-                self.file_reader = FileReader(download_file_path, download_file_type, shuffle_file)
+                self.file_reader = FileReader(download_file_path, download_file_type, shuffle_file, split_multi_turn)
             self.file_reader.__init__()
         else:
             raise ValueError(f"Unsupported huggingface dataset {file_path}")

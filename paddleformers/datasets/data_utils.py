@@ -148,6 +148,8 @@ def function_call_chat_template(tokenizer, messages, tools):
     input_dict = dict()
     input_dict["messages"] = history
     if tools is not None:
+        if isinstance(tools, str):
+            tools = json.loads(tools)
         input_dict["tools"] = tools
     history_str = tokenizer.apply_chat_template(
         input_dict,

@@ -263,6 +263,7 @@ def run_dpo(
         "encode_one_turn": data_args.encode_one_turn,
         "stage": model_args.stage,
         "is_valid": False,
+        "template_backend": data_args.template_backend,
     }
 
     dataset_config.update(
@@ -275,7 +276,10 @@ def run_dpo(
         }
     )
 
-    template_instance = get_template_and_fix_tokenizer(dataset_config)
+    if dataset_config["template_backend"] == "custom":
+        template_instance = get_template_and_fix_tokenizer(dataset_config)
+    else:
+        template_instance = None
     dataset_config.update(
         {
             "template_instance": template_instance,
