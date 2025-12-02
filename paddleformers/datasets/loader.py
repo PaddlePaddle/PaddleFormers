@@ -15,7 +15,7 @@
 from typing import Any, Dict
 
 from paddleformers.datasets.DPODataset import DPODataSet
-from paddleformers.datasets.SFTDataset import SFTDataSet, Sequence
+from paddleformers.datasets.SFTDataset import Sequence, SFTDataSet
 
 
 def create_dataset(**dataset_config: Dict[str, Any]):

@@ -27,6 +27,7 @@ from paddleformers.utils.log import logger
 
 LOGGER_COUNT = 0
 
+
 @dataclass
 class Sequence:
     """Sequence."""
@@ -326,9 +327,7 @@ class DPODataSet(IterableDataset):
 
         # 1.3 labels
         chosen_labels = [0] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
-        rejected_labels = (
-            [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
-        )
+        rejected_labels = [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
 
         # 1.4 response index
         # support use_sparse_head_and_loss_fn only

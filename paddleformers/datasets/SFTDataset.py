@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-from copy import deepcopy
 from dataclasses import dataclass
 from typing import List
 

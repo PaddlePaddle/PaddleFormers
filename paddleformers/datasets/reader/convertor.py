@@ -14,7 +14,6 @@
 
 import json
 from copy import deepcopy
-from typing import List
 
 
 def convert_dpo_txt_data(data):
@@ -270,7 +269,7 @@ def convert_pretraining_data(data):
     data["messages"] = []
     for a in data["text"]:
         data["messages"].append({"role": "assistant", "content": a.strip()})
-    
+
     res = {"messages": data["messages"], "label": data["label"]}
 
     return res
