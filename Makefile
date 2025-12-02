@@ -51,7 +51,7 @@ install:
 	    echo "ERROR: nvcc (CUDA) not found. Please install CUDA before proceeding."; \
 	    exit 1; \
 	fi; \
-	cuda_version=$$(nvcc --version | grep release | awk '{print $$6}' | sed 's/,//'); \
+	cuda_version=$$(nvcc --version | grep release | awk '{print $$5}' | sed 's/,//'); \
 	echo "Detected CUDA version: $$cuda_version"; \
 	if [ "$$cuda_version" = "12.6" ]; then \
 	    PADDLE_SOURCE="https://www.paddlepaddle.org.cn/packages/nightly/cu126/"; \
