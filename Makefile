@@ -46,7 +46,7 @@ unit-test:
 
 .PHONY: install
 install:
-    @echo "Checking CUDA version and selecting pip source..."
+@echo "Checking CUDA version and selecting pip source..."
 	@if ! command -v nvcc >/dev/null 2>&1; then \
 	    echo "ERROR: nvcc (CUDA) not found. Please install CUDA before proceeding."; \
 	    exit 1; \
