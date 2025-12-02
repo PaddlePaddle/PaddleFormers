@@ -3911,11 +3911,12 @@ class HFFormatFullParamSaver:
         paddle.distributed.barrier()
 
         all_sizes = []
+        paddle.distributed.all_gather_object(all_sizes, total_saved_size)
+        total_size = sum(all_sizes)
         if self.v_group and self.h_group:
             assert self.sharding_group is not None
-            paddle.distributed.all_gather_object(all_sizes, total_saved_size, sharding_group)
-        else:
-            paddle.distributed.all_gather_object(all_sizes, total_saved_size)
-        total_size = sum(all_sizes)
+            sharding_all_size = []
+            paddle.distributed.all_gather_object(sharding_all_size, total_saved_size, self.sharding_group)
+            total_size = sum(sharding_all_size)
         replace_name_and_gen_index(path, total_size)
         return total_saved_size
