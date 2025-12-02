@@ -15,7 +15,7 @@
 from typing import Any, Dict
 
 from paddleformers.datasets.DPODataset import DPODataSet
-from paddleformers.datasets.SFTDataset import SFTDataSet
+from paddleformers.datasets.SFTDataset import SFTDataSet, Sequence
 
 
 def create_dataset(**dataset_config: Dict[str, Any]):
@@ -35,3 +35,23 @@ def create_dataset(**dataset_config: Dict[str, Any]):
         train_dataset = SFTDataSet(**dataset_config)
 
     return train_dataset
+
+
+def create_indexed_dataset(data_file_prefix):
+    """Create indexed dataset from raw data files.
+
+    Args:
+        data_file_prefix (str): Path prefix for raw data files
+
+    Returns:
+        IndexedDataset: Preprocessed dataset with memory-efficient indexing
+    """
+    from paddleformers.data.indexed_dataset import (
+        make_sft_dataset as make_sft_indexed_dataset,
+    )
+
+    indexed_dataset = make_sft_indexed_dataset(
+        path=data_file_prefix,
+        dataclass=Sequence,
+    )
+    return indexed_dataset

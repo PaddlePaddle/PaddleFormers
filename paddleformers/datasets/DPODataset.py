@@ -25,6 +25,7 @@ from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 from paddleformers.utils.log import logger
 
+LOGGER_COUNT = 0
 
 @dataclass
 class Sequence:
@@ -70,9 +71,8 @@ class DPODataSet(IterableDataset):
 
         # data loader + multisource dataset mix
         if self.is_valid:
-            # dataset_config["random_shuffle"] = False
-            # dataset_config["greedy_intokens"] = False
-            # dataset_config["reverse"] = False
+            dataset_config["random_shuffle"] = False
+            dataset_config["greedy_intokens"] = False
             multi_source_dataset = MultiSourceDataset(**dataset_config)
             self.mix_datasets = create_dataset_instance(
                 "concat",

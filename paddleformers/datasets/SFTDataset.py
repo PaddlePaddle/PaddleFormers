@@ -42,26 +42,6 @@ class Sequence:
     audios: List[str]
 
 
-def create_indexed_dataset(data_file_prefix):
-    """Create indexed dataset from raw data files.
-
-    Args:
-        data_file_prefix (str): Path prefix for raw data files
-
-    Returns:
-        IndexedDataset: Preprocessed dataset with memory-efficient indexing
-    """
-    from paddleformers.data.indexed_dataset import (
-        make_sft_dataset as make_sft_indexed_dataset,
-    )
-
-    indexed_dataset = make_sft_indexed_dataset(
-        path=data_file_prefix,
-        dataclass=Sequence,
-    )
-    return indexed_dataset
-
-
 class SFTDataSet(IterableDataset):
     def __init__(self, **dataset_config):
 
@@ -144,7 +124,6 @@ class SFTDataSet(IterableDataset):
             all_tokenized_tokens = []
             for _ in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
-                actual_example_num = 1
                 tokens = self._encode_pretraining_example(example, actual_example_num)
                 if tokens is None:
                     if self.estimate:
@@ -219,7 +198,6 @@ class SFTDataSet(IterableDataset):
             if not self.packing:
                 for _ in range(len(self.mix_datasets)):
                     example = next(dataset_iterator)
-                    actual_example_num = 1
                     if self.is_pretraining:
                         sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
                     else:
@@ -249,7 +227,6 @@ class SFTDataSet(IterableDataset):
                     # base
                     for _ in range(len(self.mix_datasets)):
                         example = next(dataset_iterator)
-                        actual_example_num = 1
                         if self.is_pretraining:
                             sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
                         else:
@@ -288,7 +265,6 @@ class SFTDataSet(IterableDataset):
                     i = 0
                     for _ in range(len(self.mix_datasets)):
                         example = next(dataset_iterator)
-                        actual_example_num = 1
                         if i < buffer_size:
                             examples.append(example)
                             actual_example_num_list.append(actual_example_num)
@@ -506,7 +482,7 @@ class SFTDataSet(IterableDataset):
             position_ids=pos_ids,
             labels=labels,
             loss_mask=loss_mask,
-            num_examples=1,
+            num_examples=actual_example_num,
             images=images,
             videos=videos,
             audios=audios,
