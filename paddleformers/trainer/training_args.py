@@ -1762,6 +1762,7 @@ class TrainingArguments:
                 # In PaddleFleet, we should use the following code to initialize.
                 if HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
                     initialize_fleet(strategy)
+
                 logger.info(strategy)
 
                 if self.reorder_pipeline_priority:

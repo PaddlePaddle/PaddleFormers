@@ -17,7 +17,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, List, Optional, Union
+from typing import Callable, List, Optional, Union
 
 import paddle
 import paddle.nn.functional as F
@@ -35,10 +35,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GLMMoEModelProvider(GPTModelProvider):
     """Base provider for GLM MoE Models."""
-
-    transformer_layer_spec: Union[
-        "LayerSpec", Callable[["GPTModelProvider"], "LayerSpec"]
-    ] = get_gpt_decoder_block_spec
 
     normalization: str = "RMSNorm"
     hidden_act: Callable = F.silu
