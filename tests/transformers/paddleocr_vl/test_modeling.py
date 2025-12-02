@@ -448,12 +448,10 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 class PaddleOCRVLIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.model = PaddleOCRVLForConditionalGeneration.from_pretrained(
-            "/root/paddlejob/workspace/env_run/laipeiwen//tiny-random-paddleocr_vl", convert_from_hf=True
+            "PaddleFormers/tiny-random-paddleocr_vl", convert_from_hf=True
         )
 
-        self.processor = AutoProcessor.from_pretrained(
-            "/root/paddlejob/workspace/env_run/laipeiwen/tiny-random-paddleocr_vl"
-        )
+        self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-paddleocr_vl")
         self.messages = [
             {
                 "role": "user",

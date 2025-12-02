@@ -58,8 +58,6 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         self.image_size = image_size
         self.attention_dropout = attention_dropout
         self.layer_norm_eps = layer_norm_eps
-        if hidden_act == "gelu_pytorch_tanh":
-            hidden_act = "gelu_tanh"
         self.hidden_act = hidden_act
         self.spatial_merge_size = spatial_merge_size
         self.temporal_patch_size = temporal_patch_size
