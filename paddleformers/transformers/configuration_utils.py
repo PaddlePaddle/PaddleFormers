@@ -587,6 +587,7 @@ class PretrainedConfig:
         llm_meta = LlmMetaConfig._get_defaults()
         self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
         self._unsavable_keys.remove("tensor_parallel_degree")
+        self._unsavable_keys.add("_attn_implementation")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
