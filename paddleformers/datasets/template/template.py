@@ -778,6 +778,10 @@ register_template(
     format_tools=ToolFormatter(tool_format="glm4_moe"),
     format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
     suffix=["<|user|>"],
+    stop_words=["<|user|>", "<|observation|>", "</answer>"],
+    efficient_eos=True,
+    replace_eos=True,
+    thought_words=("\n<think>", "</think>"),
     mm_plugin=get_mm_plugin(name="glm4v", image_token="<|image|>", video_token="<|video|>"),
     template_class=ReasoningTemplate,
 )

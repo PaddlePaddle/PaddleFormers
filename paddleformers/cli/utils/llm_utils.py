@@ -377,6 +377,30 @@ def get_lora_target_modules(model):
             ".*gate_up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type == "glm4v_moe":
+        target_modules = [
+            # language_model
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_proj.*",
+            "model.language_model.*up_proj.*",
+            "model.language_model.*down_proj.*",
+            "model.language_model.*qkv_proj.*",
+            "model.language_model.*up_gate_proj.*",
+            "model.language_model.*mlp.gate_proj.*",
+            "model.language_model.*mlp.up_proj.*",
+            "model.language_model.*mlp.down_proj.*",
+            # vision
+            "model.visual.*attn.qkv.*",
+            "model.visual.*attn.proj.*",
+            "model.visual.*gate_proj.*",
+            "model.visual.*up_proj.*",
+            "model.visual.*down_proj.*",
+            # alinger
+            "model.visual.merger.mlp\.[02].*",
+        ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")
     return target_modules

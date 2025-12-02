@@ -280,6 +280,18 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
+    "glm4v_moe.modeling": [
+        "Glm4vMoeForConditionalGeneration",
+        "Glm4vMoeModel",
+        "Glm4vMoePreTrainedModel",
+        "Glm4vMoeTextModel",
+        "Glm4vMoeVisionModel",
+    ],
+    "glm4v_moe.processor": ["Glm4vProcessor"],
+    "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
+    "glm4v_moe.video_processor": ["Glm4vVideoProcessor"],
+    "glm4v_moe": [],
 }
 
 if TYPE_CHECKING:
@@ -349,6 +361,7 @@ if TYPE_CHECKING:
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *
+    from .glm4v_moe import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
