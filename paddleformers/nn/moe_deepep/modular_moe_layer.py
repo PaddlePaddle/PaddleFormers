@@ -26,6 +26,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, Sca
 
 from ...transformers.configuration_utils import PretrainedConfig
 from ...transformers.token_dispatcher import MoEFlexTokenDispatcher
+from ..linear import Linear as GeneralLinear
 from .moe_communication import AllToAllMoECommunication, DeepEPMoECommunication
 from .moe_expert import StandardMLPExpert
 from .moe_gate import StandardMoEGate
@@ -162,6 +163,11 @@ class ModularMoELayer(nn.Layer):
         else:
             self.shared_experts = None
 
+        if self.model_type == "qwen3_next":
+            shared_expert_args["intermediate_size"] = pretrained_config.shared_expert_intermediate_size
+            self.shared_expert = self.expert_class(**shared_expert_args)
+            self.shared_expert_gate = GeneralLinear.create(self.hidden_size, 1, has_bias=False, linear_type="default")
+
         if self.ep_communication_type == "deepep":
             self.communication = DeepEPMoECommunication()
         elif self.ep_communication_type == "alltoall":
@@ -264,6 +270,11 @@ class ModularMoELayer(nn.Layer):
         if self.shared_experts is not None:
             shared_output = self.shared_experts(residuals)
             output = output + shared_output
+
+        if self.model_type == "qwen3_next":
+            shared_output = self.shared_expert(residuals)
+            shared_gate = paddle.nn.functional.sigmoid(self.shared_expert_gate(residuals))
+            output = output + shared_gate * shared_output
 
         output = output.reshape(orig_shape)
 
