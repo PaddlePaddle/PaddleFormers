@@ -64,8 +64,8 @@ install:
 	    echo "Unknown CUDA version, fallback to Tsinghua mirror."; \
 	fi; \
 	echo "Using pip source: $$PADDLE_SOURCE"; \
-	pip install -r requirements-dev.txt --extrx-index-url "$$PADDLE_SOURCE"; \
-	pip install -r requirements.txt --extrx-index-url "$$PADDLE_SOURCE"; \
+	pip install -r requirements-dev.txt --extra-index-url "$$PADDLE_SOURCE"; \
+	pip install -r requirements.txt --extra-index-url "$$PADDLE_SOURCE"; \
 	pre-commit install
 
 
