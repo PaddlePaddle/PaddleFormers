@@ -58,6 +58,7 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoeForConditionalGeneration", "ernie4_5_moe_vl"),
+        ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
         ("QWen", "qwen"),
         ("Qwen2", "qwen2"),
@@ -119,6 +120,9 @@ def get_name_mapping(task="Model"):
         new_key = key + "Model_Import_Class"
         NAME_MAPPING[new_key] = import_class
         NAME_MAPPING[import_class] = value
+
+    # NAME_MAPPING["PaddleOCRVLForConditionalGeneration"] = "paddleocr_vl"
+    # NAME_MAPPING["PaddleOCRVLForConditionalGeneration_Import_Class"] = "PaddleOCRVLForConditionalGeneration"
 
     return NAME_MAPPING
 

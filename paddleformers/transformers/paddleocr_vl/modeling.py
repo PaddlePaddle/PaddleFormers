@@ -327,26 +327,22 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
     ) -> paddle.Tensor:
         if pixel_values.dim() == 5:
             assert position_ids is not None
-            from einops import rearrange
 
             batch_size, squence_len, channel, height, width = pixel_values.shape
             target_dtype = self.patch_embedding.weight.dtype
-            pixel_values = rearrange(pixel_values, "b l c h w -> (b l) c h w")
+            pixel_values = pixel_values.reshape(batch_size * squence_len, channel, height, width)
             patch_embeds = self.patch_embedding(pixel_values.to(dtype=target_dtype))  # shape = [*, width, grid, grid]
             embeddings = patch_embeds.flatten(-2).squeeze(-1)
-            embeddings = rearrange(embeddings, "(b l) d -> b l d", b=batch_size, l=squence_len)
+            embeddings = embeddings.reshape(batch_size, squence_len, -1)
 
             if interpolate_pos_encoding and image_grid_thw is not None:
                 flatten_image_grid_thw = self.flatten_list(image_grid_thw)
-                assert (
-                    batch_size == 1
-                ), f"Batch size must be 1, but received {batch_size}. This model only processes one image at a time."
-                start = 0
-
                 assert sum([np.prod(x) for x in flatten_image_grid_thw]) == embeddings.shape[1], (
                     flatten_image_grid_thw,
                     embeddings.shape,
                 )
+
+                start = 0
                 embeddings = embeddings.squeeze(0)
                 tmp_embeddings = list()
                 for image_grid in image_grid_thw:
@@ -501,9 +497,8 @@ class PaddleOCREncoder(nn.Layer):
         """
         返回：
           window_indices: int64 [sum(t*h*w_valid)]
-          cu_seqlens_within_windows: int32 [num_windows_total*t]，首位补 0 的前缀和
+          cu_seqlens_within_windows: int32 [num_windows_total*t]
         """
-        from einops import rearrange
 
         window_indices = list()
         pad_values = -100
@@ -516,12 +511,11 @@ class PaddleOCREncoder(nn.Layer):
             pad_w = (-w) % window_size
             assert pad_h >= 0 and pad_w >= 0, (pad_h, pad_w)
             window_index = nn.functional.pad(window_index, (0, pad_w, 0, pad_h), value=pad_values)
-            window_index = rearrange(
-                window_index,
-                "t (h p1) (w p2) -> t (h w) (p1 p2)",
-                p1=window_size,
-                p2=window_size,
-            )
+            h, w = h//window_size, w//window_size
+            window_index = window_index.reshape([t, h, window_size, w, window_size])
+            window_index = window_index.transpose([0, 1, 3, 2, 4])
+            window_index = window_index.reshape([t, h*w, window_size*window_size])
+
             window_seqlens = (window_index != pad_values).long().sum(-1).reshape(-1)
             window_index = window_index.reshape(-1)
             window_index = window_index[window_index != pad_values]
@@ -946,16 +940,8 @@ class PaddleOCRVisionTransformer(nn.Layer):
                 attentions=encoder_outputs.attentions,
             )
 
-        sample_hidden_state = list()
-        assert cu_seqlens is not None
-        for i in range(cu_seqlens.shape[0] - 1):
-            start = cu_seqlens[i]
-            end = cu_seqlens[i + 1]
-            tensor = last_hidden_state[:, start:end, :].squeeze(0)
-            sample_hidden_state.append(tensor)
-
         return BaseModelOutputWithPooling(
-            last_hidden_state=sample_hidden_state,
+            last_hidden_state=last_hidden_state,
             pooler_output=None,
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
@@ -1061,40 +1047,29 @@ class Projector(nn.Layer):
         )
 
     def forward(self, image_features, image_grid_thw):
+        
+        image_features_chunks = image_features.split(image_grid_thw.prod(axis=1).tolist(), axis=1)
         m1, m2 = self.merge_kernel_size
-        if isinstance(image_features, (list, tuple)):
-            processed_features = list()
-            for image_feature, image_grid in zip(image_features, image_grid_thw):
-                image_feature = self.pre_norm(image_feature)  # shape: (T*H*W, D)
-                t, h, w = image_grid
-                from einops import rearrange
 
-                image_feature = rearrange(
-                    image_feature,
-                    "(t h p1 w p2) d -> (t h w) (p1 p2 d)",
-                    t=int(t),
-                    h=int(h // m1),
-                    p1=int(m1),
-                    w=int(w // m2),
-                    p2=int(m2),
-                )
-                hidden_states = self.linear_1(image_feature)
-                hidden_states = self.act(hidden_states)
-                hidden_states = self.linear_2(hidden_states)
-                processed_features.append(hidden_states)
+        processed_features = list()
+        for image_feature, image_grid in zip(image_features_chunks, image_grid_thw):
+            image_feature = image_feature.squeeze(0)
+            image_feature = self.pre_norm(image_feature)  # shape: (T*H*W, D)
+            t, h, w = image_grid
+            d = image_feature.shape[-1]
+            h_block = h // m1
+            w_block = w // m2
 
-            return processed_features
+            image_feature = image_feature.reshape([t, h_block, m1, w_block, m2, d])
+            image_feature = image_feature.transpose([0, 1, 3, 2, 4, 5])
+            image_feature = image_feature.reshape([t * h_block * w_block, m1 * m2 * d])
 
-        dims = image_features.shape[:-1]
-        dim = image_features.shape[-1]
-        image_features = paddle.reshape(image_features, [-1, dim])
-        hidden_states = self.pre_norm(image_features)
-        hidden_states = paddle.reshape(hidden_states, [-1, self.hidden_size])
-        hidden_states = self.linear_1(hidden_states)
-        hidden_states = self.act(hidden_states)
-        hidden_states = self.linear_2(hidden_states)
-        return paddle.reshape(hidden_states, [*dims, -1])
+            hidden_states = self.linear_1(image_feature)
+            hidden_states = self.act(hidden_states)
+            hidden_states = self.linear_2(hidden_states)
+            processed_features.append(hidden_states)
 
+        return paddle.concat(processed_features, axis=0)
 
 class KeyeRotaryEmbedding(nn.Layer):
     def __init__(self, config: PaddleOCRVLConfig):
@@ -1640,6 +1615,14 @@ class PaddleOCRVLCausalLMOutputWithPast(ModelOutput):
     attentions: Optional[Tuple[paddle.Tensor]] = None
     rope_deltas: Optional[paddle.Tensor] = None
 
+
+class PaddleOCRVLModel(Ernie4_5PretrainedModel):
+    config_class = PaddleOCRVLConfig
+
+    def __init__(self, config: PaddleOCRVLConfig):
+        super().__init__(config)
+
+        raise NotImplementedError("PaddleOCRVLModel is not implemented yet")
 
 class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMixin):
     config_class = PaddleOCRVLConfig
@@ -2214,7 +2197,6 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
                 image_embeds = self.mlp_AR(image_embeds, image_grid_thw)
 
                 n_image_tokens = (input_ids == self.config.image_token_id).sum().item()
-                image_embeds = paddle.concat(image_embeds, axis=0)
                 n_image_features = image_embeds.shape[0]
                 if n_image_tokens != n_image_features:
                     raise ValueError(
