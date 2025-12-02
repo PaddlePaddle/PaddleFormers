@@ -101,6 +101,7 @@ def resize(
     interpolation: Optional[str] = "bilinear",
     max_size: Optional[int] = None,
     align_corners: Optional[bool] = None,
+    antialias: Optional[bool] = True,
 ) -> paddle.Tensor:
     if interpolation == "bilinear" or interpolation == "bicubic":
         align_corners = False
@@ -118,8 +119,9 @@ def resize(
         if interpolation == "nearest":
             # uint8 dtype can be included for cpu and cuda input if nearest mode
             acceptable_dtypes.append(paddle.uint8)
-        elif _should_use_native_uint8_kernel(interpolation):
-            acceptable_dtypes.append(paddle.uint8)
+        elif image.place.is_cpu_place():
+            if _should_use_native_uint8_kernel(interpolation):
+                acceptable_dtypes.append(paddle.uint8)
 
         image = image.reshape(-1, num_channels, old_height, old_width)
         strides = image.stride()
@@ -137,6 +139,7 @@ def resize(
             size=[new_height, new_width],
             mode=interpolation,
             align_corners=align_corners,
+            antialias=antialias,
         )
 
         if need_cast:

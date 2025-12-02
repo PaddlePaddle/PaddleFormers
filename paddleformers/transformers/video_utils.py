@@ -25,6 +25,7 @@ import paddle
 import PIL
 
 from ..utils import is_decord_available
+from ..utils.log import logger
 from .image_transforms import PaddingMode, to_channel_dimension_format
 from .image_utils import (
     ChannelDimension,
@@ -331,8 +332,79 @@ def read_video_decord(
     return video, metadata
 
 
+def read_video_paddlecodec(
+    video_path: Union["URL", "Path"],
+    sample_indices_fn: Callable,
+    **kwargs,
+):
+    """
+    Decode the video with torchcodec decoder.
+
+    Args:
+        video_path (`str`):
+            Path to the video file.
+        sample_indices_fn (`Callable`):
+            A callable function that will return indices at which the video should be sampled. If the video has to be loaded using
+            by a different sampling technique than provided by `num_frames` or `fps` arguments, one should provide their own `sample_indices_fn`.
+            If not provided, simple uniform sampling with fps is performed.
+            Example:
+            def sample_indices_fn(metadata, **kwargs):
+                return np.linspace(0, metadata.total_num_frames - 1, num_frames, dtype=int)
+
+    Returns:
+        Tuple[`paddle.Tensor`, `VideoMetadata`]: A tuple containing:
+            - Paddle tensor of frames in RGB (shape: [num_frames, height, width, 3]).
+            - `VideoMetadata` object.
+    """
+    try:
+        paddle.compat.enable_torch_proxy(scope={"torchcodec"})
+        from torchcodec.decoders import VideoDecoder
+    except (ImportError, RuntimeError) as e:
+        logger.error(
+            f"Failed to load 'torchcodec' backend via Paddle proxy.\n"
+            f"  - Common Causes:\n"
+            f"    1. Conflict with official 'torch' or 'torchcodec' packages.\n"
+            f"    2. Missing FFmpeg libraries or System library mismatch (CXXABI).\n"
+            f"  - Recommended Fix Steps:\n"
+            f"    1. Install dependencies: `conda install ffmpeg -c conda-forge`\n"
+            f"    2. Uninstall conflicts: `pip uninstall torchcodec paddlecodec -y`\n"
+            f"    3. Reinstall packages: `pip install paddlecodec --force-reinstall`\n"
+            f"  - If you encounter 'CXXABI' or 'libstdc++' errors, your system libraries might be outdated.\n"
+            f"    Try prioritizing Conda libraries by running: `LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH python your_script.py`\n"
+            f"  - Action: Falling back to 'decord' for video processing automatically.\n"
+            f"  - Original Error: {e}"
+        )
+        return read_video_decord(video_path, sample_indices_fn, **kwargs)
+
+    # VideoDecoder expects a string for device, default to "cpu" if None
+    decoder = VideoDecoder(
+        video_path,
+        # Interestingly `exact` mode takes less than approximate when we load the whole video
+        seek_mode="exact",
+        # Allow FFmpeg decide on the number of threads for efficiency
+        num_ffmpeg_threads=0,
+        device=kwargs.get("device", "cpu"),
+    )
+    total_num_frames = decoder.metadata.num_frames
+    video_fps = decoder.metadata.average_fps
+    metadata = VideoMetadata(
+        total_num_frames=total_num_frames,
+        fps=video_fps,
+        duration=decoder.metadata.duration_seconds,
+        video_backend="paddlecodec",
+        height=decoder.metadata.height,
+        width=decoder.metadata.width,
+    )
+
+    indices = sample_indices_fn(metadata=metadata, **kwargs)
+    video = decoder.get_frames_at(indices=indices).data.contiguous()
+    metadata.frames_indices = indices
+    return video, metadata
+
+
 VIDEO_DECODERS = {
     "decord": read_video_decord,
+    "paddlecodec": read_video_paddlecodec,
 }
 
 
