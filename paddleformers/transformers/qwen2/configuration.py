@@ -178,8 +178,6 @@ class Qwen2Config(PretrainedConfig):
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
         self.rope_parameters = self.rope_scaling
-        standardize_rope_params(self, rope_theta=rope_theta)
-        rope_config_validation(self)
 
         self.layer_types = layer_types
         if self.layer_types is None:
@@ -190,6 +188,10 @@ class Qwen2Config(PretrainedConfig):
                 for i in range(self.num_hidden_layers)
             ]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
+
+        # Validate the correctness of rotary position embeddings parameters
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,

@@ -1,0 +1,72 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: "/root/train.json" # 数据集存放路径
+train_dataset_prob: "1.0"
+eval_dataset_path: "/root/eval.json" # 数据集存放路径
+eval_dataset_prob: "1.0"
+max_seq_len: 4096
+num_samples_each_epoch: 6000000
+packing: true
+
+### model
+model_name_or_path: "/root/huggingface_model/DeepSeek-V3-bf16/" # 模型存放路径
+convert_from_hf: true
+
+### finetuning
+# base
+stage: SFT
+fine_tuning: full
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+num_nextn_predict_layers: 1
+max_steps: 100
+evaluation_strategy: steps
+save_steps: 100
+save_total_limit: 1
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 16
+logging_dir: ./vdl_log
+output_dir: ./checkpoints/dsv3
+disable_tqdm: true
+eval_accumulation_steps: 1
+load_best_model_at_end: false
+eval_with_do_generation: false
+metric_for_best_model: "loss"
+hybrid_parallel_topo_order: "sharding_first"
+unified_checkpoint: true
+unified_checkpoint_config: "ignore_merge_optimizer"
+
+# train
+warmup_steps: 30
+learning_rate: 2.2e-05
+continue_training: true
+
+# performance
+tensor_parallel_degree: 1
+sequence_parallel: false
+pipeline_parallel_degree: 8
+sharding_parallel_degree: 16
+use_expert_parallel: true
+expert_parallel_degree: 16
+tensor_parallel_config: "enable_delay_scale_loss sync_param sync_grad"
+pipeline_parallel_config: "enable_delay_scale_loss disable_partial_send_recv disable_batch_p2p_comm"
+sharding_parallel_config: "split_param"
+recompute: true
+recompute_use_reentrant: true
+recompute_granularity: "full"
+sharding: stage1
+bf16: true
+amp_master_grad: true
+fp16_opt_level: O2
+use_flash_attention: true
+use_attn_mask_startend_row_indices: true
+using_fake_gate: false
+pre_alloc_memory: 60
+tensorwise_offload_optimizer: true
+use_fused_rms_norm: true
+moe_subbatch_token_num: 0

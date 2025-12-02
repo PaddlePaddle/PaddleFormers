@@ -38,7 +38,10 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import dynamic_rope_update
@@ -51,15 +54,6 @@ def rotate_half(x):
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
     return paddle.cat([-x2, x1], axis=-1)
-
-
-def _apply_rotary_emb(
-    x: paddle.Tensor,
-    cos: paddle.Tensor,
-    sin: paddle.Tensor,
-) -> paddle.Tensor:
-    x_embed = (x * cos) + (rotate_half(x) * sin)
-    return x_embed
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
@@ -223,13 +217,13 @@ class Qwen3MoeAttention(nn.Layer):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        # [bs, seq_len, num_head, head_dim]
+        # [bs, num_head, seq_len, head_dim]
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        attn_output, _ = attention_interface(
+        attn_output, attn_weights = attention_interface(
             self,
             query=query_states,
             key=key_states,
@@ -246,7 +240,7 @@ class Qwen3MoeAttention(nn.Layer):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
 
-        return attn_output, past_key_values
+        return attn_output, attn_weights
 
 
 class Qwen3MoeMLP(MLP):
@@ -447,7 +441,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        hidden_states, present_key_value = self.self_attn(
+        hidden_states, _ = self.self_attn(
             hidden_states=hidden_states,
             position_embeddings=position_embeddings,
             attention_mask=attention_mask,
@@ -468,13 +462,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             hidden_states, _ = hidden_states
         hidden_states = residual + hidden_states
 
-        if use_cache:
-            return (
-                hidden_states,
-                present_key_value,
-            )
-        else:
-            return hidden_states
+        return hidden_states
 
 
 class Qwen3MoeRotaryEmbedding(nn.Layer):
@@ -757,6 +745,9 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
             norm_eps=self.config.rms_norm_eps,
         )
         self.rotary_emb = Qwen3MoeRotaryEmbedding(config=config)
+        self.has_sliding_layers = getattr(
+            self.config, "sliding_window", None
+        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -842,10 +833,14 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
             "attention_mask": attention_mask,
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
-            "return_mapping": False,
         }
         # Create the causal mask and row indices
-        causal_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
+        if self.has_sliding_layers:
+            causal_mask, attn_mask_startend_row_indices = create_sliding_window_causal_mask_and_row_indices(
+                **mask_kwargs
+            )
+        else:
+            causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         hidden_states = inputs_embeds
 
@@ -855,7 +850,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         for idx, (decoder_layer) in enumerate(self.layers):
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
-                layer_outputs = self.recompute_training_full(
+                hidden_states = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
                     causal_mask,
@@ -866,7 +861,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
                     batch_size=batch_size,
                 )
             else:
-                layer_outputs = decoder_layer(
+                hidden_states = decoder_layer(
                     hidden_states,
                     causal_mask,
                     past_key_values,
@@ -875,11 +870,6 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     batch_size=batch_size,
                 )
-
-            if use_cache:
-                hidden_states = layer_outputs[0]
-            else:
-                hidden_states = layer_outputs
 
         hidden_states = self.norm(hidden_states)
         if not return_dict:
@@ -1017,36 +1007,6 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
             "attention_mask": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
             "position_ids": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
         }
-
-    @staticmethod
-    def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
-        # update cache
-        if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
-            model_kwargs["past_key_values"] = outputs[1]
-
-        if isinstance(outputs, MoECausalLMOutputWithPast) and "past_key_values" in outputs:
-            model_kwargs["past_key_values"] = outputs.past_key_values
-
-        # update position_ids
-        if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
-            position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
-
-        if not is_encoder_decoder and "attention_mask" in model_kwargs:
-            # TODO: support attention mask for other models
-            attention_mask = model_kwargs["attention_mask"]
-            if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )
-            elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )[:, :, -1:, :]
-
-        return model_kwargs
 
     def forward(
         self,

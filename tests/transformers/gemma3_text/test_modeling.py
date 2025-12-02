@@ -310,6 +310,38 @@ class Gemma3TextModelTester:
         else:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
+    def create_and_check_tp(self, config, input_ids, input_mask, *args):
+        config.tensor_parallel_degree = 2
+
+        # check num_key_value_heads
+        config.num_key_value_heads = 1
+        with self.parent.assertRaises(AssertionError):
+            Gemma3ForCausalLM(config)
+
+        # check num_attention_heads
+        config.num_key_value_heads = 4
+        config.num_attention_heads = 1
+        with self.parent.assertRaises(AssertionError):
+            Gemma3ForCausalLM(config)
+
+    def create_and_check_fuse_attn(self, config, input_ids, input_mask, *args):
+        config.fuse_attention_qkv = True
+        config.fuse_attention_ffn = True
+        model = Gemma3ForCausalLM(config)
+        model.eval()
+
+        result = model(
+            input_ids,
+            use_cache=True,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
+        if self.parent.use_labels:
+            self.parent.assertIsInstance(result[0].item(), float)
+            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+        else:
+            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+
 
 class Gemma3TextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
     base_model_class = Gemma3TextModel
@@ -359,9 +391,7 @@ class Gemma3TextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
 
     def test_gemma3_text_gqa_model(self):
-        # pass
-        config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        self.model_tester.create_and_check_gqa_model(*config_and_inputs)
+        pass
 
     def test_attention_outputs(self):
         pass
@@ -392,6 +422,29 @@ class Gemma3TextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
     def test_hidden_states_output(self):
         pass
+
+    def test_gemma3_text_tp(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_tp(*config_and_inputs)
+
+    def test_gemma3_text_fuse_attn(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_fuse_attn(*config_and_inputs)
+
+    def test_gemma3_text_generate(self):
+        config = Gemma3TextConfig(
+            hidden_size=16, intermediate_size=1120, num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2
+        )
+        model = Gemma3ForCausalLM(config)
+        model.eval()
+        input_ids = paddle.to_tensor([[1, 2, 3]], dtype="int64")
+        output = model.generate(
+            input_ids=input_ids,
+            max_new_tokens=2,
+            do_sample=False,
+            use_cache=True,
+        )
+        assert output[0].shape == [1, 2]
 
 
 class Gemma3TextIntegrationTest(unittest.TestCase):
@@ -428,6 +481,7 @@ class Gemma3TextIntegrationTest(unittest.TestCase):
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
+
         expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(

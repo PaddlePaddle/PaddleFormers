@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-from functools import partial
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -31,7 +30,10 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import dynamic_rope_update
@@ -528,7 +530,7 @@ class GptOssAttention(nn.Layer):
 
         if not output_attentions:
             attn_weights = None
-        return attn_output, attn_weights, past_key_values
+        return attn_output, attn_weights
 
 
 class GptOssDecoderLayer(nn.Layer):
@@ -592,7 +594,7 @@ class GptOssDecoderLayer(nn.Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, self_attn_weights = self.self_attn(
             hidden_states=hidden_states,
             past_key_values=past_key_values,
             attention_mask=attention_mask,
@@ -616,8 +618,6 @@ class GptOssDecoderLayer(nn.Layer):
         outputs = (hidden_states,)
         if output_attentions:
             outputs += (self_attn_weights,)
-        if use_cache:
-            outputs += (present_key_value,)
         if output_router_logits:
             outputs += (router_logits,)
         if type(outputs) is tuple and len(outputs) == 1:
@@ -632,54 +632,6 @@ class GptOssPreTrainedModel(PretrainedModel):
     base_model_prefix = "model"
     keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config: GptOssConfig, is_split=True):
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        def get_tensor_parallel_split_mappings(num_layers, num_experts):
-            final_actions = {}
-
-            base_actions = {
-                "lm_head.weight": partial(fn, is_column=False),
-                # Row Linear
-                "embed_tokens.weight": partial(fn, is_column=False),
-                "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
-            }
-
-            if not config.vocab_size % config.tensor_parallel_degree == 0:
-                base_actions.pop("lm_head.weight")
-                base_actions.pop("embed_tokens.weight")
-            base_actions["layers.0.self_attn.sinks"] = partial(fn, is_column=False)
-            # Column Linear
-            base_actions["layers.0.self_attn.q_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.self_attn.q_proj.bias"] = partial(fn, is_column=True)
-
-            # if we have enough num_key_value_heads to split, then split it.
-            if config.num_key_value_heads % config.tensor_parallel_degree == 0:
-                base_actions["layers.0.self_attn.k_proj.weight"] = partial(fn, is_column=True)
-                base_actions["layers.0.self_attn.v_proj.weight"] = partial(fn, is_column=True)
-                base_actions["layers.0.self_attn.k_proj.bias"] = partial(fn, is_column=True)
-                base_actions["layers.0.self_attn.v_proj.bias"] = partial(fn, is_column=True)
-
-            for key, action in base_actions.items():
-                if "layers.0." in key:
-                    for i in range(num_layers):
-                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
-                final_actions[key] = action
-
-            return final_actions
-
-        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers, config.num_experts)
-
-        return mappings
 
     @classmethod
     def _gen_aoa_config(cls, config: GptOssConfig):
@@ -861,6 +813,9 @@ class GptOssModel(GptOssPreTrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = GptOssRotaryEmbedding(config=config)
+        self.has_sliding_layers = getattr(
+            self.config, "sliding_window", None
+        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -962,9 +917,17 @@ class GptOssModel(GptOssPreTrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         # Create the causal mask and row indices
-        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
-            **mask_kwargs
-        )
+        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+
+        causal_mask_mapping = {"full_attention": full_mask}
+        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
+
+        # if model has sliding layer
+        if self.has_sliding_layers:
+            (
+                causal_mask_mapping["sliding_attention"],
+                attn_mask_startend_row_indices_mapping["sliding_attention"],
+            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
@@ -1184,32 +1147,6 @@ class GptOssForCausalLM(GptOssPreTrainedModel):
             "attention_mask": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
             "position_ids": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
         }
-
-    @staticmethod
-    def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
-        # update cache
-        if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
-            model_kwargs["past_key_values"] = outputs[1]
-        if isinstance(outputs, MoECausalLMOutputWithPast) and "past_key_values" in outputs:
-            model_kwargs["past_key_values"] = outputs.past_key_values
-        # update position_ids
-        if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
-            position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
-        if not is_encoder_decoder and "attention_mask" in model_kwargs:
-            # TODO: support attention mask for other models
-            attention_mask = model_kwargs["attention_mask"]
-            if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )
-            elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )[:, :, -1:, :]
-        return model_kwargs
 
     def forward(
         self,

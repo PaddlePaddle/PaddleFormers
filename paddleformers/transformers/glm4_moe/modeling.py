@@ -36,7 +36,7 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import dynamic_rope_update
@@ -279,7 +279,7 @@ class Glm4MoeAttention(nn.Layer):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
 
-        return attn_output, past_key_values
+        return attn_output, attn_weights
 
 
 class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
@@ -426,7 +426,16 @@ class Glm4MoeMoE(nn.Layer):
                 expert_input = hidden_states[token_indices]
                 expert_output = expert(expert_input)
                 weighted_output = expert_output * expert_weights.unsqueeze(-1)
-                final_hidden_states.index_add_(index=token_indices, axis=0, value=weighted_output)
+
+                # use scatter to replace index_add
+                final_hidden_states_tmp = paddle.zeros_like(final_hidden_states)
+                final_hidden_states_tmp = paddle.scatter(
+                    final_hidden_states_tmp,
+                    token_indices,
+                    weighted_output,
+                    overwrite=False,
+                )
+                final_hidden_states = final_hidden_states + final_hidden_states_tmp
 
         # in original deepseek, the output of the experts are gathered once we leave this module
         # thus the moe module is itelsf an IsolatedParallel module
@@ -740,12 +749,9 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states,
         residual,
         use_cache=False,
-        present_key_value=None,
     ):
         hidden_states = residual + hidden_states
         outputs = (hidden_states,)
-        if use_cache:
-            outputs += (present_key_value,)
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
         return outputs
@@ -774,10 +780,9 @@ class Glm4MoeDecoderLayer(nn.Layer):
         )
         hidden_states = attn_outputs[0]
         residual = attn_outputs[1]
-        present_key_value = attn_outputs[2] if use_cache else None
 
         hidden_states = self.mlp(hidden_states)
-        outputs = self.post_process(hidden_states, residual, use_cache, present_key_value)
+        outputs = self.post_process(hidden_states, residual, use_cache)
         return outputs
 
 
@@ -1352,9 +1357,9 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             "attention_mask": attention_mask,
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
-            "return_mapping": False,
         }
-        causal_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
+
+        causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
@@ -1464,32 +1469,6 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
             }
         )
         return model_inputs
-
-    @staticmethod
-    def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
-        # update cache
-        if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
-            model_kwargs["past_key_values"] = outputs[1]
-        if isinstance(outputs, CausalLMOutputWithPast) and "past_key_values" in outputs:
-            model_kwargs["past_key_values"] = outputs.past_key_values
-        # update position_ids
-        if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
-            position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
-        if not is_encoder_decoder and "attention_mask" in model_kwargs:
-            # TODO: support attention mask for other models
-            attention_mask = model_kwargs["attention_mask"]
-            if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )
-            elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )[:, :, -1:, :]
-        return model_kwargs
 
     def forward(
         self,

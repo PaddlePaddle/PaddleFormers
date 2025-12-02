@@ -40,25 +40,25 @@ class GLMMoEModelProvider(GPTModelProvider):
     ] = get_gpt_decoder_block_spec
 
     normalization: str = "RMSNorm"
-    activation_func: Callable = F.silu
+    act_fn: Callable = F.silu
     gated_linear_unit: bool = True
     add_bias_linear: bool = False
     add_qkv_bias: bool = True
     seq_length: int = 131072
     init_method_std: int = 0.02
-    hidden_dropout: float = 0.0
+    hidden_dropout_prob: float = 0.0
     vocab_size: int = 151552
     share_embeddings_and_output_weights: Optional[bool] = False
-    layernorm_epsilon: float = 1e-5
+    rms_norm_eps: float = 1e-5
     autocast_dtype: paddle.dtype = paddle.bfloat16
     params_dtype: paddle.dtype = paddle.bfloat16
     bf16: bool = True
 
     # Attention
-    num_query_groups: int = 8
+    num_key_value_heads: int = 8
     num_attention_heads: int = 96
     attention_dropout: float = 0.0
-    kv_channels: int = 128
+    head_dim: int = 128
 
     # RoPE
     position_embedding_type: str = "rope"
@@ -85,7 +85,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     bias_dropout_fusion: bool = True
 
     # MTP
-    mtp_num_layers: Optional[int] = 1
+    num_nextn_predict_layers: Optional[int] = 1
     mtp_loss_scaling_factor: Optional[
         float
     ] = 0.3  # https://arxiv.org/pdf/2508.06471 0.3 for the first 15T tokens, 0.1 for the remaining tokens.
@@ -97,16 +97,16 @@ class GLM45ModelProvider355B(GLMMoEModelProvider):
     Provider for GLM 4.5 355B-A32B: https://huggingface.co/zai-org/GLM-4.5
     """
 
-    num_layers: int = 92
+    num_hidden_layers: int = 92
     moe_num_experts: int = 160
     hidden_size: int = 5120
-    ffn_hidden_size: int = 12288
+    intermediate_size: int = 12288
     moe_layer_freq: Union[int, List[int]] = field(
         default_factory=lambda: [0] * 3 + [1] * 89
     )  # first three layers are dense
     moe_ffn_hidden_size: int = 1536
     moe_shared_expert_intermediate_size: int = 1536
-    qk_layernorm: bool = True
+    use_qk_norm: bool = True
     moe_router_topk_scaling_factor: float = 2.5
 
 
@@ -116,16 +116,16 @@ class GLM45AirModelProvider106B(GLMMoEModelProvider):
     Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
     """
 
-    num_layers: int = 46
+    num_hidden_layers: int = 46
     moe_num_experts: int = 128
     hidden_size: int = 4096
-    ffn_hidden_size: int = 10944
+    intermediate_size: int = 10944
     moe_layer_freq: Union[int, List[int]] = field(
         default_factory=lambda: [0] * 1 + [1] * 45
     )  # first one layer is dense
     moe_ffn_hidden_size: int = 1408
     moe_shared_expert_intermediate_size: int = 1408
-    qk_layernorm: bool = False
+    use_qk_norm: bool = False
     moe_router_topk_scaling_factor: float = 1.0
 
 
@@ -135,11 +135,45 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
     """
 
-    num_layers: int = 10
+    num_hidden_layers: int = 10
     moe_num_shared_experts: int = 1
+    moe_layer_freq: Union[int, List[int]] = field(
+        default_factory=lambda: [0] * 1 + [1] * 9
+    )  # first one layer is dense
     hidden_size: int = 128
-    ffn_hidden_size: int = 128
+    intermediate_size: int = 128
     moe_intermediate_size: int = 1408
-    mtp_num_layers: Optional[int] = 0
+    num_nextn_predict_layers: Optional[int] = 0
     use_bias: bool = False
     vocab_size: int = 37888
+
+
+@dataclass
+class GLM45AirModelSingleCardDebugProvider(GLMMoEModelProvider):
+    """
+    Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
+    """
+
+    use_bias: bool = False
+    num_hidden_layers: int = 2
+    num_attention_heads: int = 8
+    moe_aux_loss_coeff: float = 1e-4
+    num_key_value_heads: int = 8
+    seq_length: int = 8192
+    num_experts_per_tok: int = 4
+    hidden_size: int = 512
+    act_fn: Callable = F.silu
+    intermediate_size: int = 1024
+    moe_layer_freq: Union[int, List[int]] = field(
+        default_factory=lambda: [0] * 1 + [1] * 1
+    )  # first one layer is dense
+    moe_num_experts: int = 8
+    topk_method: str = "noaux_tc"
+
+    moe_intermediate_size: int = 1408
+    moe_shared_expert_intermediate_size: int = 1408
+    use_qk_norm: bool = False
+    moe_router_topk_scaling_factor: float = 1.0
+    num_nextn_predict_layers: Optional[int] = 0
+
+    transpose_gate_weight: bool = True

@@ -1364,9 +1364,14 @@ class Trainer:
             elif self.args.load_checkpoint_format == "flex_checkpoint":
                 if delay_optimizer_creation:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
-
+                if ShardingOption.FULL_SHARD in self.args.sharding:
+                    model.init_slice_param()
+                    model.init_optimizer_for_slice_param()
                 if resume_from_checkpoint is not None:
                     self._load_flex_checkpoint(resume_from_checkpoint)
+                if ShardingOption.FULL_SHARD in self.args.sharding:
+                    model.align_param_to_buffer_and_clear_slice_param()
+
             else:
                 if delay_optimizer_creation:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
@@ -2303,7 +2308,9 @@ class Trainer:
 
             seq_length = None
             model_flops_per_token = None
-            if getattr(self, "is_pretraining", False) and hasattr(self.model, "config"):
+            if (getattr(self, "is_pretraining", False) or getattr(self.args, "benchmark", False)) and hasattr(
+                self.model, "config"
+            ):
                 seq_length = getattr(self.model.config, "seq_length", None)
                 try:
                     model_flops_per_token = self.model.get_hardware_flops()
