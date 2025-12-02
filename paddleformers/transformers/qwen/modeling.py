@@ -259,6 +259,7 @@ class QWenAttention(nn.Layer):
                     attn_mask=attention_mask,
                     is_causal=attention_mask is None,
                     enable=skip_recompute,
+                    enable_gqa=True,
                 )
                 attn_weights = None
 
