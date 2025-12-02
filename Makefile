@@ -46,7 +46,7 @@ unit-test:
 
 .PHONY: install
 install:
-@echo "Checking CUDA version and selecting pip source..."
+	@echo "Checking CUDA version and selecting pip source..."
 	@if ! command -v nvcc >/dev/null 2>&1; then \
 	    echo "ERROR: nvcc (CUDA) not found. Please install CUDA before proceeding."; \
 	    exit 1; \
@@ -60,8 +60,8 @@ install:
 	elif [ "$$cuda_version" = "13.0" ]; then \
 	    PADDLE_SOURCE="https://www.paddlepaddle.org.cn/packages/nightly/cu130/"; \
 	else \
-	    PADDLE_SOURCE="https://pypi.tuna.tsinghua.edu.cn/simple"; \
-	    echo "Unknown CUDA version, fallback to Tsinghua mirror."; \
+	    PADDLE_SOURCE=""; \
+	    echo "Unknown CUDA version."; \
 	fi; \
 	echo "Using pip source: $$PADDLE_SOURCE"; \
 	pip install -r requirements-dev.txt --extra-index-url "$$PADDLE_SOURCE"; \
