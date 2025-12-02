@@ -46,9 +46,26 @@ unit-test:
 
 .PHONY: install
 install:
-	pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
-	pip install -r requirements-dev.txt
-	pip install -r requirements.txt
+    @echo "Checking CUDA version and selecting pip source..."
+	@if ! command -v nvcc >/dev/null 2>&1; then \
+	    echo "ERROR: nvcc (CUDA) not found. Please install CUDA before proceeding."; \
+	    exit 1; \
+	fi; \
+	cuda_version=$$(nvcc --version | grep release | awk '{print $$6}' | sed 's/,//'); \
+	echo "Detected CUDA version: $$cuda_version"; \
+	if [ "$$cuda_version" = "12.6" ]; then \
+	    PADDLE_SOURCE="https://www.paddlepaddle.org.cn/packages/nightly/cu126/"; \
+	elif [ "$$cuda_version" = "12.9" ]; then \
+	    PADDLE_SOURCE="https://www.paddlepaddle.org.cn/packages/nightly/cu129/"; \
+	elif [ "$$cuda_version" = "13.0" ]; then \
+	    PADDLE_SOURCE="https://www.paddlepaddle.org.cn/packages/nightly/cu130/"; \
+	else \
+	    PADDLE_SOURCE="https://pypi.tuna.tsinghua.edu.cn/simple"; \
+	    echo "Unknown CUDA version, fallback to Tsinghua mirror."; \
+	fi; \
+	echo "Using pip source: $$PADDLE_SOURCE"; \
+	pip install -r requirements-dev.txt --extrx-index-url "$$PADDLE_SOURCE"; \
+	pip install -r requirements.txt --extrx-index-url "$$PADDLE_SOURCE"; \
 	pre-commit install
 
 
