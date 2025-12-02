@@ -53,6 +53,9 @@ class DPODataSet(IterableDataset):
         self.template_backend = dataset_config.get("template_backend", "jinja")
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
         self.is_valid = dataset_config.get("is_valid", False)
+        self.packing = dataset_config.get("packing", False)
+        self.greedy_intokens = dataset_config.get("greedy_intokens", True)
+        self.buffer_size = dataset_config.get("buffer_size", 500)
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
@@ -87,71 +90,97 @@ class DPODataSet(IterableDataset):
     def __len__(self):
         return len(self.mix_datasets)
 
-    def __iter__(self):
-        for example in self.mix_datasets:
-            # sequence: system + knowledge_tokens + prompt + chosen + reject
-            (
-                prompt_token_ids,
-                response_token_ids_list,
-                response_label_ids_list,
-                response_len_list,
-                cur_len,
-            ) = self.__postprocess_before_concat(example)
+    def __iter_func(self):
 
-            # The sequnece is too long, just return None
-            if prompt_token_ids is None:
-                return None
-            # 1.concat all tokens
-            # 1.1 input_ids
-            input_ids = prompt_token_ids + response_token_ids_list[0] + response_token_ids_list[1]
-            if cur_len != len(input_ids):
-                logger.warning(f"[SKIP] code bug: {example}")
-                return None
+        # prepare epoch data
+        batch_sequence, cur_len = [], 0
+        dataset_iterator = iter(self.mix_datasets)
 
-            # 1.2. position_ids
-            prompt_len = len(prompt_token_ids)
-            chosen_len = len(response_token_ids_list[0])
-            rejected_len = len(response_token_ids_list[1])
-            position_ids = (
-                list(range(prompt_len))  # prompt
-                + list(range(prompt_len, prompt_len + chosen_len))  # chosen
-                + list(range(prompt_len, prompt_len + rejected_len))  # rejected
-            )
+        if not self.packing:
+            for _ in range(len(self.mix_datasets)):
+                example = next(dataset_iterator)
+                sequence = self._postprocess_sequence(example)
+                if sequence is None:
+                    continue
 
-            # 1.3 labels
-            chosen_labels = [0] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
-            rejected_labels = (
-                [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
-            )
+                batch_sequence, cur_len = [sequence], len(sequence.token_ids)
+                yield batch_sequence
 
-            # 1.4 response index
-            # support use_sparse_head_and_loss_fn only
-            response_index = [0, response_len_list[0], sum(response_len_list)]
+            if len(batch_sequence) > 0:
+                yield batch_sequence
+        else:
+            if not self.greedy_intokens:
+                # base
+                for _ in range(len(self.mix_datasets)):
+                    example = next(dataset_iterator)
+                    sequence = self._postprocess_sequence(example)
+                    if sequence is None:
+                        continue
+                    if cur_len + len(sequence.token_ids) <= self.max_seq_len:
+                        batch_sequence.append(sequence)
+                        cur_len += len(sequence.token_ids)
+                    else:
+                        yield batch_sequence
+                        batch_sequence, cur_len = [sequence], len(sequence.token_ids)
 
-            # 1.5 attention mask
-            if self.use_attn_mask_startend_row_indices:
-                attn_mask_startend_row_indices = (
-                    [cur_len] * (prompt_len) + [prompt_len + chosen_len] * chosen_len + [cur_len] * rejected_len
-                )
-                attention_mask = None
+                if len(batch_sequence) > 0:
+                    yield batch_sequence
             else:
-                attention_mask = np.tri(cur_len, cur_len, dtype=bool)
-                attention_mask[
-                    (prompt_len + chosen_len) :,
-                    prompt_len : (prompt_len + chosen_len),
-                ] = False
-                attn_mask_startend_row_indices = None
-            # 2. return sequence
-            yield Sequence(
-                token_ids=input_ids,
-                position_ids=position_ids,
-                attention_mask=attention_mask,
-                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                chosen_labels=chosen_labels,
-                rejected_labels=rejected_labels,
-                response_index=response_index,
-                score_delta=example["score_delta"],
-            )
+                sequence_buffer = []
+                buffer_size = self.buffer_size
+                for _ in range(len(self.mix_datasets)):
+                    example = next(dataset_iterator)
+                    sequence = self._postprocess_sequence(example)
+                    if sequence is None:
+                        continue
+                    sequence_buffer.append(sequence)
+
+                    if len(sequence_buffer) == buffer_size:
+                        sequence_pack = self._generate_greedy_packs(sequence_buffer)
+                        for pack in sequence_pack:
+                            yield pack
+                        sequence_buffer = []
+                if len(sequence_buffer) > 0:
+                    sequence_pack = self._generate_greedy_packs(sequence_buffer)
+                    for pack in sequence_pack:
+                        yield pack
+
+    def __iter__(self):
+        """
+        Rewrite the __iter__ method to implement dataset iteration.
+        Each iteration returns a Sequence-type element.
+        """
+        if self.is_valid:
+            yield from self.__iter_func()
+        else:
+            while True:
+                yield from self.__iter_func()
+
+    def _generate_greedy_packs(self, sequences):
+        """Generate packed sequences using greedy strategy.
+
+        Args:
+            examples: List of examples to pack.
+            actual_example_num_list: List of example counts.
+
+        Returns:
+            list: List of packed sequences.
+        """
+
+        left_len_list = np.array([])
+        sequence_pack = []
+        for sequence in sequences:
+            sequence_len = len(sequence.token_ids)
+            if len(left_len_list) > 0:
+                max_left_len_index = left_len_list.argmax()
+
+            if len(left_len_list) == 0 or left_len_list[max_left_len_index] < sequence_len:
+                sequence_pack.append([sequence])
+                left_len_list = np.append(left_len_list, np.array([self.max_seq_len - sequence_len]))
+            else:
+                sequence_pack[max_left_len_index].append(sequence)
+                left_len_list[max_left_len_index] -= sequence_len
+        return sequence_pack
 
     def __postprocess_before_concat(self, example):
         """Process multi-turn conversation data into tokenized sequences with dynamic truncation."""
@@ -265,114 +294,67 @@ class DPODataSet(IterableDataset):
             cur_len,
         )
 
+    def _postprocess_sequence(self, example):
+        # sequence: system + knowledge_tokens + prompt + chosen + reject
+        (
+            prompt_token_ids,
+            response_token_ids_list,
+            response_label_ids_list,
+            response_len_list,
+            cur_len,
+        ) = self.__postprocess_before_concat(example)
 
-class DPOPackingDataset(IterableDataset):
-    def __init__(self, processed_dataset, **dataset_config):
-        self.processed_dataset = processed_dataset
-        self.packing = dataset_config.get("packing", False)
-        self.greedy_intokens = dataset_config.get("greedy_intokens", True)
-        self.max_seq_len = dataset_config.get("max_seq_len", 8192)
-        self.is_valid = dataset_config.get("is_valid", False)
-        self.buffer_size = dataset_config.get("buffer_size", 500)
+        # The sequnece is too long, just return None
+        if prompt_token_ids is None:
+            return None
+        # 1.concat all tokens
+        # 1.1 input_ids
+        input_ids = prompt_token_ids + response_token_ids_list[0] + response_token_ids_list[1]
+        if cur_len != len(input_ids):
+            logger.warning(f"[SKIP] code bug: {example}")
+            return None
 
-        self.estimate = False
-        # The number of valid samples and skipped samples in estimation
-        self.unused_samples = 0
-        self.used_samples = 0
-        # If used_estimate_samples exceeds max_estimate_samples,stop estimating.
-        self.used_estimate_samples = 0
-        self.max_estimate_samples = 0
-        # set max estimate samples
-        if not self.is_valid:
-            self.max_estimate_samples = len(self.processed_dataset)
+        # 1.2. position_ids
+        prompt_len = len(prompt_token_ids)
+        chosen_len = len(response_token_ids_list[0])
+        rejected_len = len(response_token_ids_list[1])
+        position_ids = (
+            list(range(prompt_len))  # prompt
+            + list(range(prompt_len, prompt_len + chosen_len))  # chosen
+            + list(range(prompt_len, prompt_len + rejected_len))  # rejected
+        )
 
-    def __iter_func(self):
-        
-        batch_sequence, cur_len = [], 0
-        dataset_iterator = iter(self.processed_dataset)
+        # 1.3 labels
+        chosen_labels = [0] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
+        rejected_labels = (
+            [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
+        )
 
-        if not self.packing:
-            for _ in range(len(self.processed_dataset)):
-                example = next(dataset_iterator)
-                sequence = example
-                if sequence is None:
-                    continue
+        # 1.4 response index
+        # support use_sparse_head_and_loss_fn only
+        response_index = [0, response_len_list[0], sum(response_len_list)]
 
-                batch_sequence, cur_len = [sequence], len(sequence.token_ids)
-                yield batch_sequence
-
-            if len(batch_sequence) > 0:
-                yield batch_sequence
+        # 1.5 attention mask
+        if self.use_attn_mask_startend_row_indices:
+            attn_mask_startend_row_indices = (
+                [cur_len] * (prompt_len) + [prompt_len + chosen_len] * chosen_len + [cur_len] * rejected_len
+            )
+            attention_mask = None
         else:
-            if not self.greedy_intokens:
-                # base
-                for _ in range(len(self.processed_dataset)):
-                    example = next(dataset_iterator)
-                    sequence = example
-                    if sequence is None:
-                        continue
-                    if cur_len + len(sequence.token_ids) <= self.max_seq_len:
-                        batch_sequence.append(sequence)
-                        cur_len += len(sequence.token_ids)
-                    else:
-                        yield batch_sequence
-                        batch_sequence, cur_len = [sequence], len(sequence.token_ids)
-
-                if len(batch_sequence) > 0:
-                    yield batch_sequence
-            else:
-                sequence_buffer = []
-                buffer_size = self.buffer_size
-                for _ in range(len(self.processed_dataset)):
-                    example = next(dataset_iterator)
-                    sequence = example
-                    if sequence is None:
-                        continue
-                    sequence_buffer.append(sequence)
-
-                    if len(sequence_buffer) == buffer_size:
-                        sequence_pack = self._generate_greedy_packs(sequence_buffer)
-                        for pack in sequence_pack:
-                            yield pack
-                        sequence_buffer = []
-                if len(sequence_buffer) > 0:
-                    sequence_pack = self._generate_greedy_packs(sequence_buffer)
-                    for pack in sequence_pack:
-                        yield pack
-
-    def __iter__(self):
-        """
-        Rewrite the __iter__ method to implement dataset iteration.
-        Each iteration returns a Sequence-type element.
-        """
-        if self.is_valid:
-            yield from self.__iter_func()
-        else:
-            while True:
-                yield from self.__iter_func()
-
-    def _generate_greedy_packs(self, sequences):
-        """Generate packed sequences using greedy strategy.
-
-        Args:
-            examples: List of examples to pack.
-            actual_example_num_list: List of example counts.
-
-        Returns:
-            list: List of packed sequences.
-        """
-
-        left_len_list = np.array([])
-        sequence_pack = []
-        for sequence in sequences:
-            sequence_len = len(sequence.token_ids)
-            if len(left_len_list) > 0:
-                max_left_len_index = left_len_list.argmax()
-
-            if len(left_len_list) == 0 or left_len_list[max_left_len_index] < sequence_len:
-                sequence_pack.append([sequence])
-                left_len_list = np.append(left_len_list, np.array([self.max_seq_len - sequence_len]))
-            else:
-                sequence_pack[max_left_len_index].append(sequence)
-                left_len_list[max_left_len_index] -= sequence_len
-        return sequence_pack
+            attention_mask = np.tri(cur_len, cur_len, dtype=bool)
+            attention_mask[
+                (prompt_len + chosen_len) :,
+                prompt_len : (prompt_len + chosen_len),
+            ] = False
+            attn_mask_startend_row_indices = None
+        # 2. return sequence
+        return Sequence(
+            token_ids=input_ids,
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            chosen_labels=chosen_labels,
+            rejected_labels=rejected_labels,
+            response_index=response_index,
+            score_delta=example["score_delta"],
+        )
