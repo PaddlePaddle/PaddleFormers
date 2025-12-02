@@ -1177,6 +1177,10 @@ def save_full_param(
         logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Consuming iterator for synchronization...")
         for _ in itr:
             pass
+
+        if use_dist:
+            dist.barrier()
+
         logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Iterator consumption complete.")
         return
 
@@ -3154,7 +3158,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         is_main_process: bool = True,
         state_dict: Optional[dict] = None,
         save_function: Callable = paddle.save,
-        max_shard_size: Union[int, str] = "10GB",
+        max_shard_size: Union[int, str] = "1GB",
         safe_serialization: bool = False,
         variant: Optional[str] = None,
         *args,

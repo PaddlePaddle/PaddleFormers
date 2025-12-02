@@ -302,7 +302,7 @@ import_structure = {
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "ernie4_5_moe_vl": [],
-    "qwen2_5_v;": [],
+    "qwen2_5_vl": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],

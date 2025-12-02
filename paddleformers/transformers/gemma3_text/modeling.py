@@ -25,12 +25,18 @@ from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.mlp import MLP as BaseMLP
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..activations import ACT2FN
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..cache_utils import Cache, DynamicCache
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
+from ..modeling_rope_utils import dynamic_rope_update
 from .configuration import Gemma3Config, Gemma3TextConfig
 
 try:
@@ -64,38 +70,10 @@ class Gemma3TextScaledWordEmbedding(nn.Embedding):
         return super().forward(input_ids) * self.embed_scale.to(self.weight.dtype)
 
 
-class Gemma3MLP(nn.Layer):
-    def __init__(self, config: Gemma3TextConfig):
-        super().__init__()
-        self.config = config
-        self.hidden_size = config.hidden_size
-        self.intermediate_size = config.intermediate_size
-        self.gate_proj = GeneralLinear.create(
-            self.hidden_size,
-            self.intermediate_size,
-            has_bias=False,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.up_proj = GeneralLinear.create(
-            self.hidden_size,
-            self.intermediate_size,
-            has_bias=False,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.down_proj = GeneralLinear.create(
-            self.intermediate_size,
-            self.hidden_size,
-            has_bias=False,
-            config=config,
-            tp_plan="rowwise",
-        )
+class Gemma3MLP(BaseMLP):
+    def __init__(self, config: Gemma3TextConfig, fuse_up_gate=False):
+        super().__init__(config, fuse_up_gate=fuse_up_gate)
         self.act_fn = ACT2FN[config.hidden_activation]
-
-    def forward(self, x):
-        down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
-        return down_proj
 
 
 class Gemma3RMSNorm(nn.Layer):
@@ -149,6 +127,8 @@ class Gemma3RotaryEmbedding(nn.Layer):
         base = config.rope_theta
         partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
         head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        rope_parameters = self.config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
         dim = int(head_dim * partial_rotary_factor)
 
         # TODO: The rope_type here is the 'default', which supports some models such as `gemma-3-1b-it`.
@@ -158,6 +138,7 @@ class Gemma3RotaryEmbedding(nn.Layer):
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = self.inv_freq
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
         # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
@@ -211,6 +192,7 @@ class Gemma3Attention(nn.Layer):
         self.attention_dropout = config.attention_dropout
         self.is_causal = not config.use_bidirectional_attention
         self.attn_implementation = config._attn_implementation
+        self.fuse_attention_qkv = config.fuse_attention_qkv
 
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
@@ -231,27 +213,36 @@ class Gemma3Attention(nn.Layer):
         kv_hidden_size = config.num_key_value_heads * self.head_dim
         q_hidden_size = config.num_attention_heads * self.head_dim
 
-        self.q_proj = GeneralLinear.create(
-            config.hidden_size,
-            q_hidden_size,
-            has_bias=config.attention_bias,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.k_proj = GeneralLinear.create(
-            config.hidden_size,
-            kv_hidden_size,
-            has_bias=config.attention_bias,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.v_proj = GeneralLinear.create(
-            config.hidden_size,
-            kv_hidden_size,
-            has_bias=config.attention_bias,
-            config=config,
-            tp_plan="colwise",
-        )
+        if not self.fuse_attention_qkv:
+            self.q_proj = GeneralLinear.create(
+                config.hidden_size,
+                q_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.k_proj = GeneralLinear.create(
+                config.hidden_size,
+                kv_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.v_proj = GeneralLinear.create(
+                config.hidden_size,
+                kv_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+        else:
+            self.qkv_proj = GeneralLinear.create(
+                config.hidden_size,
+                q_hidden_size + 2 * kv_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
             config.hidden_size,
@@ -274,35 +265,60 @@ class Gemma3Attention(nn.Layer):
         hidden_states: paddle.Tensor,
         position_embeddings: Tuple[paddle.Tensor, paddle.Tensor],
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         position_ids: Optional[Tuple[paddle.Tensor]] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     ) -> tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[tuple[paddle.Tensor]]]:
-        if self.config.sequence_parallel:
-            max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
-            q_len = max_sequence_length
+        if not self.fuse_attention_qkv:
+            if self.config.sequence_parallel:
+                max_sequence_length = self.config.max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                q_len = max_sequence_length
+            else:
+                bsz, q_len, _ = hidden_states.shape
+
+            hidden_shape = (bsz, q_len, -1, self.head_dim)
+
+            query_states = self.q_proj(hidden_states).reshape(hidden_shape)
+            key_states = self.k_proj(hidden_states).reshape(hidden_shape)
+            value_states = self.v_proj(hidden_states).reshape(hidden_shape)
         else:
-            bsz, q_len, _ = hidden_states.shape
-
-        hidden_shape = (bsz, q_len, -1, self.head_dim)
-
-        query_states = self.q_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).reshape(hidden_shape).transpose(1, 2)
+            mix_layer = self.qkv_proj(hidden_states)
+            if self.config.sequence_parallel:
+                max_sequence_length = self.config.max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                q_len = max_sequence_length
+                target_shape = [
+                    bsz,
+                    q_len,
+                    self.num_key_value_heads,
+                    (self.num_key_value_groups + 2) * self.head_dim,
+                ]
+            else:
+                target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
+            mix_layer = paddle.reshape_(mix_layer, target_shape)
+            query_states, key_states, value_states = paddle.split(
+                mix_layer,
+                num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
+                axis=-1,
+            )
+            query_states = query_states.reshape([0, 0, -1, self.head_dim])
 
         query_states = self.q_norm(query_states)
         key_states = self.k_norm(key_states)
 
+        # b l h d -> b h l d
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
+
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
-        if past_key_value is not None:
-            key_states = paddle.concat([past_key_value[0], key_states], axis=2)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=2)
-        past_key_value = (key_states, value_states) if use_cache else None
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
         if attn_mask_startend_row_indices is None and attention_mask is None:
             self.attn_implementation = "sdpa"
@@ -327,7 +343,7 @@ class Gemma3Attention(nn.Layer):
         attn_output = self.o_proj(attn_output)
         if not output_attentions:
             attn_weights = None
-        return attn_output, attn_weights, past_key_value
+        return attn_output, attn_weights
 
 
 class Gemma3DecoderLayer(nn.Layer):
@@ -338,7 +354,7 @@ class Gemma3DecoderLayer(nn.Layer):
         self.layer_idx = layer_idx
         self.attention_type = config.layer_types[layer_idx]
         self.self_attn = Gemma3Attention(config=config, layer_idx=layer_idx)
-        self.mlp = Gemma3MLP(config)
+        self.mlp = Gemma3MLP(config, fuse_up_gate=config.fuse_attention_ffn)
         self.input_layernorm = Gemma3RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = Gemma3RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
         self.pre_feedforward_layernorm = Gemma3RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
@@ -349,7 +365,7 @@ class Gemma3DecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         position_embeddings: Tuple[paddle.Tensor, paddle.Tensor],
         attention_mask: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         position_ids: Optional[paddle.LongTensor] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
@@ -360,11 +376,11 @@ class Gemma3DecoderLayer(nn.Layer):
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, self_attn_weights = self.self_attn(
             hidden_states=hidden_states,
             position_embeddings=position_embeddings,
             attention_mask=attention_mask,
-            past_key_value=past_key_value,
+            past_key_values=past_key_values,
             position_ids=position_ids,
             output_attentions=output_attentions,
             use_cache=use_cache,
@@ -384,8 +400,6 @@ class Gemma3DecoderLayer(nn.Layer):
 
         if output_attentions:
             outputs += (self_attn_weights,)
-        if use_cache:
-            outputs += (present_key_value,)
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
 
@@ -408,70 +422,75 @@ class Gemma3PreTrainedModel(PretrainedModel):
     ]
 
     @classmethod
-    def _get_tensor_parallel_mappings(cls, config: Gemma3TextConfig, is_split=True):
-        """Generate tensor parallel mappings for model conversion."""
-        from ..conversion_utils import split_or_merge_func
+    def _get_fuse_or_split_param_mappings(cls, config: Gemma3TextConfig, is_fuse=False):
+        # return parameter fuse utils
+        from ..conversion_utils import split_or_fuse_func
 
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
+        fn = split_or_fuse_func(is_fuse=is_fuse)
 
-        LAYER_COLWISE = [
-            "self_attn.q_proj.weight",
-            "mlp.up_proj.weight",
-            "mlp.gate_proj.weight",
+        # last key is fused key, other keys are to be fused.
+        fuse_qkv_keys = [
+            (
+                "layers.0.self_attn.q_proj.weight",
+                "layers.0.self_attn.k_proj.weight",
+                "layers.0.self_attn.v_proj.weight",
+                "layers.0.self_attn.qkv_proj.weight",
+            ),
+            (
+                "layers.0.self_attn.q_proj.bias",
+                "layers.0.self_attn.k_proj.bias",
+                "layers.0.self_attn.v_proj.bias",
+                "layers.0.self_attn.qkv_proj.bias",
+            ),
         ]
-
-        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
-
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.o_proj.bias",
+        fuse_gate_up_keys = [
+            (
+                "layers.0.mlp.gate_proj.weight",
+                "layers.0.mlp.up_proj.weight",
+                "layers.0.mlp.up_gate_proj.weight",
+            ),
         ]
+        num_heads = config.num_attention_heads
+        num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
+        fuse_attention_qkv = getattr(config, "fuse_attention_qkv", False)
+        fuse_attention_ffn = getattr(config, "fuse_attention_ffn", False)
 
-        # if we have enough num_key_value_heads to split, then split it.
-        if config.num_key_value_heads % config.tensor_parallel_degree == 0:
-            LAYER_COLWISE.extend(["self_attn.k_proj.weight", "self_attn.v_proj.weight"])
-            BIAS_KEYS.extend(["self_attn.k_proj.bias", "self_attn.v_proj.bias"])
+        final_actions = {}
+        if is_fuse:
+            if fuse_attention_qkv:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_qkv_keys:
+                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
+                        final_actions[keys] = partial(
+                            fn, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
+                        )
 
-        def make_base_actions():
-            if config.vocab_size % config.tensor_parallel_degree == 0:
-                actions = {
-                    "lm_head.weight": partial(fn, is_column=False),
-                    "embed_tokens.weight": partial(fn, is_column=False),
-                }
-            else:
-                actions = {}
+            if fuse_attention_ffn:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_gate_up_keys:
+                        keys = [key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys]
+                        experts_keys = tuple(keys)
+                        final_actions[experts_keys] = fn
 
-            for layer_idx in range(config.num_hidden_layers):
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                        for k in LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
-                        for k in LAYER_ROWWISE
-                    }
-                )
-                # bias
-                if config.attention_bias:
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
-                            for b in BIAS_KEYS
-                        }
-                    )
-
-            return actions
-
-        mappings = make_base_actions()
-        return mappings
+        else:
+            if not fuse_attention_qkv:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_qkv_keys:
+                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
+                        final_actions[keys] = partial(
+                            fn,
+                            split_nums=3,
+                            is_qkv=True,
+                            num_heads=num_heads,
+                            num_key_value_heads=num_key_value_heads,
+                        )
+            if not fuse_attention_ffn:
+                for i in range(config.num_hidden_layers):
+                    for fuse_keys in fuse_gate_up_keys:
+                        keys = [key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys]
+                        experts_keys = tuple(keys)
+                        final_actions[experts_keys] = partial(fn, split_nums=2)
+        return final_actions
 
     @classmethod
     def _gen_aoa_config(cls, config: Gemma3TextConfig):
@@ -488,15 +507,34 @@ class Gemma3PreTrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.pre_feedforward_layernorm.weight -> {model_prefix}layers.$LAYER_ID.pre_feedforward_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_feedforward_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight",
                 # do transpose
-                f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate_proj.weight",
-                f"model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
-                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight",
-                f"model.layers.$LAYER_ID.self_attn.k_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight",
-                f"model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
             ]
         }
+
+        # attention qkv
+        if not config.fuse_attention_qkv:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+            ]
+
+        # FFN
+        if not config.fuse_attention_ffn:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
+                for p in ("gate", "up")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+            ]
+
         return aoa_config
 
     # NOTE: These aoa_config items will be removed later. The subsequent AOA parsing module will automatically generate the reverse AOA based on the forward (from_pretrained) AOA.
@@ -507,12 +545,7 @@ class Gemma3PreTrainedModel(PretrainedModel):
             # ignore tied weights
             "lm_head.weight -> _",
             # do transpose
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.gate_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.mlp.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.up_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight^T -> model.layers.$LAYER_ID.self_attn.q_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight^T -> model.layers.$LAYER_ID.self_attn.k_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight^T -> model.layers.$LAYER_ID.self_attn.v_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             # others
             f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
@@ -522,6 +555,34 @@ class Gemma3PreTrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.pre_feedforward_layernorm.weight -> model.layers.$LAYER_ID.pre_feedforward_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight -> model.layers.$LAYER_ID.post_feedforward_layernorm.weight",
         ]
+
+        if not config.fuse_attention_qkv:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
+            ]
+            aoa_statements += [
+                f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
+                for layer_id in range(config.num_hidden_layers)
+                for x in ("q", "k", "v")
+            ]
+
+        if not config.fuse_attention_ffn:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
+                for y in ("gate", "up")
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}layers.0.mlp.up_gate_proj.weight -> model.layers.0.mlp.gate_proj.weight, model.layers.0.mlp.up_proj.weight, fused_ffn",
+                "model.layers.0.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
+                "model.layers.0.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
+            ]
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
@@ -540,6 +601,9 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         )
         self.norm = Gemma3RMSNormPipe(config)
         self.rotary_emb = Gemma3RotaryEmbedding(config=config)
+        self.has_sliding_layers = getattr(
+            self.config, "sliding_window", None
+        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
         if config.sequence_parallel:
             self.norm.enable_sequence_parallel()
@@ -551,7 +615,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         hidden_states: paddle.Tensor,
         position_ids: Optional[paddle.Tensor],
         attention_mask: paddle.Tensor,
-        past_key_value: paddle.Tensor,
+        past_key_values: Cache,
         output_attentions: bool,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -568,7 +632,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             hidden_states,
             position_embeddings,
             attention_mask,
-            past_key_value,
+            past_key_values,
             position_ids,
             output_attentions,
             use_cache,
@@ -583,7 +647,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.LongTensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.FloatTensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
@@ -613,11 +677,9 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             # [bs, seq_len, dim]
             inputs_embeds = self.embed_tokens(input_ids)
 
-        cache_length = 0
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-        else:
-            cache_length = past_key_values[0][0].shape[-2]
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if self.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
@@ -645,9 +707,17 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         # Create the causal mask and row indices
-        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
-            **mask_kwargs
-        )
+        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+
+        causal_mask_mapping = {"full_attention": full_mask}
+        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
+
+        # if model has sliding layer
+        if self.has_sliding_layers:
+            (
+                causal_mask_mapping["sliding_attention"],
+                attn_mask_startend_row_indices_mapping["sliding_attention"],
+            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
 
         # Generate position_ids if not provided
         if position_ids is None:
@@ -660,12 +730,10 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
         hidden_states = inputs_embeds
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
-        next_decoder_cache = () if use_cache else None
 
         for idx, (decoder_layer) in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
 
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
@@ -674,7 +742,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
                     hidden_states,
                     position_embeddings=position_embeddings,
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     position_ids=position_ids,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
@@ -687,7 +755,7 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
                     hidden_states,
                     position_embeddings=position_embeddings,
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     position_ids=position_ids,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
@@ -704,24 +772,21 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
 
-            if use_cache:
-                next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
-
         # Final Norm
         hidden_states = self.norm(hidden_states)
 
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
-        next_cache = next_decoder_cache if use_cache else None
-
         # Return outputs
         if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
+            return tuple(
+                v for v in [hidden_states, past_key_values, all_hidden_states, all_self_attns] if v is not None
+            )
 
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
-            past_key_values=next_cache,
+            past_key_values=past_key_values,
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
         )
@@ -777,42 +842,12 @@ class Gemma3ForCausalLM(Gemma3PreTrainedModel, GenerationMixin):
             "position_ids": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
         }
 
-    @staticmethod
-    def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
-        # update cache
-        if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
-            model_kwargs["past_key_values"] = outputs[1]
-
-        if isinstance(outputs, CausalLMOutputWithPast) and "past_key_values" in outputs:
-            model_kwargs["past_key_values"] = outputs.past_key_values
-
-        # update position_ids
-        if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
-            position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
-
-        if not is_encoder_decoder and "attention_mask" in model_kwargs:
-            # TODO: support attention mask for other models
-            attention_mask = model_kwargs["attention_mask"]
-            if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )
-            elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )[:, :, -1:, :]
-
-        return model_kwargs
-
     def forward(
         self,
         input_ids: Optional[paddle.LongTensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.LongTensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.FloatTensor] = None,
         labels: Optional[paddle.LongTensor] = None,
         use_cache: Optional[bool] = None,

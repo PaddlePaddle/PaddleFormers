@@ -41,7 +41,10 @@ from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..contrastive_loss import SimpleContrastiveLoss
 from ..embedding_utils import dist_gather_tensor_with_gradient
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
@@ -210,7 +213,7 @@ class Qwen2Attention(nn.Layer):
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        attn_output, _ = attention_interface(
+        attn_output, attn_weights = attention_interface(
             self,
             query=query_states,
             key=key_states,
@@ -227,7 +230,7 @@ class Qwen2Attention(nn.Layer):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
 
-        return attn_output, past_key_values
+        return attn_output, attn_weights
 
 
 class Qwen2DecoderLayer(nn.Layer):
@@ -274,7 +277,7 @@ class Qwen2DecoderLayer(nn.Layer):
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
         # Self Attention
-        hidden_states, present_key_value = self.self_attn(
+        hidden_states, _ = self.self_attn(
             hidden_states=hidden_states,
             position_embeddings=position_embeddings,
             attention_mask=attention_mask,
@@ -293,13 +296,7 @@ class Qwen2DecoderLayer(nn.Layer):
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
 
-        if use_cache:
-            return (
-                hidden_states,
-                present_key_value,
-            )
-        else:
-            return hidden_states
+        return hidden_states
 
 
 class Qwen2PretrainedModel(PretrainedModel):
@@ -522,6 +519,9 @@ class Qwen2Model(Qwen2PretrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = Qwen2RotaryEmbedding(config=config)
+        self.has_sliding_layers = getattr(
+            self.config, "sliding_window", None
+        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -608,10 +608,17 @@ class Qwen2Model(Qwen2PretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         # Create the causal mask and row indices
-        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
-            **mask_kwargs
-        )
+        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
+        causal_mask_mapping = {"full_attention": full_mask}
+        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
+
+        # if model has sliding layer
+        if self.has_sliding_layers:
+            (
+                causal_mask_mapping["sliding_attention"],
+                attn_mask_startend_row_indices_mapping["sliding_attention"],
+            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
         hidden_states = inputs_embeds
 
         # create position embeddings to be shared across the decoder layers
@@ -620,7 +627,7 @@ class Qwen2Model(Qwen2PretrainedModel):
         for idx, (decoder_layer) in enumerate(self.layers):
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
-                layer_outputs = self.recompute_training_full(
+                hidden_states = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
                     causal_mask_mapping[decoder_layer.attention_type],
@@ -633,7 +640,7 @@ class Qwen2Model(Qwen2PretrainedModel):
                     batch_size=batch_size,
                 )
             else:
-                layer_outputs = decoder_layer(
+                hidden_states = decoder_layer(
                     hidden_states,
                     causal_mask_mapping[decoder_layer.attention_type],
                     past_key_values,
@@ -644,11 +651,6 @@ class Qwen2Model(Qwen2PretrainedModel):
                     ],
                     batch_size=batch_size,
                 )
-
-            if use_cache:
-                hidden_states = layer_outputs[0]
-            else:
-                hidden_states = layer_outputs
 
         hidden_states = self.norm(hidden_states)
 

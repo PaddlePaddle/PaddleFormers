@@ -14,7 +14,7 @@
 """Paddle Phi3 model."""
 
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import paddle
 from paddle import nn
@@ -30,9 +30,14 @@ from ...nn.mlp import MLP as Phi3MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..cache_utils import Cache, DynamicCache
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import dynamic_rope_update
 from .configuration import Phi3Config
 
 
@@ -110,7 +115,7 @@ class Phi3Attention(nn.Layer):
         hidden_states: paddle.Tensor,
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor],
         attention_mask: Optional[paddle.Tensor],
-        past_key_value: Optional[paddle.Tensor] = None,
+        past_key_values: Optional[Cache] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         use_cache: bool = False,
@@ -148,10 +153,8 @@ class Phi3Attention(nn.Layer):
         value_states = value_states.transpose(1, 2)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        if past_key_value is not None:
-            key_states = paddle.cat([past_key_value[0], key_states], axis=2)
-            value_states = paddle.cat([past_key_value[1], value_states], axis=2)
-        past_key_value = (key_states, value_states) if use_cache else None
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
         attn_output, attn_weights = attention_interface(
@@ -174,7 +177,7 @@ class Phi3Attention(nn.Layer):
 
         if not output_attentions:
             attn_weights = None
-        return attn_output, attn_weights, past_key_value
+        return attn_output, attn_weights
 
 
 class Phi3DecoderLayer(nn.Layer):
@@ -215,7 +218,7 @@ class Phi3DecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         output_attentions: Optional[bool] = False,
@@ -224,12 +227,12 @@ class Phi3DecoderLayer(nn.Layer):
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, self_attn_weights = self.self_attn(
             hidden_states=hidden_states,
             position_embeddings=position_embeddings,
             position_ids=position_ids,
             attention_mask=attention_mask,
-            past_key_value=past_key_value,
+            past_key_values=past_key_values,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             use_cache=use_cache,
             output_attentions=output_attentions,
@@ -244,8 +247,6 @@ class Phi3DecoderLayer(nn.Layer):
         outputs = (hidden_states,)
         if output_attentions:
             outputs += (self_attn_weights,)
-        if use_cache:
-            outputs += (present_key_value,)
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
         return outputs
@@ -258,6 +259,8 @@ class Phi3RotaryEmbedding(nn.Layer):
         base = config.rope_theta
         partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
         head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        rope_parameters = self.config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
         dim = int(head_dim * partial_rotary_factor)
 
         inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
@@ -265,6 +268,7 @@ class Phi3RotaryEmbedding(nn.Layer):
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = self.inv_freq
 
+    @dynamic_rope_update
     @paddle.no_grad()
     def forward(self, x, position_ids):
         inv_freq_expanded = (
@@ -407,6 +411,9 @@ class Phi3Model(Phi3PreTrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = Phi3RotaryEmbedding(config)
+        self.has_sliding_layers = getattr(
+            self.config, "sliding_window", None
+        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -416,7 +423,7 @@ class Phi3Model(Phi3PreTrainedModel):
         position_ids: Optional[paddle.Tensor],
         attention_mask: paddle.Tensor,
         output_attentions: bool,
-        past_key_value: paddle.Tensor,
+        past_key_values: Cache,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
@@ -432,7 +439,7 @@ class Phi3Model(Phi3PreTrainedModel):
             hidden_states,
             attention_mask,
             position_ids,
-            past_key_value,
+            past_key_values,
             use_cache,
             position_embeddings,
             output_attentions,
@@ -446,7 +453,7 @@ class Phi3Model(Phi3PreTrainedModel):
         input_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
@@ -482,11 +489,9 @@ class Phi3Model(Phi3PreTrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        cache_length = 0
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-        else:
-            cache_length = past_key_values[0][0].shape[1]
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
@@ -503,21 +508,27 @@ class Phi3Model(Phi3PreTrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         # Create the causal mask and row indices
-        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
-            **mask_kwargs
-        )
+        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+
+        causal_mask_mapping = {"full_attention": full_mask}
+        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
+
+        # if model has sliding layer
+        if self.has_sliding_layers:
+            (
+                causal_mask_mapping["sliding_attention"],
+                attn_mask_startend_row_indices_mapping["sliding_attention"],
+            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
 
         hidden_states = inputs_embeds
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
-        next_decoder_cache = () if use_cache else None
 
         for idx, (decoder_layer) in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
                 layer_outputs = self.recompute_training_full(
@@ -529,7 +540,7 @@ class Phi3Model(Phi3PreTrainedModel):
                     ],
                     position_ids=position_ids,
                     output_attentions=output_attentions,
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     use_cache=use_cache,
                     position_embeddings=position_embeddings,
                 )
@@ -543,7 +554,7 @@ class Phi3Model(Phi3PreTrainedModel):
                     ],
                     position_ids=position_ids,
                     output_attentions=output_attentions,
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     use_cache=use_cache,
                     position_embeddings=position_embeddings,
                 )
@@ -556,20 +567,15 @@ class Phi3Model(Phi3PreTrainedModel):
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
 
-            if use_cache:
-                next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
-
         hidden_states = self.norm(hidden_states)
 
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
-        next_cache = next_decoder_cache if use_cache else None
-
         if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache] if v is not None)
+            return tuple(v for v in [hidden_states, past_key_values] if v is not None)
 
-        return BaseModelOutputWithPast(last_hidden_state=hidden_states, past_key_values=next_cache)
+        return BaseModelOutputWithPast(last_hidden_state=hidden_states, past_key_values=past_key_values)
 
 
 class Phi3ForCausalLM(Phi3PreTrainedModel):
@@ -621,38 +627,12 @@ class Phi3ForCausalLM(Phi3PreTrainedModel):
             "position_ids": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
         }
 
-    @staticmethod
-    def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
-        # update cache
-        if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
-            model_kwargs["past_key_values"] = outputs[1]
-        if isinstance(outputs, CausalLMOutputWithPast) and "past_key_values" in outputs:
-            model_kwargs["past_key_values"] = outputs.past_key_values
-        # update position_ids
-        if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
-            position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
-        if not is_encoder_decoder and "attention_mask" in model_kwargs:
-            # TODO: support attention mask for other models
-            attention_mask = model_kwargs["attention_mask"]
-            if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )
-            elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )[:, :, -1:, :]
-        return model_kwargs
-
     def forward(
         self,
         input_ids: Optional[paddle.LongTensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.LongTensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.FloatTensor] = None,
         labels: Optional[paddle.LongTensor] = None,
         use_cache: Optional[bool] = None,

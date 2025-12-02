@@ -649,6 +649,15 @@ class PaddleProcessorMixin:
                     return custom_class
         raise ValueError(f"Could not find module {module_name} in `paddleformers`.")
 
+    def batch_decode(self, *args, **kwargs):
+        """
+        This method forwards all its arguments to PreTrainedTokenizer's [`~PreTrainedTokenizer.batch_decode`]. Please
+        refer to the docstring of this method for more information.
+        """
+        if not hasattr(self, "tokenizer"):
+            raise ValueError(f"Cannot batch decode text: {self.__class__.__name__} has no tokenizer.")
+        return self.tokenizer.batch_decode(*args, **kwargs)
+
     def decode(self, *args, **kwargs):
         """
         This method forwards all its arguments to PreTrainedTokenizer's [`~PreTrainedTokenizer.decode`]. Please refer to

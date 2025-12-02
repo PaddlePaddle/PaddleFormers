@@ -32,7 +32,7 @@ from transformers.image_processing_utils import (
 from transformers.image_processing_utils import get_size_dict  # noqa: F401
 from transformers.utils import PROCESSOR_NAME
 
-from ..utils.download import DownloadSource, resolve_file_path
+from ..utils.download import resolve_file_path
 from ..utils.log import logger
 from .feature_extraction_utils import BatchFeature
 
@@ -186,13 +186,6 @@ class PaddleImageProcessingMixin:
         if download_hub is None:
             download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
         logger.info(f"Using download source: {download_hub}")
-
-        # If downloaded from hf, use the native hf from pretrained
-        if download_hub == DownloadSource.HUGGINGFACE:
-            return super().get_image_processor_dict(
-                pretrained_model_name_or_path,
-                **kwargs,
-            )
 
         cache_dir = kwargs.pop("cache_dir", None)
         subfolder = kwargs.pop("subfolder", "")

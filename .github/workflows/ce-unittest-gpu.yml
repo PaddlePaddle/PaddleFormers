@@ -22,7 +22,7 @@ concurrency:
 env:
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   TASK: PaddleFormers-CE-unittest-gpu
-  ce_scripts: /workspace/PaddleFormers/scripts/unit_test
+  ce_scripts: /github/workspace/PaddleFormers/scripts/unit_test
   BRANCH: ${{ github.event.pull_request.base.ref }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CE_name: unittest-gpu-ce
@@ -62,7 +62,7 @@ jobs:
           echo "GPU_OPTION=${GPU_OPTION}"
           docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
-            -v $work_dir:/workspace \
+            -v $work_dir:/github/workspace/ \
             -v /home/.cache/pip:/home/.cache/pip \
             -v /home/paddle-1/models/:/home/models/ \
             -e PF_HOME=/home/models/ \
@@ -81,7 +81,7 @@ jobs:
             -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
-            -w /workspace ${GPU_OPTION} --privileged $IMAGE_NAME
+            -w /github/workspace/ ${GPU_OPTION} --privileged $IMAGE_NAME
             
       - name: Download Code
         run: |
@@ -115,7 +115,7 @@ jobs:
           pip config set global.cache-dir "/home/.cache/pip"
           set -e
           rm -rf /root/.cache/aistudio/
-          cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
+          cd /github/workspace/PaddleFormers && git config --global --add safe.directory $PWD
           source $work_dir/../../../proxy
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
           echo "work_dir = ${work_dir}"
