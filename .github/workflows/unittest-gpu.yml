@@ -129,6 +129,16 @@ jobs:
           ls -l ./models
           timeout 50m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
+      - name: Set pytest flag
+        id: set_pytest_flag
+        run: |
+          if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ] && grep -q "true" "${PYTEST_EXECUTE_FLAG_FILE}"; then
+            echo "pytest_execute_flag=true" >> $GITHUB_OUTPUT
+          else
+            echo "pytest_execute_flag=false" >> $GITHUB_OUTPUT
+          fi
+
+
       - name: Copy coverage.xml out of container
         run: |
           docker cp $container_name:/github/workspace/PaddleFormers/coverage.xml coverage.xml
@@ -140,7 +150,7 @@ jobs:
         with:
           name: coverage
           path: coverage.xml
-          
+
       - name: Terminate And Delete the Container
         if: always()
         run: |
@@ -152,6 +162,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Debug execute flag
+        run: |
+          echo "Output flag = ${{ needs.unittest-gpu-ci.outputs.pytest_execute_flag }}"
+
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
         with:
