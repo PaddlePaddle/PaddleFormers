@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import List
-from copy import deepcopy
 
-import os
 import numpy as np
 from paddle.io import IterableDataset
 
@@ -79,6 +79,8 @@ class SFTDataSet(IterableDataset):
         self.is_valid = dataset_config.get("is_valid", False)
         if self.truncate_packing and not self.is_pretraining:
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
+        self.packing = dataset_config.get("packing", False)
+        self.greedy_intokens = dataset_config.get("greedy_intokens", True)
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
@@ -104,26 +106,233 @@ class SFTDataSet(IterableDataset):
             )
         else:
             multi_source_dataset = MultiSourceDataset(**dataset_config)
+            dataset_config["reverse"] = True
             self.mix_datasets = create_dataset_instance(
                 dataset_config["mix_strategy"],
                 multi_source_dataset,
                 **dataset_config,
             )
 
+        self.estimate = False
+        # The number of valid samples and skipped samples in estimation
+        self.unused_samples = 0
+        self.used_samples = 0
+        # If used_estimate_samples exceeds max_estimate_samples,stop estimating.
+        self.used_estimate_samples = 0
+        self.max_estimate_samples = 0
+        # set max estimate samples
+        if not self.is_valid:
+            self.max_estimate_samples = len(self.mix_datasets)
+
+        self.last_printed_percent = 0
+
     def __len__(self):
         return len(self.mix_datasets)
 
-    def __iter__(self):
-        for example in self.mix_datasets:
-            actual_example_num = 1
-            if self.is_pretraining:
-                if self.truncate_packing:
-                    # return only tokens
-                    yield self._encode_pretraining_example(example, actual_example_num)
-                else:
-                    yield self._postprocess_pretraining_sequence(example, actual_example_num)
+    def __iter_func(self):
+
+        # prepare epoch data
+        batch_sequence, cur_len = [], 0
+        dataset_iterator = iter(self.mix_datasets)
+        actual_example_num = 1
+
+        # pre-training:
+        # 1. tokenize all the samples in the sampling pool,
+        # 2. combine them into one large sample
+        # 3. truncate it into multiple new samples based on the max_seq_len.
+        if self.is_pretraining and self.truncate_packing:
+            all_tokenized_tokens = []
+            for _ in range(len(self.mix_datasets)):
+                example = next(dataset_iterator)
+                actual_example_num = 1
+                tokens = self._encode_pretraining_example(example, actual_example_num)
+                if tokens is None:
+                    if self.estimate:
+                        self.unused_samples += actual_example_num
+                    continue
+                if self.estimate:
+                    self.used_samples += actual_example_num
+
+                all_tokenized_tokens.extend(tokens)
+
+                while len(all_tokenized_tokens) >= self.max_seq_len:
+                    cut_tokens = all_tokenized_tokens[: self.max_seq_len]
+                    # Add an EOS token at the position of data truncation
+                    if cut_tokens[-1] != self.tokenizer.eos_token_id:
+                        cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
+                    all_tokenized_tokens = all_tokenized_tokens[self.max_seq_len :]
+
+                    res_tokens = cut_tokens[:-1]
+                    res_labels = cut_tokens[1:]
+                    loss_mask = [1] * len(res_tokens)
+                    pos_ids = list(range(len(res_tokens)))
+                    sequence = Sequence(
+                        token_ids=res_tokens,
+                        position_ids=pos_ids,
+                        labels=res_labels,
+                        loss_mask=loss_mask,
+                        num_examples=actual_example_num,
+                        images=[],
+                        videos=[],
+                        audios=[],
+                    )
+                    batch_sequence = [sequence]
+                    yield batch_sequence
+
+                    if self.estimate:
+                        self.used_estimate_samples += actual_example_num
+                        self.print_max_steps_estimate_progress()
+                        if self.used_estimate_samples >= self.max_estimate_samples:
+                            self.used_estimate_samples = 0
+                            # Set flag to False and yield empty list to signal the end of estimation
+                            self.estimate = False
+                            yield []
+
+            # If the entire dataset has been fully traversed, return the remaining data.
+            if len(all_tokenized_tokens) > 0:
+                cut_tokens = all_tokenized_tokens
+                cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
+                res_tokens = cut_tokens[:-1]
+                res_labels = cut_tokens[1:]
+                loss_mask = [1] * len(res_tokens)
+                pos_ids = list(range(len(res_tokens)))
+                sequence = Sequence(
+                    token_ids=res_tokens,
+                    position_ids=pos_ids,
+                    labels=res_labels,
+                    loss_mask=loss_mask,
+                    num_examples=actual_example_num,
+                    images=[],
+                    videos=[],
+                    audios=[],
+                )
+                batch_sequence = [sequence]
+                yield batch_sequence
+                if self.estimate:
+                    self.used_estimate_samples += actual_example_num
+                    if self.used_estimate_samples >= self.max_estimate_samples:
+                        self.used_estimate_samples = 0
+                        # Set flag to False and yield empty list to signal the end of estimation
+                        self.estimate = False
+                        yield []
+        else:
+            if not self.packing:
+                for _ in range(len(self.mix_datasets)):
+                    example = next(dataset_iterator)
+                    actual_example_num = 1
+                    if self.is_pretraining:
+                        sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
+                    else:
+                        sequence = self._postprocess_sequence(example, actual_example_num)
+                    # unused_samples and used_samples are used to calculate skip_samples and actual_train_samples
+                    if sequence is None:
+                        if self.estimate:
+                            self.unused_samples += actual_example_num
+                        continue
+                    if self.estimate:
+                        self.used_samples += actual_example_num
+                    batch_sequence, cur_len = [sequence], len(sequence.token_ids)
+                    yield batch_sequence
+
+                    if self.estimate:
+                        self.used_estimate_samples += actual_example_num
+                        self.print_max_steps_estimate_progress()
+                        if self.used_estimate_samples >= self.max_estimate_samples:
+                            self.used_estimate_samples = 0
+                            # Set flag to False and yield empty list to signal the end of estimation
+                            self.estimate = False
+                            yield []
+                if len(batch_sequence) > 0:
+                    yield batch_sequence
             else:
-                yield self._postprocess_sequence(example, actual_example_num)
+                if not self.greedy_intokens:
+                    # base
+                    for _ in range(len(self.mix_datasets)):
+                        example = next(dataset_iterator)
+                        actual_example_num = 1
+                        if self.is_pretraining:
+                            sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
+                        else:
+                            sequence = self._postprocess_sequence(example, actual_example_num)
+                        if sequence is None:
+                            if self.estimate:
+                                self.unused_samples += actual_example_num
+                            continue
+                        if self.estimate:
+                            self.used_samples += actual_example_num
+                        if cur_len + len(sequence.token_ids) <= self.max_seq_len:
+                            batch_sequence.append(sequence)
+                            cur_len += len(sequence.token_ids)
+                        else:
+                            yield batch_sequence
+                            batch_sequence, cur_len = [sequence], len(sequence.token_ids)
+
+                        if self.estimate:
+                            self.used_estimate_samples += actual_example_num
+                            self.print_max_steps_estimate_progress()
+                            if self.used_estimate_samples >= self.max_estimate_samples:
+                                # Yield left batch sequence before estimation ends
+                                if len(batch_sequence) > 0:
+                                    yield batch_sequence
+                                self.used_estimate_samples = 0
+                                # Set flag to False and yield empty list to signal the end of estimation
+                                self.estimate = False
+                                yield []
+                    if len(batch_sequence) > 0:
+                        yield batch_sequence
+                else:
+                    # Pseudo multiple rounds + group greedy intokens.
+                    buffer_size = 500
+                    examples = []
+                    actual_example_num_list = []
+                    i = 0
+                    for _ in range(len(self.mix_datasets)):
+                        example = next(dataset_iterator)
+                        actual_example_num = 1
+                        if i < buffer_size:
+                            examples.append(example)
+                            actual_example_num_list.append(actual_example_num)
+                            i += 1
+                        else:
+                            # Running greedy strategy in examples.
+                            generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
+                            for pack in generate_packs:
+                                if len(pack) > 0:
+                                    yield pack
+                            examples = [example]
+                            i = 1
+
+                        if self.estimate:
+                            self.used_estimate_samples += actual_example_num
+                            self.print_max_steps_estimate_progress()
+                            # Stop estimation if the number of samples used in estimation is larger than max_estimate_samples
+                            if self.used_estimate_samples >= self.max_estimate_samples:
+                                # Yield left packs before estimation ends
+                                if len(examples) > 0:
+                                    generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
+                                    for pack in generate_packs:
+                                        if len(pack) > 0:
+                                            yield pack
+                                # Set flag to False and yield empty list to signal the end of estimation
+                                self.estimate = False
+                                yield []
+
+                    if len(examples) > 0:
+                        generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
+                        for pack in generate_packs:
+                            if len(pack) > 0:
+                                yield pack
+
+    def __iter__(self):
+        """
+        Rewrite the __iter__ method to implement dataset iteration.
+        Each iteration returns a Sequence-type element.
+        """
+        if self.is_valid:
+            yield from self.__iter_func()
+        else:
+            while True:
+                yield from self.__iter_func()
 
     def _postprocess_pretraining_sequence(self, example, actual_example_num):
         tokens = self._encode_pretraining_example(example, actual_example_num)
@@ -231,26 +440,36 @@ class SFTDataSet(IterableDataset):
             except Exception:
                 logger.warning("[SKIP] wrong example")
 
-        if self.begin_token_id is not None and self.end_of_response_id is not None:
-            if tokens[0] != self.begin_token_id:
-                tokens = [self.begin_token_id] + tokens
-                loss_mask = [0] + loss_mask
+        if self.use_template:
+            if self.begin_token_id is not None and self.end_of_response_id is not None:
+                # Maybe left truncated, so need to add begin_token
+                if tokens[0] != self.begin_token_id:
+                    tokens = [self.begin_token_id] + tokens
+                    loss_mask = [0] + loss_mask
 
-            if len(tokens) > self.max_seq_len:
-                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
-            # Add EOS token at the end
-            del tokens[-1]
-            del loss_mask[-1]
-            labels = tokens[1:] + [self.tokenizer.eos_token_id]
+                # Add EOS token at the end
+                del tokens[-1]
+                del loss_mask[-1]
+                labels = tokens[1:] + [self.tokenizer.eos_token_id]
 
-            # end_of_response is a special token that indicates the end of the turn.
-            # end_token is a special token that indicates the end of the answer.
-            labels = [label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels]
+                # end_of_response is a special token that indicates the end of the turn.
+                # end_token is a special token that indicates the end of the answer.
+                labels = [
+                    label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
+                ]
+            else:
+                tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
+                labels = tokens[1:] + [-100]
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
         else:
-            # labels = tokens[1:] + [self.tokenizer.eos_token_id]
-            # tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
-            labels = tokens[1:] + [-100]
+            oral_tokens = tokens
+            tokens = oral_tokens[:-1]
+            labels = oral_tokens[1:]
+            loss_mask = loss_mask[:-1]
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
@@ -293,218 +512,6 @@ class SFTDataSet(IterableDataset):
             audios=audios,
         )
 
-
-class SFTPackingDataset(IterableDataset):
-    def __init__(self, processed_dataset, **dataset_config):
-        self.processed_dataset = processed_dataset
-        self.packing = dataset_config.get("packing", False)
-        self.greedy_intokens = dataset_config.get("greedy_intokens", True)
-        self.max_seq_len = dataset_config.get("max_seq_len", 8192)
-        self.is_valid = dataset_config.get("is_valid", False)
-        self.truncate_packing = dataset_config.get("truncate_packing", True)
-        self.tokenizer = dataset_config.get("tokenizer", None)
-        self.is_pretraining = dataset_config.get("is_pretraining", False)
-
-        self.estimate = False
-        # The number of valid samples and skipped samples in estimation
-        self.unused_samples = 0
-        self.used_samples = 0
-        # If used_estimate_samples exceeds max_estimate_samples,stop estimating.
-        self.used_estimate_samples = 0
-        self.max_estimate_samples = 0
-        # set max estimate samples
-        if not self.is_valid:
-            self.max_estimate_samples = len(self.processed_dataset)
-
-    def __iter_func(self):
-
-        dataset_iterator = iter(self.processed_dataset)
-
-        if self.is_pretraining and self.truncate_packing:
-            all_tokenized_tokens = []
-            for _ in range(len(self.processed_dataset)):
-                example = next(dataset_iterator)
-                actual_example_num = 1
-                tokens = example
-                if tokens is None:
-                    if self.estimate:
-                        self.unused_samples += actual_example_num
-                    continue
-                if self.estimate:
-                    self.used_samples += actual_example_num
-
-                all_tokenized_tokens.extend(tokens)
-
-                while len(all_tokenized_tokens) >= self.max_seq_len:
-                    cut_tokens = all_tokenized_tokens[: self.max_seq_len]
-                    # Add an EOS token at the position of data truncation
-                    if cut_tokens[-1] != self.tokenizer.eos_token_id:
-                        cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
-                    all_tokenized_tokens = all_tokenized_tokens[self.max_seq_len :]
-
-                    res_tokens = cut_tokens[:-1]
-                    res_labels = cut_tokens[1:]
-                    loss_mask = [1] * len(res_tokens)
-                    pos_ids = list(range(len(res_tokens)))
-                    sequence = Sequence(
-                        token_ids=res_tokens,
-                        position_ids=pos_ids,
-                        labels=res_labels,
-                        loss_mask=loss_mask,
-                        num_examples=actual_example_num,
-                        images=[],
-                        videos=[],
-                        audios=[],
-                    )
-                    batch_sequence = [sequence]
-                    yield batch_sequence
-
-                    if self.estimate:
-                        self.used_estimate_samples += actual_example_num
-                        self.print_max_steps_estimate_progress()
-                        if self.used_estimate_samples >= self.max_estimate_samples:
-                            self.used_estimate_samples = 0
-                            # Set flag to False and yield empty list to signal the end of estimation
-                            self.estimate = False
-                            yield []
-
-            # If the entire dataset has been fully traversed, return the remaining data.
-            if len(all_tokenized_tokens) > 0:
-                cut_tokens = all_tokenized_tokens
-                cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
-                res_tokens = cut_tokens[:-1]
-                res_labels = cut_tokens[1:]
-                loss_mask = [1] * len(res_tokens)
-                pos_ids = list(range(len(res_tokens)))
-                sequence = Sequence(
-                    token_ids=res_tokens,
-                    position_ids=pos_ids,
-                    labels=res_labels,
-                    loss_mask=loss_mask,
-                    num_examples=actual_example_num,
-                    images=[],
-                    videos=[],
-                    audios=[],
-                )
-                batch_sequence = [sequence]
-                yield batch_sequence
-                if self.estimate:
-                    self.used_estimate_samples += actual_example_num
-                    if self.used_estimate_samples >= self.max_estimate_samples:
-                        self.used_estimate_samples = 0
-                        # Set flag to False and yield empty list to signal the end of estimation
-                        self.estimate = False
-                        yield []
-        else:
-            if not self.packing:
-                for _ in range(len(self.processed_dataset)):
-                    example = next(dataset_iterator)
-                    actual_example_num = 1
-                    sequence = example
-                    # unused_samples and used_samples are used to calculate skip_samples and actual_train_samples
-                    if sequence is None:
-                        if self.estimate:
-                            self.unused_samples += actual_example_num
-                        continue
-                    if self.estimate:
-                        self.used_samples += actual_example_num
-                    batch_sequence, cur_len = [sequence], len(sequence.token_ids)
-                    yield batch_sequence
-
-                    if self.estimate:
-                        self.used_estimate_samples += actual_example_num
-                        if self.used_estimate_samples >= self.max_estimate_samples:
-                            self.used_estimate_samples = 0
-                            # Set flag to False and yield empty list to signal the end of estimation
-                            self.estimate = False
-                            yield []
-                if len(batch_sequence) > 0:
-                    yield batch_sequence
-            else:
-                if not self.greedy_intokens:
-                    # base
-                    for _ in range(len(self.processed_dataset)):
-                        example = next(dataset_iterator)
-                        actual_example_num = 1
-                        sequence = example
-                        if sequence is None:
-                            if self.estimate:
-                                self.unused_samples += actual_example_num
-                            continue
-                        if self.estimate:
-                            self.used_samples += actual_example_num
-                        if cur_len + len(sequence.token_ids) <= self.max_seq_len:
-                            batch_sequence.append(sequence)
-                            cur_len += len(sequence.token_ids)
-                        else:
-                            yield batch_sequence
-                            batch_sequence, cur_len = [sequence], len(sequence.token_ids)
-
-                        if self.estimate:
-                            self.used_estimate_samples += actual_example_num
-                            if self.used_estimate_samples >= self.max_estimate_samples:
-                                # Yield left batch sequence before estimation ends
-                                if len(batch_sequence) > 0:
-                                    yield batch_sequence
-                                self.used_estimate_samples = 0
-                                # Set flag to False and yield empty list to signal the end of estimation
-                                self.estimate = False
-                                yield []
-                    if len(batch_sequence) > 0:
-                        yield batch_sequence
-                else:
-                    # Pseudo multiple rounds + group greedy intokens.
-                    buffer_size = 500
-                    examples = []
-                    actual_example_num_list = []
-                    i = 0
-                    for _ in range(len(self.processed_dataset)):
-                        example = next(dataset_iterator)
-                        actual_example_num = 1
-                        if i < buffer_size:
-                            examples.append(example)
-                            actual_example_num_list.append(actual_example_num)
-                            i += 1
-                        else:
-                            # Running greedy strategy in examples.
-                            generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
-                            for pack in generate_packs:
-                                if len(pack) > 0:
-                                    yield pack
-                            examples = [example]
-                            i = 1
-
-                        if self.estimate:
-                            self.used_estimate_samples += actual_example_num
-                            # Stop estimation if the number of samples used in estimation is larger than max_estimate_samples
-                            if self.used_estimate_samples >= self.max_estimate_samples:
-                                # Yield left packs before estimation ends
-                                if len(examples) > 0:
-                                    generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
-                                    for pack in generate_packs:
-                                        if len(pack) > 0:
-                                            yield pack
-                                # Set flag to False and yield empty list to signal the end of estimation
-                                self.estimate = False
-                                yield []
-
-                    if len(examples) > 0:
-                        generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
-                        for pack in generate_packs:
-                            if len(pack) > 0:
-                                yield pack
-
-    def __iter__(self):
-        """
-        Rewrite the __iter__ method to implement dataset iteration.
-        Each iteration returns a Sequence-type element.
-        """
-        if self.is_valid:
-            yield from self.__iter_func()
-        else:
-            while True:
-                yield from self.__iter_func()
-
     def _generate_greedy_packs(self, examples, actual_example_num_list):
         """Generate packed sequences using greedy strategy.
 
@@ -543,3 +550,10 @@ class SFTPackingDataset(IterableDataset):
                 left_len[left_index] = self.max_seq_len
 
         return generate_packs
+
+    def print_max_steps_estimate_progress(self):
+        current_percent = (self.used_estimate_samples / self.max_estimate_samples) * 100
+        # Print progress at every 5% interval.
+        if int(current_percent) // 5 > self.last_printed_percent // 5:
+            print(f"[Estimate Max Steps Progress]: {current_percent:.0f}%")
+            self.last_printed_percent = current_percent

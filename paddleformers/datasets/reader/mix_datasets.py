@@ -49,7 +49,7 @@ class BaseMixDataset(IterableDataset):
         self.epoch_np_rng = np.random.RandomState(self.epoch_index)
         self.random_shuffle = dataset_config["random_shuffle"]
         self.num_samples_each_epoch = dataset_config["num_samples_each_epoch"]
-        self.reverse = dataset_config.get("reverse", True)
+        self.reverse = dataset_config.get("reverse", False)
 
     @abstractmethod
     def __iter__(self):
