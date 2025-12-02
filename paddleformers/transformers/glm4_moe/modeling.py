@@ -36,7 +36,7 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import dynamic_rope_update
@@ -279,7 +279,7 @@ class Glm4MoeAttention(nn.Layer):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
 
-        return attn_output, past_key_values
+        return attn_output, attn_weights
 
 
 class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
@@ -740,12 +740,9 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_states,
         residual,
         use_cache=False,
-        present_key_value=None,
     ):
         hidden_states = residual + hidden_states
         outputs = (hidden_states,)
-        if use_cache:
-            outputs += (present_key_value,)
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
         return outputs
@@ -774,10 +771,9 @@ class Glm4MoeDecoderLayer(nn.Layer):
         )
         hidden_states = attn_outputs[0]
         residual = attn_outputs[1]
-        present_key_value = attn_outputs[2] if use_cache else None
 
         hidden_states = self.mlp(hidden_states)
-        outputs = self.post_process(hidden_states, residual, use_cache, present_key_value)
+        outputs = self.post_process(hidden_states, residual, use_cache)
         return outputs
 
 
@@ -1352,9 +1348,9 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             "attention_mask": attention_mask,
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
-            "return_mapping": False,
         }
-        causal_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
+
+        causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))

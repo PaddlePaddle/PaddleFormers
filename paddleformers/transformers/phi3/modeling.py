@@ -31,7 +31,10 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import dynamic_rope_update
@@ -408,6 +411,9 @@ class Phi3Model(Phi3PreTrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = Phi3RotaryEmbedding(config)
+        self.has_sliding_layers = getattr(
+            self.config, "sliding_window", None
+        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -502,9 +508,17 @@ class Phi3Model(Phi3PreTrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         # Create the causal mask and row indices
-        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
-            **mask_kwargs
-        )
+        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+
+        causal_mask_mapping = {"full_attention": full_mask}
+        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
+
+        # if model has sliding layer
+        if self.has_sliding_layers:
+            (
+                causal_mask_mapping["sliding_attention"],
+                attn_mask_startend_row_indices_mapping["sliding_attention"],
+            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
 
         hidden_states = inputs_embeds
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
@@ -612,32 +626,6 @@ class Phi3ForCausalLM(Phi3PreTrainedModel):
             "attention_mask": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
             "position_ids": paddle.static.InputSpec(shape=[None, None], dtype="int64"),
         }
-
-    @staticmethod
-    def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
-        # update cache
-        if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
-            model_kwargs["past_key_values"] = outputs[1]
-        if isinstance(outputs, CausalLMOutputWithPast) and "past_key_values" in outputs:
-            model_kwargs["past_key_values"] = outputs.past_key_values
-        # update position_ids
-        if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
-            position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
-        if not is_encoder_decoder and "attention_mask" in model_kwargs:
-            # TODO: support attention mask for other models
-            attention_mask = model_kwargs["attention_mask"]
-            if len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )
-            elif len(attention_mask.shape) == 4:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([*attention_mask.shape[:3], 1], dtype=attention_mask.dtype)],
-                    axis=-1,
-                )[:, :, -1:, :]
-        return model_kwargs
 
     def forward(
         self,
