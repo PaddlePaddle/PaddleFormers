@@ -11,19 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from transformers.tokenization_utils_base import (
-    PaddingStrategy,
-    PreTokenizedInput,
-    TensorType,
-    TextInput,
-    TruncationStrategy,
-)
-
-__all__ = [
-    "PaddingStrategy",
-    "PreTokenizedInput",
-    "TextInput",
-    "TensorType",
-    "TruncationStrategy",
-]
