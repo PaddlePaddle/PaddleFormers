@@ -530,7 +530,10 @@ class SFTDataSet(IterableDataset):
         left_index = 0
 
         while index < len(examples):
-            sequence = examples[index]
+            if self.is_pretraining:
+                sequence = self._postprocess_pretraining_sequence(examples[index], actual_example_num_list[index])
+            else:
+                sequence = self._postprocess_sequence(examples[index], actual_example_num_list[index])
             if sequence is None:
                 if self.estimate:
                     self.unused_samples += actual_example_num_list[index]

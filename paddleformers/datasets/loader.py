@@ -15,7 +15,7 @@
 from typing import Any, Dict
 
 from paddleformers.datasets.DPODataset import DPODataSet
-from paddleformers.datasets.SFTDataset import SFTDataSet, SFTPackingDataset
+from paddleformers.datasets.SFTDataset import SFTDataSet
 
 
 def create_dataset(**dataset_config: Dict[str, Any]):
@@ -30,9 +30,8 @@ def create_dataset(**dataset_config: Dict[str, Any]):
         SequenceDataset: Configured sequence dataset
     """
     if dataset_config["stage"].lower() == "dpo":
-        train_packing_dataset = DPODataSet(**dataset_config)
+        train_dataset = DPODataSet(**dataset_config)
     else:
         train_dataset = SFTDataSet(**dataset_config)
-        train_packing_dataset = SFTPackingDataset(train_dataset, **dataset_config)
 
-    return train_packing_dataset
+    return train_dataset

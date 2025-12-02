@@ -51,7 +51,7 @@ import_structure = {
         "create_dataset",
     ],
     "DPODataset": ["DPODataSet"],
-    "SFTDataset": ["SFTDataSet", "SFTPackingDataset"],
+    "SFTDataset": ["SFTDataSet"],
     "reader.convertor": [
         "convert_dpo_txt_data",
         "convert_txt_data",
