@@ -3850,9 +3850,9 @@ class HFFormatFullParamSaver:
         v_group=None,
         num_splits=None,
         shard_idx=None,
+        sharding_group=None,
         saved_in_one_node=False,
         memory_growth_threshold=8 * (2**30),
-        horizontal_sharding=True,
     ):
         self.model = model
         self.aoa_config = aoa_config
@@ -3862,7 +3862,7 @@ class HFFormatFullParamSaver:
         self.shard_idx = shard_idx
         self.saved_in_one_node = saved_in_one_node
         self.memory_growth_threshold = memory_growth_threshold
-        self.horizontal_sharding = horizontal_sharding
+        self.sharding_group = sharding_group
         self.determin_saver_based_group()
 
     def get_full_param_iter(self):
@@ -3912,8 +3912,8 @@ class HFFormatFullParamSaver:
 
         all_sizes = []
         if self.v_group and self.h_group:
-            gather_group = self.h_group if self.horizontal_sharding else self.v_group
-            paddle.distributed.all_gather_object(all_sizes, total_saved_size, gather_group)
+            assert self.sharding_group is not None
+            paddle.distributed.all_gather_object(all_sizes, total_saved_size, sharding_group)
         else:
             paddle.distributed.all_gather_object(all_sizes, total_saved_size)
         total_size = sum(all_sizes)
