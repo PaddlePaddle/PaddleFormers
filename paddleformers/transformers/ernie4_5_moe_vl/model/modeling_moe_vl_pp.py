@@ -1212,6 +1212,8 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
     _init_weights = Ernie4_5_VLMoeForConditionalGeneration._init_weights
     _keep_in_fp32_modules = Ernie4_5_VLMoeForConditionalGeneration._keep_in_fp32_modules
     transpose_weight_keys = Ernie4_5_VLMoeForConditionalGeneration.transpose_weight_keys
+    _gen_aoa_config = Ernie4_5_VLMoeForConditionalGeneration._gen_aoa_config
+    _gen_inv_aoa_config = Ernie4_5_VLMoeForConditionalGeneration._gen_inv_aoa_config
     pipe_model_type = "torch"
 
     def _prepare_pipeline_inputs_func(self, data: Union[List, Dict]):
