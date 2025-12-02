@@ -912,7 +912,7 @@ class BaseVideoProcessor(BaseImageProcessor):
         If a single url is passed, the return value will be a single object. If a list is passed a list of objects is
         returned.
         """
-        backend = kwargs.get("backend", "decord")
+        backend = kwargs.get("video_reader_backend", "decord")
 
         if isinstance(video_url_or_urls, list):
             return list(
