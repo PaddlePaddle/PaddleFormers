@@ -396,6 +396,7 @@ if TYPE_CHECKING:
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *
+    from .internvl_chat import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

@@ -81,6 +81,8 @@ class Qwen2Attention(nn.Layer):
     def __init__(self, config: Qwen2Config, layer_idx: int = 0):
         super().__init__()
         self.config = config
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
         self.layer_idx = layer_idx
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads

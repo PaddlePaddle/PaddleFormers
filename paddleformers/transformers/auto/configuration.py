@@ -52,6 +52,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
+        ("internvl_chat", "InternVLChatCOnfig")
     ]
 )
 
