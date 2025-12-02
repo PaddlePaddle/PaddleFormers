@@ -3896,7 +3896,7 @@ class HFFormatFullParamSaver:
             self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
 
         if self.saved_in_one_node:
-            local_world_size = os.environ.get("PADDLE_LOCAL_SIZE", 8)
+            local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
             self.num_saver_ranks = min(local_world_size, self.num_saver_ranks)
 
     def save_checkpoint(self, path, max_shard_size="16GB"):
@@ -3904,7 +3904,7 @@ class HFFormatFullParamSaver:
             itr=self.get_full_param_iter(),
             save_dir=path,
             rank=self.rank,
-            world_size=self.num_saver_ranks,
+            moe_sharding_world_size=self.num_saver_ranks,
             max_shard_size=max_shard_size,
             num_saver_ranks=self.num_saver_ranks,
         )
