@@ -246,8 +246,7 @@ class TestHFFormatSaverTP4Sharding2(TestMultipleGpus):
         )
         
         # Create save directory
-        # save_dir = os.path.join(self.temp_dir, "hf_checkpoint_tp4_sharding2")
-        save_dir = os.path.join('./checkpoint1', "hf_checkpoint_tp4_sharding2")
+        save_dir = os.path.join(self.temp_dir, "hf_checkpoint_tp4_sharding2")
         os.makedirs(save_dir, exist_ok=True)
         
         if rank == 0:
@@ -326,8 +325,7 @@ class TestHFFormatSaverTP4Sharding2(TestMultipleGpus):
                 memory_growth_threshold=1 * 1024**3,
             )
             
-            # save_dir = os.path.join(self.temp_dir, f"test_shard_{shard_size}")
-            save_dir = os.path.join('./checkpoint2', f"test_shard_{shard_size}")
+            save_dir = os.path.join(self.temp_dir, f"test_shard_{shard_size}")
             os.makedirs(save_dir, exist_ok=True)
             
             total_size = saver.save_checkpoint(save_dir, max_shard_size=shard_size)
