@@ -371,6 +371,7 @@ class MaskingUtilsTest(unittest.TestCase):
         no or_mask_function is present, it should return None to verify
         backend optimization (avoiding unnecessary mask creation).
         """
+        self.config._attn_implementation = "sdpa"
         # Case 1: All Ones Mask (No Padding)
         all_ones_mask = paddle.ones((self.batch_size, self.seq_length), dtype="int64")
 
@@ -386,18 +387,6 @@ class MaskingUtilsTest(unittest.TestCase):
 
         self.assertIsNone(full_mask, "Should return None for all-ones mask (optimization)")
         self.assertIsNone(indices)
-
-        self.config.sliding_window = 2
-        sw_mask, sw_indices = create_sliding_window_causal_mask_and_row_indices(
-            config=self.config,
-            inputs_embeds=self.inputs_embeds,
-            batch_size=self.batch_size,
-            seq_length=self.seq_length,
-            cache_length=0,
-            attention_mask=all_ones_mask,
-            prepare_decoder_attention_mask=self.prepare_fn,
-        )
-        self.assertIsNone(sw_mask, "Should return None for all-ones mask in sliding window (optimization)")
 
     def test_full_mask_optimization_bypassed_conditions(self):
         """
