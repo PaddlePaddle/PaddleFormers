@@ -423,20 +423,6 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
         outs["position_ids"] = np.array(outs["position_ids"], dtype=np.int64)
         return outs
 
-    def batch_decode(self, *args, **kwargs):
-        """
-        This method forwards all its arguments to Ernie4_5_VLTokenizer's [`~PreTrainedTokenizer.batch_decode`]. Please
-        refer to the docstring of this method for more information.
-        """
-        return self.tokenizer.batch_decode(*args, **kwargs)
-
-    def decode(self, *args, **kwargs):
-        """
-        This method forwards all its arguments to Ernie4_5_VLTokenizer's [`~PreTrainedTokenizer.decode`].
-        Please refer to the docstring of this method for more information.
-        """
-        return self.tokenizer.decode(*args, **kwargs)
-
     @property
     def model_input_names(self):
         """get model input names"""

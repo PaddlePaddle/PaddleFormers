@@ -57,5 +57,21 @@ class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
         decode_text = tokenizer.decode(output_dict["input_ids"], skip_special_tokens=True)
         self.assertEqual(text, decode_text)
 
+    @set_proxy(DownloadSource.AISTUDIO)
+    def test_special_token(self):
+        tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
+            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
+        )
+
+        self.assertEqual(tokenizer.space_token, "<mask:1>")
+        self.assertEqual(tokenizer.space_token_id, 100274)
+        self.assertEqual(tokenizer.gend_token, "<mask:7>")
+        self.assertEqual(tokenizer.gend_token_id, 100280)
+        self.assertEqual(tokenizer.im_start_id, 101304)
+        self.assertEqual(tokenizer.im_end_id, 101305)
+
+        vocab = tokenizer.get_vocab()
+        self.assertTrue("<|IMAGE_PLACEHOLDER|>" in vocab)
+
 
 Ernie4_5_VL_TokenizationTest().test_slow_tokenizer_from_pretrained()

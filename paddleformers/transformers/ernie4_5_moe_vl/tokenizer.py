@@ -115,12 +115,12 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
     @property
     def im_start_id(self):
         """Return the ID of the image start token"""
-        return self.sp_model.piece_to_id("<|im_start|>")
+        return self.encode("<|IMAGE_START|>")[0]
 
     @property
     def im_end_id(self):
         """Return the ID of the image end token"""
-        return self.sp_model.piece_to_id("<|im_end|>")
+        return self.encode("<|IMAGE_END|>")[0]
 
     @property
     def vocab_size(self):
