@@ -29,8 +29,8 @@ from paddleformers.transformers import (
     Qwen2_5_VLModel,
     process_vision_info,
 )
-
-# from paddleformers.transformers.video_utils import load_video
+from paddleformers.transformers.video_utils import load_video
+from paddleformers.utils.log import logger
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -554,265 +554,270 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
         ]
         self.image, _ = process_vision_info(self.messages)
 
-    # def test_model_tiny_logits(self):
-    #     text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
+    def test_model_tiny_logits(self):
+        text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
 
-    #     inputs = self.processor(text=[text], images=self.image, return_tensors="pd")
+        inputs = self.processor(text=[text], images=self.image, return_tensors="pd")
 
-    #     EXPECTED_INPUT_IDS = paddle.to_tensor(
-    #         [
-    #             151644,
-    #             8948,
-    #             198,
-    #             2610,
-    #             525,
-    #             264,
-    #             10950,
-    #             17847,
-    #             13,
-    #             151645,
-    #             198,
-    #             151644,
-    #             872,
-    #             198,
-    #             151652,
-    #             151655,
-    #             151655,
-    #         ]
-    #     )
-    #     self.assertTrue(paddle.allclose(EXPECTED_INPUT_IDS, inputs.input_ids[0][:17]))
+        EXPECTED_INPUT_IDS = paddle.to_tensor(
+            [
+                151644,
+                8948,
+                198,
+                2610,
+                525,
+                264,
+                10950,
+                17847,
+                13,
+                151645,
+                198,
+                151644,
+                872,
+                198,
+                151652,
+                151655,
+                151655,
+            ]
+        )
+        self.assertTrue(paddle.allclose(EXPECTED_INPUT_IDS, inputs.input_ids[0][:17]))
 
-    #     EXPECTED_PIXEL_SLICE = paddle.to_tensor(
-    #         [
-    #             [-0.80660772, -0.92666984, -1.04673207],
-    #             [-1.01671648, -1.03172433, -1.00170875],
-    #             [-1.04673207, -1.00170875, -0.97169322],
-    #             [-0.85163099, -0.74657661, -0.88164657],
-    #             [-0.98670095, -0.74657661, -0.88164657],
-    #             [-0.71656108, -0.77659214, -0.79159987],
-    #         ],
-    #     )
-    #     self.assertTrue(
-    #         paddle.allclose(EXPECTED_PIXEL_SLICE, inputs.pixel_values[3000:3006, 650:653], atol=5e-4, rtol=1e-5)
-    #     )
+        EXPECTED_PIXEL_SLICE = paddle.to_tensor(
+            [
+                [-0.80660772, -0.92666984, -1.04673207],
+                [-1.01671648, -1.03172433, -1.00170875],
+                [-1.04673207, -1.00170875, -0.97169322],
+                [-0.85163099, -0.74657661, -0.88164657],
+                [-0.98670095, -0.74657661, -0.88164657],
+                [-0.71656108, -0.77659214, -0.79159987],
+            ],
+        )
+        self.assertTrue(
+            paddle.allclose(EXPECTED_PIXEL_SLICE, inputs.pixel_values[3000:3006, 650:653], atol=5e-4, rtol=1e-5)
+        )
 
-    #     output = self.model(**inputs)["logits"].astype(paddle.float32)
-    #     EXPECTED_SLICE = paddle.to_tensor(
-    #         [
-    #             -0.77343750,
-    #             -0.92968750,
-    #             0.06835938,
-    #             0.36328125,
-    #             0.45117188,
-    #             0.25976562,
-    #             -0.02124023,
-    #             1.26562500,
-    #             0.15917969,
-    #             -0.01965332,
-    #             0.94921875,
-    #             -0.50000000,
-    #             0.65234375,
-    #             0.59375000,
-    #             -0.32226562,
-    #             0.73828125,
-    #             0.26562500,
-    #             -0.08349609,
-    #             -0.04418945,
-    #             -0.11035156,
-    #             0.17773438,
-    #             -0.82421875,
-    #             -0.58984375,
-    #             0.02709961,
-    #             -0.07861328,
-    #             -0.34570312,
-    #             0.00823975,
-    #             -0.27734375,
-    #             0.10742188,
-    #             0.34765625,
-    #         ]
-    #     )
-    #     self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=5e-4, rtol=1e-5))
+        output = self.model(**inputs)["logits"].astype(paddle.float32)
+        EXPECTED_SLICE = paddle.to_tensor(
+            [
+                0.00190364,
+                0.03592115,
+                -0.04341580,
+                0.01197994,
+                -0.00921174,
+                0.03796646,
+                -0.02577838,
+                -0.00522765,
+                -0.04814868,
+                -0.00298906,
+                -0.01993857,
+                0.00585408,
+                -0.07494697,
+                0.03194539,
+                0.00491890,
+                -0.02527998,
+                -0.05927889,
+                0.00743866,
+                0.05651516,
+                -0.02403277,
+                -0.03493933,
+                -0.00822193,
+                0.02282976,
+                -0.00512971,
+                -0.05163056,
+                -0.05414432,
+                -0.03009898,
+                -0.06347255,
+                -0.04479685,
+                0.0384893,
+            ]
+        )
+        logger.info(f"Output logits slice1:\n{output[0, 0, :30]}")
+        self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=5e-4, rtol=1e-5))
 
-    # def test_model_tiny_logits_batch(self):
-    #     text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
+    def test_model_tiny_logits_batch(self):
+        text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
 
-    #     inputs = self.processor(text=[text, text], images=[self.image, self.image], return_tensors="pd")
+        inputs = self.processor(text=[text, text], images=[self.image, self.image], return_tensors="pd")
 
-    #     output = self.model(**inputs)["logits"].astype(paddle.float32)
-    #     EXPECTED_SLICE = paddle.to_tensor(
-    #         [
-    #             -0.77343750,
-    #             -0.92968750,
-    #             0.06835938,
-    #             0.36328125,
-    #             0.45117188,
-    #             0.25976562,
-    #             -0.02124023,
-    #             1.26562500,
-    #             0.15917969,
-    #             -0.01965332,
-    #             0.94921875,
-    #             -0.50000000,
-    #             0.65234375,
-    #             0.59375000,
-    #             -0.32226562,
-    #             0.73828125,
-    #             0.26562500,
-    #             -0.08349609,
-    #             -0.04418945,
-    #             -0.11035156,
-    #             0.17773438,
-    #             -0.82421875,
-    #             -0.58984375,
-    #             0.02709961,
-    #             -0.07861328,
-    #             -0.34570312,
-    #             0.00823975,
-    #             -0.27734375,
-    #             0.10742188,
-    #             0.34765625,
-    #         ]
-    #     )
-    #     self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
-    #     self.assertTrue(paddle.allclose(output[1, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        output = self.model(**inputs)["logits"].astype(paddle.float32)
+        EXPECTED_SLICE = paddle.to_tensor(
+            [
+                0.00190364,
+                0.03592116,
+                -0.04341583,
+                0.01197995,
+                -0.00921174,
+                0.03796645,
+                -0.02577836,
+                -0.00522765,
+                -0.04814871,
+                -0.00298906,
+                -0.01993856,
+                0.00585408,
+                -0.07494697,
+                0.03194538,
+                0.00491889,
+                -0.02527997,
+                -0.05927888,
+                0.00743864,
+                0.05651516,
+                -0.02403277,
+                -0.03493932,
+                -0.00822193,
+                0.02282976,
+                -0.00512972,
+                -0.05163061,
+                -0.05414433,
+                -0.03009899,
+                -0.06347256,
+                -0.04479686,
+                0.03848937,
+            ]
+        )
+        logger.info(f"Output logits slice2:\n{output[0, 0, :30]}")
+        self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(output[1, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
-    # def test_model_tiny_logits_batch_wo_image(self):
-    #     text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
-    #     messages2 = [
-    #         {"role": "system", "content": "You are a helpful assistant."},
-    #         {"role": "user", "content": "Who are you?"},
-    #     ]
-    #     text2 = self.processor.apply_chat_template(messages2, tokenize=False, add_generation_prompt=True)
-    #     inputs = self.processor(text=[text, text2], images=[self.image], padding=True, return_tensors="pd")
+    def test_model_tiny_logits_batch_wo_image(self):
+        text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
+        messages2 = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Who are you?"},
+        ]
+        text2 = self.processor.apply_chat_template(messages2, tokenize=False, add_generation_prompt=True)
+        inputs = self.processor(text=[text, text2], images=[self.image], padding=True, return_tensors="pd")
 
-    #     output = self.model(**inputs)["logits"].astype(paddle.float32)
-    #     EXPECTED_SLICE_1 = paddle.to_tensor(
-    #         [
-    #             -0.27734375,
-    #             0.43750000,
-    #             -0.10595703,
-    #             -1.35156250,
-    #             0.49023438,
-    #             -0.83984375,
-    #             0.54296875,
-    #             0.30468750,
-    #             0.71093750,
-    #             0.00373840,
-    #             0.16699219,
-    #             0.11376953,
-    #             -0.26171875,
-    #             -0.32226562,
-    #             -0.61718750,
-    #             0.25195312,
-    #             0.03344727,
-    #             -0.36132812,
-    #             -0.13574219,
-    #             -0.18847656,
-    #             0.27343750,
-    #             -0.17480469,
-    #             -0.06738281,
-    #             0.41601562,
-    #             0.29101562,
-    #             0.31250000,
-    #             0.45312500,
-    #             -0.27929688,
-    #             0.61718750,
-    #             -0.60937500,
-    #         ]
-    #     )
-    #     EXPECTED_SLICE_2 = paddle.to_tensor(
-    #         [
-    #             -0.26953125,
-    #             -0.67578125,
-    #             0.07421875,
-    #             -0.05249023,
-    #             -0.53515625,
-    #             -0.46679688,
-    #             0.01470947,
-    #             -0.23828125,
-    #             0.73828125,
-    #             0.26171875,
-    #             -0.12011719,
-    #             -0.11376953,
-    #             -0.69531250,
-    #             -0.68750000,
-    #             0.45312500,
-    #             0.03442383,
-    #             0.17480469,
-    #             -0.11718750,
-    #             0.56640625,
-    #             0.46679688,
-    #             -0.10400391,
-    #             0.06787109,
-    #             0.69140625,
-    #             0.23730469,
-    #             0.10498047,
-    #             -0.83593750,
-    #             0.67968750,
-    #             0.33984375,
-    #             0.92968750,
-    #             0.32617188,
-    #         ]
-    #     )
-    #     self.assertTrue(paddle.allclose(output[0, 1000, 10000:10030], EXPECTED_SLICE_1, atol=1e-3, rtol=1e-3))
-    #     self.assertTrue(paddle.allclose(output[1, 1000, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
+        output = self.model(**inputs)["logits"].astype(paddle.float32)
+        EXPECTED_SLICE_1 = paddle.to_tensor(
+            [
+                -0.00971607,
+                0.05542037,
+                0.04857498,
+                -0.02091954,
+                0.06864400,
+                -0.03543113,
+                0.01865600,
+                0.00045855,
+                -0.03756892,
+                -0.04998226,
+                -0.03923185,
+                0.03839054,
+                -0.01160016,
+                0.06611865,
+                -0.01678847,
+                0.02508730,
+                0.02074671,
+                0.03335522,
+                -0.01111538,
+                -0.01246256,
+                0.04928322,
+                0.04211595,
+                0.06305327,
+                -0.05337471,
+                -0.03865834,
+                0.01014945,
+                0.05330236,
+                -0.01990593,
+                0.11149905,
+                -0.01333437,
+            ]
+        )
+        EXPECTED_SLICE_2 = paddle.to_tensor(
+            [
+                0.02815475,
+                -0.01576233,
+                0.00450739,
+                -0.02225647,
+                0.00621553,
+                0.03126645,
+                0.07959020,
+                0.06999812,
+                0.04361036,
+                -0.02026659,
+                0.02590707,
+                0.00297066,
+                0.04389704,
+                -0.00458416,
+                0.06226203,
+                0.04485300,
+                -0.01334734,
+                0.01592915,
+                -0.00583891,
+                0.05962470,
+                -0.03245433,
+                0.01494119,
+                -0.00826432,
+                -0.00449095,
+                0.06402205,
+                -0.00996663,
+                0.01484825,
+                -0.02389973,
+                -0.00386393,
+                0.05480766,
+            ]
+        )
+        logger.info(f"Output logits slice3:\n{output[0, 1000, 10000:10030]}")
+        logger.info(f"Output logits slice4:\n{output[1, 1000, 10000:10030]}")
+        self.assertTrue(paddle.allclose(output[0, 1000, 10000:10030], EXPECTED_SLICE_1, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(output[1, 1000, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
 
-    # def test_model_tiny_logits_with_video(self):
-    #     video_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
-    #     messages2 = [
-    #         {
-    #             "role": "user",
-    #             "content": [
-    #                 {
-    #                     "type": "video",
-    #                 },
-    #                 {"type": "text", "text": "Describe this video."},
-    #             ],
-    #         }
-    #     ]
-    #     text = self.processor.apply_chat_template(messages2, tokenize=False, add_generation_prompt=True)
-    #     video = load_video(video_url)[0][:3, ::4, ::4]  # Only the first 3 frames for testing
+    def test_model_tiny_logits_with_video(self):
+        video_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
+        messages2 = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "video",
+                    },
+                    {"type": "text", "text": "Describe this video."},
+                ],
+            }
+        ]
+        text = self.processor.apply_chat_template(messages2, tokenize=False, add_generation_prompt=True)
+        video = load_video(video_url)[0][:3, ::4, ::4]  # Only the first 3 frames for testing
 
-    #     inputs = self.processor(
-    #         text=[text], videos=video, return_tensors="pd", do_normalize=False
-    #     )  # Disable normalize to avoid unit test issue
+        inputs = self.processor(
+            text=[text], videos=video, return_tensors="pd", do_normalize=False
+        )  # Disable normalize to avoid unit test issue
 
-    #     output = self.model(**inputs)["logits"].astype(paddle.float32)
-    #     EXPECTED_SLICE = paddle.to_tensor(
-    #         [
-    #             -0.42773438,
-    #             -0.10546875,
-    #             0.32812500,
-    #             0.66015625,
-    #             0.06396484,
-    #             -0.14062500,
-    #             0.08740234,
-    #             -0.02307129,
-    #             -0.05517578,
-    #             0.55468750,
-    #             0.23632812,
-    #             -0.40429688,
-    #             0.27929688,
-    #             0.06298828,
-    #             0.13281250,
-    #             -0.64843750,
-    #             -0.49218750,
-    #             -0.23242188,
-    #             -0.46093750,
-    #             -0.14746094,
-    #             -0.30078125,
-    #             -0.05908203,
-    #             0.09863281,
-    #             -0.54687500,
-    #             -0.27343750,
-    #             -0.33593750,
-    #             0.43554688,
-    #             0.34960938,
-    #             -0.10205078,
-    #             1.13281250,
-    #         ]
-    #     )
-    #     self.assertTrue(paddle.allclose(output[0, 150, 10000:10030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        output = self.model(**inputs)["logits"].astype(paddle.float32)
+        EXPECTED_SLICE = paddle.to_tensor(
+            [
+                -0.02633137,
+                -0.04612442,
+                0.00469637,
+                -0.01361415,
+                0.03280038,
+                -0.03935526,
+                0.07284112,
+                0.05291817,
+                -0.07852594,
+                -0.04179034,
+                -0.04760805,
+                -0.00471714,
+                -0.00523766,
+                0.00449952,
+                0.06172895,
+                -0.02328227,
+                0.02816464,
+                0.04354570,
+                0.01082543,
+                0.01850530,
+                0.02449479,
+                0.04358618,
+                -0.02710543,
+                0.01480347,
+                0.02714857,
+                0.02346411,
+                0.04314926,
+                0.03883061,
+                0.10793331,
+                -0.06213767,
+            ]
+        )
+        logger.info(f"Output logits slice5:\n{output[0, 150, 10000:10030]}")
+        self.assertTrue(paddle.allclose(output[0, 150, 10000:10030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
 
 class Qwen2_5_VLCompatibilityTest(unittest.TestCase):

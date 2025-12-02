@@ -24,6 +24,7 @@ import paddle
 import paddle.nn as nn
 from paddle.distributed import fleet
 
+from ...transformers.cache_utils import DynamicCache
 from ...transformers.model_utils import (
     _add_variant,
     _load_state_dict_into_model,
@@ -273,8 +274,13 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
 
         if self.postprocess_past_key_value is not None:
             past_key_values = self.postprocess_past_key_value(past_key_values)
-
-        return past_key_values
+        past_key_values_cache = DynamicCache()
+        if isinstance(past_key_values, tuple):
+            for layer_idx, (key_state, value_state) in enumerate(past_key_values):
+                past_key_values_cache.update(key_state, value_state, layer_idx)
+        else:
+            return past_key_values
+        return past_key_values_cache
 
     def train(self):
         self.training = True

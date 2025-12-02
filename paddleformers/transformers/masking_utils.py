@@ -64,6 +64,7 @@ def create_causal_masks_and_row_indices(
 ):
     """
     Prepare causal attention masks and optional start/end row indices for full and sliding attention.
+    This method is retained for compatibility and will be deprecated later
 
     This function handles both:
     1. Pre-computed start/end row indices for optimized attention.
@@ -133,13 +134,18 @@ def create_causal_masks_and_row_indices(
     FLASH_BACKENDS = {"sdpa", "flashmask"}
     attn_impl = getattr(config, "_attn_implementation", "eager")
     is_flash_backend = attn_impl in FLASH_BACKENDS
-    if attention_mask is None and attn_mask_startend_row_indices is None and is_flash_backend:
+    is_fully_attended = attention_mask is None or (attention_mask is not None and attention_mask.cast("bool").all())
+    if is_flash_backend and is_fully_attended:
         if return_mapping:
             causal_mask_mapping = {"full_attention": None, "sliding_attention": None}
             attn_mask_startend_row_indices_mapping = {"full_attention": None, "sliding_attention": None}
             return causal_mask_mapping, attn_mask_startend_row_indices_mapping
         else:
             return None, None
+    # We only return an actual mask if there is at least 1 padding token,
+    # otherwise we return `None` and use `is_causal` in FA2
+    if attention_mask.cast("bool").all():
+        attention_mask = None
 
     seq_length_with_past = seq_length + cache_length
     attention_mask = (
@@ -189,3 +195,148 @@ def create_causal_masks_and_row_indices(
         )
         attn_mask_startend_row_indices = None
         return causal_mask, attn_mask_startend_row_indices
+
+
+def create_causal_mask_and_row_indices(
+    config: PretrainedConfig,
+    inputs_embeds: paddle.Tensor,
+    batch_size: int,
+    seq_length: int,
+    cache_length: int,
+    attention_mask: Optional[paddle.Tensor] = None,
+    attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+    prepare_decoder_attention_mask: Optional[Callable] = None,
+    or_mask_function: Optional[Callable] = None,
+):
+    """
+        Prepare causal attention mask and optional start/end row indices for full attention.
+
+        Args:
+            config (`PretrainedConfig`):
+                Model configuration.
+            inputs_embeds (`paddle.Tensor`):
+                Input embeddings of shape `(batch_size, seq_length, hidden_dim)`.
+            batch_size (`int`):
+                Current batch size.
+            seq_length (`int`):
+                Sequence length **excluding** past key-values.
+            cache_length (`int`):
+                Length of cached key-values (past sequence length).
+            attention_mask (`paddle.Tensor`, *optional*):
+                Attention mask of shape `(batch_size, seq_length + cache_length)`. If `None`, a mask of ones is used.
+            attn_mask_startend_row_indices (`paddle.Tensor`, *optional*):
+                Pre-computed start and end row indices for efficient attention. If provided, causal mask is skipped.
+            prepare_decoder_attention_mask (`Callable`, *optional*):
+                Function that creates causal attention masks.
+            or_mask_function (`Callable`, optional):
+                An optional mask function to combine with the causal mask function (by doing the union of both). This is
+                useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
+
+    Returns:
+            Tuple[paddle.Tensor, paddle.Tensor]:
+                - causal_mask: The attention mask for full attention.
+                - attn_mask_startend_row_indices: The row indices for full attention (if applicable).
+    """
+    if attn_mask_startend_row_indices is not None:
+        causal_mask = None
+        row_indices = attn_mask_startend_row_indices
+    else:
+        FLASH_BACKENDS = {"sdpa", "flashmask"}
+        attn_impl = getattr(config, "_attn_implementation", "eager")
+        is_flash_backend = attn_impl in FLASH_BACKENDS
+
+        # Check if the mask can be safely skipped
+        # Condition: Must be Flash Backend AND No extra mask func AND No padding (mask is None or all True)
+        is_fully_attended = attention_mask is None or (
+            attention_mask is not None and attention_mask.cast("bool").all()
+        )
+
+        if is_flash_backend and or_mask_function is None and is_fully_attended:
+            causal_mask = None
+            row_indices = None
+        else:
+            seq_length_with_past = seq_length + cache_length
+            attention_mask = (
+                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
+                if attention_mask is None
+                else attention_mask
+            )
+
+            causal_mask = prepare_decoder_attention_mask(
+                attention_mask=attention_mask,
+                input_shape=(batch_size, seq_length),
+                past_key_values_length=cache_length,
+                dtype=inputs_embeds.dtype,
+                or_mask_function=or_mask_function,
+            )
+            row_indices = None
+
+    return causal_mask, row_indices
+
+
+def create_sliding_window_causal_mask_and_row_indices(
+    config: PretrainedConfig,
+    inputs_embeds: paddle.Tensor,
+    batch_size: int,
+    seq_length: int,
+    cache_length: int,
+    attention_mask: Optional[paddle.Tensor] = None,
+    attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+    prepare_decoder_attention_mask: Optional[Callable] = None,
+    or_mask_function: Optional[Callable] = None,
+):
+    """
+        Prepare causal attention mask and optional start/end row indices for sliding window attention.
+
+        Args:
+            config (`PretrainedConfig`):
+                Model configuration. Must include attributes like `sliding_window`.
+            inputs_embeds (`paddle.Tensor`):
+                Input embeddings of shape `(batch_size, seq_length, hidden_dim)`.
+            batch_size (`int`):
+                Current batch size.
+            seq_length (`int`):
+                Sequence length **excluding** past key-values.
+            cache_length (`int`):
+                Length of cached key-values (past sequence length).
+            attention_mask (`paddle.Tensor`, *optional*):
+                Attention mask of shape `(batch_size, seq_length + cache_length)`. If `None`, a mask of ones is used.
+            attn_mask_startend_row_indices (`paddle.Tensor`, *optional*):
+                Pre-computed start and end row indices. If provided, they are adapted for sliding window.
+            prepare_decoder_attention_mask (`Callable`, *optional*):
+                Function that creates causal attention masks.
+            or_mask_function (`Callable`, optional):
+                An optional mask function to combine with the causal mask function (by doing the union of both). This is
+                useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
+
+    Returns:
+            Tuple[paddle.Tensor, paddle.Tensor]:
+                - causal_mask: The attention mask for sliding attention.
+                - attn_mask_startend_row_indices: The row indices adjusted for sliding window.
+    """
+    sliding_window_val = getattr(config, "sliding_window", None)
+
+    if attn_mask_startend_row_indices is not None:
+        causal_mask = None
+        row_indices = prepare_sliding_window_startend_row_indices(
+            attn_mask_startend_row_indices, window_size=sliding_window_val
+        )
+    else:
+        seq_length_with_past = seq_length + cache_length
+        attention_mask = (
+            paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
+            if attention_mask is None
+            else attention_mask
+        )
+
+        causal_mask = prepare_decoder_attention_mask(
+            attention_mask=attention_mask,
+            input_shape=(batch_size, seq_length),
+            past_key_values_length=cache_length,
+            dtype=inputs_embeds.dtype,
+            sliding_window_size=sliding_window_val,
+            or_mask_function=or_mask_function,
+        )
+        row_indices = None
+
+    return causal_mask, row_indices

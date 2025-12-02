@@ -59,6 +59,7 @@ from glm45_provider import (
     GLM45AirModelDebugProvider,
     GLM45AirModelSingleCardDebugProvider,
 )
+from qwen_provider import Qwen3MoEModelSingleCardProvider
 
 from paddleformers.trainer.utils.doc import add_start_docstrings
 
@@ -516,9 +517,13 @@ def main():
     #    if training_args.bf16:
     #        dtype = "bfloat16"
     if training_args.model_provider_type == "GLM_single_card":
+        training_args.save_checkpoint_format = None
         model_provider = GLM45AirModelSingleCardDebugProvider()
     elif training_args.model_provider_type == "GLM_muiti_cards":
         model_provider = GLM45AirModelDebugProvider()
+    elif training_args.model_provider_type == "qwen_single_card":
+        training_args.save_checkpoint_format = None
+        model_provider = Qwen3MoEModelSingleCardProvider()
     else:
         raise ValueError(f"Unsupported model provider type: {training_args.model_provider_type}")
     model = model_provider.provide()
