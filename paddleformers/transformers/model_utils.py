@@ -70,9 +70,9 @@ from ..quantization.quantization_utils import (
     replace_with_quantization_linear,
     update_loaded_state_dict_keys,
 )
-from ..trainer.trainer_utils import HFFormatFullParamSaver
 from ..quantization.unified_checkpoint_quantization import dequant_unified_optimizer
 from ..trainer.argparser import strtobool
+from ..trainer.trainer_utils import HFFormatFullParamSaver
 from ..utils import device_guard
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.env import (
@@ -1144,8 +1144,9 @@ def _parse_size(size_str: str) -> int:
         # This case should not be reached due to regex
         raise ValueError(f"Unknown unit: '{unit}'")
 
+
 def save_full_param(
-    itr,
+    itr: Iterator[tuple[str, Tensor]],
     save_dir: str,
     rank: int,
     moe_sharding_world_size: int,
@@ -1234,6 +1235,7 @@ def save_full_param(
     logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Saver) All shards saved successfully.")
     return total_size
 
+
 def clean_unrelated_safetensors(save_dir):
     use_dist = True if paddle.distributed.get_world_size() > 1 else False
 
@@ -1312,10 +1314,12 @@ def replace_name_and_gen_index(path, total_size):
         index_infos["weight_map"] = dict(sorted(index_mapping.items()))
         with open(os.path.join(path, index_file_name), "w") as f:
             json.dump(index_infos, f, indent=4)
-            
-        saved_signal_path = os.path.join(path, f"saved_signal_{dist.get_rank()}")
-        with open(saved_signal_path, mode="w+") as f:
-            f.write("1")
+
+        # For PDC signal
+        if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
+            for i in range(paddle.distributed.get_world_size()):
+                saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
+                paddle.save(i, saved_signal_path)
 
 
 def get_common_folder(file_list):
@@ -3241,7 +3245,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
             clean_unrelated_safetensors(save_dir)
 
-            total_saved_size = HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+            total_saved_size = HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(
+                save_dir, max_shard_size
+            )
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:

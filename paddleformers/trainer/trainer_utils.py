@@ -49,17 +49,11 @@ from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_sta
 )
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
-from safetensors import safe_open
-from safetensors.paddle import save_file
 from transformers.tokenization_utils_base import BatchEncoding
 
 from ..ops import Topology
 from ..trainer.argparser import strtobool
-from ..transformers.model_utils import (
-    _parse_size,
-    replace_name_and_gen_index,
-    save_full_param,
-)
+from ..transformers.model_utils import replace_name_and_gen_index, save_full_param
 from ..utils.env import PREFIX_CHECKPOINT_DIR, _re_checkpoint  # noqa for compatibility
 from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
 from ..utils.import_utils import is_paddle_cuda_available, is_psutil_available
@@ -1542,7 +1536,7 @@ class HFFormatFullParamSaver:
         shard_idx=None,
         saved_in_one_node=False,
         memory_growth_threshold=8 * (2**30),
-        horizontal_sharding=True
+        horizontal_sharding=True,
     ):
         self.model = model
         self.aoa_config = aoa_config
@@ -1566,7 +1560,7 @@ class HFFormatFullParamSaver:
         if self.v_group and self.h_group:
             assert self.shard_idx is not None, "expected shard_idx is not None"
             assert self.num_splits is not None, "expected num_splits is not None"
-            
+
             param_iter = self.model.full(
                 aoa_config=self.aoa_config,
                 h_group=self.h_group,
@@ -1576,7 +1570,9 @@ class HFFormatFullParamSaver:
                 memory_growth_threshold=self.memory_growth_threshold,
             )
         else:
-            param_iter = self.model.full(aoa_config=self.aoa_config, memory_growth_threshold=self.memory_growth_threshold)
+            param_iter = self.model.full(
+                aoa_config=self.aoa_config, memory_growth_threshold=self.memory_growth_threshold
+            )
         return param_iter
 
     def determin_saver_based_group(self):
