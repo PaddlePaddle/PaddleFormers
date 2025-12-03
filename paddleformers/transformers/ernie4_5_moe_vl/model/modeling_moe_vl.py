@@ -911,14 +911,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             f"vision_model.ln.weight -> {visual_prefix}ln.weight",
         ]
 
-        # aoa_config["aoa_statements"] += [
-        #     f"{'model.embed_tokens.weight' if config.tie_word_embeddings else 'lm_head.weight'} -> lm_head.weight",
-        # ]
-        # aoa_config["aoa_statements"] += [
-        #     f"lm_head.weight -> lm_head.weight",
-        # ]
         aoa_config["aoa_statements"] += [
-            "model.embed_tokens.weight -> lm_head.weight",
+            f"{'model.embed_tokens.weight' if config.tie_word_embeddings else 'lm_head.weight^T'} -> lm_head.weight",
         ]
 
         return aoa_config
@@ -987,11 +981,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             f"{visual_prefix}ln.weight -> vision_model.ln.weight",
         ]
 
-        # aoa_config["aoa_statements"] += [
-        #     f"lm_head.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
-        # ]
         aoa_config["aoa_statements"] += [
-            "lm_head.weight -> lm_head.weight",
+            f"{f'lm_head.weight' if config.tie_word_embeddings else 'lm_head.weight^T'} -> lm_head.weight",
         ]
 
         return aoa_config
