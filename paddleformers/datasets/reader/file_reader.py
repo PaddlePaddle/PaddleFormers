@@ -20,7 +20,7 @@ from paddle.io import IterableDataset
 
 from paddleformers.utils.log import logger
 
-from .convertor import erniekit_convertor, messages_convertor, query_response_convertor
+from .convertor import erniekit_convertor, messages_convertor
 from .download_manager import HuggingFaceDownload
 from .io import load_csv, load_json, load_jsonl, load_parquet, load_txt
 
@@ -47,7 +47,6 @@ class BaseReader(IterableDataset):
         self.convertor_map = {
             "erniekit": erniekit_convertor,
             "messages": messages_convertor,
-            "query_response": query_response_convertor,
         }
 
 
@@ -62,18 +61,20 @@ class FileReader(BaseReader):
 
         # load file
         if ext not in self.loader_map:
-            raise ValueError(f"Unsupported file extension: {ext}")
+            raise ValueError(f"Unsupported file extension: {ext}. Supported extension are: {self.loader_map.keys()}")
         res = self.loader_map[ext](self._file_path)
 
         # data preprocess
         if self._file_type not in self.convertor_map:
-            raise ValueError(f"Unsupported file type: {self._file_type}")
+            raise ValueError(
+                f"Unsupported file type: {self._file_type}. Supported types are: {self.convertor_map.keys()}"
+            )
         for item in res:
             try:
                 convert_data = self.convertor_map[self._file_type](item)
                 checked_data = self.data_check(convert_data)
             except Exception:
-                logger.warning("preprocess data error, data : ", item)
+                logger.warning(f"preprocess data error, data : {item}")
                 continue
             if not checked_data:
                 # ignore invalid example
@@ -131,8 +132,8 @@ class FileListReader(BaseReader):
     def __iter__(self):
         for file_path in self._get_files():
             # all files under the path must be of the same data type
-            reader = FileReader(file_path, self._file_type, self._shuffle_file)
-            yield reader
+            reader = FileReader(file_path, self._file_type, self._shuffle_file, self._split_multi_turn)
+            yield from reader
 
     def _get_files(self):
         files = []
@@ -156,9 +157,9 @@ class HuggingFaceReader(BaseReader):
         config_map = get_hf_dataset_config(file_path)
         if config_map is not None:
             # download hf dataset
-            HuggingFaceDownload(file_path)
-            # read hf data file
             download_dir = os.path.join(DATASET_DOWNLOAD_ROOT, file_path)
+            HuggingFaceDownload(file_path, download_dir)
+            # read hf data file
             file_name = config_map.get("file_name", "")
             download_file_path = os.path.join(download_dir, file_name)
             download_file_type = config_map.get("formatting", file_type)
@@ -168,9 +169,8 @@ class HuggingFaceReader(BaseReader):
                 )
             else:
                 self.file_reader = FileReader(download_file_path, download_file_type, shuffle_file, split_multi_turn)
-            self.file_reader.__init__()
         else:
             raise ValueError(f"Unsupported huggingface dataset {file_path}")
 
-    def read(self):
-        return self.file_reader.read()
+    def __iter__(self):
+        yield from self.file_reader

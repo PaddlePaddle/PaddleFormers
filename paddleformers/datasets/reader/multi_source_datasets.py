@@ -92,7 +92,7 @@ class MultiSourceDataset(IterableDataset):
         # filter zero probability task
         tasks = [task for task in tasks if task["prob"] > 0]
         self._task_group = tasks
-        supported_type = ["erniekit", "messages", "query-response"]
+        supported_type = ["erniekit", "messages"]
         for idx, task in enumerate(self._task_group):
             each_sub_dataset_type = sub_dataset_type[idx]
             if get_hf_dataset_config(task["filepath"]) is not None:

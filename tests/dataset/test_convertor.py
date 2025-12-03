@@ -17,6 +17,7 @@ import unittest
 from paddleformers.datasets.reader.convertor import (
     convert_dpo_txt_data,
     convert_mm_data,
+    convert_pretraining_data,
     convert_txt_data,
     erniekit_convertor,
 )
@@ -37,24 +38,18 @@ def make_dpo_txt_data():
         "label": [0, 1],
     }
     output_data = {
-        "chosen": {
-            "messages": [
-                {"role": "system", "content": "系统设定"},
-                {"role": "user", "content": "第一轮输入"},
-                {"role": "assistant", "content": "output for first query"},
-                {"role": "user", "content": "第二轮输入"},
-                {"role": "assistant", "content": "<think>\n我要好好想一想\n</think>\n\n认真回答"},
-            ],
-        },
-        "rejected": {
-            "messages": [
-                {"role": "system", "content": "系统设定"},
-                {"role": "user", "content": "第一轮输入"},
-                {"role": "assistant", "content": "output for first query"},
-                {"role": "user", "content": "第二轮输入"},
-                {"role": "assistant", "content": "<think>\n这个问题我不会\n</think>\n\n错误示范"},
-            ],
-        },
+        "messages": [
+            {"role": "system", "content": "系统设定"},
+            {"role": "user", "content": "第一轮输入"},
+            {"role": "assistant", "content": "output for first query"},
+            {"role": "user", "content": "第二轮输入"},
+        ],
+        "chosen_response": [
+            {"role": "assistant", "content": "<think>\n我要好好想一想\n</think>\n\n认真回答"},
+        ],
+        "rejected_response": [
+            {"role": "assistant", "content": "<think>\n这个问题我不会\n</think>\n\n错误示范"},
+        ],
     }
     return input_data, output_data
 
@@ -173,6 +168,16 @@ def make_mm_data():
     return input_data, output_data
 
 
+def make_pretrain_txt_data():
+    input_data = {"text": ["今天天气真好"]}
+    output_data = {
+        "messages": [
+            {"role": "assistant", "content": "今天天气真好"},
+        ],
+    }
+    return input_data, output_data
+
+
 class TestErniekitConvertor(unittest.TestCase):
     def test_convert_dpo(self):
         input_data, output_data = make_dpo_txt_data()
@@ -213,6 +218,20 @@ class TestErniekitConvertor(unittest.TestCase):
 
     def test_erniekit_convertor_mm(self):
         input_data, output_data = make_mm_data()
+
+        converted_data = erniekit_convertor(input_data)
+
+        self.assertEqual(output_data, converted_data)
+
+    def test_convert_pretrain(self):
+        input_data, output_data = make_pretrain_txt_data()
+
+        converted_data = convert_pretraining_data(input_data)
+
+        self.assertEqual(output_data, converted_data)
+
+    def test_erniekit_convertor_pretrain(self):
+        input_data, output_data = make_pretrain_txt_data()
 
         converted_data = erniekit_convertor(input_data)
 

@@ -256,26 +256,26 @@ def convert_pretraining_data(data):
         if len(item.strip()) == 0:
             raise ValueError("Ignore example with empty string in str / tgt field.")
 
-    if "label" not in data:
-        data["label"] = [1] * len(data["text"])
-
-    # convert to OpenAI format
     data["messages"] = []
     for a in data["text"]:
         data["messages"].append({"role": "assistant", "content": a.strip()})
 
-    res = {"messages": data["messages"], "label": data["label"]}
+    res = {"messages": data["messages"]}
 
     return res
 
 
 def erniekit_convertor(item):
+    # erniekit dpo data
     if "src" in item and "tgt" in item and "response" in item:
         res = convert_dpo_txt_data(item)
+    # erniekit sft data
     elif "src" in item and "tgt" in item:
         res = convert_txt_data(item)
+    # erniekit pretraining data
     elif "text" in item:
         res = convert_pretraining_data(item)
+    # erniekit multi modal data
     else:
         res = convert_mm_data(item)
     return res
@@ -283,25 +283,3 @@ def erniekit_convertor(item):
 
 def messages_convertor(item):
     return item
-
-
-def query_response_convertor(item):
-    res = {}
-    # convert to OpenAI format
-    res["messages"] = []
-    if len(item.get("system", "")) > 0:
-        res["messages"].append({"role": "system", "content": item["system"]})
-    for q, a in item.get("history", []):
-        res["messages"].append({"role": "user", "content": q})
-        res["messages"].append({"role": "assistant", "content": a})
-    res["messages"].append({"role": "user", "content": item.get("query", "")})
-    res["messages"].append({"role": "assistant", "content": item.get("response", "")})
-
-    images = item.get("images", [])
-    videos = item.get("videos", [])
-    if len(images) > 0:
-        res["images"] = images
-    if len(videos) > 0:
-        res["videos"] = videos
-
-    return res

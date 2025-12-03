@@ -26,7 +26,6 @@ import_structure = {
         "convert_pretraining_data",
         "erniekit_convertor",
         "messages_convertor",
-        "query_response_convertor",
     ],
     "download_manager": ["HuggingFaceDownload"],
     "file_reader": ["BaseReader", "FileReader", "FileListReader", "get_hf_dataset_config", "HuggingFaceReader"],
