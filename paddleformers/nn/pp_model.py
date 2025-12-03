@@ -319,6 +319,7 @@ class EmbeddingPipe(nn.Layer):
 
             ret = (emb,)
 
+        ret[0].stop_gradient = False  # 开启lora 防止recompute pylayer因base weight输入没有gradient而报错
         if attention_mask is not None:
             if attention_mask.dtype != paddle.int32:
                 if len(attention_mask.shape) == 2:
