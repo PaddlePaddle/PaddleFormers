@@ -148,7 +148,7 @@ jobs:
 
   upload-coverage:
     needs: unittest-gpu-ci
-    if: ${{ needs.unittest-gpu-ci.outputs.pytest_execute_flag == 'true' }}
+    if: github.event_name == 'pull_request' && hashFiles('coverage.xml') != ''
     runs-on: ubuntu-latest
 
     steps:
