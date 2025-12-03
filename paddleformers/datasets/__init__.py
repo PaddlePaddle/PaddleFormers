@@ -49,6 +49,7 @@ import_structure = {
     ],
     "loader": [
         "create_dataset",
+        "create_indexed_dataset",
     ],
     "DPODataset": ["DPODataSet"],
     "SFTDataset": ["SFTDataSet"],
@@ -56,6 +57,7 @@ import_structure = {
         "convert_dpo_txt_data",
         "convert_txt_data",
         "convert_mm_data",
+        "convert_pretraining_data",
         "erniekit_convertor",
         "messages_convertor",
         "query_response_convertor",
@@ -70,7 +72,7 @@ import_structure = {
         "InterLeaveDataset",
         "create_dataset_instance",
     ],
-    "reader.multi_source_datasets": ["InfiniteDataset", "get_train_args", "MultiSourceDataset"],
+    "reader.multi_source_datasets": ["InfiniteDataset", "MultiSourceDataset"],
     "template.formatter": [
         "Formatter",
         "EmptyFormatter",

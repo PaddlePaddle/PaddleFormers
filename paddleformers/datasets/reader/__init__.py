@@ -23,6 +23,7 @@ import_structure = {
         "convert_dpo_txt_data",
         "convert_txt_data",
         "convert_mm_data",
+        "convert_pretraining_data",
         "erniekit_convertor",
         "messages_convertor",
         "query_response_convertor",
@@ -37,7 +38,7 @@ import_structure = {
         "InterLeaveDataset",
         "create_dataset_instance",
     ],
-    "multi_source_datasets": ["InfiniteDataset", "get_train_args", "MultiSourceDataset"],
+    "multi_source_datasets": ["InfiniteDataset", "MultiSourceDataset"],
 }
 
 if TYPE_CHECKING:
