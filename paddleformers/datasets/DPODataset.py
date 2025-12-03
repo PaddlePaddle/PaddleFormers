@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -183,6 +184,22 @@ class DPODataSet(IterableDataset):
                 left_len_list[max_left_len_index] -= sequence_len
         return sequence_pack
 
+    def _preprocess_dpo_example(self, example):
+
+        chosen_m, rejected_m = deepcopy(example["messages"]), deepcopy(example["messages"])
+        session_start_index = (
+            len(example["messages"]) if example["messages"][0]["role"] != "system" else len(example["messages"]) - 1
+        )
+        chosen_m.extend(example["chosen_response"])
+        rejected_m.extend(example["rejected_response"])
+
+        example["chosen"] = {"messages": chosen_m}
+        example["rejected"] = {"messages": rejected_m}
+        example["session_start_index"] = session_start_index
+        example["score_delta"] = 1.0
+
+        return example
+
     def __postprocess_before_concat(self, example):
         """Process multi-turn conversation data into tokenized sequences with dynamic truncation."""
         prompt_token_ids = []
@@ -296,6 +313,7 @@ class DPODataSet(IterableDataset):
         )
 
     def _postprocess_sequence(self, example):
+        example = self._preprocess_dpo_example(example)
         # sequence: system + knowledge_tokens + prompt + chosen + reject
         (
             prompt_token_ids,

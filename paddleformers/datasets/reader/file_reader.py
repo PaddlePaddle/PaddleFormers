@@ -18,6 +18,8 @@ import os
 
 from paddle.io import IterableDataset
 
+from paddleformers.utils.log import logger
+
 from .convertor import erniekit_convertor, messages_convertor, query_response_convertor
 from .download_manager import HuggingFaceDownload
 from .io import load_csv, load_json, load_jsonl, load_parquet, load_txt
@@ -67,8 +69,12 @@ class FileReader(BaseReader):
         if self._file_type not in self.convertor_map:
             raise ValueError(f"Unsupported file type: {self._file_type}")
         for item in res:
-            convert_data = self.convertor_map[self._file_type](item)
-            checked_data = self.data_check(convert_data)
+            try:
+                convert_data = self.convertor_map[self._file_type](item)
+                checked_data = self.data_check(convert_data)
+            except Exception:
+                logger.warning("preprocess data error, data : ", item)
+                continue
             if not checked_data:
                 # ignore invalid example
                 continue

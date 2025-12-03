@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-from copy import deepcopy
 
 
 def convert_dpo_txt_data(data):
@@ -77,24 +76,19 @@ def convert_dpo_txt_data(data):
         if idx != len(data["src"]) - 1:
             data["messages"].append({"role": "assistant", "content": data["tgt"][idx]})
 
-    chosen_m, rejected_m = data["messages"], deepcopy(data["messages"])
-    session_start_index = (
-        len(data["messages"]) if data["messages"][0]["role"] != "system" else len(data["messages"]) - 1
-    )
+    chosen_response, rejected_response = [], []
     for idx in range(len(chosen)):
         if idx % 2 == 0:
             # assistant
-            chosen_m.append({"role": "assistant", "content": chosen[idx]})
-            rejected_m.append({"role": "assistant", "content": rejected[idx]})
+            chosen_response.append({"role": "assistant", "content": chosen[idx]})
+            rejected_response.append({"role": "assistant", "content": rejected[idx]})
         else:
             # user
-            chosen_m.append({"role": "user", "content": chosen[idx]})
-            rejected_m.append({"role": "user", "content": rejected[idx]})
+            chosen_response.append({"role": "user", "content": chosen[idx]})
+            rejected_response.append({"role": "user", "content": rejected[idx]})
 
-    data["chosen"] = {"messages": chosen_m}
-    data["rejected"] = {"messages": rejected_m}
-    data["session_start_index"] = session_start_index
-    data["score_delta"] = 1.0
+    data["chosen_response"] = chosen_response
+    data["rejected_response"] = rejected_response
     return data
 
 
