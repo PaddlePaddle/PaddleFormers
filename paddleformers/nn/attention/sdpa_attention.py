@@ -41,6 +41,7 @@ def sdpa_attention_forward(
     if is_causal is None and attn_mask_startend_row_indices is None:
         is_causal = query.shape[1] > 1 and attention_mask is None and getattr(module, "is_causal", True)
     elif attn_mask_startend_row_indices is not None:
+        is_causal = False
         if attn_mask_startend_row_indices.ndim == 3:
             attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
         if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
