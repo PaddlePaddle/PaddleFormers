@@ -114,10 +114,7 @@ except:
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..transformers.context_parallel_utils import (
-    auto_split_sequence_dim_load_balance,
-    split_inputs_sequence_dim_load_balance,
-)
+from ..transformers.context_parallel_utils import auto_split_sequence_dim_load_balance
 from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
     PretrainedModel,
