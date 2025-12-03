@@ -305,7 +305,8 @@ class TrainingArguments:
         refined_recompute (`str`, *optional*, defaults to `""`):
             The refined recompute parameter is designed to optimize the balance between GPU memory usage and computational speed.
             An example configuration could be: `attention_column_ln:-1,attention_row_ln:-1,flash_attn:-1,mlp_column_ln:5,mlp_row_ln:-1`.
-            The supported parameters for refining recompute are `attention_column_ln`, `attention_row_ln`, `flash_attn`, `mlp_column_ln`, and `mlp_row_ln`.
+            The supported parameters for refining recompute are `attention_column_ln`, `attention_row_ln`, `flash_attn`, `mlp_column_ln`, `mlp_row_ln`, and `global`.
+                -`global`: global configuration that applies to ALL operators.
             The associated number, `skip_num`, determines how many times to bypass recomputation for the specified operation.
             A `skip_num` of `-1` indicates no recomputation across all stages, maximizing memory usage;
             A `skip_num` of `0` enforces recomputation at every stage, minimizing memory usage.
@@ -1347,6 +1348,7 @@ class TrainingArguments:
                 logger.warning("set amp_master_grad to false since amp is disabled.")
                 self.amp_master_grad = False
 
+        self.use_paddlefleet = False
         # use_hybrid_parallel
         if self.use_hybrid_parallel:
 
@@ -1748,6 +1750,13 @@ class TrainingArguments:
                     strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
 
                 fleet.init(is_collective=True, strategy=strategy)
+
+                # In PaddleFleet, we should use the following code to initialize.
+
+                if self.use_paddlefleet:
+                    from paddlefleet.training.initialize import initialize_fleet
+
+                    initialize_fleet(strategy)
                 logger.info(strategy)
 
                 if self.reorder_pipeline_priority:
@@ -1994,6 +2003,21 @@ class TrainingArguments:
                         fleet.init(is_collective=True, strategy=strategy)
                     else:
                         paddle.distributed.init_parallel_env()
+            if world_size == 1 and self.use_paddlefleet:
+                single_card_strategy = fleet.DistributedStrategy()
+                single_card_strategy.hybrid_configs = {
+                    "dp_degree": 1,
+                    "mp_degree": 1,
+                    "pp_degree": 1,
+                    "sharding_degree": 1,
+                    "sep_degree": 1,
+                    "cp_degree": 1,
+                    "ep_degree": 1,
+                    "moe_sharding_degree": 1,
+                }
+                from paddlefleet.training.initialize import initialize_fleet
+
+                initialize_fleet(single_card_strategy)
 
         if (
             self.unified_checkpoint
@@ -2083,6 +2107,7 @@ class TrainingArguments:
                 "attention_column_ln": 0,
                 "mlp_column_ln": 0,
                 "flash_attn": 0,
+                "global": 0,
             }
             ops = self.refined_recompute.split(",")
             enable_rr = False
@@ -2674,7 +2699,7 @@ class TrainingArguments:
         return (
             ShardingOption.SHARD_OP in self.sharding
             and self.sharding_parallel_degree > 1
-            and self.save_checkpoint_format == "sharding_io"
+            and (self.save_checkpoint_format == "sharding_io" or self.save_checkpoint_format == "flex_checkpoint")
         )
 
     @property

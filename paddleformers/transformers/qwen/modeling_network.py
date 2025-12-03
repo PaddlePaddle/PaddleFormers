@@ -151,11 +151,7 @@ class QWenAttentionNet(nn.Layer):
                 )
             else:
                 attn_output = F.scaled_dot_product_attention(
-                    query,
-                    key,
-                    value,
-                    attn_mask=attention_mask,
-                    is_causal=attention_mask is None,
+                    query, key, value, attn_mask=attention_mask, is_causal=attention_mask is None, enable_gqa=True
                 )
                 attn_weights = None
             return attn_output, attn_weights

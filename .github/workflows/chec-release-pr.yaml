@@ -1,0 +1,45 @@
+name: Check Release PR
+
+on:
+  pull_request:
+    branches:
+      - 'release/*'
+    types:
+      - opened
+      - edited
+      - synchronize
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if PR description contains dev PR link
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          echo "Checking PR body: $PR_BODY"
+          if ! echo "$PR_BODY" | grep -Eqi "dev.*#([0-9]+)"; then
+            echo "::error::PR must include a link to merged PR in dev branch (e.g., 'Merged in dev: #1234')"
+            exit 1
+          fi
+          echo "Dev PR link found"
+
+      - name: Check the referenced PR is merged into dev
+        run: |
+          DEV_PR=$(echo "${{ github.event.pull_request.body }}" | grep -Eo "#[0-9]+" | head -1 | tr -d "#")
+          echo "Found dev PR: $DEV_PR"
+
+          if [ -z "$DEV_PR" ]; then
+            echo "::error::No valid PR number found"
+            exit 1
+          fi
+
+          STATUS=$(gh pr view $DEV_PR --json state --jq .state)
+          echo "Dev PR status: $STATUS"
+
+          if [ "$STATUS" != "MERGED" ]; then
+            echo "::error::The referenced dev PR (#$DEV_PR) is not merged yet"
+            exit 1
+          fi
+
+          echo "Dev PR merged. Validation completed."

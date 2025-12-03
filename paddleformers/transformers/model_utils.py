@@ -26,7 +26,6 @@ import tempfile
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
-from copy import deepcopy
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
@@ -121,7 +120,7 @@ __all__ = [
 
 def fit_bf16_to_uint16_np(tensor):
     if "xpu" in paddle.device.get_device() and isinstance(tensor, np.ndarray) and str(tensor.dtype) == "bfloat16":
-        return tensor.astype("uint16")
+        return tensor.view("uint16")
     return tensor
 
 
@@ -1178,6 +1177,10 @@ def save_full_param(
         logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Consuming iterator for synchronization...")
         for _ in itr:
             pass
+
+        if use_dist:
+            dist.barrier()
+
         logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Iterator consumption complete.")
         return
 
@@ -1370,6 +1373,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
     # trained, but which are either deterministic or tied variables)
     _keys_to_ignore_on_save = None
     _tied_weights_keys = None
+
+    # Attributes used mainly in multimodal LLMs, though all models contain a valid field for these
+    # Possible values are: text, image, video
+    input_modalities: Union[str, list[str]] = "text"  # most models are text
 
     def __init__(self, *args, **kwargs):
         super(PretrainedModel, self).__init__()
@@ -1698,20 +1705,19 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         Raises:
             NotImplementedError: Model has not implement `set_input_embeddings` method
         """
-        base_model = getattr(self, self.base_model_prefix, None)
-
         name = getattr(self, "_input_embed_layer", "embed_tokens")
-        if base_model is not None and hasattr(base_model, name):
-            setattr(base_model, name, value)
+        if hasattr(self, "model") and hasattr(self.model, name):
+            setattr(self.model, name, value)
         # 2) as well as vanilla decoder‑only architectures
         elif hasattr(self, name):
             setattr(self, name, value)
-        elif base_model is not None:
+        # 3) recurse once into the registered *base* model (e.g. for encoder/decoder)
+        elif getattr(self, self.base_model_prefix, self) is not self:
+            base_model = getattr(self, self.base_model_prefix, self)
             base_model.set_input_embeddings(value)
         else:
             raise NotImplementedError(
-                f"model of {type(base_model)} has not implemented the `get_input_embeddings`"
-                " or `set_input_embeddings` method"
+                f"`set_input_embeddings` not auto‑handled for {self.__class__.__name__}; please override in the subclass."
             )
 
     def get_output_embeddings(self) -> Optional[Embedding]:
@@ -1979,7 +1985,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         self.set_input_embeddings(new_embeddings)
 
         # 2. Update vocab_size
-        self.base_model.config["vocab_size"] = new_num_tokens
+        self.config.get_text_config()["vocab_size"] = new_num_tokens
         self.vocab_size = new_num_tokens
 
         # update init_config
@@ -2412,6 +2418,23 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 origin_expected_keys = [k.replace("quant_weight", "weight") for k in expected_keys]
                 expected_keys_set = set(expected_keys + origin_expected_keys)
 
+            # Add original (pre-fuse) keys so that shards containing q/k/v or gate/up are not skipped
+            try:
+                fuse_actions, _ = cls.get_fuse_or_split_param_convert_actions(
+                    config, loaded_keys, is_fuse=True, ignore_error=True
+                )
+                logger.info(
+                    f"Getting fuse_actions for determine expected keys set succeed, "
+                    f"number of fuse actions: {len(fuse_actions)}"
+                )
+            except Exception as e:
+                logger.warning(f"get_fuse_or_split_param_convert_actions failed when building expected_keys_set: {e}")
+                fuse_actions = {}
+            for keys in fuse_actions.keys():
+                fused_key = keys[-1]
+                if fused_key in expected_keys_set:
+                    expected_keys_set.update(keys[:-1])
+
             if key_mapping is not None:
                 # Determine the precise set of original checkpoint keys that are actually needed for the current file.
                 # This set will be used to identify which sharded checkpoint files are relevant and must be loaded.
@@ -2545,6 +2568,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 )
             else:
                 # Have loaded all state_dict, no resume state_dict
+                if key_mapping is not None:
+                    state_dict = {key_renaming_mapping[key]: value for key, value in state_dict.items()}
                 state_dict, _, fused_keys, new_keys = _fuse_or_split_keys(
                     state_dict,
                     config,
@@ -2920,7 +2945,17 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             )
 
         if dtype is None:
-            dtype = config.dtype
+            if config.dtype is not None:
+                dtype = config.dtype
+            else:
+                dtype = paddle.get_default_dtype()
+                for key in config.sub_configs:
+                    if (sub_config := getattr(config, key)) is not None:
+                        sub_config.dtype = dtype
+        else:
+            for sub_config_key in config.sub_configs:
+                if (sub_config := getattr(config, sub_config_key)) is not None:
+                    sub_config.dtype = dtype
 
         config.dtype = dtype
 
@@ -3140,7 +3175,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         is_main_process: bool = True,
         state_dict: Optional[dict] = None,
         save_function: Callable = paddle.save,
-        max_shard_size: Union[int, str] = "10GB",
+        max_shard_size: Union[int, str] = "1GB",
         safe_serialization: bool = False,
         variant: Optional[str] = None,
         *args,
@@ -3180,6 +3215,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         save_to_hf = kwargs.get("save_to_hf", False)
 
         save_checkpoint_format = kwargs.get("save_checkpoint_format", "")
+
+        if kwargs.get("enable_auto_parallel", ""):
+            # use flex_checkpoint as the default format in auto_parallel
+            save_checkpoint_format = "flex_checkpoint"
+
         safe_serialization = safe_serialization or save_to_hf
 
         save_directory = save_dir
@@ -3216,7 +3256,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if dtype is not None:
                 model_to_save.config.dtype = str(dtype).split(".")[1]
             if config_to_save is None:
-                config_to_save = deepcopy(model_to_save.config)
+                config_to_save = copy.deepcopy(model_to_save.config)
 
             # Attach architecture to the config
             config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]

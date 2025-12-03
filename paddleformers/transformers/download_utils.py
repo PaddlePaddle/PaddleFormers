@@ -947,3 +947,39 @@ register_model_group(
         },
     }
 )
+
+
+register_model_group(
+    models={
+        "Phi-4": {
+            DownloadSource.HUGGINGFACE: "microsoft/phi-4",
+            DownloadSource.AISTUDIO: "ModelHub/phi-4",
+            DownloadSource.MODELSCOPE: "microsoft/phi-4",
+        },
+        "Phi-4-mini-instruct": {
+            DownloadSource.HUGGINGFACE: "microsoft/Phi-4-mini-instruct",
+            DownloadSource.AISTUDIO: "ModelHub/Phi-4-mini-instruct",
+            DownloadSource.MODELSCOPE: "microsoft/Phi-4-mini-instruct",
+        },
+        "Phi-4-mini-reasoning": {
+            DownloadSource.HUGGINGFACE: "microsoft/Phi-4-mini-reasoning",
+            DownloadSource.AISTUDIO: "ModelHub/Phi-4-mini-reasoning",
+            DownloadSource.MODELSCOPE: "microsoft/Phi-4-mini-reasoning",
+        },
+        "Phi-4-mini-flash-reasoning": {
+            DownloadSource.HUGGINGFACE: "microsoft/Phi-4-mini-flash-reasoning",
+            DownloadSource.AISTUDIO: "ModelHub/Phi-4-mini-flash-reasoning",
+            DownloadSource.MODELSCOPE: "microsoft/Phi-4-mini-flash-reasoning",
+        },
+        "Phi-4-reasoning-plus": {
+            DownloadSource.HUGGINGFACE: "microsoft/Phi-4-reasoning-plus",
+            DownloadSource.AISTUDIO: "ModelHub/Phi-4-reasoning-plus",
+            DownloadSource.MODELSCOPE: "microsoft/Phi-4-reasoning-plus",
+        },
+        "Phi-4-reasoning": {
+            DownloadSource.HUGGINGFACE: "microsoft/Phi-4-reasoning",
+            DownloadSource.AISTUDIO: "ModelHub/Phi-4-reasoning",
+            DownloadSource.MODELSCOPE: "microsoft/Phi-4-reasoning",
+        },
+    }
+)
