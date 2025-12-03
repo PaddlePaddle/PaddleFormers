@@ -110,8 +110,8 @@ import_structure = {
     "auto.processing": ["AutoProcessor"],
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
-    "deepseek_v2.configuration": ["DeepseekV2Config"],
-    "deepseek_v2.modeling": [
+    "deepseek_v3.configuration": ["DeepseekV3Config"],
+    "deepseek_v3.modeling": [
         "masked_fill",
         "DeepseekV2Attention",
         "MoEGate",
@@ -141,14 +141,14 @@ import_structure = {
         "get_triangle_upper_mask",
         "DeepseekV2ForCausalLMPipe",
     ],
-    "deepseek_v2.modeling_auto": [
+    "deepseek_v3.modeling_auto": [
         "DeepseekV2LMHeadAuto",
         "DeepseekV2ForCausalLMAuto",
         "DeepseekV2ModelAuto",
         "DeepseekV2PretrainedModelAuto",
     ],
-    "deepseek_v2.mfu_utils": ["DeepSeekProjection"],
-    "deepseek_v2.kernel": [
+    "deepseek_v3.mfu_utils": ["DeepSeekProjection"],
+    "deepseek_v3.kernel": [
         "act_quant",
         "weight_dequant",
         "fp8_gemm",
@@ -156,27 +156,13 @@ import_structure = {
         "act_quant_kernel",
         "fp8_gemm_kernel",
     ],
-    "deepseek_v2.tokenizer_fast": ["DeepseekTokenizerFast"],
-    "deepseek_v2.fp8_linear": [
+    "deepseek_v3.tokenizer_fast": ["DeepseekTokenizerFast"],
+    "deepseek_v3.fp8_linear": [
         "Linear",
         "ColumnParallelLinear",
         "RowParallelLinear",
         "ColumnSequenceParallelLinear",
         "RowSequenceParallelLinear",
-    ],
-    "deepseek_v3.configuration": ["DeepseekV3Config"],
-    "deepseek_v3.modeling": [
-        "DeepseekV3ForCausalLM",
-        "DeepseekV3ForSequenceClassification",
-        "DeepseekV3Model",
-        "DeepseekV3PretrainedModel",
-        "DeepseekV3ForCausalLMPipe",
-    ],
-    "deepseek_v3.modeling_auto": [
-        "DeepseekV3LMHeadAuto",
-        "DeepseekV3ForCausalLMAuto",
-        "DeepseekV3ModelAuto",
-        "DeepseekV3PretrainedModelAuto",
     ],
     "ernie4_5.configuration": ["Ernie4_5Config"],
     "ernie4_5.modeling": [
@@ -307,7 +293,6 @@ import_structure = {
     "qwen2": [],
     "qwen3": [],
     "qwen": [],
-    "deepseek_v2": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
@@ -377,7 +362,6 @@ if TYPE_CHECKING:
     from .auto.processing import *
     from .auto.tokenizer import *
     from .auto.video_processing import *
-    from .deepseek_v2 import *
     from .deepseek_v3 import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
