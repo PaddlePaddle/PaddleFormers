@@ -149,9 +149,8 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     vocab_size: int = 37888
     sequence_parallel: bool = True 
     
-    expert_model_parallel_size: int = 1
+    expert_model_parallel_size: int = 16
     tensor_model_parallel_size: int = 4
-    num_experts_per_tok: int = 2
 
 
 @dataclass
