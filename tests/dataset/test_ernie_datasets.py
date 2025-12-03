@@ -15,8 +15,7 @@
 import os
 import unittest
 
-from paddleformers.datasets.dpo import create_dataset as create_dataset_dpo
-from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
+from paddleformers.datasets.loader import create_dataset as create_dataset
 from paddleformers.transformers import AutoTokenizer
 from tests.testing_utils import get_tests_dir
 
@@ -45,9 +44,10 @@ class TestPTDataset(unittest.TestCase):
             "use_template": True,
             "is_pretraining": True,
             "truncate_packing": True,
+            "stage": "PT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=ernie_dataset_path,
             task_group_prob="1.0",
             sub_dataset_type="erniekit",
@@ -77,9 +77,10 @@ class TestPTDataset(unittest.TestCase):
             "use_template": True,
             "is_pretraining": True,
             "truncate_packing": True,
+            "stage": "PT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -109,9 +110,10 @@ class TestPTDataset(unittest.TestCase):
             "use_template": True,
             "is_pretraining": True,
             "truncate_packing": True,
+            "stage": "PT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -141,9 +143,10 @@ class TestPTDataset(unittest.TestCase):
             "use_template": True,
             "is_pretraining": True,
             "truncate_packing": True,
+            "stage": "PT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -177,9 +180,10 @@ class TestSFTDataset(unittest.TestCase):
             "use_template": True,
             "is_pretraining": False,
             "truncate_packing": True,
+            "stage": "SFT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=ernie_dataset_path,
             task_group_prob="1.0",
             sub_dataset_type="erniekit",
@@ -209,9 +213,10 @@ class TestSFTDataset(unittest.TestCase):
             "use_template": True,
             "is_pretraining": False,
             "truncate_packing": True,
+            "stage": "SFT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -241,9 +246,10 @@ class TestSFTDataset(unittest.TestCase):
             "use_template": True,
             "is_pretraining": False,
             "truncate_packing": True,
+            "stage": "SFT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -273,9 +279,10 @@ class TestSFTDataset(unittest.TestCase):
             "use_template": True,
             "is_pretraining": False,
             "truncate_packing": True,
+            "stage": "SFT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -311,9 +318,10 @@ class TestDPODataset(unittest.TestCase):
             "packing": False,
             "mix_strategy": "random",
             "encode_one_turn": True,
+            "stage": "DPO",
         }
 
-        train_dataset = create_dataset_dpo(
+        train_dataset = create_dataset(
             task_group=ernie_dataset_path,
             task_group_prob="1.0",
             sub_dataset_type="erniekit",
@@ -347,9 +355,10 @@ class TestDPODataset(unittest.TestCase):
             "packing": False,
             "mix_strategy": "concat",
             "encode_one_turn": True,
+            "stage": "DPO",
         }
 
-        train_dataset = create_dataset_dpo(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -383,9 +392,10 @@ class TestDPODataset(unittest.TestCase):
             "packing": False,
             "mix_strategy": "interleave_under",
             "encode_one_turn": True,
+            "stage": "DPO",
         }
 
-        train_dataset = create_dataset_dpo(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -419,9 +429,10 @@ class TestDPODataset(unittest.TestCase):
             "packing": False,
             "mix_strategy": "interleave_over",
             "encode_one_turn": True,
+            "stage": "DPO",
         }
 
-        train_dataset = create_dataset_dpo(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
