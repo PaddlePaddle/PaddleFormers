@@ -193,6 +193,8 @@ import_structure = {
         "Ernie4_5_VLMoeForConditionalGenerationPipe",
     ],
     "ernie4_5_moe_vl.tokenizer": ["Ernie4_5_VLTokenizer"],
+    "ernie4_5_moe_vl.image_processor": ["Ernie4_5_VLImageProcessor"],
+    "ernie4_5_moe_vl.processor": ["Ernie4_5_VLProcessor"],
     "export": ["export_model"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
@@ -292,6 +294,14 @@ import_structure = {
         "Qwen3MoeForCausalLMPipe",
         "Qwen3MoePretrainingCriterion",
     ],
+    "qwen3_next.configuration": ["Qwen3NextConfig"],
+    "qwen3_next.modeling": [
+        "Qwen3NextModel",
+        "Qwen3NextPretrainedModel",
+        "Qwen3NextForCausalLM",
+        "Qwen3NextForCausalLMPipe",
+        "Qwen3NextPretrainingCriterion",
+    ],
     "bert": [],
     "llama": [],
     "qwen2": [],
@@ -306,6 +316,7 @@ import_structure = {
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
+    "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"],
     "auto": ["AutoModelForCausalLM"],
@@ -380,6 +391,7 @@ if TYPE_CHECKING:
     from .qwen2_vl import *
     from .qwen3 import *
     from .qwen3_moe import *
+    from .qwen3_next import *
     from .glm4_moe import *
     from .gpt_oss import *
     from .phi3 import *

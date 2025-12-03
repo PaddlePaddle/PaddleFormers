@@ -140,6 +140,11 @@ jobs:
         with:
           name: coverage
           path: coverage.xml
+          
+      - name: Terminate And Delete the Container
+        if: always()
+        run: |
+          docker rm -f $container_name 2>/dev/null || true
 
   upload-coverage:
     needs: unittest-gpu-ci

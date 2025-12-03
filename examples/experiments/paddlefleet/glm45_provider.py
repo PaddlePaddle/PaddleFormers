@@ -146,6 +146,9 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     num_nextn_predict_layers: Optional[int] = 0
     use_bias: bool = False
     vocab_size: int = 37888
+    sequence_parallel: bool = True 
+    expert_model_parallel_size: int = 16
+    tensor_model_parallel_size: int = 4
 
 
 @dataclass
