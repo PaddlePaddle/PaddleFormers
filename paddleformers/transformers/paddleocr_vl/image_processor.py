@@ -272,8 +272,6 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
     model_input_names = [
         "pixel_values",
         "image_grid_thw",
-        "pixel_values_videos",
-        "video_grid_thw",
     ]
 
     def __init__(
@@ -293,7 +291,7 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
         merge_size: int = 2,
         **kwargs,
     ) -> None:
-        super().__init__()
+        super().__init__(**kwargs)
         self.do_resize = do_resize
         self.resample = resample
         self.do_rescale = do_rescale

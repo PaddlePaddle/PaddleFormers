@@ -511,10 +511,10 @@ class PaddleOCREncoder(nn.Layer):
             pad_w = (-w) % window_size
             assert pad_h >= 0 and pad_w >= 0, (pad_h, pad_w)
             window_index = nn.functional.pad(window_index, (0, pad_w, 0, pad_h), value=pad_values)
-            h, w = h//window_size, w//window_size
+            h, w = h // window_size, w // window_size
             window_index = window_index.reshape([t, h, window_size, w, window_size])
             window_index = window_index.transpose([0, 1, 3, 2, 4])
-            window_index = window_index.reshape([t, h*w, window_size*window_size])
+            window_index = window_index.reshape([t, h * w, window_size * window_size])
 
             window_seqlens = (window_index != pad_values).long().sum(-1).reshape(-1)
             window_index = window_index.reshape(-1)
@@ -1047,7 +1047,7 @@ class Projector(nn.Layer):
         )
 
     def forward(self, image_features, image_grid_thw):
-        
+
         image_features_chunks = image_features.split(image_grid_thw.prod(axis=1).tolist(), axis=1)
         m1, m2 = self.merge_kernel_size
 
@@ -1070,6 +1070,7 @@ class Projector(nn.Layer):
             processed_features.append(hidden_states)
 
         return paddle.concat(processed_features, axis=0)
+
 
 class KeyeRotaryEmbedding(nn.Layer):
     def __init__(self, config: PaddleOCRVLConfig):
@@ -1623,6 +1624,7 @@ class PaddleOCRVLModel(Ernie4_5PretrainedModel):
         super().__init__(config)
 
         raise NotImplementedError("PaddleOCRVLModel is not implemented yet")
+
 
 class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMixin):
     config_class = PaddleOCRVLConfig

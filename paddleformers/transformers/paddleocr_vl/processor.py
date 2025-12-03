@@ -171,6 +171,7 @@ class PaddleOCRVLProcessor(ProcessorMixin):
         if not isinstance(text, list):
             text = [text]
 
+        text = text.copy()
         if image_grid_thw is not None:
             index = 0
             for i in range(len(text)):
@@ -259,7 +260,7 @@ class PaddleOCRVLProcessor(ProcessorMixin):
         tokenizer_input_names = self.tokenizer.model_input_names
         image_processor_input_names = self.image_processor.model_input_names
         names_from_processor = list(dict.fromkeys(tokenizer_input_names + image_processor_input_names))
-        return names_from_processor + ["second_per_grid_ts"]
+        return names_from_processor
 
 
 __all__ = ["PaddleOCRVLProcessor"]
