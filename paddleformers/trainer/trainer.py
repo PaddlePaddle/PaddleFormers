@@ -87,8 +87,8 @@ from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients,
 )
 from paddle.io import DataLoader, Dataset, DistributedBatchSampler
-from tqdm.auto import tqdm
 from paddlefleet.utils import get_batch_on_this_cp_rank
+from tqdm.auto import tqdm
 
 from ..data import (
     DataCollator,
@@ -1632,10 +1632,7 @@ class Trainer:
                 and self.args.split_inputs_sequence_dim
             ):
                 inputs = split_inputs_sequence_dim(inputs)
-            if (
-                self.args.use_hybrid_parallel
-                and self.args.context_parallel_degree > 1
-            ):
+            if self.args.use_hybrid_parallel and self.args.context_parallel_degree > 1:
                 inputs = get_batch_on_this_cp_rank(inputs)
 
             if self.args.ignore_data_skip:

@@ -2167,7 +2167,9 @@ class TrainingArguments:
             tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
             expert_parallel_degree = max(self.expert_parallel_degree, 1)
             context_parallel_degree = max(self.context_parallel_degree, 1)
-            self.hybrid_parallel_expert_grad_scale = tensor_parallel_degree * context_parallel_degree / expert_parallel_degree
+            self.hybrid_parallel_expert_grad_scale = (
+                tensor_parallel_degree * context_parallel_degree / expert_parallel_degree
+            )
             logger.info(f"Auto set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
         else:
             logger.info(f"Set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
