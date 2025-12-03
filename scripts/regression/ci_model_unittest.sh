@@ -28,10 +28,10 @@ install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
+    python -m pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --no-cache-dir --no-dependencies --progress-bar off --force-reinstall
     python -m pip install -r requirements.txt --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
-    python -m pip install nvidia-nccl-cu12==2.27.3
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off --force-reinstall
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python setup.py bdist_wheel > /dev/null
