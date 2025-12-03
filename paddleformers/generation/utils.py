@@ -702,7 +702,9 @@ class GenerationMixin(object):
         batch_size, seq_length = input_ids.shape
         model_inputs = {}
         model_inputs["past_key_values"] = past_key_values
-        forward_params = set(inspect.signature(self.forward).parameters.keys())
+        sig = inspect.signature(self.forward)
+        forward_params = set(sig.parameters.keys())
+        has_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
 
         # deal with cache_position
         cache_position = kwargs.get("cache_position", None)
@@ -719,6 +721,7 @@ class GenerationMixin(object):
                     cache_length = past_key_values[0][0].shape[-2]
             if cache_length > 0:
                 input_ids = input_ids[:, -1:]
+
         # deal with use_cache
         use_cache = kwargs.get("use_cache", None)
         if use_cache is None:
@@ -736,13 +739,13 @@ class GenerationMixin(object):
         attention_mask = kwargs.get("attention_mask", None)
         position_ids = kwargs.get("position_ids", None)
         if position_ids is None:
-            if attention_mask is not None:
-                # A：if padding
+            if attention_mask is not None and attention_mask.ndim == 2:
+                # A：if mask (can deal with padding)
                 if "position_ids" in forward_params:
                     position_ids = attention_mask.long().cumsum(-1) - 1
                     position_ids.masked_fill_(attention_mask == 0, 1)
             else:
-                # B：if not padding
+                # B：if no mask
                 if "position_ids" in forward_params:
                     position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
         if position_ids is not None:
@@ -768,6 +771,11 @@ class GenerationMixin(object):
 
         # Remove unexpected `generate` inputs
         model_inputs.pop("labels", None)
+        # Remove unexpected `forward` inputs
+        if not has_kwargs:
+            keys_to_remove = [k for k in model_inputs if k not in forward_params]
+            for k in keys_to_remove:
+                model_inputs.pop(k)
         return model_inputs
 
     def adjust_logits_during_generation(self, logits):
