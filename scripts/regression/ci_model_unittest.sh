@@ -35,7 +35,7 @@ install_requirements() {
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python setup.py bdist_wheel > /dev/null
     python -m pip install  dist/p****.whl
-    python -m pip install nvidia-nccl-cu12==2.27.3
+    python -m pip install torch==2.8.0
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
