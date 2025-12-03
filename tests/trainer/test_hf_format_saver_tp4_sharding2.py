@@ -33,7 +33,7 @@ from paddleformers.transformers.linear_utils import (
 )
 from paddleformers.transformers.model_utils import HFFormatFullParamSaver
 from tests.parallel_launch import TestMultipleGpus
-from tests.testing_utils import require_paddle_at_least_8_gpu
+from tests.testing_utils import require_paddle_at_least_8_gpu, skip_for_none_ce_case
 
 # Add path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -159,7 +159,6 @@ def initialize_tp4_sharding2_distributed():
     return hcg
 
 
-@require_paddle_at_least_8_gpu
 class TestHFFormatSaverTP4Sharding2(TestMultipleGpus):
     """HFFormatFullParamSaver TP4+Sharding2 Test"""
 
@@ -192,6 +191,8 @@ class TestHFFormatSaverTP4Sharding2(TestMultipleGpus):
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
+    @skip_for_none_ce_case
+    @require_paddle_at_least_8_gpu
     def test_save_checkpoint_tp4_sharding2(self):
         """Test checkpoint saving with TP4+Sharding2 distributed strategy"""
 
@@ -267,6 +268,8 @@ class TestHFFormatSaverTP4Sharding2(TestMultipleGpus):
         paddle.distributed.barrier()
         print(f"Rank {rank}: TP4+Sharding2 test completed")
 
+    @skip_for_none_ce_case
+    @require_paddle_at_least_8_gpu
     def test_save_with_different_shard_sizes(self):
         """Test the impact of different shard sizes on saving"""
         rank = paddle.distributed.get_rank()
