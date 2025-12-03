@@ -53,14 +53,14 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.tmpdir, ignore_errors=True)
-    
+
     def test_model_input_names(self):
-        
+
         processor = self.get_processor()
 
         text = self.prepare_text_inputs(modalities=["image"])
         image_input = self.prepare_image_inputs()
-        
+
         inputs_dict = {"text": text, "images": image_input}
 
         call_signature = inspect.signature(processor.__call__)
@@ -70,14 +70,12 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         inputs = processor(**inputs_dict, return_tensors="pd")
 
         self.assertSetEqual(set(inputs.keys()), set(processor.model_input_names))
-    
+
     def test_save_load_pretrained_default(self):
         tokenizer = self.get_tokenizer()
         image_processor = self.get_image_processor()
 
-        processor = PaddleOCRVLProcessor(
-            tokenizer=tokenizer, image_processor=image_processor
-        )
+        processor = PaddleOCRVLProcessor(tokenizer=tokenizer, image_processor=image_processor)
         processor.save_pretrained(self.tmpdir)
         processor = PaddleOCRVLProcessor.from_pretrained(self.tmpdir)
 
@@ -90,9 +88,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
 
-        processor = PaddleOCRVLProcessor(
-            tokenizer=tokenizer, image_processor=image_processor
-        )
+        processor = PaddleOCRVLProcessor(tokenizer=tokenizer, image_processor=image_processor)
 
         image_input = self.prepare_image_inputs()
 
@@ -106,9 +102,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
 
-        processor = PaddleOCRVLProcessor(
-            tokenizer=tokenizer, image_processor=image_processor
-        )
+        processor = PaddleOCRVLProcessor(tokenizer=tokenizer, image_processor=image_processor)
 
         input_str = "lower newer"
         image_input = self.prepare_image_inputs()
@@ -224,7 +218,6 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     @unittest.skip("PaddleOCR-VL do not support video input")
     def test_apply_chat_template_video_frame_sampling(self):
         pass
-    
 
     def test_kwargs_overrides_custom_image_processor_kwargs(self):
         processor = self.get_processor()
@@ -236,4 +229,3 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(inputs[self.images_input_name].shape[0], 100)
         inputs = processor(text=input_str, images=image_input, max_pixels=56 * 56 * 4, return_tensors="pd")
         self.assertEqual(inputs[self.images_input_name].shape[0], 100)
-
