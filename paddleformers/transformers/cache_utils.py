@@ -278,8 +278,9 @@ class Cache:
 
         if self.offloading:
             # Wait for the stream to finish if needed, and start prefetching the next layer
-            # Note: Since current_stream can't directly recognize key_states.place, we construct it as a string. However, this may cause unknown issues for other formats like xpu, so attention is needed
-            # The directly returned place format is Place(gpu:0)
+            # Note: Since current_stream can't directly recognize key_states.place,
+            # we construct it as a string. However, this may cause unknown issues for other formats like xpu,
+            # so attention is needed. The directly returned place format is Place(gpu:0)
             paddle.device.current_stream(f"gpu:{key_states.place.gpu_device_id()}").wait_stream(self.prefetch_stream)
             self.prefetch(layer_idx + 1, self.only_non_sliding)
 
