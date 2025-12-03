@@ -1447,11 +1447,12 @@ class Glm4MoeModelLegacy(Glm4MoePreTrainedModel):
 
 
 class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
+    is_fleet = True
+
     def __new__(cls, config):
         model_provider_class = GLMMoEModelProvider
         if hasattr(config, "n_routed_experts") and config.n_routed_experts > 0:
             config.moe_layer_freq = 1  # Default to expert layer every layer
-        config.is_fleet = True
         model_provider = model_provider_class.from_config(config)
         return model_provider.provide()
 
