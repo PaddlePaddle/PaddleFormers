@@ -19,6 +19,7 @@ import inspect
 import json
 import os
 import tempfile
+import unittest
 from pathlib import Path
 
 import numpy as np
@@ -403,6 +404,7 @@ class ProcessorTesterMixin:
         self.assertLessEqual(inputs[self.images_input_name][0][0].mean(), 0)
         self.assertEqual(inputs[self.text_input_name].shape[-1], 76)
 
+    @unittest.skipIf(not paddle.cuda.is_available(), "No GPU currently available/allocated")
     def test_tokenizer_defaults_preserved_by_kwargs_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -439,6 +441,7 @@ class ProcessorTesterMixin:
         inputs = processor(text=input_str, videos=video_input, do_sample_frames=False, return_tensors="pd")
         self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
 
+    @unittest.skipIf(not paddle.cuda.is_available(), "No GPU currently available/allocated")
     def test_kwargs_overrides_default_tokenizer_kwargs_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -484,6 +487,7 @@ class ProcessorTesterMixin:
         )
         self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
 
+    @unittest.skipIf(not paddle.cuda.is_available(), "No GPU currently available/allocated")
     def test_unstructured_kwargs_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -508,6 +512,7 @@ class ProcessorTesterMixin:
         self.assertEqual(inputs[self.text_input_name].shape[-1], 176)
 
     # TODO: Re-enable this test case once paddle.Tensor support the more tensor dimensions.
+    # @unittest.skipIf(not paddle.cuda.is_available(), "No GPU currently available/allocated")
     # def test_unstructured_kwargs_batched_video(self):
     #     if "video_processor" not in self.processor_class.attributes:
     #         self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -534,6 +539,7 @@ class ProcessorTesterMixin:
     #         and len(inputs[self.text_input_name][1]) < 176
     #     )
 
+    @unittest.skipIf(not paddle.cuda.is_available(), "No GPU currently available/allocated")
     def test_doubly_passed_kwargs_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -553,6 +559,7 @@ class ProcessorTesterMixin:
                 return_tensors="pd",
             )
 
+    @unittest.skipIf(not paddle.cuda.is_available(), "No GPU currently available/allocated")
     def test_structured_kwargs_nested_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -575,6 +582,7 @@ class ProcessorTesterMixin:
         self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
         self.assertEqual(inputs[self.text_input_name].shape[-1], 176)
 
+    @unittest.skipIf(not paddle.cuda.is_available(), "No GPU currently available/allocated")
     def test_structured_kwargs_nested_from_dict_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
