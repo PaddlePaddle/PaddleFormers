@@ -33,6 +33,7 @@ from paddleformers.transformers.linear_utils import (
 )
 from paddleformers.transformers.model_utils import HFFormatFullParamSaver
 from tests.parallel_launch import TestMultipleGpus
+from tests.testing_utils import require_paddle_at_least_8_gpu
 
 # Add path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -158,7 +159,7 @@ def initialize_tp4_sharding2_distributed():
     return hcg
 
 
-# @require_paddle_at_least_8_gpu
+@require_paddle_at_least_8_gpu
 class TestHFFormatSaverTP4Sharding2(TestMultipleGpus):
     """HFFormatFullParamSaver TP4+Sharding2 Test"""
 
