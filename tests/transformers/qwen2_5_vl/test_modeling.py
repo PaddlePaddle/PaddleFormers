@@ -762,7 +762,7 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
         self.assertTrue(paddle.allclose(output[1, 1000, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
 
     def test_model_tiny_logits_with_video(self):
-        video_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
+        video_url = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
         messages2 = [
             {
                 "role": "user",

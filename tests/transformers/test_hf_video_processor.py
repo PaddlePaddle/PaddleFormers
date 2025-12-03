@@ -31,7 +31,7 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
         response = requests.get(IMAGE_URL, stream=True)
         cls.video = [Image.open(response.raw).convert("RGB")] * 5  # load by img_list
 
-        VIDEO_URL = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
+        VIDEO_URL = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
         cls.video_url = VIDEO_URL  # load by url (only for ce)
 
     def preprocess(self, video_processor):

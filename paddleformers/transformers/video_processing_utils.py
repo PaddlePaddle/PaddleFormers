@@ -187,6 +187,7 @@ class BaseVideoProcessor(BaseImageProcessor):
     valid_kwargs = VideosKwargs
     model_input_names = ["pixel_values_videos"]
     unused_kwargs = None
+    video_reader_backend = "decord"
 
     def __init__(self, **kwargs: Unpack[VideosKwargs]):
         super().__init__()

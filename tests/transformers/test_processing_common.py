@@ -35,7 +35,7 @@ MODALITY_INPUT_DATA = {
         "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg",
     ],
     "videos": [
-        "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4",
+        "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4",
     ],
 }
 
@@ -795,7 +795,7 @@ class ProcessorTesterMixin:
                     "content": [
                         {
                             "type": "video",
-                            "url": "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4",
+                            "url": "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4",
                         },
                         {"type": "text", "text": "What is shown in this video?"},
                     ],

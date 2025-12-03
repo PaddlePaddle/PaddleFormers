@@ -258,7 +258,7 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         # # Add video URL for return dict and load with `num_frames` arg
         # messages[0][0]["content"][0] = {
         #     "type": "video",
-        #     "url": "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4",
+        #     "url": "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4",
         # }
         # num_frames = 3
         # out_dict_with_video = processor.apply_chat_template(
