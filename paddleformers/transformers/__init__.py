@@ -193,6 +193,8 @@ import_structure = {
         "Ernie4_5_VLMoeForConditionalGenerationPipe",
     ],
     "ernie4_5_moe_vl.tokenizer": ["Ernie4_5_VLTokenizer"],
+    "ernie4_5_moe_vl.image_processor": ["Ernie4_5_VLImageProcessor"],
+    "ernie4_5_moe_vl.processor": ["Ernie4_5_VLProcessor"],
     "paddleocr_vl.configuration": ["PaddleOCRVLConfig"],
     "paddleocr_vl.modeling": ["PaddleOCRVLForConditionalGeneration"],
     "paddleocr_vl.tokenizer": ["Ernie4_5Tokenizer"],
