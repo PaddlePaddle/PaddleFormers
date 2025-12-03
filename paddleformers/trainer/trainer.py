@@ -87,7 +87,6 @@ from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients,
 )
 from paddle.io import DataLoader, Dataset, DistributedBatchSampler
-from paddlefleet.utils import get_batch_on_this_cp_rank
 from tqdm.auto import tqdm
 
 from ..data import (
@@ -111,6 +110,10 @@ try:
     )
 except:
     pass
+try:
+    from paddlefleet.utils import get_batch_on_this_cp_rank
+except:
+    get_batch_on_this_cp_rank = None
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
