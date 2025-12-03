@@ -158,8 +158,7 @@ jobs:
 
   upload-coverage:
     needs: unittest-gpu-ci
-    if: |
-      hashFiles('coverage.xml') != ''
+    if: hashFiles('coverage.xml') != ''
     runs-on: ubuntu-latest
 
     steps:
