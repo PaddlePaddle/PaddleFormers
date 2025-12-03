@@ -165,8 +165,8 @@ jobs:
             cd /workspace/PaddleFormers
             python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
             echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
-else
-echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml upload."
+          else
+            echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml upload."
           fi
           # logs
           cd /workspace/PaddleFormers/unittest_logs
