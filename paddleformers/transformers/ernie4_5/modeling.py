@@ -37,7 +37,7 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     CausalLMOutputWithCrossAttentions,
@@ -108,12 +108,14 @@ def apply_fused_rope(query_states, key_states, rope_theta):
             None,
             rotary_emb_base=rope_theta,
         )
-    return query_states, key_states
+    return query_states.transpose(1, 2), key_states.transpose(1, 2)
 
 
 class Ernie4_5RotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
         self.config = config
         self.head_dim = config.head_dim
         self.base = config.rope_theta
@@ -287,7 +289,7 @@ class Ernie4_5Attention(nn.Layer):
 
         if not output_attentions:
             attn_weights = None
-        return attn_output, attn_weights, past_key_values
+        return attn_output, attn_weights
 
 
 class Ernie4_5DecoderLayer(nn.Layer):
@@ -370,7 +372,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, self_attn_weights = self.self_attn(
             hidden_states=hidden_states,
             past_key_values=past_key_values,
             attention_mask=attention_mask,
@@ -395,9 +397,6 @@ class Ernie4_5DecoderLayer(nn.Layer):
 
         if output_attentions:
             outputs += (self_attn_weights,)
-
-        if use_cache:
-            outputs += (present_key_value,)
 
         # remove empty tuple for pipeline parallel
         if type(outputs) is tuple and len(outputs) == 1:
@@ -629,10 +628,9 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             "attention_mask": attention_mask,
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
-            "return_mapping": False,
         }
 
-        causal_attention_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
+        causal_attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         if position_ids is None:
             position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))

@@ -54,7 +54,7 @@ from ...utils.log import logger
 from ...utils.masking_utils import _expand_2d_mask, _make_causal_mask
 from ..cache_utils import Cache, DynamicCache
 from ..conversion_utils import StateDictNameMapping, init_name_mappings
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import (
     BaseModelOutputWithPastAndMTP,
     CausalLMOutputWithPast,
@@ -733,8 +733,7 @@ class DeepseekV2Attention(nn.Layer):
         kv = self.kv_b_proj(self.kv_a_layernorm(compressed_kv)).reshape(shape=target_key_value_shape)
         k_nope, value_states = paddle.split(kv, [self.qk_nope_head_dim, self.v_head_dim], axis=-1)
         kv_seq_len = value_states.shape[1]
-        if past_key_values is not None:
-            kv_seq_len += past_key_values[0].shape[-3]
+        kv_seq_len += past_key_values.get_seq_length() if past_key_values is not None else 0
 
         cos, sin = position_embeddings[0], position_embeddings[1]
         cos = cos[None, :, None, :]
@@ -798,9 +797,6 @@ class DeepseekV2Attention(nn.Layer):
 
         if output_attentions:
             outputs += (attn_weights,)
-
-        if use_cache:
-            outputs += (past_key_values,)
 
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
@@ -982,7 +978,6 @@ class DeepseekV2DecoderLayer(nn.Layer):
         output_attentions=False,
         use_cache=False,
         self_attn_weights=None,
-        present_key_value=None,
     ):
         hidden_states = residual + hidden_states
 
@@ -990,9 +985,6 @@ class DeepseekV2DecoderLayer(nn.Layer):
 
         if output_attentions:
             outputs += (self_attn_weights,)
-
-        if use_cache:
-            outputs += (present_key_value,)
 
         if type(outputs) is tuple and len(outputs) == 1:
             outputs = outputs[0]
@@ -1031,11 +1023,8 @@ class DeepseekV2DecoderLayer(nn.Layer):
         hidden_states = attn_outputs[0]
         residual = attn_outputs[1]
         self_attn_weights = attn_outputs[2] if output_attentions else None
-        present_key_value = attn_outputs[3] if use_cache else None
         hidden_states = self.mlp(hidden_states)
-        outputs = self.post_process(
-            hidden_states, residual, output_attentions, use_cache, self_attn_weights, present_key_value
-        )
+        outputs = self.post_process(hidden_states, residual, output_attentions, use_cache, self_attn_weights)
         return outputs
 
 
@@ -1328,7 +1317,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         self.rotary_emb = DeepseekV2YarnRotaryEmbedding(config=config)
 
     @staticmethod
-    def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype):
+    def _prepare_decoder_attention_mask(attention_mask, input_shape, past_key_values_length, dtype, **kwargs):
         if attention_mask is not None:
             # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
             if len(attention_mask.shape) == 2:
@@ -1484,10 +1473,9 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
             "attention_mask": attention_mask,
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
-            "return_mapping": False,
         }
 
-        attention_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
+        attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         if self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]  # [B, S, D]

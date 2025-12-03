@@ -571,6 +571,48 @@ class MergeModel:
         else:
             self.merge_pdparams_lora_model(file_type_list)
 
+    def get_split_qkv_hidden_size(self, base_state_dict):
+        q_size, k_size, v_size = None, None, None
+        for key in base_state_dict.keys():
+            if key.endswith(".q_proj.weight"):
+                q_size = base_state_dict[key].shape[1]
+            elif key.endswith(".k_proj.weight"):
+                k_size = base_state_dict[key].shape[1]
+            elif key.endswith(".v_proj.weight"):
+                v_size = base_state_dict[key].shape[1]
+            if not (q_size is None or k_size is None or v_size is None):
+                break
+        return q_size, k_size, v_size
+
+    def split_fuse_lora_state_dict(self, base_state_dict, lora_state_dict):
+        # split fuse qkv/ffn
+        q_size, k_size, v_size = self.get_split_qkv_hidden_size(base_state_dict)
+        if not (q_size is None or k_size is None or v_size is None):
+            lora_state_dict_keys = list(lora_state_dict.keys())
+            for lora_key in lora_state_dict_keys:
+                if lora_key.endswith(".qkv_proj.lora_B"):
+                    lora_B_q, lora_B_k, lora_B_v = np.split(
+                        lora_state_dict.pop(lora_key), [q_size, q_size + k_size], axis=1
+                    )
+                    lora_state_dict[lora_key.replace(".qkv_proj.", ".q_proj.")] = lora_B_q
+                    lora_state_dict[lora_key.replace(".qkv_proj.", ".k_proj.")] = lora_B_k
+                    lora_state_dict[lora_key.replace(".qkv_proj.", ".v_proj.")] = lora_B_v
+                    lora_A_qkv_key = lora_key.replace(".lora_B", ".lora_A")
+                    lora_A_qkv_tensor = lora_state_dict.pop(lora_A_qkv_key)
+                    for qkv_key in ["q_proj", "k_proj", "v_proj"]:
+                        lora_state_dict[lora_A_qkv_key.replace(".qkv_proj.", f".{qkv_key}.")] = lora_A_qkv_tensor
+
+                elif lora_key.endswith(".up_gate_proj.lora_B") or lora_key.endswith(".gate_up_proj.lora_B"):
+                    fuse_ffn_flag = ".up_gate_proj." if lora_key.endswith(".up_gate_proj.lora_B") else ".gate_up_proj."
+                    lora_B_gate, lora_B_up = np.split(lora_state_dict.pop(lora_key), 2, axis=1)
+                    lora_state_dict[lora_key.replace(fuse_ffn_flag, ".gate_proj.")] = lora_B_gate
+                    lora_state_dict[lora_key.replace(fuse_ffn_flag, ".up_proj.")] = lora_B_up
+                    lora_A_ffn_key = lora_key.replace(".lora_B", ".lora_A")
+                    lora_A_ffn_tensor = lora_state_dict.pop(lora_A_ffn_key)
+                    for ffn_key in ["gate_proj", "up_proj"]:
+                        lora_state_dict[lora_A_ffn_key.replace(fuse_ffn_flag, f".{ffn_key}.")] = lora_A_ffn_tensor
+        return lora_state_dict
+
     def shard_lora_merge(self, base_index, shard_file, lora_config, file_type_list, key_list=None, file=None):
         merge_state_dict = {}
         lora_state_dict = self.get_model_state_dict(self.merge_config.lora_model_path, file_type_list[0])
@@ -579,6 +621,7 @@ class MergeModel:
             self.merge_config.base_model_path, file_type_list[1], key_list=key_list, file=file
         )
         logger.info("Load model weight successfully.")
+        lora_state_dict = self.split_fuse_lora_state_dict(base_state_dict, lora_state_dict)
         if not lora_config.rslora:
             scaling = lora_config.lora_alpha / lora_config.r
         else:
@@ -719,6 +762,7 @@ class MergeModel:
         logger.info("Load LoRA weight successfully.")
         base_state_dict = self.get_model_state_dict(self.merge_config.base_model_path, file_type_list[1])
         logger.info("Load model weight successfully.")
+        lora_state_dict = self.split_fuse_lora_state_dict(base_state_dict, lora_state_dict)
         for key in lora_state_dict.keys():
             if "lora_A" in key:
                 if key.replace("lora_A", "lora_B") not in lora_state_dict.keys():

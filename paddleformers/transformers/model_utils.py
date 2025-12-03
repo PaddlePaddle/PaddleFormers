@@ -1177,6 +1177,10 @@ def save_full_param(
         logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Consuming iterator for synchronization...")
         for _ in itr:
             pass
+
+        if use_dist:
+            dist.barrier()
+
         logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Iterator consumption complete.")
         return
 
@@ -2414,6 +2418,23 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 origin_expected_keys = [k.replace("quant_weight", "weight") for k in expected_keys]
                 expected_keys_set = set(expected_keys + origin_expected_keys)
 
+            # Add original (pre-fuse) keys so that shards containing q/k/v or gate/up are not skipped
+            try:
+                fuse_actions, _ = cls.get_fuse_or_split_param_convert_actions(
+                    config, loaded_keys, is_fuse=True, ignore_error=True
+                )
+                logger.info(
+                    f"Getting fuse_actions for determine expected keys set succeed, "
+                    f"number of fuse actions: {len(fuse_actions)}"
+                )
+            except Exception as e:
+                logger.warning(f"get_fuse_or_split_param_convert_actions failed when building expected_keys_set: {e}")
+                fuse_actions = {}
+            for keys in fuse_actions.keys():
+                fused_key = keys[-1]
+                if fused_key in expected_keys_set:
+                    expected_keys_set.update(keys[:-1])
+
             if key_mapping is not None:
                 # Determine the precise set of original checkpoint keys that are actually needed for the current file.
                 # This set will be used to identify which sharded checkpoint files are relevant and must be loaded.
@@ -3154,7 +3175,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         is_main_process: bool = True,
         state_dict: Optional[dict] = None,
         save_function: Callable = paddle.save,
-        max_shard_size: Union[int, str] = "10GB",
+        max_shard_size: Union[int, str] = "1GB",
         safe_serialization: bool = False,
         variant: Optional[str] = None,
         *args,
