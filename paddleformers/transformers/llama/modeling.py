@@ -160,9 +160,9 @@ class LLamaAttention(nn.Layer):
         q_shape = (batch_size, seq_len, self.num_heads, self.head_dim)
         kv_shape = (batch_size, seq_len, self.num_key_value_heads, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
+        query_states = self.q_proj(hidden_states).view(q_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -289,6 +289,8 @@ def _compute_llama3_parameters(config):
 class LlamaRotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
         self.config = config
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 

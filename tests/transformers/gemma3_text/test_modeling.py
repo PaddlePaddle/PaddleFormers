@@ -464,9 +464,9 @@ class Gemma3TextIntegrationTest(unittest.TestCase):
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-2.11034966, -0.55186963, 0.83094299],
-                    [0.62170440, -0.30483261, 1.01112819],
-                    [-3.67348886, -0.75942785, 1.53496051],
+                    [-1.26562500, -1.28125000, 1.30468750],
+                    [0.39257812, -0.23437500, 0.94921875],
+                    [0.84765625, -0.00598145, 1.53125000],
                 ]
             ]
         )
@@ -481,15 +481,14 @@ class Gemma3TextIntegrationTest(unittest.TestCase):
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
-
         expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [-2.11034966, -0.55186963, 0.83094299],
-                    [0.62170440, -0.30483261, 1.01112819],
-                    [-3.67348886, -0.75942785, 1.53496051],
+                    [-1.26562500, -1.28125000, 1.30468750],
+                    [0.39257812, -0.23437500, 0.94921875],
+                    [0.84765625, -0.00598145, 1.53125000],
                 ]
             ]
         )

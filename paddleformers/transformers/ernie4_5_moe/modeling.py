@@ -92,6 +92,8 @@ def mtp_hidden_states_set_zero(hidden_states, inbatch_pack_offset):
 class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
         self.config = config
         self.head_dim = config.head_dim
         self.base = config.rope_theta

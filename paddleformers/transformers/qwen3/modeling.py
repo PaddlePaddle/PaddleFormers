@@ -479,6 +479,8 @@ class Qwen3PretrainedModel(PretrainedModel):
 class Qwen3RotaryEmbedding(nn.Layer):
     def __init__(self, config: Qwen3Config):
         super().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
         self.config = config
         base = config.rope_theta
         partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0

@@ -26,7 +26,9 @@ is_sm90 = (
 )
 if is_sm90:
     os.environ["FLAGS_flash_attn_version"] = "3"
-from paddleformers.datasets.dpo import collate_fn, create_dataset
+from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
+from paddleformers.datasets.loader import create_dataset
+from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
@@ -41,6 +43,7 @@ from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
+    AutoProcessor,
     AutoTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
@@ -201,6 +204,10 @@ def run_dpo(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
+    processor = None
+    if model_args.stage == "VL-DPO":
+        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
+
     logger.info("Loading model & tokenizer successfully !")
 
     if model_args.lora:
@@ -239,6 +246,7 @@ def run_dpo(
     logger.info("Start to create dataset")
     dataset_config = {
         "tokenizer": tokenizer,
+        "processor": processor,
         "max_seq_len": data_args.max_seq_len,
         "max_prompt_len": data_args.max_prompt_len,
         "random_seed": training_args.seed,
@@ -253,7 +261,30 @@ def run_dpo(
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
+        "stage": model_args.stage,
+        "is_valid": False,
+        "template_backend": data_args.template_backend,
     }
+
+    dataset_config.update(
+        {
+            "template": data_args.template,
+            "train_on_prompt": False,
+            "tool_format": None,
+            "default_system": None,
+            "enable_thinking": True,
+        }
+    )
+
+    if dataset_config["template_backend"] == "custom":
+        template_instance = get_template_and_fix_tokenizer(dataset_config)
+    else:
+        template_instance = None
+    dataset_config.update(
+        {
+            "template_instance": template_instance,
+        }
+    )
     if training_args.max_steps == -1:
         if data_args.mix_strategy == "random":
             raise ValueError(
@@ -293,11 +324,11 @@ def run_dpo(
         train_dataset = None
 
     if training_args.do_eval and training_args.should_load_dataset:
+        dataset_config["is_valid"] = True
         eval_dataset = create_dataset(
             task_group=data_args.eval_dataset_path,
             task_group_prob=data_args.eval_dataset_prob,
             sub_dataset_type=data_args.eval_dataset_type,
-            is_valid=True,
             **dataset_config,
         )
     else:

@@ -1348,6 +1348,7 @@ class TrainingArguments:
                 logger.warning("set amp_master_grad to false since amp is disabled.")
                 self.amp_master_grad = False
 
+        self.use_paddlefleet = False
         # use_hybrid_parallel
         if self.use_hybrid_parallel:
 
@@ -1754,8 +1755,10 @@ class TrainingArguments:
 
                 # In PaddleFleet, we should use the following code to initialize.
 
-                # from paddlefleet.training.initialize import initialize_fleet
-                # initialize_fleet(strategy)
+                if self.use_paddlefleet:
+                    from paddlefleet.training.initialize import initialize_fleet
+
+                    initialize_fleet(strategy)
                 logger.info(strategy)
 
                 if self.reorder_pipeline_priority:
@@ -2002,6 +2005,21 @@ class TrainingArguments:
                         fleet.init(is_collective=True, strategy=strategy)
                     else:
                         paddle.distributed.init_parallel_env()
+            if world_size == 1 and self.use_paddlefleet:
+                single_card_strategy = fleet.DistributedStrategy()
+                single_card_strategy.hybrid_configs = {
+                    "dp_degree": 1,
+                    "mp_degree": 1,
+                    "pp_degree": 1,
+                    "sharding_degree": 1,
+                    "sep_degree": 1,
+                    "cp_degree": 1,
+                    "ep_degree": 1,
+                    "moe_sharding_degree": 1,
+                }
+                from paddlefleet.training.initialize import initialize_fleet
+
+                initialize_fleet(single_card_strategy)
 
         if (
             self.unified_checkpoint
