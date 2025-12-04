@@ -40,11 +40,11 @@ class Qwen3MoEModelProvider(GPTModelProvider):
     ] = get_gpt_decoder_block_spec
 
     normalization: str = "RMSNorm"
-    activation_func: Callable = F.silu
+    hidden_act: Callable = F.silu
     gated_linear_unit: bool = True
-    add_bias_linear: bool = False
-    add_qkv_bias: bool = False
-    qk_layernorm: bool = True
+    use_bias: bool = False
+    attention_bias: bool = False
+    use_qk_norm: bool = True
     seq_length: int = 40960
     max_position_embeddings: int = 40960
     init_method_std: int = 0.02
@@ -66,15 +66,14 @@ class Qwen3MoEModelProvider(GPTModelProvider):
     rotary_base: float = 1000000.0
 
     # MoE specific parameters
-    moe_num_experts: int = 128
+    n_routed_experts: int = 128
     moe_router_load_balancing_type: str = "aux_loss"
-    moe_aux_loss_coeff: float = 1e-3
-    moe_router_topk: int = 8
+    router_aux_loss_coef: float = 1e-3
+    num_experts_per_tok: int = 8
     moe_router_pre_softmax: bool = False
     moe_grouped_gemm: bool = True
     moe_token_dispatcher_type: str = "alltoall"
-    moe_permute_fusion: bool = True
-    
+
     # optimization
     persist_layer_norm: bool = True
     bias_activation_fusion: bool = True
@@ -110,6 +109,5 @@ class Qwen3MoEModelSingleCardProvider(Qwen3MoEModelProvider):
     use_bias: bool = False
     vocab_size: int = 37888
 
-    moe_num_shared_experts: int = 1
+    n_shared_experts: int = 1
     moe_intermediate_size: int = 1408
-    moe_shared_expert_intermediate_size: int = 1408
