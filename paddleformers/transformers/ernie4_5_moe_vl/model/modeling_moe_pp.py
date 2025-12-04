@@ -205,10 +205,17 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
         return set(no_recompute_layer_num)
 
     if vp_size == 1:
-        # If vp_size == 1, we can not select model chunk for pp,
-        # so if skip_recompute_num > 0, we select the all layers to skip recompute.
+        # No virtual pipeline: skip last few layers of each physical stage
         if skip_recompute_num > 0:
-            return set(range(layer_num))
+            chunk_size = layer_num // pp_size
+            no_recompute_layers = []
+            for i in range(pp_size):
+                start = i * chunk_size
+                end = (i + 1) * chunk_size
+                # Skip last skip_recompute_num layers per physical stage
+                skip_start = max(start, end - skip_recompute_num)
+                no_recompute_layers.extend(range(skip_start, end))
+            return set(no_recompute_layers)
         else:
             return set()
 
