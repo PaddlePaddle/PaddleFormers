@@ -60,8 +60,6 @@ class GLMMoEModelProvider(GPTModelProvider):
         "LayerSpec", Callable[["GPTModelProvider"], "LayerSpec"]
     ] = get_gpt_decoder_block_spec
 
-    transform_rules = {"n_routed_experts": "moe_num_experts"}
-
 
 def eager_attention_forward(
     module: nn.Layer,
