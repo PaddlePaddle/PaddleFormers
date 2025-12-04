@@ -129,7 +129,7 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).to(dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
         return inv_freq, attention_factor
 
     @dynamic_rope_update
@@ -156,7 +156,7 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
 
-            return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+            return cos.astype(dtype=x.dtype), sin.astype(dtype=x.dtype)
 
 
 class Ernie4_5_MoeMLP(Ernie4_5MLP):
