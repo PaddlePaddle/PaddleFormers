@@ -28,6 +28,7 @@ def standardize_rope_params(config, rope_theta: float | dict[str, float] | None 
     later type. For old model the fn will duplicate a single rope param in each layer type (backward compatibility)
     """
     rope_parameters = getattr(config, "rope_parameters", None)
+    partial_rotary_factor = getattr(config, "partial_rotary_factor", None)
     layer_types = getattr(config, "layer_types", None)
     if rope_theta is None:
         rope_theta = getattr(config, "rope_theta", None)
@@ -41,6 +42,8 @@ def standardize_rope_params(config, rope_theta: float | dict[str, float] | None 
             rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
             rope_theta = rope_parameters.get("rope_theta") or rope_theta
             rope_parameters.update({"rope_theta": rope_theta, "rope_type": rope_type})
+        if partial_rotary_factor is not None:
+            rope_parameters["partial_rotary_factor"] = partial_rotary_factor
         config.rope_parameters = rope_parameters
 
     # Case 2: different RoPE for each layer as nested dict
@@ -70,6 +73,8 @@ def standardize_rope_params(config, rope_theta: float | dict[str, float] | None 
                         "rope_type": curr_rope_type,
                         "rope_theta": rope_theta[layer_type],
                     }
+            if partial_rotary_factor is not None:
+                rope_parameters[layer_type]["partial_rotary_factor"] = partial_rotary_factor
             config.rope_parameters = rope_parameters_per_layer_type
 
 
