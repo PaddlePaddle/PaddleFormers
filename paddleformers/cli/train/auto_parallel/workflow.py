@@ -148,13 +148,13 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
     do_enable_linear_fused_grad_add = training_args.enable_linear_fused_grad_add
     # do_enable_mp_async_allreduce = (
     #     training_args.enable_auto_parallel
-    #     and training_args.tensor_parallel_degree > 1
+    #     and training_args.tensor_model_parallel_size > 1
     #     and "enable_mp_async_allreduce" in training_args.tensor_parallel_config
     #     and not training_args.sequence_parallel
     # )
     # do_enable_sp_async_reduce_scatter = (
     #     training_args.enable_auto_parallel
-    #     and training_args.tensor_parallel_degree > 1
+    #     and training_args.tensor_model_parallel_size > 1
     #     and training_args.sequence_parallel
     #     and "enable_sp_async_reduce_scatter" in training_args.tensor_parallel_config
     # )
@@ -245,13 +245,13 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
         config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
-        assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."
+        assert config.tensor_model_parallel_size > 1, "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
         config.num_attention_heads % config.sep_parallel_degree == 0
     ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
     assert (
-        config.seq_length % config.context_parallel_degree == 0
-    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_degree {config.context_parallel_degree}"
+        config.seq_length % config.context_parallel_size == 0
+    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
 
     if training_args.sharding_parallel_config is not None:
         # for stage1 overlap optimization

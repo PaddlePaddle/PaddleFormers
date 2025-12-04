@@ -238,14 +238,14 @@ class UnifiedCheckpointHandler:
             optim_state_dict,
             is_model_weight=False,
             use_expert_parallel=self.args.use_expert_parallel,
-            expert_parallel_degree=self.args.expert_parallel_degree,
+            expert_model_parallel_size=self.args.expert_model_parallel_size,
         )
         filter_sync_parameters(
             model_state_dict,
             master_weights,
             is_model_weight=False,
             use_expert_parallel=self.args.use_expert_parallel,
-            expert_parallel_degree=self.args.expert_parallel_degree,
+            expert_model_parallel_size=self.args.expert_model_parallel_size,
         )
 
         optimizer_name = _add_variant(SAFE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
@@ -622,10 +622,10 @@ def unified_checkpoint_into_shards(
         state_dict,
         is_model_weight=True,
         use_expert_parallel=args.use_expert_parallel,
-        expert_parallel_degree=args.expert_parallel_degree,
+        expert_model_parallel_size=args.expert_model_parallel_size,
     )
 
-    if config_to_save.tensor_parallel_degree > 1:
+    if config_to_save.tensor_model_parallel_size > 1:
         if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
             tp_actions = model_to_save._get_tensor_parallel_convert_actions(
                 all_filter_keys, is_split=False, ignore_error=True
@@ -653,7 +653,7 @@ def unified_checkpoint_into_shards(
 
     shard_file = get_sharded_file_name(args, weights_name)
     # renumerize shard_file name for expert_parallel.
-    if args.use_expert_parallel and args.expert_parallel_degree <= 1:
+    if args.use_expert_parallel and args.expert_model_parallel_size <= 1:
         shard_file = rename_shard_file(args, shard_file, weights_name)
 
     for key, weight in state_dict.items():
@@ -664,7 +664,7 @@ def unified_checkpoint_into_shards(
         index_weight_file,
         total_size,
         use_expert_parallel=args.use_expert_parallel,
-        expert_parallel_degree=args.expert_parallel_degree,
+        expert_model_parallel_size=args.expert_model_parallel_size,
     )
     sharded_index = get_sharded_index(
         index_file_list,
@@ -747,7 +747,7 @@ def unified_optimizer_into_shards(
         state_dict,
         is_model_weight=False,
         use_expert_parallel=args.use_expert_parallel,
-        expert_parallel_degree=args.expert_parallel_degree,
+        expert_model_parallel_size=args.expert_model_parallel_size,
     )
 
     if tp_size > 1:

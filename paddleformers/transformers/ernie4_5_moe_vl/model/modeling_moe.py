@@ -324,7 +324,7 @@ class Ernie4_5_MoeMLP(Ernie4_5_MLP):
 
         if getattr(config, "disable_ffn_model_parallel", False):
             config = deepcopy(config)
-            config.tensor_parallel_degree = 1
+            config.tensor_model_parallel_size = 1
 
         super().__init__(config, layer_idx=layer_idx)
         self.moe_dropout_prob = config.moe_dropout_prob
@@ -756,7 +756,7 @@ class Ernie4_5_DecoderLayer(nn.Layer):
         Returns:
             Context manager for dropout operation
         """
-        if self.config.tensor_parallel_degree > 1 and self.config.hidden_dropout_prob > 0.0:
+        if self.config.tensor_model_parallel_size > 1 and self.config.hidden_dropout_prob > 0.0:
             current_seed = "local_seed" if self.config.sequence_parallel else "global_seed"
             return get_rng_state_tracker().rng_state(current_seed)
         return contextlib.nullcontext()
@@ -787,7 +787,7 @@ class Ernie4_5_PretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -917,7 +917,7 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
         Args:
             config (Ernie4_5_MoeConfig): Model configuration.
         """
-        if config.moe_group in {"mp", "model", "tp"} and config.tensor_parallel_degree > 1:
+        if config.moe_group in {"mp", "model", "tp"} and config.tensor_model_parallel_size > 1:
             logger.info(f"disable FFN tensor model parallel, moe-group={config.moe_group}")
             config.disable_ffn_model_parallel = True
 
@@ -933,7 +933,7 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
         self.hidden_size = config.hidden_size
         self.config = config
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             self.embed_tokens = VocabParallelEmbedding(
                 self.vocab_size,
                 self.hidden_size,
@@ -1360,7 +1360,7 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
         self.ignored_index = getattr(config, "ignored_index", -100)
         self.config = config
         self.return_tuple = return_tuple
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
             logger.info("using parallel cross entroy, take care")

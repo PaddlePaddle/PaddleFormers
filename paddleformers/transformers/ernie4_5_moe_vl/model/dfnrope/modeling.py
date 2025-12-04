@@ -351,7 +351,7 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
             embed_dim=config.hidden_size,
         )
 
-        self.attn_sep = getattr(config, "attn_sep", False) and config.tensor_parallel_degree > 1
+        self.attn_sep = getattr(config, "attn_sep", False) and config.tensor_model_parallel_size > 1
 
         head_dim = config.hidden_size // config.num_heads
         self.rotary_pos_emb = VisionRotaryEmbedding(head_dim // 2)
@@ -468,7 +468,7 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
 
     def extract_feature(self, images, grid_thw):
         """extract feature"""
-        if self.config.tensor_parallel_degree <= 1:
+        if self.config.tensor_model_parallel_size <= 1:
             return self._extract_feature(images, grid_thw)
         else:
             grid_thw = grid_thw.clone()

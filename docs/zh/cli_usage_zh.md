@@ -50,7 +50,7 @@ export ASCEND_RT_VISIBLE_DEVICES=0
 export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 ```
 
-* 注：在`Chat`模块，CUDA_VISIBLE_DEVICES配置的GPU数量应该等于`tensor_parallel_degree`在配置中。
+* 注：在`Chat`模块，CUDA_VISIBLE_DEVICES配置的GPU数量应该等于`tensor_model_parallel_size`在配置中。
 或者，您也可以取消设置 CUDA_VISIBLE_DEVICES。
 
 **代理配置**

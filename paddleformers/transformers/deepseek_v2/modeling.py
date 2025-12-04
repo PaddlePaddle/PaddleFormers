@@ -442,7 +442,7 @@ class DeepseekV2MoE(nn.Layer):
         super().__init__()
         self.config = config
         new_config = deepcopy(config)
-        new_config.tensor_parallel_degree = 1
+        new_config.tensor_model_parallel_size = 1
 
         self.experts = nn.LayerList(
             [
@@ -507,7 +507,7 @@ class DeepseekV2MoEFlexToken(MoEFlexTokenLayer):
         moe_group = hcg.get_expert_parallel_group()
         moe_grad_group = hcg.get_moe_sharding_parallel_group()
         new_config = deepcopy(config)
-        new_config.tensor_parallel_degree = 1
+        new_config.tensor_model_parallel_size = 1
 
         super().__init__(
             config=config,
@@ -556,11 +556,11 @@ class DeepseekV2Attention(nn.Layer):
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.num_local_heads = self.num_heads
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"Attention head num ({self.num_heads}) is not divisible by tensor_parallel_degree ({config.tensor_parallel_degree})."
-            self.num_local_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"Attention head num ({self.num_heads}) is not divisible by tensor_model_parallel_size ({config.tensor_model_parallel_size})."
+            self.num_local_heads = self.num_heads // config.tensor_model_parallel_size
 
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
@@ -575,7 +575,7 @@ class DeepseekV2Attention(nn.Layer):
         self.fuse_rope = config.use_fused_rope
 
         self.seq_length = config.seq_length
-        self.tensor_parallel = config.tensor_parallel_degree > 1
+        self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
 
         # Enable_recompute defaults to False and is controlled by Trainer
@@ -811,7 +811,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         self.layer_idx = layer_idx
         self.enable_recompute = False
         self.recompute_granularity = config.recompute_granularity
-        self.tensor_parallel = config.tensor_parallel_degree > 1
+        self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
         self.hidden_size = config.hidden_size
 
@@ -1048,7 +1048,7 @@ class DeepseekV2MTPLayer(DeepseekV2DecoderLayer):
         )
         self.eh_proj = nn.Linear(2 * config.hidden_size, config.hidden_size)
 
-        if config.sequence_parallel and config.tensor_parallel_degree > 1:
+        if config.sequence_parallel and config.tensor_model_parallel_size > 1:
             mark_as_sequence_parallel_parameter(self.eh_proj.weight)
             mark_as_sequence_parallel_parameter(self.eh_proj.bias)
 
@@ -1211,7 +1211,7 @@ class DeepseekV2PretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -1227,7 +1227,7 @@ class DeepseekV2PretrainedModel(PretrainedModel):
 
             base_actions["lm_head.weight"] = partial(fn, is_column=False)
 
-            if not config.vocab_size % config.tensor_parallel_degree == 0:
+            if not config.vocab_size % config.tensor_model_parallel_size == 0:
                 base_actions.pop("lm_head.weight")
                 base_actions.pop("embed_tokens.weight")
 
@@ -1237,7 +1237,7 @@ class DeepseekV2PretrainedModel(PretrainedModel):
             base_actions["layers.0.self_attn.q_b_proj.weight"] = partial(fn, is_column=True)
 
             # if we have enough num_key_value_heads to split, then split it.
-            if config.num_key_value_heads % config.tensor_parallel_degree == 0:
+            if config.num_key_value_heads % config.tensor_model_parallel_size == 0:
                 base_actions["layers.0.self_attn.kv_b_proj.weight"] = partial(fn, is_column=True)
 
             # dense mlp
@@ -1310,7 +1310,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         self.norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
-            input_is_parallel=config.tensor_parallel_degree > 1 and config.sequence_parallel,
+            input_is_parallel=config.tensor_model_parallel_size > 1 and config.sequence_parallel,
         )
 
         self.enable_recompute = False
@@ -1614,7 +1614,7 @@ class DeepseekV2PretrainingCriterion(nn.Layer):
         super(DeepseekV2PretrainingCriterion, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
             self.loss_func = mpu.ParallelCrossEntropy(ignore_index=self.ignore_index)
@@ -1820,7 +1820,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PretrainedModel):
             from paddlenlp_kernel.triton.cut_cross_entropy import linear_cross_entropy
 
             assert (
-                self.config.tensor_parallel_degree <= 1
+                self.config.tensor_model_parallel_size <= 1
             ), "The argument `use_fused_linear_cross_entropy` is imcompatiable with tensor parallel "
 
             masked_lm_loss = linear_cross_entropy(hidden_states, self.lm_head.weight, targets=labels)
@@ -1837,7 +1837,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PretrainedModel):
         else:
             # if labels is None，means we need full output, instead of tensor_parallel_output
             # tensor_parallel_output is together with ParallelCrossEntropy
-            tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1
+            tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_model_parallel_size > 1
             logits = self.lm_head(hidden_states, tensor_parallel_output=tensor_parallel_output)
             mtp_logits = (
                 [

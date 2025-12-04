@@ -80,7 +80,7 @@ class KTOTrainer(Trainer):
             self.ref_model_wrapped = None
         else:
             raise ValueError("ref_model is None! KTO requires a reference model")
-        if not self.args.pipeline_parallel_degree > 1:
+        if not self.args.pipeline_model_parallel_size > 1:
             if kto_criterion is None:
                 self.kto_criterion = KTOCriterion(self.model.config, kto_config=kto_config, ignore_label=ignore_label)
             elif isinstance(kto_criterion, KTOCriterion):
@@ -191,7 +191,7 @@ class KTOTrainer(Trainer):
         for key in metrics:
             if "count" in key:
                 metrics[key] = self._nested_gather(paddle.tile(metrics[key], repeat_times=[1, 1])).sum().cpu()
-                metrics[key] /= max(self.args.tensor_parallel_degree, 1)
+                metrics[key] /= max(self.args.tensor_model_parallel_size, 1)
             else:
                 metrics[key] = self._nested_gather(paddle.tile(metrics[key], repeat_times=[1, 1])).mean().cpu()
         metrics[f"{prefix}kl"] = kl
@@ -215,14 +215,14 @@ class KTOTrainer(Trainer):
             dtype=self.amp_dtype,
         )
         model = fleet.distributed_model(model)
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
         return model
 
     def _wrap_model(self, model, training=True):
         """Wrap model."""
         model = super()._wrap_model(model, training)
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
         return model
 
@@ -233,7 +233,7 @@ class KTOTrainer(Trainer):
 
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
         """prediction_step"""
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
             return self.prediction_pipeline_step(self.ref_model_wrapped, model, inputs)

@@ -242,12 +242,12 @@ class LlmMetaConfig:
 
     hybrid_parallel_attributes = [
         # tensor_parallel
-        ("tensor_parallel_degree", int, 1, "tensor_parallel_degree"),
+        ("tensor_model_parallel_size", int, 1, "tensor_model_parallel_size"),
         ("tensor_parallel_rank", int, 0, "tensor_parallel_rank"),
         ("tensor_parallel_output", bool, True, "tensor_parallel_output"),
         # pipeline_parallel
-        ("pipeline_parallel_degree", int, 1, "pipeline_parallel_degree"),
-        ("virtual_pp_degree", int, 1, "Virtual pipeline degree"),
+        ("pipeline_model_parallel_size", int, 1, "pipeline_model_parallel_size"),
+        ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         (
@@ -259,7 +259,7 @@ class LlmMetaConfig:
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
         ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
-        ("context_parallel_degree", int, 1, "context_parallel_degree"),
+        ("context_parallel_size", int, 1, "context_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
     ]
@@ -588,14 +588,14 @@ class PretrainedConfig:
         kwargs.pop("transformers_version", None)
         llm_meta = LlmMetaConfig._get_defaults()
         self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
-        self._unsavable_keys.remove("tensor_parallel_degree")
+        self._unsavable_keys.remove("tensor_model_parallel_size")
         self._unsavable_keys.add("_attn_implementation")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
             assert (
-                self.tensor_parallel_degree > 1
-            ), f"senquence-parallel only works in tensor parallel, got tensor parallel degree={self.tensor_parallel_degree}"
+                self.tensor_model_parallel_size > 1
+            ), f"senquence-parallel only works in tensor parallel, got tensor parallel degree={self.tensor_model_parallel_size}"
 
         self.chunk_size_feed_forward = kwargs.pop("chunk_size_feed_forward", 0)
         self.return_dict = kwargs.pop("return_dict", False)
