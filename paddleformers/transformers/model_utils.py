@@ -3909,8 +3909,12 @@ class HFFormatFullParamSaver:
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()
 
+        # TODO(): fix total size
         all_sizes = []
-        paddle.distributed.all_gather_object(all_sizes, total_saved_size)
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.all_gather_object(all_sizes, total_saved_size)
+        else:
+            all_sizes.append(total_saved_size)
         total_size = sum(all_sizes)
         replace_name_and_gen_index(path, total_size)
         return total_saved_size
