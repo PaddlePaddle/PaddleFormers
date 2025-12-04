@@ -66,7 +66,6 @@
 #     "pipeline_parallel_degree": 1,
 #     "lora": "true",
 #     "zero_padding": "false",
-#     "use_flash_attention": "false",
 #     "unified_checkpoint": 1,
 # }
 

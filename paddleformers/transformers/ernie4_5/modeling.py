@@ -735,7 +735,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
 
     def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
         """Avoid using attention_mask with flash_attn on generation."""
-        if self.config.use_flash_attention:
+        if self.config._attn_implementation == "sdpa":
             return None
         return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
 

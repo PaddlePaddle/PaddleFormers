@@ -66,7 +66,6 @@ pretrain_arguments = {
     "sharding": "",
     "virtual_pp_degree": 1,
     "sequence_parallel": 0,
-    "use_flash_attention": "false",
     "fuse_rms_norm": "false",
     "max_seq_len": 1024,
     "learning_rate": 3e-04,

@@ -157,7 +157,7 @@ class QWenAttentionAuto(nn.Layer):
         # Support the flash attention and normal attention
         bsz, q_len, num_heads, head_dim = query.shape
         _, kv_seq_len, _, _ = value.shape
-        if self.config.use_flash_attention and flash_attention is not None:
+        if self.config._attn_implementation == "sdpa" and flash_attention is not None:
             # Flash Attention now ignore attention mask
             # Current Flash Attention doesn't support attn maskt
             # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]

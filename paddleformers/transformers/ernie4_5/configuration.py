@@ -40,7 +40,6 @@ class Ernie4_5Config(PretrainedConfig):
         initializer_range=0.02,
         rms_norm_eps=1e-6,
         use_cache=False,
-        use_flash_attention=False,
         recompute=False,
         recompute_granularity="core_attn",
         recompute_use_reentrant=False,
@@ -77,7 +76,6 @@ class Ernie4_5Config(PretrainedConfig):
             num_attention_heads (int): Number of attention heads for each attention layer
             rms_norm_eps (float): The epsilon used by the RMS normalization layers
             use_cache (bool): Whether to use caching for faster generation (decoding)
-            use_flash_attention (bool): Whether to use FlashAttention for optimized attention computation
             recompute (bool): Whether to use gradient checkpointing to save memory
             recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
@@ -123,7 +121,6 @@ class Ernie4_5Config(PretrainedConfig):
         self.use_cache = use_cache
         self.recompute = recompute
         self.recompute_granularity = recompute_granularity
-        self.use_flash_attention = use_flash_attention
         self.recompute_use_reentrant = recompute_use_reentrant
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
