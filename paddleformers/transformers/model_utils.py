@@ -3791,7 +3791,10 @@ def replace_name_and_gen_index(path, total_size):
     safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
     files_num = len(safetensor_files)
     all_files_num = []
-    paddle.distributed.all_gather_object(all_files_num, files_num)
+    if paddle.distributed.get_world_size() > 1:
+        paddle.distributed.all_gather_object(all_files_num, files_num)
+    else:
+        all_files_num.append(files_num)
     total_files_num = sum(all_files_num)
 
     start_idx = []
@@ -3820,7 +3823,10 @@ def replace_name_and_gen_index(path, total_size):
             os.rename(file_path, new_file_path)
 
     index_mapping_list = []
-    paddle.distributed.all_gather_object(index_mapping_list, index_mapping)
+    if paddle.distributed.get_world_size() > 1:
+        paddle.distributed.all_gather_object(index_mapping_list, index_mapping)
+    else:
+        index_mapping_list.append(index_mapping)
     index_mapping = {}
     for mapping in index_mapping_list:
         index_mapping.update(mapping)
