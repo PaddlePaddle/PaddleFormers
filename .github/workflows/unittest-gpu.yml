@@ -55,6 +55,7 @@ jobs:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
+          PIP_CACHE_DIR: /home/.cache/pip
           paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
@@ -83,6 +84,7 @@ jobs:
             -e "AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio" \
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
+            -e PIP_CACHE_DIR \
             -w /github/workspace --privileged $IMAGE_NAME
 
       - name: Download Code
@@ -117,7 +119,8 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
-          pip config set global.cache-dir "/home/.cache/pip"
+          mkdir -p /home/.cache/pip
+          pip cache dir
           set -e
           rm -rf /root/.cache/aistudio/
           cd /github/workspace/PaddleFormers && git config --global --add safe.directory $PWD
@@ -127,7 +130,7 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
-          timeout 50m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
+          timeout 120m bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
       - name: Copy coverage.xml out of container
         run: |
