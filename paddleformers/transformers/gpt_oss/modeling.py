@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import math
+from functools import partial
 from typing import Optional, Tuple, Union
 
 import paddle

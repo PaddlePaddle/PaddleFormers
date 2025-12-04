@@ -442,7 +442,9 @@ def main():
         config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
-        assert config.tensor_model_parallel_size > 1, "tensor_model_parallel_size must be larger than 1 for sequence parallel."
+        assert (
+            config.tensor_model_parallel_size > 1
+        ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
         config.num_attention_heads % config.sep_parallel_degree == 0
     ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"

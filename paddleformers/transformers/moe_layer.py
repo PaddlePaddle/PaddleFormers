@@ -185,7 +185,9 @@ class MoELayer(nn.Layer):
             self.moe_rank = dist.get_rank(self.moe_group)
             self.moe_rank = 0 if self.moe_rank < 0 else self.moe_rank
             self.expert_model_parallel_size = dist.get_world_size(self.moe_group)
-            self.expert_model_parallel_size = 1 if self.expert_model_parallel_size < 0 else self.expert_model_parallel_size
+            self.expert_model_parallel_size = (
+                1 if self.expert_model_parallel_size < 0 else self.expert_model_parallel_size
+            )
             self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
                 self.moe_num_experts, self.expert_model_parallel_size
             )

@@ -618,7 +618,9 @@ class Trainer:
         if args.enable_auto_parallel:
             return
         # for pipeline mode and pure tensor parallel
-        if self.args.pipeline_model_parallel_size > 1 or (self.args.tensor_model_parallel_size > 1 and self.sharding is None):
+        if self.args.pipeline_model_parallel_size > 1 or (
+            self.args.tensor_model_parallel_size > 1 and self.sharding is None
+        ):
             if self.args.amp_master_grad:
                 mix_precision_utils.MixPrecisionScaler(self.scaler)  # return value has no use
             self.scaler = fleet.distributed_scaler(self.scaler)
@@ -3495,7 +3497,9 @@ class Trainer:
         signal_dir = os.path.join(run_signal_dir, checkpoint_folder)
 
         if not self.args.enable_auto_parallel:
-            if isinstance(self.model, LoRAModel) and (self.model.quantized or self.args.pipeline_model_parallel_size > 1):
+            if isinstance(self.model, LoRAModel) and (
+                self.model.quantized or self.args.pipeline_model_parallel_size > 1
+            ):
                 self.save_model(output_dir)
             elif isinstance(self.model, LoRAModel) or isinstance(self.model, PrefixModelForCausalLM):
                 self.save_model(output_dir, True)

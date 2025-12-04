@@ -8,7 +8,7 @@ CLI（Command Line Interface）提供基于终端的程序交互，通过参数�
 
 **安装**
 
-在PaddleFormers根目录下运行：
+在 PaddleFormers 根目录下运行：
 ```bash
 python -m pip install -e .
 ```
@@ -28,7 +28,7 @@ paddleformers-cli help
 ------------------------------------------------------------
 ```
 
-**GPU配置**
+**GPU 配置**
 
 默认情况下，CLI 中使用所有可用的 GPU。
 如果您想指定某些 GPU，请在运行 CLI 之前设置 CUDA_VISIBLE_DEVICES：
@@ -50,7 +50,7 @@ export ASCEND_RT_VISIBLE_DEVICES=0
 export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 ```
 
-* 注：在`Chat`模块，CUDA_VISIBLE_DEVICES配置的GPU数量应该等于`tensor_model_parallel_size`在配置中。
+* 注：在`Chat`模块，CUDA_VISIBLE_DEVICES 配置的 GPU 数量应该等于`tensor_model_parallel_size`在配置中。
 或者，您也可以取消设置 CUDA_VISIBLE_DEVICES。
 
 **代理配置**

@@ -1447,7 +1447,9 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             Union[paddle.Tensor, Tuple[paddle.Tensor, paddle.Tensor]]:
                 Same return format as forward()
         """
-        assert self.config.tensor_model_parallel_size > 0, "use_fused_head_and_loss_fn require tensor_model_parallel_size > 0"
+        assert (
+            self.config.tensor_model_parallel_size > 0
+        ), "use_fused_head_and_loss_fn require tensor_model_parallel_size > 0"
         masked_lm_loss, masked_lm_labels_all = FusedHeadParallelCrossEntropy.apply(
             hidden_states,
             outlinear_weight,

@@ -224,7 +224,9 @@ class ModularMoELayer(nn.Layer):
             assert (
                 self.expert_model_parallel_size == new_expert_model_parallel_size
             ), f"self.expert_model_parallel_size={self.expert_model_parallel_size} != moe_world_size={new_expert_model_parallel_size}"
-            self.expert_model_parallel_size = 1 if new_expert_model_parallel_size < 0 else new_expert_model_parallel_size
+            self.expert_model_parallel_size = (
+                1 if new_expert_model_parallel_size < 0 else new_expert_model_parallel_size
+            )
             self.num_experts_per_device = _parse_moe_expert_parallel(self.num_experts, self.expert_model_parallel_size)
         else:
             self.moe_group = None

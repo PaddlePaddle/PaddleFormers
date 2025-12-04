@@ -1339,7 +1339,9 @@ class TrainingArguments:
                 "2. enable_auto_parallel is set to True, which means the training will be executed in static mode of auto parallel."
             )
 
-        if self.distributed_dataloader and not (self.tensor_model_parallel_size > 1 or self.pipeline_model_parallel_size > 1):
+        if self.distributed_dataloader and not (
+            self.tensor_model_parallel_size > 1 or self.pipeline_model_parallel_size > 1
+        ):
             warnings.warn("We set `distributed_dataloader` to False if tp_degree <= 1 and pp_degree <= 1")
             self.distributed_dataloader = False
 
@@ -1778,7 +1780,9 @@ class TrainingArguments:
             self.context_parallel_size = max(self.context_parallel_size, 1)
             self.pipeline_model_parallel_size = max(self.pipeline_model_parallel_size, 1)
 
-            assert self.pipeline_model_parallel_size == 1, "Current not support pipeline parallel in auto parallel mode."
+            assert (
+                self.pipeline_model_parallel_size == 1
+            ), "Current not support pipeline parallel in auto parallel mode."
             assert (
                 world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0
             ), f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
@@ -2236,11 +2240,16 @@ class TrainingArguments:
                 self.sharding = []
 
             self.data_parallel_degree = world_size // (
-                sharding_parallel_degree * tensor_model_parallel_size * sep_parallel_degree * pipeline_model_parallel_size
+                sharding_parallel_degree
+                * tensor_model_parallel_size
+                * sep_parallel_degree
+                * pipeline_model_parallel_size
             )
 
             if expert_model_parallel_size > 1:
-                moe_sharding_parallel_degree = world_size // (pipeline_model_parallel_size * expert_model_parallel_size)
+                moe_sharding_parallel_degree = world_size // (
+                    pipeline_model_parallel_size * expert_model_parallel_size
+                )
                 assert (
                     self.expert_tensor_model_parallel_size <= 1
                 ), "expert_tensor_model_parallel_size > 1 is not supported when expert_model_parallel_size > 1"
@@ -2502,7 +2511,9 @@ class TrainingArguments:
             if self.use_expert_parallel and self.expert_model_parallel_size <= 1:
                 name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree))
             if self.use_expert_parallel and self.expert_model_parallel_size > 1:
-                name.append(self._format_name("moe_sharding", self.expert_parallel_rank, self.expert_model_parallel_size))
+                name.append(
+                    self._format_name("moe_sharding", self.expert_parallel_rank, self.expert_model_parallel_size)
+                )
             return "_".join(name)
 
         else:
