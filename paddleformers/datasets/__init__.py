@@ -63,7 +63,7 @@ import_structure = {
     ],
     "reader.download_manager": ["HuggingFaceDownload"],
     "reader.file_reader": ["BaseReader", "FileReader", "FileListReader", "get_hf_dataset_config", "HuggingFaceReader"],
-    "reader.io": ["load_json", "load_jsonl", "load_txt", "load_parquet", "load_csv"],
+    "reader.io": ["load_json", "load_txt", "load_parquet", "load_csv"],
     "reader.mix_datasets": [
         "BaseMixDataset",
         "RandomDataset",
