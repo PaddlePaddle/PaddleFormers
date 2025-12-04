@@ -89,6 +89,7 @@ def create_dataset(**dataset_config):
         encode_one_turn=dataset_config["encode_one_turn"],
         use_template=dataset_config["use_template"],
         is_pretraining=dataset_config["is_pretraining"],
+        truncate_packing=dataset_config.get("truncate_packing", True),
     )
     return sequence_dataset
 
@@ -169,9 +170,15 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
 
         if not model_args.stage.lower() == "pt":
             if model_args.use_attn_mask_startend_row_indices:
-                return_list[-1].append(gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len))
+                return_list[-1].append(
+                    gen_attn_mask_startend_row_indices(
+                        original_token_ids, max_seq_len, model_args.use_global_causal_attn
+                    )
+                )
             else:
-                return_list[-1].append(gen_self_attn_mask(original_token_ids, max_seq_len))
+                return_list[-1].append(
+                    gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+                )
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
     input_dict = dict(zip(input_keys, return_list))
@@ -334,6 +341,7 @@ class SequenceDataset(IterableDataset):
         encode_one_turn: bool = True,
         use_template: bool = True,
         is_pretraining: bool = False,
+        truncate_packing: bool = True,
     ):
         """Initialize SequenceDataset.
 
@@ -368,6 +376,7 @@ class SequenceDataset(IterableDataset):
         self.num_samples_each_epoch = num_samples_each_epoch
         self.reverse = True
         self.is_pretraining = is_pretraining
+        self.truncate_packing = truncate_packing
 
         # For new data concatenation mode
         self.begin_of_query = self.tokenizer.tokenize("User: ")
@@ -443,7 +452,7 @@ class SequenceDataset(IterableDataset):
         # 1. tokenize all the samples in the sampling pool,
         # 2. combine them into one large sample
         # 3. truncate it into multiple new samples based on the max_seq_len.
-        if self.is_pretraining:
+        if self.is_pretraining and self.truncate_packing:
             all_tokenized_tokens = []
             for _ in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
@@ -460,7 +469,9 @@ class SequenceDataset(IterableDataset):
 
                 while len(all_tokenized_tokens) >= self.max_seq_len:
                     cut_tokens = all_tokenized_tokens[: self.max_seq_len]
-                    cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
+                    # Add an EOS token at the position of data truncation
+                    if cut_tokens[-1] != self.tokenizer.eos_token_id:
+                        cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
                     all_tokenized_tokens = all_tokenized_tokens[self.max_seq_len :]
 
                     res_tokens = cut_tokens[:-1]
@@ -514,7 +525,21 @@ class SequenceDataset(IterableDataset):
                 for _ in range(len(self.mix_datasets)):
                     example = next(dataset_iterator)
                     actual_example_num = 1
-                    sequence = self._postprocess_sequence(example, actual_example_num)
+                    if self.is_pretraining:
+                        tokens = self._postprocess_pretraining_sequence(example, actual_example_num)
+                        res_tokens = tokens[:-1]
+                        res_labels = tokens[1:]
+                        loss_mask = [1] * len(res_tokens)
+                        pos_ids = list(range(len(res_tokens)))
+                        sequence = Sequence(
+                            token_ids=res_tokens,
+                            position_ids=pos_ids,
+                            labels=res_labels,
+                            loss_mask=loss_mask,
+                            num_examples=actual_example_num,
+                        )
+                    else:
+                        sequence = self._postprocess_sequence(example, actual_example_num)
                     # unused_samples and used_samples are used to calculate skip_samples and actual_train_samples
                     if sequence is None:
                         if self.estimate:
@@ -540,7 +565,21 @@ class SequenceDataset(IterableDataset):
                     for _ in range(len(self.mix_datasets)):
                         example = next(dataset_iterator)
                         actual_example_num = 1
-                        sequence = self._postprocess_sequence(example, actual_example_num)
+                        if self.is_pretraining:
+                            tokens = self._postprocess_pretraining_sequence(example, actual_example_num)
+                            res_tokens = tokens[:-1]
+                            res_labels = tokens[1:]
+                            loss_mask = [1] * len(res_tokens)
+                            pos_ids = list(range(len(res_tokens)))
+                            sequence = Sequence(
+                                token_ids=res_tokens,
+                                position_ids=pos_ids,
+                                labels=res_labels,
+                                loss_mask=loss_mask,
+                                num_examples=actual_example_num,
+                            )
+                        else:
+                            sequence = self._postprocess_sequence(example, actual_example_num)
                         if sequence is None:
                             if self.estimate:
                                 self.unused_samples += actual_example_num
@@ -624,6 +663,8 @@ class SequenceDataset(IterableDataset):
         # tokens
         content = example.request["messages"][0]["content"]
         tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
+        # Add an EOS token at the end of each sample
+        tokens = tokens + [self.tokenizer.eos_token_id]
 
         return tokens
 
@@ -784,7 +825,21 @@ class SequenceDataset(IterableDataset):
         left_index = 0
 
         while index < len(examples):
-            sequence = self._postprocess_sequence(examples[index], actual_example_num_list[index])
+            if self.is_pretraining:
+                tokens = self._postprocess_pretraining_sequence(examples[index], actual_example_num_list[index])
+                res_tokens = tokens[:-1]
+                res_labels = tokens[1:]
+                loss_mask = [1] * len(res_tokens)
+                pos_ids = list(range(len(res_tokens)))
+                sequence = Sequence(
+                    token_ids=res_tokens,
+                    position_ids=pos_ids,
+                    labels=res_labels,
+                    loss_mask=loss_mask,
+                    num_examples=actual_example_num_list[index],
+                )
+            else:
+                sequence = self._postprocess_sequence(examples[index], actual_example_num_list[index])
             if sequence is None:
                 if self.estimate:
                     self.unused_samples += actual_example_num_list[index]
@@ -806,7 +861,7 @@ class SequenceDataset(IterableDataset):
         return generate_packs
 
 
-def gen_self_attn_mask(batch_token_ids: List[List[int]], max_seq_len: int):
+def gen_self_attn_mask(batch_token_ids: List[List[int]], max_seq_len: int, use_global_causal_attn: bool):
     """Generate self-attention mask for multi-sequence batches.
 
     Args:
@@ -818,15 +873,24 @@ def gen_self_attn_mask(batch_token_ids: List[List[int]], max_seq_len: int):
     """
     input_mask_data = np.zeros((1, 1, max_seq_len, max_seq_len), dtype="float32")
     offset = 0
-    for index, token_ids in enumerate(batch_token_ids):
-        cur_len = len(token_ids)
-        b = np.tril(np.ones([cur_len, cur_len]), 0)
-        input_mask_data[0, 0, offset : offset + cur_len, offset : offset + cur_len] = b
-        offset += cur_len
+    if use_global_causal_attn:
+        total_len = 0
+        for index, token_ids in enumerate(batch_token_ids):
+            total_len += len(token_ids)
+        b = np.tril(np.ones([total_len, total_len]), 0)
+        input_mask_data[0, 0, offset : offset + total_len, offset : offset + total_len] = b
+    else:
+        for index, token_ids in enumerate(batch_token_ids):
+            cur_len = len(token_ids)
+            b = np.tril(np.ones([cur_len, cur_len]), 0)
+            input_mask_data[0, 0, offset : offset + cur_len, offset : offset + cur_len] = b
+            offset += cur_len
     return input_mask_data
 
 
-def gen_attn_mask_startend_row_indices(batch_token_ids: List[List[int]], max_seq_len: int):
+def gen_attn_mask_startend_row_indices(
+    batch_token_ids: List[List[int]], max_seq_len: int, use_global_causal_attn: bool
+):
     """Generate row indices for flash attention masks.
 
     Args:
@@ -838,11 +902,20 @@ def gen_attn_mask_startend_row_indices(batch_token_ids: List[List[int]], max_seq
     """
     offset = 0
     attn_mask_startend_row_indices = []
-    for token_ids in batch_token_ids:
-        cur_len = len(token_ids)
-        attn_mask_startend_row_indices.extend([offset + cur_len] * cur_len)
-        offset += cur_len
-    if offset < max_seq_len:
-        attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
+    if use_global_causal_attn:
+        total_len = 0
+        for token_ids in batch_token_ids:
+            total_len += len(token_ids)
+        attn_mask_startend_row_indices.extend([offset + total_len] * total_len)
+        offset += total_len
+        if offset < max_seq_len:
+            attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
+    else:
+        for token_ids in batch_token_ids:
+            cur_len = len(token_ids)
+            attn_mask_startend_row_indices.extend([offset + cur_len] * cur_len)
+            offset += cur_len
+        if offset < max_seq_len:
+            attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
     # NOTE(hehuang): The dtype of attn_mask_startend_row_indices must be np.int32
     return np.array(attn_mask_startend_row_indices, dtype=np.int32)[None, None, ..., None]  # add dimension modify
