@@ -3906,7 +3906,8 @@ class HFFormatFullParamSaver:
             max_shard_size=max_shard_size,
             num_saver_ranks=self.num_saver_ranks,
         )
-        paddle.distributed.barrier()
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
 
         all_sizes = []
         paddle.distributed.all_gather_object(all_sizes, total_saved_size)
