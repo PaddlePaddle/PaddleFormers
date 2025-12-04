@@ -49,13 +49,11 @@ from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_sta
 )
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
-from safetensors import safe_open
-from safetensors.paddle import save_file
 from transformers.tokenization_utils_base import BatchEncoding
 
 from ..ops import Topology
 from ..trainer.argparser import strtobool
-from ..transformers.model_utils import _parse_size
+from ..transformers.model_utils import replace_name_and_gen_index, save_full_param
 from ..utils.env import PREFIX_CHECKPOINT_DIR, _re_checkpoint  # noqa for compatibility
 from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
 from ..utils.import_utils import is_paddle_cuda_available, is_psutil_available
@@ -1662,7 +1660,7 @@ def save_hf_checkpoint(
     )
     num_saver_ranks = h_group.nranks * v_group.nranks
     rank = h_group.rank + v_group.rank * h_group.nranks
-    total_saved_size = save_full_param_tmp(
+    total_saved_size = save_full_param(
         itr=itr,
         save_dir=path,
         rank=rank,
@@ -1671,4 +1669,4 @@ def save_hf_checkpoint(
         num_saver_ranks=num_saver_ranks,
     )
     paddle.distributed.barrier()
-    replace_name_and_gen_index_tmp(path, total_saved_size)
+    replace_name_and_gen_index(path, total_saved_size)
