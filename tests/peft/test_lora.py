@@ -23,7 +23,7 @@ import paddle
 from parameterized import parameterized
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
-from paddleformers.transformers import AutoModel, BertModel, Glm4MoeModel
+from paddleformers.transformers import AutoModel, BertModel, Glm4MoeModelLegacy
 
 
 class TestLoraLayer(unittest.TestCase):
@@ -187,7 +187,7 @@ class TestLoraModelFC(unittest.TestCase):
                 r=4,
                 lora_alpha=8,
             )
-            model = Glm4MoeModel.from_pretrained(
+            model = Glm4MoeModelLegacy.from_pretrained(
                 "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=True
             )
             lora_model = LoRAModel(model, lora_config)

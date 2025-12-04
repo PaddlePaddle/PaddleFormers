@@ -318,7 +318,7 @@ import_structure = {
     "qwen3_moe": [],
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
-    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"],
+    "glm4_moe": ["Glm4MoeForCausalLMPipeLegacy", "Glm4MoeModelLegacy", "Glm4MoeForCausalLMLegacy"],
     "auto": ["AutoModelForCausalLM"],
     "legacy.tokenizer_utils_base": ["EncodingFast"],
     "legacy": [],
