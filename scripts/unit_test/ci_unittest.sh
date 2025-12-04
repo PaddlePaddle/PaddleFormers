@@ -37,11 +37,14 @@ AGILE_COMPILE_BRANCH=$4
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
+    python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
+    sed -i '/^paddlefleet/d' requirements.txt
     python -m pip install -r requirements.txt
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
-    python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
-    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
+    python -m pip install --pre paddlepaddle-gpu  --no-cache-dir --no-dependencies --progress-bar off -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+    python -m pip install paddlefleet --no-dependencies --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+    # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python setup.py bdist_wheel > /dev/null
     python -m pip install  dist/p****.whl

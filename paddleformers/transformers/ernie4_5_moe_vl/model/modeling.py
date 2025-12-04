@@ -54,6 +54,13 @@ from .fusion_ops import (
 from .refined_recompute.utils import RefinedRecomputeFunction
 from .sequence_parallel_utils import ScatterOp
 
+try:
+    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+        build_sharded_state_dict,
+    )
+except:
+    build_sharded_state_dict = None
+
 
 def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_output=None, training=True):
     """
@@ -1679,3 +1686,18 @@ class Ernie4_5_LMHead(nn.Layer):
             tensor_parallel_output,
             training=self.training,
         )
+
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        if build_sharded_state_dict is None:
+            raise ImportError(
+                "The current version of paddlepaddle does not support 'build_sharded_state_dict'. "
+                "Please install paddlepaddle>=3.2."
+            )
+
+        if self.config.tensor_parallel_degree > 1:
+            state_dict = self.state_dict(structured_name_prefix="")
+            return build_sharded_state_dict(state_dict, {"weight": 0, "bias": 0}, structured_name_prefix)
+        return super().sharded_state_dict(structured_name_prefix)
