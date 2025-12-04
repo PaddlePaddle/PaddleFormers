@@ -88,9 +88,9 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
     should_pad_vocab: bool = False
 
     # MoE / FP8
-    moe_num_experts: Optional[int] = None
+    n_routed_experts: Optional[int] = None
     moe_grouped_gemm: bool = False
-    qk_layernorm: bool = False
+    use_qk_norm: bool = False
     fp8: Optional[str] = None
     normalization: str = "LayerNorm"
 

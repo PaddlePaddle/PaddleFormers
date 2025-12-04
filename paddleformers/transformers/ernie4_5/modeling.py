@@ -114,6 +114,8 @@ def apply_fused_rope(query_states, key_states, rope_theta):
 class Ernie4_5RotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
         self.config = config
         self.head_dim = config.head_dim
         self.base = config.rope_theta
