@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from functools import partial
-from typing import Callable, cast
+from typing import Callable, Optional, cast
 
 import paddle
 from paddle import nn
@@ -33,7 +33,7 @@ from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import LlamaConfig
 
 
@@ -298,13 +298,38 @@ class LlamaRotaryEmbedding(nn.Layer):
         if hasattr(config, "rope_parameters") and isinstance(config.rope_parameters, dict):
             self.rope_type = config.rope_parameters.get("rope_type", "default")
 
-        if self.rope_type == "llama3":
-            inv_freq, attention_scaling = _compute_llama3_parameters(config)
-        else:
-            inv_freq, attention_scaling = _compute_default_parameters(config)
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
-        self.attention_scaling = attention_scaling
         self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[LlamaConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).to(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @dynamic_rope_update
     def forward(self, x, position_ids):

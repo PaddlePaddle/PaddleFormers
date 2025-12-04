@@ -224,6 +224,7 @@ class DeepseekV2Config(PretrainedConfig):
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
 
+        self.head_dim = qk_rope_head_dim
         self.rope_parameters = rope_scaling
         standardize_rope_params(self, rope_theta=rope_theta)
         rope_config_validation(self)
