@@ -484,7 +484,7 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
                 else:
                     predetermined_grid_thw_one = None
 
-                image = image_augmentation(image)
+                # image = image_augmentation(image)
                 patches, image_grid_thw = self._preprocess(
                     image,
                     do_resize=do_resize,

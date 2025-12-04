@@ -84,25 +84,19 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(processor.tokenizer.__class__.__name__, "LlamaTokenizerFast")
         self.assertEqual(processor.image_processor.__class__.__name__, "PaddleOCRVLImageProcessor")
 
-    @unittest.skip("PaddleOCR-VL image processor and image augmentation are currently coupled together")
     def test_image_processor(self):
+        image_processor = self.get_image_processor()
+        tokenizer = self.get_tokenizer()
 
-        pass
+        processor = PaddleOCRVLProcessor(tokenizer=tokenizer, image_processor=image_processor)
 
-        # image_processor = self.get_image_processor()
-        # tokenizer = self.get_tokenizer()
+        image_input = self.prepare_image_inputs()
 
-        # processor = PaddleOCRVLProcessor(
-        #     tokenizer=tokenizer, image_processor=image_processor
-        # )
+        input_image_proc = image_processor(image_input, return_tensors="pd")
+        input_processor = processor(images=image_input, text="dummy", return_tensors="pd")
 
-        # image_input = self.prepare_image_inputs()
-
-        # input_image_proc = image_processor(image_input, return_tensors="pd")
-        # input_processor = processor(images=image_input, text="dummy", return_tensors="pd")
-
-        # for key in input_image_proc:
-        #     self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
+        for key in input_image_proc:
+            self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
 
     def test_processor(self):
         image_processor = self.get_image_processor()

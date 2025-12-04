@@ -15,11 +15,8 @@
 from __future__ import annotations
 
 import copy
-import random
 import tempfile
 import unittest
-
-random.seed(42)
 
 import paddle
 
@@ -496,33 +493,34 @@ class PaddleOCRVLIntegrationTest(unittest.TestCase):
 
         EXPECTED_PIXEL_SLICE = paddle.to_tensor(
             [
-                -0.65490198,
-                0.99215686,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                0.87450981,
+                0.97647059,
+                1.0,
+                1.0,
+                0.89803922,
                 1.0,
                 1.0,
                 0.99215686,
                 0.98431373,
-                0.99215686,
                 1.0,
-                0.91372550,
                 1.0,
-                0.96078432,
-                0.99215686,
-                1.0,
-                0.99215686,
-                0.99215686,
-                1.0,
-                0.50588238,
-                -0.09019607,
+                0.89019608,
                 1.0,
                 1.0,
                 0.99215686,
-                0.97647059,
                 1.0,
                 1.0,
-                0.99215686,
+                1.0,
+                0.30196083,
+                1.0,
+                1.0,
             ]
         )
+
         self.assertTrue(
             paddle.allclose(
                 EXPECTED_PIXEL_SLICE,
