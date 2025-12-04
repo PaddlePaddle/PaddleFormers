@@ -1264,12 +1264,12 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
 
 
 @register_base_model
-class Glm4MoeModel(Glm4MoePreTrainedModel):
+class Glm4MoeModelFleet(Glm4MoePreTrainedModel):
     pass
 
 
 @register_base_model
-class Glm4MoeModelLegacy(Glm4MoePreTrainedModel):
+class Glm4MoeModel(Glm4MoePreTrainedModel):
     _keys_to_ignore_on_load_unexpected = [r"model\.layers\.92.*", r"model\.layers\.46.*"]
 
     def __init__(self, config: Glm4MoeConfig):
@@ -1457,7 +1457,7 @@ class Glm4MoeModelLegacy(Glm4MoePreTrainedModel):
         )
 
 
-class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1466,7 +1466,7 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         return model_provider.provide()
 
 
-class Glm4MoeForCausalLMLegacy(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
     _pp_plan = {"lm_head": (["hidden_states"], ["logits"])}
@@ -1474,7 +1474,7 @@ class Glm4MoeForCausalLMLegacy(Glm4MoePreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
-        self.model = Glm4MoeModelLegacy(self.config)
+        self.model = Glm4MoeModel(self.config)
         self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
@@ -1638,11 +1638,11 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         return ret
 
 
-class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe):
     pass
 
 
-class Glm4MoeForCausalLMPipeLegacy(GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
     _decoder_layer_pipe_cls = Glm4MoeDecoderLayerPipe
@@ -1653,15 +1653,15 @@ class Glm4MoeForCausalLMPipeLegacy(GeneralModelForCausalLMPipe):
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Glm4MoeModel.transpose_weight_keys
     _rotary_emb_cls = Glm4MoeRotaryEmbedding
-    _gen_aoa_config = Glm4MoeForCausalLMLegacy._gen_aoa_config
-    _gen_inv_aoa_config = Glm4MoeForCausalLMLegacy._gen_inv_aoa_config
+    _gen_aoa_config = Glm4MoeForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = Glm4MoeForCausalLM._gen_inv_aoa_config
 
 
 __all__ = [
+    "Glm4MoeForCausalLMPipeFleet",
+    "Glm4MoeModelFleet",
+    "Glm4MoeForCausalLMFleet",
     "Glm4MoeForCausalLMPipe",
     "Glm4MoeModel",
     "Glm4MoeForCausalLM",
-    "Glm4MoeForCausalLMPipeLegacy",
-    "Glm4MoeModelLegacy",
-    "Glm4MoeForCausalLMLegacy",
 ]
