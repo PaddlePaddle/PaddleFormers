@@ -32,7 +32,7 @@ class VisionArguments:
     patch_size: int = field(default=14, metadata={"help": "Patch size"})
     spatial_merge_size: int = field(default=2, metadata={"help": "Spatial merge size"})
     spatial_patch_size: int = field(default=14, metadata={"help": "Spatial patch size"})
-    tensor_parallel_degree: int = field(default=4, metadata={"help": "Tensor parallel degree"})
+    tensor_model_parallel_size: int = field(default=4, metadata={"help": "Tensor parallel degree"})
     use_recompute: bool = field(default=True, metadata={"help": "Whether to use recompute"})
     vit_num_recompute_layers: int = field(default=10000, metadata={"help": "Number of recompute layers"})
 

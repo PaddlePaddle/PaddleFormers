@@ -34,7 +34,7 @@ def parallel_matmul(
     logit_weights,
     bias=None,
     transpose_y=False,
-    tensor_parallel_degree=1,
+    tensor_model_parallel_size=1,
     tensor_parallel_output=True,
     fuse_linear=False,
     training=True,
@@ -46,7 +46,7 @@ def parallel_matmul(
         logit_weights: y for matmul
         bias (Tensor, optional): Bias tensor. Default is None.
         transpose_y (bool, optional): Whether to transpose y. Default is False.
-        tensor_parallel_degree (int, optional): Tensor parallel degree. Default is 1.
+        tensor_model_parallel_size (int, optional): Tensor parallel degree. Default is 1.
         tensor_parallel_output (bool, optional): Whether to output tensor parallel. Default is True.
         fuse_linear (bool, optional): Whether to fuse linear. Default is False.
         training (bool, optional): Training state. Default is False.
@@ -64,7 +64,7 @@ def parallel_matmul(
                 logit_weights,
                 bias=bias,
                 transpose_y=transpose_y,
-                tensor_parallel_degree=tensor_parallel_degree,
+                tensor_model_parallel_size=tensor_model_parallel_size,
                 tensor_parallel_output=tensor_parallel_output,
                 training=training,
             )
@@ -76,16 +76,16 @@ def parallel_matmul(
     try:
         hcg = fleet.get_hybrid_communicate_group()
         model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
+        tensor_model_parallel_size = hcg.get_model_parallel_world_size()
     except:
         is_fleet_init = False
 
     is_logit_weight_distributed = logit_weights.is_distributed
     #  `is_distributed` in static mode is always False
-    if in_declarative_mode() and tensor_parallel_degree > 1:
+    if in_declarative_mode() and tensor_model_parallel_size > 1:
         is_logit_weight_distributed = True
 
-    if is_fleet_init and tensor_parallel_degree > 1 and is_logit_weight_distributed:
+    if is_fleet_init and tensor_model_parallel_size > 1 and is_logit_weight_distributed:
         input_parallel = paddle.distributed.collective._c_identity(lm_output, group=model_parallel_group)
 
         if transpose_y:
@@ -119,7 +119,7 @@ def fused_head_and_loss_fn(
     loss_mask,
     transpose_y,
     num_embeddings,
-    tensor_parallel_degree,
+    tensor_model_parallel_size,
     tensor_parallel_output,
     fused_linear,
     loop_chunk_size,
@@ -135,7 +135,7 @@ def fused_head_and_loss_fn(
         loss_mask,
         transpose_y,
         num_embeddings,
-        tensor_parallel_degree,
+        tensor_model_parallel_size,
         tensor_parallel_output,
         fused_linear,
         loop_chunk_size,
@@ -157,7 +157,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
         loss_mask: paddle.Tensor,
         transpose_y: bool,
         num_embeddings: int,
-        tensor_parallel_degree: int,
+        tensor_model_parallel_size: int,
         tensor_parallel_output: bool,
         fused_linear: bool,
         loop_chunk_size: int,
@@ -175,7 +175,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
             loss_mask (`paddle.Tensor` of shape `(batch_size, max_seq_len)`)
             transpose_y: bool
             num_embeddings: int
-            tensor_parallel_degree: int
+            tensor_model_parallel_size: int
             tensor_parallel_output: bool
             fused_linear: bool
             loop_chunk_size: int, default is LOOP_CHUNK_SIZE
@@ -190,10 +190,10 @@ class FusedHeadAndCrossEntropy(PyLayer):
             fused_linear = False  # NOTE(hehuang): Cannot support fused_linear now
         # initialize distributed settings
         dtype = hidden_states.dtype
-        if tensor_parallel_degree > 1:
+        if tensor_model_parallel_size > 1:
             hcg = fleet.get_hybrid_communicate_group()
             model_parallel_group = hcg.get_model_parallel_group()
-            tensor_parallel_degree = hcg.get_model_parallel_world_size()
+            tensor_model_parallel_size = hcg.get_model_parallel_world_size()
 
         original_shape = hidden_states.shape
         hidden_states = hidden_states.reshape([-1, original_shape[-1]])
@@ -219,9 +219,9 @@ class FusedHeadAndCrossEntropy(PyLayer):
             lm_head_bias_cast = lm_head_bias.astype(dtype)
 
         # initialize indices for labels_one_hot
-        if tensor_parallel_degree > 1 and tensor_parallel_output:
+        if tensor_model_parallel_size > 1 and tensor_parallel_output:
             rank = hcg.get_model_parallel_rank()
-            per_part_size = num_embeddings // tensor_parallel_degree
+            per_part_size = num_embeddings // tensor_model_parallel_size
             indices = paddle.arange(
                 rank * per_part_size,
                 rank * per_part_size + n_classes,
@@ -265,7 +265,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
             )
             if lm_head_bias is not None:
                 logits_chunk_cast += lm_head_bias_cast
-            if tensor_parallel_degree > 1 and not tensor_parallel_output:
+            if tensor_model_parallel_size > 1 and not tensor_parallel_output:
                 logits_chunk_cast_lst = []
                 dist.all_gather(
                     logits_chunk_cast_lst,
@@ -277,12 +277,12 @@ class FusedHeadAndCrossEntropy(PyLayer):
 
             # log softmax
             max_logits = paddle.max(logits_chunk, axis=-1, keepdim=True)
-            if tensor_parallel_degree > 1 and tensor_parallel_output:
+            if tensor_model_parallel_size > 1 and tensor_parallel_output:
                 dist.all_reduce(max_logits, op=dist.ReduceOp.MAX, group=model_parallel_group)
             normalized_logits = logits_chunk - max_logits
             exp_logits = paddle.exp(normalized_logits)
             sum_exp_logits = paddle.sum(exp_logits, axis=-1, keepdim=True)
-            if tensor_parallel_degree > 1 and tensor_parallel_output:
+            if tensor_model_parallel_size > 1 and tensor_parallel_output:
                 dist.all_reduce(
                     sum_exp_logits,
                     op=dist.ReduceOp.SUM,
@@ -301,7 +301,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
                 axis=-1,
                 keepdim=True,
             )
-            if tensor_parallel_degree > 1 and tensor_parallel_output:
+            if tensor_model_parallel_size > 1 and tensor_parallel_output:
                 dist.all_reduce(
                     label_logits,
                     op=dist.ReduceOp.SUM,
@@ -314,7 +314,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
 
             # gradients calculations
             if not return_token_loss:
-                if tensor_parallel_degree > 1 and not tensor_parallel_output:
+                if tensor_model_parallel_size > 1 and not tensor_parallel_output:
                     exp_logits = exp_logits.split(model_parallel_group.nranks, axis=-1)[model_parallel_group.rank]
                     labels_one_hot = labels_one_hot.split(model_parallel_group.nranks, axis=-1)[
                         model_parallel_group.rank
@@ -363,7 +363,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
             ctx.transpose_y = transpose_y
             ctx.num_embeddings = num_embeddings
             ctx.loop_chunk_size = loop_chunk_size
-            ctx.tensor_parallel_degree = tensor_parallel_degree
+            ctx.tensor_model_parallel_size = tensor_model_parallel_size
             ctx.tensor_parallel_output = tensor_parallel_output
 
             ctx.original_shape = original_shape
@@ -376,7 +376,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
 
             grad_args = []
             if ctx.hidden_states_has_grad:
-                if tensor_parallel_degree > 1:
+                if tensor_model_parallel_size > 1:
                     dist.all_reduce(
                         grad_hidden_states,
                         op=dist.ReduceOp.SUM,
@@ -444,15 +444,15 @@ class FusedHeadAndCrossEntropy(PyLayer):
         transpose_y = ctx.transpose_y
         num_embeddings = ctx.num_embeddings
         loop_chunk_size = ctx.loop_chunk_size
-        tensor_parallel_degree = ctx.tensor_parallel_degree
+        tensor_model_parallel_size = ctx.tensor_model_parallel_size
         tensor_parallel_output = ctx.tensor_parallel_output
 
         # initialize distributed settings
         dtype = hidden_states.dtype
-        if tensor_parallel_degree > 1:
+        if tensor_model_parallel_size > 1:
             hcg = fleet.get_hybrid_communicate_group()
             model_parallel_group = hcg.get_model_parallel_group()
-            tensor_parallel_degree = hcg.get_model_parallel_world_size()
+            tensor_model_parallel_size = hcg.get_model_parallel_world_size()
 
         n_tokens = hidden_states.shape[0]
         n_classes = lm_head_weight.shape[0] if transpose_y else lm_head_weight.shape[1]
@@ -463,9 +463,9 @@ class FusedHeadAndCrossEntropy(PyLayer):
             lm_head_bias_cast = lm_head_bias.astype(dtype)
 
         # initialize indices for labels_one_hot
-        if tensor_parallel_degree > 1 and tensor_parallel_output:
+        if tensor_model_parallel_size > 1 and tensor_parallel_output:
             rank = hcg.get_model_parallel_rank()
-            per_part_size = num_embeddings // tensor_parallel_degree
+            per_part_size = num_embeddings // tensor_model_parallel_size
             indices = paddle.arange(
                 rank * per_part_size,
                 rank * per_part_size + n_classes,
@@ -505,7 +505,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
             )
             if lm_head_bias is not None:
                 logits_chunk_cast += lm_head_bias_cast
-            if tensor_parallel_degree > 1 and not tensor_parallel_output:
+            if tensor_model_parallel_size > 1 and not tensor_parallel_output:
                 logits_chunk_cast_lst = []
                 dist.all_gather(
                     logits_chunk_cast_lst,
@@ -517,12 +517,12 @@ class FusedHeadAndCrossEntropy(PyLayer):
 
             # log softmax
             max_logits = paddle.max(logits_chunk, axis=-1, keepdim=True)
-            if tensor_parallel_degree > 1 and tensor_parallel_output:
+            if tensor_model_parallel_size > 1 and tensor_parallel_output:
                 dist.all_reduce(max_logits, op=dist.ReduceOp.MAX, group=model_parallel_group)
             normalized_logits = logits_chunk - max_logits
             exp_logits = paddle.exp(normalized_logits)
             sum_exp_logits = paddle.sum(exp_logits, axis=-1, keepdim=True)
-            if tensor_parallel_degree > 1 and tensor_parallel_output:
+            if tensor_model_parallel_size > 1 and tensor_parallel_output:
                 dist.all_reduce(
                     sum_exp_logits,
                     op=dist.ReduceOp.SUM,
@@ -530,7 +530,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
                 )
 
             labels_one_hot = labels_chunk.unsqueeze(1) == indices
-            if tensor_parallel_degree > 1 and not tensor_parallel_output:
+            if tensor_model_parallel_size > 1 and not tensor_parallel_output:
                 exp_logits = exp_logits.split(model_parallel_group.nranks, axis=-1)[model_parallel_group.rank]
                 labels_one_hot = labels_one_hot.split(model_parallel_group.nranks, axis=-1)[model_parallel_group.rank]
             grad_logits_chunk = exp_logits / sum_exp_logits - labels_one_hot.astype("float32")
@@ -560,7 +560,7 @@ class FusedHeadAndCrossEntropy(PyLayer):
                 grad_lm_head_bias += grad_logits_chunk.astype("float32").sum(axis=0).astype(dtype)
 
         if grad_hidden_states is not None:
-            if tensor_parallel_degree > 1:
+            if tensor_model_parallel_size > 1:
                 dist.all_reduce(
                     grad_hidden_states,
                     op=dist.ReduceOp.SUM,
@@ -589,7 +589,7 @@ def model_parallel_dropout(config):
     Returns:
         Context manager for dropout operation
     """
-    if config.tensor_parallel_degree > 1 and config.hidden_dropout_prob > 0.0:
+    if config.tensor_model_parallel_size > 1 and config.hidden_dropout_prob > 0.0:
         current_seed = "local_seed" if config.sequence_parallel else "global_seed"
         return get_rng_state_tracker().rng_state(current_seed)
     return contextlib.nullcontext()

@@ -90,7 +90,7 @@ class VitTrainableCallback(TrainerCallback):
         self.mp_group = hcg.get_model_parallel_group()
         self.mp_degree = max(1, hcg.get_model_parallel_world_size())
         logger.info(
-            f"self.pp_group: {self.pp_group} - {args.pipeline_parallel_degree} -- {args.pipeline_parallel_rank}"
+            f"self.pp_group: {self.pp_group} - {args.pipeline_model_parallel_size} -- {args.pipeline_parallel_rank}"
         )
         # hack extract_feature func
         assert hasattr(self.vision_model, "extract_feature")
@@ -116,8 +116,8 @@ class VitTrainableCallback(TrainerCallback):
 
         self.vision_model.extract_feature = MethodType(extract_feature_wrapper, self.vision_model)
 
-        if args.pipeline_parallel_degree > 1:
-            assert args.pp_need_data_degree == args.pipeline_parallel_degree
+        if args.pipeline_model_parallel_size > 1:
+            assert args.pp_need_data_degree == args.pipeline_model_parallel_size
             # Rank 0 PP holds the full image_features.
             assert hasattr(model, "_prepare_pipeline_inputs_func")
             ori_prepare_pipeline_inputs_func = model._prepare_pipeline_inputs_func
@@ -159,9 +159,9 @@ class VitTrainableCallback(TrainerCallback):
             _type_: _description_
         """
         key = "enable_delay_scale_loss"
-        if args.pipeline_parallel_degree > 1:
+        if args.pipeline_model_parallel_size > 1:
             return key in args.pipeline_parallel_config.split(" ")
-        elif args.tensor_parallel_degree > 1:
+        elif args.tensor_model_parallel_size > 1:
             return key in args.tensor_parallel_config.split(" ")
         else:
             return False
@@ -200,7 +200,7 @@ class VitTrainableCallback(TrainerCallback):
             state (TrainerState): _description_
             control (TrainerControl): _description_
         """
-        if args.pipeline_parallel_degree <= 1:
+        if args.pipeline_model_parallel_size <= 1:
             return
         if not self.images_buffer:
             return
@@ -345,7 +345,7 @@ class VitTrainableCallback(TrainerCallback):
             state (TrainerState): _description_
             control (TrainerControl): _description_
         """
-        if args.pipeline_parallel_degree <= 1:
+        if args.pipeline_model_parallel_size <= 1:
             return
         self.images_buffer = []
         self.images_features = []

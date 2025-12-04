@@ -40,12 +40,7 @@ from paddleformers.trainer import (
     speed_metrics,
 )
 from paddleformers.trainer.trainer import Trainer
-from paddleformers.transformers import (
-    AutoConfig,
-    AutoTokenizer,
-    CosineAnnealingWithWarmupDecay,
-    LinearAnnealingWithWarmupDecay,
-)
+from paddleformers.transformers import AutoConfig, AutoTokenizer
 from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
@@ -479,13 +474,15 @@ def main():
         config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
-        assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."
+        assert (
+            config.tensor_model_parallel_size > 1
+        ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
         config.num_attention_heads % config.sep_parallel_degree == 0
     ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
     assert (
-        config.seq_length % config.context_parallel_degree == 0
-    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_degree {config.context_parallel_degree}"
+        config.seq_length % config.context_parallel_size == 0
+    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
 
     if training_args.sharding_parallel_config is not None:
         # for stage1 overlap optimization
@@ -534,11 +531,6 @@ def main():
     # Create the learning_rate sheduler and optimizer
     if training_args.decay_steps is None:
         training_args.decay_steps = training_args.max_steps
-
-    if training_args.warmup_steps > 0:
-        warmup_steps = training_args.warmup_steps
-    else:
-        warmup_steps = training_args.warmup_ratio * training_args.max_steps
 
     lr_scheduler = None
 

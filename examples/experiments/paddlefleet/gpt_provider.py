@@ -139,7 +139,7 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
         if vp_size and not is_flexible_pp_layout:
             p_size = self.pipeline_model_parallel_size
             assert (
-                self.num_layers // p_size
+                self.num_hidden_layers // p_size
             ) % vp_size == 0, "Make sure the number of model chunks is the same across all pipeline stages."
 
         transformer_layer_spec = self.transformer_layer_spec
