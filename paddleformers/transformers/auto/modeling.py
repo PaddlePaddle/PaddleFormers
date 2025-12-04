@@ -125,9 +125,6 @@ def get_name_mapping(task="Model"):
         NAME_MAPPING[new_key] = import_class
         NAME_MAPPING[import_class] = value
 
-    # NAME_MAPPING["PaddleOCRVLForConditionalGeneration"] = "paddleocr_vl"
-    # NAME_MAPPING["PaddleOCRVLForConditionalGeneration_Import_Class"] = "PaddleOCRVLForConditionalGeneration"
-
     return NAME_MAPPING
 
 
