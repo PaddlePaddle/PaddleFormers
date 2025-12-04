@@ -370,7 +370,6 @@ class DeepseekV3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
 
 class DeepseekV3IntegrationTest(unittest.TestCase):
-    @unittest.skip
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = DeepseekV3ForCausalLM.from_pretrained(
@@ -565,7 +564,3 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
-
-
-if __name__ == "__main__":
-    unittest.main()
