@@ -54,12 +54,12 @@ except Exception:
         return False
 
 
-try:
+if paddle.device.is_compiled_with_cuda():
     from paddlefleet.parallel_state import get_tensor_model_parallel_group
     from paddlefleet.training import initialize_fleet
 
     HAS_PADDLEFLEET = True
-except ImportError:
+else:
     HAS_PADDLEFLEET = False
 
 
