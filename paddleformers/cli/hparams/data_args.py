@@ -59,8 +59,6 @@ class DataArguments:
         Multi-source dataset is supported, e.g., 0.8,0.2."
         },
     )
-    text_dataset_path: str = field(default=None, metadata={"help": "sft txt data path"})
-    text_dataset_prob: str = field(default=None, metadata={"help": "sft txt data prob"})
     eval_dataset_type: str = field(default="erniekit", metadata={"help": "type of eval datasets."})
     eval_dataset_path: str = field(
         default="examples/data/sft-eval.jsonl",
@@ -138,6 +136,18 @@ class DataArguments:
     use_template: bool = field(
         default=True,
         metadata={"help": "Whether to use template in data processing."},
+    )
+    template: str = field(
+        default=None,
+        metadata={"help": "The chat template used in training."},
+    )
+    split_multi_turn: bool = field(
+        default=False,
+        metadata={"help": "Whether to split multi-round dialogues into multiple pieces of data for training"},
+    )
+    template_backend: str = field(
+        default="jinja",
+        metadata={"help": "jinja means using apply_chat_template, custom means using a custom template"},
     )
     eval_with_do_generation: bool = field(default=False, metadata={"help": "Whether to do generation for evaluation"})
     share_folder: bool = field(
