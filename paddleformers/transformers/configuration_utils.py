@@ -230,13 +230,11 @@ class LlmMetaConfig:
     op_fusion_attributes = [
         # name, type, default_value, comment
         ("use_flash_attention", bool, False, "Whether to use flash attention to accelerate training."),
-        ("use_fused_rms_norm", bool, False, "llama or other model, use_fused_rms_norm"),
-        ("use_fused_rope", bool, False, "Enable rope fusion or not."),
-        ("use_fused_linear", bool, False, "GPT3 model, use fused linear layer"),
-        ("use_fused_dropout_add", bool, False, "GPT3 model, use fused `dropout + residual add` op."),
+        ("fuse_rms_norm", bool, False, "llama or other model, fuse_rms_norm"),
+        ("apply_rope_fusion", bool, False, "Enable rope fusion or not."),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
         ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
-        ("fuse_rope", bool, False, "Whether to fuse RoPE operation"),
+        ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
     ]
 

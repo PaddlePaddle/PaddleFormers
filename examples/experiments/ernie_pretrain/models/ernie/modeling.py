@@ -847,12 +847,12 @@ class ErnieAttention(nn.Layer):
         self.use_recompute_attn = config.use_recompute_attn
         logger.info(f"using recompute attn={self.use_recompute_attn}")
         self.is_gqa = config.num_key_value_heads is not None and config.num_key_value_heads != self.num_heads
-        if config.fuse_rope:
+        if config.apply_rope_fusion:
             assert fused_rope is not None, "fused_rope is not supported"
-        self.fuse_rope = config.fuse_rope
+        self.apply_rope_fusion = config.apply_rope_fusion
         self.rope_3d = config.rope_3d
         if self.rope_3d:
-            assert not self.fuse_rope, "does not support fuse rope when rope_3d is on for now."
+            assert not self.apply_rope_fusion, "does not support fuse rope when rope_3d is on for now."
             assert not config.rope_reorder, "does not support rope_reorder when rope_3d is on for now."
             assert config.freq_allocation is not None, "freq_allocation must be provided if rope_3d is on."
 
@@ -1135,7 +1135,7 @@ class ErnieAttention(nn.Layer):
                 offset=offset if position_ids is None else 0,
             )
         else:
-            if offset > 0 or position_ids is not None or not self.fuse_rope:
+            if offset > 0 or position_ids is not None or not self.apply_rope_fusion:
                 if not self.rope_3d:
                     cos_sin = self.rotary_emb(kv_seq_len, position_ids).transpose([0, 2, 1, 3])
                     if offset > 0 and position_ids is None:

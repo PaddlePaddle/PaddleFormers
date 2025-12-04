@@ -48,6 +48,7 @@ class MLP(nn.Layer):
         self.gate_up_proj_name = gate_up_proj_name
 
         if self.fuse_up_gate:
+            self.fuse_swiglu = True
             setattr(
                 self,
                 gate_up_proj_name,

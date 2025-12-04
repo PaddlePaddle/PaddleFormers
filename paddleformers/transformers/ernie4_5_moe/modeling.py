@@ -874,7 +874,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
 
         hidden_states = inputs_embeds
 
-        if self.config.fuse_rope:
+        if self.config.apply_rope_fusion:
             position_embeddings = None
         else:
             position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin

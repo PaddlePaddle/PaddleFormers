@@ -238,7 +238,7 @@ class QWenAttentionNet(nn.Layer):
 
         if rotary_pos_emb is not None:
             cos, sin = rotary_pos_emb
-            if self.config.use_fused_rope:
+            if self.config.apply_rope_fusion:
                 query, key, _ = fused_rotary_position_embedding(
                     query,
                     key,
@@ -813,7 +813,7 @@ class QWenRMSNormNet(nn.Layer):
         return x * paddle.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
-        if self.config.use_fused_rms_norm:
+        if self.config.fuse_rms_norm:
             return paddle.incubate.nn.functional.fused_rms_norm_ext(x, self.weight, self.eps)[0].astype(
                 self.weight.dtype
             )

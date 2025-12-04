@@ -263,7 +263,7 @@ class Ernie4_5Attention(nn.Layer):
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
-        if self.config.fuse_rope:
+        if self.config.apply_rope_fusion:
             query_states, key_states = apply_fused_rope(query_states, key_states, self.config.rope_theta)
         else:
             cos, sin = position_embeddings
@@ -635,7 +635,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         if position_ids is None:
             position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))
 
-        if not self.config.fuse_rope:
+        if not self.config.apply_rope_fusion:
             position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin
         else:
             position_embeddings = None

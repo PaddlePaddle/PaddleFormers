@@ -267,7 +267,7 @@ class EmbeddingPipe(nn.Layer):
         )
         input_ids.stop_gradient = True
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
-        if position_ids is None and not self.config.fuse_rope:
+        if position_ids is None and not self.config.apply_rope_fusion:
             position_ids = (
                 paddle.arange(
                     0,
@@ -277,7 +277,7 @@ class EmbeddingPipe(nn.Layer):
                 .unsqueeze(0)
                 .tile([input_ids.shape[0], 1])
             )
-        if self.config.fuse_rope:
+        if self.config.apply_rope_fusion:
             position_embeddings = None
         else:
             position_embeddings = paddle.stack(self.rotary_emb(emb, position_ids))  # cos and sin
