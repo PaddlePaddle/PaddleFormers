@@ -230,8 +230,7 @@ class LlmMetaConfig:
     op_fusion_attributes = [
         # name, type, default_value, comment
         ("use_flash_attention", bool, False, "Whether to use flash attention to accelerate training."),
-        ("fuse_rms_norm", bool, False, "llama or other model, fuse_rms_norm"),
-        ("apply_rope_fusion", bool, False, "Enable rope fusion or not."),
+        ("fuse_rms_norm", bool, False, "Whether to fuse RMSNorm for efficiency"),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
         ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
         ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
