@@ -60,6 +60,12 @@ class GLMMoEModelProvider(GPTModelProvider):
         "LayerSpec", Callable[["GPTModelProvider"], "LayerSpec"]
     ] = get_gpt_decoder_block_spec
 
+    moe_router_load_balancing_type: str = "seq_aux_loss"
+
+    gated_linear_unit: bool = True
+
+    bias_activation_fusion: bool = True
+
 
 def eager_attention_forward(
     module: nn.Layer,
