@@ -3109,8 +3109,13 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
-        if hasattr(self.__class__, "_gen_inv_aoa_config") and save_checkpoint_format == "flex_checkpoint":
-            aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+        if (
+            hasattr(self.__class__, "_gen_inv_aoa_config") or hasattr(self, "_gen_inv_aoa_config")
+        ) and save_checkpoint_format == "flex_checkpoint":
+            if hasattr(self.__class__, "_gen_inv_aoa_config"):
+                aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+            else:
+                aoa_config = self._gen_inv_aoa_config(model_to_save.config)
 
             clean_unrelated_safetensors(save_dir)
 
@@ -3122,7 +3127,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if dtype is not None:
                 model_to_save.config.dtype = str(dtype).split(".")[1]
             if config_to_save is None:
-                config_to_save = copy.deepcopy(model_to_save.config)
+                if hasattr(model_to_save, "config_to_save"):
+                    config_to_save = copy.deepcopy(model_to_save.config_to_save)
+                else:
+                    config_to_save = copy.deepcopy(model_to_save.config)
 
             # Attach architecture to the config
             config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
