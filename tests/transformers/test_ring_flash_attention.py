@@ -84,7 +84,9 @@ class TestRingFlashAttention(unittest.TestCase):
             local_out = RingFlashAttention.apply(
                 local_query, local_key, local_value, self.group, is_causal=is_causal, attn_mask=local_attn_mask
             )
-            ref_out = scaled_dot_product_attention(query, key, value, is_causal=is_causal, attn_mask=attn_mask)
+            ref_out = scaled_dot_product_attention(
+                query, key, value, is_causal=is_causal, attn_mask=attn_mask, enable_gqa=True
+            )
 
         local_out.backward()
         ref_out.backward()

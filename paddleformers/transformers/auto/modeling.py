@@ -65,6 +65,7 @@ MAPPING_NAMES = OrderedDict(
         ("Qwen2Moe", "qwen2_moe"),
         ("Qwen3", "qwen3"),
         ("Qwen3Moe", "qwen3_moe"),
+        ("Qwen3Next", "qwen3_next"),
         ("Glm4Moe", "glm4_moe"),
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
@@ -215,6 +216,9 @@ class _BaseAutoModelClass:
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
         try:
             model_class = getattr(import_class, init_class)
+            return model_class
+        except AttributeError:
+            model_class = getattr(import_class, init_class + "Fleet")
             return model_class
         except AttributeError as err:
             try:

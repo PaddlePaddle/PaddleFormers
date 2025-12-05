@@ -112,6 +112,8 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "qwen2":
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
@@ -122,6 +124,8 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "qwen3":
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
@@ -154,6 +158,8 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "qwen2_moe":
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
@@ -164,6 +170,18 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
         ]
     elif model.config.model_type == "qwen3_moe":
+        target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
+    elif model.config.model_type == "qwen3_next":
         target_modules = [
             ".*q_proj.*",
             ".*k_proj.*",
@@ -220,6 +238,8 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "glm4_moe" or isinstance(model, Glm4MoeForCausalLMPipe):
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
@@ -227,9 +247,6 @@ def get_lora_target_modules(model):
             ".*gate_proj.*",
             ".*up_proj.*",
             ".*down_proj.*",
-            ".*mlp.gate_proj.*",
-            ".*mlp.up_proj.*",
-            ".*mlp.down_proj.*",
             ".*mlp.gate_proj.*",
             ".*mlp.up_proj.*",
             ".*mlp.down_proj.*",
