@@ -1228,6 +1228,11 @@ class TrainingArguments:
         metadata={"help": "whether to use auto_parallel intermediate API."},
     )
 
+    use_paddlefleet: bool = field(
+        default=False,
+        metadata={"help": "Whether to use paddlefleet for SFTtraining."},
+    )
+
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
