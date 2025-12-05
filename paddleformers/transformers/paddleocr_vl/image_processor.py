@@ -15,10 +15,8 @@
 """Image processor class for PaddleOCR-VL."""
 
 import io
-import json
 import math
 import random
-from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 import numpy as np
@@ -30,6 +28,8 @@ from ..feature_extraction_utils import BatchFeature
 from ..image_processing_utils import BaseImageProcessor
 from ..image_transforms import convert_to_rgb, to_channel_dimension_format
 from ..image_utils import (
+    OPENAI_CLIP_MEAN,
+    OPENAI_CLIP_STD,
     ChannelDimension,
     ImageInput,
     PILImageResampling,
@@ -39,9 +39,6 @@ from ..image_utils import (
     to_numpy_array,
     valid_images,
 )
-
-_OPENAI_CLIP_MEAN = [0.48145466, 0.4578275, 0.40821073]
-_OPENAI_CLIP_STD = [0.26862954, 0.26130258, 0.27577711]
 
 __all__ = [
     "PaddleOCRVLImageProcessor",
@@ -297,8 +294,8 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
         self.do_rescale = do_rescale
         self.rescale_factor = rescale_factor
         self.do_normalize = do_normalize
-        self.image_mean = image_mean if image_mean is not None else _OPENAI_CLIP_MEAN
-        self.image_std = image_std if image_std is not None else _OPENAI_CLIP_STD
+        self.image_mean = image_mean if image_mean is not None else OPENAI_CLIP_MEAN
+        self.image_std = image_std if image_std is not None else OPENAI_CLIP_STD
         self.min_pixels = min_pixels
         self.max_pixels = max_pixels
         self.patch_size = patch_size
@@ -307,14 +304,6 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
         self.merge_size = merge_size
         self.size = {"min_pixels": min_pixels, "max_pixels": max_pixels}  # not used
         self.do_convert_rgb = do_convert_rgb
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_dir):
-        pretrained_model_dir = Path(pretrained_model_dir)
-        image_processor_config_path = pretrained_model_dir / "preprocessor_config.json"
-        with open(image_processor_config_path, "r", encoding="utf-8") as f:
-            image_processor_config = json.load(f)
-        return cls(**image_processor_config)
 
     def set_pixels(self, min_pixels=None, max_pixels=None, msg=""):
         """set_pixels"""
@@ -484,7 +473,6 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
                 else:
                     predetermined_grid_thw_one = None
 
-                # image = image_augmentation(image)
                 patches, image_grid_thw = self._preprocess(
                     image,
                     do_resize=do_resize,

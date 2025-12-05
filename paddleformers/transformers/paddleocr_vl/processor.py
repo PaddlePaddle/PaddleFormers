@@ -14,34 +14,13 @@
 
 from typing import List, Union
 
-import numpy as np
 import paddle
-import PIL
 
 from ..feature_extraction_utils import BatchFeature
+from ..image_utils import ImageInput
 from ..processing_utils import ProcessingKwargs, ProcessorMixin, Unpack, VideosKwargs
 from ..tokenizer_utils_base import PreTokenizedInput, TextInput
-
-ImageInput = Union[
-    "PIL.Image.Image",
-    np.ndarray,
-    "paddle.Tensor",
-    List["PIL.Image.Image"],
-    List[np.ndarray],
-    List["paddle.Tensor"],
-]  # noqa
-
-
-VideoInput = Union[
-    List["PIL.Image.Image"],
-    "np.ndarray",
-    "paddle.Tensor",
-    List["np.ndarray"],
-    List["paddle.Tensor"],
-    List[List["PIL.Image.Image"]],
-    List[List["np.ndarrray"]],
-    List[List["paddle.Tensor"]],
-]  # noqa
+from ..video_utils import VideoInput
 
 
 class PaddleOCRVLVideosProcessorKwargs(VideosKwargs, total=False):
@@ -209,20 +188,6 @@ class PaddleOCRVLProcessor(ProcessorMixin):
         text_inputs = self.tokenizer(text, **output_kwargs["text_kwargs"])
 
         return BatchFeature(data={**text_inputs, **image_inputs, **videos_inputs})
-
-    def batch_decode(self, *args, **kwargs):
-        """
-        This method forwards all its arguments to Ernie4_5Tokenizer's [`~PreTrainedTokenizer.batch_decode`]. Please
-        refer to the docstring of this method for more information.
-        """
-        return self.tokenizer.batch_decode(*args, **kwargs)
-
-    def decode(self, *args, **kwargs):
-        """
-        This method forwards all its arguments to Ernie4_5Tokenizer's [`~PreTrainedTokenizer.decode`]. Please refer to
-        the docstring of this method for more information.
-        """
-        return self.tokenizer.decode(*args, **kwargs)
 
     def post_process_image_text_to_text(
         self,
