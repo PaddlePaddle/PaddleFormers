@@ -423,6 +423,11 @@ class FinetuningArguments(
         },
     )
 
+    use_paddlefleet: bool = field(
+        default=False,
+        metadata={"help": "Whether to use paddlefleet for SFTtraining."},
+    )
+
     def __post_init__(self):
         self.bf16 = True
         if self.compute_type == "bf16":
