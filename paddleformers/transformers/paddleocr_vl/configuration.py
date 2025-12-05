@@ -15,6 +15,7 @@
 """ PaddleOCR-VL model configuration."""
 
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 __all__ = ["PaddleOCRVLConfig", "PaddleOCRVisionConfig"]
 
@@ -41,7 +42,6 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         tokens_per_second=2,
         recompute=False,
         recompute_granularity="core_attn",
-        # recompute_use_reentrant=False,
         use_flash_attention=False,
         use_sparse_flash_attn=False,
         _attn_implementation="eager",
@@ -64,7 +64,6 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         self.tokens_per_second = tokens_per_second
         self.recompute = recompute
         self.recompute_granularity = recompute_granularity
-        # self.recompute_use_reentrant = recompute_use_reentrant
         self.use_flash_attention = use_flash_attention
         self.use_sparse_flash_attn = use_sparse_flash_attn
         self._attn_implementation = _attn_implementation
@@ -75,7 +74,6 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         self.register_unsavable_keys(
             [
                 "recompute",
-                # "recompute_use_reentrant",
                 "recompute_granularity",
                 "use_sparse_flash_attn",
             ]
@@ -106,8 +104,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         _attn_implementation="eager",
         recompute=False,
         recompute_granularity="core_attn",
-        # recompute_use_reentrant=False,
-        # use_rmsnorm=True,
         fuse_rms_norm=False,
         pad_token_id=0,
         bos_token_id=1,
@@ -151,8 +147,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self._attn_implementation = _attn_implementation
         self.recompute = recompute
         self.recompute_granularity = recompute_granularity
-        # self.recompute_use_reentrant = recompute_use_reentrant
-        # self.use_rmsnorm = use_rmsnorm
         self.fuse_rms_norm = fuse_rms_norm
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
@@ -174,10 +168,12 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.use_sparse_head_and_loss_fn = use_sparse_head_and_loss_fn
         self.max_sequence_length = max_sequence_length
         self.rope_scaling = rope_scaling
-        if self.rope_scaling is not None and "type" in self.rope_scaling:
-            if self.rope_scaling["type"] == "mrope":
-                self.rope_scaling["type"] = "default"
-            self.rope_scaling["rope_type"] = self.rope_scaling["type"]
+        self.rope_parameters = rope_scaling
+        # Validate the correctness of rotary position embeddings parameters
+        standardize_rope_params(self, rope_theta=rope_theta)
+        if self.rope_parameters["rope_type"] == "mrope":
+            self.rope_parameters["rope_type"] = "default"
+        rope_config_validation(self, ignore_keys={"mrope_section"})
 
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
@@ -198,7 +194,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.register_unsavable_keys(
             [
                 "recompute",
-                # "recompute_use_reentrant",
                 "recompute_granularity",
                 "use_recompute_loss_fn",
                 "use_sparse_flash_attn",
