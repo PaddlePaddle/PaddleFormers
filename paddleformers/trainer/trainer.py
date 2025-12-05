@@ -356,10 +356,8 @@ class Trainer:
         self._memory_tracker.start()
 
         # Seed must be set before instantiating the model when using model
-        if self.args.use_paddlefleet:
-            set_random_seed(seed_=self.args.seed)
-        else:
-            set_seed(seed=self.args.seed)
+        set_random_seed(seed_=self.args.seed)
+        set_seed(seed=self.args.seed)
 
         self._skip_global_steps = 0  # total skip global steps
         self._skip_steps_since_last_logged = 0  # skip steps since last logged
