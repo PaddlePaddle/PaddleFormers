@@ -20,7 +20,6 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "image_processor": ["PaddleOCRVLImageProcessor"],
     "processor": ["PaddleOCRVLProcessor"],
-    "tokenizer": ["Ernie4_5Tokenizer"],
     "configuration": ["PaddleOCRVLConfig"],
     "modeling": ["PaddleOCRVLForConditionalGeneration"],
 }
@@ -29,7 +28,6 @@ if TYPE_CHECKING:
     from .configuration import *
     from .image_processor import *
     from .modeling import *
-    from .tokenizer import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
