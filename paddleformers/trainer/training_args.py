@@ -54,6 +54,15 @@ except Exception:
         return False
 
 
+if paddle.device.is_compiled_with_cuda():
+    from paddlefleet.parallel_state import get_tensor_model_parallel_group
+    from paddlefleet.training import initialize_fleet
+
+    HAS_PADDLEFLEET = True
+else:
+    HAS_PADDLEFLEET = False
+
+
 __all__ = [
     "default_logdir",
     "TrainingArguments",
@@ -1348,7 +1357,6 @@ class TrainingArguments:
                 logger.warning("set amp_master_grad to false since amp is disabled.")
                 self.amp_master_grad = False
 
-        self.use_paddlefleet = False
         # use_hybrid_parallel
         if self.use_hybrid_parallel:
 
@@ -1754,10 +1762,7 @@ class TrainingArguments:
                 fleet.init(is_collective=True, strategy=strategy)
 
                 # In PaddleFleet, we should use the following code to initialize.
-
-                if self.use_paddlefleet:
-                    from paddlefleet.training.initialize import initialize_fleet
-
+                if HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
                     initialize_fleet(strategy)
                 logger.info(strategy)
 
@@ -2005,7 +2010,7 @@ class TrainingArguments:
                         fleet.init(is_collective=True, strategy=strategy)
                     else:
                         paddle.distributed.init_parallel_env()
-            if world_size == 1 and self.use_paddlefleet:
+            if world_size == 1 and HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
                 single_card_strategy = fleet.DistributedStrategy()
                 single_card_strategy.hybrid_configs = {
                     "dp_degree": 1,
@@ -2017,8 +2022,6 @@ class TrainingArguments:
                     "ep_degree": 1,
                     "moe_sharding_degree": 1,
                 }
-                from paddlefleet.training.initialize import initialize_fleet
-
                 initialize_fleet(single_card_strategy)
 
         if (

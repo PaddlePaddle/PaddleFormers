@@ -41,8 +41,8 @@ class CriterionLayer(nn.Layer):
     def __init__(self, config, return_tuple=True, ignore_eos_token=False, use_infohub=False, **kwargs):
         super().__init__()
         self.config = config
-        self.dpo_config = copy.deepcopy(config.get("dpo_config", None))
-        self.kto_config = copy.deepcopy(config.get("kto_config", None))
+        self.dpo_config = copy.deepcopy(config.dpo_config) if hasattr(config, "dpo_config") else None
+        self.kto_config = copy.deepcopy(config.kto_config) if hasattr(config, "kto_config") else None
         self.ignored_index = getattr(config, "ignored_index", -100)
         self.use_filtered_label_loss = config.get("use_filtered_label_loss", False)
         self.loss_subbatch_sequence_length = config.get("loss_subbatch_sequence_length", -1)
