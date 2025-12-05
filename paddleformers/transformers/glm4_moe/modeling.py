@@ -13,8 +13,9 @@
 # limitations under the License.
 
 from copy import deepcopy
+from dataclasses import dataclass
 from functools import partial
-from typing import Optional, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Optional, Tuple, Union
 
 import paddle
 import paddle.distributed as dist
@@ -23,6 +24,9 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 from paddle.nn import functional as F
+from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
+
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.attention.utils import repeat_kv
@@ -43,6 +47,24 @@ from ..modeling_rope_utils import dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import Glm4MoeConfig
+
+if TYPE_CHECKING:
+    from paddlefleet.transformer import LayerSpec
+
+
+@dataclass
+class GLMMoEModelProvider(GPTModelProvider):
+    """Base provider for GLM MoE Models."""
+
+    transformer_layer_spec: Union[
+        "LayerSpec", Callable[["GPTModelProvider"], "LayerSpec"]
+    ] = get_gpt_decoder_block_spec
+
+    moe_router_load_balancing_type: str = "seq_aux_loss"
+
+    gated_linear_unit: bool = True
+
+    bias_activation_fusion: bool = True
 
 
 def eager_attention_forward(
@@ -1242,6 +1264,11 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
 
 
 @register_base_model
+class Glm4MoeModelFleet(Glm4MoePreTrainedModel):
+    pass
+
+
+@register_base_model
 class Glm4MoeModel(Glm4MoePreTrainedModel):
     _keys_to_ignore_on_load_unexpected = [r"model\.layers\.92.*", r"model\.layers\.46.*"]
 
@@ -1430,6 +1457,15 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         )
 
 
+class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
+    is_fleet = True
+
+    def __new__(cls, config):
+        model_provider_class = GLMMoEModelProvider
+        model_provider = model_provider_class.from_config(config)
+        return model_provider.provide()
+
+
 class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
@@ -1602,6 +1638,10 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         return ret
 
 
+class Glm4MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe):
+    pass
+
+
 class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
@@ -1617,4 +1657,11 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _gen_inv_aoa_config = Glm4MoeForCausalLM._gen_inv_aoa_config
 
 
-__all__ = ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"]
+__all__ = [
+    "Glm4MoeForCausalLMPipeFleet",
+    "Glm4MoeModelFleet",
+    "Glm4MoeForCausalLMFleet",
+    "Glm4MoeForCausalLMPipe",
+    "Glm4MoeModel",
+    "Glm4MoeForCausalLM",
+]

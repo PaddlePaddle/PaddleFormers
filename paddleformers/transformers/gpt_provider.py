@@ -23,15 +23,24 @@ from functools import partial
 from typing import Any, Callable, Literal, Optional, Union
 
 import paddle
-from model_provider import ModelProviderMixin
-from paddlefleet import parallel_state
-from paddlefleet.models.gpt import GPTModel
+from paddlefleet import LayerSpec, parallel_state
+from paddlefleet.models.gpt import GPTModel as FleetGPTModel
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
-from paddlefleet.spec_utils import LayerSpec
 from paddlefleet.transformer.transformer_config import TransformerConfig
-from vocab_utils import calculate_padded_vocab_size
+
+from paddleformers.transformers.model_utils import PretrainedModel
+
+from .model_provider import ModelProviderMixin
+from .vocab_utils import calculate_padded_vocab_size
 
 logger = logging.getLogger(__name__)
+
+
+class GPTModel(FleetGPTModel, PretrainedModel):
+    pass
+
+
+# GPTModel = FleetGPTModel
 
 
 def local_layer_spec(config: "GPTModelProvider") -> LayerSpec:
@@ -44,7 +53,7 @@ def local_layer_spec(config: "GPTModelProvider") -> LayerSpec:
         LayerSpec: Module specification for local implementation layers
     """
     return get_gpt_layer_local_spec(
-        num_experts=config.moe_num_experts,
+        num_experts=config.num_moe_experts,
         moe_grouped_gemm=config.moe_grouped_gemm,
         qk_layernorm=config.qk_layernorm,
         normalization=config.normalization,
@@ -64,7 +73,7 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
     parallel_output: bool = True
     share_embeddings_and_output_weights: bool = True
     make_vocab_size_divisible_by: int = 128
-    position_embedding_type: Literal["learned_absolute", "rope"] = "learned_absolute"
+    position_embedding_type: Literal["learned_absolute", "rope"] = "rope"
     rotary_base: int = 10000
     rotary_percent: float = 1.0
     seq_len_interpolation_factor: Optional[float] = None
@@ -92,7 +101,7 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
     moe_grouped_gemm: bool = False
     use_qk_norm: bool = False
     fp8: Optional[str] = None
-    normalization: str = "LayerNorm"
+    normalization: str = "RMSNorm"
 
     # Multi-token prediction
     mtp_enabled: bool = False
