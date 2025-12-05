@@ -69,7 +69,7 @@ def eager_attention_forward(
         scores = probs[..., :-1]  # we drop the sink here
         attn_weights = nn.functional.dropout(scores, p=dropout, training=module.training)
     else:
-        attn_weights = nn.functional.softmax(attn_weights, axis=-1, dtype=query.dtype)
+        attn_weights = nn.functional.softmax(attn_weights, axis=-1, dtype=paddle.float32).astype(query.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
 
     attn_output = paddle.matmul(attn_weights, value)  # b h l l @ b h l d -> b h l d
