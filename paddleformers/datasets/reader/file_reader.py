@@ -22,7 +22,7 @@ from paddleformers.utils.log import logger
 
 from .convertor import erniekit_convertor, messages_convertor
 from .download_manager import HuggingFaceDownload
-from .io import load_csv, load_json, load_jsonl, load_parquet, load_txt
+from .io import load_csv, load_json, load_parquet, load_txt
 
 DATA_INFO_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), "data_info.json")
 DATASET_WORKROOT = os.getenv("DATASET_WORKROOT", "/root/.cache/paddleformers")
@@ -39,7 +39,7 @@ class BaseReader(IterableDataset):
         self._split_multi_turn = split_multi_turn
         self.loader_map = {
             ".json": load_json,
-            ".jsonl": load_jsonl,
+            ".jsonl": load_json,
             ".txt": load_txt,
             ".csv": load_csv,
             ".parquet": load_parquet,

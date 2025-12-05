@@ -29,7 +29,7 @@ import_structure = {
     ],
     "download_manager": ["HuggingFaceDownload"],
     "file_reader": ["BaseReader", "FileReader", "FileListReader", "get_hf_dataset_config", "HuggingFaceReader"],
-    "io": ["load_json", "load_jsonl", "load_txt", "load_parquet", "load_csv"],
+    "io": ["load_json", "load_txt", "load_parquet", "load_csv"],
     "mix_datasets": [
         "BaseMixDataset",
         "RandomDataset",

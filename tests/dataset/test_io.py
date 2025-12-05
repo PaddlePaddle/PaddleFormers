@@ -15,7 +15,7 @@
 import os
 import unittest
 
-from paddleformers.datasets.reader.io import load_json, load_jsonl, load_parquet
+from paddleformers.datasets.reader.io import load_json, load_parquet
 from tests.testing_utils import get_tests_dir
 
 
@@ -23,7 +23,7 @@ class TestDatasetIO(unittest.TestCase):
     def test_jsonl_io(self):
         dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
         dataset_path = os.path.join(dataset_dir, "io", "train.jsonl")
-        res = load_jsonl(dataset_path)
+        res = load_json(dataset_path)
         self.assertEqual(len(res), 3)
 
     def test_json_io(self):

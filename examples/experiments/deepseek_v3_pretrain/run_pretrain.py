@@ -48,7 +48,7 @@ from paddleformers.transformers import (
     LinearAnnealingWithWarmupDecay,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
-from paddleformers.transformers.deepseek_v2 import DeepseekV2ForCausalLM
+from paddleformers.transformers.deepseek_v3 import DeepseekV3ForCausalLM
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
 
@@ -480,7 +480,7 @@ def main():
         if training_args.bf16:
             dtype = "bfloat16"
 
-    model_class = DeepseekV2ForCausalLM
+    model_class = DeepseekV3ForCausalLM
     if training_args.pipeline_parallel_degree > 1:
         model_class = DeepseekV2ForCausalLMPipe
         if "LLama" in str(config.architectures):
