@@ -268,7 +268,7 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
         training_args.no_recompute_layers.sort()
 
     if training_args.use_intermediate_api:
-        config.run_single_model = True
+        config.use_single_model_implementation = True
         config.tensor_parallel_degree = 1
         config.sharding_parallel_degree = 1
         config.sep_parallel_degree = 1
@@ -288,13 +288,6 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
 
     if not training_args.enable_auto_parallel and training_args.pipeline_parallel_degree > 1:
         model_class = AutoModelForCausalLMPipe
-        if "LLama" in str(config.architectures):
-            try:
-                from utils.register_reshard import register_pp_reshard_information
-
-                register_pp_reshard_information(config.num_hidden_layers)
-            except:
-                print("Not register llama pp reshard information.")
 
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
@@ -304,7 +297,6 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
         training_args.use_expert_parallel = True
 
     if model_args.continue_training:
-        # NOTE(gongenlei): new add
         if training_args.autotuner_benchmark:
             model = model_class.from_config(config, dtype=dtype)
         else:

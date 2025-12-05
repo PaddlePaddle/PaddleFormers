@@ -539,7 +539,7 @@ class PretrainedConfig:
             Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
             model has a output word embedding layer.
 
-        run_single_model (`bool`, *optional*, defaults to `False`):
+        use_single_model_implementation (`bool`, *optional*, defaults to `False`):
             Whether to run the model in single card mode. When enabled, all parallel degree configurations will be disabled.
 
         dtype (`str`, *optional*):
@@ -613,8 +613,8 @@ class PretrainedConfig:
         self.tie_word_embeddings = kwargs.pop("tie_word_embeddings", True)
 
         # for run model in single card mode
-        self.run_single_model = kwargs.pop("run_single_model", False)
-        if self.run_single_model:
+        self.use_single_model_implementation = kwargs.pop("use_single_model_implementation", False)
+        if self.use_single_model_implementation:
             self.tensor_parallel_degree = 1
             self.sep_parallel_degree = 1
             self.context_parallel_degree = 1

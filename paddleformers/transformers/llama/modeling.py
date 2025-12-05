@@ -693,7 +693,7 @@ class LlamaForCausalLM(LlamaPretrainedModel):
         )
 
     def auto_dist_config(self, prefix=""):
-        assert self.config.run_single_model, "Use `get_dist_config` only in single card mode."
+        assert self.config.use_single_model_implementation, "Use `get_dist_config` only in single card mode."
         return get_dist_config(self, prefix)
 
 
