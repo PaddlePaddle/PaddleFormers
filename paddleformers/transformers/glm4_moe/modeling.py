@@ -1032,8 +1032,8 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         ]
         num_heads = config.num_attention_heads
         num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
-        fuse_attention_qkv = getattr(config, "fuse_attention_qkv", True)
-        fuse_attention_ffn = getattr(config, "fuse_attention_ffn", True)
+        fuse_attention_qkv = getattr(config, "fuse_attention_qkv", False)
+        fuse_attention_ffn = getattr(config, "fuse_attention_ffn", False)
         num_experts = getattr(config, "n_routed_experts", 128)
 
         final_actions = {}
