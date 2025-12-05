@@ -679,9 +679,8 @@ class GptOssPreTrainedModel(PretrainedModel):
             return final_actions
 
         mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers, config.num_experts)
-
         return mappings
-        
+
     @classmethod
     def _gen_aoa_config(cls, config: GptOssConfig):
         model_prefix = "" if cls == cls.base_model_class else "model."
