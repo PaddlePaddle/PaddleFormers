@@ -35,6 +35,7 @@ AGILE_COMPILE_BRANCH=$4
 
 
 install_requirements() {
+    sleep 180m
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
