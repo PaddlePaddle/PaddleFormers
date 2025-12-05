@@ -119,21 +119,24 @@ class FileReader(BaseReader):
         data["system"] = system
 
         # Convert the relative paths of multimode data into absolute paths
-        for idx in range(len(data["images"])):
-            if data["images"][idx].startswith("http") or os.path.isabs(data["images"][idx]):
-                pass
-            else:
-                data["images"][idx] = os.path.join(os.path.dirname(self._file_path), data["images"][idx])
-        for idx in range(len(data["videos"])):
-            if data["videos"][idx].startswith("http") or os.path.isabs(data["videos"][idx]):
-                pass
-            else:
-                data["videos"][idx] = os.path.join(os.path.dirname(self._file_path), data["videos"][idx])
-        for idx in range(len(data["audios"])):
-            if data["audios"][idx].startswith("http") or os.path.isabs(data["audios"][idx]):
-                pass
-            else:
-                data["audios"][idx] = os.path.join(os.path.dirname(self._file_path), data["audios"][idx])
+        if "images" in data:
+            for idx in range(len(data["images"])):
+                if data["images"][idx].startswith("http") or os.path.isabs(data["images"][idx]):
+                    pass
+                else:
+                    data["images"][idx] = os.path.join(os.path.dirname(self._file_path), data["images"][idx])
+        if "videos" in data:
+            for idx in range(len(data["videos"])):
+                if data["videos"][idx].startswith("http") or os.path.isabs(data["videos"][idx]):
+                    pass
+                else:
+                    data["videos"][idx] = os.path.join(os.path.dirname(self._file_path), data["videos"][idx])
+        if "audios" in data:
+            for idx in range(len(data["audios"])):
+                if data["audios"][idx].startswith("http") or os.path.isabs(data["audios"][idx]):
+                    pass
+                else:
+                    data["audios"][idx] = os.path.join(os.path.dirname(self._file_path), data["audios"][idx])
 
         return data
 
