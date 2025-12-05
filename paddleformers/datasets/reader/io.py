@@ -24,11 +24,9 @@ def load_json(file_path):
             return json.load(f)
     except FileNotFoundError:
         raise FileNotFoundError(f"file {file_path} not exists")
-    except json.JSONDecodeError as e:
-        raise json.JSONDecodeError(f"JSON parse error: {e.msg}", e.doc, e.pos)
+    except json.JSONDecodeError:
+        pass  # fallback to JSONL
 
-
-def load_jsonl(file_path):
     try:
         res = []
         with open(file_path, "r", encoding="utf-8") as file:
