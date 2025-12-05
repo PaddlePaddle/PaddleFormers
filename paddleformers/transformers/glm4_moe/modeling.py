@@ -66,6 +66,8 @@ class GLMMoEModelProvider(GPTModelProvider):
 
     bias_activation_fusion: bool = True
 
+    transform_rules = {"tensor_parallel_degree": "tensor_model_parallel_size"}
+
 
 def eager_attention_forward(
     module: nn.Layer,
@@ -1457,7 +1459,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         )
 
 
-class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1466,7 +1468,7 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         return model_provider.provide()
 
 
-class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
     _pp_plan = {"lm_head": (["hidden_states"], ["logits"])}
