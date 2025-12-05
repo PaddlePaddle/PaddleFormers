@@ -238,6 +238,8 @@ class LlmMetaConfig:
         ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
         ("fuse_rope", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
+        ("fuse_attention_qkv", bool, False, "Whether to fuse Attention QKV operations"),
+        ("fuse_attention_ffn", bool, False, "Whether to fuse Attention FFN operations"),
     ]
 
     hybrid_parallel_attributes = [
@@ -587,6 +589,8 @@ class PretrainedConfig:
         llm_meta = LlmMetaConfig._get_defaults()
         self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
         self._unsavable_keys.remove("tensor_parallel_degree")
+        self._unsavable_keys.remove("fuse_attention_qkv")
+        self._unsavable_keys.remove("fuse_attention_ffn")
         self._unsavable_keys.add("_attn_implementation")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)

@@ -182,6 +182,7 @@ def run_dpo(
         model = model_class.from_config(model_config)
         if not training_args.reference_free and not model_args.lora:
             ref_model = model_class.from_config(ref_model_config)
+            ref_model.set_state_dict(model.state_dict())
         else:
             ref_model = None
     if training_args.pipeline_parallel_degree > 1:

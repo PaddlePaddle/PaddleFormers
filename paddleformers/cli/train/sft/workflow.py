@@ -205,11 +205,6 @@ def run_sft(
     if hasattr(model_config, "ignore_index"):
         model_config.ignore_index = -100
 
-    if model_args.fuse_attention_qkv is not None:
-        model_config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
-
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
     if model_args.attn_impl not in avaible_attn_impl:
         raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
