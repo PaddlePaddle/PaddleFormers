@@ -1632,7 +1632,7 @@ class Trainer:
                 and self.args.split_inputs_sequence_dim
             ):
                 inputs = split_inputs_sequence_dim(inputs)
-            if self.args.use_hybrid_parallel and self.args.context_parallel_degree > 1 and self.args.split_cp_inputs:
+            if self.args.use_hybrid_parallel and self.args.context_parallel_degree > 1:
                 inputs = get_batch_on_this_cp_rank(inputs)
 
             if self.args.ignore_data_skip:

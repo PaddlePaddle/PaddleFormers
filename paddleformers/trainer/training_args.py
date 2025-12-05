@@ -1218,10 +1218,6 @@ class TrainingArguments:
         default=True,
         metadata={"help": "whether to use auto_parallel intermediate API."},
     )
-    split_cp_inputs: bool = field(
-        default=False,
-        metadata={"help": "whether to directly split inputs for cp."},
-    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
