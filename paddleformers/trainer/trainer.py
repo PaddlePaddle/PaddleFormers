@@ -1120,12 +1120,13 @@ class Trainer:
                 offload=self.args.load_via_cpu,
             )
 
-            dist.load_state_dict(
-                master_weights,
-                master_weights_path,
-                aoa_config=self.args.aoa_config,
-                offload=self.args.load_via_cpu,
-            )
+            if not self.args.sharded_model_from_ema:
+                dist.load_state_dict(
+                    master_weights,
+                    master_weights_path,
+                    aoa_config=self.args.aoa_config,
+                    offload=self.args.load_via_cpu,
+                )
 
             for v in optimizer_sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
@@ -1137,7 +1138,14 @@ class Trainer:
         if should_load_stage1 and self.args.sharded_model_from_ema:
             ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
             ema_state_dict = paddle.load(ema_states_path)
-            ema_state_dict.pop("master_weights", None)
+            ema_master_weights = ema_state_dict.pop("master_weights", None)
+            opt_master_weights = self.optimizer.state_dict()["master_weights"]
+            for k, v in opt_master_weights.items():
+                assert (
+                    k in ema_master_weights
+                ), f"{k} not in ema_master_weights, emas_master_weight keys {ema_master_weights.keys()}"
+                paddle.assign(ema_master_weights[k], opt_master_weights[k])
+
             ema_state_dict = reshard_util.all_gather_state_dict(ema_state_dict, lambda x: True, self.sharding_group)
             self.model.set_state_dict(ema_state_dict)
         else:
