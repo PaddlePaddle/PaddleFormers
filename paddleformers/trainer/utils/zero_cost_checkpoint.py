@@ -1539,7 +1539,6 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
         return state_dict
 
     def _cache_meta_for_sharded_save(self, model, optimizer):
-        # TODO(): fix later.
         logger.info("Start caching metas for sharded save...")
         (self.manipulated_state_dict) = self._manipulate_state_dict_and_config(model, optimizer)
 
@@ -1554,10 +1553,6 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
         self.manipulated_config_to_save = self.manipulated_config_to_save.to_json_string(use_diff=True)
         logger.info("Cache manipulated model config done")
 
-        # self.filtered_state_dict = model.state_dict()
-        # logger.debug(f"model state dict key {self.manipulated_state_dict.keys()}")
-        # logger.debug(f"model sharded state dict key {model.sharded_state_dict().keys()}")
-
         self.model_meta = DistInfoCollectorValidator(self.args, self.hcg).gather_distributed_model_meta(
             model, optimizer
         )
@@ -1569,7 +1564,6 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
 
         # model state ckpt meta and filter
         self.ckpt_data_name, self.ckpt_meta_name = create_ckpt_file_name()
-        # self.model_ckpt_meta, self.model_state_filter = saved_ckptmeta(model.sharded_state_dict(), self.ckpt_data_name)
         self.model_ckpt_meta, self.model_state_filter = saved_ckptmeta(
             self.manipulated_state_dict, self.ckpt_data_name
         )
