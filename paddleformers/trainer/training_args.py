@@ -54,6 +54,15 @@ except Exception:
         return False
 
 
+if paddle.device.is_compiled_with_cuda():
+    from paddlefleet.parallel_state import get_tensor_model_parallel_group
+    from paddlefleet.training import initialize_fleet
+
+    HAS_PADDLEFLEET = True
+else:
+    HAS_PADDLEFLEET = False
+
+
 __all__ = [
     "default_logdir",
     "TrainingArguments",
@@ -1753,9 +1762,8 @@ class TrainingArguments:
                 fleet.init(is_collective=True, strategy=strategy)
 
                 # In PaddleFleet, we should use the following code to initialize.
-
-                # from paddlefleet.training.initialize import initialize_fleet
-                # initialize_fleet(strategy)
+                if HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
+                    initialize_fleet(strategy)
                 logger.info(strategy)
 
                 if self.reorder_pipeline_priority:
@@ -2002,6 +2010,19 @@ class TrainingArguments:
                         fleet.init(is_collective=True, strategy=strategy)
                     else:
                         paddle.distributed.init_parallel_env()
+            if world_size == 1 and HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
+                single_card_strategy = fleet.DistributedStrategy()
+                single_card_strategy.hybrid_configs = {
+                    "dp_degree": 1,
+                    "mp_degree": 1,
+                    "pp_degree": 1,
+                    "sharding_degree": 1,
+                    "sep_degree": 1,
+                    "cp_degree": 1,
+                    "ep_degree": 1,
+                    "moe_sharding_degree": 1,
+                }
+                initialize_fleet(single_card_strategy)
 
         if (
             self.unified_checkpoint

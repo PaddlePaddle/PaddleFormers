@@ -767,7 +767,7 @@ class Ernie4_5_PretrainedModel(PretrainedModel):
 
     config_class = Ernie4_5_MoeConfig
     base_model_prefix = "model"
-    _keep_in_fp32_modules = ["mlp.gate", "e_score_correction_bias"]
+    _keep_in_fp32_modules = ["mlp.gate.", "e_score_correction_bias"]
     transpose_weight_keys = [
         "q_proj",
         "k_proj",
