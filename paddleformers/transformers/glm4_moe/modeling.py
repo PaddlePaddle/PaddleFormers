@@ -66,7 +66,7 @@ class GLMMoEModelProvider(GPTModelProvider):
 
     bias_activation_fusion: bool = True
 
-    transform_rules = {"tensor_parallel_degree": "tensor_model_parallel_size"}
+    transform_rules = {"tensor_parallel_degree": "tensor_model_parallel_size", "dtype": "params_dtype"}
 
 
 def eager_attention_forward(

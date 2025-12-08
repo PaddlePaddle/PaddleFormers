@@ -13,7 +13,7 @@
 # limitations under the License.
 
 START_RANK=0 # 改成真正执行的机器号
-END_RANK=2 # 改成真正执行的机器号
+END_RANK=1 # 改成真正执行的机器号
 
 if [[ $rank -lt $START_RANK ]]; then
    exit 0
@@ -33,11 +33,19 @@ rank=$(($rank-$START_RANK))
 # 使用标准的FP32格式计算, 提升精度
 export NVIDIA_TF32_OVERRIDE=0
 
-python -m paddle.distributed.launch \
-   --log_dir ./outputs/output_$rank/paddle_distributed_logs \
-   --master $master:$port \
-   --nnodes $nnodes \
-   --rank $rank \
-   --run_mode=collective \
-   run_pretrain.py glm45.json \
-   --output_dir . # 改成自己的保存模型目录
+root_path="/root/paddlejob/share-storage/gpfs/system-public/wangruting/wangruting"
+export PYTHONPATH=$root_path/PaddleFleet/src:$root_path/PaddleFormers/examples/experiments/paddlefleet #修改为自己的paddlefleet路径
+# export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+# paddleformers-cli train ./examples/experiments/paddlefleet/pt_full.yaml
+
+export CUDA_VISIBLE_DEVICES=0
+paddleformers-cli train ./examples/experiments/paddlefleet/pt_single_full.yaml
+
+# python -m paddle.distributed.launch \
+#    --log_dir ./outputs/output_$rank/paddle_distributed_logs \
+#    --master $master:$port \
+#    --nnodes $nnodes \
+#    --rank $rank \
+#    --run_mode=collective \
+#    ./examples/experiments/paddlefleet/run_pretrain.py ./examples/experiments/paddlefleet/glm45_single_card.json \
+#    --output_dir . # 改成自己的保存模型目录
