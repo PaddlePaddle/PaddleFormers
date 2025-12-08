@@ -235,6 +235,8 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "glm4_moe" or isinstance(model, Glm4MoeForCausalLMPipe):
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
