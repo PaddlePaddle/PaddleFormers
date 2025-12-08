@@ -21,8 +21,9 @@ from typing import TYPE_CHECKING, Callable, List, Optional, Union
 
 import paddle
 import paddle.nn.functional as F
-from gpt_provider import GPTModelProvider
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
+
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 if TYPE_CHECKING:
     from paddlefleet.spec_utils import LayerSpec
@@ -79,6 +80,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     moe_router_enable_expert_bias: bool = True
     moe_router_bias_update_rate: float = 0
     norm_topk_prob = True
+    topk_method: str = "noaux_tc"
 
     # optimization
     persist_layer_norm: bool = True
@@ -128,6 +130,7 @@ class GLM45AirModelProvider106B(GLMMoEModelProvider):
     n_shared_experts: int = 1
     use_qk_norm: bool = False
     routed_scaling_factor: float = 1.0
+    rope_theta: float = 1000000.0
 
 
 @dataclass
@@ -137,20 +140,18 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     """
 
     num_hidden_layers: int = 10
-    n_shared_experts: int = 1
     moe_layer_freq: Union[int, List[int]] = field(
         default_factory=lambda: [0] * 1 + [1] * 9
     )  # first one layer is dense
-    hidden_size: int = 128
-    intermediate_size: int = 128
-    moe_intermediate_size: int = 1408
+    seq_length: int = 8192  # default value is 131072
+
+    # all args below will be removed when config system is ready
     num_nextn_predict_layers: Optional[int] = 0
-    use_bias: bool = False
-    vocab_size: int = 37888
-    sequence_parallel: bool = True 
-    
+    sequence_parallel: bool = True
     expert_model_parallel_size: int = 16
     tensor_model_parallel_size: int = 4
+    moe_router_force_load_balancing: bool = True
+    apply_rope_fusion: bool = True
 
 
 @dataclass
@@ -173,7 +174,6 @@ class GLM45AirModelSingleCardDebugProvider(GLMMoEModelProvider):
         default_factory=lambda: [0] * 1 + [1] * 1
     )  # first one layer is dense
     n_routed_experts: int = 8
-    topk_method: str = "noaux_tc"
 
     moe_intermediate_size: int = 1408
     n_shared_experts: int = 1
