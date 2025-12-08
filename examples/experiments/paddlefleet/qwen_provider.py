@@ -16,13 +16,14 @@
 # Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 
 import logging
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, List, Optional, Union
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable, Optional, Union
 
 import paddle
 import paddle.nn.functional as F
-from gpt_provider import GPTModelProvider
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
+
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 if TYPE_CHECKING:
     from paddlefleet.spec_utils import LayerSpec

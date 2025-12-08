@@ -21,8 +21,9 @@ from typing import TYPE_CHECKING, Callable, List, Optional, Union
 
 import paddle
 import paddle.nn.functional as F
-from gpt_provider import GPTModelProvider
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
+
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 if TYPE_CHECKING:
     from paddlefleet.spec_utils import LayerSpec
