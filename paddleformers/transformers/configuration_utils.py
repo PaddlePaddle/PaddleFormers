@@ -697,9 +697,7 @@ class PretrainedConfig:
         self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
 
         # For general components
-        self._attn_implementation = kwargs.pop(
-            "_attn_implementation", "eager"
-        )  # 或者 kwargs.pop("attn_implementation", "eager") 兼容
+        self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
 
         # Quantization Config
         if "quantization_config" in kwargs and isinstance(kwargs["quantization_config"], dict):
@@ -713,7 +711,7 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        # MoE specific (Paddle)
+        # MoE specific
         self.moe_subbatch_token_num = kwargs.pop("moe_subbatch_token_num", 0)
         self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
