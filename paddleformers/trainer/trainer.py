@@ -64,9 +64,10 @@ except:
 try:
     import paddlefleet
     import paddlefleet.distributed.model as paddlefleet_dist_model
+
+    HAS_PADDLEFLEET = True
 except:
-    paddlefleet = None
-    paddlefleet_dist_model = None
+    HAS_PADDLEFLEET = False
 
 from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
@@ -3006,7 +3007,7 @@ class Trainer:
 
             return model
 
-        if paddlefleet is not None and isinstance(model, paddlefleet.pipeline_parallel.PipelineLayer):
+        if HAS_PADDLEFLEET and isinstance(model, paddlefleet.pipeline_parallel.PipelineLayer):
             prepare_pipeline_inputs_func = (
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
             )
@@ -3095,7 +3096,7 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
-        if paddlefleet is not None and isinstance(model, paddlefleet.pipeline_parallel.ParallelBase):
+        if HAS_PADDLEFLEET and isinstance(model, paddlefleet.pipeline_parallel.ParallelBase):
             in_pipeline_parallel_mode = True
         else:
             in_pipeline_parallel_mode = self.args.pipeline_parallel_degree > 1
@@ -3433,7 +3434,7 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if paddlefleet is not None and isinstance(model, paddlefleet.pipeline_parallel.ParallelBase):
+        if HAS_PADDLEFLEET and isinstance(model, paddlefleet.pipeline_parallel.ParallelBase):
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_parallel_degree > 1:
