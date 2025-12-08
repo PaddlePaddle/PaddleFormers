@@ -623,6 +623,7 @@ class LoRAModel(nn.Layer):
         elif (
             isinstance(module, FleetColumnParallelLinear) or isinstance(module, FleetRowParallelLinear)
         ) and module.world_size == 1:
+            print("FleetLoRALinear! ")
             lora_module = FleetLoRALinear(
                 in_features=module.weight.shape[0],
                 out_features=module.weight.shape[1],
@@ -686,9 +687,11 @@ class LoRAModel(nn.Layer):
                 self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
 
         elif isinstance(module, FleetColumnParallelLinear):
+            print("FleetColumnParallelLinear! ")
             # recover the original output_features
             output_features = module.weight.shape[1] * module.world_size
             if module.sequence_parallel:
+                print("FleetColumnSequenceParallelLoRALinear")
                 lora_module = FleetColumnSequenceParallelLoRALinear(
                     in_features=module.weight.shape[0],
                     out_features=output_features,
@@ -708,6 +711,7 @@ class LoRAModel(nn.Layer):
                     use_quick_lora=lora_config.use_quick_lora,
                 )
             else:
+                print("FleetColumnParallelLoRALinear")
                 lora_module = FleetColumnParallelLoRALinear(
                     in_features=module.weight.shape[0],
                     out_features=output_features,
@@ -762,6 +766,7 @@ class LoRAModel(nn.Layer):
         elif isinstance(module, FleetRowParallelLinear):
             # recover the original output_features
             if module.sequence_parallel:
+                print("FleetRowSequenceParallelLoRALinear")
                 lora_module = FleetRowSequenceParallelLoRALinear(
                     in_features=module.weight.shape[0] * module.world_size,
                     out_features=module.weight.shape[1],
@@ -776,6 +781,7 @@ class LoRAModel(nn.Layer):
                     use_quick_lora=lora_config.use_quick_lora,
                 )
             else:
+                print("FleetRowParallelLoRALinear")
                 lora_module = FleetRowParallelLoRALinear(
                     in_features=module.weight.shape[0] * module.world_size,
                     out_features=module.weight.shape[1],
