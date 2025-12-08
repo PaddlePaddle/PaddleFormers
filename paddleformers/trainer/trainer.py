@@ -131,6 +131,7 @@ from ..transformers.segment_parallel_utils import (
 from ..utils import empty_device_cache
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
+    EMA_STATE_DIC,
     LOKR_WEIGHTS_NAME,
     LORA_WEIGHTS_NAME,
     MASTER_WEIGHT_DIC,
@@ -203,6 +204,8 @@ from .unified_checkpoint import UnifiedCheckpointHandler
 from .utils import reshard as reshard_util
 from .utils.async_save import AsyncSaver
 from .utils.ckpt_converter import CheckpointConverter
+from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
+from .utils.sharding_io import GroupGetter, to_device
 
 try:
     from .utils.zero_cost_checkpoint import (
@@ -1120,12 +1123,13 @@ class Trainer:
                 offload=self.args.load_via_cpu,
             )
 
-            dist.load_state_dict(
-                master_weights,
-                master_weights_path,
-                aoa_config=self.args.aoa_config,
-                offload=self.args.load_via_cpu,
-            )
+            if not self.args.sharded_model_from_ema:
+                dist.load_state_dict(
+                    master_weights,
+                    master_weights_path,
+                    aoa_config=self.args.aoa_config,
+                    offload=self.args.load_via_cpu,
+                )
 
             for v in optimizer_sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
@@ -1133,12 +1137,80 @@ class Trainer:
 
             self._load_scheduler(resume_from_checkpoint)
 
-        dist.load_state_dict(
-            model_sharded_state_dict,
-            model_states_path,
-            aoa_config=self.args.aoa_config,
-            offload=self.args.load_via_cpu,
-        )
+        should_load_stage1 = self.args.should_load_sharding_stage1_model
+        if should_load_stage1 and self.args.sharded_model_from_ema:
+            ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
+            ema_state_dict = paddle.load(ema_states_path)
+            ema_master_weights = ema_state_dict.pop("master_weights", None)
+            opt_master_weights = self.optimizer.state_dict()["master_weights"]
+            for k, v in opt_master_weights.items():
+                assert (
+                    k in ema_master_weights
+                ), f"{k} not in ema_master_weights, emas_master_weight keys {ema_master_weights.keys()}"
+                paddle.assign(ema_master_weights[k], opt_master_weights[k])
+
+            ema_state_dict = reshard_util.all_gather_state_dict(ema_state_dict, lambda x: True, self.sharding_group)
+            self.model.set_state_dict(ema_state_dict)
+        else:
+            dist.load_state_dict(
+                model_sharded_state_dict,
+                model_states_path,
+                aoa_config=self.args.aoa_config,
+                offload=self.args.load_via_cpu,
+            )
+
+        if self.args.bf16 and (not self.args.ignore_load_lr_and_optim) and should_load_stage1:
+            opt_state_dict = self.optimizer.state_dict()
+
+            def recover_params_from_master_weight(opt_state_dict, group):
+                master_weights = opt_state_dict["master_weights"]
+                tmp = OrderedDict()
+                (master_weights, tmp) = (tmp, master_weights)
+                # cast to before
+                for (k, v) in tmp.items():
+                    name = v.name
+                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+                    master_weights[k].name = name
+
+                structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
+                node_model_state = reshard_util.NodeModelState(group=group)
+                node_model_state_tmp = reshard_util.NodeModelState(group=group)
+                node_model_state_tmp.add_master_weights(master_weights)
+                node_model_state_tmp.pack_keys(structure_name_map)
+                node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
+                del node_model_state_tmp
+                sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
+                logger.debug(f"sharding_strategy: {sharding_strategy}")
+                restore_func = (
+                    reshard_util.sharding_v1.restore
+                    if sharding_strategy == SHARDING_STRATEGY_V1
+                    else reshard_util.sharding_v2.restore
+                )
+                node_model_state = restore_func(node_model_state, self.model, self.optimizer)
+                node_model_state.unpack_keys()
+                master_weights = node_model_state.master_weights
+
+                master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
+
+                model_state_dict = self.model.state_dict()
+                for key, param in model_state_dict.items():
+                    if param.name in master_weights:
+                        logger.debug(
+                            f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
+                        )
+                        assert (
+                            param.shape == master_weights[param.name].shape
+                        ), f"got {param.shape} vs {master_weights[param.name].shape}"
+                        master_weight = paddle.reshape(master_weights[param.name], param.shape)
+                        paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
+
+            group_getter = GroupGetter(self.model)
+            opt_state_dict = split_opt_state(opt_state_dict, group_getter)
+            for gid in group_getter.get_group_ids():
+                sub_opt_state_dict = opt_state_dict[gid]
+                group = group_getter.get_group_by_id(gid)
+                if self.args.bf16:
+                    recover_params_from_master_weight(sub_opt_state_dict, group)
 
         for v in model_sharded_state_dict.values():
             if hasattr(v.local_tensor, "target_tensor"):
