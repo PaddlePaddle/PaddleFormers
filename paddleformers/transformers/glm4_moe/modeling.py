@@ -15,7 +15,7 @@
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Callable, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import paddle
 import paddle.distributed as dist
@@ -24,7 +24,6 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 from paddle.nn import functional as F
-from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
 
 from paddleformers.transformers.gpt_provider import GPTModelProvider
 
@@ -48,17 +47,10 @@ from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import Glm4MoeConfig
 
-if TYPE_CHECKING:
-    from paddlefleet.transformer import LayerSpec
-
 
 @dataclass
 class GLMMoEModelProvider(GPTModelProvider):
     """Base provider for GLM MoE Models."""
-
-    transformer_layer_spec: Union[
-        "LayerSpec", Callable[["GPTModelProvider"], "LayerSpec"]
-    ] = get_gpt_decoder_block_spec
 
     moe_router_load_balancing_type: str = "seq_aux_loss"
 
