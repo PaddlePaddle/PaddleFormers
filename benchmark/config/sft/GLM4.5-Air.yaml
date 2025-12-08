@@ -9,7 +9,7 @@ max_seq_len: 8192
 mix_strategy: concat
 
 ### model
-model_name_or_path: /root/paddlejob/gpfs/zhangyichen03/huggingface_model/GLM-4.5-Air
+model_name_or_path: /root/paddlejob/gpfs/efficient_benchmark/huggingface/GLM-4.5-Air
 attn_impl: flashmask
 
 ### finetuning
