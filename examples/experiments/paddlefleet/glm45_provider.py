@@ -21,8 +21,9 @@ from typing import TYPE_CHECKING, Callable, List, Optional, Union
 
 import paddle
 import paddle.nn.functional as F
-from gpt_provider import GPTModelProvider
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
+
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 if TYPE_CHECKING:
     from paddlefleet.spec_utils import LayerSpec
@@ -147,8 +148,8 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     num_nextn_predict_layers: Optional[int] = 0
     use_bias: bool = False
     vocab_size: int = 37888
-    sequence_parallel: bool = True 
-    
+    sequence_parallel: bool = True
+
     expert_model_parallel_size: int = 16
     tensor_model_parallel_size: int = 4
 
