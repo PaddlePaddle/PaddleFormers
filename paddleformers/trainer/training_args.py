@@ -423,7 +423,7 @@ class TrainingArguments:
             Whether to load checkpoint data into CPU memory first before transferring to GPU.
             This helps mitigate GPU memory shortage by staging data on the CPU and only moving required parts to the GPU on demand during communication.
             Defaults to False.
-        save_hf_steps (`int`, *optional*, defaults to 500):
+
             Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
         hybrid_parallel_expert_grad_scale (float, optional, defaults to None)(
             Scaling factor for expert gradients when Expert Parallel is enabled.
@@ -444,6 +444,8 @@ class TrainingArguments:
             whether to run distributed training in auto parallel mode.
         use_intermediate_api (`bool`, *optional*, defaults to `True`):
             whether to use auto_parallel intermediate API if `enable_auto_parallel=True`.
+        save_hf_steps (`int`, *optional*, defaults to -1):
+            Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
     """
 
     output_dir: str = field(
@@ -1217,7 +1219,7 @@ class TrainingArguments:
         },
     )
 
-    save_hf_steps: int = field(default=500, metadata={"help": "Save huggingface checkpoint every X updates steps."})
+    save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
 
     hybrid_parallel_expert_grad_scale: Optional[float] = field(
         default=None,
