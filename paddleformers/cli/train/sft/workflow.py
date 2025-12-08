@@ -45,6 +45,7 @@ from paddleformers.trainer import (
     MoeExpertsGradScaleCallback,
     MoEGateSpGradSyncCallBack,
     get_last_checkpoint,
+    set_random_seed,
     set_seed,
 )
 from paddleformers.transformers import (
@@ -161,6 +162,7 @@ def run_sft(
 
     # Setup GPU & distributed training
     paddle.set_device(training_args.device)
+    set_random_seed(seed_=training_args.seed)
     set_seed(seed=training_args.seed)
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, world_size: {training_args.world_size}, "
