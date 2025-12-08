@@ -18,10 +18,9 @@
 
 
 import json
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, NamedTuple, Union
+from typing import Any, NamedTuple
 
 from typing_extensions import override
 
@@ -64,15 +63,6 @@ class ToolUtils(ABC):
     @abstractmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
         r"""Generate the assistant message including all the tool calls."""
-        ...
-
-    @staticmethod
-    @abstractmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        r"""Extract all the function calls from the assistant message.
-
-        It should be an inverse function of `function_formatter`.
-        """
         ...
 
 
@@ -119,26 +109,6 @@ class DefaultToolUtils(ToolUtils):
     def function_formatter(functions: list["FunctionCall"]) -> str:
         return "\n".join([f"Action: {name}\nAction Input: {arguments}" for name, arguments in functions])
 
-    @override
-    @staticmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        regex = re.compile(r"Action:\s*([a-zA-Z0-9_]+)\s*Action Input:\s*(.+?)(?=\s*Action:|\s*$)", re.DOTALL)
-        action_match: list[tuple[str, str]] = re.findall(regex, content)
-        if not action_match:
-            return content
-
-        results = []
-        for match in action_match:
-            tool_name = match[0].strip()
-            tool_input = match[1].strip().strip('"').strip("```")
-            try:
-                arguments = json.loads(tool_input)
-                results.append(FunctionCall(tool_name, json.dumps(arguments, ensure_ascii=False)))
-            except json.JSONDecodeError:
-                return content
-
-        return results
-
 
 class QwenToolUtils(ToolUtils):
     r"""Qwen 2.5 tool using template."""
@@ -161,28 +131,6 @@ class QwenToolUtils(ToolUtils):
             for name, arguments in functions
         ]
         return "\n".join([f"<tool_call>\n{text}\n</tool_call>" for text in function_texts])
-
-    @override
-    @staticmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        regex = re.compile(r"<tool_call>(.+?)</tool_call>(?=\s*<tool_call>|\s*$)", re.DOTALL)
-        tool_match: list[str] = re.findall(regex, content)
-        if not tool_match:
-            return content
-
-        results = []
-        for tool in tool_match:
-            try:
-                tool = json.loads(tool.strip())
-            except json.JSONDecodeError:
-                return content
-
-            if "name" not in tool or "arguments" not in tool:
-                return content
-
-            results.append(FunctionCall(tool["name"], json.dumps(tool["arguments"], ensure_ascii=False)))
-
-        return results
 
 
 TOOLS = {

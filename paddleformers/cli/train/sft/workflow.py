@@ -318,7 +318,6 @@ def run_sft(
     dataset_config.update(
         {
             "template": data_args.template,
-            "train_on_prompt": False,
             "tool_format": None,
             "default_system": None,
             "enable_thinking": True,

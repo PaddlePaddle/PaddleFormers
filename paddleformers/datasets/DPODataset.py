@@ -240,9 +240,10 @@ class DPODataSet(IterableDataset):
         response_token_ids_list = []
         response_label_ids_list = []
         response_len_list = []
+        split_index = example["session_start_index"] // 2
         for responses in [
-            chosen_encoded_messages[example["session_start_index"] // 2 :],
-            rejected_encoded_messages[example["session_start_index"] // 2 :],
+            chosen_encoded_messages[split_index:],
+            rejected_encoded_messages[split_index:],
         ]:
             responses_token_ids = []
             responses_label_ids = []
@@ -274,9 +275,9 @@ class DPODataSet(IterableDataset):
         cur_len += sum(map(len, response_token_ids_list))
 
         # create at least one turn
-        turn_index = len(chosen_encoded_messages) - 1
+        turn_index = split_index
         while turn_index >= 0:
-            if turn_index == len(chosen_encoded_messages) - 1:
+            if turn_index == split_index:
                 cur_turn_token = chosen_encoded_messages[turn_index][0]
             else:
                 cur_turn_token = chosen_encoded_messages[turn_index][0] + chosen_encoded_messages[turn_index][1]
@@ -289,7 +290,7 @@ class DPODataSet(IterableDataset):
             turn_index -= 1
 
         # at least one turn
-        if turn_index == len(chosen_encoded_messages) - 1:
+        if turn_index == split_index:
             sub_src = example["chosen"]["messages"][0]["content"].strip()[:5]
             global LOGGER_COUNT
             LOGGER_COUNT += 1
