@@ -129,7 +129,7 @@ class GLM45AirModelProvider106B(GLMMoEModelProvider):
     n_shared_experts: int = 1
     use_qk_norm: bool = False
     routed_scaling_factor: float = 1.0
-    rope_theta: int = 1000000
+    rope_theta: float = 1000000.0
 
 
 @dataclass
