@@ -698,13 +698,31 @@ class GenerationMixin(object):
                 - "return_dict": Always set to True for consistent output format
 
         """
+        # prepare part
+        batch_size, seq_length = input_ids.shape
         model_inputs = {}
         model_inputs["past_key_values"] = past_key_values
-        model_inputs["cache_position"] = kwargs.get("cache_position", None)
+        sig = inspect.signature(self.forward)
+        forward_params = set(sig.parameters.keys())
+        has_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
 
-        if past_key_values:
-            input_ids = input_ids[:, -1:]
+        # deal with cache_position
+        cache_position = kwargs.get("cache_position", None)
+        if cache_position is not None and "cache_position" in forward_params:
+            model_inputs["cache_position"] = cache_position
 
+        # only intercept input after the first step of reasoning
+        if past_key_values is not None:
+            cache_length = 0
+            if hasattr(past_key_values, "get_seq_length"):
+                cache_length = past_key_values.get_seq_length()
+            elif isinstance(past_key_values, tuple):
+                if len(past_key_values) > 0 and past_key_values[0] is not None:
+                    cache_length = past_key_values[0][0].shape[-2]
+            if cache_length > 0:
+                input_ids = input_ids[:, -1:]
+
+        # deal with use_cache
         use_cache = kwargs.get("use_cache", None)
         if use_cache is None:
             use_cache = getattr(self.config, "use_cache", False)
@@ -717,16 +735,21 @@ class GenerationMixin(object):
             model_inputs["inputs_embeds"] = None
             model_inputs["input_ids"] = input_ids
 
+        # deal with position_ids
         attention_mask = kwargs.get("attention_mask", None)
-        if (
-            attention_mask is not None
-            and kwargs.get("position_ids") is None
-            and "position_ids" in set(inspect.signature(self.forward).parameters.keys())
-        ):
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            kwargs["position_ids"] = position_ids  # placed in kwargs for further processing (see below)
-
+        position_ids = kwargs.get("position_ids", None)
+        if position_ids is None:
+            if attention_mask is not None and attention_mask.ndim == 2:
+                # A：if mask (can deal with padding)
+                if "position_ids" in forward_params:
+                    position_ids = attention_mask.long().cumsum(-1) - 1
+                    position_ids.masked_fill_(attention_mask == 0, 1)
+            else:
+                # B：if no mask
+                if "position_ids" in forward_params:
+                    position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
+        if position_ids is not None:
+            kwargs["position_ids"] = position_ids
         model_input = kwargs.get("position_ids")
         if model_input is not None:
             if past_key_values is not None or use_cache:
@@ -735,9 +758,11 @@ class GenerationMixin(object):
                     if model_inputs.get("inputs_embeds") is not None
                     else model_inputs["input_ids"].shape[1]
                 )
+                # if use kv_cache, we need to adjust the position_ids
                 model_input = model_input[:, -current_input_length:]
             model_inputs["position_ids"] = model_input
 
+        # deal with return_dict
         model_inputs["return_dict"] = kwargs.get("return_dict", True)
 
         for key, value in kwargs.items():
@@ -746,6 +771,11 @@ class GenerationMixin(object):
 
         # Remove unexpected `generate` inputs
         model_inputs.pop("labels", None)
+        # Remove unexpected `forward` inputs
+        if not has_kwargs:
+            keys_to_remove = [k for k in model_inputs if k not in forward_params]
+            for k in keys_to_remove:
+                model_inputs.pop(k)
         return model_inputs
 
     def adjust_logits_during_generation(self, logits):

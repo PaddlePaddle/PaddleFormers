@@ -45,6 +45,7 @@ from paddleformers.trainer import (
     MoeExpertsGradScaleCallback,
     MoEGateSpGradSyncCallBack,
     get_last_checkpoint,
+    set_random_seed,
     set_seed,
 )
 from paddleformers.transformers import (
@@ -161,6 +162,7 @@ def run_sft(
 
     # Setup GPU & distributed training
     paddle.set_device(training_args.device)
+    set_random_seed(seed_=training_args.seed)
     set_seed(seed=training_args.seed)
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, world_size: {training_args.world_size}, "
@@ -224,11 +226,6 @@ def run_sft(
         model_config.attention_probs_dropout_prob = finetuning_args.attention_probs_dropout_prob
     if hasattr(model_config, "ignore_index"):
         model_config.ignore_index = -100
-
-    if model_args.fuse_attention_qkv is not None:
-        model_config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
     if model_args.attn_impl not in avaible_attn_impl:

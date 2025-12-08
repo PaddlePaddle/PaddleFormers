@@ -1,0 +1,54 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./tests/fixtures/dummy/sft-vl/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./tests/fixtures/dummy/sft-vl/train.jsonl
+eval_dataset_prob: "1.0"
+max_seq_len: 8192
+packing: true
+mix_strategy: concat
+template_backend: custom
+template: qwen2_vl
+
+### model
+model_name_or_path: Qwen2.5-VL-3B-Instruct
+attn_impl: flashmask
+
+### finetuning
+# base
+stage: VL-SFT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: true
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: -1
+eval_steps: 100
+evaluation_strategy: steps
+save_steps: 100
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 4
+logging_dir: ./vdl_log
+output_dir: ./checkpoints/Qwen2.5-VL-sft-full-tp-pp
+disable_tqdm: true
+eval_accumulation_steps: 16
+
+# train
+warmup_steps: 20
+learning_rate: 1.0e-5
+
+# performance
+tensor_parallel_degree: 2
+pipeline_parallel_degree: 2
+sequence_parallel: true
+sharding: stage1
+recompute: true
+bf16: true
+fp16_opt_level: O2
+unified_checkpoint: false
+save_checkpoint_format: "flex_checkpoint"
+load_checkpoint_format: "flex_checkpoint"
