@@ -990,6 +990,8 @@ class Ernie4_5ForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = Ernie4_5Model._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Ernie4_5Model.transpose_weight_keys
+    _gen_aoa_config = Ernie4_5ForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = Ernie4_5ForCausalLM._gen_inv_aoa_config
 
 
 __all__ = ["Ernie4_5Model", "Ernie4_5ForCausalLM", "Ernie4_5ForCausalLMPipe"]
