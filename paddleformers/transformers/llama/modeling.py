@@ -20,6 +20,11 @@ from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
+from paddleformers.transformers.conversion_utils import (
+    StateDictNameMapping,
+    init_name_mappings,
+)
+
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
@@ -28,14 +33,13 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
-from .auto_dist_config import get_dist_config
-
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
+from .auto_dist_config import get_dist_config
 from .configuration import LlamaConfig
 
 
@@ -162,9 +166,9 @@ class LLamaAttention(nn.Layer):
         q_shape = (batch_size, seq_len, self.num_heads, self.head_dim)
         kv_shape = (batch_size, seq_len, self.num_key_value_heads, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).view(q_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
+        query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -327,8 +331,41 @@ class LlamaPretrainedModel(PretrainedModel):
     ]
 
     @classmethod
-    def _get_tensor_parallel_mappings(cls, config: LlamaConfig, is_split=True):
+    def _get_name_mappings(cls, config: LlamaConfig) -> list[StateDictNameMapping]:
+        mappings: list[StateDictNameMapping] = []
+        model_mappings = [
+            ["embed_tokens.weight"],
+            ["norm.weight"],
+        ]
+        for layer_index in range(config.num_hidden_layers):
+            layer_mappings = [
+                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.k_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.v_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.rotary_emb.inv_freq"],
+                [f"layers.{layer_index}.mlp.gate_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.down_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.up_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.input_layernorm.weight"],
+                [f"layers.{layer_index}.post_attention_layernorm.weight"],
+            ]
+            model_mappings.extend(layer_mappings)
 
+        init_name_mappings(mappings=model_mappings)
+        # base-model prefix "LlamaModel"
+        if "LlamaModel" not in config.architectures:
+            for mapping in model_mappings:
+                mapping[0] = "model." + mapping[0]
+                mapping[1] = "llama." + mapping[1]
+            if not config.tie_word_embeddings:
+                model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
+
+        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
+        return mappings
+
+    @classmethod
+    def _get_tensor_parallel_mappings(cls, config: LlamaConfig, is_split=True):
         from ..conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(

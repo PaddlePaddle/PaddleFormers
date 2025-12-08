@@ -33,8 +33,6 @@ from paddleformers.transformers import (
     AutoTokenizer,
     CosineAnnealingWithWarmupDecay,
     LinearAnnealingWithWarmupDecay,
-    LlamaConfig,
-    LlamaForCausalLM,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.utils.log import logger
@@ -147,6 +145,7 @@ class PretrainingTrainer(Trainer):
 
 
 def run_auto_parallel(model_args, data_args, generating_args, training_args):
+
     do_enable_linear_fused_grad_add = training_args.enable_linear_fused_grad_add
     # do_enable_mp_async_allreduce = (
     #     training_args.enable_auto_parallel
@@ -311,9 +310,6 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
                 model = model_class.from_config(config, dtype=dtype)
         else:
             model = model_class.from_config(config, dtype=dtype)
-    
-    criterion = model.criterion
-
 
     if training_args.recompute:
 
