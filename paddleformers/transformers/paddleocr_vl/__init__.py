@@ -11,29 +11,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Package"""
+import sys
+from typing import TYPE_CHECKING
 
-from collections import OrderedDict
+from ...utils.lazy_import import _LazyModule
 
-import paddle.nn as nn
-
-
-class ClassInstantier(OrderedDict):
-    def __getitem__(self, key):
-        content = super().__getitem__(key)
-        cls, kwargs = content if isinstance(content, tuple) else (content, {})
-        return cls(**kwargs)
-
-
-ACT2CLS = {
-    "gelu": nn.GELU,
-    "gelu_tanh": (nn.GELU, {"approximate": "tanh"}),
-    "gelu_pytorch_tanh": (nn.GELU, {"approximate": "tanh"}),
-    "relu": nn.ReLU,
-    "relu6": nn.ReLU6,
-    "sigmoid": nn.Sigmoid,
-    "silu": nn.Silu,
-    "tanh": nn.Tanh,
-    "prelu": nn.PReLU,
+import_structure = {
+    "image_processor": ["PaddleOCRVLImageProcessor"],
+    "processor": ["PaddleOCRVLProcessor"],
+    "configuration": ["PaddleOCRVLConfig"],
+    "modeling": ["PaddleOCRVLForConditionalGeneration"],
 }
 
-ACT2FN = ClassInstantier(ACT2CLS)
+if TYPE_CHECKING:
+    from .configuration import *
+    from .image_processor import *
+    from .modeling import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

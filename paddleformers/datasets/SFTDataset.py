@@ -417,6 +417,7 @@ class SFTDataSet(IterableDataset):
                     logger.warning(f"This data is too long: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
             except Exception:
                 logger.warning("[SKIP] wrong example")
+            return None
 
         if self.use_template:
             if self.begin_token_id is not None and self.end_of_response_id is not None:

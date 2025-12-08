@@ -181,6 +181,10 @@ import_structure = {
     "ernie4_5_moe_vl.tokenizer": ["Ernie4_5_VLTokenizer"],
     "ernie4_5_moe_vl.image_processor": ["Ernie4_5_VLImageProcessor"],
     "ernie4_5_moe_vl.processor": ["Ernie4_5_VLProcessor"],
+    "paddleocr_vl.configuration": ["PaddleOCRVLConfig"],
+    "paddleocr_vl.modeling": ["PaddleOCRVLForConditionalGeneration"],
+    "paddleocr_vl.image_processor": ["PaddleOCRVLImageProcessor"],
+    "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "export": ["export_model"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
@@ -297,6 +301,7 @@ import_structure = {
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "ernie4_5_moe_vl": [],
+    "paddleocr_vl": [],
     "qwen2_5_vl": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
@@ -366,6 +371,7 @@ if TYPE_CHECKING:
     from .ernie4_5 import *
     from .ernie4_5_moe import *
     from .ernie4_5_moe_vl import *
+    from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
     from .qwen import *
