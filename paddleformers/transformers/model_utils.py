@@ -1226,7 +1226,8 @@ def save_full_param(
             if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
                 _save_current_shard()
 
-            current_shard_state_dict[param_key] = param
+            # Move tensor to CPU since we only need to save it, not compute with it
+            current_shard_state_dict[param_key] = param.cpu()
             current_shard_size_bytes += param_size_bytes
 
             if current_shard_size_bytes >= max_shard_size_bytes:
