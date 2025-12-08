@@ -1066,30 +1066,6 @@ class QWenForCausalLM(QWenPretrainedModel):
     def set_output_embeddings(self, new_embeddings):
         self.lm_head = new_embeddings
 
-    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, inputs_embeds=None, **kwargs):
-        attention_mask = kwargs.get("attention_mask", None)
-        position_ids = kwargs.get("position_ids", None)
-
-        if past_key_values:
-            input_ids = input_ids[:, -1].unsqueeze(-1)
-            if position_ids is not None:
-                position_ids = position_ids[:, -1].unsqueeze(-1)
-
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-
-        model_inputs.update(
-            {
-                "past_key_values": past_key_values,
-                "use_cache": kwargs.get("use_cache"),
-                "attention_mask": attention_mask,
-                "position_ids": position_ids,
-            }
-        )
-        return model_inputs
-
     @staticmethod
     def prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id):
         is_pad_token_in_inputs_ids = (pad_token_id is not None) and paddle.any(input_ids == pad_token_id).item()

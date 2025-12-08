@@ -148,6 +148,7 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     use_bias: bool = False
     vocab_size: int = 37888
     sequence_parallel: bool = True 
+    
     expert_model_parallel_size: int = 16
     tensor_model_parallel_size: int = 4
 
@@ -175,7 +176,7 @@ class GLM45AirModelSingleCardDebugProvider(GLMMoEModelProvider):
     topk_method: str = "noaux_tc"
 
     moe_intermediate_size: int = 1408
-    n_shared_experts: int = 1408
+    n_shared_experts: int = 1
     use_qk_norm: bool = False
     routed_scaling_factor: float = 1.0
     num_nextn_predict_layers: Optional[int] = 0

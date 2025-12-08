@@ -3115,9 +3115,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         model_to_save = unwrap_model(self)
 
         if save_checkpoint_format == "flex_checkpoint":
-            if not hasattr(self.__class__, "_gen_inv_aoa_config"):
-                if hasattr(self.__class__, "_gen_aoa_config"):
-                    aoa_config = self.__class__._gen_aoa_config(model_to_save.config)
+            if not hasattr(self, "_gen_inv_aoa_config"):
+                if hasattr(self, "_gen_aoa_config"):
+                    aoa_config = self._gen_aoa_config(model_to_save.config)
                     aoa_config["aoa_config_reverse"] = True
                     logger.warning("There is no _gen_inv_aoa_config, so we auto-derived it from _gen_aoa_config.")
                 else:
@@ -3127,7 +3127,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         "or the _gen_aoa_config function (which will be automatically used to derive _gen_inv_aoa_config)."
                     )
             else:
-                aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+                aoa_config = self._gen_inv_aoa_config(model_to_save.config)
 
             clean_unrelated_safetensors(save_dir)
 
@@ -3139,7 +3139,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if dtype is not None:
                 model_to_save.config.dtype = str(dtype).split(".")[1]
             if config_to_save is None:
-                config_to_save = copy.deepcopy(model_to_save.config)
+                if hasattr(model_to_save, "config_to_save"):
+                    config_to_save = copy.deepcopy(model_to_save.config_to_save)
+                else:
+                    config_to_save = copy.deepcopy(model_to_save.config)
 
             # Attach architecture to the config
             config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
