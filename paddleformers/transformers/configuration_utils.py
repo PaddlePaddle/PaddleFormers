@@ -889,8 +889,6 @@ class PretrainedConfig:
         assert unused_kwargs == {"foo": False}
         ```"""
         config_dict, kwargs = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
-        print(f"here we load in config {config_dict}")
-        print(f"here we use base {cls.base_config_key}")
         if cls.base_config_key and cls.base_config_key in config_dict:
             config_dict = config_dict[cls.base_config_key]
 
@@ -907,7 +905,6 @@ class PretrainedConfig:
                     f"You are using a model of type {config_dict['model_type']} to instantiate a model of type "
                     f"{cls.model_type}. This is not supported for all configurations of models and can yield errors."
                 )
-        print(f"here we find the after {config_dict}")
         return cls.from_dict(config_dict, **kwargs)
 
     @classmethod
