@@ -53,6 +53,7 @@ from transformers.tokenization_utils_base import BatchEncoding
 
 from ..ops import Topology
 from ..trainer.argparser import strtobool
+from ..transformers.model_utils import replace_name_and_gen_index, save_full_param
 from ..utils.env import PREFIX_CHECKPOINT_DIR, _re_checkpoint  # noqa for compatibility
 from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
 from ..utils.import_utils import is_paddle_cuda_available, is_psutil_available
@@ -68,6 +69,7 @@ __all__ = [
     "IntervalStrategy",
     "SchedulerType",
     "set_seed",
+    "set_random_seed",
     "speed_metrics",
     "get_last_checkpoint",
     "get_scheduler",
@@ -198,6 +200,33 @@ def set_seed(seed: int = 1234, topo=None):
         "The global seed is set to {}, local seed is set to {} and "
         "random seed is set to {}.".format(global_seed, local_seed, random_seed)
     )
+
+
+def set_random_seed(
+    seed_: int,
+    data_parallel_random_init: bool = False,
+    te_rng_tracker: bool = False,
+    inference_rng_tracker: bool = False,
+    use_cudagraphable_rng: bool = False,
+):
+    """Set random seed for reproducability."""
+    if seed_ is not None and seed_ > 0:
+        import paddlefleet
+
+        # Ensure that different pipeline MP stages get different seeds.
+        seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
+        # Ensure different data parallel ranks get different seeds
+        if data_parallel_random_init:
+            seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
+        random.seed(seed)
+        np.random.seed(seed)
+        paddle.manual_seed(seed)
+        if paddle.cuda.device_count() > 0:
+            paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
+                seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
+            )
+    else:
+        raise ValueError("Seed ({}) should be a positive integer.".format(seed_))
 
 
 def _switch_mode(mode="dynamic"):
@@ -1496,3 +1525,29 @@ def init_nccl_config(nccl_comm_group_config, strategy):
     set_comm_config("moe_sharding_configs", "check_nccl_config", nccl_config.get("moe_sharding_check", None))
     set_comm_config("default_comm_group_configs", "nccl_config", nccl_config.get("default", None))
     return strategy
+
+
+def save_hf_checkpoint(
+    model,
+    aoa_config,
+    h_group,
+    v_group,
+    num_splits,
+    shard_idx,
+    path,
+):
+    itr = model.full(
+        aoa_config=aoa_config, h_group=h_group, v_group=v_group, num_splits=num_splits, shard_idx=shard_idx
+    )
+    num_saver_ranks = h_group.nranks * v_group.nranks
+    rank = h_group.rank + v_group.rank * h_group.nranks
+    total_saved_size = save_full_param(
+        itr=itr,
+        save_dir=path,
+        rank=rank,
+        moe_sharding_world_size=num_saver_ranks,
+        max_shard_size="16GB",
+        num_saver_ranks=num_saver_ranks,
+    )
+    paddle.distributed.barrier()
+    replace_name_and_gen_index(path, total_saved_size)

@@ -55,7 +55,11 @@ from paddleformers.utils.tools import get_env_device
 os.environ["USE_CASUAL_MASK"] = "True"
 
 
-from glm45_provider import GLM45AirModelDebugProvider
+from glm45_provider import (
+    GLM45AirModelDebugProvider,
+    GLM45AirModelSingleCardDebugProvider,
+)
+from qwen_provider import Qwen3MoEModelSingleCardProvider
 
 from paddleformers.trainer.utils.doc import add_start_docstrings
 
@@ -88,6 +92,11 @@ class PreTrainingArguments(TrainingArguments):
     unified_checkpoint: bool = field(
         default=True,
         metadata={"help": "Enable fused linear grad add strategy."},
+    )
+
+    model_provider_type: str = field(
+        default="GLM",
+        metadata={"help": "name of the model provider."},
     )
 
     def __post_init__(self):
@@ -165,15 +174,6 @@ class ModelArguments:
 
     hidden_dropout_prob: float = field(default=0.1, metadata={"help": "The hidden dropout prob."})
     attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "The attention hidden dropout prob."})
-
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
 
     continue_training: bool = field(
         default=False,
@@ -464,10 +464,6 @@ def main():
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
         config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
-    if model_args.fuse_attention_qkv is not None:
-        config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
         assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."
@@ -507,11 +503,16 @@ def main():
     #        dtype = "float16"
     #    if training_args.bf16:
     #        dtype = "bfloat16"
-
-    model_provider = GLM45AirModelDebugProvider()
-    # Set MoE layer frequency configuration
-    if hasattr(config, "n_routed_experts") and config.n_routed_experts > 0:
-        model_provider.moe_layer_freq = 1  # Default to expert layer every layer
+    if training_args.model_provider_type == "GLM_single_card":
+        training_args.save_checkpoint_format = None
+        model_provider = GLM45AirModelSingleCardDebugProvider()
+    elif training_args.model_provider_type == "GLM_muiti_cards":
+        model_provider = GLM45AirModelDebugProvider()
+    elif training_args.model_provider_type == "qwen_single_card":
+        training_args.save_checkpoint_format = None
+        model_provider = Qwen3MoEModelSingleCardProvider()
+    else:
+        raise ValueError(f"Unsupported model provider type: {training_args.model_provider_type}")
     model = model_provider.provide()
 
     if training_args.recompute:
@@ -527,22 +528,6 @@ def main():
         warmup_steps = training_args.warmup_ratio * training_args.max_steps
 
     lr_scheduler = None
-    if training_args.lr_scheduler_type.value == "cosine":
-        lr_scheduler = CosineAnnealingWithWarmupDecay(
-            max_lr=training_args.learning_rate,
-            min_lr=training_args.min_learning_rate,
-            warmup_step=warmup_steps,
-            decay_step=training_args.decay_steps,
-            last_epoch=0,
-        )
-    elif training_args.lr_scheduler_type.value == "linear":
-        lr_scheduler = LinearAnnealingWithWarmupDecay(
-            max_lr=training_args.learning_rate,
-            min_lr=training_args.min_learning_rate,
-            warmup_step=warmup_steps,
-            decay_step=training_args.decay_steps,
-            last_epoch=0,
-        )
 
     data_file = get_train_data_file(data_args)
     train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(

@@ -48,7 +48,14 @@ def sdpa_attention_forward(
 
     if sink is None:
         attn_output = nn.functional.scaled_dot_product_attention(
-            query, key, value, attention_mask, dropout, is_causal=is_causal, training=module.training
+            query,
+            key,
+            value,
+            attention_mask,
+            dropout,
+            is_causal=is_causal,
+            training=module.training,
+            enable_gqa=True,
         )
     else:
         attn_output = sink_attention_forward(

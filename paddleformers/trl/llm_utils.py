@@ -33,7 +33,6 @@ if TYPE_CHECKING:
 from ..generation import GenerationConfig
 from ..transformers import (  # ChatGLMv2Tokenizer,
     AutoTokenizer,
-    DeepseekV2ForCausalLMPipe,
     DeepseekV3ForCausalLMPipe,
     Glm4MoeForCausalLMPipe,
     LlamaForCausalLMPipe,
@@ -112,6 +111,8 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "qwen2":
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
@@ -122,6 +123,8 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "qwen3":
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
@@ -154,6 +157,8 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "qwen2_moe":
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
@@ -165,6 +170,8 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "qwen3_moe":
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
@@ -173,9 +180,17 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
-    elif model.config.model_type in ["deepseek_v2", "deepseek_v3"] or isinstance(
-        model, (DeepseekV2ForCausalLMPipe, DeepseekV3ForCausalLMPipe)
-    ):
+    elif model.config.model_type == "qwen3_next":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
+    elif model.config.model_type in ["deepseek_v3"] or isinstance(model, (DeepseekV3ForCausalLMPipe)):
         target_modules = [
             ".*q_proj.*",
             ".*q_a_proj.*",
@@ -220,6 +235,8 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "glm4_moe" or isinstance(model, Glm4MoeForCausalLMPipe):
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
@@ -227,9 +244,6 @@ def get_lora_target_modules(model):
             ".*gate_proj.*",
             ".*up_proj.*",
             ".*down_proj.*",
-            ".*mlp.gate_proj.*",
-            ".*mlp.up_proj.*",
-            ".*mlp.down_proj.*",
             ".*mlp.gate_proj.*",
             ".*mlp.up_proj.*",
             ".*mlp.down_proj.*",

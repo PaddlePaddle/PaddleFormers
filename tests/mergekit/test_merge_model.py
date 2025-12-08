@@ -20,6 +20,7 @@ from parameterized import parameterized
 
 from paddleformers.mergekit import MergeConfig, MergeModel
 from paddleformers.transformers import AutoModel
+from tests.testing_utils import require_package
 
 
 class TestMergeModel(unittest.TestCase):
@@ -111,6 +112,65 @@ class TestMergeModel(unittest.TestCase):
                 output_path=tempdir,
                 tensor_type="pd",
                 base_model_path=safe_path,
+            )
+            mergekit = MergeModel(merge_config)
+            mergekit.merge_model()
+
+    @require_package("transformers", "torch")
+    def test_fuse_qkv_lora_merge_torch(self):
+        with TemporaryDirectory() as tempdir:
+            # create torch model
+            from transformers import Qwen3Config, Qwen3ForCausalLM
+
+            torch_model_path = os.path.join(tempdir, "torch_model")
+            config = Qwen3Config(
+                hidden_size=16,
+                intermediate_size=1120,
+                num_hidden_layers=2,
+                num_attention_heads=4,
+                num_key_value_heads=2,
+            )
+            model = Qwen3ForCausalLM(config)
+            model.save_pretrained(torch_model_path)
+
+            # load torch base model with fc(fused qkv/ffn)
+            from paddleformers.transformers import Qwen3Config, Qwen3ForCausalLM
+
+            model_config = Qwen3Config.from_pretrained(torch_model_path)
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
+            fused_base_model = Qwen3ForCausalLM.from_pretrained(
+                torch_model_path,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+
+            # create lora model
+            from paddleformers.peft import LoRAConfig, LoRAModel
+            from paddleformers.trl.llm_utils import get_lora_target_modules
+
+            target_modules = get_lora_target_modules(fused_base_model)
+            lora_config = LoRAConfig(
+                target_modules=target_modules,
+                r=8,
+                lora_alpha=4,
+            )
+            lora_model = LoRAModel(fused_base_model, lora_config)
+            lora_model_path = os.path.join(tempdir, "lora_model")
+            lora_model.save_pretrained(lora_model_path, save_checkpoint_format="flex_checkpoint")
+
+            # merge fused lora model
+            from paddleformers.mergekit import MergeConfig, MergeModel
+
+            output_path = os.path.join(tempdir, "merged_model")
+            merge_config = MergeConfig(
+                base_model_path=torch_model_path,
+                lora_model_path=lora_model_path,
+                output_path=output_path,
+                convert_from_hf=True,
+                save_to_hf=True,
             )
             mergekit = MergeModel(merge_config)
             mergekit.merge_model()
