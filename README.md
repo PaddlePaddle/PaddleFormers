@@ -42,12 +42,22 @@ Requires Python 3.8+ and [PaddlePaddle](https://www.paddlepaddle.org.cn/install/
 
 ```bash
 # Install via pip
-pip install paddleformers
+# cuda12.6
+pip install paddleformers --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+# cuda12.9
+pip install paddleformers --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+# cuda13.0
+pip install paddleformers --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
 
 # Install development version
 git clone https://github.com/PaddlePaddle/PaddleFormers.git
 cd PaddleFormers
-pip install -e .
+# cuda12.6
+pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+# cuda12.9
+pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+# cuda13.0
+pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
 ```
 
 ## Quickstart

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 import sys
 from typing import TYPE_CHECKING
 
@@ -20,10 +21,33 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "configuration": ["DeepseekV3Config"],
     "modeling": [
+        "masked_fill",
+        "DeepseekV3Attention",
+        "MoEGate",
+        "FakeGate",
         "DeepseekV3ForCausalLM",
-        "DeepseekV3ForSequenceClassification",
-        "DeepseekV3Model",
+        "_make_causal_mask",
+        "is_casual_mask",
+        "DeepseekV3MoE",
+        "DeepseekV3MoEFlexToken",
+        "scaled_dot_product_attention",
+        "rotate_half",
+        "DeepseekV3MTPLayer",
+        "DeepseekV3RMSNorm",
+        "DeepseekV3YarnRotaryEmbedding",
+        "parallel_matmul",
         "DeepseekV3PretrainedModel",
+        "AddAuxiliaryLoss",
+        "apply_rotary_pos_emb",
+        "assign_kv_heads",
+        "DeepseekV3ForSequenceClassification",
+        "_expand_2d_mask",
+        "DeepseekV3Model",
+        "repeat_kv",
+        "DeepseekV3MLP",
+        "yarn_get_mscale",
+        "DeepseekV3DecoderLayer",
+        "get_triangle_upper_mask",
         "DeepseekV3ForCausalLMPipe",
     ],
     "modeling_auto": [
@@ -32,12 +56,31 @@ import_structure = {
         "DeepseekV3ModelAuto",
         "DeepseekV3PretrainedModelAuto",
     ],
+    "mfu_utils": ["DeepSeekProjection"],
+    "kernel": [
+        "act_quant",
+        "weight_dequant",
+        "fp8_gemm",
+        "weight_dequant_kernel",
+        "act_quant_kernel",
+        "fp8_gemm_kernel",
+    ],
+    "tokenizer_fast": ["DeepseekTokenizerFast"],
+    "fp8_linear": [
+        "Linear",
+        "ColumnParallelLinear",
+        "RowParallelLinear",
+        "ColumnSequenceParallelLinear",
+        "RowSequenceParallelLinear",
+    ],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
     from .modeling import *
+    from .modeling_auto import *
     from .modeling_pp import *
+    from .tokenizer_fast import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

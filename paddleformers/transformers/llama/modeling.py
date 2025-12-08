@@ -160,9 +160,9 @@ class LLamaAttention(nn.Layer):
         q_shape = (batch_size, seq_len, self.num_heads, self.head_dim)
         kv_shape = (batch_size, seq_len, self.num_key_value_heads, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
+        query_states = self.q_proj(hidden_states).view(q_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
