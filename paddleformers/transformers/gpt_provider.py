@@ -23,11 +23,17 @@ from functools import partial
 from typing import Any, Callable, Literal, Optional, Union
 
 import paddle
-from paddlefleet import LayerSpec
-from paddlefleet.gpt_builders import gpt_builder
-from paddlefleet.models.gpt import GPTModel as FleetGPTModel
-from paddlefleet.models.gpt.gpt_config import GPTConfig
-from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+
+try:
+    from paddlefleet import LayerSpec
+    from paddlefleet.gpt_builders import gpt_builder
+    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
+    from paddlefleet.models.gpt.gpt_config import GPTConfig
+    from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+
+    HAS_PADDLEFLEET = True
+except ImportError:
+    HAS_PADDLEFLEET = False
 
 from paddleformers.transformers.model_utils import PretrainedModel
 
@@ -52,6 +58,7 @@ def local_layer_spec(config: "GPTModelProvider") -> LayerSpec:
     Returns:
         LayerSpec: Module specification for local implementation layers
     """
+    assert HAS_PADDLEFLEET
     return get_gpt_layer_local_spec(
         num_experts=config.num_moe_experts,
         moe_grouped_gemm=config.moe_grouped_gemm,
@@ -135,6 +142,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         Returns:
             GPTModel: Configured PaddleFleet GPT model instance
         """
+        assert HAS_PADDLEFLEET
         vp_size = self.virtual_pipeline_model_parallel_size
         is_pipeline_asymmetric = getattr(self, "account_for_embedding_in_pipeline_split", False) or getattr(
             self, "account_for_loss_in_pipeline_split", False
@@ -183,6 +191,7 @@ def mtp_block_spec(config: "GPTModelProvider", vp_stage: Optional[int] = None) -
     Returns:
         LayerSpec: The MTP module specification
     """
+    assert HAS_PADDLEFLEET
     if getattr(config, "mtp_num_layers", None):
         from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_mtp_block_spec
 
