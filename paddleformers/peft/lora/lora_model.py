@@ -588,7 +588,10 @@ class LoRAModel(nn.Layer):
         if is_main_process:
             lora_config_to_save.save_pretrained(save_directory)
             if save_model_config:
-                model_config_to_save = copy.deepcopy(self.model.config)
+                if hasattr(self.model, "config_to_save"):
+                    model_config_to_save = copy.deepcopy(self.model.config_to_save)
+                else:
+                    model_config_to_save = copy.deepcopy(self.model.config)
                 if merge_tensor_parallel:
                     model_config_to_save.tensor_parallel_degree = -1
                 model_config_to_save.save_pretrained(save_directory)

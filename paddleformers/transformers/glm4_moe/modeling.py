@@ -66,6 +66,8 @@ class GLMMoEModelProvider(GPTModelProvider):
 
     bias_activation_fusion: bool = True
 
+    transform_rules = {"tensor_parallel_degree": "tensor_model_parallel_size", "dtype": "params_dtype"}
+
 
 def eager_attention_forward(
     module: nn.Layer,
@@ -1502,6 +1504,7 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         gpt_model = model_provider.provide()
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         gpt_model.config_to_save = config
         return gpt_model
 
