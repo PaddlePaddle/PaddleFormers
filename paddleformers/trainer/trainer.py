@@ -62,8 +62,9 @@ try:
 except:
     core = None
 try:
-    import paddlefleet
     import paddlefleet.distributed.model as paddlefleet_dist_model
+    from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
+    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
     HAS_PADDLEFLEET = True
 except:
@@ -3007,7 +3008,7 @@ class Trainer:
 
             return model
 
-        if HAS_PADDLEFLEET and isinstance(model, paddlefleet.pipeline_parallel.PipelineLayer):
+        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
             prepare_pipeline_inputs_func = (
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
             )
@@ -3096,7 +3097,7 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
-        if HAS_PADDLEFLEET and isinstance(model, paddlefleet.pipeline_parallel.ParallelBase):
+        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
             in_pipeline_parallel_mode = True
         else:
             in_pipeline_parallel_mode = self.args.pipeline_parallel_degree > 1
@@ -3434,7 +3435,7 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if HAS_PADDLEFLEET and isinstance(model, paddlefleet.pipeline_parallel.ParallelBase):
+        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_parallel_degree > 1:
