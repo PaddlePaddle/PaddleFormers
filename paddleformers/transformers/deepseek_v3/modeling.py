@@ -61,7 +61,7 @@ from ..model_outputs import (
     SequenceClassifierOutputWithPast,
 )
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import DeepseekV3Config
@@ -137,81 +137,6 @@ def yarn_get_mscale(scale, mscale=1):
     return 0.1 * mscale * math.log(scale) + 1.0
 
 
-def _compute_yarn_parameters(
-    config,
-    seq_len=None,
-):
-    base = config["rope_theta"]
-    rope_parameters_dict = config["rope_parameters"]
-    partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-    head_dim = getattr(config, "qk_rope_head_dim", config.hidden_size // config.num_attention_heads)
-    dim = int(head_dim * partial_rotary_factor)
-
-    factor = rope_parameters_dict["factor"]
-    attention_factor = rope_parameters_dict.get("attention_factor", None)
-    mscale = rope_parameters_dict.get("mscale")
-    mscale_all_dim = rope_parameters_dict.get("mscale_all_dim")
-
-    # NOTE: DeekSeek-V3 (and potentially other models) modify `max_position_embeddings` and have a
-    # `original_max_position_embeddings` field containing the pretrained value. They use the ratio between these two
-    # values to compute the default attention scaling factor, instead of using `factor`.
-    if "original_max_position_embeddings" in rope_parameters_dict:
-        original_max_position_embeddings = rope_parameters_dict["original_max_position_embeddings"]
-        factor = config.max_position_embeddings / original_max_position_embeddings
-    else:
-        original_max_position_embeddings = config.max_position_embeddings
-
-    # Sets the attention factor as suggested in the paper
-    if attention_factor is None:
-        if mscale and mscale_all_dim:
-            attention_factor = float(yarn_get_mscale(factor, mscale) / yarn_get_mscale(factor, mscale_all_dim))
-        else:
-            attention_factor = yarn_get_mscale(factor)
-
-    # Optional config options
-    # beta_fast/beta_slow: as suggested in the paper, default to 32/1 (correspondingly)
-    beta_fast = rope_parameters_dict.get("beta_fast") or 32
-    beta_slow = rope_parameters_dict.get("beta_slow") or 1
-
-    # Compute the inverse frequencies
-    def find_correction_dim(num_rotations, dim, base, max_position_embeddings):
-        """Inverse dimension formula to find the dimension based on the number of rotations"""
-        return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
-
-    def find_correction_range(low_rot, high_rot, dim, base, max_position_embeddings, truncate):
-        """Find dimension range bounds based on rotations"""
-        low = find_correction_dim(low_rot, dim, base, max_position_embeddings)
-        high = find_correction_dim(high_rot, dim, base, max_position_embeddings)
-        if truncate:
-            low = math.floor(low)
-            high = math.ceil(high)
-        return max(low, 0), min(high, dim - 1)
-
-    def linear_ramp_factor(min, max, dim):
-        if min == max:
-            max += 0.001  # Prevent singularity
-
-        linear_func = (paddle.arange(dim, dtype=paddle.float32) - min) / (max - min)
-        ramp_func = paddle.clamp(linear_func, 0, 1)
-        return ramp_func
-
-    pos_freqs = base ** (paddle.arange(0, dim, 2).astype(paddle.float32) / dim)
-    inv_freq_extrapolation = 1.0 / pos_freqs
-    inv_freq_interpolation = 1.0 / (factor * pos_freqs)
-
-    # truncate = config.rope_parameters.get("truncate", True)
-    low, high = find_correction_range(beta_fast, beta_slow, dim, base, original_max_position_embeddings, True)
-
-    # Get n-dimensional rotational scaling corrected for extrapolation
-    inv_freq_extrapolation_factor = 1 - linear_ramp_factor(low, high, dim // 2).astype(paddle.float32)
-
-    inv_freq = (
-        inv_freq_interpolation * (1 - inv_freq_extrapolation_factor)
-        + inv_freq_extrapolation * inv_freq_extrapolation_factor
-    )
-    return inv_freq, attention_factor
-
-
 class DeepseekV3YarnRotaryEmbedding(nn.Layer):
     def __init__(self, config: DeepseekV3Config, device=None):
         super().__init__()
@@ -221,11 +146,38 @@ class DeepseekV3YarnRotaryEmbedding(nn.Layer):
 
         rope_parameters = self.config.rope_parameters
         self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
-        assert self.rope_type == "yarn"
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
-        self.inv_freq, self.attention_scaling = _compute_yarn_parameters(config)
-        self.register_buffer("inv_freq", self.inv_freq, persistable=False)
-        # self.original_inv_freq = self.inv_freq
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[DeepseekV3Config] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @dynamic_rope_update
     def forward(self, x, position_ids):

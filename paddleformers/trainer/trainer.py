@@ -61,6 +61,15 @@ try:
     from paddle.base import core
 except:
     core = None
+try:
+    import paddlefleet.distributed.model as paddlefleet_dist_model
+    from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
+    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
+
+    HAS_PADDLEFLEET = True
+except:
+    HAS_PADDLEFLEET = False
+
 from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
     HybridParallelOptimizer,
@@ -1833,7 +1842,7 @@ class Trainer:
             if (
                 not args.enable_auto_parallel
                 and isinstance(train_dataloader, paddle.io.DataLoader)
-                and isinstance(train_dataloader.batch_sampler, (DistributedBatchSampler, NlpDistributedBatchSampler))
+                and isinstance(train_dataloader.batch_sampler, DistributedBatchSampler)
             ):
                 train_dataloader.batch_sampler.set_epoch(epoch)
 
@@ -2999,6 +3008,47 @@ class Trainer:
 
             return model
 
+        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+            prepare_pipeline_inputs_func = (
+                model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
+            )
+            model = paddlefleet_dist_model.distributed_model(model)
+            if prepare_pipeline_inputs_func is not None:
+                model._prepare_pipeline_inputs_func = prepare_pipeline_inputs_func
+            else:
+
+                def _prepare_pipeline_inputs_func(inputs):
+                    first_stage_keys = ["input_ids", "attention_mask", "position_ids"]
+                    last_stage_keys = ["labels"]
+
+                    def get_expected_keys(inputs, keys):
+                        ret = tuple([inputs.pop(k) for k in keys if k in inputs])
+                        if len(ret) == 1:
+                            ret = ret[0]
+                        return ret
+
+                    if type(inputs) is dict or type(inputs) is OrderedDict:
+                        return [
+                            get_expected_keys(inputs, first_stage_keys),
+                            get_expected_keys(inputs, last_stage_keys),
+                        ]
+
+                    keys = list(inputs[0].keys())
+                    inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
+                    first_stage_inputs_batch = inputs_batch
+                    last_stage_inputs = first_stage_inputs_batch.pop("labels")
+                    outputs = (
+                        first_stage_inputs_batch,
+                        last_stage_inputs,
+                    )
+                    return outputs
+
+                logger.warning(
+                    "Using default prepare pipeline inputs func, only support input_ids and labels as inputs."
+                )
+                model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
+            return model
+
         # train/eval could be run multiple-times - if already wrapped, don't re-wrap it again
         if unwrap_model(model) is not model:
             return model
@@ -3047,7 +3097,10 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
-        in_pipeline_parallel_mode = self.args.pipeline_parallel_degree > 1
+        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
+            in_pipeline_parallel_mode = True
+        else:
+            in_pipeline_parallel_mode = self.args.pipeline_parallel_degree > 1
         in_sharding_parallel_mode = self.sharding is not None
         in_tensor_parallel_mode = self.args.tensor_parallel_degree > 1
         in_sep_parallel_mode = self.args.sep_parallel_degree > 1
@@ -3382,6 +3435,9 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
+        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
+            return self.training_pipeline_step(model, inputs)
+
         if self.args.pipeline_parallel_degree > 1:
             return self.training_pipeline_step(model, inputs)
 

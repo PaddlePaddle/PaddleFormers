@@ -40,12 +40,7 @@ from paddleformers.trainer import (
     speed_metrics,
 )
 from paddleformers.trainer.trainer import Trainer
-from paddleformers.transformers import (
-    AutoConfig,
-    AutoTokenizer,
-    CosineAnnealingWithWarmupDecay,
-    LinearAnnealingWithWarmupDecay,
-)
+from paddleformers.transformers import AutoConfig, AutoTokenizer
 from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
@@ -521,11 +516,6 @@ def main():
     # Create the learning_rate sheduler and optimizer
     if training_args.decay_steps is None:
         training_args.decay_steps = training_args.max_steps
-
-    if training_args.warmup_steps > 0:
-        warmup_steps = training_args.warmup_steps
-    else:
-        warmup_steps = training_args.warmup_ratio * training_args.max_steps
 
     lr_scheduler = None
 
