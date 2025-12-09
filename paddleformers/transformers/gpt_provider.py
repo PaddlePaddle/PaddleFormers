@@ -23,13 +23,20 @@ from functools import partial
 from typing import Any, Callable, Literal, Optional, Union
 
 import paddle
+from paddlefleet import LayerSpec
+from paddlefleet.models.gpt import GPTModel as FleetGPTModel
+from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
 
 try:
-    from paddlefleet import LayerSpec
-    from paddlefleet.gpt_builders import gpt_builder
-    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
     from paddlefleet.models.gpt.gpt_config import GPTConfig
-    from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+except ImportError:
+    from paddlefleet.transformer.transformer_config import (
+        TransformerConfig as GPTConfig,
+    )
+
+
+try:
+    from paddlefleet.gpt_builders import gpt_builder
 
     HAS_PADDLEFLEET = True
 except ImportError:
