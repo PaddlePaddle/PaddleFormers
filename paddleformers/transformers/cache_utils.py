@@ -94,12 +94,15 @@ class DynamicLayer(CacheLayerMixin):
 
     is_sliding = False
 
-    def lazy_initialization(self, key_states: paddle.Tensor):
+    def lazy_initialization(self, key_states: paddle.Tensor, value_states: paddle.Tensor):
         self.dtype, self.place = key_states.dtype, key_states.place
-        B, N, _, H = key_states.shape
-        initial_shape = [B, N, 0, H]
-        self.keys = paddle.empty(initial_shape, dtype=self.dtype, device=self.place)
-        self.values = paddle.empty(initial_shape, dtype=self.dtype, device=self.place)
+        B, N, _, H_k = key_states.shape
+        _, _, _, H_v = value_states.shape
+        initial_keys_shape = [B, N, 0, H_k]
+        initial_values_shape = [B, N, 0, H_v]
+
+        self.keys = paddle.empty(initial_keys_shape, dtype=self.dtype, device=self.place)
+        self.values = paddle.empty(initial_values_shape, dtype=self.dtype, device=self.place)
         self.is_initialized = True
 
     def update(
@@ -121,7 +124,7 @@ class DynamicLayer(CacheLayerMixin):
         """
         # Lazy initialization
         if not self.is_initialized:
-            self.lazy_initialization(key_states)
+            self.lazy_initialization(key_states, value_states)
         # the shape of the key and value states is [B,N,S,H].
         self.keys = paddle.concat([self.keys, key_states], axis=-2)
         self.values = paddle.concat([self.values, value_states], axis=-2)
@@ -432,7 +435,7 @@ class DynamicCache(Cache):
     >>> model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2-0.5B-Instruct")
     >>> tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B-Instruct")
 
-    >>> inputs = tokenizer(text="My name is Qwen2", return_tensors="pt")
+    >>> inputs = tokenizer(text="My name is Qwen2", return_tensors="pd")
 
     >>> # Prepare a cache class and pass it to model's forward
     >>> past_key_values = DynamicCache(config=model.config)
@@ -521,8 +524,8 @@ class DynamicSlidingWindowLayer(DynamicLayer):
         self.cumulative_length = 0
         self._sliding_window_tensor = paddle.to_tensor(self.sliding_window, dtype=paddle.int64)
 
-    def lazy_initialization(self, key_states: paddle.Tensor) -> None:
-        super().lazy_initialization(key_states)
+    def lazy_initialization(self, key_states: paddle.Tensor, value_states: paddle.Tensor) -> None:
+        super().lazy_initialization(key_states, value_states)
         self._sliding_window_tensor = self._sliding_window_tensor.to(self.place)
 
     def update(
@@ -544,7 +547,7 @@ class DynamicSlidingWindowLayer(DynamicLayer):
         """
         # Lazy initialization
         if not self.is_initialized:
-            self.lazy_initialization(key_states)
+            self.lazy_initialization(key_states, value_states)
 
         self.cumulative_length += key_states.shape[-2]
 
