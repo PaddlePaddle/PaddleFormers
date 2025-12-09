@@ -21,10 +21,10 @@ import paddle
 
 from paddleformers.transformers import (
     AutoConfig,
-    BertModel,
     LlamaModel,
     PretrainedConfig,
     PretrainedModel,
+    Qwen3Model,
     register_base_model,
 )
 from paddleformers.transformers.model_utils import (
@@ -127,12 +127,12 @@ class TestFromPretrained(unittest.TestCase):
             str_src_dtype = str(src_dtype)[dtype_prefix_len:]
             str_dst_dtype = str(dst_dtype)[dtype_prefix_len:]
 
-            config = AutoConfig.from_pretrained("Paddleformers/tiny-random-bert")
-            model = BertModel.from_config(config, dtype=str_src_dtype)
+            config = AutoConfig.from_pretrained("Paddleformers/tiny-random-qwen3")
+            model = Qwen3Model.from_config(config, dtype=str_src_dtype)
 
             with tempfile.TemporaryDirectory() as tmp_dir:
                 model.save_pretrained(tmp_dir)
-                new_model = BertModel.from_pretrained(tmp_dir, dtype=str_dst_dtype)
+                new_model = Qwen3Model.from_pretrained(tmp_dir, dtype=str_dst_dtype)
 
             for k, v in model.state_dict().items():
                 if v.is_floating_point():
@@ -275,7 +275,7 @@ class TestShardCheckpoint(unittest.TestCase):
             self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_variant_local(self):
-        model = BertModel.from_pretrained("Paddleformers/tiny-random-bert")
+        model = Qwen3Model.from_pretrained("Paddleformers/tiny-random-qwen3")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2")
@@ -287,15 +287,15 @@ class TestShardCheckpoint(unittest.TestCase):
             self.assertFalse(os.path.isfile(os.path.join(tmp_dir, PADDLE_WEIGHTS_NAME)))
 
             with self.assertRaises(EnvironmentError):
-                _ = BertModel.from_pretrained(tmp_dir)
+                _ = Qwen3Model.from_pretrained(tmp_dir)
 
-            new_model = BertModel.from_pretrained(tmp_dir, variant="v2")
+            new_model = Qwen3Model.from_pretrained(tmp_dir, variant="v2")
 
         for p1, p2 in zip(model.parameters(), new_model.parameters()):
             self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_variant_local_sharded(self):
-        model = BertModel.from_pretrained("Paddleformers/tiny-random-bert")
+        model = Qwen3Model.from_pretrained("Paddleformers/tiny-random-qwen3")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2", max_shard_size="50kB")
@@ -311,16 +311,16 @@ class TestShardCheckpoint(unittest.TestCase):
                 self.assertTrue(os.path.isfile(weights_name_file))
 
             with self.assertRaises(EnvironmentError):
-                _ = BertModel.from_pretrained(tmp_dir)
+                _ = Qwen3Model.from_pretrained(tmp_dir)
 
-            new_model = BertModel.from_pretrained(tmp_dir, variant="v2")
+            new_model = Qwen3Model.from_pretrained(tmp_dir, variant="v2")
 
         for p1, p2 in zip(model.parameters(), new_model.parameters()):
             self.assertTrue(paddle.allclose(p1, p2))
 
     @require_package("safetensors")
     def test_checkpoint_variant_local_safe(self):
-        model = BertModel.from_pretrained("Paddleformers/tiny-random-bert")
+        model = Qwen3Model.from_pretrained("Paddleformers/tiny-random-qwen3")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2", safe_serialization=True)
@@ -333,16 +333,16 @@ class TestShardCheckpoint(unittest.TestCase):
             self.assertFalse(os.path.isfile(os.path.join(tmp_dir, SAFE_WEIGHTS_NAME)))
 
             with self.assertRaises(EnvironmentError):
-                _ = BertModel.from_pretrained(tmp_dir)
+                _ = Qwen3Model.from_pretrained(tmp_dir)
 
-            new_model = BertModel.from_pretrained(tmp_dir, variant="v2")
+            new_model = Qwen3Model.from_pretrained(tmp_dir, variant="v2")
 
         for p1, p2 in zip(model.parameters(), new_model.parameters()):
             self.assertTrue(paddle.allclose(p1, p2))
 
     @require_package("safetensors")
     def test_checkpoint_variant_local_sharded_safe(self):
-        model = BertModel.from_pretrained("Paddleformers/tiny-random-bert")
+        model = Qwen3Model.from_pretrained("Paddleformers/tiny-random-qwen3")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2", max_shard_size="50kB", safe_serialization=True)
@@ -358,9 +358,9 @@ class TestShardCheckpoint(unittest.TestCase):
                 self.assertTrue(os.path.isfile(weights_name_file))
 
             with self.assertRaises(EnvironmentError):
-                _ = BertModel.from_pretrained(tmp_dir)
+                _ = Qwen3Model.from_pretrained(tmp_dir)
 
-            new_model = BertModel.from_pretrained(tmp_dir, variant="v2")
+            new_model = Qwen3Model.from_pretrained(tmp_dir, variant="v2")
 
         for p1, p2 in zip(model.parameters(), new_model.parameters()):
             self.assertTrue(paddle.allclose(p1, p2))
