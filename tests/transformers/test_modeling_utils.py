@@ -16,7 +16,7 @@ import os
 import unittest
 from tempfile import TemporaryDirectory
 
-from paddleformers.transformers import Qwen3Model
+from paddleformers.transformers import Qwen3ForCausalLM
 from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
 from tests.testing_utils import slow
 
@@ -28,7 +28,7 @@ def download_qwen3_model(model_name: str):
         model_name (str): the model name
     """
 
-    model = Qwen3Model.from_pretrained(model_name)
+    model = Qwen3ForCausalLM.from_pretrained(model_name)
     # free the model resource
     del model
 
@@ -40,7 +40,7 @@ class TestModeling(unittest.TestCase):
     def test_from_pretrained_cache_dir_community_model(self):
         model_name = "Paddleformers/tiny-random-qwen3"
         with TemporaryDirectory() as tempdir:
-            Qwen3Model.from_pretrained(model_name, cache_dir=tempdir)
+            Qwen3ForCausalLM.from_pretrained(model_name, cache_dir=tempdir, convert_from_hf=True)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, PADDLE_WEIGHTS_NAME)))
             # check against double appending model_name in cache_dir
@@ -50,7 +50,7 @@ class TestModeling(unittest.TestCase):
     def test_from_pretrained_cache_dir_pretrained_init(self):
         model_name = "PaddleFormers/tiny-random-qwen3"
         with TemporaryDirectory() as tempdir:
-            Qwen3Model.from_pretrained(model_name, cache_dir=tempdir)
+            Qwen3ForCausalLM.from_pretrained(model_name, cache_dir=tempdir, convert_from_hf=True)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, PADDLE_WEIGHTS_NAME)))
             # check against double appending model_name in cache_dir

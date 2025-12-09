@@ -23,7 +23,7 @@ import paddle
 from parameterized import parameterized
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
-from paddleformers.transformers import AutoModelForCausalLM, Qwen3Model
+from paddleformers.transformers import AutoModelForCausalLM, Qwen3ForCausalLM
 
 
 class TestMosLoraLayer(unittest.TestCase):
@@ -114,7 +114,7 @@ class TestMosLoraModel(unittest.TestCase):
         original_results_2 = restored_model(input_ids)
         self.assertIsNotNone(original_results_1)
         self.assertIsNotNone(original_results_2)
-        self.assertIsInstance(restored_model, Qwen3Model)
+        self.assertIsInstance(restored_model, Qwen3ForCausalLM)
         self.assertTrue(paddle.allclose(original_results_1[0], original_results_2[0]))
 
     def test_parallel_support(self):
@@ -147,8 +147,6 @@ class TestMosLoraModel(unittest.TestCase):
         model = AutoModelForCausalLM.from_pretrained(
             "Paddleformers/tiny-random-qwen3",
             convert_from_hf=True,
-            hidden_dropout_prob=0,
-            attention_probs_dropout_prob=0,
         )
         lora_model = LoRAModel(model, lora_config)
         lora_model.mark_only_lora_as_trainable()

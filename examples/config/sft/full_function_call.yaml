@@ -1,6 +1,6 @@
 ### data
-train_dataset_type: chatml
-eval_dataset_type: chatml
+train_dataset_type: messages
+eval_dataset_type: messages
 train_dataset_path: ./tests/fixtures/dummy/sft/function-call-train.jsonl
 train_dataset_prob: "1.0"
 eval_dataset_path: ./tests/fixtures/dummy/sft/function-call-eval.jsonl
@@ -8,6 +8,7 @@ eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false
 mix_strategy: concat
+split_multi_turn: True
 
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base

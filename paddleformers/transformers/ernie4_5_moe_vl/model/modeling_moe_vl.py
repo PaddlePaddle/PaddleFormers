@@ -51,7 +51,7 @@ from .sequence_parallel_utils import (
 )
 
 try:
-    from ..utils.misc import global_training_logs
+    from .utils.misc import global_training_logs
 except ModuleNotFoundError:
     global_training_logs = {}
 
@@ -846,6 +846,146 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                 }
             )
         return mappings
+
+    @classmethod
+    def _gen_aoa_config(cls, config):
+        mapping = cls._checkpoint_conversion_mapping
+        llm_target = next((v for v in mapping.values() if v.startswith("model")), "model")
+        visual_target = next((v for v in mapping.values() if "vision_model" in v), "vision_model")
+        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+
+        # language model
+        aoa_config = {
+            "aoa_statements": [
+                f"model.embed_tokens.weight -> {llm_prefix}embed_tokens.weight",
+                f"model.norm.weight -> {llm_prefix}norm.weight",
+                f"model.layers.$LAYER_ID.input_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.gate_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.up_proj.weight",
+                f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.layers.$LAYER_ID.self_attn.k_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.k_proj.weight",
+                f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.q_proj.weight",
+                f"model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.v_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.shared_experts.up_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.gate.weight -> {llm_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                f"model.layers.$LAYER_ID.mlp.gate.weight_1 -> {llm_prefix}layers.$LAYER_ID.mlp.gate.weight_1, dtype='float32'",
+                f"model.layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias -> {llm_prefix}layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias, dtype='float32'",
+            ]
+        }
+
+        # resampler model
+        aoa_config["aoa_statements"] += [
+            f"model.resampler_model.after_norm.weight -> {llm_prefix}resampler_model.after_norm.weight",
+            f"model.resampler_model.mlp.bias -> {llm_prefix}resampler_model.mlp.bias",
+            f"model.resampler_model.mlp.weight^T -> {llm_prefix}resampler_model.mlp.weight",
+            f"model.resampler_model.spatial_linear.$LAYER_ID.bias -> {llm_prefix}resampler_model.spatial_linear.$LAYER_ID.bias",
+            f"model.resampler_model.spatial_linear.$LAYER_ID.weight^T -> {llm_prefix}resampler_model.spatial_linear.$LAYER_ID.weight",
+            f"model.resampler_model.temporal_linear.$LAYER_ID.bias -> {llm_prefix}resampler_model.temporal_linear.$LAYER_ID.bias",
+            f"model.resampler_model.temporal_linear.$LAYER_ID.weight^T -> {llm_prefix}resampler_model.temporal_linear.$LAYER_ID.weight",
+        ]
+
+        # visual model
+        aoa_config["aoa_statements"] += [
+            f"vision_model.patch_embed.proj.weight^T -> {visual_prefix}patch_embed.proj.weight",
+            f"vision_model.blocks.$LAYER_ID.attn.proj.bias -> {visual_prefix}blocks.$LAYER_ID.attn.proj.bias",
+            f"vision_model.blocks.$LAYER_ID.attn.proj.weight^T -> {visual_prefix}blocks.$LAYER_ID.attn.proj.weight",
+            f"vision_model.blocks.$LAYER_ID.attn.qkv.bias -> {visual_prefix}blocks.$LAYER_ID.attn.qkv.bias",
+            f"vision_model.blocks.$LAYER_ID.attn.qkv.weight^T -> {visual_prefix}blocks.$LAYER_ID.attn.qkv.weight",
+            f"vision_model.blocks.$LAYER_ID.mlp.fc1.bias -> {visual_prefix}blocks.$LAYER_ID.mlp.fc1.bias",
+            f"vision_model.blocks.$LAYER_ID.mlp.fc1.weight^T -> {visual_prefix}blocks.$LAYER_ID.mlp.fc1.weight",
+            f"vision_model.blocks.$LAYER_ID.mlp.fc2.bias -> {visual_prefix}blocks.$LAYER_ID.mlp.fc2.bias",
+            f"vision_model.blocks.$LAYER_ID.mlp.fc2.weight^T -> {visual_prefix}blocks.$LAYER_ID.mlp.fc2.weight",
+            f"vision_model.blocks.$LAYER_ID.norm1.bias -> {visual_prefix}blocks.$LAYER_ID.norm1.bias",
+            f"vision_model.blocks.$LAYER_ID.norm1.weight -> {visual_prefix}blocks.$LAYER_ID.norm1.weight",
+            f"vision_model.blocks.$LAYER_ID.norm2.bias -> {visual_prefix}blocks.$LAYER_ID.norm2.bias",
+            f"vision_model.blocks.$LAYER_ID.norm2.weight -> {visual_prefix}blocks.$LAYER_ID.norm2.weight",
+            f"vision_model.ln.bias -> {visual_prefix}ln.bias",
+            f"vision_model.ln.weight -> {visual_prefix}ln.weight",
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"{'model.embed_tokens.weight' if config.tie_word_embeddings else 'lm_head.weight^T'} -> lm_head.weight",
+        ]
+
+        return aoa_config
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config):
+        mapping = cls._checkpoint_conversion_mapping
+        llm_target = next((v for v in mapping.values() if v.startswith("model")), "model")
+        visual_target = next((v for v in mapping.values() if "vision_model" in v), "vision_model")
+        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+
+        # language model
+        aoa_config = {
+            "aoa_statements": [
+                f"{llm_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+                f"{llm_prefix}norm.weight -> model.norm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.gate_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.up_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.k_proj.weight^T -> model.layers.$LAYER_ID.self_attn.k_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.q_proj.weight^T -> model.layers.$LAYER_ID.self_attn.q_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.v_proj.weight^T -> model.layers.$LAYER_ID.self_attn.v_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.shared_experts.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.gate.weight_1 -> model.layers.$LAYER_ID.mlp.gate.weight_1",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias",
+            ]
+        }
+
+        # resampler model
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}resampler_model.after_norm.weight -> model.resampler_model.after_norm.weight",
+            f"{llm_prefix}resampler_model.mlp.bias -> model.resampler_model.mlp.bias",
+            f"{llm_prefix}resampler_model.mlp.weight^T -> model.resampler_model.mlp.weight",
+            f"{llm_prefix}resampler_model.spatial_linear.$LAYER_ID.bias -> model.resampler_model.spatial_linear.$LAYER_ID.bias",
+            f"{llm_prefix}resampler_model.spatial_linear.$LAYER_ID.weight^T -> model.resampler_model.spatial_linear.$LAYER_ID.weight",
+            f"{llm_prefix}resampler_model.temporal_linear.$LAYER_ID.bias -> model.resampler_model.temporal_linear.$LAYER_ID.bias",
+            f"{llm_prefix}resampler_model.temporal_linear.$LAYER_ID.weight^T -> model.resampler_model.temporal_linear.$LAYER_ID.weight",
+        ]
+
+        # visual model
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}patch_embed.proj.weight^T -> vision_model.patch_embed.proj.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.attn.proj.bias -> vision_model.blocks.$LAYER_ID.attn.proj.bias",
+            f"{visual_prefix}blocks.$LAYER_ID.attn.proj.weight^T -> vision_model.blocks.$LAYER_ID.attn.proj.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.attn.qkv.bias -> vision_model.blocks.$LAYER_ID.attn.qkv.bias",
+            f"{visual_prefix}blocks.$LAYER_ID.attn.qkv.weight^T -> vision_model.blocks.$LAYER_ID.attn.qkv.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.mlp.fc1.bias -> vision_model.blocks.$LAYER_ID.mlp.fc1.bias",
+            f"{visual_prefix}blocks.$LAYER_ID.mlp.fc1.weight^T -> vision_model.blocks.$LAYER_ID.mlp.fc1.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.mlp.fc2.bias -> vision_model.blocks.$LAYER_ID.mlp.fc2.bias",
+            f"{visual_prefix}blocks.$LAYER_ID.mlp.fc2.weight^T -> vision_model.blocks.$LAYER_ID.mlp.fc2.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.norm1.bias -> vision_model.blocks.$LAYER_ID.norm1.bias",
+            f"{visual_prefix}blocks.$LAYER_ID.norm1.weight -> vision_model.blocks.$LAYER_ID.norm1.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.norm2.bias -> vision_model.blocks.$LAYER_ID.norm2.bias",
+            f"{visual_prefix}blocks.$LAYER_ID.norm2.weight -> vision_model.blocks.$LAYER_ID.norm2.weight",
+            f"{visual_prefix}ln.bias -> vision_model.ln.bias",
+            f"{visual_prefix}ln.weight -> vision_model.ln.weight",
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"{f'lm_head.weight' if config.tie_word_embeddings else 'lm_head.weight^T'} -> lm_head.weight",
+        ]
+
+        return aoa_config
 
     def _set_modality_param_mapping(self):
         """set modality parameter mapping"""

@@ -25,7 +25,7 @@ from paddleformers.utils.log import logger
 # isort: off
 # fmt: off
 # isort: on
-from paddleformers.datasets.dpo import create_dataset
+from paddleformers.datasets.loader import create_dataset
 
 
 def calculate_acc_steps(num_samples, train_batch, dataset_world_size, per_device_train_batch_size):
@@ -89,6 +89,7 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
             "packing": data_args.packing,
             "mix_strategy": data_args.mix_strategy,
             "encode_one_turn": data_args.encode_one_turn,
+            "stage": "DPO",
         }
         train_dataset = create_dataset(
             task_group=data_args.train_dataset_path,
@@ -116,7 +117,7 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
                 break
             train_batch += 1
             for sequence in sequences:
-                train_tokens += len(sequence.input_ids)
+                train_tokens += len(sequence.token_ids)
                 num_samples += 1
         if training_args.gradient_accumulation_steps < 0:
             training_args.gradient_accumulation_steps = calculate_acc_steps(

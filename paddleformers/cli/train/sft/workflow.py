@@ -19,6 +19,7 @@ import math
 import os
 from functools import partial
 
+import numpy as np
 import paddle
 
 is_sm90 = (
@@ -33,9 +34,10 @@ from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
 )
+from paddleformers.datasets.collate import collate_fn, mm_collate_fn
 from paddleformers.datasets.data_utils import estimate_training
-from paddleformers.datasets.finetuning import collate_fn
-from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
+from paddleformers.datasets.loader import create_dataset as create_dataset_sft
+from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
@@ -44,12 +46,15 @@ from paddleformers.trainer import (
     MoeExpertsGradScaleCallback,
     MoEGateSpGradSyncCallBack,
     get_last_checkpoint,
+    set_random_seed,
     set_seed,
 )
 from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
+    AutoModelForConditionalGeneration,
+    AutoProcessor,
     AutoTokenizer,
     Llama3Tokenizer,
     LlamaTokenizer,
@@ -70,7 +75,7 @@ from paddleformers.cli.hparams import (
 )
 
 
-def create_pretrained_dataset(training_args, data_args):
+def create_pretrained_dataset(training_args, data_args, model_args):
     assert data_args.input_dir is not None and len(data_args.input_dir.split()) > 1
 
     check_data_split(
@@ -110,16 +115,40 @@ def create_pretrained_dataset(training_args, data_args):
 
     from paddleformers.data import Stack
 
-    def _collate_data(data, stack_fn=Stack()):
-        tokens_ = stack_fn([x["text"] for x in data])
+    def _collate_data(batch, stack_fn=Stack()):
+        input_keys = ["input_ids", "labels", "position_ids", "attn_mask_startend_row_indices"]
+        return_list = []
+        for batch_sequence in batch:
+            # tokens
+            padded_token_ids = np.array([batch_sequence["text"][:-1]])
+            # labels
+            padded_labels = np.array([batch_sequence["text"][1:]])
+            # position_ids
+            padded_position_ids = np.array([sum(batch_sequence["position_ids"], [])[:-1]])
+            return_list.append(
+                [
+                    padded_token_ids,
+                    padded_labels,
+                    padded_position_ids,
+                ]
+            )
+            # attn mask
+            oral_position_ids = batch_sequence["position_ids"]
+            from paddleformers.datasets.collate import (
+                gen_attn_mask_startend_row_indices,
+            )
 
-        labels = tokens_[:, 1:]
-        tokens = tokens_[:, :-1]
+            return_list[-1].append(
+                gen_attn_mask_startend_row_indices(
+                    oral_position_ids,
+                    data_args.max_seq_len + training_args.num_nextn_predict_layers,
+                    model_args.use_global_causal_attn,
+                )[:, :, :-1, :]
+            )
 
-        return {
-            "input_ids": tokens,
-            "labels": labels,
-        }
+        return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
+        input_dict = dict(zip(input_keys, return_list))
+        return input_dict
 
     return train_dataset, valid_dataset, test_dataset, _collate_data
 
@@ -158,6 +187,7 @@ def run_sft(
 
     # Setup GPU & distributed training
     paddle.set_device(training_args.device)
+    set_random_seed(seed_=training_args.seed)
     set_seed(seed=training_args.seed)
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, world_size: {training_args.world_size}, "
@@ -222,11 +252,6 @@ def run_sft(
     if hasattr(model_config, "ignore_index"):
         model_config.ignore_index = -100
 
-    if model_args.fuse_attention_qkv is not None:
-        model_config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        model_config.fuse_attention_ffn = model_args.fuse_attention_ffn
-
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
     if model_args.attn_impl not in avaible_attn_impl:
         raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
@@ -238,12 +263,15 @@ def run_sft(
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
-    model_class = AutoModelForCausalLM
-    if training_args.pipeline_parallel_degree > 1:
-        if data_args.eval_with_do_generation and training_args.do_eval:
-            raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
+    if model_args.stage == "VL-SFT":
+        model_class = AutoModelForConditionalGeneration
+    else:
+        model_class = AutoModelForCausalLM
+        if training_args.pipeline_parallel_degree > 1:
+            if data_args.eval_with_do_generation and training_args.do_eval:
+                raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
 
-        model_class = AutoModelForCausalLMPipe
+            model_class = AutoModelForCausalLMPipe
 
     if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(
@@ -274,7 +302,7 @@ def run_sft(
         else:
             raise NotImplementedError("Only support neftune for model with get_input_embeddings")
 
-    # Load tokenizer & dataset
+    # Load tokenizer & processor & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -286,8 +314,13 @@ def run_sft(
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
+    processor = None
+    if model_args.stage == "VL-SFT":
+        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
+
     dataset_config = {
         "tokenizer": tokenizer,
+        "processor": processor,
         "max_seq_len": data_args.max_seq_len,
         "random_seed": training_args.seed,
         "num_replicas": training_args.dataset_world_size,
@@ -301,11 +334,37 @@ def run_sft(
         "use_template": data_args.use_template,
         "is_pretraining": True if model_args.stage.lower() == "pt" else False,
         "truncate_packing": data_args.truncate_packing,
+        "stage": model_args.stage,
+        "is_valid": False,
+        "template_backend": data_args.template_backend,
+        "split_multi_turn": data_args.split_multi_turn,
     }
+
+    dataset_config.update(
+        {
+            "template": data_args.template,
+            "train_on_prompt": False,
+            "tool_format": None,
+            "default_system": None,
+            "enable_thinking": True,
+        }
+    )
+
+    if dataset_config["template_backend"] == "custom":
+        template_instance = get_template_and_fix_tokenizer(dataset_config)
+    else:
+        template_instance = None
+    dataset_config.update(
+        {
+            "template_instance": template_instance,
+        }
+    )
 
     if data_args.dataset_type == "pretrain":
         training_args.test_iters = training_args.eval_iters * 10
-        train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(training_args, data_args)
+        train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(
+            training_args, data_args, model_args
+        )
     else:
         train_dataset = create_dataset_sft(
             task_group=data_args.train_dataset_path,
@@ -313,11 +372,11 @@ def run_sft(
             sub_dataset_type=data_args.train_dataset_type,
             **dataset_config,
         )
+        dataset_config["is_valid"] = True
         eval_dataset = create_dataset_sft(
             task_group=data_args.eval_dataset_path,
             task_group_prob=data_args.eval_dataset_prob,
             sub_dataset_type=data_args.eval_dataset_type,
-            is_valid=True,
             **dataset_config,
         )
 
@@ -337,13 +396,24 @@ def run_sft(
         else None
     )
     if data_args.dataset_type != "pretrain":
-        data_collator = partial(
-            collate_fn,
-            tokenizer=tokenizer,
-            training_args=training_args,
-            model_args=model_args,
-            max_seq_len=max_seq_len,
-        )
+        if model_args.stage == "VL-SFT":
+            data_collator = partial(
+                mm_collate_fn,
+                template=template_instance,
+                processor=processor,
+                tokenizer=tokenizer,
+                training_args=training_args,
+                model_args=model_args,
+                max_seq_len=max_seq_len,
+            )
+        else:
+            data_collator = partial(
+                collate_fn,
+                tokenizer=tokenizer,
+                training_args=training_args,
+                model_args=model_args,
+                max_seq_len=max_seq_len,
+            )
 
     if training_args.max_steps == -1:
         if data_args.mix_strategy == "random":

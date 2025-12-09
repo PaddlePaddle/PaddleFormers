@@ -120,8 +120,6 @@ class TestLoraModel(unittest.TestCase):
         model = AutoModelForCausalLM.from_pretrained(
             "Paddleformers/tiny-random-qwen3",
             convert_from_hf=True,
-            hidden_dropout_prob=0,
-            attention_probs_dropout_prob=0,
         )
         lora_model = LoRAModel(model, lora_config)
         lora_model.mark_only_lora_as_trainable()
@@ -173,7 +171,7 @@ class TestLoraModel(unittest.TestCase):
 
     def test_lora_module_raise_exception(self):
         lora_config = LoRAConfig(
-            target_modules=[".*norm1.*"],
+            target_modules=[".*norm.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=None,

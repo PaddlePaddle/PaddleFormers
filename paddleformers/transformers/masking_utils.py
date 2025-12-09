@@ -144,7 +144,7 @@ def create_causal_masks_and_row_indices(
             return None, None
     # We only return an actual mask if there is at least 1 padding token,
     # otherwise we return `None` and use `is_causal` in FA2
-    if attention_mask.cast("bool").all():
+    if attention_mask is not None and attention_mask.cast("bool").all():
         attention_mask = None
 
     seq_length_with_past = seq_length + cache_length

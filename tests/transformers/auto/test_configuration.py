@@ -33,7 +33,7 @@ class AutoConfigTest(unittest.TestCase):
     def test_built_in_model_class_config(self):
         config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-qwen3", download_hub="aistudio")
         number = random.randint(0, 10000)
-        self.assertEqual(config.hidden_size, 32)
+        self.assertEqual(config.hidden_size, 128)
         config.hidden_size = number
 
         with tempfile.TemporaryDirectory() as tempdir:
