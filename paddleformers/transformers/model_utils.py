@@ -3119,9 +3119,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
             clean_unrelated_safetensors(save_dir)
 
-            total_saved_size = HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(
-                save_dir, max_shard_size
-            )
+            HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:
@@ -3139,8 +3137,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
-                # Organize the files in this directory into the Hugging Face (HF) format.
-                replace_name_and_gen_index(save_directory, total_saved_size)
             return
 
         # save the string version of dtype to the config, e.g. convert paddle.float32 => "float32"
@@ -3828,8 +3824,8 @@ def replace_name_and_gen_index(path, total_size):
         start_idx.append(acc)
         acc += files_num
 
-    env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", 0))
     env_local_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
+    env_local_rank = dist.get_rank() % env_local_size
     assert env_local_rank >= 0, f"expected positive local rank, got {env_local_rank}"
 
     cur_file_index = start_idx[cur_rank] // env_local_size
