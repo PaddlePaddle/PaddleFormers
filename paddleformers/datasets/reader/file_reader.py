@@ -132,6 +132,7 @@ class FileReader(BaseReader):
             system = data["messages"][0]["content"]
             if not isinstance(system, str):
                 raise ValueError("System field must be a string.")
+            data["messages"] = data["messages"][1:]
         data["system"] = system
 
         # Convert the relative paths of multimode data into absolute paths
