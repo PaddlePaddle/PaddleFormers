@@ -31,9 +31,9 @@ install_requirements() {
     python -m pip install -r requirements-dev.txt
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     python setup.py bdist_wheel > /dev/null
-    uv pip install  dist/p****.whl  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
+    uv pip install dist/p****.whl --system --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    uv pip install -r tests/requirements.txt  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
+    uv pip install -r tests/requirements.txt --system --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
