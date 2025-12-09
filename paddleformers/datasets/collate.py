@@ -210,9 +210,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
 
         if model_args.use_attn_mask_startend_row_indices:
             return_list[-1].append(
-                gen_attn_mask_startend_row_indices(
-                    original_token_ids, max_seq_len, model_args.use_global_causal_attn
-                )
+                gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
             )
         else:
             return_list[-1].append(
