@@ -253,6 +253,11 @@ class TestQwenVisionProcessing(unittest.TestCase):
         ele = {"video": self.test_video_url}
         result = vision_process.fetch_video(ele, video_reader_backend="paddlecodec")
 
+        import torchcodec
+
+        if not getattr(torchcodec, "__is_paddle_compatible_library__", None):
+            raise RuntimeError("Could not import 'torchcodec'. Please ensure it is installed.")
+
         self.assertIsInstance(result, paddle.Tensor)
 
     def test_fetch_video_with_frame_list(self):
