@@ -2007,8 +2007,6 @@ class Trainer:
                             cp_worldsize = hcg.get_context_parallel_world_size()
 
                         for p in paramlist:
-                            if not getattr(p, "no_sync", False):
-                                continue
                             color = getattr(p, "color", -1)
                             is_expert = isinstance(color, dict) and color.get("color", -1) == "moe_expert"
                             disable_scale_grad = getattr(p, "context_parallel_disable_scale_grad", False)
