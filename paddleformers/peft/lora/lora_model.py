@@ -817,7 +817,6 @@ class LoRAModel(nn.Layer):
             return model
         if isinstance(lora_config.target_modules, str):
             lora_config.target_modules = [lora_config.target_modules]
-
         for i in model.named_sublayers():
             module_name = i[0]
             for target_module in lora_config.target_modules:
