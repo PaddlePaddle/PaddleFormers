@@ -109,6 +109,7 @@ class Ernie4_5_Config(PretrainedConfig):
         micro_batch_size=-1,
         use_fused_head_and_loss_fn=False,
         token_balance_loss=False,
+        pp_first_stage_layers=0, 
         token_balance_seqlen=False,  # calculated based on batchsize and seqlen
         loss_subbatch_seqlen=32768,
         cachekv_quant: bool = False,
@@ -199,6 +200,7 @@ class Ernie4_5_Config(PretrainedConfig):
         self.fuse_ln = fuse_ln
         self.use_rmsnorm = use_rmsnorm
         self.micro_batch_size = micro_batch_size
+        self.pp_first_stage_layers=pp_first_stage_layers
 
         self.max_sequence_length = max_sequence_length
         self.use_bias = use_bias
@@ -562,6 +564,7 @@ class Ernie4_5_VLMoeConfig(Ernie4_5_MoeConfig):
         super().__init__(**kwargs)
 
         self.vision_config = DFNRopeVisionTransformerConfig(**vision_config) if vision_config else None
+        self.audio_config = None
         self.im_patch_id = im_patch_id
         self.pixel_hidden_size = pixel_hidden_size
         self.modality_detach = modality_detach

@@ -1062,6 +1062,7 @@ class Ernie4_5_Attention(nn.Layer):
         # tensors, so that we can clear the cache tensors for memory efficiency.
         past_key_value = [key_states, value_states] if use_cache else None
         seq_length = query_states.shape[1]
+        print("zhui debug 1065", attention_mask.shape if attention_mask is not None else None)
         attn_output, attn_weights = self.attn_func(
             query_states,
             key_states,

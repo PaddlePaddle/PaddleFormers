@@ -670,6 +670,7 @@ class Ernie4_5_DecoderLayer(nn.Layer):
                 use_reentrant=self.config.recompute_use_reentrant,
             )
         else:
+            print("zhui debug 673", attention_mask.shape if attention_mask is not None else None)
             (hidden_states, self_attn_weights, present_key_value, *router_loss_attn) = self.self_attn(
                 hidden_states=hidden_states,
                 past_key_value=past_key_value,

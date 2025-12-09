@@ -44,6 +44,7 @@ class DFNRopeVisionTransformerPipe(DFNRopeVisionTransformerPretrainedModel):
         if self.use_full_recompute:
             logger.info("use full recompute, vision model will NOT use recompute inner")
             config.vision_config.recompute = False
+        print("zhui debug vision config", config.vision_config)
         super().__init__(config.vision_config)
         if self.config.tensor_parallel_degree > 1:
             logger.info("use sp extract feature, vit parameter will be marked as sequence parallel")

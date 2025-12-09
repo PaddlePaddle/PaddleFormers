@@ -927,7 +927,23 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
 
         token_type_ids = token_type_ids.clone()
         if inbatch_pack_offset is not None:
-            attn_mask_start_row_indices = inbatch_pack_offset_to_attn_mask_start_row_indices(inbatch_pack_offset)
+            print("zhui debug modeling pp", inbatch_pack_offset)
+            if len(inbatch_pack_offset.shape) == 2:
+                causal_mask_indices, attn_mask_min_start_row = inbatch_pack_offset_to_attn_mask_start_row_indices(
+                    inbatch_pack_offset
+                )
+                attn_mask_start_row_indices = causal_mask_indices.unsqueeze(-1)
+            else:
+                # startend_row_indices (inbatch_pack_offset) shape: [batch_size, seq_len, {1, 2, 4}]
+                assert len(inbatch_pack_offset.shape) == 4, (
+                    f"inbatch_pack_offset needs to be a 2 or 4-dimensional tensor when use flashmask attention, "
+                    f"but got shape of {inbatch_pack_offset.shape}"
+                )
+                attn_mask_start_row_indices = inbatch_pack_offset
+            # attn_mask_start_row_indices = inbatch_pack_offset_to_attn_mask_start_row_indices(inbatch_pack_offset)
+            print("zhui debug modeling pp attn", attn_mask_start_row_indices)
+            attn_mask_start_row_indices = attn_mask_start_row_indices.astype("int32")
+            attn_mask_start_row_indices.squeeze_(-1)
         else:
             attn_mask_start_row_indices = None
 
