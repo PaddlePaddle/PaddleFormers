@@ -644,7 +644,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
 
         # lm_head
         if config.tie_word_embeddings:
-            aoa_config["aoa_statements"] += ["model.embed_tokens.weight^T -> lm_head.weight"]
+            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
 
         return aoa_config
 
@@ -671,15 +671,15 @@ class Qwen2MoePretrainedModel(PretrainedModel):
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
             ]
+            for layer_id in range(config.num_hidden_layers):
+                for x in ("q", "k", "v"):
+                    aoa_statements += [
+                        f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
+                    ]
             if config.qkv_bias:
                 aoa_statements += [
                     f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
-
-            aoa_statements += [
-                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
-            ]
 
         if not config.fuse_attention_ffn:
             aoa_statements += [
@@ -694,12 +694,16 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight, fused_ffn",
                 f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
             ]
-            aoa_statements += [
-                "model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight",
-                "model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight",
-                "model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight",
-                "model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight",
-            ]
+            for layer_id in range(config.num_hidden_layers):
+                aoa_statements += [
+                    f"model.layers.{layer_id}.mlp.shared_expert.gate_proj.weight^T -> model.layers.{layer_id}.mlp.shared_expert.gate_proj.weight",
+                    f"model.layers.{layer_id}.mlp.shared_expert.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_expert.up_proj.weight",
+                ]
+                for expert_id in range(config.num_experts):
+                    aoa_statements += [
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
+                    ]
 
         if config.tie_word_embeddings:
             aoa_statements += ["lm_head.weight -> _"]
@@ -1114,6 +1118,8 @@ class Qwen2MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = Qwen2MoeModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen2MoeModel.transpose_weight_keys
+    _gen_aoa_config = Qwen2MoeForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = Qwen2MoeForCausalLM._gen_inv_aoa_config
 
 
 __all__ = [
