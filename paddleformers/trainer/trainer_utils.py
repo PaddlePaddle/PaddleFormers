@@ -69,6 +69,7 @@ __all__ = [
     "IntervalStrategy",
     "SchedulerType",
     "set_seed",
+    "set_random_seed",
     "speed_metrics",
     "get_last_checkpoint",
     "get_scheduler",
@@ -130,6 +131,8 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
         sep_size = topo.sep_info.size
 
         sharding_rank = topo.sharding_info.rank
+
+        cp_rank, cp_size = 0, 1
     elif hcg is not None and paddle.distributed.get_world_size() > 1:
         # obtain rank message of hybrid parallel
 
@@ -148,8 +151,15 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
         dp_rank = hcg.get_data_parallel_rank()
         dp_size = hcg.get_data_parallel_world_size()
 
-        sharding_rank = hcg.get_sharding_parallel_rank()
+        if hasattr(fleet, "get_context_parallel_rank"):
+            cp_rank = hcg.get_context_parallel_rank()
+            cp_size = hcg.get_context_parallel_world_size()
+            sharding_rank = hcg.get_sharding_parallel_rank(with_context_parallel=cp_size > 1)
+        else:
+            cp_rank, cp_size = 0, 1
+            sharding_rank = hcg.get_sharding_parallel_rank()
     else:
+        cp_rank, cp_size = 0, 1
         mp_rank, mp_size = 0, 1
         sep_rank, sep_size = 0, 1
         pp_rank, pp_size = 0, 1
@@ -157,23 +167,41 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
         sharding_rank, _ = 0, 1
 
     seed_offset = seed
-    global_seed = (
-        seed_offset
-        + sep_rank * (mp_size)
-        + pp_rank * (mp_size * sep_size)
-        + dp_rank * (mp_size * sep_size * pp_size)
-        + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
-    )
+    if cp_size == 1:
+        global_seed = (
+            seed_offset
+            + sep_rank * (mp_size)
+            + pp_rank * (mp_size * sep_size)
+            + dp_rank * (mp_size * sep_size * pp_size)
+            + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
+        )
 
-    seed_offset += paddle.distributed.get_world_size()
-    local_seed = (
-        seed_offset
-        + mp_rank
-        + sep_rank * (mp_size)
-        + pp_rank * (mp_size * sep_size)
-        + dp_rank * (mp_size * sep_size * pp_size)
-        + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
-    )
+        seed_offset += paddle.distributed.get_world_size()
+        local_seed = (
+            seed_offset
+            + mp_rank
+            + sep_rank * (mp_size)
+            + pp_rank * (mp_size * sep_size)
+            + dp_rank * (mp_size * sep_size * pp_size)
+            + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
+        )
+    else:
+        assert sep_size == 1, f"When cp_size != 1, sep_size must be 1, but get sep_size = {sep_size}"
+        global_seed = (
+            seed_offset
+            + pp_rank * (mp_size * cp_size)
+            + dp_rank * (mp_size * cp_size * pp_size)
+            + sharding_rank * (mp_size * cp_size * pp_size * dp_size)
+        )
+        seed_offset += paddle.distributed.get_world_size()
+        local_seed = (
+            seed_offset
+            + mp_rank
+            + cp_rank * mp_size
+            + pp_rank * (mp_size * cp_size)
+            + dp_rank * (mp_size * cp_size * pp_size)
+            + sharding_rank * (mp_size * cp_size * pp_size * dp_size)
+        )
 
     # NOTE: the commented seeds are set only for precision validation
     random_seed = seed + 100 * pp_rank
@@ -199,6 +227,33 @@ def set_seed(seed: int = 1234, topo=None):
         "The global seed is set to {}, local seed is set to {} and "
         "random seed is set to {}.".format(global_seed, local_seed, random_seed)
     )
+
+
+def set_random_seed(
+    seed_: int,
+    data_parallel_random_init: bool = False,
+    te_rng_tracker: bool = False,
+    inference_rng_tracker: bool = False,
+    use_cudagraphable_rng: bool = False,
+):
+    """Set random seed for reproducability."""
+    if seed_ is not None and seed_ > 0:
+        import paddlefleet
+
+        # Ensure that different pipeline MP stages get different seeds.
+        seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
+        # Ensure different data parallel ranks get different seeds
+        if data_parallel_random_init:
+            seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
+        random.seed(seed)
+        np.random.seed(seed)
+        paddle.manual_seed(seed)
+        if paddle.cuda.device_count() > 0:
+            paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
+                seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
+            )
+    else:
+        raise ValueError("Seed ({}) should be a positive integer.".format(seed_))
 
 
 def _switch_mode(mode="dynamic"):

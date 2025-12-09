@@ -33,7 +33,7 @@ def flashmask_attention_forward(
     is_causal: Optional[bool] = None,
     **kwargs
 ):
-    # [b, h, l, d] -> [b,l,h,d]
+    # [b, h, l, d] -> [b, l, h, d]
     query = query.transpose(1, 2)
     key = key.transpose(1, 2)
     value = value.transpose(1, 2)
@@ -41,6 +41,9 @@ def flashmask_attention_forward(
         attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
     if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
         is_causal = True
+    if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 4:
+        is_causal = False
+
     if sink is None:
         out = flashmask_attention(
             query,

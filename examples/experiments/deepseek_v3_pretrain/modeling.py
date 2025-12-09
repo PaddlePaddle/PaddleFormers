@@ -71,13 +71,13 @@ from paddleformers.transformers.conversion_utils import (
     StateDictNameMapping,
     init_name_mappings,
 )
-from paddleformers.transformers.deepseek_v2 import fp8_linear as linear_utils
-from paddleformers.transformers.deepseek_v2 import (
+from paddleformers.transformers.deepseek_v3 import fp8_linear as linear_utils
+from paddleformers.transformers.deepseek_v3 import (
     rotate_half,
     scaled_dot_product_attention,
     yarn_get_mscale,
 )
-from paddleformers.transformers.deepseek_v2.fp8_linear import Linear as Linear_
+from paddleformers.transformers.deepseek_v3.fp8_linear import Linear as Linear_
 from paddleformers.transformers.fp8_utils import (
     FP8KeepXLinear,
     FP8Linear,
@@ -1219,7 +1219,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
     _no_split_modules = ["DeepseekV2DecoderLayer"]
 
     def _get_model_flops(self, batch_size=1, seq_length=None, **kwargs):
-        from paddleformers.transformers.deepseek_v2.mfu_utils import DeepSeekProjection
+        from paddleformers.transformers.deepseek_v3.mfu_utils import DeepSeekProjection
 
         # self._
         mfu_cal_proj = DeepSeekProjection(self.config)

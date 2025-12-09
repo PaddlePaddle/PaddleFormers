@@ -16,17 +16,13 @@
 # Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 
 import logging
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, List, Optional, Union
+from dataclasses import dataclass
+from typing import Callable, Optional
 
 import paddle
 import paddle.nn.functional as F
-from gpt_provider import GPTModelProvider
-from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
 
-if TYPE_CHECKING:
-    from paddlefleet.spec_utils import LayerSpec
-
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +30,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Qwen3MoEModelProvider(GPTModelProvider):
     """Base provider for Qwen 3 MoE Models."""
-
-    transformer_layer_spec: Union[
-        "LayerSpec", Callable[["GPTModelProvider"], "LayerSpec"]
-    ] = get_gpt_decoder_block_spec
 
     normalization: str = "RMSNorm"
     hidden_act: Callable = F.silu
