@@ -2863,15 +2863,17 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             use_safetensors=use_safetensors,
             variant=variant,
         )
-
-        file_list = resolved_sharded_files if is_sharded else [resolved_archive_file]
-        ckpt_path = get_common_folder(file_list)
+        if resolved_archive_file is not None:
+            file_list = resolved_sharded_files if is_sharded else [resolved_archive_file]
+            ckpt_path = get_common_folder(file_list)
+        else:
+            ckpt_path = None
         # 3. init the model
         init_args = config["init_args"] or ()
         with ContextManagers(init_contexts):
             model = cls(config, *init_args, **model_kwargs)
 
-        if hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
+        if ckpt_path is not None and hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
             aoa_config = cls._gen_aoa_config(config)
             sharded_state_dict = model.sharded_state_dict()
             dist.load_state_dict(
