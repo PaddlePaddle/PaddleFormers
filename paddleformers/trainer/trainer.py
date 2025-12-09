@@ -110,13 +110,14 @@ try:
     )
 except:
     pass
+try:
+    from paddlefleet.utils import get_batch_on_this_cp_rank
+except:
+    get_batch_on_this_cp_rank = None
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..transformers.context_parallel_utils import (
-    auto_split_sequence_dim_load_balance,
-    split_inputs_sequence_dim_load_balance,
-)
+from ..transformers.context_parallel_utils import auto_split_sequence_dim_load_balance
 from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
     PretrainedModel,
@@ -1496,8 +1497,6 @@ class Trainer:
                 trainable_numel = int(trainable_numel_tensor.item()) // self.args.dataset_world_size
                 if self.args.sep_parallel_degree > 0:
                     trainable_numel = trainable_numel // self.args.sep_parallel_degree
-                if self.args.context_parallel_degree > 0:
-                    trainable_numel = trainable_numel // self.args.context_parallel_degree
                 # the numel is roughly, because the tensor parallel still hold own bias or layer_norm weight without splited
                 # so, the trainable numel is a little bigger than real.
                 logger.debug(f"  Number of trainable parameters = {trainable_numel:,} (all devices, roughly)")
@@ -1711,9 +1710,9 @@ class Trainer:
             if (
                 self.args.use_hybrid_parallel
                 and self.args.context_parallel_degree > 1
-                and self.args.split_inputs_sequence_dim
+                and getattr(self.model, "is_fleet", False)
             ):
-                inputs = split_inputs_sequence_dim_load_balance(inputs)
+                inputs = get_batch_on_this_cp_rank(inputs)
 
             if self.args.ignore_data_skip:
                 self.timers and self.timers("read-data").stop()
@@ -1998,17 +1997,19 @@ class Trainer:
                         else:
                             cp_worldsize = hcg.get_context_parallel_world_size()
 
-                        if cp_worldsize > 1:
-                            raise ValueError(
-                                "hybrid_parallel_scale_param_grad is not supported when Context Parallel is enable"
-                            )
-
                         for p in paramlist:
                             if not getattr(p, "no_sync", False):
                                 continue
                             color = getattr(p, "color", -1)
                             is_expert = isinstance(color, dict) and color.get("color", -1) == "moe_expert"
-                            if is_expert and self.args.hybrid_parallel_expert_grad_scale != 1.0:
+                            disable_scale_grad = getattr(p, "context_parallel_disable_scale_grad", False)
+                            if not (disable_scale_grad or is_expert) and cp_worldsize > 1:
+                                grad = getattr(p, "main_grad", p.grad)
+                                if grad is not None:
+                                    with paddle.no_grad():
+                                        coeff = cp_worldsize
+                                        grad.scale_(coeff)
+                            elif is_expert and self.args.hybrid_parallel_expert_grad_scale != 1.0:
                                 grad = getattr(p, "main_grad", p.grad)
                                 if grad is not None:
                                     with paddle.no_grad():
