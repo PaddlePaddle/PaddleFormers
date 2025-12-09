@@ -101,7 +101,24 @@ MAPPING_TASKS = OrderedDict(
 )
 
 
-MODEL_FOR_CAUSAL_LM_MAPPING_NAMES = OrderedDict([])
+MODEL_FOR_CAUSAL_LM_MAPPING_NAMES = OrderedDict(
+    [
+        ("deepseek_v3", "DeepseekV3ForCausalLM"),
+        ("ernie4_5", "Ernie4_5ForCausalLM"),
+        ("ernie4_5_moe", "Ernie4_5_MoeForCausalLM"),
+        ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
+        ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
+        ("llama", "LlamaForCausalLM"),
+        ("qwen", "QWenForCausalLM"),
+        ("qwen2", "Qwen2ForCausalLM"),
+        ("qwen2_5_vl", "Qwen2_5_VLForConditionalGeneration"),
+        ("qwen2_5_vl_text", "Qwen2_5_VLForConditionalGeneration"),
+        ("qwen2_moe", "Qwen2MoeForCausalLM"),
+        ("qwen3", "Qwen3ForCausalLM"),
+        ("qwen3_moe", "Qwen3MoeForCausalLM"),
+        ("qwen3_next", "Qwen3NextForCausalLM"),
+    ]
+)
 
 MODEL_FOR_CAUSAL_LM_INFERENCE_MAPPING_NAMES = OrderedDict([])
 
