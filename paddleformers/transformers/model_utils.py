@@ -1240,6 +1240,7 @@ def save_full_param(
     logger.info(f"[Rank {rank}/{world_size}] (Saver) All shards saved successfully.")
     return total_size
 
+
 def clean_unrelated_safetensors(save_dir):
     use_dist = True if paddle.distributed.get_world_size() > 1 else False
 
@@ -3781,97 +3782,6 @@ def clean_model_class_name(class_name, suffixes_to_strip: Union[str, List[str]] 
 
     pattern = f"({'|'.join(map(re.escape, suffixes_to_strip))})$"
     return re.sub(pattern, "", class_name)
-
-
-def save_full_param(
-    itr: Iterator[tuple[str, Tensor]],
-    save_dir: str,
-    rank: int,
-    moe_sharding_world_size: int,
-    max_shard_size: str = "2GB",
-    num_saver_ranks: int = 8,
-) -> None:
-    """
-    Saves model weights from an iterator into shards, supporting max shard size
-    and a limited number of saver ranks.
-
-    Only ranks less than `num_saver_ranks` will perform disk I/O. All other ranks
-    will iterate through the data to maintain synchronization but will not save.
-    The parameter distribution logic is based on `num_saver_ranks`, ensuring all
-    parameters are handled by a designated saver rank.
-
-    Args:
-        itr (Iterator): An iterator that yields (param_key, param_tensor).
-        save_dir (str): The directory where shard files will be saved.
-        rank (int): The rank of the current process.
-        moe_sharding_world_size (int): The total number of processes.
-        max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
-        num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
-    """
-
-    # 1. Non-saver ranks simply consume the iterator to stay in sync.
-    if rank >= num_saver_ranks:
-        logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Consuming iterator for synchronization...")
-        for _ in itr:
-            pass
-        logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Iterator consumption complete.")
-        return
-
-    max_shard_size_bytes = _parse_size(max_shard_size)
-    logger.info(
-        f"[Rank {rank}/{moe_sharding_world_size}] (Saver) Initializing save. "
-        f"Max shard size set to: {max_shard_size_bytes / 1024**3:.2f} GB"
-    )
-
-    os.makedirs(save_dir, exist_ok=True)
-
-    current_shard_state_dict = {}
-    current_shard_size_bytes = 0
-    sub_shard_index = 0
-
-    def _save_current_shard():
-        nonlocal sub_shard_index, current_shard_state_dict, current_shard_size_bytes
-        if not current_shard_state_dict:
-            return
-
-        # Filename includes the main shard number (rank) and the sub-shard index
-        cur_rank = paddle.distributed.get_rank()
-        shard_filename = f"shard_{cur_rank}-{sub_shard_index}.safetensors"
-        save_path = os.path.join(save_dir, shard_filename)
-
-        logger.info(
-            f"[Rank {rank}/{moe_sharding_world_size}] Saving sub-shard {sub_shard_index}... "
-            f"Size: {current_shard_size_bytes / 1024**2:.2f} MB, "
-            f"Params: {len(current_shard_state_dict)}, "
-            f"Path: {save_path}"
-        )
-
-        save_file(current_shard_state_dict, save_path)
-
-        # Reset for the next shard
-        sub_shard_index += 1
-        current_shard_state_dict = {}
-        current_shard_size_bytes = 0
-
-    logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Starting to process the weight iterator...")
-
-    total_size = 0
-
-    for i, (param_key, param) in enumerate(itr):
-        param_size_bytes = param.numel() * param.element_size()
-        total_size += param_size_bytes.item()
-        if i % num_saver_ranks == rank:
-            if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
-                _save_current_shard()
-
-            current_shard_state_dict[param_key] = param
-            current_shard_size_bytes += param_size_bytes
-
-            if current_shard_size_bytes >= max_shard_size_bytes:
-                _save_current_shard()
-    _save_current_shard()
-    logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Saver) All shards saved successfully.")
-    return total_size
 
 
 def replace_name_and_gen_index(path, total_size):
