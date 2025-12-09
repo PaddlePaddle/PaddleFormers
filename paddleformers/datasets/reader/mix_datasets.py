@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" Basic datasets implement. """
 
 import random
 from abc import abstractmethod
@@ -19,56 +18,51 @@ from abc import abstractmethod
 import numpy as np
 from paddle.io import IterableDataset, get_worker_info
 
-from .base import InfiniteDataset
+from .multi_source_datasets import InfiniteDataset
 
 
 class BaseMixDataset(IterableDataset):
     """
-    A dataset randomly samples from multiple datasets with specified probabilities.
+    Base class for mixed datasets that combine multiple data sources with configurable sampling strategies.
     """
 
     def __init__(
         self,
-        datasets_list,
-        datasets_prob,
-        mode: str = "upsampling",
-        seed=42,
-        random_shuffle=True,
-        num_samples_each_epoch=6000000,
-        reverse=False,
+        multi_source_dataset,
+        **dataset_config,
     ):
         """
-        Initialize the RandomDataset.
+        Initialize the mixed dataset with configuration parameters.
 
         Args:
-            datasets_list: List of datasets to sample from
-            datasets_prob: List of probabilities corresponding to each dataset
-            rng: Random number generator (default creates new one if None)
-            random_shuffle: Whether to shuffle samples within each dataset (default True)
-            num_samples_each_epoch: Total number of samples to generate per epoch
+            multi_source_dataset: A dataset wrapper containing multiple task groups
+
+            **dataset_config: Configuration dictionary
         """
-        self.datasets_list = datasets_list
-        self.datasets_prob = datasets_prob
-        self.mode = mode
-        self.seed = seed
-        self.rng = random.Random(seed)
+        self.datasets_list = [task["dataset"] for task in multi_source_dataset._task_group]
+        self.datasets_prob = [task["prob"] for task in multi_source_dataset._task_group]
+        self.mode = "upsampling" if dataset_config["mix_strategy"] == "interleave_under" else "oversampling"
+        self.seed = dataset_config["random_seed"]
+        self.rng = random.Random(self.seed)
         self.np_rng = np.random.default_rng(self.seed)
         self.epoch_index = 0
         self.epoch_np_rng = np.random.RandomState(self.epoch_index)
-        self.random_shuffle = random_shuffle
-        self.num_samples_each_epoch = num_samples_each_epoch
-        self.reverse = reverse
+        self.random_shuffle = dataset_config["random_shuffle"]
+        self.num_samples_each_epoch = dataset_config["num_samples_each_epoch"]
+        self.reverse = dataset_config.get("reverse", False)
 
     @abstractmethod
     def __iter__(self):
         """
-        Returns an iterator that can loop over the dataset indefinitely.
+        Create an iterator over the mixed dataset.
         """
         pass
 
     @abstractmethod
     def __len__(self):
-        """Returns the total size of the dataset."""
+        """
+        Return the effective size of the dataset.
+        """
         pass
 
 
@@ -80,13 +74,6 @@ class RandomDataset(BaseMixDataset):
     def __init__(self, *args, **kwargs):
         """
         Initialize the RandomDataset.
-
-        Args:
-            datasets_list: List of datasets to sample from
-            datasets_prob: List of probabilities corresponding to each dataset
-            rng: Random number generator (default creates new one if None)
-            random_shuffle: Whether to shuffle samples within each dataset (default True)
-            num_samples_each_epoch: Total number of samples to generate per epoch
         """
         super().__init__(*args, **kwargs)
 
@@ -142,12 +129,6 @@ class ConcatDataset(BaseMixDataset):
     def __init__(self, *args, **kwargs):
         """
         Initializes the ConcatDataset.
-
-        Args:
-            datasets_list (list): A list of dataset objects to concatenate.
-            datasets_prob (any): A parameter for dataset probabilities.
-            rng (random.Random, optional): A random number generator for shuffling. Defaults to a new instance.
-            random_shuffle (bool, optional): If True, the dataset will be shuffled at the start of each epoch. Defaults to True.
         """
         super().__init__(*args, **kwargs)
 

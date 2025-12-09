@@ -54,6 +54,15 @@ except Exception:
         return False
 
 
+if paddle.device.is_compiled_with_cuda():
+    from paddlefleet.parallel_state import get_tensor_model_parallel_group
+    from paddlefleet.training import initialize_fleet
+
+    HAS_PADDLEFLEET = True
+else:
+    HAS_PADDLEFLEET = False
+
+
 __all__ = [
     "default_logdir",
     "TrainingArguments",
@@ -1604,9 +1613,7 @@ class TrainingArguments:
                         "mp_degree": self.tensor_parallel_degree,
                         "pp_degree": self.pipeline_parallel_degree,
                         "sharding_degree": self.sharding_parallel_degree,
-                        "sep_degree": self.sep_parallel_degree
-                        if self.sep_parallel_degree > 1
-                        else self.context_parallel_degree,
+                        "sep_degree": self.sep_parallel_degree,
                         "order": order,
                     }
                 else:
@@ -1753,9 +1760,8 @@ class TrainingArguments:
                 fleet.init(is_collective=True, strategy=strategy)
 
                 # In PaddleFleet, we should use the following code to initialize.
-
-                # from paddlefleet.training.initialize import initialize_fleet
-                # initialize_fleet(strategy)
+                if HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
+                    initialize_fleet(strategy)
                 logger.info(strategy)
 
                 if self.reorder_pipeline_priority:
@@ -2002,6 +2008,19 @@ class TrainingArguments:
                         fleet.init(is_collective=True, strategy=strategy)
                     else:
                         paddle.distributed.init_parallel_env()
+            if world_size == 1 and HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
+                single_card_strategy = fleet.DistributedStrategy()
+                single_card_strategy.hybrid_configs = {
+                    "dp_degree": 1,
+                    "mp_degree": 1,
+                    "pp_degree": 1,
+                    "sharding_degree": 1,
+                    "sep_degree": 1,
+                    "cp_degree": 1,
+                    "ep_degree": 1,
+                    "moe_sharding_degree": 1,
+                }
+                initialize_fleet(single_card_strategy)
 
         if (
             self.unified_checkpoint
@@ -2150,7 +2169,10 @@ class TrainingArguments:
         if self.hybrid_parallel_expert_grad_scale is None:
             tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
             expert_parallel_degree = max(self.expert_parallel_degree, 1)
-            self.hybrid_parallel_expert_grad_scale = tensor_parallel_degree / expert_parallel_degree
+            context_parallel_degree = max(self.context_parallel_degree, 1)
+            self.hybrid_parallel_expert_grad_scale = (
+                tensor_parallel_degree * context_parallel_degree / expert_parallel_degree
+            )
             logger.info(f"Auto set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
         else:
             logger.info(f"Set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
@@ -2368,9 +2390,49 @@ class TrainingArguments:
             return paddle.distributed.get_rank()
 
     @property
+    def cp_sharding_degree(self):
+        """cp_sharding_degree"""
+        assert self.sharding_parallel_degree % self.context_parallel_degree == 0, (
+            f"sharding parallel degree {self.sharding_parallel_degree} "
+            f"is not divisible by context parallel degree {self.context_parallel_degree}"
+        )
+        hcg = None
+        if hasattr(fleet.fleet, "_hcg"):
+            hcg = fleet.fleet.get_hybrid_communicate_group()
+        if hasattr(hcg, "get_context_parallel_world_size"):
+            return hcg.get_sharding_parallel_world_size(with_context_parallel=True)
+        else:
+            if self.context_parallel_degree < 0:
+                self.context_parallel_degree = 1
+            assert self.context_parallel_degree == 1, (
+                "context_parallel_degree > 1 requires 'get_context_parallel_world_size' in hcg. "
+                "Please upgrade your PaddlePaddle version."
+            )
+            return 1
+
+    @property
+    def cp_sharding_rank(self):
+        """cp_sharding_rank"""
+        if self.use_hybrid_parallel:
+            hcg = fleet.get_hybrid_communicate_group()
+            if hasattr(hcg, "get_context_parallel_world_size") and self.context_parallel_degree > 1:
+                sharding_rank = hcg.get_sharding_parallel_rank(with_context_parallel=True)
+            else:
+                sharding_rank = hcg.get_sharding_parallel_rank()
+            return max(sharding_rank, 0)
+        else:
+            return 0
+
+    @property
     def dataset_rank(self):
         if self.use_hybrid_parallel:
-            return max(self.sharding_parallel_degree, 1) * self.data_parallel_rank + self.sharding_parallel_rank
+            sharding_parallel_degree = (
+                self.cp_sharding_degree if self.context_parallel_degree > 1 else self.sharding_parallel_degree
+            )
+            sharding_parallel_rank = (
+                self.cp_sharding_rank if self.context_parallel_degree > 1 else self.sharding_parallel_rank
+            )
+            return max(sharding_parallel_degree, 1) * self.data_parallel_rank + sharding_parallel_rank
         elif self.enable_auto_parallel:
             return self.data_parallel_rank
         else:
@@ -2379,7 +2441,15 @@ class TrainingArguments:
     @property
     def dataset_world_size(self):
         if self.use_hybrid_parallel:
-            return max(self.sharding_parallel_degree, 1) * max(self.data_parallel_degree, 1)
+            if self.context_parallel_degree > 1:
+                assert self.use_hybrid_parallel, "context parallel only support with use_hybrid_parallel"
+                assert (
+                    self.data_parallel_degree == 1
+                ), f"context parallel can not coexist with data parallel, but got self.data_parallel_degree == {self.data_parallel_degree}"
+                sharding_parallel_degree = self.cp_sharding_degree
+            else:
+                sharding_parallel_degree = self.sharding_parallel_degree
+            return max(sharding_parallel_degree, 1) * max(self.data_parallel_degree, 1)
         elif self.enable_auto_parallel:
             return max(self.sharding_parallel_degree, 1) * max(self.data_parallel_degree, 1)
         else:
