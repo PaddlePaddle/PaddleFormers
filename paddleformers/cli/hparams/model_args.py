@@ -85,14 +85,6 @@ class ModelArguments:
         default=False,
         metadata={"help": "GPT3 model, use fast layernorm"},
     )
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
     attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
     fuse_gate_detach_matmul: bool = field(
         default=True,

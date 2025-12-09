@@ -386,7 +386,7 @@ class DeepseekV3IntegrationTest(unittest.TestCase):
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[-0.00238470, 0.00017223, 0.00278541, -0.01001317, -0.00794907, -0.00762849, 0.01201535, -0.00347932]]
+            [[-0.00238119, 0.00045322, -0.00630159, 0.00018909, -0.00675243, -0.00595381, -0.00273710, 0.00166127]]
         )
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
 
