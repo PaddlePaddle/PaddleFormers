@@ -520,10 +520,13 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             from paddleformers.transformers import Ernie4_5Config, Ernie4_5ForCausalLM
 
             uc_load_model = Ernie4_5ForCausalLM.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format="unified_checkpoint"
+                self.torch_model_path,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="unified_checkpoint",
             )
             fc_load_model = Ernie4_5ForCausalLM.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             uc_load_model.eval()
             fc_load_model.eval()
@@ -538,11 +541,11 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                 )
             )
 
-            model_config = Ernie4_5Config.from_pretrained(tempdir)
+            model_config = Ernie4_5Config.from_pretrained(self.torch_model_path)
             model_config.fuse_attention_qkv = True
             model_config.fuse_attention_ffn = True
             fc_fused_load_model = Ernie4_5ForCausalLM.from_pretrained(
-                tempdir,
+                self.torch_model_path,
                 config=model_config,
                 convert_from_hf=True,
                 dtype="float32",
@@ -554,8 +557,8 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                 np.allclose(
                     fc_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     fc_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    atol=1e-3,
-                    rtol=1e-3,
+                    atol=1e-5,
+                    rtol=1e-5,
                 )
             )
 
