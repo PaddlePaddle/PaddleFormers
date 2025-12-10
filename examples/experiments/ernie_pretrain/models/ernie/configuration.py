@@ -168,7 +168,7 @@ class ErnieMoEConfig(PretrainedConfig):
         insert_empty_layer: Optional[list] = None,
         pp_no_recompute_layer: Optional[list] = None,
         multi_token_pred_depth: int = 0,
-        multi_token_pred_lambda: float = 0.3,
+        mtp_loss_scaling_factor: float = 0.3,
         fuse_gate_detach_matmul: bool = False,
         enable_mtp_magic_send: bool = False,
         n_group: int = 0,
@@ -373,7 +373,7 @@ class ErnieMoEConfig(PretrainedConfig):
             insert_empty_layer = []
 
         self.multi_token_pred_depth = multi_token_pred_depth
-        self.multi_token_pred_lambda = multi_token_pred_lambda
+        self.mtp_loss_scaling_factor = mtp_loss_scaling_factor
         self.enable_mtp_magic_send = enable_mtp_magic_send
         self.insert_empty_layer = insert_empty_layer
         self.n_group = n_group

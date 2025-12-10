@@ -89,7 +89,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         fuse_gate_detach_matmul: bool = False,
         moe_use_hard_gate=False,
         num_nextn_predict_layers=1,
-        multi_token_pred_lambda=0.1,
+        mtp_loss_scaling_factor=0.1,
         enable_mtp_magic_send=False,
         use_recompute_mtp=False,
         dpo_config=None,
@@ -234,7 +234,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.moe_use_hard_gate = moe_use_hard_gate
         self.moe_multimodal_dispatch_use_allgather = moe_multimodal_dispatch_use_allgather
         self.num_nextn_predict_layers = num_nextn_predict_layers
-        self.multi_token_pred_lambda = multi_token_pred_lambda
+        self.mtp_loss_scaling_factor = mtp_loss_scaling_factor
         self.enable_mtp_magic_send = enable_mtp_magic_send
         self.use_recompute_mtp = use_recompute_mtp
         self.dpo_config = dpo_config
@@ -274,7 +274,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
                 "moe_group_origin",
                 "moe_rank",
                 "moe_world_size",
-                "multi_token_pred_lambda",
+                "mtp_loss_scaling_factor",
                 "moe_multimodal_dispatch_use_allgather",
             ]
         )

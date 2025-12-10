@@ -329,7 +329,7 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
         moe_use_hard_gate=False,
         moe_dense_experts_token_type_id=3,
         num_nextn_predict_layers=0,
-        multi_token_pred_lambda=0.1,
+        mtp_loss_scaling_factor=0.1,
         enable_mtp_magic_send=False,
         use_recompute_mtp=False,
         **kwargs,
@@ -413,7 +413,7 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
         self.moe_use_hard_gate = moe_use_hard_gate
         self.moe_dense_experts_token_type_id = moe_dense_experts_token_type_id
         self.num_nextn_predict_layers = num_nextn_predict_layers
-        self.multi_token_pred_lambda = multi_token_pred_lambda
+        self.mtp_loss_scaling_factor = mtp_loss_scaling_factor
         self.enable_mtp_magic_send = enable_mtp_magic_send
         self.use_recompute_mtp = use_recompute_mtp
         self.register_unsavable_keys(

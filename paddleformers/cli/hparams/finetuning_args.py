@@ -397,7 +397,7 @@ class FinetuningArguments(
     )
     actscale_moving_rate: float = field(default=0.01, metadata={"help": "EMA moving_rate for activation scale"})
     fp8_format_type: str = field(default="hybrid", metadata={"help": "FP8 Format"})
-    multi_token_pred_lambda: float = field(default=0.3, metadata={"help": "multi token pred lambda"})
+    mtp_loss_scaling_factor: float = field(default=0.3, metadata={"help": "multi token pred lambda"})
     use_recompute_mtp: bool = field(default=False, metadata={"help": "Whether to use recompute_mtp"})
 
     # training pytorch models from huggingFace

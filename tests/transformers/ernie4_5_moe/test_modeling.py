@@ -94,7 +94,7 @@
 #         fuse_gate_detach_matmul=False,
 #         moe_use_hard_gate=False,
 #         num_nextn_predict_layers=0,
-#         multi_token_pred_lambda=0.1,
+#         mtp_loss_scaling_factor=0.1,
 #         enable_mtp_magic_send=False,
 #         use_recompute_mtp=False,
 #         is_training=True,
@@ -166,7 +166,7 @@
 #         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
 #         self.moe_use_hard_gate = moe_use_hard_gate
 #         self.num_nextn_predict_layers = num_nextn_predict_layers
-#         self.multi_token_pred_lambda = multi_token_pred_lambda
+#         self.mtp_loss_scaling_factor = mtp_loss_scaling_factor
 #         self.enable_mtp_magic_send = enable_mtp_magic_send
 #         self.use_recompute_mtp = use_recompute_mtp
 #         self.is_training = is_training
@@ -256,7 +256,7 @@
 #             fuse_gate_detach_matmul=self.fuse_gate_detach_matmul,
 #             moe_use_hard_gate=self.moe_use_hard_gate,
 #             num_nextn_predict_layers=self.num_nextn_predict_layers,
-#             multi_token_pred_lambda=self.multi_token_pred_lambda,
+#             mtp_loss_scaling_factor=self.mtp_loss_scaling_factor,
 #             enable_mtp_magic_send=self.enable_mtp_magic_send,
 #             use_recompute_mtp=self.use_recompute_mtp,
 #         )
