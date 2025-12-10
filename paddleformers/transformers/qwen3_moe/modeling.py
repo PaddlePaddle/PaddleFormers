@@ -841,7 +841,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)

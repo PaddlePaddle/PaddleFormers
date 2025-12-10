@@ -644,7 +644,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if self.config.sequence_parallel:
             inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
