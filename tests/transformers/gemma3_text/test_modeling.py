@@ -449,32 +449,42 @@ class Gemma3TextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
 class Gemma3TextIntegrationTest(unittest.TestCase):
     base_model_class = Gemma3TextModel
+    test_dtype = "float32"  # "bfloat16"
 
     def test_inference_no_attention(self):
         model = Gemma3TextModel.from_pretrained(
-            "PaddleFormers/tiny-random-gemma3", download_hub="aistudio", convert_from_hf=True
+            "PaddleFormers/tiny-random-gemma3", download_hub="aistudio", convert_from_hf=True, dtype=self.test_dtype
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
-            output = model(input_ids, attention_mask=attention_mask)[0]
+            output = model(input_ids)[0]
         expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
-        expected_slice = paddle.to_tensor(
+        expected_slice_bf16 = paddle.to_tensor(
             [
                 [
-                    [-1.26562500, -1.28125000, 1.30468750],
-                    [0.39257812, -0.23437500, 0.94921875],
-                    [0.84765625, -0.00598145, 1.53125000],
+                    [-1.24218750, -1.01562500, 0.68750000],
+                    [0.32617188, -0.24609375, 1.25000000],
+                    [1.10156250, 0.29687500, 0.88671875],
                 ]
             ]
         )
+        expected_slice_fp32 = paddle.to_tensor(
+            [
+                [
+                    [-1.25233459, -1.01471460, 0.69251710],
+                    [0.32604450, -0.25053313, 1.26085544],
+                    [0.98726571, 0.30734059, 0.91449308],
+                ]
+            ]
+        )
+        expected_slice = expected_slice_fp32 if self.test_dtype == "float32" else expected_slice_bf16
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
     def test_inference_with_attention(self):
         model = Gemma3TextModel.from_pretrained(
-            "PaddleFormers/tiny-random-gemma3", download_hub="aistudio", convert_from_hf=True
+            "PaddleFormers/tiny-random-gemma3", download_hub="aistudio", convert_from_hf=True, dtype=self.test_dtype
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -483,7 +493,7 @@ class Gemma3TextIntegrationTest(unittest.TestCase):
             output = model(input_ids, attention_mask=attention_mask)[0]
         expected_shape = [1, 11, 16]
         self.assertEqual(output.shape, expected_shape)
-        expected_slice = paddle.to_tensor(
+        expected_slice_bf16 = paddle.to_tensor(
             [
                 [
                     [-1.26562500, -1.28125000, 1.30468750],
@@ -492,6 +502,16 @@ class Gemma3TextIntegrationTest(unittest.TestCase):
                 ]
             ]
         )
+        expected_slice_fp32 = paddle.to_tensor(
+            [
+                [
+                    [-1.27054501, -1.26936519, 1.29382658],
+                    [0.37663761, -0.25405365, 0.95409876],
+                    [0.81471157, -0.01011910, 1.53275037],
+                ]
+            ]
+        )
+        expected_slice = expected_slice_fp32 if self.test_dtype == "float32" else expected_slice_bf16
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
 
 
