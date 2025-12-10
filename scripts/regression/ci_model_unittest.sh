@@ -28,7 +28,6 @@ install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
-    python -m pip install -r requirements-dev.txt
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     python setup.py bdist_wheel > /dev/null
     uv pip install dist/p****.whl --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
