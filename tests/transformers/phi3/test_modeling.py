@@ -45,6 +45,7 @@ class Phi3ModelTester:
         num_key_value_heads=10,
         resid_pdrop=0.0,
         embd_pdrop=0.0,
+        is_training=True,
         attention_dropout=0.0,
         hidden_act="silu",
         max_position_embeddings=4096,
@@ -80,6 +81,7 @@ class Phi3ModelTester:
         self.embd_pdrop = embd_pdrop
         self.attention_dropout = attention_dropout
         self.hidden_act = hidden_act
+        self.is_training = is_training
         self.max_position_embeddings = max_position_embeddings
         self.original_max_position_embeddings = original_max_position_embeddings
         self.initializer_range = initializer_range

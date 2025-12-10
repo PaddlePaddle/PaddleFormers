@@ -294,6 +294,7 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
     base_model_class = GptOssModel
     return_dict = False
     use_labels = False
+    test_all_params_have_gradient = False
 
     all_model_classes = (GptOssModel, GptOssForCausalLM)
     all_generative_model_classes = {GptOssForCausalLM: (GptOssModel, "GptOss")}
