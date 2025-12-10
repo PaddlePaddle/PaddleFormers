@@ -50,7 +50,7 @@ class SFTDataSet(IterableDataset):
         self.template = dataset_config.get("template_instance", None)
         self.template_backend = dataset_config.get("template_backend", "jinja")
         self.use_template = dataset_config.get("use_template", True)
-        self.efficient_eos = True if not self.template else getattr(self.template, 'efficient_eos', False)
+        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", False)
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
