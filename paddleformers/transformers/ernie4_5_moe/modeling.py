@@ -51,7 +51,7 @@ from ..ernie4_5.modeling import Ernie4_5Attention
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoECausalLMOutputWithPastAndMTP
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..tensor_parallel_utils import model_parallel_dropout
 from .configuration import Ernie4_5_MoeConfig
 
@@ -99,6 +99,38 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
         self.base = config.rope_theta
         rope_parameters = config.rope_parameters
         self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
+
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[Ernie4_5_MoeConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
@@ -112,18 +144,19 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
         Returns:
             Tensor: Rotary position embeddings of shape [1, 1, seq_length, head_dim]
         """
-        indices = paddle.arange(0, self.head_dim, 2, dtype="float32")
-        indices = 1 / self.base ** (indices / self.head_dim)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-        sinusoid_inp = position_ids.unsqueeze(-1).astype("float32") * indices.unsqueeze(
-            0
-        )  # [b, s, 1] * [1, d/2] -> [b, s, d/2]
-        emb = paddle.cat((sinusoid_inp, sinusoid_inp), axis=-1)
-        cos = emb.cos()
-        sin = emb.sin()
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        # keeping it in full precision
-        return cos, sin
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+            return cos.astype(dtype=x.dtype), sin.astype(dtype=x.dtype)
 
 
 class Ernie4_5_MoeMLP(Ernie4_5MLP):
