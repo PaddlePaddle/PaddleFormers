@@ -176,7 +176,7 @@ class EmbeddingTrainer(Trainer):
         inputs,
         step_control=0,
     ):
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             raise NotImplementedError("Cannot support pipeline parallel for Embedding training now.")
 
         if self.args.gradient_accumulation_steps == 1:

@@ -174,7 +174,7 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
     Args:
         config (Config): Model configuration object containing:
             - num_hidden_layers (int): Total number of transformer layers
-            - virtual_pp_degree (int): Virtual pipeline parallelism degree
+            - virtual_pipeline_model_parallel_size (int): Virtual pipeline parallelism degree
             - add_tail_layers (int): Additional tail layers to append
         skip_recompute_num (int): Number of layers per virtual pipeline stage
             to exclude from recomputation. Defaults to -1 (auto-configure).
@@ -189,7 +189,7 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
     """
     hcg = get_hcg()
     pp_size = max(hcg.get_pipe_parallel_world_size(), 1)
-    vp_size = max(config.virtual_pp_degree, 1)
+    vp_size = max(config.virtual_pipeline_model_parallel_size, 1)
 
     assert pp_size > 1, (
         "Only support pipeline parallel, " f"pp_size must be greater than 1, but got pp_size: {pp_size}"
@@ -282,7 +282,7 @@ class Ernie4_5_EmbeddingPipe(nn.Layer):
 
         super(Ernie4_5_EmbeddingPipe, self).__init__()
         self.use_moe = config.use_moe
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             self.embed_tokens = VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
@@ -500,7 +500,7 @@ class Ernie4_5_DecoderLayerPipe(Ernie4_5_DecoderLayer):
 
         max_seq_len = hidden_states.shape[1]
         if self.config.sequence_parallel:
-            max_seq_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
+            max_seq_len = hidden_states.shape[0] * self.config.tensor_model_parallel_size
         if attention_mask is None:
             tgt_mask = None
             attn_mask_start_row_indices = None
@@ -743,7 +743,7 @@ class MTPLayer(nn.Layer):
 
         max_seq_len = hidden_states.shape[1]
         if self.config.sequence_parallel:
-            max_seq_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
+            max_seq_len = hidden_states.shape[0] * self.config.tensor_model_parallel_size
 
         if attention_mask is None:
             tgt_mask = None
@@ -1004,10 +1004,10 @@ class Ernie4_5_MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         self.config = config
 
         hcg = get_hcg()
-        tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
+        tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
 
-        config.tensor_parallel_degree = tensor_parallel_degree
+        config.tensor_model_parallel_size = tensor_model_parallel_size
         config.tensor_parallel_rank = tensor_parallel_rank
 
         no_recompute_layers = get_pp_vp_split_layers(config)
@@ -1108,7 +1108,7 @@ class Ernie4_5_MoeForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 "offload": False,
                 "partition": False,
             },
-            num_virtual_pipeline_stages=config.virtual_pp_degree,
+            num_virtual_pipeline_stages=config.virtual_pipeline_model_parallel_size,
         )
 
     def get_loss_fn(self, config):

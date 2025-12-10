@@ -63,11 +63,11 @@ class LoKrModel(nn.Layer):
         self.is_pipelinemodel = False
         if issubclass(type(self.model), PipelineLayer):
             raise NotImplementedError("lokr don't support pipeline parallel now")
-        if lokr_config.tensor_parallel_degree > 1:
-            self.lokr_config.tensor_parallel_degree = -1
-            self.model.config.tensor_parallel_degree = -1
+        if lokr_config.tensor_model_parallel_size > 1:
+            self.lokr_config.tensor_model_parallel_size = -1
+            self.model.config.tensor_model_parallel_size = -1
             raise NotImplementedError("lokr don't support tensor parallel now")
-        # currently tensor_parallel_degree should all be set to -1.
+        # currently tensor_model_parallel_size should all be set to -1.
         self.forward = self.model.forward
 
         logger.info("Mark only lokr and trainable_module as trainable.")
@@ -79,8 +79,8 @@ class LoKrModel(nn.Layer):
         # init lokr config & lokr model
         if not isinstance(lokr_config, LoKrConfig):
             lokr_config = LoKrConfig.from_pretrained(lokr_path)
-        # define a new variable to conserve original lora_config.tensor_parallel_degree value which will update while initializing lora model
-        lokr_config_tensor_parallel_degree = lokr_config.tensor_parallel_degree
+        # define a new variable to conserve original lora_config.tensor_model_parallel_size value which will update while initializing lora model
+        lokr_config_tensor_model_parallel_size = lokr_config.tensor_model_parallel_size
         lokr_model = cls(model, lokr_config)
 
         # define lokr weight name
@@ -94,11 +94,11 @@ class LoKrModel(nn.Layer):
             logger.info(f"Loading the LoKR weights from {lokr_weight_path}")
 
             if (
-                lokr_config_tensor_parallel_degree > 1
-                and lokr_config_tensor_parallel_degree != model.config.tensor_parallel_degree
+                lokr_config_tensor_model_parallel_size > 1
+                and lokr_config_tensor_model_parallel_size != model.config.tensor_model_parallel_size
             ):
                 raise NotImplementedError(
-                    f"{lokr_config_tensor_parallel_degree} is not equal to {model.config.tensor_parallel_degree}. Please merge LoKR weights first."
+                    f"{lokr_config_tensor_model_parallel_size} is not equal to {model.config.tensor_model_parallel_size}. Please merge LoKR weights first."
                 )
             # set lokr state dict
             lokr_model.set_state_dict(lokr_state_dict)
@@ -142,7 +142,7 @@ class LoKrModel(nn.Layer):
             if save_model_config:
                 model_config_to_save = copy.deepcopy(self.model.config)
                 if merge_tensor_parallel:
-                    model_config_to_save.tensor_parallel_degree = -1
+                    model_config_to_save.tensor_model_parallel_size = -1
                 model_config_to_save.save_pretrained(save_directory)
 
     def _find_and_replace_module(self, model, module_name, lokr_config):

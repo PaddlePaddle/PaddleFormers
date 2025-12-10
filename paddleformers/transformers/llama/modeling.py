@@ -96,16 +96,16 @@ class LLamaAttention(nn.Layer):
             "num_attention_heads must be divisible by num_key_value_heads"
             f"Found {config.num_attention_heads} and {config.num_key_value_heads}"
         )
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
         self.scaling = self.head_dim**-0.5
@@ -159,7 +159,7 @@ class LLamaAttention(nn.Layer):
     ) -> tuple[paddle.Tensor, list[paddle.Tensor] | None]:
         if self.config.sequence_parallel:
             seq_len = self.config.max_sequence_length
-            batch_size = hidden_states.shape[0] * self.config.tensor_parallel_degree // seq_len
+            batch_size = hidden_states.shape[0] * self.config.tensor_model_parallel_size // seq_len
         else:
             batch_size, seq_len = hidden_states.shape[:2]
 
@@ -370,7 +370,7 @@ class LlamaPretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )

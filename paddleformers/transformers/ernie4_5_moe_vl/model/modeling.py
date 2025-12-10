@@ -97,7 +97,7 @@ def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_out
         weight,
         bias=bias,
         transpose_y=config.tie_word_embeddings,
-        tensor_parallel_degree=config.tensor_parallel_degree,
+        tensor_model_parallel_size=config.tensor_model_parallel_size,
         tensor_parallel_output=tensor_parallel_output,
         fuse_linear=config.fuse_linear,
         training=training,
@@ -525,7 +525,7 @@ class Ernie4_5_MLP(nn.Layer):
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             ColumnLN = ColumnSequenceParallelLinear if config.sequence_parallel else ColumnParallelLinear
             RowLN = RowSequenceParallelLinear if config.sequence_parallel else RowParallelLinear
 
@@ -558,7 +558,7 @@ class Ernie4_5_MLP(nn.Layer):
             self.up_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
             self.gate_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             row_ln_configs = {}
             if (
                 config.recompute
@@ -637,16 +637,16 @@ class Ernie4_5_Attention(nn.Layer):
             assert not self.fuse_rope, "does not support fuse rope when rope_3d is on for now."
             assert self.freq_allocation is not None, "freq_allocation must be provided if rope_3d is on."
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
             if self.is_gqa:
                 assert (
-                    self.num_key_value_heads % config.tensor_parallel_degree == 0
-                ), f"num_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-                self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                    self.num_key_value_heads % config.tensor_model_parallel_size == 0
+                ), f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+                self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
         if self.is_gqa:
             logger.info(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
             assert (
@@ -661,7 +661,7 @@ class Ernie4_5_Attention(nn.Layer):
         else:
             q_hidden_size = kv_hidden_size = self.head_dim * config.num_attention_heads
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             column_ln_configs = {}
             ColumnLN = ColumnSequenceParallelLinear if config.sequence_parallel else ColumnParallelLinear
             RowLN = RowSequenceParallelLinear if config.sequence_parallel else RowParallelLinear
@@ -715,7 +715,7 @@ class Ernie4_5_Attention(nn.Layer):
                 bias_attr=config.use_bias,
             )
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             row_ln_configs = {}
             if (
                 config.recompute
@@ -806,7 +806,7 @@ class Ernie4_5_Attention(nn.Layer):
                 token_type_ids = ScatterOp.apply(token_type_ids)
                 token_type_ids.stop_gradient = True
             bsz = 1
-            q_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
+            q_len = hidden_states.shape[0] * self.config.tensor_model_parallel_size
         else:
             bsz, q_len, _ = hidden_states.shape
         query_states = key_states = value_states = mix_layer = None
@@ -1094,7 +1094,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
         weight,
         bias,
         labels,
-        tensor_parallel_degree,
+        tensor_model_parallel_size,
         mp_group=None,
         ignore_index=-100,
         seq_chunk_size=8192,
@@ -1110,7 +1110,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
             weight (paddle.Tensor): Weight matrix for projection
             bias (Optional[paddle.Tensor]): Optional bias vector
             labels (paddle.Tensor): Target labels tensor of shape [batch_size*seq_len]
-            tensor_parallel_degree (int): Degree of tensor parallelism
+            tensor_model_parallel_size (int): Degree of tensor parallelism
             mp_group (Optional[dist.Group]): Model parallel group. Defaults to None (auto-detect)
             ignore_index (int): Index to ignore in loss computation. Defaults to -100
             seq_chunk_size (int): Chunk size for processing long sequences. Defaults to 8192
@@ -1124,7 +1124,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                 - gathered_labels: Concatenated labels from all parallel groups
         """
 
-        ctx.tensor_parallel_degree = tensor_parallel_degree
+        ctx.tensor_model_parallel_size = tensor_model_parallel_size
         ctx.ignore_index = ignore_index
         ctx.seq_chunk_size = seq_chunk_size
         ctx.transpose_y = transpose_y
@@ -1182,7 +1182,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                         weight,
                         bias=bias,
                         transpose_y=ctx.transpose_y,
-                        tensor_parallel_degree=ctx.tensor_parallel_degree,
+                        tensor_model_parallel_size=ctx.tensor_model_parallel_size,
                         tensor_parallel_output=True,
                         fuse_linear=ctx.fuse_linear,
                         training=ctx.training,
@@ -1284,7 +1284,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                         weight,
                         bias=bias,
                         transpose_y=ctx.transpose_y,
-                        tensor_parallel_degree=ctx.tensor_parallel_degree,
+                        tensor_model_parallel_size=ctx.tensor_model_parallel_size,
                         tensor_parallel_output=True,
                         fuse_linear=ctx.fuse_linear,
                         training=ctx.training,
@@ -1339,7 +1339,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
         self.ignored_index = getattr(config, "ignored_index", -100)
         self.config = config
         self.return_tuple = return_tuple
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
             logger.info("using parallel cross entroy, take care")
@@ -1447,13 +1447,15 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             Union[paddle.Tensor, Tuple[paddle.Tensor, paddle.Tensor]]:
                 Same return format as forward()
         """
-        assert self.config.tensor_parallel_degree > 0, "use_fused_head_and_loss_fn require tensor_parallel_degree > 0"
+        assert (
+            self.config.tensor_model_parallel_size > 0
+        ), "use_fused_head_and_loss_fn require tensor_model_parallel_size > 0"
         masked_lm_loss, masked_lm_labels_all = FusedHeadParallelCrossEntropy.apply(
             hidden_states,
             outlinear_weight,
             outlinear_bias,
             masked_lm_labels,
-            self.config.tensor_parallel_degree,
+            self.config.tensor_model_parallel_size,
             ignore_index=self.ignored_index,
             seq_chunk_size=self.config.get("loss_subbatch_seqlen", 32768),
             transpose_y=self.config.tie_word_embeddings,
@@ -1600,7 +1602,7 @@ class Ernie4_5_LMHead(nn.Layer):
             config (Ernie4_5_Config): Model configuration containing:
                 - vocab_size: Size of vocabulary
                 - hidden_size: Dimension of hidden states
-                - tensor_parallel_degree: Degree of tensor parallelism
+                - tensor_model_parallel_size: Degree of tensor parallelism
                 - tie_word_embeddings: Whether to tie input/output embeddings
                 - weight_share_add_bias: Whether to add bias when weight sharing
                 - use_bias: Whether to use bias term
@@ -1610,8 +1612,8 @@ class Ernie4_5_LMHead(nn.Layer):
 
         super(Ernie4_5_LMHead, self).__init__()
         self.config = config
-        if config.tensor_parallel_degree > 1:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1:
+            vocab_size = config.vocab_size // config.tensor_model_parallel_size
         else:
             vocab_size = config.vocab_size
 
@@ -1697,7 +1699,7 @@ class Ernie4_5_LMHead(nn.Layer):
                 "Please install paddlepaddle>=3.2."
             )
 
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             state_dict = self.state_dict(structured_name_prefix="")
             return build_sharded_state_dict(state_dict, {"weight": 0, "bias": 0}, structured_name_prefix)
         return super().sharded_state_dict(structured_name_prefix)
