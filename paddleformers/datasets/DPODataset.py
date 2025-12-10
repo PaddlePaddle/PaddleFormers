@@ -16,10 +16,11 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional
 
+import os
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets.data_utils import postprocess_fc_sequence
+from paddleformers.datasets.data_utils import postprocess_fc_sequence, print_debug_info
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
@@ -365,6 +366,30 @@ class DPODataSet(IterableDataset):
                 prompt_len : (prompt_len + chosen_len),
             ] = False
             attn_mask_startend_row_indices = None
+
+        # print
+        enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
+        if enable_dataset_debug:
+            logger.info("\n" + "=" * 50)
+            logger.info("[dataset debug] Debug mode enabled")
+            if hasattr(self, "tokenizer"):
+                print("========================================")
+                print_debug_info(self.tokenizer, input_ids, "input")
+                print("========================================\n")
+
+                filtered_labels = [x for x in chosen_labels if x != 0]  # remove -100
+                print("========================================")
+                print_debug_info(self.tokenizer, filtered_labels, "chosen_labels")
+                print("========================================\n")
+
+                filtered_labels = [x for x in rejected_labels if x != 0]  # remove -100
+                print("========================================")
+                print_debug_info(self.tokenizer, filtered_labels, "rejected_labels")
+                print("========================================\n")
+            else:
+                logger.info("[dataset debug] Tokenizer not available")
+            logger.info("=" * 50 + "\n")
+
         # 2. return sequence
         return Sequence(
             token_ids=input_ids,
