@@ -19,14 +19,15 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["Qwen3_VLConfig", "Qwen3_VLTextConfig"],
+    "configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
     "modeling": [
-        "Qwen3_VLForConditionalGeneration",
-        "Qwen3_VLModel",
-        "Qwen3_VLPretrainedModel",
-        "Qwen3_VLTextModel",
+        "Qwen3VLForConditionalGeneration",
+        "Qwen3VLModel",
+        "Qwen3VLPretrainedModel",
+        "Qwen3VLTextModel",
     ],
-    "processor": ["Qwen3_VLProcessor"],
+    "processor": ["Qwen3VLProcessor"],
+    "video_processor": ["Qwen3VLVideoProcessor"],
 }
 
 if TYPE_CHECKING:

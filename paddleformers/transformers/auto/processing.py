@@ -47,6 +47,7 @@ from .tokenizer import AutoTokenizer
 PROCESSOR_MAPPING_NAMES = OrderedDict(
     [
         ("qwen2_5_vl", "Qwen2_5_VLProcessor"),
+        ("qwen3_vl", "Qwen3VLProcessor"),
         ("qwen2_vl", "Qwen2VLProcessor"),
         ("paddleocr_vl", "PaddleOCRVLProcessor"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLProcessor"),

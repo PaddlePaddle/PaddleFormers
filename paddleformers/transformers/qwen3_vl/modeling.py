@@ -47,10 +47,10 @@ from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from ..utils import logger
-from .configuration import Qwen3_VLConfig, Qwen3_VLTextConfig, Qwen3_VLVisionConfig
+from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
 
 
-class Qwen3_VLVisionMLP(nn.Layer):
+class Qwen3VLVisionMLP(nn.Layer):
     def __init__(self, config):
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -64,7 +64,7 @@ class Qwen3_VLVisionMLP(nn.Layer):
         return self.linear_fc2(self.act_fn(self.linear_fc1(hidden_state)))
 
 
-class Qwen3_VisionPatchEmbed(nn.Layer):
+class Qwen3VisionPatchEmbed(nn.Layer):
     def __init__(
         self,
         patch_size: int = 14,
@@ -90,7 +90,7 @@ class Qwen3_VisionPatchEmbed(nn.Layer):
         return hidden_states
 
 
-class Qwen3_VisionRotaryEmbedding(nn.Layer):
+class Qwen3VisionRotaryEmbedding(nn.Layer):
     inv_freq: paddle.Tensor
 
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
@@ -104,16 +104,20 @@ class Qwen3_VisionRotaryEmbedding(nn.Layer):
         return freqs
 
 
-class Qwen3_VLPatchMerger(nn.Layer):
+class Qwen3VLPatchMerger(nn.Layer):
     def __init__(
         self,
-        config: Qwen3_VLConfig,
-        dim: int,
-        context_dim: int,
-        spatial_merge_size: int = 2,
+        config: Qwen3VLConfig,
+        dim: int = None,
+        context_dim: int = None,
+        spatial_merge_size: int = None,
         use_postshuffle_norm: bool = False,
     ) -> None:
         super().__init__()
+        context_dim = context_dim if context_dim is not None else config.hidden_size
+        dim = dim if dim is not None else config.out_hidden_size
+        spatial_merge_size = spatial_merge_size if spatial_merge_size is not None else config.spatial_merge_size
+
         self.hidden_size = context_dim * (spatial_merge_size**2)
         self.use_postshuffle_norm = use_postshuffle_norm
         norm_dim = self.hidden_size if use_postshuffle_norm else context_dim
@@ -155,8 +159,8 @@ def apply_rotary_pos_emb_vision(q, k, cos, sin):
         return q_embed.astype(orig_q_dtype), k_embed.astype(orig_k_dtype)
 
 
-class Qwen3_VLVisionAttention(nn.Layer):
-    def __init__(self, config: Qwen3_VLVisionConfig) -> None:
+class Qwen3VLVisionAttention(nn.Layer):
+    def __init__(self, config: Qwen3VLVisionConfig) -> None:
         super().__init__()
         self.dim = config.hidden_size
         self.num_heads = config.num_heads
@@ -225,23 +229,13 @@ class Qwen3_VLVisionAttention(nn.Layer):
         return attn_output
 
 
-class Qwen3_VLVisionBlock(nn.Layer):
+class Qwen3VLVisionBlock(nn.Layer):
     def __init__(self, config, attn_implementation: str = "sdpa") -> None:
         super().__init__()
-        self.norm1 = GeneralNorm.create(
-            config=config,
-            norm_type="rms_norm",
-            hidden_size=config.hidden_size,
-            norm_eps=1e-6,
-        )
-        self.norm2 = GeneralNorm.create(
-            config=config,
-            norm_type="rms_norm",
-            hidden_size=config.hidden_size,
-            norm_eps=1e-6,
-        )
-        self.attn = Qwen3_VLVisionAttention(config=config)
-        self.mlp = Qwen3_VLVisionMLP(config)
+        self.norm1 = nn.LayerNorm(config.hidden_size, eps=1e-6)
+        self.norm2 = nn.LayerNorm(config.hidden_size, eps=1e-6)
+        self.attn = Qwen3VLVisionAttention(config=config)
+        self.mlp = Qwen3VLVisionMLP(config)
 
     def forward(
         self,
@@ -262,11 +256,11 @@ class Qwen3_VLVisionBlock(nn.Layer):
         return hidden_states
 
 
-class Qwen3_VLPretrainedModel(PretrainedModel):
-    config_class = Qwen3_VLConfig
+class Qwen3VLPretrainedModel(PretrainedModel):
+    config_class = Qwen3VLConfig
     base_model_prefix = "model"
     input_modalities = ["image", "video", "text"]
-    _no_split_modules = ["Qwen3_VLDecoderLayer", "Qwen3_VLVisionBlock"]
+    _no_split_modules = ["Qwen3VLDecoderLayer", "Qwen3VLVisionBlock"]
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
     transpose_weight_keys = [
         "q_proj",
@@ -282,7 +276,7 @@ class Qwen3_VLPretrainedModel(PretrainedModel):
     ]
 
     @classmethod
-    def _get_tensor_parallel_mappings(cls, config: Qwen3_VLConfig, is_split=True):
+    def _get_tensor_parallel_mappings(cls, config: Qwen3VLConfig, is_split=True):
         """Generate tensor parallel mappings for model conversion."""
         from ..conversion_utils import split_or_merge_func
 
@@ -345,7 +339,7 @@ class Qwen3_VLPretrainedModel(PretrainedModel):
         return mappings
 
     @classmethod
-    def _gen_aoa_config(cls, config: Qwen3_VLConfig):
+    def _gen_aoa_config(cls, config: Qwen3VLConfig):
         mapping = cls._checkpoint_conversion_mapping
         llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
         visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
@@ -448,7 +442,7 @@ class Qwen3_VLPretrainedModel(PretrainedModel):
         return aoa_config
 
     @classmethod
-    def _gen_inv_aoa_config(cls, config: Qwen3_VLConfig):
+    def _gen_inv_aoa_config(cls, config: Qwen3VLConfig):
         mapping = cls._checkpoint_conversion_mapping
         llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
         visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
@@ -541,7 +535,7 @@ class Qwen3_VLPretrainedModel(PretrainedModel):
                 f"{llm_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight^T, fused_ffn -> model.language_model.layers.$LAYER_ID.mlp.gate_proj.weight, model.language_model.layers.$LAYER_ID.mlp.up_proj.weight",
             ]
 
-        # Qwen3_VLModel without lm_head
+        # Qwen3VLModel without lm_head
         if cls.base_model_prefix:
             aoa_config["aoa_statements"] += [
                 f"lm_head.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
@@ -550,21 +544,20 @@ class Qwen3_VLPretrainedModel(PretrainedModel):
         return aoa_config
 
 
-class Qwen3_VisionTransformerPretrainedModel(Qwen3_VLPretrainedModel):
-    config_class = Qwen3_VLVisionConfig
-    _no_split_modules = ["Qwen3_VLVisionBlock"]
+class Qwen3VisionTransformerPretrainedModel(Qwen3VLPretrainedModel):
+    config_class = Qwen3VLVisionConfig
+    _no_split_modules = ["Qwen3VLVisionBlock"]
 
     def __init__(self, config, *inputs, **kwargs) -> None:
         super().__init__(config, *inputs, **kwargs)
         self.spatial_merge_size = config.spatial_merge_size
         self.patch_size = config.patch_size
-        self.window_size = config.window_size
         self.spatial_merge_unit = self.spatial_merge_size * self.spatial_merge_size
         self.pos_embed = nn.Embedding(config.num_position_embeddings, config.hidden_size)
         self.deepstack_visual_indexes = config.deepstack_visual_indexes
-        self.deepstack_merger_list = nn.ModuleList(  # todo 这里没有modulelist需要替换
+        self.deepstack_merger_list = nn.LayerList(
             [
-                Qwen3_VLPatchMerger(
+                Qwen3VLPatchMerger(
                     config=config,
                     use_postshuffle_norm=True,
                 )
@@ -572,18 +565,18 @@ class Qwen3_VisionTransformerPretrainedModel(Qwen3_VLPretrainedModel):
             ]
         )
 
-        self.patch_embed = Qwen3_VisionPatchEmbed(
+        self.patch_embed = Qwen3VisionPatchEmbed(
             patch_size=config.patch_size,
             temporal_patch_size=config.temporal_patch_size,
             in_channels=config.in_channels,
             embed_dim=config.hidden_size,
         )
-
+        self.num_grid_per_side = int(config.num_position_embeddings**0.5)
         head_dim = config.hidden_size // config.num_heads
-        self.rotary_pos_emb = Qwen3_VisionRotaryEmbedding(head_dim // 2)
+        self.rotary_pos_emb = Qwen3VisionRotaryEmbedding(head_dim // 2)
 
-        self.blocks = nn.LayerList([Qwen3_VLVisionBlock(config) for _ in range(config.depth)])
-        self.merger = Qwen3_VLPatchMerger(
+        self.blocks = nn.LayerList([Qwen3VLVisionBlock(config) for _ in range(config.depth)])
+        self.merger = Qwen3VLPatchMerger(
             config=config,
             dim=config.out_hidden_size,
             context_dim=config.hidden_size,
@@ -662,8 +655,8 @@ class Qwen3_VisionTransformerPretrainedModel(Qwen3_VLPretrainedModel):
             h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
             w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
 
-            dh = h_idxs - h_idxs_floor
-            dw = w_idxs - w_idxs_floor
+            dh = h_idxs - h_idxs_floor.astype("float32")
+            dw = w_idxs - w_idxs_floor.astype("float32")
 
             base_h = h_idxs_floor * self.num_grid_per_side
             base_h_ceil = h_idxs_ceil * self.num_grid_per_side
@@ -696,9 +689,9 @@ class Qwen3_VisionTransformerPretrainedModel(Qwen3_VLPretrainedModel):
         patch_pos_embeds_permute = []
         merge_size = self.config.spatial_merge_size
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
-            pos_embed = pos_embed.repeat(t, 1)
+            pos_embed = pos_embed.tile([t, 1])
             pos_embed = (
-                pos_embed.view(t, h // merge_size, merge_size, w // merge_size, merge_size, -1)
+                pos_embed.reshape([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
                 .permute(0, 1, 3, 2, 4, 5)
                 .flatten(0, 4)
             )
@@ -763,7 +756,7 @@ class Qwen3_VisionTransformerPretrainedModel(Qwen3_VLPretrainedModel):
 
 
 @dataclass
-class Qwen3_VLModelOutputWithPast(ModelOutput):
+class Qwen3VLModelOutputWithPast(ModelOutput):
     """
     Args:
         past_key_values (`Cache)`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
@@ -789,10 +782,10 @@ class Qwen3_VLModelOutputWithPast(ModelOutput):
     rope_deltas: Optional[paddle.Tensor] = None
 
 
-class Qwen3_VLRotaryEmbedding(nn.Layer):
+class Qwen3VLRotaryEmbedding(nn.Layer):
     inv_freq: paddle.Tensor
 
-    def __init__(self, config: Qwen3_VLTextConfig):
+    def __init__(self, config: Qwen3VLTextConfig):
         super().__init__()
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
@@ -810,7 +803,7 @@ class Qwen3_VLRotaryEmbedding(nn.Layer):
 
     @staticmethod
     def compute_default_rope_parameters(
-        config: Optional[Qwen3_VLTextConfig] = None,
+        config: Optional[Qwen3VLTextConfig] = None,
         seq_len: Optional[int] = None,
     ) -> tuple["paddle.Tensor", float]:
         """
@@ -905,13 +898,13 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim
     return q_embed, k_embed
 
 
-class Qwen3_VLAttention(nn.Layer):
+class Qwen3VLAttention(nn.Layer):
     """
     Multi-headed attention from 'Attention Is All You Need' paper. Modified to use sliding window attention: Longformer
     and "Generating Long Sequences with Sparse Transformers".
     """
 
-    def __init__(self, config: Qwen3_VLTextConfig, layer_idx: Optional[int] = None):
+    def __init__(self, config: Qwen3VLTextConfig, layer_idx: Optional[int] = None):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
@@ -970,28 +963,28 @@ class Qwen3_VLAttention(nn.Layer):
         self.q_proj = GeneralLinear.create(
             config.hidden_size,
             q_hidden_size,
-            has_bias=True,
+            has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
         )
         self.k_proj = GeneralLinear.create(
             config.hidden_size,
             kv_hidden_size,
-            has_bias=True,
+            has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
         )
         self.v_proj = GeneralLinear.create(
             config.hidden_size,
             kv_hidden_size,
-            has_bias=True,
+            has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
         )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
             config.hidden_size,
-            has_bias=False,
+            has_bias=config.attention_bias,
             config=config,
             tp_plan="rowwise",
         )
@@ -1023,14 +1016,17 @@ class Qwen3_VLAttention(nn.Layer):
 
         # apply qk_norm
         # todo 这里一定要确认形状是不是对了，并且 reshape 好像有问题，需要确认。这里的逻辑可能也有问题，特别是来会转换这两步
-        target_shape = [0, 0, self.num_heads, self.head_dim]
-        query_states = query_states.reshape(shape=target_shape)
-        key_states = key_states.reshape(shape=target_shape)
+        target_shape_q = [0, 0, self.num_heads, self.head_dim]
+        target_shape_kv = [0, 0, self.num_key_value_heads, self.head_dim]
+        query_states = query_states.reshape(shape=target_shape_q)
+        key_states = key_states.reshape(shape=target_shape_kv)
+        value_states = value_states.reshape(shape=target_shape_kv)
+
         query_states = self.q_norm(query_states)
         key_states = self.k_norm(key_states)
         query_states = query_states.transpose([0, 2, 1, 3])
         key_states = key_states.transpose([0, 2, 1, 3])
-        value_states = value_states.reshape(shape=target_shape).transpose([0, 2, 1, 3])
+        value_states = value_states.transpose([0, 2, 1, 3])
         # todo 代码是从下面换成上面，需要确认
         # query_states = query_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
         # key_states = key_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
@@ -1068,17 +1064,11 @@ class Qwen3_VLAttention(nn.Layer):
         return attn_output, attn_weights
 
 
-class Qwen3_VLDecoderLayer(nn.Layer):
-    def __init__(self, config: Qwen3_VLTextConfig, layer_idx: int):
+class Qwen3VLDecoderLayer(nn.Layer):
+    def __init__(self, config: Qwen3VLTextConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
-
-        if config.use_sliding_window and config._attn_implementation != "flashmask":
-            logger.warning_once(
-                f"Sliding Window Attention is enabled but not implemented for `{config._attn_implementation}`; "
-                "unexpected results may be encountered."
-            )
-        self.self_attn = Qwen3_VLAttention(config, layer_idx)
+        self.self_attn = Qwen3VLAttention(config, layer_idx)
 
         self.mlp = Qwen2MLP(config)
         self.input_layernorm = GeneralNorm.create(
@@ -1166,11 +1156,11 @@ class Qwen3_VLDecoderLayer(nn.Layer):
         return outputs
 
 
-class Qwen3_VLTextModel(Qwen3_VLPretrainedModel):
-    config: Qwen3_VLTextConfig
+class Qwen3VLTextModel(Qwen3VLPretrainedModel):
+    config: Qwen3VLTextConfig
     input_modalities = "text"
 
-    def __init__(self, config: Qwen3_VLTextConfig):
+    def __init__(self, config: Qwen3VLTextConfig):
         super().__init__(config)
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
@@ -1182,7 +1172,7 @@ class Qwen3_VLTextModel(Qwen3_VLPretrainedModel):
             padding_idx=self.padding_idx,
         )
         self.layers = nn.LayerList(
-            [Qwen3_VLDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [Qwen3VLDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         self._attn_implementation = config._attn_implementation
         self.norm = GeneralNorm.create(
@@ -1193,7 +1183,7 @@ class Qwen3_VLTextModel(Qwen3_VLPretrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.has_sliding_layers = "sliding_attention" in self.config.layer_types
-        self.rotary_emb = Qwen3_VLRotaryEmbedding(config=config)
+        self.rotary_emb = Qwen3VLRotaryEmbedding(config=config)
 
         self.gradient_checkpointing = False
         self.has_sliding_layers = getattr(
@@ -1410,16 +1400,16 @@ class Qwen3_VLTextModel(Qwen3_VLPretrainedModel):
         )
 
 
-class Qwen3_VLModel(Qwen3_VLPretrainedModel):
+class Qwen3VLModel(Qwen3VLPretrainedModel):
     base_model_prefix = ""
     _checkpoint_conversion_mapping = {"^model": "language_model"}
-    config: Qwen3_VLConfig
-    _no_split_modules = ["Qwen3_VLDecoderLayer", "Qwen3_VLVisionBlock"]
+    config: Qwen3VLConfig
+    _no_split_modules = ["Qwen3VLDecoderLayer", "Qwen3VLVisionBlock"]
 
     def __init__(self, config):
         super().__init__(config)
-        self.visual = Qwen3_VisionTransformerPretrainedModel._from_config(config.vision_config)
-        self.language_model = Qwen3_VLTextModel._from_config(config.text_config)
+        self.visual = Qwen3VisionTransformerPretrainedModel._from_config(config.vision_config)
+        self.language_model = Qwen3VLTextModel._from_config(config.text_config)
         self.rope_deltas = None  # cache rope_deltas here
 
     def get_input_embeddings(self):
@@ -1642,10 +1632,9 @@ class Qwen3_VLModel(Qwen3_VLPretrainedModel):
         video_grid_thw: Optional[paddle.Tensor] = None,
         rope_deltas: Optional[paddle.Tensor] = None,
         cache_position: Optional[paddle.Tensor] = None,
-        second_per_grid_ts: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> Union[tuple, Qwen3_VLModelOutputWithPast]:
+    ) -> Union[tuple, Qwen3VLModelOutputWithPast]:
         r"""
         image_grid_thw (`paddle.Tensor` of shape `(num_images, 3)`, *optional*):
             The temporal, height and width of feature shape of each image in LLM.
@@ -1653,10 +1642,9 @@ class Qwen3_VLModel(Qwen3_VLPretrainedModel):
             The temporal, height and width of feature shape of each video in LLM.
         rope_deltas (`paddle.Tensor` of shape `(batch_size, )`, *optional*):
             The rope index difference between sequence length and multimodal rope.
-        second_per_grid_ts (`paddle.Tensor` of shape `(num_videos)`, *optional*):
-            The time interval (in seconds) for each grid along the temporal dimension in the 3D position IDs.
         """
-
+        image_mask = None
+        video_mask = None
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -1715,7 +1703,6 @@ class Qwen3_VLModel(Qwen3_VLPretrainedModel):
                     input_ids,
                     image_grid_thw,
                     video_grid_thw,
-                    second_per_grid_ts=second_per_grid_ts,
                     attention_mask=attention_mask,
                 )
                 self.rope_deltas = rope_deltas
@@ -1747,7 +1734,7 @@ class Qwen3_VLModel(Qwen3_VLPretrainedModel):
             **kwargs,
         )
 
-        output = Qwen3_VLModelOutputWithPast(
+        output = Qwen3VLModelOutputWithPast(
             last_hidden_state=outputs.last_hidden_state,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
@@ -1758,7 +1745,7 @@ class Qwen3_VLModel(Qwen3_VLPretrainedModel):
 
 
 @dataclass
-class Qwen3_VLCausalLMOutputWithPast(ModelOutput):
+class Qwen3VLCausalLMOutputWithPast(ModelOutput):
     r"""
     loss (`paddle.Tensor` of shape `(1,)`, *optional*, returned when `labels` is provided):
         Language modeling loss (for next-token prediction).
@@ -1779,17 +1766,17 @@ class Qwen3_VLCausalLMOutputWithPast(ModelOutput):
     rope_deltas: Optional[paddle.Tensor] = None
 
 
-class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
+class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
     }
     _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
-    config_class = Qwen3_VLConfig
+    config_class = Qwen3VLConfig
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = Qwen3_VLModel(config)
+        self.model = Qwen3VLModel(config)
         self.lm_head = GeneralLMHead(config.text_config)
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
@@ -1838,11 +1825,10 @@ class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
         video_grid_thw: Optional[paddle.Tensor] = None,
         rope_deltas: Optional[paddle.Tensor] = None,
         cache_position: Optional[paddle.Tensor] = None,
-        second_per_grid_ts: Optional[paddle.Tensor] = None,
         logits_to_keep: Union[int, paddle.Tensor] = 0,
         return_dict: Optional[bool] = True,
         **kwargs,
-    ) -> Union[tuple, Qwen3_VLCausalLMOutputWithPast]:
+    ) -> Union[tuple, Qwen3VLCausalLMOutputWithPast]:
         r"""
         labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
@@ -1854,15 +1840,13 @@ class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
             The temporal, height and width of feature shape of each video in LLM.
         rope_deltas (`paddle.Tensor` of shape `(batch_size, )`, *optional*):
             The rope index difference between sequence length and multimodal rope.
-        second_per_grid_ts (`paddle.Tensor` of shape `(num_videos)`, *optional*):
-            The time interval (in seconds) for each grid along the temporal dimension in the 3D position IDs.
 
         Example:
 
         ```python
-        >>> from paddleformers.transformers import AutoProcessor, Qwen3_VLForConditionalGeneration
+        >>> from paddleformers.transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
-        >>> model = Qwen3_VLForConditionalGeneration.from_pretrained("Qwen/Qwen3-VL-4B-Instruct")
+        >>> model = Qwen3VLForConditionalGeneration.from_pretrained("Qwen/Qwen3-VL-4B-Instruct")
         >>> processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-4B-Instruct")
 
         >>> messages = [
@@ -1904,7 +1888,6 @@ class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
             pixel_values_videos=pixel_values_videos,
             image_grid_thw=image_grid_thw,
             video_grid_thw=video_grid_thw,
-            second_per_grid_ts=second_per_grid_ts,
             position_ids=position_ids,
             attention_mask=attention_mask,
             past_key_values=past_key_values,
@@ -1928,7 +1911,7 @@ class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
         if labels is not None:
             loss, _ = self.criterion(logits, labels)
 
-        return Qwen3_VLCausalLMOutputWithPast(
+        return Qwen3VLCausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
@@ -1950,7 +1933,6 @@ class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
         pixel_values_videos=None,
         image_grid_thw=None,
         video_grid_thw=None,
-        second_per_grid_ts=None,
         **kwargs,
     ):
 
@@ -1975,7 +1957,6 @@ class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
             pixel_values_videos=pixel_values_videos,
             image_grid_thw=image_grid_thw,
             video_grid_thw=video_grid_thw,
-            second_per_grid_ts=second_per_grid_ts,
             use_cache=use_cache,
             **kwargs,
         )
@@ -1991,7 +1972,6 @@ class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
                     model_inputs.get("input_ids", None),
                     image_grid_thw=image_grid_thw,
                     video_grid_thw=video_grid_thw,
-                    second_per_grid_ts=second_per_grid_ts,
                     attention_mask=attention_mask,
                 )
                 self.model.rope_deltas = rope_deltas
@@ -2070,7 +2050,7 @@ class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
         if expand_size == 1:
             return input_ids, model_kwargs
 
-        visual_keys = ["pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw", "second_per_grid_ts"]
+        visual_keys = ["pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw"]
 
         def _expand_dict_for_generation_visual(dict_to_expand):
             image_grid_thw = model_kwargs.get("image_grid_thw", None)
@@ -2111,10 +2091,6 @@ class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
                     dict_to_expand[key] = _repeat_interleave_samples(
                         dict_to_expand[key], lengths=lengths, repeat_times=expand_size
                     )
-                elif key == "second_per_grid_ts":
-                    dict_to_expand[key] = _repeat_interleave_samples(
-                        dict_to_expand[key], lengths=list(video_nums), repeat_times=expand_size
-                    )
             return dict_to_expand
 
         def _expand_dict_for_generation(dict_to_expand):
@@ -2143,4 +2119,4 @@ class Qwen3_VLForConditionalGeneration(Qwen3_VLPretrainedModel):
         return input_ids, model_kwargs
 
 
-__all__ = ["Qwen3_VLForConditionalGeneration", "Qwen3_VLModel", "Qwen3_VLPretrainedModel", "Qwen3_VLTextModel"]
+__all__ = ["Qwen3VLForConditionalGeneration", "Qwen3VLModel", "Qwen3VLPretrainedModel", "Qwen3VLTextModel"]

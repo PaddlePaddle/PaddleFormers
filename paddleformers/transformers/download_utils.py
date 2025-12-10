@@ -122,6 +122,32 @@ register_model_group(
     }
 )
 
+# qwen3_vl
+register_model_group(
+    models={
+        "Qwen3-VL-2B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-2B-Instruct",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-2B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-2B-Instruct",
+        },
+        "Qwen3-VL-4B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-4B-Instruct",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-VL-7B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-VL-4B-Instruct",
+        },
+        "Qwen3-VL-32B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-VL-32B-Instruct",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-VL-32B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-VL-32B-Instruct",
+        },
+        "Qwen3-VL-72B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-VL-72B-Instruct",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen2.5-VL-72B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen2.5-VL-72B-Instruct",
+        },
+    }
+)
+
 
 # qwen2_moe
 register_model_group(

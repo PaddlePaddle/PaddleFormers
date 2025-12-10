@@ -17,13 +17,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Qwen3_VL model configuration"""
+"""Qwen3VL model configuration"""
 
 from ..configuration_utils import PretrainedConfig, layer_type_validation
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
-class Qwen3_VLVisionConfig(PretrainedConfig):
+class Qwen3VLVisionConfig(PretrainedConfig):
     model_type = "qwen3_vl"
     base_config_key = "vision_config"
 
@@ -61,9 +61,9 @@ class Qwen3_VLVisionConfig(PretrainedConfig):
         self.num_position_embeddings = num_position_embeddings
 
 
-class Qwen3_VLTextConfig(PretrainedConfig):
+class Qwen3VLTextConfig(PretrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`Qwen3_VLTextModel`]. It is used to instantiate a
+    This is the configuration class to store the configuration of a [`Qwen3VLTextModel`]. It is used to instantiate a
     Qwen3-VL model according to the specified arguments, defining the model architecture.
 
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
@@ -71,8 +71,8 @@ class Qwen3_VLTextConfig(PretrainedConfig):
 
     Args:
         vocab_size (`int`, *optional*, defaults to 152064):
-            Vocabulary size of the Qwen3_VL model. Defines the number of different tokens that can be represented by the
-            `inputs_ids` passed when calling [`Qwen3_VLModel`]
+            Vocabulary size of the Qwen3VL model. Defines the number of different tokens that can be represented by the
+            `inputs_ids` passed when calling [`Qwen3VLModel`]
         hidden_size (`int`, *optional*, defaults to 8192):
             Dimension of the hidden representations.
         intermediate_size (`int`, *optional*, defaults to 29568):
@@ -102,11 +102,6 @@ class Qwen3_VLTextConfig(PretrainedConfig):
         tie_word_embeddings (`bool`, *optional*, defaults to `False`):
             Whether the model's input and output word embeddings should be tied.
         rope_theta (`float`, *optional*, defaults to 1000000.0):
-            The base period of the RoPE embeddings.
-        use_sliding_window (`bool`, *optional*, defaults to `False`):
-            Whether to use sliding window attention.
-        sliding_window (`int`, *optional*, defaults to 4096):
-            Sliding window attention (SWA) window size. If not specified, will default to `4096`.
         max_window_layers (`int`, *optional*, defaults to 80):
             The number of layers using full attention. The first `max_window_layers` layers will use full attention, while any
             additional layer afterwards will use SWA (Sliding Window Attention).
@@ -153,13 +148,13 @@ class Qwen3_VLTextConfig(PretrainedConfig):
                     Only used with 'llama3'. Scaling factor applied to high frequency components of the RoPE
 
     ```python
-    >>> from paddleformers.transformers import Qwen3_VLTextModel, Qwen3_VLConfig
+    >>> from paddleformers.transformers import Qwen3VLTextModel, Qwen3VLConfig
 
-    >>> # Initializing a Qwen3_VL style configuration
-    >>> configuration = Qwen3_VLConfig()
+    >>> # Initializing a Qwen3VL style configuration
+    >>> configuration = Qwen3VLConfig()
 
     >>> # Initializing a model from the configuration
-    >>> model = Qwen3_VLTextModel(configuration)
+    >>> model = Qwen3VLTextModel(configuration)
 
     >>> # Accessing the model configuration
     >>> configuration = model.config
@@ -218,12 +213,7 @@ class Qwen3_VLTextConfig(PretrainedConfig):
 
         self.layer_types = layer_types
         if self.layer_types is None:
-            self.layer_types = [
-                "sliding_attention"
-                if self.sliding_window is not None and i >= self.max_window_layers
-                else "full_attention"
-                for i in range(self.num_hidden_layers)
-            ]
+            self.layer_types = ["full_attention" for i in range(self.num_hidden_layers)]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
 
         # Validate the correctness of rotary position embeddings parameters
@@ -234,9 +224,9 @@ class Qwen3_VLTextConfig(PretrainedConfig):
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
 
-class Qwen3_VLConfig(PretrainedConfig):
+class Qwen3VLConfig(PretrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`Qwen3_VLModel`]. It is used to instantiate a
+    This is the configuration class to store the configuration of a [`Qwen3VLModel`]. It is used to instantiate a
     Qwen3-VL model according to the specified arguments, defining the model architecture.
 
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
@@ -244,9 +234,9 @@ class Qwen3_VLConfig(PretrainedConfig):
 
 
     Args:
-        text_config (`Union[PreTrainedConfig, dict]`, *optional*, defaults to `Qwen3_VLTextConfig`):
+        text_config (`Union[PreTrainedConfig, dict]`, *optional*, defaults to `Qwen3VLTextConfig`):
             The config object or dictionary of the text backbone.
-        vision_config (`Union[PreTrainedConfig, dict]`,  *optional*, defaults to `Qwen3_VLVisionConfig`):
+        vision_config (`Union[PreTrainedConfig, dict]`,  *optional*, defaults to `Qwen3VLVisionConfig`):
             The config object or dictionary of the vision backbone.
         image_token_id (`int`, *optional*, defaults to 151655):
             The image token index to encode the image prompt.
@@ -254,20 +244,20 @@ class Qwen3_VLConfig(PretrainedConfig):
             The video token index to encode the image prompt.
 
     ```python
-    >>> from paddleformers.transformers import Qwen3_VLForConditionalGeneration, Qwen3_VLConfig
+    >>> from paddleformers.transformers import Qwen3VLForConditionalGeneration, Qwen3VLConfig
 
-    >>> # Initializing a Qwen3_VL style configuration
-    >>> configuration = Qwen3_VLConfig()
+    >>> # Initializing a Qwen3VL style configuration
+    >>> configuration = Qwen3VLConfig()
 
     >>> # Initializing a model from the Qwen2-VL-7B style configuration
-    >>> model = Qwen3_VLForConditionalGeneration(configuration)
+    >>> model = Qwen3VLForConditionalGeneration(configuration)
 
     >>> # Accessing the model configuration
     >>> configuration = model.config
     ```"""
 
     model_type = "qwen3_vl"
-    sub_configs = {"vision_config": Qwen3_VLVisionConfig, "text_config": Qwen3_VLTextConfig}
+    sub_configs = {"vision_config": Qwen3VLVisionConfig, "text_config": Qwen3VLTextConfig}
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
@@ -282,7 +272,7 @@ class Qwen3_VLConfig(PretrainedConfig):
     ):
         # We need to init super() here so that it does not reset values
         # that are in text config to the BaseClass defaults. The Base
-        # config has many text related defaults and not all defaults are same as for `Qwen3_VLTextConfig`
+        # config has many text related defaults and not all defaults are same as for `Qwen3VLTextConfig`
         super().__init__(**kwargs)
 
         if isinstance(vision_config, dict):
@@ -325,4 +315,4 @@ class Qwen3_VLConfig(PretrainedConfig):
         return super().__getattribute__(key)
 
 
-__all__ = ["Qwen3_VLConfig", "Qwen3_VLTextConfig"]
+__all__ = ["Qwen3VLConfig", "Qwen3VLTextConfig"]
