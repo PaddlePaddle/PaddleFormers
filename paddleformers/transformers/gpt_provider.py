@@ -184,7 +184,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         """
 
         with model_init_device_context():
-            model = gpt_builder(self, num_stages=1)
+            model = gpt_builder(self, num_stages=1, seg_method="layer:TransformerLayer")
 
         return model
 
