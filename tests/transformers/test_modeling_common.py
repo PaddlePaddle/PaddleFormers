@@ -301,7 +301,7 @@ class ModelTesterMixin:
         for model_class in self.all_model_classes:
             config.recompute = True
             config.recompute_granularity = "full"
-            model = model_class(copy.deepcopy(config))
+            model = self._make_model_instance(config, model_class)
             self.assertTrue(model.config.recompute)
             self.assertEqual(model.config.recompute_granularity, "full")
 
@@ -343,7 +343,6 @@ class ModelTesterMixin:
                 config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
 
                 config.use_cache = False
-                config.return_dict = True
 
                 # make sure that test runs are consistent by disabling dropout
                 #
@@ -356,6 +355,7 @@ class ModelTesterMixin:
                     config.attention_probs_dropout_prob = 0.0
 
                 inputs = self._prepare_for_class(inputs_dict, model_class, return_labels=True)
+                inputs["return_dict"] = True
 
                 paddle.seed(0)
                 model = model_class(config)
@@ -371,6 +371,8 @@ class ModelTesterMixin:
                 optimizer = paddle.optimizer.SGD(learning_rate=0.01, parameters=model.parameters())
                 paddle.seed(0)
                 loss = model(**inputs).loss
+                if isinstance(loss, (list, tuple)):
+                    loss = loss[0]
                 loss.backward()
                 grad_expected_params = [(n, p) for n, p in model.named_parameters() if p.grad is not None]
                 non_zero_grads_normal = {n for n, p in grad_expected_params if p.grad.abs().sum() > 0}
@@ -386,6 +388,8 @@ class ModelTesterMixin:
                 optimizer = paddle.optimizer.SGD(learning_rate=0.01, parameters=model.parameters())
                 paddle.seed(0)
                 loss = model(**inputs).loss
+                if isinstance(loss, (list, tuple)):
+                    loss = loss[0]
                 loss.backward()
                 optimizer.step()
 
@@ -440,7 +444,6 @@ class ModelTesterMixin:
 
         for model_class in self.all_model_classes:
             config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
-            config.return_dict = True
 
             if model_class.__name__ in [*get_values(MODEL_NAMES_MAPPING)]:
                 continue
@@ -448,7 +451,10 @@ class ModelTesterMixin:
             model = model_class(config)
             model.train()
             inputs = self._prepare_for_class(inputs_dict, model_class, return_labels=True)
+            inputs["return_dict"] = True
             loss = model(**inputs).loss
+            if isinstance(loss, (list, tuple)):
+                loss = loss[0]
             loss.backward()
 
     @unittest.skip("Not implemented yet")
