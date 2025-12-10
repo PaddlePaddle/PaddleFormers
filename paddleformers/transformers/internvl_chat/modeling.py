@@ -555,17 +555,17 @@ class InternVLChatPretrainedModel(PretrainedModel):
         aoa_config = {
             "aoa_statements": [
                 # Vision model components
-                f"vision_model.encoder.layers.$LAYER_ID.attn.qkv.weight^T -> vision_model.encoder.layers.$LAYER_ID.attn.qkv.weight",
-                f"vision_model.encoder.layers.$LAYER_ID.attn.proj.weight^T -> vision_model.encoder.layers.$LAYER_ID.attn.proj.weight",
-                f"vision_model.encoder.layers.$LAYER_ID.mlp.fc1.weight^T -> vision_model.encoder.layers.$LAYER_ID.mlp.fc1.weight",
-                f"vision_model.encoder.layers.$LAYER_ID.mlp.fc2.weight^T -> vision_model.encoder.layers.$LAYER_ID.mlp.fc2.weight",
-                f"vision_model.encoder.layers.$LAYER_ID.norm1.weight -> vision_model.encoder.layers.$LAYER_ID.norm1.weight",
-                f"vision_model.encoder.layers.$LAYER_ID.norm2.weight -> vision_model.encoder.layers.$LAYER_ID.norm2.weight",
-                f"vision_model.embeddings.patch_embedding.weight^T -> vision_model.embeddings.patch_embedding.weight",
-                f"vision_model.embeddings.patch_embedding.bias -> vision_model.embeddings.patch_embedding.bias",
+                "vision_model.encoder.layers.$LAYER_ID.attn.qkv.weight^T -> vision_model.encoder.layers.$LAYER_ID.attn.qkv.weight",
+                "vision_model.encoder.layers.$LAYER_ID.attn.proj.weight^T -> vision_model.encoder.layers.$LAYER_ID.attn.proj.weight",
+                "vision_model.encoder.layers.$LAYER_ID.mlp.fc1.weight^T -> vision_model.encoder.layers.$LAYER_ID.mlp.fc1.weight",
+                "vision_model.encoder.layers.$LAYER_ID.mlp.fc2.weight^T -> vision_model.encoder.layers.$LAYER_ID.mlp.fc2.weight",
+                "vision_model.encoder.layers.$LAYER_ID.norm1.weight -> vision_model.encoder.layers.$LAYER_ID.norm1.weight",
+                "vision_model.encoder.layers.$LAYER_ID.norm2.weight -> vision_model.encoder.layers.$LAYER_ID.norm2.weight",
+                "vision_model.embeddings.patch_embedding.weight^T -> vision_model.embeddings.patch_embedding.weight",
+                "vision_model.embeddings.patch_embedding.bias -> vision_model.embeddings.patch_embedding.bias",
                 # Connection MLP
-                f"mlp1.1.weight^T -> mlp1.1.weight",
-                f"mlp1.3.weight^T -> mlp1.3.weight",
+                "mlp1.1.weight^T -> mlp1.1.weight",
+                "mlp1.3.weight^T -> mlp1.3.weight",
             ]
         }
 
@@ -573,7 +573,7 @@ class InternVLChatPretrainedModel(PretrainedModel):
         if config.llm_config.architectures[0] == "LlamaForCausalLM":
             # Llama-specific mappings
             aoa_config["aoa_statements"] += [
-                f"language_model.lm_head.weight -> language_model.lm_head.weight",
+                "language_model.lm_head.weight -> language_model.lm_head.weight",
                 f"language_model.{model_prefix}embed_tokens.weight -> embed_tokens.weight",
                 f"language_model.{model_prefix}norm.weight -> norm.weight",
             ]
@@ -617,17 +617,17 @@ class InternVLChatPretrainedModel(PretrainedModel):
         model_prefix = "" if cls == cls.base_model_prefix else "model."
         aoa_statements = [
             # Vision model components - reverse mappings
-            f"vision_model.encoder.layers.$LAYER_ID.attn.qkv.weight^T -> vision_model.encoder.layers.$LAYER_ID.attn.qkv.weight",
-            f"vision_model.encoder.layers.$LAYER_ID.attn.proj.weight^T -> vision_model.encoder.layers.$LAYER_ID.attn.proj.weight",
-            f"vision_model.encoder.layers.$LAYER_ID.mlp.fc1.weight^T -> vision_model.encoder.layers.$LAYER_ID.mlp.fc1.weight",
-            f"vision_model.encoder.layers.$LAYER_ID.mlp.fc2.weight^T -> vision_model.encoder.layers.$LAYER_ID.mlp.fc2.weight",
-            f"vision_model.encoder.layers.$LAYER_ID.norm1.weight -> vision_model.encoder.layers.$LAYER_ID.norm1.weight",
-            f"vision_model.encoder.layers.$LAYER_ID.norm2.weight -> vision_model.encoder.layers.$LAYER_ID.norm2.weight",
-            f"vision_model.embeddings.patch_embedding.weight^T -> vision_model.embeddings.patch_embedding.weight",
-            f"vision_model.embeddings.patch_embedding.bias -> vision_model.embeddings.patch_embedding.bias",
+            "vision_model.encoder.layers.$LAYER_ID.attn.qkv.weight^T -> vision_model.encoder.layers.$LAYER_ID.attn.qkv.weight",
+            "vision_model.encoder.layers.$LAYER_ID.attn.proj.weight^T -> vision_model.encoder.layers.$LAYER_ID.attn.proj.weight",
+            "vision_model.encoder.layers.$LAYER_ID.mlp.fc1.weight^T -> vision_model.encoder.layers.$LAYER_ID.mlp.fc1.weight",
+            "vision_model.encoder.layers.$LAYER_ID.mlp.fc2.weight^T -> vision_model.encoder.layers.$LAYER_ID.mlp.fc2.weight",
+            "vision_model.encoder.layers.$LAYER_ID.norm1.weight -> vision_model.encoder.layers.$LAYER_ID.norm1.weight",
+            "vision_model.encoder.layers.$LAYER_ID.norm2.weight -> vision_model.encoder.layers.$LAYER_ID.norm2.weight",
+            "vision_model.embeddings.patch_embedding.weight^T -> vision_model.embeddings.patch_embedding.weight",
+            "vision_model.embeddings.patch_embedding.bias -> vision_model.embeddings.patch_embedding.bias",
             # Connection MLP - reverse mappings
-            f"mlp1.1.weight^T -> mlp1.1.weight",
-            f"mlp1.3.weight^T -> mlp1.3.weight",
+            "mlp1.1.weight^T -> mlp1.1.weight",
+            "mlp1.3.weight^T -> mlp1.3.weight",
         ]
 
         # Language model components based on architecture
@@ -653,7 +653,7 @@ class InternVLChatPretrainedModel(PretrainedModel):
         elif config.llm_config.architectures[0] == "Qwen2ForCausalLM":
             # Qwen2-specific reverse mappings
             aoa_statements += [
-                f"language_model.lm_head.weight -> language_model.lm_head.weight",
+                "language_model.lm_head.weight -> language_model.lm_head.weight",
                 f"language_model.{model_prefix}embed_tokens.weight -> language_model.{model_prefix}embed_tokens.weight",
                 f"language_model.{model_prefix}norm.weight -> language_model.{model_prefix}norm.weight",
             ]
