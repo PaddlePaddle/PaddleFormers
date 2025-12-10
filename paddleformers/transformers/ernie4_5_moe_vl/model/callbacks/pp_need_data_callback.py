@@ -60,16 +60,16 @@ class PPNeedDataCallback(TrainerCallback):
 
         def _enable_delay_scale_loss():
             key = "enable_delay_scale_loss"
-            if args.pipeline_parallel_degree > 1:
+            if args.pipeline_model_parallel_size > 1:
                 return key in args.pipeline_parallel_config.split(" ")
-            elif args.tensor_parallel_degree > 1:
+            elif args.tensor_model_parallel_size > 1:
                 return key in args.tensor_parallel_config.split(" ")
             else:
                 return False
 
         # TODO When performing inference, you need to disable `delay_scale_loss`.
         model = kwargs.pop("model")
-        if args.pipeline_parallel_degree > 1 and _enable_delay_scale_loss():
+        if args.pipeline_model_parallel_size > 1 and _enable_delay_scale_loss():
             # paddle.device.synchronize()
             # logger.info(f"scale grad")
             for p in model.parameters():

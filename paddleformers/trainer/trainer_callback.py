@@ -792,10 +792,10 @@ class MoeExpertsGradScaleCallback(TrainerCallback):
         """
         if not args.use_expert_parallel:
             raise ValueError("This callback should be used with expert parallel")
-        if args.expert_parallel_degree > 1:
-            self.expert_gradient_scaling_factor = 1.0 / args.expert_parallel_degree
-            if args.tensor_parallel_degree > 1:
-                self.expert_gradient_scaling_factor *= args.tensor_parallel_degree
+        if args.expert_model_parallel_size > 1:
+            self.expert_gradient_scaling_factor = 1.0 / args.expert_model_parallel_size
+            if args.tensor_model_parallel_size > 1:
+                self.expert_gradient_scaling_factor *= args.tensor_model_parallel_size
             logger.info(
                 f"EP-MoE is used, expert gradient scaling factor is set to {self.expert_gradient_scaling_factor}"
             )
@@ -808,7 +808,7 @@ class MoeExpertsGradScaleCallback(TrainerCallback):
 class MoEGateSpGradSyncCallBack(TrainerCallback):
     """
     用于绕过sp allreduce hook被错误调用多次的bug，此bug是框架内部机制的问题，将来会进行修复。
-    目前仅gate的梯度在开启moe_subbatch_token_num存在这个问题，因此这里只添加gate的梯度聚合。
+    目前仅gate的梯度在开启moe_subbatch_token_num_before_dispatch存在这个问题，因此这里只添加gate的梯度聚合。
     但保险起见mark_as_sequence_parallel_parameter的参数最好都通过类似的hook处理。
     """
 
@@ -816,7 +816,7 @@ class MoEGateSpGradSyncCallBack(TrainerCallback):
         logger.info("MoEGateSpGradSyncCallBack Created")
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
-        if args.tensor_parallel_degree > 1 and args.sequence_parallel:
+        if args.tensor_model_parallel_size > 1 and args.sequence_parallel:
             model = kwargs["model"]
             hcg = fleet.get_hybrid_communicate_group()
             pg = hcg.get_model_parallel_group().process_group

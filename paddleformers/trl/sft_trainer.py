@@ -307,7 +307,7 @@ class SFTTrainer(Trainer):
         prediction_loss_only: bool,
         ignore_keys=None,
     ):
-        if prediction_loss_only or self.args.pipeline_parallel_degree > 1:
+        if prediction_loss_only or self.args.pipeline_model_parallel_size > 1:
             return super().prediction_step(model, inputs, prediction_loss_only, ignore_keys)
         elif not self.do_generation:
             loss, logits, labels = super().prediction_step(model, inputs, prediction_loss_only, ignore_keys)
@@ -316,7 +316,7 @@ class SFTTrainer(Trainer):
             if isinstance(logits, (list, tuple)):
                 logits = logits[0]
             # all gather logits when enabling tensor_parallel_output
-            if self.args.tensor_parallel_degree > 1 and getattr(self.args, "tensor_parallel_output", False):
+            if self.args.tensor_model_parallel_size > 1 and getattr(self.args, "tensor_parallel_output", False):
                 hcg = fleet.get_hybrid_communicate_group()
                 model_parallel_group = hcg.get_model_parallel_group()
                 gathered_logits = []

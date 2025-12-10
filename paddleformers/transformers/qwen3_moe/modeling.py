@@ -84,21 +84,21 @@ class Qwen3MoeAttention(nn.Layer):
         self.num_key_value_heads = config.num_key_value_heads
         assert config.num_attention_heads // config.num_key_value_heads
 
-        self.tensor_parallel = config.tensor_parallel_degree > 1
+        self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
         self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
@@ -176,7 +176,7 @@ class Qwen3MoeAttention(nn.Layer):
 
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
             else:
                 bsz, q_len, _ = hidden_states.shape
@@ -188,7 +188,7 @@ class Qwen3MoeAttention(nn.Layer):
             mix_layer = self.qkv_proj(hidden_states)
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
                 target_shape = [
                     bsz,
@@ -284,7 +284,7 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
         self.top_k = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
         self.sequence_parallel = config.sequence_parallel
-        if self.sequence_parallel and config.tensor_parallel_degree > 1:
+        if self.sequence_parallel and config.tensor_model_parallel_size > 1:
             config = copy.deepcopy(config)
             config.sequence_parallel = False
 
@@ -368,7 +368,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
         except:
             moe_group = None
-        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+        expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
         if (layer_idx not in config.mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
         ):
@@ -383,7 +383,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
                     drop_tokens=False,
                     transpose_gate_weight=False,
                 )
-                if expert_parallel_degree > 1
+                if expert_model_parallel_size > 1
                 else Qwen3MoeSparseMoeBlock(config)
             )
         else:
@@ -552,7 +552,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -600,9 +600,9 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                     moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
                 except Exception:
                     moe_group = None
-                expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
-                # TODO: merge disable_ffn_model_parallel and expert_parallel_degree
-                if expert_parallel_degree <= 1:
+                expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
+                # TODO: merge disable_ffn_model_parallel and expert_model_parallel_size
+                if expert_model_parallel_size <= 1:
                     # # if disable_ffn_model_parallel is True, disable expert layer tp plan
                     # if not config.disable_ffn_model_parallel:
                     actions.update(

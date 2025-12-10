@@ -172,7 +172,7 @@ class Ernie4_5_MoeMLP(Ernie4_5MLP):
 
         if getattr(config, "disable_ffn_model_parallel", False):
             config = deepcopy(config)
-            config.tensor_parallel_degree = 1
+            config.tensor_model_parallel_size = 1
 
         super().__init__(config, hidden_size=hidden_size, intermediate_size=moe_intermediate_size, layer_idx=layer_idx)
         self.moe_dropout_prob = config.moe_dropout_prob
@@ -506,7 +506,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -647,7 +647,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         Args:
             config (Ernie4_5_MoeConfig): Model configuration.
         """
-        if config.moe_group in {"mp", "model", "tp"} and config.tensor_parallel_degree > 1:
+        if config.moe_group in {"mp", "model", "tp"} and config.tensor_model_parallel_size > 1:
             logger.info(f"disable FFN tensor model parallel, moe-group={config.moe_group}")
             config.disable_ffn_model_parallel = True
         config.moe_group_origin = config.moe_group
