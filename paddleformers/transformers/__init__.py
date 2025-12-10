@@ -253,6 +253,14 @@ import_structure = {
         "Qwen2_5_VLTextModel",
     ],
     "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
+    "qwen3_vl.configuration": ["Qwen3_VLConfig", "Qwen3_VLTextConfig"],
+    "qwen3_vl.modeling": [
+        "Qwen3_VLForConditionalGeneration",
+        "Qwen3_VLModel",
+        "Qwen3_VLPretrainedModel",
+        "Qwen3_VLTextModel",
+    ],
+    "qwen3_vl.processor": ["Qwen_VLProcessor"],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -303,6 +311,7 @@ import_structure = {
     "ernie4_5_moe_vl": [],
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
+    "qwen3_vl": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
@@ -382,6 +391,7 @@ if TYPE_CHECKING:
     from .qwen3 import *
     from .qwen3_moe import *
     from .qwen3_next import *
+    from .qwen3_vl import *
     from .glm4_moe import *
     from .gpt_oss import *
     from .phi3 import *
