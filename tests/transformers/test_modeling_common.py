@@ -368,7 +368,7 @@ class ModelTesterMixin:
         base_class = self.base_model_class
 
         for model_class in self.all_model_classes:
-            if model_class == base_class:
+            if base_class is None or model_class == base_class:
                 continue
 
             # make a copy of model class to not break future tests
