@@ -14,11 +14,13 @@ template: qwen2_vl
 ### model
 model_name_or_path: Qwen2.5-VL-3B-Instruct
 attn_impl: flashmask
+lora: true
+lora_rank: 8
 
 ### finetuning
 # base
 stage: VL-SFT
-fine_tuning: full
+fine_tuning: lora
 seed: 23
 do_train: true
 do_eval: true
@@ -33,13 +35,13 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen2.5-vl-sft-full
+output_dir: ./checkpoints/qwen2.5-vl-sft-lora
 disable_tqdm: true
 eval_accumulation_steps: 16
 
 # train
 warmup_steps: 20
-learning_rate: 1.0e-5
+learning_rate: 1.0e-4
 
 # performance
 tensor_parallel_degree: 1
