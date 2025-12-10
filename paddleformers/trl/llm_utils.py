@@ -33,7 +33,6 @@ if TYPE_CHECKING:
 from ..generation import GenerationConfig
 from ..transformers import (  # ChatGLMv2Tokenizer,
     AutoTokenizer,
-    DeepseekV2ForCausalLMPipe,
     DeepseekV3ForCausalLMPipe,
     Glm4MoeForCausalLMPipe,
     LlamaForCausalLMPipe,
@@ -181,9 +180,17 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
-    elif model.config.model_type in ["deepseek_v2", "deepseek_v3"] or isinstance(
-        model, (DeepseekV2ForCausalLMPipe, DeepseekV3ForCausalLMPipe)
-    ):
+    elif model.config.model_type == "qwen3_next":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
+    elif model.config.model_type in ["deepseek_v3"] or isinstance(model, (DeepseekV3ForCausalLMPipe)):
         target_modules = [
             ".*q_proj.*",
             ".*q_a_proj.*",

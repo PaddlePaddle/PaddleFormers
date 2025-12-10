@@ -198,7 +198,7 @@ try:
             exclude=("examples*", "tests*", "applications*", "fast_generation*", "model_zoo*"),
         ),
         package_data={
-            "paddleformers": ["datasets/hf/data_info.json"],
+            "paddleformers": ["datasets/reader/data_info.json"],
         },
         setup_requires=["cython", "numpy"],
         install_requires=REQUIRED_PACKAGES,

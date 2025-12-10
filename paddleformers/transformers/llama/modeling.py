@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from functools import partial
-from typing import Callable, cast
+from typing import Callable, Optional, cast
 
 import paddle
 from paddle import nn
@@ -29,10 +29,11 @@ from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..cache_utils import Cache, DynamicCache
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import LlamaConfig
 
 
@@ -144,7 +145,7 @@ class LLamaAttention(nn.Layer):
     def forward(
         self,
         hidden_states: paddle.Tensor,
-        past_key_value: list[paddle.Tensor] | None = None,
+        past_key_values: Cache | None = None,
         attention_mask: paddle.Tensor | None = None,
         attn_mask_startend_row_indices: paddle.Tensor | None = None,
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None = None,
@@ -159,23 +160,21 @@ class LLamaAttention(nn.Layer):
         q_shape = (batch_size, seq_len, self.num_heads, self.head_dim)
         kv_shape = (batch_size, seq_len, self.num_key_value_heads, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
+        query_states = self.q_proj(hidden_states).view(q_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        if past_key_value is not None:
-            key_states = paddle.concat([past_key_value[0], key_states], axis=2)
-            value_states = paddle.concat([past_key_value[1], value_states], axis=2)
-        past_key_value = [key_states, value_states] if use_cache else None
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS["sdpa"]
         if self.config._attn_implementation != "sdpa":
             attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        attn_output, _ = attention_interface(
+        attn_output, attn_weights = attention_interface(
             self,
             query=query_states,
             key=key_states,
@@ -188,7 +187,7 @@ class LLamaAttention(nn.Layer):
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
-        return attn_output, past_key_value
+        return attn_output, attn_weights
 
 
 class LlamaDecoderLayer(nn.Layer):
@@ -222,22 +221,17 @@ class LlamaDecoderLayer(nn.Layer):
         attn_mask_startend_row_indices: paddle.Tensor | None = None,
         position_ids: paddle.Tensor | None = None,
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None = None,
-        past_key_value: list[paddle.Tensor] | None = None,
+        past_key_values: Cache | None = None,
         use_cache: bool = False,
-    ) -> (
-        tuple[paddle.Tensor]
-        | tuple[paddle.Tensor, paddle.Tensor]
-        | tuple[paddle.Tensor, list[paddle.Tensor]]
-        | tuple[paddle.Tensor, paddle.Tensor, list[paddle.Tensor]]
-    ):
+    ) -> (tuple[paddle.Tensor] | tuple[paddle.Tensor, paddle.Tensor]):
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
-        hidden_states, current_key_value = self.self_attn(
+        hidden_states, _ = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_embeddings=position_embeddings,
-            past_key_value=past_key_value,
+            past_key_values=past_key_values,
             use_cache=use_cache,
         )
         hidden_states = residual + hidden_states
@@ -248,9 +242,6 @@ class LlamaDecoderLayer(nn.Layer):
         hidden_states = residual + hidden_states
         outputs = (hidden_states,)
 
-        if use_cache:
-            outputs += (current_key_value,)
-
         # for pipeline parallel
         if len(outputs) == 1 and isinstance(outputs, tuple):
             outputs = outputs[0]
@@ -258,46 +249,11 @@ class LlamaDecoderLayer(nn.Layer):
         return outputs  # type: ignore[return-value]
 
 
-def _compute_default_parameters(config):
-    head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-    base = config.rope_theta
-
-    indices = paddle.arange(0, head_dim, 2, dtype="float32")
-    inv_freq = 1.0 / (base ** (indices / head_dim))
-    attention_factor = 1.0
-    return inv_freq, attention_factor
-
-
-def _compute_llama3_parameters(config):
-    inv_freq, attention_factor = _compute_default_parameters(config)
-
-    factor = config.rope_parameters["factor"]
-    low_freq_factor = config.rope_parameters["low_freq_factor"]
-    high_freq_factor = config.rope_parameters["high_freq_factor"]
-    old_context_len = config.rope_parameters["original_max_position_embeddings"]
-
-    low_freq_wavelen = old_context_len / low_freq_factor
-    high_freq_wavelen = old_context_len / high_freq_factor
-    wavelen = 2 * paddle.pi / inv_freq
-
-    inv_freq_llama = paddle.where(wavelen > low_freq_wavelen, inv_freq / factor, inv_freq)
-
-    smooth_factor = (old_context_len / wavelen - low_freq_factor) / (high_freq_factor - low_freq_factor)
-
-    smoothed_inv_freq = (1 - smooth_factor) * inv_freq_llama / factor + smooth_factor * inv_freq_llama
-
-    is_medium_freq = paddle.logical_and(
-        wavelen >= high_freq_wavelen,
-        wavelen <= low_freq_wavelen,
-    )
-    inv_freq_llama = paddle.where(is_medium_freq, smoothed_inv_freq, inv_freq_llama)
-
-    return inv_freq_llama, attention_factor
-
-
 class LlamaRotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
         self.config = config
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 
@@ -305,13 +261,38 @@ class LlamaRotaryEmbedding(nn.Layer):
         if hasattr(config, "rope_parameters") and isinstance(config.rope_parameters, dict):
             self.rope_type = config.rope_parameters.get("rope_type", "default")
 
-        if self.rope_type == "llama3":
-            inv_freq, attention_scaling = _compute_llama3_parameters(config)
-        else:
-            inv_freq, attention_scaling = _compute_default_parameters(config)
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
-        self.attention_scaling = attention_scaling
         self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[LlamaConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
@@ -510,7 +491,7 @@ class LlamaModel(LlamaPretrainedModel):
         input_ids: paddle.Tensor | None = None,
         attention_mask: paddle.Tensor | None = None,
         position_ids: paddle.Tensor | None = None,
-        past_key_values: tuple[list[paddle.Tensor] | None] | None = None,
+        past_key_values: Cache | None = None,
         inputs_embeds: paddle.Tensor | None = None,
         attn_mask_startend_row_indices: paddle.Tensor | None = None,
         use_cache: bool | None = None,
@@ -534,12 +515,9 @@ class LlamaModel(LlamaPretrainedModel):
             inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-            kv_seq_len = 0
-        else:
-            assert past_key_values[0] is not None, "past_key_values[0] should not be None if provided"
-            kv_seq_len = past_key_values[0][0].shape[2]
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if position_ids is None:
             position_ids = (
@@ -556,18 +534,15 @@ class LlamaModel(LlamaPretrainedModel):
             "attention_mask": attention_mask,
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
-            "return_mapping": False,
         }
-        causal_mask, attn_mask_startend_row_indices = create_causal_masks_and_row_indices(**mask_kwargs)
+        causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
         position_embeddings = self.rotary_emb(inputs_embeds, position_ids)
         all_hidden_states = [] if output_hidden_states else None
 
         hidden_states = inputs_embeds
-        next_key_values = [] if use_cache else None
         for idx, decoder_layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states.append(hidden_states)
-            past_key_value: list[paddle.Tensor] | None = past_key_values[idx]  # type: ignore[index]
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
                 layer_outputs = self.recompute_training(
@@ -577,7 +552,7 @@ class LlamaModel(LlamaPretrainedModel):
                     attn_mask_startend_row_indices,
                     position_ids,
                     position_embeddings,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                 )
             else:
@@ -587,13 +562,11 @@ class LlamaModel(LlamaPretrainedModel):
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     position_ids=position_ids,
                     position_embeddings=position_embeddings,
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     use_cache=use_cache,
                 )
 
             hidden_states = layer_outputs[0] if isinstance(layer_outputs, tuple | list) else layer_outputs
-            if use_cache:
-                next_key_values.append(layer_outputs[1])
 
         hidden_states = self.norm(hidden_states)
         if output_hidden_states:
@@ -602,20 +575,17 @@ class LlamaModel(LlamaPretrainedModel):
             )
 
         all_hidden_states = tuple(all_hidden_states) if all_hidden_states else None
-        next_key_values = tuple(next_key_values) if next_key_values else None
 
         if not return_dict:
             outputs = []
             outputs.append(hidden_states)
-            if use_cache:
-                outputs.append(next_key_values)
             if output_hidden_states:
                 outputs.append(all_hidden_states)
             return tuple(outputs)
 
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
-            past_key_values=next_key_values,
+            past_key_values=past_key_values,
             hidden_states=all_hidden_states,
         )
 
@@ -628,7 +598,7 @@ class LlamaModel(LlamaPretrainedModel):
         attn_mask_startend_row_indices: paddle.Tensor | None,
         position_ids: paddle.Tensor,
         position_embeddings: paddle.Tensor,
-        past_key_value: list[paddle.Tensor] | None,
+        past_key_values: Cache | None,
         use_cache: bool,
     ):
         hidden_states = recompute(
@@ -638,7 +608,7 @@ class LlamaModel(LlamaPretrainedModel):
             attn_mask_startend_row_indices,
             position_ids,
             position_embeddings,
-            past_key_value,
+            past_key_values,
             use_cache,
         )
         return hidden_states
@@ -665,7 +635,7 @@ class LlamaForCausalLM(LlamaPretrainedModel):
         labels: paddle.Tensor | None = None,
         loss_mask: paddle.Tensor | None = None,
         use_cache: bool = False,
-        past_key_values: tuple[list[paddle.Tensor]] | None = None,
+        past_key_values: Cache | None = None,
         output_hidden_states: bool | None = False,
         return_dict: bool = False,  # true when decode, false when pretrain & eval
         **kwargs,

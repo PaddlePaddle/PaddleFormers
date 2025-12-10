@@ -239,10 +239,6 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
         config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
-    if model_args.fuse_attention_qkv is not None:
-        config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
         assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."

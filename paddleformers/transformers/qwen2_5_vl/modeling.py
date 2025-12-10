@@ -37,9 +37,14 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
-from ..masking_utils import create_causal_masks_and_row_indices
+from ..cache_utils import Cache, DynamicCache
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from ..utils import logger
 from .configuration import (
     Qwen2_5_VLConfig,
@@ -673,10 +678,7 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPretrainedModel):
 class Qwen2_5_VLModelOutputWithPast(ModelOutput):
     """
     Args:
-        past_key_values (`tuple(tuple(paddle.Tensor))`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
-            Tuple of `tuple(paddle.Tensor)` of length `config.n_layers`, with each tuple having 2 tensors of shape
-            `(batch_size, num_heads, sequence_length, embed_size_per_head)`)
-
+        past_key_values (`Cache)`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
             Contains pre-computed hidden-states (key and values in the self-attention blocks) that can be used (see
             `past_key_values` input) to speed up sequential decoding.
         hidden_states (`tuple(paddle.Tensor)`, *optional*, returned when `output_hidden_states=True` is passed or when `config.output_hidden_states=True`):
@@ -693,7 +695,7 @@ class Qwen2_5_VLModelOutputWithPast(ModelOutput):
     """
 
     last_hidden_state: Optional[paddle.Tensor] = None
-    past_key_values: Optional[Tuple[paddle.Tensor]] = None
+    past_key_values: Optional[Cache] = None
     hidden_states: Optional[Tuple[paddle.Tensor]] = None
     attentions: Optional[Tuple[paddle.Tensor]] = None
     rope_deltas: Optional[paddle.Tensor] = None
@@ -704,16 +706,44 @@ class Qwen2_5_VLRotaryEmbedding(nn.Layer):
 
     def __init__(self, config: Qwen2_5_VLTextConfig):
         super().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
         self.config = config
-        base = config.rope_theta
-        partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
-        dim = int(head_dim * partial_rotary_factor)
 
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
-        self.attention_scaling = 1.0
+        rope_parameters = config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
+
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[Qwen2_5_VLTextConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     def forward(self, x, position_ids):
         # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
@@ -871,7 +901,7 @@ class Qwen2_5_VLAttention(nn.Layer):
         hidden_states: paddle.Tensor,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,  # default true
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -889,9 +919,9 @@ class Qwen2_5_VLAttention(nn.Layer):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        key_states = key_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        value_states = value_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        query_states = query_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        key_states = key_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        value_states = value_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_multimodal_rotary_pos_emb(
@@ -899,10 +929,8 @@ class Qwen2_5_VLAttention(nn.Layer):
         )
 
         # [bs, num_head, seq_len, head_dim]
-        if past_key_value is not None:
-            key_states = paddle.cat([past_key_value[0], key_states], axis=2)
-            value_states = paddle.cat([past_key_value[1], value_states], axis=2)
-        past_key_value = (key_states, value_states) if use_cache else None
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
@@ -924,7 +952,7 @@ class Qwen2_5_VLAttention(nn.Layer):
         attn_output = self.o_proj(attn_output)
         if not output_attentions:
             attn_weights = None
-        return attn_output, attn_weights, past_key_value
+        return attn_output, attn_weights
 
 
 class Qwen2_5_VLDecoderLayer(nn.Layer):
@@ -966,7 +994,7 @@ class Qwen2_5_VLDecoderLayer(nn.Layer):
         hidden_states: paddle.Tensor,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
@@ -978,14 +1006,13 @@ class Qwen2_5_VLDecoderLayer(nn.Layer):
             hidden_states (`paddle.Tensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
             attention_mask (`paddle.Tensor`, *optional*): attention mask of size
                 `(batch, sequence_length)` where padding elements are indicated by 0.
-            past_key_value (`Tuple(paddle.Tensor)`, *optional*): cached past key and value projection states
+            past_key_values (`Cache`, *optional*): cached past key and value projection states
             output_attentions (`bool`, *optional*):
                 Whether or not to return the attentions tensors of all attention layers. See `attentions` under
                 returned tensors for more detail.
             use_cache (`bool`, *optional*):
-                If set to `True`, `past_key_value` key value states are returned and can be used to speed up decoding
-                (see `past_key_value`).
-            past_key_value (`Tuple(paddle.Tensor)`, *optional*): cached past key and value projection states
+                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
+                (see `past_key_values`).
             position_embeddings (`Tuple[paddle.Tensor, paddle.Tensor]`, *optional*):
                 Tuple containing the cosine and sine positional embeddings of shape `(batch_size, seq_len, head_dim)`,
                 with `head_dim` being the embedding dimension of each attention head.
@@ -999,11 +1026,11 @@ class Qwen2_5_VLDecoderLayer(nn.Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, self_attn_weights = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             position_ids=position_ids,
-            past_key_value=past_key_value,
+            past_key_values=past_key_values,
             output_attentions=output_attentions,
             use_cache=use_cache,
             position_embeddings=position_embeddings,
@@ -1022,9 +1049,6 @@ class Qwen2_5_VLDecoderLayer(nn.Layer):
 
         if output_attentions:
             outputs += (self_attn_weights,)
-
-        if use_cache:
-            outputs += (present_key_value,)
 
         return outputs
 
@@ -1059,6 +1083,9 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
         self.rotary_emb = Qwen2_5_VLRotaryEmbedding(config=config)
 
         self.gradient_checkpointing = False
+        self.has_sliding_layers = getattr(
+            self.config, "sliding_window", None
+        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -1068,11 +1095,10 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
         attention_mask: Tensor,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]],
         position_ids: Optional[paddle.Tensor],
-        past_key_value: Optional[Tuple[paddle.Tensor]],
+        past_key_values: Optional[Cache],
         output_attentions: bool,
         use_cache: bool,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-        batch_size: int = None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -1084,13 +1110,12 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
             create_custom_forward(layer_module),
             hidden_states,
             attention_mask,
-            position_embeddings,
             position_ids,
-            past_key_value,
+            past_key_values,
             output_attentions,
             use_cache,
+            position_embeddings,
             attn_mask_startend_row_indices,
-            batch_size,
         )
 
         return hidden_states
@@ -1100,7 +1125,7 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
@@ -1134,11 +1159,9 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
                 )
                 use_cache = False
 
-        cache_length = 0
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-        else:
-            cache_length = past_key_values[0][0].shape[2]
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
@@ -1151,7 +1174,7 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         if cache_position is None:
-            past_seen_tokens = past_key_values[0][0].shape[2] if past_key_values[0] is not None else 0
+            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
             cache_position = paddle.arange(past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1])
 
         if position_ids is None:
@@ -1179,9 +1202,17 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         # Create the causal mask and row indices
-        causal_mask_mapping, attn_mask_startend_row_indices_mapping = create_causal_masks_and_row_indices(
-            **mask_kwargs
-        )
+        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+
+        causal_mask_mapping = {"full_attention": full_mask}
+        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
+
+        # if model has sliding layer
+        if self.has_sliding_layers:
+            (
+                causal_mask_mapping["sliding_attention"],
+                attn_mask_startend_row_indices_mapping["sliding_attention"],
+            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
 
         hidden_states = inputs_embeds
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
@@ -1189,13 +1220,11 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
-        next_cache = () if use_cache else None
 
         for idx, (decoder_layer) in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
             has_gradient = not hidden_states.stop_gradient
             if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
                 layer_outputs = self.recompute_training_full(
@@ -1204,13 +1233,12 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
                     position_embeddings=position_embeddings,
                     position_ids=text_position_ids,
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
                         decoder_layer.attention_type
                     ],
-                    batch_size=batch_size,
                     **kwargs,
                 )
             else:
@@ -1219,19 +1247,16 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
                     attention_mask=causal_mask_mapping[decoder_layer.attention_type],
                     position_embeddings=position_embeddings,
                     position_ids=text_position_ids,
-                    past_key_value=past_key_value,
+                    past_key_values=past_key_values,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
                         decoder_layer.attention_type
                     ],
-                    batch_size=batch_size,
                     **kwargs,
                 )
 
             hidden_states = layer_outputs[0]
-
-            next_cache = next_cache + (layer_outputs[-1],) if use_cache else None
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
@@ -1243,10 +1268,12 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
             all_hidden_states += (hidden_states,)
 
         if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
+            return tuple(
+                v for v in [hidden_states, past_key_values, all_hidden_states, all_self_attns] if v is not None
+            )
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
-            past_key_values=next_cache,
+            past_key_values=past_key_values,
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
         )
@@ -1527,7 +1554,7 @@ class Qwen2_5_VLModel(Qwen2_5_VLPretrainedModel):
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
@@ -1632,10 +1659,7 @@ class Qwen2_5_VLCausalLMOutputWithPast(ModelOutput):
         Language modeling loss (for next-token prediction).
     logits (`paddle.Tensor` of shape `(batch_size, sequence_length, config.vocab_size)`):
         Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
-    past_key_values (`tuple(paddle.Tensor))`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
-        Tuple of `tuple(paddle.Tensor)` of length `config.n_layers`, with each tuple having 2 tensors of shape
-        `(batch_size, num_heads, sequence_length, embed_size_per_head)`)
-
+    past_key_values (`Cache)`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
         Contains pre-computed hidden-states (key and values in the self-attention blocks) that can be used (see
         `past_key_values` input) to speed up sequential decoding.
     rope_deltas (`paddle.Tensor` of shape `(batch_size, )`, *optional*):
@@ -1644,7 +1668,7 @@ class Qwen2_5_VLCausalLMOutputWithPast(ModelOutput):
 
     loss: Optional[paddle.Tensor] = None
     logits: Optional[paddle.Tensor] = None
-    past_key_values: Optional[Tuple[paddle.Tensor]] = None
+    past_key_values: Optional[Cache] = None
     hidden_states: Optional[tuple[paddle.Tensor]] = None
     attentions: Optional[tuple[paddle.Tensor]] = None
     rope_deltas: Optional[paddle.Tensor] = None
@@ -1696,7 +1720,7 @@ class Qwen2_5_VLForConditionalGeneration(Qwen2_5_VLPretrainedModel):
         input_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,

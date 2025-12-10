@@ -384,34 +384,30 @@ class GenerationMixin(object):
 
     @staticmethod
     def _prepare_decoder_attention_mask(
-        attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None
+        attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None, **kwargs
     ):
         # Step 1: Process input mask to generate basic expanded mask
         if attention_mask is not None:
             # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
             if len(attention_mask.shape) == 2:
                 expanded_attn_mask = _expand_2d_mask(attention_mask, dtype, tgt_length=input_shape[-1])
-                # When not generating in single step, need to combine causal mask and sliding window mask
-                if input_shape[-1] > 1:
-                    # Generate basic causal mask (prevent future information leakage)
-                    causal_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
-                    # Generate sliding window mask (limit historical attention range)
-                    if sliding_window_size is not None and sliding_window_size > 0:
-                        window_mask = _make_sliding_window_mask(
-                            input_shape, past_key_values_length=past_key_values_length, window_size=sliding_window_size
-                        )
-                        # Take intersection of sliding window mask and causal mask (satisfy both restrictions)
-                        combined_attention_mask = causal_mask & window_mask
-                    else:
-                        combined_attention_mask = (
-                            causal_mask  # Use causal mask directly when sliding window is disabled
-                        )
+                # Generate basic causal mask (prevent future information leakage)
+                causal_mask = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
+                # Generate sliding window mask (limit historical attention range)
+                if sliding_window_size is not None and sliding_window_size > 0:
+                    window_mask = _make_sliding_window_mask(
+                        input_shape, past_key_values_length=past_key_values_length, window_size=sliding_window_size
+                    )
+                    # Take intersection of sliding window mask and causal mask (satisfy both restrictions)
+                    combined_attention_mask = causal_mask & window_mask
+                else:
+                    combined_attention_mask = causal_mask  # Use causal mask directly when sliding window is disabled
 
-                    # Combine with user-provided mask (e.g., padding mask)
-                    if get_env_device() in ["npu", "mlu", "intel_hpu"]:
-                        expanded_attn_mask = expanded_attn_mask.astype("bool") & combined_attention_mask.astype("bool")
-                    else:
-                        expanded_attn_mask = expanded_attn_mask & combined_attention_mask
+                # Combine with user-provided mask (e.g., padding mask)
+                if get_env_device() in ["npu", "mlu", "intel_hpu"]:
+                    expanded_attn_mask = expanded_attn_mask.astype("bool") & combined_attention_mask.astype("bool")
+                else:
+                    expanded_attn_mask = expanded_attn_mask & combined_attention_mask
             # [bsz, seq_len, seq_len] -> [bsz, 1, seq_len, seq_len]
             elif len(attention_mask.shape) == 3:
                 expanded_attn_mask = attention_mask.unsqueeze(1).astype("bool")
@@ -428,6 +424,25 @@ class GenerationMixin(object):
                 expanded_attn_mask = causal_mask & window_mask
             else:
                 expanded_attn_mask = causal_mask  # Use causal mask directly when sliding window is disabled
+
+        or_mask_function = kwargs.pop("or_mask_function", None)
+        if or_mask_function is not None:
+            bsz = input_shape[0]
+            tgt_len = input_shape[1]
+            src_len = past_key_values_length + tgt_len
+
+            batch_idx = paddle.arange(bsz, dtype="int64").reshape((bsz, 1, 1, 1))
+            # here we just consider 1 head
+            head_idx = paddle.zeros((1, 1, 1, 1), dtype="int64")
+            q_idx = paddle.arange(tgt_len, dtype="int64").reshape((1, 1, tgt_len, 1)) + past_key_values_length
+            kv_idx = paddle.arange(src_len, dtype="int64").reshape((1, 1, 1, src_len))
+
+            # Call the user function to get the additional mask
+            # The function expects (batch_idx, head_idx, q_idx, kv_idx)
+            extra_mask = or_mask_function(batch_idx, head_idx, q_idx, kv_idx)
+            # Apply Union: If extra_mask says True, we allow attention regardless of previous restrictions
+            # Ensure dtypes match
+            expanded_attn_mask = expanded_attn_mask.cast("bool") | extra_mask.cast("bool")
 
         # Step 2: Convert boolean mask to numerical mask (adapt to different devices)
         if get_env_device() in ["npu", "mlu", "intel_hpu"]:
@@ -683,13 +698,31 @@ class GenerationMixin(object):
                 - "return_dict": Always set to True for consistent output format
 
         """
+        # prepare part
+        batch_size, seq_length = input_ids.shape
         model_inputs = {}
         model_inputs["past_key_values"] = past_key_values
-        model_inputs["cache_position"] = kwargs.get("cache_position", None)
+        sig = inspect.signature(self.forward)
+        forward_params = set(sig.parameters.keys())
+        has_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
 
-        if past_key_values:
-            input_ids = input_ids[:, -1:]
+        # deal with cache_position
+        cache_position = kwargs.get("cache_position", None)
+        if cache_position is not None and "cache_position" in forward_params:
+            model_inputs["cache_position"] = cache_position
 
+        # only intercept input after the first step of reasoning
+        if past_key_values is not None:
+            cache_length = 0
+            if hasattr(past_key_values, "get_seq_length"):
+                cache_length = past_key_values.get_seq_length()
+            elif isinstance(past_key_values, tuple):
+                if len(past_key_values) > 0 and past_key_values[0] is not None:
+                    cache_length = past_key_values[0][0].shape[-2]
+            if cache_length > 0:
+                input_ids = input_ids[:, -1:]
+
+        # deal with use_cache
         use_cache = kwargs.get("use_cache", None)
         if use_cache is None:
             use_cache = getattr(self.config, "use_cache", False)
@@ -702,16 +735,21 @@ class GenerationMixin(object):
             model_inputs["inputs_embeds"] = None
             model_inputs["input_ids"] = input_ids
 
+        # deal with position_ids
         attention_mask = kwargs.get("attention_mask", None)
-        if (
-            attention_mask is not None
-            and kwargs.get("position_ids") is None
-            and "position_ids" in set(inspect.signature(self.forward).parameters.keys())
-        ):
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            kwargs["position_ids"] = position_ids  # placed in kwargs for further processing (see below)
-
+        position_ids = kwargs.get("position_ids", None)
+        if position_ids is None:
+            if attention_mask is not None and attention_mask.ndim == 2:
+                # A：if mask (can deal with padding)
+                if "position_ids" in forward_params:
+                    position_ids = attention_mask.long().cumsum(-1) - 1
+                    position_ids.masked_fill_(attention_mask == 0, 1)
+            else:
+                # B：if no mask
+                if "position_ids" in forward_params:
+                    position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
+        if position_ids is not None:
+            kwargs["position_ids"] = position_ids
         model_input = kwargs.get("position_ids")
         if model_input is not None:
             if past_key_values is not None or use_cache:
@@ -720,9 +758,11 @@ class GenerationMixin(object):
                     if model_inputs.get("inputs_embeds") is not None
                     else model_inputs["input_ids"].shape[1]
                 )
+                # if use kv_cache, we need to adjust the position_ids
                 model_input = model_input[:, -current_input_length:]
             model_inputs["position_ids"] = model_input
 
+        # deal with return_dict
         model_inputs["return_dict"] = kwargs.get("return_dict", True)
 
         for key, value in kwargs.items():
@@ -731,6 +771,11 @@ class GenerationMixin(object):
 
         # Remove unexpected `generate` inputs
         model_inputs.pop("labels", None)
+        # Remove unexpected `forward` inputs
+        if not has_kwargs:
+            keys_to_remove = [k for k in model_inputs if k not in forward_params]
+            for k in keys_to_remove:
+                model_inputs.pop(k)
         return model_inputs
 
     def adjust_logits_during_generation(self, logits):
