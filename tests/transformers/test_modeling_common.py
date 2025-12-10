@@ -314,14 +314,19 @@ class ModelTesterMixin:
             if model_class._keep_in_fp32_modules is None:
                 self.skipTest(reason="Model class has no _keep_in_fp32_modules attribute defined")
 
-            model = model_class(copy.deepcopy(config))
+            model = self._make_model_instance(config, model_class)
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model.save_pretrained(tmpdirname)
 
-                model = model_class.from_pretrained(tmpdirname, dtype=paddle.float16)
+                if hasattr(config, "moe_group"):
+                    config["moe_group"] = "dummy"
+
+                model = model_class.from_pretrained(tmpdirname, config=config, dtype=paddle.float16)
 
                 for name, param in model.named_parameters():
-                    if any(name.endswith(pattern) for pattern in model_class._keep_in_fp32_modules):
+                    if any(
+                        module_to_keep_in_fp32 in name for module_to_keep_in_fp32 in model_class._keep_in_fp32_modules
+                    ):
                         self.assertTrue(param.dtype == paddle.float32)
                     else:
                         self.assertTrue(param.dtype == paddle.float16, name)
@@ -360,10 +365,7 @@ class ModelTesterMixin:
         if config.__class__ not in MODEL_MAPPING:
             self.skipTest(reason=f"{config.__class__.__name__} not in MODEL_MAPPING")
 
-        base_class = MODEL_MAPPING[config.__class__]
-
-        if isinstance(base_class, tuple):
-            base_class = base_class[0]
+        base_class = self.base_model_class
 
         for model_class in self.all_model_classes:
             if model_class == base_class:
@@ -398,7 +400,7 @@ class ModelTesterMixin:
 
             # check that certain keys didn't get saved with the model
             with tempfile.TemporaryDirectory() as tmpdirname:
-                pt_checkpoint_path = os.path.join(tmpdirname, "pytorch_model.bin")
+                pt_checkpoint_path = os.path.join(tmpdirname, "paddle_model.bin")
                 paddle.save(state_dict, pt_checkpoint_path)
                 check_equal(load_state_dict(pt_checkpoint_path))
                 paddle.save(state_dict, pt_checkpoint_path)
