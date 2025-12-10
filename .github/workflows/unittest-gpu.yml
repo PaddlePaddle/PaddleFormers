@@ -64,7 +64,7 @@ jobs:
           DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
           docker run -d -t --gpus all --runtime=nvidia --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
-            -v $work_dir:/github/workspace \
+            -v $work_dir:/workspace \
             -v /home/.cache/:/root/.cache/ \
             -v /home/paddle-1/models/:/home/models/ \
             -e PF_HOME=/home/models/ \
@@ -85,7 +85,7 @@ jobs:
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
             -e PIP_CACHE_DIR \
-            -w /github/workspace --privileged $IMAGE_NAME
+            -w /workspace --privileged $IMAGE_NAME
 
       - name: Download Code
         run: |
