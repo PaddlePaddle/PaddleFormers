@@ -298,6 +298,7 @@ class ModelTesterMixin:
 
     def test_from_pretrained_no_checkpoint(self):
         config, _ = self.model_tester.prepare_config_and_inputs_for_common()
+        config.dtype = "float32"
         for model_class in self.all_model_classes:
             model = model_class(copy.deepcopy(config))
             state_dict = model.state_dict()
@@ -306,7 +307,7 @@ class ModelTesterMixin:
                 pretrained_model_name_or_path=None, config=config, state_dict=state_dict
             )
             for p1, p2 in zip(model.parameters(), new_model.parameters()):
-                self.assertTrue(paddle.allclose(p1, p2.cast("float32"), rtol=1e-3, atol=1e-3))
+                self.assertTrue(paddle.allclose(p1, p2))
 
     def test_keep_in_fp32_modules(self):
         config, _ = self.model_tester.prepare_config_and_inputs_for_common()
