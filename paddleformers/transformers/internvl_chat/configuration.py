@@ -215,6 +215,6 @@ class InternVLChatConfig(PretrainedConfig):
 
 
 __all__ = [
-    "InternVisionConfig"
+    "InternVisionConfig",
     "InternVLChatConfig",
 ]

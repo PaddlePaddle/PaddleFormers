@@ -13,36 +13,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple, Union
 import warnings
+from typing import Optional, Tuple, Union
 
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
-from paddle.distributed.fleet.recompute import recompute
 from einops import rearrange
-from .conversation import get_conv_template
+from paddle.distributed.fleet.recompute import recompute
+
 from ...generation.configuration_utils import GenerationConfig
-from ..activations import ACT2FN
-from ..model_outputs import BaseModelOutput, BaseModelOutputWithPooling, CausalLMOutputWithPast
-from ..model_utils import PretrainedModel
-from .. import LlamaForCausalLM, Qwen2ForCausalLM
 from ...nn.linear import Linear as GeneralLinear
 from ...utils import logger
-
+from .. import LlamaForCausalLM, Qwen2ForCausalLM
+from ..activations import ACT2FN
+from ..model_outputs import (
+    BaseModelOutput,
+    BaseModelOutputWithPooling,
+    CausalLMOutputWithPast,
+)
+from ..model_utils import PretrainedModel
 from .configuration import InternVisionConfig, InternVLChatConfig
+from .conversation import get_conv_template
 
 try:
     from flash_attn.bert_padding import pad_input, unpad_input
-    from flash_attn.flash_attn_interface import \
-        flash_attn_varlen_qkvpacked_func
+    from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+
     has_flash_attn = True
 except:
-    print('FlashAttention2 is not installed.')
+    print("FlashAttention2 is not installed.")
     has_flash_attn = False
 
 
-def drop_path(x, drop_prob: float = 0., training: bool = False, scale_by_keep: bool = True):
+def drop_path(x, drop_prob: float = 0.0, training: bool = False, scale_by_keep: bool = True):
     """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
 
     This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
@@ -52,7 +56,7 @@ def drop_path(x, drop_prob: float = 0., training: bool = False, scale_by_keep: b
     'survival rate' as the argument.
 
     """
-    if drop_prob == 0. or not training:
+    if drop_prob == 0.0 or not training:
         return x
     keep_prob = 1 - drop_prob
     shape = (x.shape[0],) + (1,) * (x.ndim - 1)  # work with diff dim tensors, not just 2D ConvNets
@@ -63,9 +67,9 @@ def drop_path(x, drop_prob: float = 0., training: bool = False, scale_by_keep: b
 
 
 class DropPath(nn.Module):
-    """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
-    """
-    def __init__(self, drop_prob: float = 0., scale_by_keep: bool = True):
+    """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks)."""
+
+    def __init__(self, drop_prob: float = 0.0, scale_by_keep: bool = True):
         super().__init__()
         self.drop_prob = drop_prob
         self.scale_by_keep = scale_by_keep
@@ -74,7 +78,7 @@ class DropPath(nn.Module):
         return drop_path(x, self.drop_prob, self.training, self.scale_by_keep)
 
     def extra_repr(self):
-        return f'drop_prob={round(self.drop_prob,3):0.3f}'
+        return f"drop_prob={round(self.drop_prob,3):0.3f}"
 
 
 class FlashAttention(nn.Module):
@@ -93,8 +97,7 @@ class FlashAttention(nn.Module):
         self.softmax_scale = softmax_scale
         self.dropout_p = attention_dropout
 
-    def forward(self, qkv, key_padding_mask=None, causal=False, cu_seqlens=None,
-                max_s=None, need_weights=False):
+    def forward(self, qkv, key_padding_mask=None, causal=False, cu_seqlens=None, max_s=None, need_weights=False):
         """Implements the multihead softmax attention.
         Arguments
         ---------
@@ -110,32 +113,47 @@ class FlashAttention(nn.Module):
             batch_size = qkv.shape[0]
             seqlen = qkv.shape[1]
             if key_padding_mask is None:
-                qkv = rearrange(qkv, 'b s ... -> (b s) ...')
+                qkv = rearrange(qkv, "b s ... -> (b s) ...")
                 max_s = seqlen
-                cu_seqlens = paddle.arange(0, (batch_size + 1) * seqlen, step=seqlen, dtype=paddle.int32,
-                                          device=qkv.device)
-                output = flash_attn_varlen_qkvpacked_func(
-                    qkv, cu_seqlens, max_s, self.dropout_p if self.training else 0.0,
-                    softmax_scale=self.softmax_scale, causal=causal
+                cu_seqlens = paddle.arange(
+                    0, (batch_size + 1) * seqlen, step=seqlen, dtype=paddle.int32, device=qkv.device
                 )
-                output = rearrange(output, '(b s) ... -> b s ...', b=batch_size)
+                output = flash_attn_varlen_qkvpacked_func(
+                    qkv,
+                    cu_seqlens,
+                    max_s,
+                    self.dropout_p if self.training else 0.0,
+                    softmax_scale=self.softmax_scale,
+                    causal=causal,
+                )
+                output = rearrange(output, "(b s) ... -> b s ...", b=batch_size)
             else:
                 nheads = qkv.shape[-2]
-                x = rearrange(qkv, 'b s three h d -> b s (three h d)')
+                x = rearrange(qkv, "b s three h d -> b s (three h d)")
                 x_unpad, indices, cu_seqlens, max_s = unpad_input(x, key_padding_mask)
-                x_unpad = rearrange(x_unpad, 'nnz (three h d) -> nnz three h d', three=3, h=nheads)
+                x_unpad = rearrange(x_unpad, "nnz (three h d) -> nnz three h d", three=3, h=nheads)
                 output_unpad = flash_attn_varlen_qkvpacked_func(
-                    x_unpad, cu_seqlens, max_s, self.dropout_p if self.training else 0.0,
-                    softmax_scale=self.softmax_scale, causal=causal
+                    x_unpad,
+                    cu_seqlens,
+                    max_s,
+                    self.dropout_p if self.training else 0.0,
+                    softmax_scale=self.softmax_scale,
+                    causal=causal,
                 )
-                output = rearrange(pad_input(rearrange(output_unpad, 'nnz h d -> nnz (h d)'),
-                                             indices, batch_size, seqlen),
-                                   'b s (h d) -> b s h d', h=nheads)
+                output = rearrange(
+                    pad_input(rearrange(output_unpad, "nnz h d -> nnz (h d)"), indices, batch_size, seqlen),
+                    "b s (h d) -> b s h d",
+                    h=nheads,
+                )
         else:
             assert max_s is not None
             output = flash_attn_varlen_qkvpacked_func(
-                qkv, cu_seqlens, max_s, self.dropout_p if self.training else 0.0,
-                softmax_scale=self.softmax_scale, causal=causal
+                qkv,
+                cu_seqlens,
+                max_s,
+                self.dropout_p if self.training else 0.0,
+                softmax_scale=self.softmax_scale,
+                causal=causal,
             )
 
         return output, None
@@ -160,18 +178,18 @@ try:
 
     InternRMSNorm = FusedRMSNorm  # noqa
 
-    logger.info('Discovered apex.normalization.FusedRMSNorm - will use it instead of InternRMSNorm')
+    logger.info("Discovered apex.normalization.FusedRMSNorm - will use it instead of InternRMSNorm")
 except ImportError:
     # using the normal InternRMSNorm
     pass
 except Exception:
-    logger.warning('discovered apex but it failed to load, falling back to InternRMSNorm')
+    logger.warning("discovered apex but it failed to load, falling back to InternRMSNorm")
     pass
 
 
 NORM2FN = {
-    'rms_norm': InternRMSNorm,
-    'layer_norm': nn.LayerNorm,
+    "rms_norm": InternRMSNorm,
+    "layer_norm": nn.LayerNorm,
 }
 
 
@@ -198,10 +216,17 @@ class InternVisionEmbeddings(nn.Module):
 
     def _get_pos_embed(self, pos_embed, H, W):
         target_dtype = pos_embed.dtype
-        pos_embed = pos_embed.float().reshape(
-            1, self.image_size // self.patch_size, self.image_size // self.patch_size, -1).permute(0, 3, 1, 2)
-        pos_embed = F.interpolate(pos_embed, size=(H, W), mode='bicubic', align_corners=False). \
-            reshape(1, -1, H * W).permute(0, 2, 1).to(target_dtype)
+        pos_embed = (
+            pos_embed.float()
+            .reshape(1, self.image_size // self.patch_size, self.image_size // self.patch_size, -1)
+            .permute(0, 3, 1, 2)
+        )
+        pos_embed = (
+            F.interpolate(pos_embed, size=(H, W), mode="bicubic", align_corners=False)
+            .reshape(1, -1, H * W)
+            .permute(0, 2, 1)
+            .to(target_dtype)
+        )
         return pos_embed
 
     def forward(self, pixel_values: paddle.FloatTensor) -> paddle.Tensor:
@@ -211,10 +236,10 @@ class InternVisionEmbeddings(nn.Module):
         patch_embeds = patch_embeds.flatten(2).transpose(1, 2)
         class_embeds = self.class_embedding.expand(batch_size, 1, -1).to(target_dtype)
         embeddings = paddle.cat([class_embeds, patch_embeds], dim=1)
-        position_embedding = paddle.cat([
-            self.position_embedding[:, :1, :],
-            self._get_pos_embed(self.position_embedding[:, 1:, :], height, width)
-        ], dim=1)
+        position_embedding = paddle.cat(
+            [self.position_embedding[:, :1, :], self._get_pos_embed(self.position_embedding[:, 1:, :], height, width)],
+            dim=1,
+        )
         embeddings = embeddings + position_embedding.to(target_dtype)
         return embeddings
 
@@ -229,16 +254,18 @@ class InternAttention(nn.Module):
         self.num_heads = config.num_attention_heads
         self.use_flash_attn = config.use_flash_attn and has_flash_attn
         if config.use_flash_attn and not has_flash_attn:
-            print('Warning: Flash Attention is not available, use_flash_attn is set to False.')
+            print("Warning: Flash Attention is not available, use_flash_attn is set to False.")
         self.head_dim = self.embed_dim // self.num_heads
         if self.head_dim * self.num_heads != self.embed_dim:
             raise ValueError(
-                f'embed_dim must be divisible by num_heads (got `embed_dim`: {self.embed_dim} and `num_heads`:'
-                f' {self.num_heads}).'
+                f"embed_dim must be divisible by num_heads (got `embed_dim`: {self.embed_dim} and `num_heads`:"
+                f" {self.num_heads})."
             )
 
-        self.scale = self.head_dim ** -0.5
-        self.qkv = GeneralLinear.create(self.embed_dim, 3 * self.embed_dim, has_bias=config.qkv_bias, linear_type="default")
+        self.scale = self.head_dim**-0.5
+        self.qkv = GeneralLinear.create(
+            self.embed_dim, 3 * self.embed_dim, has_bias=config.qkv_bias, linear_type="default"
+        )
         self.attn_drop = nn.Dropout(config.attention_dropout)
         self.proj_drop = nn.Dropout(config.dropout)
 
@@ -262,7 +289,7 @@ class InternAttention(nn.Module):
             q = self.q_norm(q.transpose(1, 2).flatten(-2, -1)).view(B_, N_, H_, D_).transpose(1, 2)
             k = self.k_norm(k.transpose(1, 2).flatten(-2, -1)).view(B_, N_, H_, D_).transpose(1, 2)
 
-        attn = ((q * self.scale) @ k.transpose(-2, -1))
+        attn = (q * self.scale) @ k.transpose(-2, -1)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
@@ -273,7 +300,7 @@ class InternAttention(nn.Module):
 
     def _flash_attn(self, x, key_padding_mask=None, need_weights=False):
         qkv = self.qkv(x)
-        qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.num_heads)
+        qkv = rearrange(qkv, "b s (three h d) -> b s three h d", three=3, h=self.num_heads)
 
         if self.qk_normalization:
             q, k, v = qkv.unbind(2)
@@ -281,10 +308,8 @@ class InternAttention(nn.Module):
             k = self.k_norm(k.flatten(-2, -1)).view(k.shape)
             qkv = paddle.stack([q, k, v], dim=2)
 
-        context, _ = self.inner_attn(
-            qkv, key_padding_mask=key_padding_mask, need_weights=need_weights, causal=False
-        )
-        outs = self.proj(rearrange(context, 'b s h d -> b s (h d)'))
+        context, _ = self.inner_attn(qkv, key_padding_mask=key_padding_mask, need_weights=need_weights, causal=False)
+        outs = self.proj(rearrange(context, "b s h d -> b s (h d)"))
         outs = self.proj_drop(outs)
         return outs
 
@@ -322,20 +347,24 @@ class InternVisionEncoderLayer(nn.Module):
 
         self.ls1 = nn.Parameter(config.initializer_factor * paddle.ones(self.embed_dim))
         self.ls2 = nn.Parameter(config.initializer_factor * paddle.ones(self.embed_dim))
-        self.drop_path1 = DropPath(drop_path_rate) if drop_path_rate > 0. else nn.Identity()
-        self.drop_path2 = DropPath(drop_path_rate) if drop_path_rate > 0. else nn.Identity()
+        self.drop_path1 = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
+        self.drop_path2 = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
 
     def forward(
-            self,
-            hidden_states: paddle.Tensor,
+        self,
+        hidden_states: paddle.Tensor,
     ) -> Tuple[paddle.FloatTensor, Optional[paddle.FloatTensor], Optional[Tuple[paddle.FloatTensor]]]:
         """
         Args:
             hidden_states (`Tuple[torch.FloatTensor, Optional[torch.FloatTensor]]`): input to the layer of shape `(batch, seq_len, embed_dim)`
         """
-        hidden_states = hidden_states + self.drop_path1(self.attn(self.norm1(hidden_states).to(hidden_states.dtype)) * self.ls1)
+        hidden_states = hidden_states + self.drop_path1(
+            self.attn(self.norm1(hidden_states).to(hidden_states.dtype)) * self.ls1
+        )
 
-        hidden_states = hidden_states + self.drop_path2(self.mlp(self.norm2(hidden_states).to(hidden_states.dtype)) * self.ls2)
+        hidden_states = hidden_states + self.drop_path2(
+            self.mlp(self.norm2(hidden_states).to(hidden_states.dtype)) * self.ls2
+        )
 
         return hidden_states
 
@@ -355,8 +384,9 @@ class InternVisionEncoder(nn.Module):
         self.config = config
         # stochastic depth decay rule
         dpr = [x.item() for x in paddle.linspace(0, config.drop_path_rate, config.num_hidden_layers)]
-        self.layers = nn.ModuleList([
-            InternVisionEncoderLayer(config, dpr[idx]) for idx in range(config.num_hidden_layers)])
+        self.layers = nn.ModuleList(
+            [InternVisionEncoderLayer(config, dpr[idx]) for idx in range(config.num_hidden_layers)]
+        )
 
     @paddle.jit.not_to_static
     def recompute_training(
@@ -367,9 +397,9 @@ class InternVisionEncoder(nn.Module):
         def create_custorm_forward(module):
             def custom_forward(*inputs):
                 return module(*inputs)
-            
+
             return custom_forward
-        
+
         hidden_states = recompute(
             create_custorm_forward(layer_module),
             hidden_states,
@@ -402,10 +432,12 @@ class InternVisionEncoder(nn.Module):
         for idx, encoder_layer in enumerate(self.layers):
             if output_hidden_states:
                 encoder_states = encoder_states + (hidden_states,)
-            if self.config.recompute and not hidden_states.stop_gradient and self.config.recompute_granularity == "full":
-                hidden_states = self.recompute_training(
-                    encoder_layer, hidden_states
-                )
+            if (
+                self.config.recompute
+                and not hidden_states.stop_gradient
+                and self.config.recompute_granularity == "full"
+            ):
+                hidden_states = self.recompute_training(encoder_layer, hidden_states)
             else:
                 layer_outputs = encoder_layer(
                     hidden_states,
@@ -417,9 +449,7 @@ class InternVisionEncoder(nn.Module):
 
         if not return_dict:
             return tuple(v for v in [hidden_states, encoder_states] if v is not None)
-        return BaseModelOutput(
-            last_hidden_state=hidden_states, hidden_states=encoder_states
-        )
+        return BaseModelOutput(last_hidden_state=hidden_states, hidden_states=encoder_states)
 
 
 class InternVisionPretrainedModel(PretrainedModel):
@@ -427,14 +457,11 @@ class InternVisionPretrainedModel(PretrainedModel):
     base_model_prefix = "vision_model"
     _supports_flash_attn_2 = True
     supports_gradient_checkpointing = True
-    _no_split_modules = ['InternVisionEncoderLayer']
-    transpose_weight_keys = [
-        "fc1", "fc2", "qkv", "proj"
-    ]
+    _no_split_modules = ["InternVisionEncoderLayer"]
+    transpose_weight_keys = ["fc1", "fc2", "qkv", "proj"]
 
 
 class InternVisionModel(InternVisionPretrainedModel):
-
     def __init__(self, config: InternVisionConfig):
         super().__init__(config)
         self.config = config
@@ -447,12 +474,12 @@ class InternVisionModel(InternVisionPretrainedModel):
         _, num_positions, embed_dim = pos_emb.shape
         cls_emb = pos_emb[:, :1, :]
         pos_emb = pos_emb[:, 1:, :].reshape(1, old_size // patch_size, old_size // patch_size, -1).permute(0, 3, 1, 2)
-        pos_emb = F.interpolate(pos_emb.float(), size=new_size // patch_size, mode='bicubic', align_corners=False)
+        pos_emb = F.interpolate(pos_emb.float(), size=new_size // patch_size, mode="bicubic", align_corners=False)
         pos_emb = pos_emb.to(cls_emb.dtype).reshape(1, embed_dim, -1).permute(0, 2, 1)
         pos_emb = paddle.cat([cls_emb, pos_emb], dim=1)
         self.embeddings.position_embedding = nn.Parameter(pos_emb)
         self.embeddings.image_size = new_size
-        logger.info('Resized position embeddings from {} to {}'.format(old_size, new_size))
+        logger.info("Resized position embeddings from {} to {}".format(old_size, new_size))
 
     def get_input_embeddings(self):
         return self.embeddings
@@ -470,7 +497,7 @@ class InternVisionModel(InternVisionPretrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if pixel_values is None and pixel_embeds is None:
-            raise ValueError('You have to specify pixel_values or pixel_embeds')
+            raise ValueError("You have to specify pixel_values or pixel_embeds")
 
         if pixel_embeds is not None:
             hidden_states = pixel_embeds
@@ -478,7 +505,7 @@ class InternVisionModel(InternVisionPretrainedModel):
             if len(pixel_values.shape) == 4:
                 hidden_states = self.embeddings(pixel_values)
             else:
-                raise ValueError(f'wrong pixel_values size: {pixel_values.shape}')
+                raise ValueError(f"wrong pixel_values size: {pixel_values.shape}")
         encoder_outputs = self.encoder(
             inputs_embeds=hidden_states,
             output_hidden_states=output_hidden_states,
@@ -500,13 +527,25 @@ class InternVisionModel(InternVisionPretrainedModel):
 
 class InternVLChatPretrainedModel(PretrainedModel):
     config_class = InternVLChatConfig
-    main_input_name = 'pixel_values'
-    base_model_prefix = 'model'
+    main_input_name = "pixel_values"
+    base_model_prefix = "model"
     _supports_flash_attn_2 = True
     supports_gradient_checkpointing = True
-    _no_split_modules = ['InternVisionModel', 'LlamaDecoderLayer', 'Qwen2DecoderLayer']
+    _no_split_modules = ["InternVisionModel", "LlamaDecoderLayer", "Qwen2DecoderLayer"]
     transpose_weight_keys = [
-        "mlp1.1", "mlp1.3", "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "qkv", "fc1", "fc2", "proj",
+        "mlp1.1",
+        "mlp1.3",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "qkv",
+        "fc1",
+        "fc2",
+        "proj",
         "qkv_proj",
     ]
 
@@ -524,15 +563,14 @@ class InternVLChatPretrainedModel(PretrainedModel):
                 f"vision_model.encoder.layers.$LAYER_ID.norm2.weight -> vision_model.encoder.layers.$LAYER_ID.norm2.weight",
                 f"vision_model.embeddings.patch_embedding.weight^T -> vision_model.embeddings.patch_embedding.weight",
                 f"vision_model.embeddings.patch_embedding.bias -> vision_model.embeddings.patch_embedding.bias",
-                
                 # Connection MLP
                 f"mlp1.1.weight^T -> mlp1.1.weight",
                 f"mlp1.3.weight^T -> mlp1.3.weight",
             ]
         }
-        
+
         # Language model components based on architecture
-        if config.llm_config.architectures[0] == 'LlamaForCausalLM':
+        if config.llm_config.architectures[0] == "LlamaForCausalLM":
             # Llama-specific mappings
             aoa_config["aoa_statements"] += [
                 f"language_model.lm_head.weight -> language_model.lm_head.weight",
@@ -551,7 +589,7 @@ class InternVLChatPretrainedModel(PretrainedModel):
                 f"language_model.{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> language_model.{model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"language_model.{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> language_model.{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
             ]
-        elif config.llm_config.architectures[0] == 'Qwen2ForCausalLM':
+        elif config.llm_config.architectures[0] == "Qwen2ForCausalLM":
             # Qwen2-specific mappings
             aoa_config["aoa_statements"] += [
                 f"language_model.{model_prefix}lm_head.weight -> language_model.lm_head.weight",
@@ -570,7 +608,7 @@ class InternVLChatPretrainedModel(PretrainedModel):
                 f"language_model.{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> language_model.{model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"language_model.{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> language_model.{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
             ]
-        
+
         return aoa_config
 
     @classmethod
@@ -587,14 +625,13 @@ class InternVLChatPretrainedModel(PretrainedModel):
             f"vision_model.encoder.layers.$LAYER_ID.norm2.weight -> vision_model.encoder.layers.$LAYER_ID.norm2.weight",
             f"vision_model.embeddings.patch_embedding.weight^T -> vision_model.embeddings.patch_embedding.weight",
             f"vision_model.embeddings.patch_embedding.bias -> vision_model.embeddings.patch_embedding.bias",
-            
             # Connection MLP - reverse mappings
             f"mlp1.1.weight^T -> mlp1.1.weight",
             f"mlp1.3.weight^T -> mlp1.3.weight",
         ]
-        
+
         # Language model components based on architecture
-        if config.llm_config.architectures[0] == 'LlamaForCausalLM':
+        if config.llm_config.architectures[0] == "LlamaForCausalLM":
             # Llama-specific reverse mappings
             aoa_statements += [
                 f"language_model.{model_prefix}lm_head.weight -> language_model.{model_prefix}lm_head.weight",
@@ -613,7 +650,7 @@ class InternVLChatPretrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
             ]
-        elif config.llm_config.architectures[0] == 'Qwen2ForCausalLM':
+        elif config.llm_config.architectures[0] == "Qwen2ForCausalLM":
             # Qwen2-specific reverse mappings
             aoa_statements += [
                 f"language_model.lm_head.weight -> language_model.lm_head.weight",
@@ -632,7 +669,7 @@ class InternVLChatPretrainedModel(PretrainedModel):
                 f"language_model.{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> language_model.{model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"language_model.{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> language_model.{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
             ]
-        
+
         return {"aoa_statements": aoa_statements}
 
 
@@ -645,15 +682,15 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         self.patch_size = patch_size
         self.select_layer = config.select_layer
         self.template = config.template
-        self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio ** 2))
+        self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio**2))
         self.downsample_ratio = config.downsample_ratio
         self.ps_version = config.ps_version
         use_flash_attn = use_flash_attn if has_flash_attn else False
         config.vision_config.use_flash_attn = True if use_flash_attn else False
-        config.llm_config._attn_implementation = 'flash_attention_2' if use_flash_attn else 'eager'
+        config.llm_config._attn_implementation = "flash_attention_2" if use_flash_attn else "eager"
 
-        logger.info(f'num_image_token: {self.num_image_token}')
-        logger.info(f'ps_version: {self.ps_version}')
+        logger.info(f"num_image_token: {self.num_image_token}")
+        logger.info(f"ps_version: {self.ps_version}")
         if vision_model is not None:
             self.vision_model = vision_model
         else:
@@ -661,21 +698,23 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         if language_model is not None:
             self.language_model = language_model
         else:
-            if config.llm_config.architectures[0] == 'LlamaForCausalLM':
+            if config.llm_config.architectures[0] == "LlamaForCausalLM":
                 self.language_model = LlamaForCausalLM(config.llm_config)
-            elif config.llm_config.architectures[0] == 'Qwen2ForCausalLM':
+            elif config.llm_config.architectures[0] == "Qwen2ForCausalLM":
                 self.language_model = Qwen2ForCausalLM(config.llm_config)
             else:
-                raise NotImplementedError(f'{config.llm_config.architectures[0]} is not implemented.')
+                raise NotImplementedError(f"{config.llm_config.architectures[0]} is not implemented.")
 
         vit_hidden_size = config.vision_config.hidden_size
         llm_hidden_size = config.llm_config.hidden_size
 
         self.mlp1 = nn.Sequential(
             nn.LayerNorm(vit_hidden_size * int(1 / self.downsample_ratio) ** 2),
-            GeneralLinear.create(vit_hidden_size * int(1 / self.downsample_ratio) ** 2, llm_hidden_size, linear_type="default"),
+            GeneralLinear.create(
+                vit_hidden_size * int(1 / self.downsample_ratio) ** 2, llm_hidden_size, linear_type="default"
+            ),
             nn.GELU(),
-            GeneralLinear.create(llm_hidden_size, llm_hidden_size, linear_type="default")
+            GeneralLinear.create(llm_hidden_size, llm_hidden_size, linear_type="default"),
         )
 
         self.img_context_token_id = None
@@ -709,16 +748,20 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         input_embeds = input_embeds.reshape(B * N, C)
 
         if paddle.distributed.is_initialized() and paddle.distributed.get_rank() == 0:
-            print(f'dynamic ViT batch size: {vit_batch_size}, images per sample: {vit_batch_size / B}, dynamic token length: {N}')
+            print(
+                f"dynamic ViT batch size: {vit_batch_size}, images per sample: {vit_batch_size / B}, dynamic token length: {N}"
+            )
 
         input_ids = input_ids.reshape(B * N)
-        selected = (input_ids == self.img_context_token_id)
+        selected = input_ids == self.img_context_token_id
         try:
             input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds.reshape(-1, C)
         except Exception as e:
             vit_embeds = vit_embeds.reshape(-1, C)
-            print(f'warning: {e}, input_embeds[selected].shape={input_embeds[selected].shape}, '
-                  f'vit_embeds.shape={vit_embeds.shape}')
+            print(
+                f"warning: {e}, input_embeds[selected].shape={input_embeds[selected].shape}, "
+                f"vit_embeds.shape={vit_embeds.shape}"
+            )
             n_token = min(selected.sum(), vit_embeds.size(0))
             input_embeds[selected][:n_token] = input_embeds[selected][:n_token] * 0.0 + vit_embeds[:n_token]
 
@@ -768,11 +811,12 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         # N, W, H * scale, C // scale --> N, H * scale, W, C // scale
         x = x.permute(0, 2, 1, 3).contiguous()
         # N, H * scale, W, C // scale --> N, H * scale, W * scale, C // (scale ** 2)
-        x = x.view(n, int(h * scale_factor), int(w * scale_factor),
-                   int(c / (scale_factor * scale_factor)))
-        if self.ps_version == 'v1':
-            warnings.warn("In ps_version 'v1', the height and width have not been swapped back, "
-                          'which results in a transposed image.')
+        x = x.view(n, int(h * scale_factor), int(w * scale_factor), int(c / (scale_factor * scale_factor)))
+        if self.ps_version == "v1":
+            warnings.warn(
+                "In ps_version 'v1', the height and width have not been swapped back, "
+                "which results in a transposed image."
+            )
         else:
             x = x.permute(0, 2, 1, 3).contiguous()
         return x
@@ -780,14 +824,12 @@ class InternVLChatModel(InternVLChatPretrainedModel):
     def extract_feature(self, pixel_values):
         if self.select_layer == -1:
             vit_embeds = self.vision_model(
-                pixel_values=pixel_values,
-                output_hidden_states=False,
-                return_dict=True).last_hidden_state
+                pixel_values=pixel_values, output_hidden_states=False, return_dict=True
+            ).last_hidden_state
         else:
             vit_embeds = self.vision_model(
-                pixel_values=pixel_values,
-                output_hidden_states=True,
-                return_dict=True).hidden_states[self.select_layer]
+                pixel_values=pixel_values, output_hidden_states=True, return_dict=True
+            ).hidden_states[self.select_layer]
         vit_embeds = vit_embeds[:, 1:, :]
 
         h = w = int(vit_embeds.shape[1] ** 0.5)
@@ -797,29 +839,41 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         vit_embeds = self.mlp1(vit_embeds)
         return vit_embeds
 
-    def batch_chat(self, tokenizer, pixel_values, questions, generation_config, num_patches_list=None,
-                   history=None, return_history=False, IMG_START_TOKEN='<img>', IMG_END_TOKEN='</img>',
-                   IMG_CONTEXT_TOKEN='<IMG_CONTEXT>', verbose=False, image_counts=None):
+    def batch_chat(
+        self,
+        tokenizer,
+        pixel_values,
+        questions,
+        generation_config,
+        num_patches_list=None,
+        history=None,
+        return_history=False,
+        IMG_START_TOKEN="<img>",
+        IMG_END_TOKEN="</img>",
+        IMG_CONTEXT_TOKEN="<IMG_CONTEXT>",
+        verbose=False,
+        image_counts=None,
+    ):
         if history is not None or return_history:
-            print('Now multi-turn chat is not supported in batch_chat.')
+            print("Now multi-turn chat is not supported in batch_chat.")
             raise NotImplementedError
 
         if image_counts is not None:
             num_patches_list = image_counts
-            print('Warning: `image_counts` is deprecated. Please use `num_patches_list` instead.')
+            print("Warning: `image_counts` is deprecated. Please use `num_patches_list` instead.")
 
         img_context_token_id = tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
         self.img_context_token_id = img_context_token_id
 
         if verbose and pixel_values is not None:
             image_bs = pixel_values.shape[0]
-            print(f'dynamic ViT batch size: {image_bs}')
+            print(f"dynamic ViT batch size: {image_bs}")
 
         queries = []
         for idx, num_patches in enumerate(num_patches_list):
             question = questions[idx]
-            if pixel_values is not None and '<image>' not in question:
-                question = '<image>\n' + question
+            if pixel_values is not None and "<image>" not in question:
+                question = "<image>\n" + question
             template = get_conv_template(self.template)
             template.system_message = self.system_message
             template.append_message(template.roles[0], question)
@@ -827,31 +881,39 @@ class InternVLChatModel(InternVLChatPretrainedModel):
             query = template.get_prompt()
 
             image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.num_image_token * num_patches + IMG_END_TOKEN
-            query = query.replace('<image>', image_tokens, 1)
+            query = query.replace("<image>", image_tokens, 1)
             queries.append(query)
 
-        tokenizer.padding_side = 'left'
-        model_inputs = tokenizer(queries, return_tensors='pt', padding=True)
-        input_ids = model_inputs['input_ids'].to(self.device)
-        attention_mask = model_inputs['attention_mask'].to(self.device)
+        tokenizer.padding_side = "left"
+        model_inputs = tokenizer(queries, return_tensors="pt", padding=True)
+        input_ids = model_inputs["input_ids"].to(self.device)
+        attention_mask = model_inputs["attention_mask"].to(self.device)
         eos_token_id = tokenizer.convert_tokens_to_ids(template.sep.strip())
-        generation_config['eos_token_id'] = eos_token_id
+        generation_config["eos_token_id"] = eos_token_id
         generation_output = self.generate(
-            pixel_values=pixel_values,
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            **generation_config
+            pixel_values=pixel_values, input_ids=input_ids, attention_mask=attention_mask, **generation_config
         )
         responses = tokenizer.batch_decode(generation_output, skip_special_tokens=True)
         responses = [response.split(template.sep.strip())[0].strip() for response in responses]
         return responses
 
-    def chat(self, tokenizer, pixel_values, question, generation_config, history=None, return_history=False,
-             num_patches_list=None, IMG_START_TOKEN='<img>', IMG_END_TOKEN='</img>', IMG_CONTEXT_TOKEN='<IMG_CONTEXT>',
-             verbose=False):
+    def chat(
+        self,
+        tokenizer,
+        pixel_values,
+        question,
+        generation_config,
+        history=None,
+        return_history=False,
+        num_patches_list=None,
+        IMG_START_TOKEN="<img>",
+        IMG_END_TOKEN="</img>",
+        IMG_CONTEXT_TOKEN="<IMG_CONTEXT>",
+        verbose=False,
+    ):
 
-        if history is None and pixel_values is not None and '<image>' not in question:
-            question = '<image>\n' + question
+        if history is None and pixel_values is not None and "<image>" not in question:
+            question = "<image>\n" + question
 
         if num_patches_list is None:
             num_patches_list = [pixel_values.shape[0]] if pixel_values is not None else []
@@ -874,21 +936,18 @@ class InternVLChatModel(InternVLChatPretrainedModel):
 
         if verbose and pixel_values is not None:
             image_bs = pixel_values.shape[0]
-            print(f'dynamic ViT batch size: {image_bs}')
+            print(f"dynamic ViT batch size: {image_bs}")
 
         for num_patches in num_patches_list:
             image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.num_image_token * num_patches + IMG_END_TOKEN
-            query = query.replace('<image>', image_tokens, 1)
+            query = query.replace("<image>", image_tokens, 1)
 
         model_inputs = tokenizer(query)
-        input_ids = paddle.tensor([model_inputs['input_ids']])
-        attention_mask = paddle.tensor([model_inputs['attention_mask']])
-        generation_config['eos_token_id'] = eos_token_id
+        input_ids = paddle.tensor([model_inputs["input_ids"]])
+        attention_mask = paddle.tensor([model_inputs["attention_mask"]])
+        generation_config["eos_token_id"] = eos_token_id
         generation_output = self.generate(
-            pixel_values=pixel_values,
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            **generation_config
+            pixel_values=pixel_values, input_ids=input_ids, attention_mask=attention_mask, **generation_config
         )
         response = tokenizer.batch_decode(generation_output[0], skip_special_tokens=True)[0]
         response = response.split(template.sep.strip())[0].strip()
@@ -896,8 +955,8 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         if return_history:
             return response, history
         else:
-            query_to_print = query.replace(IMG_CONTEXT_TOKEN, '')
-            query_to_print = query_to_print.replace(f'{IMG_START_TOKEN}{IMG_END_TOKEN}', '<image>')
+            query_to_print = query.replace(IMG_CONTEXT_TOKEN, "")
+            query_to_print = query_to_print.replace(f"{IMG_START_TOKEN}{IMG_END_TOKEN}", "<image>")
             if verbose:
                 print(query_to_print, response)
             return response
@@ -925,7 +984,7 @@ class InternVLChatModel(InternVLChatPretrainedModel):
             input_embeds = input_embeds.reshape(B * N, C)
 
             input_ids = input_ids.reshape(B * N)
-            selected = (input_ids == self.img_context_token_id)
+            selected = input_ids == self.img_context_token_id
             assert selected.sum() != 0
             input_embeds[selected] = vit_embeds.reshape(-1, C).to(input_embeds.device)
 
