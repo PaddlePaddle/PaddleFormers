@@ -951,12 +951,12 @@ class LoRAModel(nn.Layer):
             return model
         if isinstance(lora_config.target_modules, str):
             lora_config.target_modules = [lora_config.target_modules]
-
-        for target_module in lora_config.target_modules:
-            for i in model.named_sublayers():
-                module_name = i[0]
+        for i in model.named_sublayers():
+            module_name = i[0]
+            for target_module in lora_config.target_modules:
                 if re.fullmatch(target_module, module_name):
                     self._find_and_replace_module(model, module_name, lora_config)
+                    break
         return model
 
     def restore_original_model(self):

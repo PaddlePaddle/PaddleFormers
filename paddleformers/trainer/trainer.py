@@ -369,7 +369,11 @@ class Trainer:
         self._memory_tracker.start()
 
         # Seed must be set before instantiating the model when using model
-        set_random_seed(seed_=self.args.seed)
+        if not self.args.enable_auto_parallel:
+            set_random_seed(seed_=self.args.seed)
+        else:
+            logger.warning("set_seed not support yet in auto_parallel mode")
+
         set_seed(seed=self.args.seed)
 
         self._skip_global_steps = 0  # total skip global steps
@@ -2007,8 +2011,6 @@ class Trainer:
                             cp_worldsize = hcg.get_context_parallel_world_size()
 
                         for p in paramlist:
-                            if not getattr(p, "no_sync", False):
-                                continue
                             color = getattr(p, "color", -1)
                             is_expert = isinstance(color, dict) and color.get("color", -1) == "moe_expert"
                             disable_scale_grad = getattr(p, "context_parallel_disable_scale_grad", False)

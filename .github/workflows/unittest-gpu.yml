@@ -55,7 +55,7 @@ jobs:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
-          PIP_CACHE_DIR: /home/.cache/pip
+          PIP_CACHE_DIR: /root/.cache/pip
           paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
@@ -65,7 +65,7 @@ jobs:
           docker run -d -t --gpus all --runtime=nvidia --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/github/workspace \
-            -v /home/.cache/pip:/home/.cache/pip \
+            -v /home/.cache/:/root/.cache/ \
             -v /home/paddle-1/models/:/home/models/ \
             -e PF_HOME=/home/models/ \
             -e "BRANCH=$BRANCH" \
@@ -119,13 +119,15 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
-          mkdir -p /home/.cache/pip
+          mkdir -p /root/.cache/pip
           pip cache dir
+          uv cache dir
           set -e
           rm -rf /root/.cache/aistudio/
           cd /github/workspace/PaddleFormers && git config --global --add safe.directory $PWD
           source $work_dir/../../../proxy
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
+          pip install uv
           echo "work_dir = ${work_dir}"
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"

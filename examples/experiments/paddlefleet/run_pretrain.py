@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import math
 import os
 import random
@@ -127,7 +126,7 @@ class DataArguments:
     split: str = field(default="949,50,1", metadata={"help": "Train/valid/test data split."})
 
     max_seq_length: int = field(
-        default=1024,
+        default=8192,
         metadata={
             "help": "The maximum total input sequence length after tokenization. Sequences longer "
             "than this will be truncated, sequences shorter will be padded."
@@ -180,11 +179,15 @@ class ModelArguments:
         default=None,
         metadata={"help": "num_hidden_layers."},
     )
+    use_global_causal_attn: bool = field(
+        default=False, metadata={"help": "Whether to use global causal attention in packing data"}
+    )
 
 
 def create_pretrained_dataset(
     data_args,
     training_args,
+    model_args,
     data_file,
     tokenizer,
     need_data=True,
@@ -234,16 +237,52 @@ def create_pretrained_dataset(
 
     from paddleformers.data import Stack
 
-    def _collate_data(data, stack_fn=Stack()):
-        tokens_ = stack_fn([x["text"] for x in data])
+    def _collate_data(batch, stack_fn=Stack()):
+        # origin no mask data
+        # tokens_ = stack_fn([x["text"] for x in batch])
 
-        labels = copy.deepcopy(tokens_)[:, 1:]
-        tokens = tokens_[:, :-1]
+        # labels = copy.deepcopy(tokens_)[:, 1:]
+        # tokens = tokens_[:, :-1]
 
-        return {
-            "input_ids": tokens,
-            "labels": labels,
-        }
+        # return {
+        #     "input_ids": tokens,
+        #     "labels": labels,
+        # }
+
+        # data with attn_mask_startend_row_indices for flashmask
+        input_keys = ["input_ids", "labels", "position_ids", "attn_mask_startend_row_indices"]
+        return_list = []
+        for batch_sequence in batch:
+            # tokens
+            padded_token_ids = np.array([batch_sequence["text"][:-1]])
+            # labels
+            padded_labels = np.array([batch_sequence["text"][1:]])
+            # position_ids
+            padded_position_ids = np.array([sum(batch_sequence["position_ids"], [])[:-1]])
+            return_list.append(
+                [
+                    padded_token_ids,
+                    padded_labels,
+                    padded_position_ids,
+                ]
+            )
+            # attn mask
+            oral_position_ids = batch_sequence["position_ids"]
+            from paddleformers.datasets.collate import (
+                gen_attn_mask_startend_row_indices,
+            )
+
+            return_list[-1].append(
+                gen_attn_mask_startend_row_indices(
+                    oral_position_ids,
+                    data_args.max_seq_length + training_args.num_nextn_predict_layers,
+                    model_args.use_global_causal_attn,
+                )[:, :, :-1, :]
+            )
+
+        return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
+        input_dict = dict(zip(input_keys, return_list))
+        return input_dict
 
     if need_data:
         if training_args.do_train:
@@ -523,6 +562,7 @@ def main():
     train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(
         data_args,
         training_args,
+        model_args,
         data_file,
         tokenizer,
         need_data=training_args.should_load_dataset,

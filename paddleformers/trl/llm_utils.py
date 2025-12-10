@@ -155,6 +155,25 @@ def get_lora_target_modules(model):
             ".*w2.*",
             ".*w3.*",
         ]
+    elif model.config.model_type == "qwen2_5_vl":
+        target_modules = [
+            # llm
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_proj.*",
+            "model.language_model.*up_proj.*",
+            "model.language_model.*down_proj.*",
+            # vision
+            "model.visual.*attn.qkv.*",
+            "model.visual.*attn.proj.*",
+            "model.visual.*gate_proj.*",
+            "model.visual.*up_proj.*",
+            "model.visual.*down_proj.*",
+            # alinger
+            "model.visual.merger.mlp\.[02].*",
+        ]
     elif model.config.model_type == "qwen2_moe":
         target_modules = [
             ".*qkv_proj.*",
