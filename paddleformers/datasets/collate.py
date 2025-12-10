@@ -208,17 +208,14 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
             padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
             return_list[-1].append(padded_nbatch_pack_offset)
 
-        if not model_args.stage.lower() == "pt":
-            if model_args.use_attn_mask_startend_row_indices:
-                return_list[-1].append(
-                    gen_attn_mask_startend_row_indices(
-                        original_token_ids, max_seq_len, model_args.use_global_causal_attn
-                    )
-                )
-            else:
-                return_list[-1].append(
-                    gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
-                )
+        if model_args.use_attn_mask_startend_row_indices:
+            return_list[-1].append(
+                gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+            )
+        else:
+            return_list[-1].append(
+                gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+            )
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
     input_dict = dict(zip(input_keys, return_list))
