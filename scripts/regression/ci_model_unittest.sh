@@ -30,7 +30,6 @@ install_requirements() {
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
     sed -i '/^paddlefleet/d' requirements.txt
     python -m pip install -r requirements.txt
-    python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
     python -m pip install --pre paddlepaddle-gpu  --no-cache-dir --no-dependencies --progress-bar off -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/
     python -m pip install paddlefleet --no-dependencies --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
