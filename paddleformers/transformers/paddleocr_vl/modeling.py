@@ -49,6 +49,7 @@ from ..model_outputs import (
     ModelOutput,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..tensor_parallel_utils import model_parallel_dropout
 from .configuration import PaddleOCRVisionConfig, PaddleOCRVLConfig
 
@@ -100,6 +101,9 @@ def apply_rotary_pos_emb_vision(q, k, cos, sin):
 
 
 def apply_fused_rope(query_states, key_states, rope_theta):
+    # b h l d -> b l h d
+    query_states = query_states.transpose(1, 2)
+    key_states = key_states.transpose(1, 2)
     _, _, num_heads, _ = query_states.shape
     _, kv_seq_len, num_key_value_heads, _ = key_states.shape
     if num_heads != num_key_value_heads:
@@ -112,7 +116,7 @@ def apply_fused_rope(query_states, key_states, rope_theta):
             None,
             rotary_emb_base=rope_theta,
         )
-    return query_states, key_states
+    return query_states.transpose(1, 2), key_states.transpose(1, 2)
 
 
 def inbatch_pack_offset_to_attn_mask_start_row_indices(inbatch_pack_offset):
@@ -1056,28 +1060,46 @@ class Projector(nn.Layer):
 class KeyeRotaryEmbedding(nn.Layer):
     def __init__(self, config: PaddleOCRVLConfig):
         super().__init__()
-        self.rope_kwargs = {}
-
-        # # BC: "rope_type" was originally "type"
-        # if hasattr(config, "rope_scaling") and config.rope_scaling is not None:
-        #     self.rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
-        # else:
-        #     self.rope_type = "default"
-        rope_parameters = config.rope_parameters
-        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        self.config = config
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
 
-        if self.rope_type == "default":
-            dim = config.head_dim
-            inv_freq = 1.0 / (config.rope_theta ** (paddle.arange(0, dim, 2, dtype="int64").astype("float32") / dim))
-            self.attention_scaling = 1.0
-        else:
-            raise ValueError(f"Unsupported rope type: {self.rope_type}")
+        rope_parameters = self.config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
         self.register_buffer("inv_freq", inv_freq, persistable=False)
-        self.original_inv_freq = self.inv_freq
+        self.original_inv_freq = inv_freq
 
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[PaddleOCRVLConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
+
+    @dynamic_rope_update
     @paddle.no_grad()
     def forward(self, x, position_ids):
         # Core RoPE block. In contrast to other models, Keye has different position ids for the grids
