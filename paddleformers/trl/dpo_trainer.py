@@ -208,7 +208,7 @@ class DPOTrainer(Trainer):
             dtype=self.amp_dtype,
         )
         model = fleet.distributed_model(model)
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
 
         return model
@@ -216,7 +216,7 @@ class DPOTrainer(Trainer):
     def _wrap_model(self, model, training=True):
         """Wrap model."""
         model = super()._wrap_model(model, training)
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
         return model
 
@@ -228,7 +228,7 @@ class DPOTrainer(Trainer):
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
 
         """prediction_step"""
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
             return self.prediction_pipeline_step(self.ref_model_wrapped, model, inputs)

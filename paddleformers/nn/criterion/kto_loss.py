@@ -82,7 +82,7 @@ def kto_logps(
     labels = response_labels + response_kl_labels
 
     if self.use_filtered_label_loss:
-        if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel and logits is None:
+        if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel and logits is None:
             labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, self.ignored_index)
 
             hidden_states = paddle.take_along_axis(hidden_states, sparse_tgt_idx, axis=0)
@@ -111,7 +111,7 @@ def kto_logps(
             None,
             transpose_y,
             self.config.vocab_size,
-            self.config.tensor_parallel_degree,
+            self.config.tensor_model_parallel_size,
             self.config.tensor_parallel_output,
             self.config.fused_linear,
             self.loss_subbatch_sequence_length,

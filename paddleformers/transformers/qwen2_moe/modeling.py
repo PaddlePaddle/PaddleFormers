@@ -85,16 +85,16 @@ class Qwen2MoeAttention(nn.Layer):
         self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
@@ -158,7 +158,7 @@ class Qwen2MoeAttention(nn.Layer):
 
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
             else:
                 bsz, q_len, _ = hidden_states.shape
@@ -169,7 +169,7 @@ class Qwen2MoeAttention(nn.Layer):
             mix_layer = self.qkv_proj(hidden_states)
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
                 target_shape = [
                     bsz,
@@ -263,7 +263,7 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
         self.top_k = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
         self.sequence_parallel = config.sequence_parallel
-        if self.sequence_parallel and config.tensor_parallel_degree > 1:
+        if self.sequence_parallel and config.tensor_model_parallel_size > 1:
             config = copy.deepcopy(config)
             config.sequence_parallel = False
 
@@ -521,7 +521,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
