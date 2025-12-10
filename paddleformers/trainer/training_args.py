@@ -1231,6 +1231,10 @@ class TrainingArguments:
         default=True,
         metadata={"help": "whether to use auto_parallel intermediate API."},
     )
+    offload_fp8_expert_master_weight: bool = field(
+        default=True,
+        metadata={"help": "Offload FP8 expert weights."},
+    )
 
     use_cache: bool = field(
         default=False,
