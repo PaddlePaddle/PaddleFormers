@@ -19,6 +19,7 @@ import math
 import os
 from functools import partial
 
+import numpy as np
 import paddle
 
 is_sm90 = (
@@ -74,7 +75,7 @@ from paddleformers.cli.hparams import (
 )
 
 
-def create_pretrained_dataset(training_args, data_args):
+def create_pretrained_dataset(training_args, data_args, model_args):
     assert data_args.input_dir is not None and len(data_args.input_dir.split()) > 1
 
     check_data_split(
@@ -114,16 +115,40 @@ def create_pretrained_dataset(training_args, data_args):
 
     from paddleformers.data import Stack
 
-    def _collate_data(data, stack_fn=Stack()):
-        tokens_ = stack_fn([x["text"] for x in data])
+    def _collate_data(batch, stack_fn=Stack()):
+        input_keys = ["input_ids", "labels", "position_ids", "attn_mask_startend_row_indices"]
+        return_list = []
+        for batch_sequence in batch:
+            # tokens
+            padded_token_ids = np.array([batch_sequence["text"][:-1]])
+            # labels
+            padded_labels = np.array([batch_sequence["text"][1:]])
+            # position_ids
+            padded_position_ids = np.array([sum(batch_sequence["position_ids"], [])[:-1]])
+            return_list.append(
+                [
+                    padded_token_ids,
+                    padded_labels,
+                    padded_position_ids,
+                ]
+            )
+            # attn mask
+            oral_position_ids = batch_sequence["position_ids"]
+            from paddleformers.datasets.collate import (
+                gen_attn_mask_startend_row_indices,
+            )
 
-        labels = tokens_[:, 1:]
-        tokens = tokens_[:, :-1]
+            return_list[-1].append(
+                gen_attn_mask_startend_row_indices(
+                    oral_position_ids,
+                    data_args.max_seq_len + training_args.num_nextn_predict_layers,
+                    model_args.use_global_causal_attn,
+                )[:, :, :-1, :]
+            )
 
-        return {
-            "input_ids": tokens,
-            "labels": labels,
-        }
+        return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
+        input_dict = dict(zip(input_keys, return_list))
+        return input_dict
 
     return train_dataset, valid_dataset, test_dataset, _collate_data
 
@@ -337,7 +362,9 @@ def run_sft(
 
     if data_args.dataset_type == "pretrain":
         training_args.test_iters = training_args.eval_iters * 10
-        train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(training_args, data_args)
+        train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(
+            training_args, data_args, model_args
+        )
     else:
         train_dataset = create_dataset_sft(
             task_group=data_args.train_dataset_path,

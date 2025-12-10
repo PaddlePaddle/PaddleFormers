@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 from functools import partial
 from typing import Optional, Tuple, Union
 
@@ -37,7 +36,7 @@ from ..masking_utils import (
 )
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import GptOssConfig
 
 
@@ -225,92 +224,6 @@ class GptOssMLP(nn.Layer):
         return routed_out, router_scores
 
 
-def _compute_yarn_parameters(config, device: paddle.device, seq_len: Optional[int] = None) -> tuple[Tensor, float]:
-    """
-    Computes the inverse frequencies with NTK scaling. Please refer to the
-    [original paper](https://huggingface.co/papers/2309.00071)
-    Args:
-        config: The model configuration.
-        device: The device to use for initialization of the inverse frequencies.
-        seq_len: The current sequence length. Unused for this type of RoPE.
-    Returns:
-        Tuple of (Tensor, float), containing the inverse frequencies for the RoPE embeddings and the
-        post-processing scaling factor applied to the computed cos/sin.
-    """
-
-    base = config.rope_theta
-    partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-    head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-    dim = int(head_dim * partial_rotary_factor)
-    factor = config.rope_parameters["factor"]
-    attention_factor = config.rope_parameters.get("attention_factor")
-    mscale = config.rope_parameters.get("mscale")
-    mscale_all_dim = config.rope_parameters.get("mscale_all_dim")
-
-    # Handling the situation of embedding the original maximum position
-    if "original_max_position_embeddings" in config.rope_parameters:
-        original_max_position_embeddings = config.rope_parameters["original_max_position_embeddings"]
-        factor = config.max_position_embeddings / original_max_position_embeddings
-    else:
-        original_max_position_embeddings = config.max_position_embeddings
-
-    def get_mscale(scale, mscale=1):
-        if scale <= 1:
-            return 1.0
-        return 0.1 * mscale * math.log(scale) + 1.0
-
-    # Set attention factor
-    if attention_factor is None:
-        if mscale and mscale_all_dim:
-            attention_factor = float(get_mscale(factor, mscale) / get_mscale(factor, mscale_all_dim))
-        else:
-            attention_factor = get_mscale(factor)
-
-    # Optional configuration parameters
-    beta_fast = config.rope_parameters.get("beta_fast") or 32
-    beta_slow = config.rope_parameters.get("beta_slow") or 1
-
-    # Auxiliary function for calculating inverse frequency
-    def find_correction_dim(num_rotations, dim, base, max_position_embeddings):
-        """Inverse dimension formula based on the number of rotations to calculate dimensions"""
-        return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
-
-    def find_correction_range(low_rot, high_rot, dim, base, max_position_embeddings, truncate):
-        """Find the boundary of dimension range based on rotation"""
-        low = find_correction_dim(low_rot, dim, base, max_position_embeddings)
-        high = find_correction_dim(high_rot, dim, base, max_position_embeddings)
-        if truncate:
-            low = math.floor(low)
-            high = math.ceil(high)
-        return max(low, 0), min(high, dim - 1)
-
-    def linear_ramp_factor(min_val, max_val, dim):
-        if min_val == max_val:
-            max_val += 0.001  # 防止奇点
-
-        # Create a linear function using arange
-        linear_func = (paddle.arange(dim, dtype=paddle.float32) - min_val) / (max_val - min_val)
-        ramp_func = paddle.clip(linear_func, 0, 1)
-        return ramp_func
-
-    # Calculate position frequency
-    # Specify device and data type in Paddle
-    pos_freqs = base ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim)
-    inv_freq_extrapolation = 1.0 / pos_freqs
-    inv_freq_interpolation = 1.0 / (factor * pos_freqs)
-
-    truncate = config.rope_parameters.get("truncate", True)
-    low, high = find_correction_range(beta_fast, beta_slow, dim, base, original_max_position_embeddings, truncate)
-
-    # Obtain n-dimensional rotation scaling correction for extrapolation
-    inv_freq_extrapolation_factor = 1 - linear_ramp_factor(low, high, dim // 2).to(device=device, dtype=paddle.float32)
-    inv_freq = (
-        inv_freq_interpolation * (1 - inv_freq_extrapolation_factor)
-        + inv_freq_extrapolation * inv_freq_extrapolation_factor
-    )
-    return inv_freq, attention_factor
-
-
 class GptOssRotaryEmbedding(nn.Layer):
     def __init__(self, config: GptOssConfig, device=None):
         super().__init__()
@@ -323,17 +236,39 @@ class GptOssRotaryEmbedding(nn.Layer):
         self.original_max_seq_len = config.max_position_embeddings
 
         self.config = config
-        self.rope_init_fn = _compute_yarn_parameters
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
-        inv_freq, self.attention_scaling = self.rope_init_fn(self.config, device)
-        # todo : inv_freq会不会变？
-        self.inv_freq = self.create_parameter(
-            shape=inv_freq.shape,
-            dtype=inv_freq.dtype,
-            default_initializer=paddle.nn.initializer.Assign(inv_freq),
-        )
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
         self.inv_freq.stop_gradient = True
-        self.original_inv_freq = self.inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[GptOssConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @paddle.no_grad()
     @dynamic_rope_update
