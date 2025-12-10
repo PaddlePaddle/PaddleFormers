@@ -79,8 +79,9 @@ get_diff_TO_case(){
 models=""
 FLAGS_enable_CI=false
 TRANS_MODEL_DIR="paddleformers/transformers"
-TRANS_TEST_DIR="tests/transformers"
 TRAINER_DIR="paddleformers/trainer"
+CLI_DIR="paddleformers/cli"
+examples_DIR="exampls/congfig"
 
 for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $NF}'`; do
     ext="${file_name##*.}"
@@ -90,11 +91,12 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $N
     if [ ! -f ${file_name} ]; then
         continue
     elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
+        FLAGS_enable_CI=false
         continue
     fi
 
-    # 新增模型判断逻辑
-    if [[ "$file_name" == ${TRANS_MODEL_DIR}/* ]] || [[ "$file_name" == ${TRANS_TEST_DIR}/* ]]; then
+    # check modified models files
+    if [[ "$file_name" == ${TRANS_MODEL_DIR}/* ]]; then
         model_name=$(echo "$file_name" | awk -F'/' '{print $3}')
         if [[ "$models" == "" ]]; then
             models="$model_name"
@@ -104,18 +106,19 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $N
         FLAGS_enable_CI=true
         continue
     fi
-
-    if [[ "$file_name" == ${TRAINER_DIR}/* ]]; then
-        models="all"
+    
+    # check modified files which need to run model ci
+    if [[ "$file_name" == ${TRAINER_DIR}/* ]] || [[ "$file_name" == ${CLI_DIR}/* ]] ||  [[ "$file_name" == ${examples_DIR}/* ]]; then
+        models="glm_moe"
         FLAGS_enable_CI=true
         continue
-    fi
-    FLAGS_enable_CI=true
+    fi   
+
+    
 done
 
-# 默认使用 glm
 if [[ "$models" == "" ]]; then
-    models="qwen3moe"
+    FLAGS_enable_CI=false 
 fi
 }
 get_diff_TO_case

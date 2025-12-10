@@ -97,7 +97,7 @@ else
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
         if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
             continue
-        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
+        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* || "$ext" == "yaml"]]  ; then
             continue
         else
             FLAGS_enable_CI=true
