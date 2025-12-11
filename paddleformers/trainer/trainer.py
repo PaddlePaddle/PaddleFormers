@@ -484,9 +484,9 @@ class Trainer:
         if self.args.pipeline_parallel_degree > 1 and self.args.use_hybrid_parallel:
             if HAS_PADDLEFLEET:
                 assert (
-                    isinstance(model, LoRAModel) and isinstance(model.model, PaddleFleetPipelineLayer)
+                    isinstance(model, LoRAModel) and isinstance(model.model, (PaddleFleetPipelineLayer, PipelineLayer))
                 ) or isinstance(
-                    model, PaddleFleetPipelineLayer
+                    model, (PaddleFleetPipelineLayer, PipelineLayer)
                 ), "Only support pipeline parallel mode when model is PipelineLayer!!!"
             else:
                 assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
