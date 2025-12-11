@@ -69,4 +69,4 @@ using_fake_gate: false
 pre_alloc_memory: 60
 tensorwise_offload_optimizer: true
 fuse_rms_norm: true
-moe_subbatch_token_num: 1024
+moe_subbatch_token_num_before_dispatch: 1024
