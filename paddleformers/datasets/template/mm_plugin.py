@@ -373,7 +373,7 @@ class PaddleOCRVLPlugin(BasePlugin):
     def _preprocess_image(self, image, **kwargs):
 
         if image and hasattr(self, "image_augmentation"):
-            image = [self.image_augmentation(img) for img in image]
+            image = self.image_augmentation(image)
 
         return image
 
