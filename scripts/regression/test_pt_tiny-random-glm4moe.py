@@ -131,6 +131,9 @@ class PTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "save_checkpoint_format": "flex_checkpoint",
+            "load_checkpoint_format": "flex_checkpoint",
+            "unified_checkpoint": "false",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -183,6 +186,9 @@ class PTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "save_checkpoint_format": "flex_checkpoint",
+            "load_checkpoint_format": "flex_checkpoint",
+            "unified_checkpoint": "false",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -242,6 +248,9 @@ class PTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "save_checkpoint_format": "flex_checkpoint",
+            "load_checkpoint_format": "flex_checkpoint",
+            "unified_checkpoint": "false",
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -293,6 +302,9 @@ class PTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "save_checkpoint_format": "flex_checkpoint",
+            "load_checkpoint_format": "flex_checkpoint",
+            "unified_checkpoint": "false",
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
