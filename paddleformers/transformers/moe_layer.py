@@ -184,17 +184,19 @@ class MoELayer(nn.Layer):
                 assert NotImplementedError("moe_group can only be data or expert, but given {}".format(self.moe_group))
             self.moe_rank = dist.get_rank(self.moe_group)
             self.moe_rank = 0 if self.moe_rank < 0 else self.moe_rank
-            self.expert_parallel_degree = dist.get_world_size(self.moe_group)
-            self.expert_parallel_degree = 1 if self.expert_parallel_degree < 0 else self.expert_parallel_degree
-            self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
-                self.moe_num_experts, self.expert_parallel_degree
+            self.expert_model_parallel_size = dist.get_world_size(self.moe_group)
+            self.expert_model_parallel_size = (
+                1 if self.expert_model_parallel_size < 0 else self.expert_model_parallel_size
             )
-            self.is_dummy_moe = False if self.expert_parallel_degree > 1 else True
+            self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
+                self.moe_num_experts, self.expert_model_parallel_size
+            )
+            self.is_dummy_moe = False if self.expert_model_parallel_size > 1 else True
         else:
             # when moe_group is dummy, we don't need to use all_to_all
             self.moe_group = None
             self.moe_rank = 0
-            self.expert_parallel_degree = 1
+            self.expert_model_parallel_size = 1
             self.moe_num_experts_per_device = self.moe_num_experts
             self.is_dummy_moe = True
         self.all_to_all_dropout = all_to_all_dropout
@@ -211,14 +213,14 @@ class MoELayer(nn.Layer):
         self.gate.group = self.moe_group
         self._post_init()
 
-    def _parse_moe_expert_parallel(self, moe_num_experts, expert_parallel_degree):
+    def _parse_moe_expert_parallel(self, moe_num_experts, expert_model_parallel_size):
         assert (
-            moe_num_experts >= expert_parallel_degree
-        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_parallel_degree}"
+            moe_num_experts >= expert_model_parallel_size
+        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
         assert (
-            moe_num_experts % expert_parallel_degree == 0
-        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_parallel_degree} == 0"
-        moe_num_experts_per_device = moe_num_experts // expert_parallel_degree
+            moe_num_experts % expert_model_parallel_size == 0
+        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
+        moe_num_experts_per_device = moe_num_experts // expert_model_parallel_size
         return moe_num_experts_per_device
 
     def _post_init(self):
@@ -268,13 +270,13 @@ class MoELayer(nn.Layer):
         tokens_per_expert = tokens_per_expert.detach()
         sorted_tokens_shape = sorted_tokens.shape
 
-        if self.expert_parallel_degree > 1:
-            tokens_per_ep_rank = tokens_per_expert.reshape([self.expert_parallel_degree, -1]).sum(axis=1)
+        if self.expert_model_parallel_size > 1:
+            tokens_per_ep_rank = tokens_per_expert.reshape([self.expert_model_parallel_size, -1]).sum(axis=1)
             tokens_per_expert_group = _AllToAll.apply(
                 [tokens_per_expert.shape[0]], tokens_per_expert, group=self.moe_group
             )
             output_splits = (
-                tokens_per_expert_group.reshape([self.expert_parallel_degree, -1]).sum(axis=1).cpu().tolist()
+                tokens_per_expert_group.reshape([self.expert_model_parallel_size, -1]).sum(axis=1).cpu().tolist()
             )
             input_split_sizes = tokens_per_ep_rank.cpu().tolist()
             gathered_tokens = _AllToAll.apply(
@@ -286,7 +288,7 @@ class MoELayer(nn.Layer):
             )
 
             tokens_per_expert_post_gather = tokens_per_expert_group.reshape(
-                [self.expert_parallel_degree, self.moe_num_experts_per_device]
+                [self.expert_model_parallel_size, self.moe_num_experts_per_device]
             ).sum(axis=0)
             gatherd_idxs = np.zeros(shape=(gathered_tokens.shape[0],), dtype=np.int32)
             s = 0
@@ -309,7 +311,7 @@ class MoELayer(nn.Layer):
             outputs.append(expert_out)
             start_idx = end_idx
         outs = paddle.cat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
-        if self.expert_parallel_degree > 1:
+        if self.expert_model_parallel_size > 1:
             new_x = paddle.empty_like(outs)
             new_x[gatherd_idxs] = outs
             gathered_tokens = _AllToAll.apply(
@@ -351,10 +353,10 @@ class MoEFlexTokenLayer(nn.Layer):
         self.token_dispatcher = MoEFlexTokenDispatcher(
             self.num_local_experts, self.moe_router_topk, self.moe_num_experts, moe_group
         )
-        self.expert_parallel_degree = 1 if self.ep_size < 0 else self.ep_size
-        self.is_dummy_moe = False if self.expert_parallel_degree > 1 else True
+        self.expert_model_parallel_size = 1 if self.ep_size < 0 else self.ep_size
+        self.is_dummy_moe = False if self.expert_model_parallel_size > 1 else True
         self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
-            self.moe_num_experts, self.expert_parallel_degree
+            self.moe_num_experts, self.expert_model_parallel_size
         )
         self.experts = nn.LayerList([])
         for i in range(self.moe_num_experts):
@@ -399,12 +401,12 @@ class MoEFlexTokenLayer(nn.Layer):
         output, _ = self.token_dispatcher.token_unpermutation(expert_output, None)
         return output, l_aux, l_zloss
 
-    def _parse_moe_expert_parallel(self, moe_num_experts, expert_parallel_degree):
+    def _parse_moe_expert_parallel(self, moe_num_experts, expert_model_parallel_size):
         assert (
-            moe_num_experts >= expert_parallel_degree
-        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_parallel_degree}"
+            moe_num_experts >= expert_model_parallel_size
+        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
         assert (
-            moe_num_experts % expert_parallel_degree == 0
-        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_parallel_degree} == 0"
-        moe_num_experts_per_device = moe_num_experts // expert_parallel_degree
+            moe_num_experts % expert_model_parallel_size == 0
+        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
+        moe_num_experts_per_device = moe_num_experts // expert_model_parallel_size
         return moe_num_experts_per_device

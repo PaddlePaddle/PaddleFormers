@@ -46,7 +46,7 @@ class VeRAModel(nn.Layer):
         self.is_pipelinemodel = False
         if issubclass(type(self.model), PipelineLayer):
             raise NotImplementedError("vera don't support pipeline parallel now")
-        if vera_config.tensor_parallel_degree > 1:
+        if vera_config.tensor_model_parallel_size > 1:
             raise NotImplementedError("vera don't support tensor parallel now")
         self.forward = self.model.forward
 
@@ -56,8 +56,8 @@ class VeRAModel(nn.Layer):
         # init vera config & vera model
         if not isinstance(vera_config, VeRAConfig):
             vera_config = VeRAConfig.from_pretrained(vera_path)
-        # define a new variable to conserve original vera_config.tensor_parallel_degree value which will update while initializing vera model
-        vera_config_tensor_parallel_degree = vera_config.tensor_parallel_degree
+        # define a new variable to conserve original vera_config.tensor_model_parallel_size value which will update while initializing vera model
+        vera_config_tensor_model_parallel_size = vera_config.tensor_model_parallel_size
         vera_model = cls(model, vera_config)
 
         vera_weight_name = VERA_WEIGHTS_NAME
@@ -73,11 +73,11 @@ class VeRAModel(nn.Layer):
             logger.info(f"Loading the VeRA weights from {vera_weight_path}")
 
             if (
-                vera_config_tensor_parallel_degree > 1
-                and vera_config_tensor_parallel_degree != model.config.tensor_parallel_degree
+                vera_config_tensor_model_parallel_size > 1
+                and vera_config_tensor_model_parallel_size != model.config.tensor_model_parallel_size
             ):
                 raise NotImplementedError(
-                    f"{vera_config_tensor_parallel_degree} is not equal to {model.config.tensor_parallel_degree}. Please merge VeRA weights first."
+                    f"{vera_config_tensor_model_parallel_size} is not equal to {model.config.tensor_model_parallel_size}. Please merge VeRA weights first."
                 )
 
             # set vera state dict
@@ -103,12 +103,12 @@ class VeRAModel(nn.Layer):
 
         if self.is_pipelinemodel:
             self.model._single_to_pp_mapping = None
-        if self.quantized and merge_tensor_parallel and self.vera_config.tensor_parallel_degree > 1:
+        if self.quantized and merge_tensor_parallel and self.vera_config.tensor_model_parallel_size > 1:
             merge_tensor_parallel = False
             logger.warning(
                 "Quantized strategy does not support merge_tensor_parallel. Set merge_tensor_parallel to False."
             )
-        if self.is_pipelinemodel and merge_tensor_parallel and self.vera_config.tensor_parallel_degree > 1:
+        if self.is_pipelinemodel and merge_tensor_parallel and self.vera_config.tensor_model_parallel_size > 1:
             merge_tensor_parallel = False
             logger.warning(
                 "Pipeline parallelism does not support merge_tensor_parallel. Set merge_tensor_parallel to False."
@@ -139,7 +139,7 @@ class VeRAModel(nn.Layer):
             if save_model_config:
                 model_config_to_save = copy.deepcopy(self.model.config)
                 if merge_tensor_parallel:
-                    model_config_to_save.tensor_parallel_degree = -1
+                    model_config_to_save.tensor_model_parallel_size = -1
                 model_config_to_save.save_pretrained(save_directory)
 
     def _find_and_replace_module(self, model, module_name, vera_config, enable_vera):

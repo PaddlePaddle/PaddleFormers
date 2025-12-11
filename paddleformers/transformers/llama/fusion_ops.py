@@ -61,15 +61,15 @@ def fusion_rope(
     position_ids,
     past_key_value,
     rotary_emb,
-    context_parallel_degree=-1,
+    context_parallel_size=-1,
 ):
     if get_env_device() not in ["gcu", "intel_hpu"]:
         assert past_key_value is None, "fuse rotary not support cache kv for now"
     batch_size, seq_length, num_heads, head_dim = query_states.shape
     _, kv_seq_len, num_key_value_heads, _ = key_states.shape
-    if context_parallel_degree > 1:
+    if context_parallel_size > 1:
         assert get_env_device() == "gpu", "context parallel only support cuda device for now"
-        kv_seq_len *= context_parallel_degree
+        kv_seq_len *= context_parallel_size
     if get_env_device() not in ["gcu", "intel_hpu"]:
         cos, sin = rotary_emb(value_states, seq_len=kv_seq_len)
     if get_env_device() == "npu":
@@ -176,7 +176,7 @@ def fusion_flash_attention(
     if version != "0.0.0" and version <= "2.5.2":
         if alibi is not None:
             raise ValueError("Flash Attention doesn't support alibi")
-        if config.context_parallel_degree > 1:
+        if config.context_parallel_size > 1:
             raise ValueError(f"Context parallel is not implemented in version {version}")
         attn_output, attn_weights = flash_attention(
             query_states,
@@ -190,7 +190,7 @@ def fusion_flash_attention(
             alibi = alibi.reshape([bsz, num_heads, 1, -1])
             attention_mask = attention_mask.cast(alibi.dtype) + alibi
         if get_env_device() == "npu":
-            if config.context_parallel_degree > 1:
+            if config.context_parallel_size > 1:
                 raise ValueError("Context parallel is not implemented for npu")
             attn_output = core.eager._run_custom_op(
                 "flash_attention_npu",
@@ -209,7 +209,7 @@ def fusion_flash_attention(
                 False,
             )[0]
         elif get_env_device() == "gcu":
-            if config.context_parallel_degree > 1:
+            if config.context_parallel_size > 1:
                 raise ValueError("Context parallel is not implemented for gcu")
             attn_output = core.eager._run_custom_op(
                 "fused_sdp_flash_attention_gcu",
@@ -222,7 +222,7 @@ def fusion_flash_attention(
                 True,
             )[0]
         elif get_env_device() == "intel_hpu":
-            if config.context_parallel_degree > 1:
+            if config.context_parallel_size > 1:
                 raise ValueError("Context parallel is not implemented for intel_hpu")
             scaling_factor = query_states.shape[3] ** -0.5
             attention_mask = attention_mask.astype(query_states.dtype)
@@ -237,7 +237,7 @@ def fusion_flash_attention(
                 False,
             )
         else:
-            if config.context_parallel_degree > 1:
+            if config.context_parallel_size > 1:
                 attn_output = RingFlashAttention.apply(
                     query_states,
                     key_states,

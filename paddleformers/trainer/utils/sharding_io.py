@@ -326,10 +326,10 @@ class ShardingIO:
         mp_degree = parallel_config["mp_degree"]
         sharding_degree = parallel_config["sharding_degree"]
         assert (
-            self.args.tensor_parallel_degree == mp_degree
-        ), f"mp_degree of the script {self.args.tensor_parallel_degree} and mp of the model {mp_degree} are not matched"
+            self.args.tensor_model_parallel_size == mp_degree
+        ), f"mp_degree of the script {self.args.tensor_model_parallel_size} and mp of the model {mp_degree} are not matched"
         cur_sharding_degree = self.args.sharding_parallel_degree
-        cur_pp_degree = self.args.pipeline_parallel_degree
+        cur_pp_degree = self.args.pipeline_model_parallel_size
         if pp_degree > 1:
             assert cur_pp_degree > 1, "can not reshard from pp to non pp"
         if pp_degree <= 1:
@@ -487,7 +487,7 @@ class ShardingIO:
     def _need_reshard_pp(self, checkpoint):
         parallel_config = self._load_distributed_strategy(checkpoint)
         pp_degree = parallel_config["pp_degree"]
-        cur_pp_degree = self.args.pipeline_parallel_degree
+        cur_pp_degree = self.args.pipeline_model_parallel_size
         if pp_degree != cur_pp_degree:
             return True
         # vpp、segment method changes is not auto supported yet
@@ -505,8 +505,8 @@ class ShardingIO:
         sharding_strategy = SHARDING_STRATEGY_V1
         if "sharding_strategy" in sharding_meta:
             sharding_strategy = sharding_meta["sharding_strategy"]
-        assert self.args.tensor_parallel_degree == mp_degree
-        cur_pp_degree = self.args.pipeline_parallel_degree
+        assert self.args.tensor_model_parallel_size == mp_degree
+        cur_pp_degree = self.args.pipeline_model_parallel_size
 
         if pp_degree > 1:
             assert cur_pp_degree > 1, "can not reshard from pp to non pp"
@@ -633,9 +633,9 @@ class ShardingIO:
             assert hasattr(model_to_save, "config")
             model_to_save.config.dtype = str(dtype).split(".")[1]
             config_to_save = copy.deepcopy(model_to_save.config)
-            if config_to_save.tensor_parallel_degree > 1:
+            if config_to_save.tensor_model_parallel_size > 1:
                 state_dict = model_to_save.merge_tensor_parallel(state_dict, config_to_save)
-                config_to_save.tensor_parallel_degree = 1
+                config_to_save.tensor_model_parallel_size = 1
                 if config_to_save.tensor_parallel_rank != 0:
                     logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
                     return
@@ -826,7 +826,7 @@ class ShardingIO:
         if pp_rank is None:
             pp_rank = self.args.pipeline_parallel_rank
         suffix = f"tp{tp_rank:0>2d}_pp{pp_rank:0>2d}"
-        if self.args.expert_parallel_degree > 1:
+        if self.args.expert_model_parallel_size > 1:
             ep_rank = self.args.expert_parallel_rank
             return f"{suffix}_ep{ep_rank:0>2d}"
         else:
@@ -918,7 +918,7 @@ class ShardingIO:
         sharding_metas = {k: v for e in sharding_metas_list for (k, v) in e.items()}
         sharding_metas_list = self._all_gather_simple_object(sharding_metas, self.hcg.get_pipe_parallel_group())
         sharding_metas = {k: v for e in sharding_metas_list for (k, v) in e.items()}
-        if self.args.expert_parallel_degree > 1:
+        if self.args.expert_model_parallel_size > 1:
             sharding_metas_list = self._all_gather_simple_object(sharding_metas, self.hcg.get_expert_parallel_group())
             sharding_metas = {k: v for e in sharding_metas_list for (k, v) in e.items()}
         return sharding_metas
