@@ -86,7 +86,7 @@ def main():
             ), "Should set '--pipeline_parallel_config disable_partial_send_recv' in bash script for pp with sp."
         if training_args.tensor_model_parallel_size <= 1:
             training_args.sequence_parallel = False
-            logger.info("Tensor_parallel_degree = 1. Set sequence_parallel to False.")
+            logger.info("Tensor_model_parallel_size = 1. Set sequence_parallel to False.")
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
     training_args.print_config(dpo_config, "DPOConfig")
