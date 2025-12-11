@@ -391,28 +391,6 @@ def get_send_recv_pairs(diff_rank2size):
     return send_recv_pairs
 
 
-def partition_numbers(nums, m):
-    """
-    Args:
-    nums: List[int] - Sorted list of positive integers
-    m: int - Number of piles to partition into.
-
-    Returns:
-    List[List[int]] - A list containing m lists
-    """
-    heap = [(0, 0, i) for i in range(m)]
-    heapq.heapify(heap)
-    piles = [[] for _ in range(m)]
-    for num in reversed(nums):
-        sum_pile, count_pile, pile_index = heapq.heappop(heap)
-        piles[pile_index].append(num)
-        sum_pile += num[1] * num[2]
-        count_pile += 1
-        heapq.heappush(heap, (sum_pile, count_pile, pile_index))
-
-    return piles
-
-
 def shard_data_in_pp_group(
     fn,
     fwd_batch_size=128,

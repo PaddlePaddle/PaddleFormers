@@ -235,15 +235,6 @@ def run_sft(
     # (Liuting) Not support acc calculation now due to MTP.
     if "DeepseekV3" in str(model_config.architectures):
         training_args.prediction_loss_only = True
-    # sink_attention v2 not support packing=false Now
-
-    if (
-        "GptOss" in str(model_config.architectures)
-        and data_args.packing is False
-        and model_args.attn_impl == "flashmask"
-    ):
-        if not is_sm90:
-            model_args.attn_impl = "eager"
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
