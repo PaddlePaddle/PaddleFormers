@@ -103,6 +103,7 @@ jobs:
           import paddle
           print("paddle_commit:", paddle.version.commit)
           EOF
+          source ../PaddleFleet/.venv/bin/activate
           python /tmp/check_paddle.py
           '
 
@@ -273,6 +274,7 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
+          source ../PaddleFleet/.venv/bin/activate
           source ../PaddleFleet/.venv/bin/activate
           pip install -e .
           '
