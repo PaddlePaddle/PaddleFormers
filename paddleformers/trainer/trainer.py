@@ -2291,7 +2291,7 @@ class Trainer:
         if self.train_dataset is None or not has_length(self.train_dataset):
             return None
 
-        shuffle = True if self.args.enable_auto_parallel else self.args.dataloader_shuffle
+        shuffle = False if self.args.enable_auto_parallel else self.args.dataloader_shuffle
         total_batch_size = self.args.per_device_train_batch_size
         if self.args.enable_auto_parallel:
             total_batch_size = total_batch_size * self.args.dataset_world_size * self.args.gradient_accumulation_steps

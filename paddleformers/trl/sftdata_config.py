@@ -129,3 +129,11 @@ class DataConfig:
     )
     # Pose related parameters
     use_pose_convert: bool = field(default=False, metadata={"help": "Whether to use PoSE data conversion function"})
+    zero_padding: bool = field(default=False, metadata={"help": "Whether to use Zero Padding data stream"})
+    src_length: int = field(default=1024, metadata={"help": "The maximum length of source(context) tokens."})
+    max_length: int = field(
+        default=2048,
+        metadata={
+            "help": "The maximum length that model input tokens can have. When Zero Padding is set to True, it's also the maximum length for Zero Padding data stream"
+        },
+    )
