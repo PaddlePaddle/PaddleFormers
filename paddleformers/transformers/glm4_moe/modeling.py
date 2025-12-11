@@ -58,7 +58,36 @@ class GLMMoEModelProvider(GPTModelProvider):
 
     bias_activation_fusion: bool = True
 
-    transform_rules = {"tensor_parallel_degree": "tensor_model_parallel_size", "dtype": "params_dtype"}
+    transform_rules = {
+        "tensor_parallel_degree": "tensor_model_parallel_size",
+        "pipeline_parallel_degree": "pipeline_model_parallel_size",
+        "context_parallel_degree": "context_parallel_size",
+        "expert_parallel_degree": "expert_model_parallel_size",
+        "dtype": "params_dtype",
+    }
+
+    # (@peiziliang) hard code
+    rotary_base: float = 1000000.0
+    rotary_percent: float = 0.5
+    moe_shared_expert_overlap: bool = True
+    moe_router_pre_softmax: bool = False
+    moe_permute_fusion: bool = True
+    moe_router_dtype: str = "fp32"
+    moe_router_enable_expert_bias: bool = True
+    moe_router_bias_update_rate: float = 0
+    persist_layer_norm: bool = True
+    moe_router_force_load_balancing: bool = True
+    share_embeddings_and_output_weights: bool = False
+
+    apply_rope_fusion: bool = True
+    mtp_loss_scaling_factor: float = 0.3
+    recompute_granularity: str = None
+    virtual_pipeline_model_parallel_size: int = None
+
+    rope_scaling: float = 1.0
+    bias_dropout_fusion: bool = True
+    router_aux_loss_coef: float = 0.001
+    moe_grouped_gemm: bool = True
 
 
 def eager_attention_forward(

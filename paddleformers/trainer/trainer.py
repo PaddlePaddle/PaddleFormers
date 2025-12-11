@@ -369,7 +369,11 @@ class Trainer:
         self._memory_tracker.start()
 
         # Seed must be set before instantiating the model when using model
-        set_random_seed(seed_=self.args.seed)
+        if not self.args.enable_auto_parallel:
+            set_random_seed(seed_=self.args.seed)
+        else:
+            logger.warning("set_seed not support yet in auto_parallel mode")
+
         set_seed(seed=self.args.seed)
 
         self._skip_global_steps = 0  # total skip global steps
