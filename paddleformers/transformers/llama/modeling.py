@@ -20,11 +20,6 @@ from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
-from paddleformers.transformers.conversion_utils import (
-    StateDictNameMapping,
-    init_name_mappings,
-)
-
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
@@ -329,40 +324,6 @@ class LlamaPretrainedModel(PretrainedModel):
         "up_proj",
         "down_proj",
     ]
-
-    @classmethod
-    def _get_name_mappings(cls, config: LlamaConfig) -> list[StateDictNameMapping]:
-        mappings: list[StateDictNameMapping] = []
-        model_mappings = [
-            ["embed_tokens.weight"],
-            ["norm.weight"],
-        ]
-        for layer_index in range(config.num_hidden_layers):
-            layer_mappings = [
-                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.k_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.v_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.rotary_emb.inv_freq"],
-                [f"layers.{layer_index}.mlp.gate_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.down_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.up_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.input_layernorm.weight"],
-                [f"layers.{layer_index}.post_attention_layernorm.weight"],
-            ]
-            model_mappings.extend(layer_mappings)
-
-        init_name_mappings(mappings=model_mappings)
-        # base-model prefix "LlamaModel"
-        if "LlamaModel" not in config.architectures:
-            for mapping in model_mappings:
-                mapping[0] = "model." + mapping[0]
-                mapping[1] = "llama." + mapping[1]
-            if not config.tie_word_embeddings:
-                model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
-
-        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
-        return mappings
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: LlamaConfig, is_split=True):
