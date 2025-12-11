@@ -102,8 +102,8 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
         if training_args.num_of_gpus > 0:
             dataset_world_size = (
                 training_args.num_of_gpus
-                // max(1, training_args.tensor_parallel_degree)
-                // max(1, training_args.pipeline_parallel_degree))
+                // max(1, training_args.tensor_model_parallel_size)
+                // max(1, training_args.pipeline_model_parallel_size))
             if dataset_world_size < 1:
                 raise ValueError("dataset_world_size must be positive, please verify your config")
         else:
@@ -142,8 +142,8 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
             "gradient_accumulation_steps": int(training_args.gradient_accumulation_steps),
             "num_of_gpus": int(training_args.num_of_gpus),
             "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
-            "pipeline_parallel_degree": int(max(1, training_args.pipeline_parallel_degree)),
-            "tensor_parallel_degree": int(max(1, training_args.tensor_parallel_degree)),
+            "pipeline_model_parallel_size": int(max(1, training_args.pipeline_model_parallel_size)),
+            "tensor_model_parallel_size": int(max(1, training_args.tensor_model_parallel_size)),
             "seed": int(training_args.seed),
             "num_samples_each_epoch": int(data_args.num_samples_each_epoch),
             "max_seq_len": int(data_args.max_seq_len),
@@ -165,8 +165,8 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
             "gradient_accumulation_steps": int(training_args.gradient_accumulation_steps),
             "num_of_gpus": int(training_args.num_of_gpus),
             "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
-            "pipeline_parallel_degree": int(max(1, training_args.pipeline_parallel_degree)),
-            "tensor_parallel_degree": int(max(1, training_args.tensor_parallel_degree)),
+            "pipeline_model_parallel_size": int(max(1, training_args.pipeline_model_parallel_size)),
+            "tensor_model_parallel_size": int(max(1, training_args.tensor_model_parallel_size)),
             "seed": int(training_args.seed),
             "num_samples_each_epoch": 6000000,
             "max_seq_len": int(data_args.max_seq_len),

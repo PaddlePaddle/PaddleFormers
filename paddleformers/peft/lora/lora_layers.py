@@ -300,6 +300,19 @@ class LoRALinear(nn.Linear):
         return f"in_features={self.weight.shape[0]}, out_features={self.weight.shape[1]}, rank={self.r}{name}"
 
 
+class FleetLoRALinear(LoRALinear):
+    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
+        super().__init__(in_features, out_features, **kwargs)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias
+
+
 class RowParallelLoRALinear(RowParallelLinear):
     def __init__(
         self,
@@ -461,6 +474,19 @@ class RowParallelLoRALinear(RowParallelLinear):
         return f"in_features={self.weight.shape[0]}, out_features={self.weight.shape[1]}, rank={self.r}{name}"
 
 
+class FleetRowParallelLoRALinear(RowParallelLoRALinear):
+    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
+        super().__init__(in_features, out_features, **kwargs)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias
+
+
 class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
     def __init__(
         self,
@@ -577,6 +603,19 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
     def extra_repr(self):
         name = f", name={self.name}" if self.name else ""
         return f"in_features={self.weight.shape[0]}, out_features={self.weight.shape[1]}, rank={self.r}{name}"
+
+
+class FleetRowSequenceParallelLoRALinear(RowSequenceParallelLoRALinear):
+    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
+        super().__init__(in_features, out_features, **kwargs)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias
 
 
 class ColumnParallelLoRALinear(ColumnParallelLinear):
@@ -722,6 +761,19 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
         return f"in_features={self.weight.shape[0]}, out_features={self.weight.shape[1]}, rank={self.r}{name}"
 
 
+class FleetColumnParallelLoRALinear(ColumnParallelLoRALinear):
+    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
+        super().__init__(in_features, out_features, **kwargs)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias
+
+
 class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
     def __init__(
         self,
@@ -841,6 +893,19 @@ class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
     def extra_repr(self):
         name = f", name={self.name}" if self.name else ""
         return f"in_features={self.weight.shape[0]}, out_features={self.weight.shape[1]}, rank={self.r}{name}"
+
+
+class FleetColumnSequenceParallelLoRALinear(ColumnSequenceParallelLoRALinear):
+    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
+        super().__init__(in_features, out_features, **kwargs)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias
 
 
 class LoRAConv2D(nn.Conv2D):
