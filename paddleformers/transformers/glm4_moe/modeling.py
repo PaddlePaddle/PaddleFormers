@@ -59,10 +59,6 @@ class GLMMoEModelProvider(GPTModelProvider):
     bias_activation_fusion: bool = True
 
     transform_rules = {
-        "tensor_parallel_degree": "tensor_model_parallel_size",
-        "pipeline_parallel_degree": "pipeline_model_parallel_size",
-        "context_parallel_degree": "context_parallel_size",
-        "expert_parallel_degree": "expert_model_parallel_size",
         "dtype": "params_dtype",
     }
 
