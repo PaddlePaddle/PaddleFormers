@@ -735,10 +735,13 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
                 f"{model_prefix}mtp_block.$LAYER_ID.self_attn.qkv_proj.weight -> model.mtp_block.$LAYER_ID.self_attn.q_proj.weight, model.mtp_block.$LAYER_ID.self_attn.k_proj.weight, model.mtp_block.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
             ]
-            for layer_id in range(config.num_hidden_layers):
-                for x in ("q", "k", "v"):
+            for x in ("q", "k", "v"):
+                for layer_id in range(config.num_hidden_layers):
                     aoa_statements += [
                         f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight",
+                    ]
+                for layer_id in range(config.num_nextn_predict_layers):
+                    aoa_statements += [
                         f"model.mtp_block.{layer_id}.self_attn.{x}_proj.weight^T -> model.mtp_block.{layer_id}.self_attn.{x}_proj.weight",
                     ]
             if config.use_bias:
