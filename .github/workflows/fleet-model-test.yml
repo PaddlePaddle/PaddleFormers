@@ -82,6 +82,7 @@ jobs:
           nvidia-smi
           rm -rf * .[^.]*
           source /root/proxy
+          export UV_LOCK_TIMEOUT=600
           git clone https://github.com/PaddlePaddle/PaddleFleet.git
           cd PaddleFleet
           git log -1
@@ -231,6 +232,7 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
           source /root/proxy
+          export UV_LOCK_TIMEOUT=600
           git clone https://github.com/PaddlePaddle/PaddleFleet.git
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFleet
