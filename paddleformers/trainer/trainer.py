@@ -3018,16 +3018,13 @@ class Trainer:
         if HAS_PADDLEFLEET and isinstance(model, LoRAModel):
             model = model.model
         if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
-            print("hehehehheheh")
             prepare_pipeline_inputs_func = (
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
             )
             model = paddlefleet_dist_model.distributed_model(model)
             if prepare_pipeline_inputs_func is not None:
-                print("1111111")
                 model._prepare_pipeline_inputs_func = prepare_pipeline_inputs_func
             else:
-                print("222222")
 
                 def _prepare_pipeline_inputs_func(inputs):
                     first_stage_keys = ["input_ids", "attention_mask", "position_ids"]
