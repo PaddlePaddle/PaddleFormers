@@ -41,10 +41,10 @@ learning_rate: 1.0e-05
 random_shuffle: false
 
 # performance
-tensor_parallel_degree: 4
-pipeline_parallel_degree: 4
+tensor_model_parallel_size: 4
+pipeline_model_parallel_size: 4
 use_expert_parallel: true
-expert_parallel_degree: 8
+expert_model_parallel_size: 8
 sequence_parallel: true
 sharding_parallel_config: split_param
 amp_master_grad: true

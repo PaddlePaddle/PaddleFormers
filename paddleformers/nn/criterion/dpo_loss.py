@@ -72,7 +72,7 @@ def dpo_logps(
 
     # drop ignored index token
     if self.use_filtered_label_loss:
-        if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel and logits is None:
+        if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel and logits is None:
             labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, ignore_index)
 
             if hidden_states is not None:
@@ -90,7 +90,7 @@ def dpo_logps(
             if logits is not None:
                 logits = paddle.gather(logits, sparse_tgt_idx, axis=1)
     else:
-        if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel and hidden_states is not None:
+        if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel and hidden_states is not None:
             hidden_states = GatherOp.apply(hidden_states)
             hidden_states = hidden_states.reshape(
                 [
@@ -112,7 +112,7 @@ def dpo_logps(
             None,
             transpose_y,
             self.config.vocab_size,
-            self.config.tensor_parallel_degree,
+            self.config.tensor_model_parallel_size,
             self.config.tensor_parallel_output,
             False,  # fused_linear
             self.loss_subbatch_sequence_length,
