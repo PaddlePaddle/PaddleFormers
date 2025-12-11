@@ -13,12 +13,17 @@
 # limitations under the License.
 
 from functools import partial
-from typing import Callable, cast
+from typing import Callable, Optional, cast
 
 import paddle
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+
+from paddleformers.transformers.conversion_utils import (
+    StateDictNameMapping,
+    init_name_mappings,
+)
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -33,7 +38,8 @@ from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
+from .auto_dist_config import get_dist_config
 from .configuration import LlamaConfig
 
 
@@ -160,9 +166,9 @@ class LLamaAttention(nn.Layer):
         q_shape = (batch_size, seq_len, self.num_heads, self.head_dim)
         kv_shape = (batch_size, seq_len, self.num_key_value_heads, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).view(q_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
+        query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -249,43 +255,6 @@ class LlamaDecoderLayer(nn.Layer):
         return outputs  # type: ignore[return-value]
 
 
-def _compute_default_parameters(config):
-    head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-    base = config.rope_theta
-
-    indices = paddle.arange(0, head_dim, 2, dtype="float32")
-    inv_freq = 1.0 / (base ** (indices / head_dim))
-    attention_factor = 1.0
-    return inv_freq, attention_factor
-
-
-def _compute_llama3_parameters(config):
-    inv_freq, attention_factor = _compute_default_parameters(config)
-
-    factor = config.rope_parameters["factor"]
-    low_freq_factor = config.rope_parameters["low_freq_factor"]
-    high_freq_factor = config.rope_parameters["high_freq_factor"]
-    old_context_len = config.rope_parameters["original_max_position_embeddings"]
-
-    low_freq_wavelen = old_context_len / low_freq_factor
-    high_freq_wavelen = old_context_len / high_freq_factor
-    wavelen = 2 * paddle.pi / inv_freq
-
-    inv_freq_llama = paddle.where(wavelen > low_freq_wavelen, inv_freq / factor, inv_freq)
-
-    smooth_factor = (old_context_len / wavelen - low_freq_factor) / (high_freq_factor - low_freq_factor)
-
-    smoothed_inv_freq = (1 - smooth_factor) * inv_freq_llama / factor + smooth_factor * inv_freq_llama
-
-    is_medium_freq = paddle.logical_and(
-        wavelen >= high_freq_wavelen,
-        wavelen <= low_freq_wavelen,
-    )
-    inv_freq_llama = paddle.where(is_medium_freq, smoothed_inv_freq, inv_freq_llama)
-
-    return inv_freq_llama, attention_factor
-
-
 class LlamaRotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
@@ -298,13 +267,38 @@ class LlamaRotaryEmbedding(nn.Layer):
         if hasattr(config, "rope_parameters") and isinstance(config.rope_parameters, dict):
             self.rope_type = config.rope_parameters.get("rope_type", "default")
 
-        if self.rope_type == "llama3":
-            inv_freq, attention_scaling = _compute_llama3_parameters(config)
-        else:
-            inv_freq, attention_scaling = _compute_default_parameters(config)
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
-        self.attention_scaling = attention_scaling
         self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[LlamaConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
@@ -335,6 +329,40 @@ class LlamaPretrainedModel(PretrainedModel):
         "up_proj",
         "down_proj",
     ]
+
+    @classmethod
+    def _get_name_mappings(cls, config: LlamaConfig) -> list[StateDictNameMapping]:
+        mappings: list[StateDictNameMapping] = []
+        model_mappings = [
+            ["embed_tokens.weight"],
+            ["norm.weight"],
+        ]
+        for layer_index in range(config.num_hidden_layers):
+            layer_mappings = [
+                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.k_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.v_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.self_attn.rotary_emb.inv_freq"],
+                [f"layers.{layer_index}.mlp.gate_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.down_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.mlp.up_proj.weight", None, "transpose"],
+                [f"layers.{layer_index}.input_layernorm.weight"],
+                [f"layers.{layer_index}.post_attention_layernorm.weight"],
+            ]
+            model_mappings.extend(layer_mappings)
+
+        init_name_mappings(mappings=model_mappings)
+        # base-model prefix "LlamaModel"
+        if "LlamaModel" not in config.architectures:
+            for mapping in model_mappings:
+                mapping[0] = "model." + mapping[0]
+                mapping[1] = "llama." + mapping[1]
+            if not config.tie_word_embeddings:
+                model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
+
+        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
+        return mappings
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: LlamaConfig, is_split=True):
@@ -700,6 +728,10 @@ class LlamaForCausalLM(LlamaPretrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+    def auto_dist_config(self, prefix=""):
+        assert self.config.use_single_model_implementation, "Use `get_dist_config` only in single card mode."
+        return get_dist_config(self, prefix)
 
 
 class LlamaForCausalLMPipe(GeneralModelForCausalLMPipe):

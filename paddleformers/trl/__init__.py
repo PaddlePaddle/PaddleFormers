@@ -39,6 +39,10 @@ import_structure = {
         "get_eos_token_id",
         "set_triton_cache",
     ],
+    "mllm_utils": [
+        "freeze_model_parameters",
+        "get_multimodel_lora_target_modules",
+    ],
     "model_config": ["ModelConfig"],
     "quant_config": ["QuantConfig"],
     "sft_auto_trainer": ["SFTAutoTrainer"],

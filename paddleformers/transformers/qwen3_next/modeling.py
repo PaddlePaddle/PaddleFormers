@@ -36,6 +36,7 @@ from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..qwen2_moe.modeling import Qwen2MoeSparseMoeBlock, load_balancing_loss_func
 from ..qwen3_moe.modeling import Qwen3MoeAttention, Qwen3MoeMLP
 from .configuration import Qwen3NextConfig
@@ -209,11 +210,42 @@ class Qwen3NextRotaryEmbedding(nn.Layer):
         self.original_max_seq_len = config.max_position_embeddings
 
         self.config = config
-        self.rope_init_fn = _compute_default_rope_parameters
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
-        self.inv_freq, self.attention_scaling = self.rope_init_fn(self.config)
-        self.original_inv_freq = self.inv_freq
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
 
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[Qwen3NextConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        partial_rotary_factor = config.rope_parameters.get("partial_rotary_factor", 1.0)
+        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        dim = int(head_dim * partial_rotary_factor)
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
+
+    @dynamic_rope_update
     @paddle.no_grad()
     def forward(self, x, position_ids):
         inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)

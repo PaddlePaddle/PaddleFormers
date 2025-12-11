@@ -165,15 +165,6 @@ class ModelArguments:
     hidden_dropout_prob: float = field(default=0.1, metadata={"help": "The hidden dropout prob."})
     attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "The attention hidden dropout prob."})
 
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
-
     continue_training: bool = field(
         default=False,
         metadata={
@@ -436,10 +427,6 @@ def main():
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
         config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
-    if model_args.fuse_attention_qkv is not None:
-        config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
         assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."

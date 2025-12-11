@@ -3109,20 +3109,26 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
-        if hasattr(self.__class__, "_gen_inv_aoa_config") and save_checkpoint_format == "flex_checkpoint":
-            aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+        if (
+            hasattr(self.__class__, "_gen_inv_aoa_config") or hasattr(self, "_gen_inv_aoa_config")
+        ) and save_checkpoint_format == "flex_checkpoint":
+            if hasattr(self.__class__, "_gen_inv_aoa_config"):
+                aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+            else:
+                aoa_config = self._gen_inv_aoa_config(model_to_save.config)
 
             clean_unrelated_safetensors(save_dir)
 
-            total_saved_size = HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(
-                save_dir, max_shard_size
-            )
+            HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:
                 model_to_save.config.dtype = str(dtype).split(".")[1]
             if config_to_save is None:
-                config_to_save = copy.deepcopy(model_to_save.config)
+                if hasattr(model_to_save, "config_to_save"):
+                    config_to_save = copy.deepcopy(model_to_save.config_to_save)
+                else:
+                    config_to_save = copy.deepcopy(model_to_save.config)
 
             # Attach architecture to the config
             config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
@@ -3131,8 +3137,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
-                # Organize the files in this directory into the Hugging Face (HF) format.
-                replace_name_and_gen_index(save_directory, total_saved_size)
             return
 
         # save the string version of dtype to the config, e.g. convert paddle.float32 => "float32"
@@ -3820,8 +3824,8 @@ def replace_name_and_gen_index(path, total_size):
         start_idx.append(acc)
         acc += files_num
 
-    env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", 0))
     env_local_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
+    env_local_rank = dist.get_rank() % env_local_size
     assert env_local_rank >= 0, f"expected positive local rank, got {env_local_rank}"
 
     cur_file_index = start_idx[cur_rank] // env_local_size
