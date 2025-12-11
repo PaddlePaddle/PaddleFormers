@@ -334,7 +334,7 @@ class Qwen2_5_VLPretrainedModel(PretrainedModel):
             ]
         }
 
-        # visual model
+        # vision model
         aoa_config["aoa_statements"] += (
             [
                 f"visual.blocks.$LAYER_ID.attn.{x}.weight^T -> {visual_prefix}blocks.$LAYER_ID.attn.{x}.weight"
@@ -919,9 +919,9 @@ class Qwen2_5_VLAttention(nn.Layer):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        value_states = value_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        query_states = query_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        key_states = key_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
+        value_states = value_states.reshape(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_multimodal_rotary_pos_emb(
@@ -948,7 +948,6 @@ class Qwen2_5_VLAttention(nn.Layer):
 
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
-        attn_output = attn_output.reshape([bsz, q_len, -1]).contiguous()
         attn_output = self.o_proj(attn_output)
         if not output_attentions:
             attn_weights = None
@@ -1817,7 +1816,7 @@ class Qwen2_5_VLForConditionalGeneration(Qwen2_5_VLPretrainedModel):
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-        logits = self.lm_head(hidden_states[:, slice_indices, :])
+        logits = self.lm_head(hidden_states[..., slice_indices, :])
 
         loss = None
         if labels is not None:

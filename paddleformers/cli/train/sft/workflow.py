@@ -62,6 +62,10 @@ from paddleformers.transformers import (
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.trl import SFTTrainer
 from paddleformers.trl.llm_utils import compute_metrics, get_lora_target_modules
+from paddleformers.trl.mllm_utils import (
+    freeze_model_parameters,
+    get_multimodel_lora_target_modules,
+)
 from paddleformers.utils.log import logger
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
@@ -238,15 +242,6 @@ def run_sft(
     # (Liuting) Not support acc calculation now due to MTP.
     if "DeepseekV3" in str(model_config.architectures):
         training_args.prediction_loss_only = True
-    # sink_attention v2 not support packing=false Now
-
-    if (
-        "GptOss" in str(model_config.architectures)
-        and data_args.packing is False
-        and model_args.attn_impl == "flashmask"
-    ):
-        if not is_sm90:
-            model_args.attn_impl = "eager"
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
@@ -267,6 +262,13 @@ def run_sft(
     model_config.seq_length = data_args.max_seq_len
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args.attn_impl
+
+    # Sync arguments to MLLM sub_config
+    if getattr(model_config, "text_config", None) is not None:
+        model_config.text_config.max_sequence_length = data_args.max_seq_len
+    if getattr(model_config, "vision_config", None) is not None:
+        model_config.vision_config._attn_implementation = model_args.attn_impl
+
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
@@ -388,6 +390,10 @@ def run_sft(
             sub_dataset_type=data_args.eval_dataset_type,
             **dataset_config,
         )
+
+    # Freeze model based on training args (Supports for MLLM Full training)
+    if not model_args.lora and getattr(training_args, "freeze_config", ""):
+        freeze_model_parameters(model, training_args.freeze_config)
 
     model = create_peft_model(model_args, training_args, dtype, model)
 
@@ -537,6 +543,11 @@ def create_peft_model(model_args, training_args, dtype, model):
             ), "Currently not support enabling sharding_stage1_overlap in lora mode."
         if model_args.lora_path is None:
             target_modules = get_lora_target_modules(model)
+
+            # Freeze model based on training args (Supports for MLLM LoRA training)
+            if getattr(training_args, "freeze_config", ""):
+                target_modules = get_multimodel_lora_target_modules(model, target_modules, training_args.freeze_config)
+
             lora_config = LoRAConfig(
                 target_modules=target_modules,
                 r=model_args.lora_rank,

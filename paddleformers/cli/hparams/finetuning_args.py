@@ -120,7 +120,7 @@ class PreTrainingArguments(TrainingArguments):
         metadata={
             "help": (
                 "Some additional config for freeze params, we provide some option to config it."
-                "following config is support: freeze_vision,freeze_lm"
+                "following config is support: freeze_vision | freeze_llm | freeze_aligner"
             )
         },
     )
