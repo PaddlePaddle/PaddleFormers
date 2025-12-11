@@ -263,7 +263,6 @@ def run_dpo(
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
         "stage": model_args.stage,
-        "is_valid": False,
         "template_backend": data_args.template_backend,
     }
 
@@ -324,11 +323,11 @@ def run_dpo(
         train_dataset = None
 
     if training_args.do_eval and training_args.should_load_dataset:
-        dataset_config["is_valid"] = True
         eval_dataset = create_dataset(
             task_group=data_args.eval_dataset_path,
             task_group_prob=data_args.eval_dataset_prob,
             sub_dataset_type=data_args.eval_dataset_type,
+            is_valid=True,
             **dataset_config,
         )
     else:

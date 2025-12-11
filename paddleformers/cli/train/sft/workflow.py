@@ -310,7 +310,6 @@ def run_sft(
         "is_pretraining": True if model_args.stage.lower() == "pt" else False,
         "truncate_packing": data_args.truncate_packing,
         "stage": model_args.stage,
-        "is_valid": False,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
     }
@@ -344,11 +343,11 @@ def run_sft(
             sub_dataset_type=data_args.train_dataset_type,
             **dataset_config,
         )
-        dataset_config["is_valid"] = True
         eval_dataset = create_dataset_sft(
             task_group=data_args.eval_dataset_path,
             task_group_prob=data_args.eval_dataset_prob,
             sub_dataset_type=data_args.eval_dataset_type,
+            is_valid=True,
             **dataset_config,
         )
 

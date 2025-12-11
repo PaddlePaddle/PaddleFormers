@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional
 
-import os
 import numpy as np
 from paddle.io import IterableDataset
 
