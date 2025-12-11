@@ -39,27 +39,27 @@ class DFNRopeVisionTransformerPipe(DFNRopeVisionTransformerPretrainedModel):
         self.seq_list = None
         self.new_thw = []
         self.pp_data_balance = getattr(config.vision_config, "pp_data_balance", False)
-        self.attn_sep = getattr(config.vision_config, "attn_sep", False) and config.tensor_parallel_degree > 1
+        self.attn_sep = getattr(config.vision_config, "attn_sep", False) and config.tensor_model_parallel_size > 1
         self.use_full_recompute = use_full_recompute
         if self.use_full_recompute:
             logger.info("use full recompute, vision model will NOT use recompute inner")
             config.vision_config.recompute = False
         super().__init__(config.vision_config)
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             logger.info("use sp extract feature, vit parameter will be marked as sequence parallel")
             for p in self.parameters():
                 mark_as_sequence_parallel_parameter(p)
 
     def extract_feature(self, images, grid_thw, second_fwd=False):
         """extract feature"""
-        if self.config.tensor_parallel_degree <= 1:
+        if self.config.tensor_model_parallel_size <= 1:
             return self._extract_feature(images, grid_thw)
         else:
             grid_thw = grid_thw.clone()
             # logger.info("use sp extract feature")
             images_indices = []
-            # NOTE(Liuting) dont know why tensor_parallel_degree here is wrong, fix later.
-            # parallelism = self.config.tensor_parallel_degree
+            # NOTE(Liuting) dont know why tensor_model_parallel_size here is wrong, fix later.
+            # parallelism = self.config.tensor_model_parallel_size
             hcg = fleet.get_hybrid_communicate_group()
             group = hcg.get_model_parallel_group()
             parallelism = group.nranks

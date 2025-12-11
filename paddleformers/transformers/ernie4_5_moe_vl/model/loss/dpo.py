@@ -47,7 +47,7 @@ class ErnieDPOCriterion(DPOCriterion):
         hidden_states, weight, bias, transpose_y = logits
 
         if self.config.use_sparse_head_and_loss_fn:
-            if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel:
+            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
                 labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, 0)
 
                 hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
@@ -60,7 +60,7 @@ class ErnieDPOCriterion(DPOCriterion):
                 hidden_states = hidden_states.reshape([-1, hidden_states.shape[-1]])
                 hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
         elif self.config.use_fused_head_and_loss_fn:
-            if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel:
+            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
                 hidden_states = GatherOp.apply(hidden_states)
                 hidden_states = hidden_states.reshape(
                     [
@@ -79,7 +79,7 @@ class ErnieDPOCriterion(DPOCriterion):
                 None,
                 transpose_y,
                 self.config.text_config.vocab_size,
-                self.config.tensor_parallel_degree,
+                self.config.tensor_model_parallel_size,
                 self.config.tensor_parallel_output,
                 self.config.text_config.fuse_linear,
                 LOOP_CHUNK_SIZE,

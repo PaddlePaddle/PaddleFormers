@@ -311,7 +311,7 @@ class Gemma3TextModelTester:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def create_and_check_tp(self, config, input_ids, input_mask, *args):
-        config.tensor_parallel_degree = 2
+        config.tensor_model_parallel_size = 2
 
         # check num_key_value_heads
         config.num_key_value_heads = 1

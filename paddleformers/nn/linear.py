@@ -63,7 +63,7 @@ class Linear(GeneralInterface):
 
     @classmethod
     def get_linear_type(self, config: PretrainedConfig, tp_plan=None):
-        if config.tensor_parallel_degree <= 1:
+        if config.tensor_model_parallel_size <= 1:
             if config.get("fuse_linear", False):
                 return "fuse_linear"
             else:

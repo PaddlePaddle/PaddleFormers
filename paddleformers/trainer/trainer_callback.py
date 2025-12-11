@@ -792,10 +792,10 @@ class MoeExpertsGradScaleCallback(TrainerCallback):
         """
         if not args.use_expert_parallel:
             raise ValueError("This callback should be used with expert parallel")
-        if args.expert_parallel_degree > 1:
-            self.expert_gradient_scaling_factor = 1.0 / args.expert_parallel_degree
-            if args.tensor_parallel_degree > 1:
-                self.expert_gradient_scaling_factor *= args.tensor_parallel_degree
+        if args.expert_model_parallel_size > 1:
+            self.expert_gradient_scaling_factor = 1.0 / args.expert_model_parallel_size
+            if args.tensor_model_parallel_size > 1:
+                self.expert_gradient_scaling_factor *= args.tensor_model_parallel_size
             logger.info(
                 f"EP-MoE is used, expert gradient scaling factor is set to {self.expert_gradient_scaling_factor}"
             )
@@ -816,7 +816,7 @@ class MoEGateSpGradSyncCallBack(TrainerCallback):
         logger.info("MoEGateSpGradSyncCallBack Created")
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
-        if args.tensor_parallel_degree > 1 and args.sequence_parallel:
+        if args.tensor_model_parallel_size > 1 and args.sequence_parallel:
             model = kwargs["model"]
             hcg = fleet.get_hybrid_communicate_group()
             pg = hcg.get_model_parallel_group().process_group
