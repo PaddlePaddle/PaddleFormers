@@ -574,7 +574,7 @@ def get_sharded_file_name(args, file_name, is_optimizer=False):
     if not is_optimizer:
         sd_degree = args.sharding_parallel_degree if args.sharding_parallel_degree > 1 else 1
         if args.use_expert_parallel:
-            if args.expert_parallel_degree > 1:
+            if args.expert_model_parallel_size > 1:
                 size = dist.get_world_size() // args.moe_sharding_parallel_degree
             else:
                 size = args.world_size // sd_degree
@@ -629,7 +629,7 @@ def get_sharded_index(
 
 
 def gather_sharded_object(
-    index_file, total_size, is_optimizer=False, use_expert_parallel=False, expert_parallel_degree=1
+    index_file, total_size, is_optimizer=False, use_expert_parallel=False, expert_model_parallel_size=1
 ):
     """
     All gather sharded files list across different groups.
@@ -667,7 +667,7 @@ def gather_sharded_object(
         index_file_list = [index_file]
         total_size_list = [total_size]
 
-    if use_expert_parallel and expert_parallel_degree <= 1:
+    if use_expert_parallel and expert_model_parallel_size <= 1:
         data_group = hcg.get_data_parallel_group()
         if data_group.nranks > 1:
             data_index_file_list = []
@@ -677,7 +677,7 @@ def gather_sharded_object(
             index_file_list = flatten_list(data_index_file_list)
             total_size_list = flatten_list(data_total_size_list)
 
-    if is_optimizer or expert_parallel_degree > 1:
+    if is_optimizer or expert_model_parallel_size > 1:
         sharding_group = hcg.get_sharding_parallel_group()
         if sharding_group.nranks > 1:
             sharding_index_file_list = []
@@ -767,9 +767,9 @@ def save_model_config(model_to_save, save_directory, save_to_hf=False):
         model_to_save.config.dtype = str(dtype).split(".")[1]
         config_to_save = copy.deepcopy(model_to_save.config)
 
-        if config_to_save.tensor_parallel_degree > 1:
+        if config_to_save.tensor_model_parallel_size > 1:
             # do we need to change?
-            config_to_save.tensor_parallel_degree = 1
+            config_to_save.tensor_model_parallel_size = 1
 
         return config_to_save
 
@@ -800,7 +800,7 @@ def filter_sync_parameters(
     master_weights=None,
     is_model_weight=True,
     use_expert_parallel=False,
-    expert_parallel_degree=1,
+    expert_model_parallel_size=1,
 ):
     """Filter sync parameters under expert parallel mode."""
 
@@ -809,7 +809,7 @@ def filter_sync_parameters(
     sharding_group = hcg.get_sharding_parallel_group()
     dp_rank = dp_group.rank if dp_group.nranks > 1 else 0
     sharding_rank = sharding_group.rank if sharding_group.nranks > 1 else 0
-    if expert_parallel_degree > 1:
+    if expert_model_parallel_size > 1:
         try:
             ep_group = hcg.get_expert_parallel_group()
         except:
@@ -820,14 +820,14 @@ def filter_sync_parameters(
     if is_model_weight:
         for key in list(model_state_dict.keys()):
             if use_expert_parallel:
-                if expert_parallel_degree > 1:
+                if expert_model_parallel_size > 1:
                     if ep_rank > 0 and sharding_rank > 0 and not getattr(model_state_dict[key], "no_sync", False):
                         model_state_dict.pop(key)
                 else:
                     if dp_rank > 0 and not getattr(model_state_dict[key], "no_sync", False):
                         model_state_dict.pop(key)
     else:
-        if use_expert_parallel and expert_parallel_degree == 1:
+        if use_expert_parallel and expert_model_parallel_size == 1:
             no_sync_kname = []
             for k, v in model_state_dict.items():
                 if getattr(v, "no_sync", False):

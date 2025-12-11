@@ -178,7 +178,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
 
         self.num_experts = num_experts
         self.expert_hidden_size = expert_hidden_size
-        self.expert_parallel_degree = kwargs.pop("expert_parallel_degree", 1)
+        self.expert_model_parallel_size = kwargs.pop("expert_model_parallel_size", 1)
 
         # force keep in float32 when using amp
         self._cast_to_low_precision = False

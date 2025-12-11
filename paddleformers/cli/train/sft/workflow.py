@@ -269,7 +269,7 @@ def run_sft(
         model_class = AutoModelForConditionalGeneration
     else:
         model_class = AutoModelForCausalLM
-        if training_args.pipeline_parallel_degree > 1:
+        if training_args.pipeline_model_parallel_size > 1:
             if data_args.eval_with_do_generation and training_args.do_eval:
                 raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
             model_class = AutoModelForCausalLMPipe
@@ -389,7 +389,7 @@ def run_sft(
 
     # Create trainer
 
-    if training_args.pipeline_parallel_degree > 1:
+    if training_args.pipeline_model_parallel_size > 1:
         metrics = None
     else:
         metrics = compute_metrics
@@ -519,7 +519,9 @@ def run_sft(
             logger.info("Benchmark done.")
         else:
             if not training_args.autotuner_benchmark:
-                trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1, last_fc_to_hf=True)
+                trainer.save_model(
+                    merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True
+                )
                 trainer.log_metrics("train", train_result.metrics)
                 trainer.save_metrics("train", train_result.metrics)
                 trainer.save_state()
@@ -546,7 +548,7 @@ def create_peft_model(model_args, training_args, dtype, model):
                 lora_plus_scale=model_args.lora_plus_scale,
                 pissa=model_args.pissa,
                 merge_weights=False,
-                tensor_parallel_degree=training_args.tensor_parallel_degree,
+                tensor_model_parallel_size=training_args.tensor_model_parallel_size,
                 dtype=dtype,
                 base_model_name_or_path=model_args.model_name_or_path,
                 use_quick_lora=model_args.use_quick_lora,

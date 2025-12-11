@@ -42,6 +42,7 @@ import paddle.amp.auto_cast as autocast
 import paddle.distributed as dist
 import paddle.distributed.auto_parallel.intermediate.parallelize as parallelize
 import paddle.nn as nn
+import psutil
 from packaging import version
 from paddle import framework
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
@@ -481,7 +482,7 @@ class Trainer:
                 "You should subclass `Trainer` and override the `create_optimizer_and_scheduler` method."
             )
 
-        if self.args.pipeline_parallel_degree > 1 and self.args.use_hybrid_parallel:
+        if self.args.pipeline_model_parallel_size > 1 and self.args.use_hybrid_parallel:
             if HAS_PADDLEFLEET:
                 assert (
                     isinstance(model, LoRAModel) and isinstance(model.model, (PaddleFleetPipelineLayer, PipelineLayer))
@@ -553,7 +554,7 @@ class Trainer:
         if self.args.ordered_save_group_size > 0:
             logger.info(f"using save in order, its group size is {self.args.ordered_save_group_size}")
             assert not self.args.use_async_save, "Not support async save in ordered save"
-            assert self.args.tensor_parallel_degree % self.args.ordered_save_group_size == 0
+            assert self.args.tensor_model_parallel_size % self.args.ordered_save_group_size == 0
             self._save_ckpt_func = self._ordered_save
 
         if self.args.use_async_save:
@@ -600,7 +601,7 @@ class Trainer:
             model.apply(fn)
 
         self._pp_data_group = None
-        if self.args.pipeline_parallel_degree > 1 and self.args.distributed_dataloader:
+        if self.args.pipeline_model_parallel_size > 1 and self.args.distributed_dataloader:
             self._pp_data_group = init_dataloader_comm_group()
 
         default_label_names = (
@@ -644,7 +645,9 @@ class Trainer:
         if args.enable_auto_parallel:
             return
         # for pipeline mode and pure tensor parallel
-        if self.args.pipeline_parallel_degree > 1 or (self.args.tensor_parallel_degree > 1 and self.sharding is None):
+        if self.args.pipeline_model_parallel_size > 1 or (
+            self.args.tensor_model_parallel_size > 1 and self.sharding is None
+        ):
             if self.args.amp_master_grad:
                 mix_precision_utils.MixPrecisionScaler(self.scaler)  # return value has no use
             self.scaler = fleet.distributed_scaler(self.scaler)
@@ -716,17 +719,17 @@ class Trainer:
         if resume_from_checkpoint is not None:
             convert_tp = False
             if isinstance(self.model, LoRAModel):
-                if self.model.quantized or self.args.pipeline_parallel_degree > 1:
+                if self.model.quantized or self.args.pipeline_model_parallel_size > 1:
                     weights_file = os.path.join(
                         resume_from_checkpoint, _add_variant(LORA_WEIGHTS_NAME, self.args.weight_name_suffix)
                     )
                 else:
                     weights_file = os.path.join(resume_from_checkpoint, LORA_WEIGHTS_NAME)
-                    if self.model.lora_config.tensor_parallel_degree > 1:
+                    if self.model.lora_config.tensor_model_parallel_size > 1:
                         convert_tp = True
             elif isinstance(self.model, PrefixModelForCausalLM):
                 weights_file = os.path.join(resume_from_checkpoint, PREFIX_WEIGHTS_NAME)
-                if self.model.prefix_config.tensor_parallel_degree > 1:
+                if self.model.prefix_config.tensor_model_parallel_size > 1:
                     convert_tp = True
             elif isinstance(self.model, VeRAModel):
                 weights_file = os.path.join(resume_from_checkpoint, VERA_WEIGHTS_NAME)
@@ -1504,8 +1507,8 @@ class Trainer:
             per_device_trainable_numel = sum(np.prod(p.shape) for p in model.parameters() if not p.stop_gradient)
         logger.debug(f"  Number of trainable parameters = {per_device_trainable_numel:,} (per device)")
         if self.args.use_hybrid_parallel:
-            # todo fix for pipeline_parallel_degree
-            parts_num = max(self.args.tensor_parallel_degree, 1) * max(self.args.pipeline_parallel_degree, 1)
+            # todo fix for pipeline_model_parallel_size
+            parts_num = max(self.args.tensor_model_parallel_size, 1) * max(self.args.pipeline_model_parallel_size, 1)
             if parts_num > 1:
                 all_reduce_dtype = "int64"
                 if paddle.get_device().split(":")[0] in ["npu", "xpu"]:
@@ -1695,12 +1698,12 @@ class Trainer:
         enable_release_grads = False
         if args.sharding_parallel_degree > 1:
             enable_release_grads = "enable_release_grads" in args.sharding_parallel_config
-        if not enable_release_grads and args.pipeline_parallel_degree > 1:
+        if not enable_release_grads and args.pipeline_model_parallel_size > 1:
             enable_release_grads = "enable_release_grads" in args.pipeline_parallel_config
 
         if not args.enable_auto_parallel and (args.release_grads or enable_release_grads):
             self.optimizer.clear_grad(set_to_zero=False)
-            if args.pipeline_parallel_degree > 1:
+            if args.pipeline_model_parallel_size > 1:
                 for _, buffers in model._chunk_2_comm_buffers.items():
                     for buffer in buffers:
                         buffer._clear_grad_storage()
@@ -1717,7 +1720,7 @@ class Trainer:
             for inputs in inputs_list:
                 if self.args.sep_parallel_degree > 1 and self.args.split_inputs_sequence_dim:
                     inputs = auto_split_inputs_sequence_dim(inputs)
-                if self.args.context_parallel_degree > 1 and self.args.split_inputs_sequence_dim:
+                if self.args.context_parallel_size > 1 and self.args.split_inputs_sequence_dim:
                     inputs = auto_split_sequence_dim_load_balance(inputs)
         else:
             if (
@@ -1728,7 +1731,7 @@ class Trainer:
                 inputs = split_inputs_sequence_dim(inputs)
             if (
                 self.args.use_hybrid_parallel
-                and self.args.context_parallel_degree > 1
+                and self.args.context_parallel_size > 1
                 and getattr(self.model, "is_fleet", False)
             ):
                 inputs = get_batch_on_this_cp_rank(inputs)
@@ -2044,7 +2047,7 @@ class Trainer:
                         if self._enable_delay_scale_loss():
                             if self.args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
                                 tr_loss /= self.args.gradient_accumulation_steps
-                            if not self.args.enable_auto_parallel and self.args.pipeline_parallel_degree <= 1:
+                            if not self.args.enable_auto_parallel and self.args.pipeline_model_parallel_size <= 1:
                                 tr_loss /= self.args.gradient_accumulation_steps
 
                         # assert if loss is invalid
@@ -2074,14 +2077,14 @@ class Trainer:
 
                             # Pipeline parallel mode,  handle gradient reduce here to overlap
                             enable_dp_comm_overlap = (
-                                self.args.pipeline_parallel_degree > 1
+                                self.args.pipeline_model_parallel_size > 1
                                 and "enable_dp_comm_overlap" in args.pipeline_parallel_config
                             )
 
                             enable_release_grads = False
                             if args.sharding_parallel_degree > 1:
                                 enable_release_grads = "enable_release_grads" in args.sharding_parallel_config
-                            if not enable_release_grads and args.pipeline_parallel_degree > 1:
+                            if not enable_release_grads and args.pipeline_model_parallel_size > 1:
                                 enable_release_grads = "enable_release_grads" in args.pipeline_parallel_config
 
                             # Case 3: Pipeline parallel mode, overlap with dp
@@ -2266,18 +2269,18 @@ class Trainer:
 
         convert_tp = False
         if isinstance(self.model, LoRAModel):
-            if self.model.quantized or self.args.pipeline_parallel_degree > 1:
+            if self.model.quantized or self.args.pipeline_model_parallel_size > 1:
                 best_model_path = os.path.join(
                     self.state.best_model_checkpoint, _add_variant(LORA_WEIGHTS_NAME, self.args.weight_name_suffix)
                 )
             else:
                 best_model_path = os.path.join(self.state.best_model_checkpoint, LORA_WEIGHTS_NAME)
-                if self.model.lora_config.tensor_parallel_degree > 1:
+                if self.model.lora_config.tensor_model_parallel_size > 1:
                     convert_tp = True
 
         elif isinstance(self.model, PrefixModelForCausalLM):
             best_model_path = os.path.join(self.state.best_model_checkpoint, PREFIX_WEIGHTS_NAME)
-            if self.model.prefix_config.tensor_parallel_degree > 1:
+            if self.model.prefix_config.tensor_model_parallel_size > 1:
                 convert_tp = True
 
         if os.path.exists(best_model_path):
@@ -2601,7 +2604,7 @@ class Trainer:
                 drop_last=False,
             )
         else:
-            if self.args.pipeline_parallel_degree > 1:
+            if self.args.pipeline_model_parallel_size > 1:
                 # In pipeline parallelism, batch size will be strictly checked
                 # Use LastBatchPaddingSampler to pad the last batch with the first batch
                 from .trainer_utils import LastBatchPaddingSampler
@@ -2652,7 +2655,7 @@ class Trainer:
         additional_configs = {}
         if is_iterable_dataset:
             if (
-                self.args.dataset_world_size > 1 or self.args.pipeline_parallel_degree > 1
+                self.args.dataset_world_size > 1 or self.args.pipeline_model_parallel_size > 1
             ) and eval_dataset is not None:
                 eval_dataset = IterableDatasetShard(
                     eval_dataset,
@@ -2875,7 +2878,7 @@ class Trainer:
 
         if self.args.use_hybrid_parallel:
             if "hybrid_parallel_rng_state_tracker" in checkpoint_rng_state:
-                if self.args.tensor_parallel_degree <= 1:
+                if self.args.tensor_model_parallel_size <= 1:
                     checkpoint_rng_state["hybrid_parallel_rng_state_tracker"].pop("model_parallel_rng", None)
                 try:
                     fleet.meta_parallel.get_rng_state_tracker().set_states_tracker(
@@ -2986,7 +2989,7 @@ class Trainer:
         if (
             self.args.use_expert_parallel
             and self.args.moe_sharding_parallel_degree >= 1
-            and self.args.expert_parallel_degree > 1
+            and self.args.expert_model_parallel_size > 1
             and self.args.sharding_parallel_degree > 1
         ):
             from ..utils import MoEHybridParallelOptimizer
@@ -3089,7 +3092,7 @@ class Trainer:
             else:
                 model, self.optimizer = decorated
 
-        if self.args.tensor_parallel_degree > 1 and self.args.sequence_parallel:
+        if self.args.tensor_model_parallel_size > 1 and self.args.sequence_parallel:
             # use callback for sp grad sync in case of unexpected behaviour (except sharding stage 2&3)
             if ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.FULL_SHARD in self.args.sharding:
                 # stage 2 or stage 3
@@ -3109,11 +3112,11 @@ class Trainer:
         if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
             in_pipeline_parallel_mode = True
         else:
-            in_pipeline_parallel_mode = self.args.pipeline_parallel_degree > 1
+            in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
         in_sharding_parallel_mode = self.sharding is not None
-        in_tensor_parallel_mode = self.args.tensor_parallel_degree > 1
+        in_tensor_parallel_mode = self.args.tensor_model_parallel_size > 1
         in_sep_parallel_mode = self.args.sep_parallel_degree > 1
-        in_cp_parallel_mode = self.args.context_parallel_degree > 1
+        in_cp_parallel_mode = self.args.context_parallel_size > 1
 
         # Multi-gpu training
         if self.args.world_size > 1 and (not self.args.use_hybrid_parallel):
@@ -3201,7 +3204,7 @@ class Trainer:
         # No pipeline mode, sharding only
         if not in_pipeline_parallel_mode and in_sharding_parallel_mode:
             # Sharded DDP!
-            if self.args.tensor_parallel_degree > 1:
+            if self.args.tensor_model_parallel_size > 1:
                 hcg = fleet.get_hybrid_communicate_group()
                 assert (
                     ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.SHARD_OP in self.args.sharding
@@ -3417,9 +3420,9 @@ class Trainer:
             return True
 
         key = "enable_delay_scale_loss"
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             return key in self.args.pipeline_parallel_config
-        elif self.args.tensor_parallel_degree > 1:
+        elif self.args.tensor_model_parallel_size > 1:
             return key in self.args.tensor_parallel_config
         else:
             return False
@@ -3447,7 +3450,7 @@ class Trainer:
         if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
             return self.training_pipeline_step(model, inputs)
 
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             return self.training_pipeline_step(model, inputs)
 
         model.train()
@@ -3645,7 +3648,9 @@ class Trainer:
         signal_dir = os.path.join(run_signal_dir, checkpoint_folder)
 
         if not self.args.enable_auto_parallel:
-            if isinstance(self.model, LoRAModel) and (self.model.quantized or self.args.pipeline_parallel_degree > 1):
+            if isinstance(self.model, LoRAModel) and (
+                self.model.quantized or self.args.pipeline_model_parallel_size > 1
+            ):
                 self.save_model(output_dir)
             elif isinstance(self.model, LoRAModel) or isinstance(self.model, PrefixModelForCausalLM):
                 self.save_model(output_dir, True)
@@ -4280,6 +4285,14 @@ class Trainer:
 
         if self.state.epoch is not None:
             logs["progress_or_epoch"] = round(self.state.epoch, 4)
+
+        if self.timers:
+            logs.update(self.timers.info(self.timers.timers.keys()))
+
+        mem_info = psutil.virtual_memory()
+        logs["cpu_used_memory"] = round(mem_info.used / (1024**3), 2)
+        logs["cpu_available_memory"] = round(mem_info.available / (1024**3), 2)
+
         self.state.log_history = []
         self.control = self.callback_handler.on_log(self.args, self.state, self.control, logs, **kwargs)
 
@@ -4366,7 +4379,7 @@ class Trainer:
 
         prediction_loss_only = prediction_loss_only if prediction_loss_only is not None else args.prediction_loss_only
 
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             from paddle.distributed.fleet.meta_parallel import PipelineLayer
 
             _prepare_pipeline_inputs_func = getattr(self.model_wrapped, "_prepare_pipeline_inputs_func", None)
@@ -4685,7 +4698,7 @@ class Trainer:
             Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]: A tuple with the loss,
             logits and labels (each being optional).
         """
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
             return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys)
