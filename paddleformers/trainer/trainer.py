@@ -487,11 +487,11 @@ class Trainer:
                     isinstance(model, LoRAModel) and isinstance(model.model, (PaddleFleetPipelineLayer, PipelineLayer))
                 ) or isinstance(
                     model, (PaddleFleetPipelineLayer, PipelineLayer)
-                ), "Only support pipeline parallel mode when model is PipelineLayer!!!"
+                ), f"Only support pipeline parallel mode when model is PaddleFleetPipelineLayer or PipelineLayer!!! but get {type(model.model)}"
             else:
                 assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
                     model, PipelineLayer
-                ), "Only support pipeline parallel mode when model is PipelineLayer!!!"
+                ), f"Only support pipeline parallel mode when model is PipelineLayer!!! but get {type(model.model)}"
         default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
         callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
         self.callback_handler = CallbackHandler(
