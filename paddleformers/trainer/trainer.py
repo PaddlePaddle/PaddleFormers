@@ -3532,6 +3532,14 @@ class Trainer:
 
         if self.state.epoch is not None:
             logs["progress_or_epoch"] = round(self.state.epoch, 4)
+
+        if self.timers:
+            logs.update(self.timers.info(self.timers.timers.keys()))
+
+        mem_info = psutil.virtual_memory()
+        logs["cpu_used_memory"] = round(mem_info.used / (1024**3), 2)
+        logs["cpu_available_memory"] = round(mem_info.available / (1024**3), 2)
+
         self.state.log_history = []
         self.control = self.callback_handler.on_log(self.args, self.state, self.control, logs, **kwargs)
 
