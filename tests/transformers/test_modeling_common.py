@@ -404,8 +404,6 @@ class ModelTesterMixin:
                 pt_checkpoint_path = os.path.join(tmpdirname, "paddle_model.bin")
                 paddle.save(state_dict, pt_checkpoint_path)
                 check_equal(load_state_dict(pt_checkpoint_path))
-                paddle.save(state_dict, pt_checkpoint_path)
-                check_equal(load_state_dict(pt_checkpoint_path))
 
     def test_determinism(self):
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
