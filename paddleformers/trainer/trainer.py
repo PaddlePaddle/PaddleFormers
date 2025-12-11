@@ -42,6 +42,7 @@ import paddle.amp.auto_cast as autocast
 import paddle.distributed as dist
 import paddle.distributed.auto_parallel.intermediate.parallelize as parallelize
 import paddle.nn as nn
+import psutil
 from packaging import version
 from paddle import framework
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
