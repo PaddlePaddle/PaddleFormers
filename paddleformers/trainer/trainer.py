@@ -478,10 +478,16 @@ class Trainer:
             )
 
         if self.args.pipeline_parallel_degree > 1 and self.args.use_hybrid_parallel:
-            assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
-                model, PipelineLayer
-            ), "Only support pipeline parallel mode when model is PipelineLayer!!!"
-
+            if HAS_PADDLEFLEET:
+                assert (
+                    isinstance(model, LoRAModel) and isinstance(model.model, PaddleFleetPipelineLayer)
+                ) or isinstance(
+                    model, PaddleFleetPipelineLayer
+                ), "Only support pipeline parallel mode when model is PipelineLayer!!!"
+            else:
+                assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
+                    model, PipelineLayer
+                ), "Only support pipeline parallel mode when model is PipelineLayer!!!"
         default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
         callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
         self.callback_handler = CallbackHandler(
@@ -3005,15 +3011,19 @@ class Trainer:
                     param.initialize()
 
             return model
-
+        if HAS_PADDLEFLEET and isinstance(model, LoRAModel):
+            model = model.model
         if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+            print("hehehehheheh")
             prepare_pipeline_inputs_func = (
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
             )
             model = paddlefleet_dist_model.distributed_model(model)
             if prepare_pipeline_inputs_func is not None:
+                print("1111111")
                 model._prepare_pipeline_inputs_func = prepare_pipeline_inputs_func
             else:
+                print("222222")
 
                 def _prepare_pipeline_inputs_func(inputs):
                     first_stage_keys = ["input_ids", "attention_mask", "position_ids"]

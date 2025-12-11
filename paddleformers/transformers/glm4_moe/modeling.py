@@ -58,7 +58,11 @@ class GLMMoEModelProvider(GPTModelProvider):
 
     bias_activation_fusion: bool = True
 
-    transform_rules = {"tensor_parallel_degree": "tensor_model_parallel_size", "dtype": "params_dtype"}
+    transform_rules = {
+        "tensor_parallel_degree": "tensor_model_parallel_size",
+        "pipeline_parallel_degree": "pipeline_model_parallel_size",
+        "dtype": "params_dtype",
+    }
 
 
 def eager_attention_forward(
@@ -1081,14 +1085,15 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     def _gen_aoa_config(cls, config: Glm4MoeConfig):
         is_fleet = getattr(cls, "is_fleet", False)
         if is_fleet:
-            model_prefix = "" if cls == cls.base_model_class else "decoder."
+            model_prefix = "" if cls == cls.base_model_class else "model."
             aoa_config = {
                 "aoa_statements": [
-                    "model.embed_tokens.weight -> embedding.embed_tokens.weight",
-                    f"model.norm.weight -> {model_prefix}norm.weight",
-                    f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
-                    f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
-                    f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
+                    f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
+                    f"model.norm.weight -> {model_prefix}norm_cls.weight",
+                    f"_ -> {model_prefix}lm_head.weight",
+                    # f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                    # f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                    # f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
                     f"model.layers.$LAYER_ID.mlp.gate.weight -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
                     f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
                     f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
@@ -1164,8 +1169,9 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
                 f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
-                "embedding.embed_tokens.weight -> model.embed_tokens.weight",
-                f"{model_prefix}norm.weight -> model.norm.weight",
+                "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
+                f"{model_prefix}lm_head.weight -> _",
+                f"{model_prefix}norm_cls.weight -> model.norm.weight",
                 f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
                 f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"{model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
