@@ -450,6 +450,10 @@ class Trainer:
         self.model = model
         self.criterion = criterion
 
+        # Set use_cache for the model
+        if getattr(self.model, "config", None) is not None:
+            self.model.config.use_cache = self.args.use_cache
+
         self.compute_metrics = compute_metrics
         self.preprocess_logits_for_metrics = preprocess_logits_for_metrics
         self.processing_class = processing_class
