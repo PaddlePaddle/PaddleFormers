@@ -54,6 +54,7 @@ from paddleformers.utils.log import logger
 from ...hparams import (
     DataArguments,
     FinetuningArguments,
+    FleetArguments,
     GeneratingArguments,
     ModelArguments,
 )
@@ -66,6 +67,7 @@ def run_dpo(
     data_args: "DataArguments",
     generating_args: "GeneratingArguments",
     training_args: "FinetuningArguments",
+    fleet_args: "FleetArguments",
 ):
     """main"""
     paddle.set_device(training_args.device)
@@ -174,6 +176,14 @@ def run_dpo(
     if not training_args.reference_free and not model_args.lora:
         ref_model_config.dpo_config = dpo_config
     model_config.dpo_config = dpo_config
+
+    # Fleet args apply.
+    for key, value in fleet_args.__dict__.items():
+        setattr(model_config, key, value)
+
+    # model_config.tensor_parallel_degree = training_args.tensor_parallel_degree
+    # model_config.pipeline_parallel_degree = training_args.tensor_parallel_degree
+
     if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,

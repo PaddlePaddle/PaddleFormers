@@ -24,6 +24,7 @@ import_structure = {
     "finetuning_args": ["FinetuningArguments"],
     "generating_args": ["GeneratingArguments"],
     "model_args": ["ModelArguments"],
+    "fleet_args": ["FleetArguments"],
     "parser": ["get_eval_args", "get_train_args", "get_server_args", "get_export_args", "read_args"],
     "server_args": ["ServerArguments"],
 }
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from .data_args import *
     from .export_args import *
     from .finetuning_args import *
+    from .fleet_args import *
     from .generating_args import *
     from .model_args import *
     from .parser import *
