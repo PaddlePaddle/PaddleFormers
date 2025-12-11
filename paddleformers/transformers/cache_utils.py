@@ -305,9 +305,10 @@ class Cache:
         # this fake tensor approach. It has size 0 on the -2 dimension, so it does not allocate any data (it only
         # creates an empty tensor with correct shape, dtype and device), which is very efficient and practical
         fake_keys_tensor = paddle.zeros((batch_size, num_heads, 0, head_dim), dtype=dtype, device=device)
+        fake_valuess_tensor = paddle.zeros((batch_size, num_heads, 0, head_dim), dtype=dtype, device=device)
         # Init all layers
         for layer in self.layers:
-            layer.lazy_initialization(fake_keys_tensor)
+            layer.lazy_initialization(fake_keys_tensor, fake_valuess_tensor)
 
     def get_seq_length(self, layer_idx: int = 0) -> int:
         """Returns the sequence length of the cache for the given layer."""
