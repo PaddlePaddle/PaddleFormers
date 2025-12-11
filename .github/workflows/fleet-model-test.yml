@@ -257,6 +257,7 @@ jobs:
           import paddle
           print("paddle_commit:", paddle.version.commit)
           EOF
+          source ../PaddleFleet/.venv/bin/activate
           python /tmp/check_paddle.py
           '
 
