@@ -769,40 +769,6 @@ class MultiHeadAttention(nn.Layer):
         )
 
 
-# class PaddleOCRMultiheadAttentionPoolingHead(nn.Layer):
-#     """Multihead Attention Pooling."""
-
-#     def __init__(self, config: PaddleOCRVisionConfig):
-#         super().__init__()
-
-#         self.probe = self.create_parameter(
-#             shape=(1, 1, config.hidden_size),
-#             default_initializer=nn.initializer.Normal(),
-#         )
-#         self.attention = MultiHeadAttention(config, config.hidden_size, config.num_attention_heads)
-#         self.layernorm = GeneralNorm.create(
-#             config=config,
-#             norm_type="layer_norm",
-#             hidden_size=config.hidden_size,
-#             has_bias=False,
-#             norm_eps=config.layer_norm_eps,
-#             input_is_parallel=False,
-#         )
-#         self.mlp = PaddleOCRMLP(config)
-
-#     def forward(self, hidden_state, key_padding_mask=None):
-#         batch_size = hidden_state.shape[0]
-#         probe = self.probe.tile((batch_size, 1, 1))
-
-#         hidden_state = self.attention(probe, hidden_state, hidden_state, key_padding_mask=key_padding_mask)[0]
-
-#         residual = hidden_state
-#         hidden_state = self.layernorm(hidden_state)
-#         hidden_state = residual + self.mlp(hidden_state)
-
-#         return hidden_state[:, 0]
-
-
 class PaddleOCRVisionTransformer(nn.Layer):
     def __init__(self, config: PaddleOCRVisionConfig):
         super().__init__()
@@ -819,10 +785,6 @@ class PaddleOCRVisionTransformer(nn.Layer):
             norm_eps=config.layer_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
-
-        # self.use_head = True if not hasattr(config, "vision_use_head") else config.vision_use_head
-        # if self.use_head:
-        #     self.head = PaddleOCRMultiheadAttentionPoolingHead(config)
 
     def forward(
         self,
@@ -1118,6 +1080,7 @@ class Ernie4_5Attention(nn.Layer):
         self.head_dim = config.head_dim
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.rope_scaling = config.rope_scaling
+        self.is_causal = True
 
         if config.tensor_parallel_degree > 1:
             assert (
@@ -1234,6 +1197,7 @@ class Ernie4_5Attention(nn.Layer):
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             dropout=self.config.get("attention_dropout_prob", 0.0) if self.training else 0.0,
             scaling=self.scaling,
+            is_causal=self.is_causal,
         )
 
         if self.config.sequence_parallel:
@@ -1685,12 +1649,6 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
 
         hidden_states = inputs_embeds
 
-        # if attention_mask is not None:
-        #     causal_attention_mask = self._prepare_decoder_attention_mask(
-        #         attention_mask, hidden_states.shape[:2], kv_seq_len, hidden_states.dtype
-        #     )
-        # else:
-        #     causal_attention_mask = None
         mask_kwargs = {
             "config": self.config,
             "inputs_embeds": inputs_embeds,

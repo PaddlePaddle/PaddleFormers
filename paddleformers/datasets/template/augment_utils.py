@@ -15,37 +15,10 @@
 """Image processor class for PaddleOCR-VL."""
 
 import io
-import math
 import random
-from typing import Dict, List, Optional, Union
 
-import numpy as np
 from paddle.vision import transforms
 from PIL import Image, ImageOps
-
-from ...utils.log import logger
-from ...transformers.feature_extraction_utils import BatchFeature
-from ...transformers.image_processing_utils import BaseImageProcessor
-from ...transformers.image_transforms import convert_to_rgb, to_channel_dimension_format
-from ...transformers.image_utils import (
-    OPENAI_CLIP_MEAN,
-    OPENAI_CLIP_STD,
-    ChannelDimension,
-    ImageInput,
-    PILImageResampling,
-    infer_channel_dimension_format,
-    is_valid_image,
-    make_list_of_images,
-    to_numpy_array,
-    valid_images,
-)
-
-__all__ = [
-    "PaddleOCRVLImageProcessor",
-]
-
-
-# --- Transformation Classes ---
 
 
 class RandomApply:
@@ -128,5 +101,3 @@ class RandomSingleSidePadding:
 
         padding = (pad_left, pad_top, pad_right, pad_bottom)
         return ImageOps.expand(img, border=padding, fill=self.fill)
-
-
