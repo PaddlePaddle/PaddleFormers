@@ -78,4 +78,3 @@ load_checkpoint_format : "flex_checkpoint"
 save_to_hf: true
 
 benchmark: true
-进入IDE阅读
