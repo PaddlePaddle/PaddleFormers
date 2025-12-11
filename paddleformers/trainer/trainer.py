@@ -1484,7 +1484,7 @@ class Trainer:
                     # Pipeline parallel mode,  handle gradient reduce here to overlap
                     enable_dp_comm_overlap = (
                         self.args.pipeline_model_parallel_size > 1
-                        and "enable_dp_comm_overlap" in args.pipeline_model_parallel_size
+                        and "enable_dp_comm_overlap" in args.pipeline_parallel_config
                     )
 
                     enable_release_grads = False
