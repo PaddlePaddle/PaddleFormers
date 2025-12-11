@@ -1163,7 +1163,7 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
         cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if self.config.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]

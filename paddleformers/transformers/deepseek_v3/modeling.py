@@ -1421,7 +1421,7 @@ class DeepseekV3Model(DeepseekV3PretrainedModel):
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if position_embeddings is None:
             position_embeddings = paddle.stack(self.rotary_emb(inputs_embeds, position_ids=position_ids))

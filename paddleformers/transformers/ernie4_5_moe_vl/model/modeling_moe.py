@@ -1118,7 +1118,7 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
             cache_length = paddle.shape(past_key_values[0][0])[1]
             seq_length_with_past += cache_length
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         inputs_embeds = inputs_embeds.astype(self.embed_tokens.weight.dtype)
         if self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]

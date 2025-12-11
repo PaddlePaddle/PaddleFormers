@@ -850,7 +850,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         seq_length -= self.config.num_nextn_predict_layers
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         mask_kwargs = {
             "config": self.config,

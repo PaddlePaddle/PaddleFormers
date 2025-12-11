@@ -1055,7 +1055,7 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if use_cache and past_key_values is None:
             past_key_values = Qwen3NextDynamicCache(config=self.config)

@@ -547,7 +547,7 @@ class LlamaModel(LlamaPretrainedModel):
         if not ((input_ids is None) ^ (inputs_embeds is None)):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         inputs_embeds = cast(paddle.Tensor, inputs_embeds)  # for type check
         bsz, seq_length, _ = inputs_embeds.shape
 
