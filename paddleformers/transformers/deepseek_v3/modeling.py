@@ -93,7 +93,6 @@ def scaled_dot_product_attention(
     # Attention Interface input [bz, nhead, seqlen, headdim]
 
     fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])["FLAGS_flash_attn_version"]
-    # config._attn_implementation = "flashmask"
     if fa_version == 2 and config._attn_implementation == "flashmask":
         q_head_dim = query_states.shape[-1]
         softmax_scale = softmax_scale * (q_head_dim**0.5)
