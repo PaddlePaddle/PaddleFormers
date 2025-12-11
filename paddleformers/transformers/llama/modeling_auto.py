@@ -986,7 +986,7 @@ class LlamaModelAuto(LlamaPretrainedModelAuto):
 
         if inputs_embeds is None:
             with paddle.amp.auto_cast(False):
-                inputs_embeds = self.embed_tokens(input_ids)
+                inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if self.config.sequence_parallel:
             # [B, S, H] -> [S, B, H]

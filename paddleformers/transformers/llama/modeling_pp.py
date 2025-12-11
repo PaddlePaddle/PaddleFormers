@@ -181,7 +181,7 @@ class LlamaEmbeddingPipe(nn.Layer):
                 position_ids = attn_mask_startend_row_indices
                 attn_mask_startend_row_indices = None
 
-        input_embeds = self.embed_tokens(input_ids)
+        input_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         if self.sequence_parallel:
             from . import ScatterOp
 

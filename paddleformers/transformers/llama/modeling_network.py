@@ -796,7 +796,7 @@ class LlamaModelNet(LlamaPretrainedModelNet):
 
         if inputs_embeds is None:
             with paddle.amp.auto_cast(False):
-                inputs_embeds = self.embed_tokens(input_ids)
+                inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         """
         if position_ids is None and self.config.sep_parallel_degree > 1:

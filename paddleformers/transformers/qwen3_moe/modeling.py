@@ -818,7 +818,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         cache_length = 0
         if past_key_values is None:
@@ -1137,6 +1137,7 @@ class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _get_tensor_parallel_mappings = Qwen3MoeModel._get_tensor_parallel_mappings
     _init_weights = Qwen3MoeModel._init_weights
     _keep_in_fp32_modules = Qwen3MoeModel._keep_in_fp32_modules
+    _rotary_emb_cls = Qwen3MoeRotaryEmbedding
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen3MoeModel.transpose_weight_keys
     _gen_aoa_config = Qwen3MoeForCausalLM._gen_aoa_config
