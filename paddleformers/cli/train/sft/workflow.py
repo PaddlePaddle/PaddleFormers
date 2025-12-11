@@ -78,13 +78,6 @@ from paddleformers.cli.hparams import (
     ModelArguments,
 )
 
-try:
-    import paddlefleet  # noqa: F401
-
-    HAS_PADDLEFLEET = True
-except:
-    HAS_PADDLEFLEET = False
-
 
 def create_pretrained_dataset(training_args, data_args, model_args):
     assert data_args.input_dir is not None and len(data_args.input_dir.split()) > 1
@@ -279,10 +272,7 @@ def run_sft(
         if training_args.pipeline_parallel_degree > 1:
             if data_args.eval_with_do_generation and training_args.do_eval:
                 raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
-            if HAS_PADDLEFLEET:
-                model_class = AutoModelForCausalLM
-            else:
-                model_class = AutoModelForCausalLMPipe
+            model_class = AutoModelForCausalLMPipe
 
     if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(
