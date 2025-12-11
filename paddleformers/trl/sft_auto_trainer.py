@@ -90,9 +90,9 @@ class SFTAutoTrainer(SFTTrainer):
             assert model is not None
             # NOTE(zhangwl): some param_init_func is not support lazy init
             auto_dist_degree = {
-                "tensor_parallel": kwargs["args"].tensor_parallel_degree > 1,
+                "tensor_parallel": kwargs["args"].tensor_model_parallel_size > 1,
                 "sequence_parallel": sequence_parallel,
-                "pipeline_parallel": kwargs["args"].pipeline_parallel_degree > 1,
+                "pipeline_parallel": kwargs["args"].pipeline_model_parallel_size > 1,
                 "data_sharding_parallel": kwargs["args"].dataset_world_size > 1,
                 "sharding": kwargs["args"].sharding,
                 "sharding_mesh_dim": kwargs["args"].sharding_parallel_mesh_dimension,
@@ -145,7 +145,7 @@ class SFTAutoTrainer(SFTTrainer):
             else:
                 tr_loss = paddle.to_tensor([tensors])
 
-        if self.args.pipeline_parallel_degree <= 1:
+        if self.args.pipeline_model_parallel_size <= 1:
             return super()._nested_gather(tr_loss)
 
         paddle.distributed.broadcast(tr_loss, src=self.comm_group_in_pp.ranks[-1], group=self.comm_group_in_pp)
@@ -169,10 +169,10 @@ class SFTAutoTrainer(SFTTrainer):
         elif isinstance(data, (list, tuple)):
             data_num = len(data)
         assert data_num >= 2
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             for i in range(1, data_num):
                 meshes.append(_get_mesh(0))
-            meshes[-1] = _get_mesh(self.args.pipeline_parallel_degree - 1)
+            meshes[-1] = _get_mesh(self.args.pipeline_model_parallel_size - 1)
         return meshes
 
     def _wrap_for_dist_loader(self, train_dataloader):
@@ -267,7 +267,7 @@ class SFTAutoTrainer(SFTTrainer):
         if self.args.gradient_accumulation_steps == 1:
             return [inputs]
 
-        if self.args.to_static and self.args.pipeline_parallel_degree > 1:
+        if self.args.to_static and self.args.pipeline_model_parallel_size > 1:
             return [inputs]
 
         if self.args.to_static and self._in_pir_mode and self.args.gradient_accumulation_steps > 1:
@@ -468,7 +468,7 @@ class SFTAutoTrainer(SFTTrainer):
                         tr_loss += tr_loss_step
 
                     disable_accumulation = False
-                    if self.args.pipeline_parallel_degree > 1 and self.args.to_static:
+                    if self.args.pipeline_model_parallel_size > 1 and self.args.to_static:
                         disable_accumulation = True
                     if self.args.to_static and self._in_pir_mode and self.args.gradient_accumulation_steps > 1:
                         disable_accumulation = True

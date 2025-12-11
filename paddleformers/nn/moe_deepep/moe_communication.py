@@ -33,7 +33,7 @@ class MoECommunicationInterface(ABC):
         gates_masked: paddle.Tensor,
         mask: paddle.Tensor,
         priorities: paddle.Tensor,
-        expert_parallel_degree: int,
+        expert_model_parallel_size: int,
         moe_group: Group,
         experts: nn.LayerList,
         moe_rank: int,
@@ -50,7 +50,7 @@ class MoECommunicationInterface(ABC):
             gates_masked: Masked gates. For each token(row), the selected experts are remainded with their normalized gate values, others are 0. Shape: [num_tokens, num_experts]
             mask: Mask. For each token(row), the selected experts are marked with 1, others are 0. Shape: [num_tokens, num_experts]
             priorities: Token priorities, shape: [num_tokens, num_experts]
-            expert_parallel_degree: Expert parallel degree
+            expert_model_parallel_size: Expert parallel degree
             moe_group: MoE group
             experts: Experts list
             moe_rank: Current rank id in the MoE group
@@ -80,7 +80,7 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         gates_masked: paddle.Tensor,
         mask: paddle.Tensor,
         priorities: paddle.Tensor,
-        expert_parallel_degree: int,
+        expert_model_parallel_size: int,
         moe_group: Group,
         experts: nn.LayerList,
         moe_rank: int,
@@ -102,7 +102,7 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
             mask:
                 Mask tensor indicating which experts are selected.
                 Shape: [batch_size * seq_len, num_experts], where [i, j] is 1 when expert j is selected at sequence index i; otherwise it's zero.
-            expert_parallel_degree: Degree of expert parallelism
+            expert_model_parallel_size: Degree of expert parallelism
             moe_group: MoE communication group
 
         Returns:
@@ -110,7 +110,7 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
             aux_loss: Auxiliary loss
             z_loss: Z-loss
         """
-        if expert_parallel_degree <= 1:
+        if expert_model_parallel_size <= 1:
             return hidden_states
         mask = mask.to(paddle.int64)
 
@@ -132,11 +132,11 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         tokens_per_expert = tokens_per_expert.detach()
         sorted_tokens_shape = sorted_tokens.shape
 
-        tokens_per_ep_rank = tokens_per_expert.reshape([expert_parallel_degree, -1]).sum(axis=1)
+        tokens_per_ep_rank = tokens_per_expert.reshape([expert_model_parallel_size, -1]).sum(axis=1)
         # First All-to-All: Exchange expert token counts across ranks
         tokens_per_expert_group = _AllToAll.apply([tokens_per_expert.shape[0]], tokens_per_expert, group=moe_group)
 
-        tokens_per_expert_group_sum = tokens_per_expert_group.reshape([expert_parallel_degree, -1])
+        tokens_per_expert_group_sum = tokens_per_expert_group.reshape([expert_model_parallel_size, -1])
         output_splits = tokens_per_expert_group_sum.sum(axis=1).cpu().tolist()
         input_split_sizes = tokens_per_ep_rank.cpu().tolist()
         output_shape = [tokens_per_expert_group.sum(axis=0).cpu().item(), sorted_tokens.shape[1]]
@@ -151,7 +151,7 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         )
 
         tokens_per_expert_post_gather = tokens_per_expert_group.reshape(
-            [expert_parallel_degree, num_experts_per_device]
+            [expert_model_parallel_size, num_experts_per_device]
         ).sum(axis=0)
         gatherd_idxs = np.zeros(shape=(gathered_tokens.shape[0],), dtype=np.int32)
         s = 0
@@ -238,7 +238,7 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         gates_masked: paddle.Tensor,
         mask: paddle.Tensor,
         priorities: paddle.Tensor,
-        expert_parallel_degree: int,
+        expert_model_parallel_size: int,
         moe_group: Group,
         experts: nn.LayerList,
         moe_rank: int,
@@ -247,7 +247,7 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         topk: int,
         token_dispatcher,
     ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
-        if expert_parallel_degree <= 1:
+        if expert_model_parallel_size <= 1:
             return hidden_states
         (dispatched_input, tokens_per_expert) = token_dispatcher.token_permutation(
             hidden_states,

@@ -81,12 +81,12 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
         self.postprocess_past_key_value = postprocess_past_key_value
         self.pad_attention_mask = pad_attention_mask
         if self.model.base_model_prefix == "chatglm_v2":
-            self.prefix_config.tensor_parallel_degree = -1
+            self.prefix_config.tensor_model_parallel_size = -1
         else:
-            if self.prefix_config.tensor_parallel_degree != self.model.config.tensor_parallel_degree:
-                self.prefix_config.tensor_parallel_degree = self.model.config.tensor_parallel_degree
+            if self.prefix_config.tensor_model_parallel_size != self.model.config.tensor_model_parallel_size:
+                self.prefix_config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
                 logger.warning(
-                    f"Reset tensor_parallel_degree of prefix_config to {self.model.config.tensor_parallel_degree}."
+                    f"Reset tensor_model_parallel_size of prefix_config to {self.model.config.tensor_model_parallel_size}."
                 )
         logger.info("Mark only prefix and trainable_module as trainable.")
         self.mark_only_prefix_as_trainable()
@@ -201,7 +201,7 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
             self.num_heads = self.prefix_config.num_attention_heads
         if self.prefix_config.prefix_projection:
             activation = nn.Tanh()
-            if self.prefix_config.tensor_parallel_degree > 1:
+            if self.prefix_config.tensor_model_parallel_size > 1:
                 prefix_embedding = fleet.meta_parallel.VocabParallelEmbedding(
                     self.prefix_config.num_prefix_tokens,
                     self.head_dim * self.num_heads,
@@ -233,7 +233,7 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
                 )
             prefix_encoder = nn.Sequential(prefix_embedding, prefix_proj_0, activation, prefix_proj_1, prefix_dropout)
         else:
-            if self.prefix_config.tensor_parallel_degree > 1:
+            if self.prefix_config.tensor_model_parallel_size > 1:
                 prefix_embedding = fleet.meta_parallel.VocabParallelEmbedding(
                     self.prefix_config.num_prefix_tokens,
                     self.head_dim * self.num_heads * self.prefix_config.num_hidden_layers * 2,
@@ -251,17 +251,17 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
         # (bs, prefixlen, hidden_dim*layer_num*2)
         past_key_values = self.prefix_encoder(self.prefix_tokens.unsqueeze(0).expand([batch_size, -1]))
 
-        # (bs, prefixlen, hidden_dim*layer_num*2/tensor_parallel_degree)
-        if self.prefix_config.tensor_parallel_degree > 1:
+        # (bs, prefixlen, hidden_dim*layer_num*2/tensor_model_parallel_size)
+        if self.prefix_config.tensor_model_parallel_size > 1:
             split_past_key_values = past_key_values.split(
-                num_or_sections=self.prefix_config.tensor_parallel_degree, axis=2
+                num_or_sections=self.prefix_config.tensor_model_parallel_size, axis=2
             )
             past_key_values = split_past_key_values[self.model.config.tensor_parallel_rank]
-            num_heads_per_partition = self.num_heads // self.prefix_config.tensor_parallel_degree
+            num_heads_per_partition = self.num_heads // self.prefix_config.tensor_model_parallel_size
         else:
             num_heads_per_partition = self.num_heads
 
-        # (bs, prefixlen, layer_num*2, head_num/tensor_parallel_degree,  head_dim)
+        # (bs, prefixlen, layer_num*2, head_num/tensor_model_parallel_size,  head_dim)
         past_key_values = past_key_values.reshape(
             [
                 batch_size,
@@ -323,8 +323,8 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
     ):
         # init prefix config & prefix model
         prefix_config = PrefixConfig.from_pretrained(prefix_path)
-        # define a new variable to conserve original prefix_config.tensor_parallel_degree value which will update while initializing prefix model
-        prefix_config_tensor_parallel_degree = prefix_config.tensor_parallel_degree
+        # define a new variable to conserve original prefix_config.tensor_model_parallel_size value which will update while initializing prefix model
+        prefix_config_tensor_model_parallel_size = prefix_config.tensor_model_parallel_size
         prefix_model = cls(model, prefix_config, postprocess_past_key_value, pad_attention_mask)
 
         prefix_model_index_file = os.path.join(prefix_path, SAFE_PEFT_WEIGHTS_INDEX_NAME)
@@ -343,7 +343,7 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
             error_msgs = []
             for shard_file in resolved_archieve_file:
                 pre_tensor_parallel_split = False
-                if model.config.tensor_parallel_degree > 1:
+                if model.config.tensor_model_parallel_size > 1:
                     pre_tensor_parallel_split = True
                     tp_actions = prefix_model._get_tensor_parallel_convert_actions(is_split=True)
                 state_dict = load_state_dict(
@@ -363,7 +363,7 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
             return prefix_model
 
         # define prefix weight name
-        if prefix_config_tensor_parallel_degree > 1:
+        if prefix_config_tensor_model_parallel_size > 1:
             prefix_weight_name = _add_variant(PREFIX_WEIGHTS_NAME, f"tp{model.config.tensor_parallel_rank:0>2d}")
         else:
             prefix_weight_name = PREFIX_WEIGHTS_NAME
@@ -376,15 +376,15 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
             logger.info(f"Loading the prefix weights from {prefix_weight_path}")
 
             if (
-                prefix_config_tensor_parallel_degree > 1
-                and prefix_config_tensor_parallel_degree != model.config.tensor_parallel_degree
+                prefix_config_tensor_model_parallel_size > 1
+                and prefix_config_tensor_model_parallel_size != model.config.tensor_model_parallel_size
             ):
                 raise NotImplementedError(
-                    f"{prefix_config_tensor_parallel_degree} is not equal to {model.config.tensor_parallel_degree}. Please merge prefix weights first."
+                    f"{prefix_config_tensor_model_parallel_size} is not equal to {model.config.tensor_model_parallel_size}. Please merge prefix weights first."
                 )
 
             # convert parameters to tensor parallel for mp model
-            if prefix_config_tensor_parallel_degree <= 1 and model.config.tensor_parallel_degree > 1:
+            if prefix_config_tensor_model_parallel_size <= 1 and model.config.tensor_model_parallel_size > 1:
                 prefix_state_dict = prefix_model._convert_tensor_parallel(prefix_state_dict=prefix_state_dict)
 
             # set prefix state dict
@@ -418,17 +418,17 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
         # (num_layers, 2, num_heads, prefixlen, head_dim)
         past_key_values = paddle.transpose(past_key_values, perm=[2, 1, 3, 0, 4]).cpu().numpy()
 
-        if merge_tensor_parallel and self.prefix_config.tensor_parallel_degree > 1:
+        if merge_tensor_parallel and self.prefix_config.tensor_model_parallel_size > 1:
             trainable_state_dict = self.prefix_encoder.state_dict()
             trainable_state_dict = self._merge_trainable_tensor_parallel(trainable_state_dict)
             if not is_main_process:
                 logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
                 return
             variant = None
-            self.prefix_config.tensor_parallel_degree = -1
+            self.prefix_config.tensor_model_parallel_size = -1
         else:
             trainable_state_dict = self.prefix_encoder.state_dict()
-            if self.prefix_config.tensor_parallel_degree > 1:
+            if self.prefix_config.tensor_model_parallel_size > 1:
                 if variant is None:
                     variant = f"tp{self.model.config.tensor_parallel_rank:0>2d}"
 
@@ -443,9 +443,9 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
             np.save(os.path.join(save_directory, PAST_KEY_VALUES_FILE_NAME), past_key_values)
 
         if self.model.base_model_prefix == "chatglm_v2":
-            self.prefix_config.tensor_parallel_degree = -1
+            self.prefix_config.tensor_model_parallel_size = -1
         else:
-            self.prefix_config.tensor_parallel_degree = self.model.config.tensor_parallel_degree
+            self.prefix_config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
 
     def set_state_dict(self, state_dict):
         self.prefix_encoder.set_state_dict(state_dict)
@@ -456,7 +456,7 @@ class PrefixModelForCausalLM(paddle.nn.Layer):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=self.prefix_config.tensor_parallel_degree,
+            tensor_model_parallel_size=self.prefix_config.tensor_model_parallel_size,
             tensor_parallel_rank=self.model.config.tensor_parallel_rank,
             num_attention_heads=self.model.config.num_attention_heads,
         )

@@ -23,15 +23,28 @@ from functools import partial
 from typing import Any, Callable, Literal, Optional, Union
 
 import paddle
-from paddlefleet import LayerSpec, parallel_state
+from paddlefleet import LayerSpec
 from paddlefleet.models.gpt import GPTModel as FleetGPTModel
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
-from paddlefleet.transformer.transformer_config import TransformerConfig
+
+try:
+    from paddlefleet.models.gpt.gpt_config import GPTConfig
+except ImportError:
+    from paddlefleet.transformer.transformer_config import (
+        TransformerConfig as GPTConfig,
+    )
+
+
+try:
+    from paddlefleet.gpt_builders import gpt_builder
+
+    HAS_PADDLEFLEET = True
+except ImportError:
+    HAS_PADDLEFLEET = False
 
 from paddleformers.transformers.model_utils import PretrainedModel
 
 from .model_provider import ModelProviderMixin
-from .vocab_utils import calculate_padded_vocab_size
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +65,7 @@ def local_layer_spec(config: "GPTModelProvider") -> LayerSpec:
     Returns:
         LayerSpec: Module specification for local implementation layers
     """
+    assert HAS_PADDLEFLEET
     return get_gpt_layer_local_spec(
         num_experts=config.num_moe_experts,
         moe_grouped_gemm=config.moe_grouped_gemm,
@@ -61,7 +75,7 @@ def local_layer_spec(config: "GPTModelProvider") -> LayerSpec:
 
 
 @dataclass
-class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
+class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     """Configuration and provider for PaddleFleet GPT models.
 
     This class extends TransformerConfig with GPT-specific parameters and
@@ -78,14 +92,15 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
     rotary_percent: float = 1.0
     seq_len_interpolation_factor: Optional[float] = None
     seq_length: int = 1024
+
+    max_sequence_length: int = 1024
+
     attention_softmax_in_fp32: bool = False
     deallocate_pipeline_outputs: bool = True
     scatter_embedding_sequence_parallel: bool = True
     tp_only_amax_red: bool = False
     tp_comm_overlap_cfg: Optional[Union[str, dict[str, Any]]] = None
     """Config file when tp_comm_overlap is enabled."""
-
-    transformer_layer_spec: Union[LayerSpec, Callable[["GPTModelProvider"], LayerSpec]] = local_layer_spec
 
     generation_config: Optional[Any] = None
 
@@ -134,6 +149,7 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
         Returns:
             GPTModel: Configured PaddleFleet GPT model instance
         """
+        assert HAS_PADDLEFLEET
         vp_size = self.virtual_pipeline_model_parallel_size
         is_pipeline_asymmetric = getattr(self, "account_for_embedding_in_pipeline_split", False) or getattr(
             self, "account_for_loss_in_pipeline_split", False
@@ -150,25 +166,6 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
             assert (
                 self.num_layers // p_size
             ) % vp_size == 0, "Make sure the number of model chunks is the same across all pipeline stages."
-
-        transformer_layer_spec = self.transformer_layer_spec
-        print(f"transformer_layer_spec  {transformer_layer_spec}")
-        print(f"param: {inspect.signature(transformer_layer_spec).parameters}")
-
-        if not isinstance(transformer_layer_spec, LayerSpec):
-            # Check if the transformer_layer_spec function accepts vp_stage parameter
-            if "vp_stage" in inspect.signature(transformer_layer_spec).parameters:
-                transformer_layer_spec = transformer_layer_spec(self, vp_stage=vp_stage)
-            else:
-                transformer_layer_spec = transformer_layer_spec(self)
-
-        assert self.vocab_size is not None, "vocab_size must be configured before calling provide()"
-        if self.should_pad_vocab:
-            padded_vocab_size = calculate_padded_vocab_size(
-                self.vocab_size, self.make_vocab_size_divisible_by, self.tensor_model_parallel_size
-            )
-        else:
-            padded_vocab_size = self.vocab_size
 
         # Initialize model as meta data instead of allocating data on a device
         model_init_device_context = contextlib.nullcontext
@@ -187,26 +184,7 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[GPTModel]):
         """
 
         with model_init_device_context():
-            model = GPTModel(
-                self,
-                transformer_layer_spec=transformer_layer_spec,
-                vocab_size=padded_vocab_size,
-                max_sequence_length=self.seq_length,
-                fp16_lm_cross_entropy=self.fp16_lm_cross_entropy,
-                parallel_output=self.parallel_output,
-                share_embeddings_and_output_weights=self.share_embeddings_and_output_weights,
-                position_embedding_type=self.position_embedding_type,
-                rotary_percent=self.rotary_percent,
-                rotary_base=self.rotary_base,
-                seq_len_interpolation_factor=self.seq_len_interpolation_factor,
-                pre_process=pre_process
-                or parallel_state.is_pipeline_first_stage(ignore_virtual=False, vp_stage=vp_stage),
-                post_process=post_process
-                or parallel_state.is_pipeline_last_stage(ignore_virtual=False, vp_stage=vp_stage),
-                scatter_embedding_sequence_parallel=self.scatter_embedding_sequence_parallel,
-                vp_stage=vp_stage,
-                **kwargs,
-            )
+            model = gpt_builder(self, num_stages=1)
 
         return model
 
@@ -220,6 +198,7 @@ def mtp_block_spec(config: "GPTModelProvider", vp_stage: Optional[int] = None) -
     Returns:
         LayerSpec: The MTP module specification
     """
+    assert HAS_PADDLEFLEET
     if getattr(config, "mtp_num_layers", None):
         from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_mtp_block_spec
 

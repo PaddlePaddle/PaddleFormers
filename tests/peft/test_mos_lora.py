@@ -125,7 +125,7 @@ class TestMosLoraModel(unittest.TestCase):
             enable_lora_list=[None, [True, False]],
             head_dim=2,
             lora_use_mixer=True,
-            tensor_parallel_degree=2,
+            tensor_model_parallel_size=2,
         )
         model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
         model.eval()

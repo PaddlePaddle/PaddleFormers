@@ -61,7 +61,7 @@ from ..model_outputs import (
     SequenceClassifierOutputWithPast,
 )
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import DeepseekV3Config
@@ -137,81 +137,6 @@ def yarn_get_mscale(scale, mscale=1):
     return 0.1 * mscale * math.log(scale) + 1.0
 
 
-def _compute_yarn_parameters(
-    config,
-    seq_len=None,
-):
-    base = config["rope_theta"]
-    rope_parameters_dict = config["rope_parameters"]
-    partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-    head_dim = getattr(config, "qk_rope_head_dim", config.hidden_size // config.num_attention_heads)
-    dim = int(head_dim * partial_rotary_factor)
-
-    factor = rope_parameters_dict["factor"]
-    attention_factor = rope_parameters_dict.get("attention_factor", None)
-    mscale = rope_parameters_dict.get("mscale")
-    mscale_all_dim = rope_parameters_dict.get("mscale_all_dim")
-
-    # NOTE: DeekSeek-V3 (and potentially other models) modify `max_position_embeddings` and have a
-    # `original_max_position_embeddings` field containing the pretrained value. They use the ratio between these two
-    # values to compute the default attention scaling factor, instead of using `factor`.
-    if "original_max_position_embeddings" in rope_parameters_dict:
-        original_max_position_embeddings = rope_parameters_dict["original_max_position_embeddings"]
-        factor = config.max_position_embeddings / original_max_position_embeddings
-    else:
-        original_max_position_embeddings = config.max_position_embeddings
-
-    # Sets the attention factor as suggested in the paper
-    if attention_factor is None:
-        if mscale and mscale_all_dim:
-            attention_factor = float(yarn_get_mscale(factor, mscale) / yarn_get_mscale(factor, mscale_all_dim))
-        else:
-            attention_factor = yarn_get_mscale(factor)
-
-    # Optional config options
-    # beta_fast/beta_slow: as suggested in the paper, default to 32/1 (correspondingly)
-    beta_fast = rope_parameters_dict.get("beta_fast") or 32
-    beta_slow = rope_parameters_dict.get("beta_slow") or 1
-
-    # Compute the inverse frequencies
-    def find_correction_dim(num_rotations, dim, base, max_position_embeddings):
-        """Inverse dimension formula to find the dimension based on the number of rotations"""
-        return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
-
-    def find_correction_range(low_rot, high_rot, dim, base, max_position_embeddings, truncate):
-        """Find dimension range bounds based on rotations"""
-        low = find_correction_dim(low_rot, dim, base, max_position_embeddings)
-        high = find_correction_dim(high_rot, dim, base, max_position_embeddings)
-        if truncate:
-            low = math.floor(low)
-            high = math.ceil(high)
-        return max(low, 0), min(high, dim - 1)
-
-    def linear_ramp_factor(min, max, dim):
-        if min == max:
-            max += 0.001  # Prevent singularity
-
-        linear_func = (paddle.arange(dim, dtype=paddle.float32) - min) / (max - min)
-        ramp_func = paddle.clamp(linear_func, 0, 1)
-        return ramp_func
-
-    pos_freqs = base ** (paddle.arange(0, dim, 2).astype(paddle.float32) / dim)
-    inv_freq_extrapolation = 1.0 / pos_freqs
-    inv_freq_interpolation = 1.0 / (factor * pos_freqs)
-
-    # truncate = config.rope_parameters.get("truncate", True)
-    low, high = find_correction_range(beta_fast, beta_slow, dim, base, original_max_position_embeddings, True)
-
-    # Get n-dimensional rotational scaling corrected for extrapolation
-    inv_freq_extrapolation_factor = 1 - linear_ramp_factor(low, high, dim // 2).astype(paddle.float32)
-
-    inv_freq = (
-        inv_freq_interpolation * (1 - inv_freq_extrapolation_factor)
-        + inv_freq_extrapolation * inv_freq_extrapolation_factor
-    )
-    return inv_freq, attention_factor
-
-
 class DeepseekV3YarnRotaryEmbedding(nn.Layer):
     def __init__(self, config: DeepseekV3Config, device=None):
         super().__init__()
@@ -221,11 +146,38 @@ class DeepseekV3YarnRotaryEmbedding(nn.Layer):
 
         rope_parameters = self.config.rope_parameters
         self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
-        assert self.rope_type == "yarn"
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
-        self.inv_freq, self.attention_scaling = _compute_yarn_parameters(config)
-        self.register_buffer("inv_freq", self.inv_freq, persistable=False)
-        # self.original_inv_freq = self.inv_freq
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[DeepseekV3Config] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
@@ -447,7 +399,7 @@ class DeepseekV3MoE(nn.Layer):
         super().__init__()
         self.config = config
         new_config = deepcopy(config)
-        new_config.tensor_parallel_degree = 1
+        new_config.tensor_model_parallel_size = 1
 
         self.experts = nn.LayerList(
             [
@@ -512,7 +464,7 @@ class DeepseekV3MoEFlexToken(MoEFlexTokenLayer):
         moe_group = hcg.get_expert_parallel_group()
         moe_grad_group = hcg.get_moe_sharding_parallel_group()
         new_config = deepcopy(config)
-        new_config.tensor_parallel_degree = 1
+        new_config.tensor_model_parallel_size = 1
 
         super().__init__(
             config=config,
@@ -562,11 +514,11 @@ class DeepseekV3Attention(nn.Layer):
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.num_local_heads = self.num_heads
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"Attention head num ({self.num_heads}) is not divisible by tensor_parallel_degree ({config.tensor_parallel_degree})."
-            self.num_local_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"Attention head num ({self.num_heads}) is not divisible by tensor_model_parallel_size ({config.tensor_model_parallel_size})."
+            self.num_local_heads = self.num_heads // config.tensor_model_parallel_size
 
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
@@ -581,7 +533,7 @@ class DeepseekV3Attention(nn.Layer):
         self.fuse_rope = config.use_fused_rope
 
         self.seq_length = config.seq_length
-        self.tensor_parallel = config.tensor_parallel_degree > 1
+        self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
 
         # Enable_recompute defaults to False and is controlled by Trainer
@@ -822,7 +774,7 @@ class DeepseekV3DecoderLayer(nn.Layer):
         self.layer_idx = layer_idx
         self.enable_recompute = False
         self.recompute_granularity = config.recompute_granularity
-        self.tensor_parallel = config.tensor_parallel_degree > 1
+        self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
         self.hidden_size = config.hidden_size
 
@@ -887,7 +839,7 @@ class DeepseekV3DecoderLayer(nn.Layer):
         residual = attn_outputs[1]
         self_attn_weights = attn_outputs[2] if output_attentions else None
         present_key_value = attn_outputs[3] if use_cache else None
-        sub_seq_len = self.config.moe_subbatch_token_num
+        sub_seq_len = self.config.moe_subbatch_token_num_before_dispatch
         seq_axis = 0 if self.config.sequence_parallel else 1
         seq_len = hidden_states.shape[seq_axis]
         assert seq_len % sub_seq_len == 0
@@ -1059,7 +1011,7 @@ class DeepseekV3MTPLayer(DeepseekV3DecoderLayer):
         )
         self.eh_proj = nn.Linear(2 * config.hidden_size, config.hidden_size)
 
-        if config.sequence_parallel and config.tensor_parallel_degree > 1:
+        if config.sequence_parallel and config.tensor_model_parallel_size > 1:
             mark_as_sequence_parallel_parameter(self.eh_proj.weight)
             mark_as_sequence_parallel_parameter(self.eh_proj.bias)
 
@@ -1222,7 +1174,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -1238,7 +1190,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
 
             base_actions["lm_head.weight"] = partial(fn, is_column=False)
 
-            if not config.vocab_size % config.tensor_parallel_degree == 0:
+            if not config.vocab_size % config.tensor_model_parallel_size == 0:
                 base_actions.pop("lm_head.weight")
                 base_actions.pop("embed_tokens.weight")
 
@@ -1248,7 +1200,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
             base_actions["layers.0.self_attn.q_b_proj.weight"] = partial(fn, is_column=True)
 
             # if we have enough num_key_value_heads to split, then split it.
-            if config.num_key_value_heads % config.tensor_parallel_degree == 0:
+            if config.num_key_value_heads % config.tensor_model_parallel_size == 0:
                 base_actions["layers.0.self_attn.kv_b_proj.weight"] = partial(fn, is_column=True)
 
             # dense mlp
@@ -1321,7 +1273,7 @@ class DeepseekV3Model(DeepseekV3PretrainedModel):
         self.norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
-            input_is_parallel=config.tensor_parallel_degree > 1 and config.sequence_parallel,
+            input_is_parallel=config.tensor_model_parallel_size > 1 and config.sequence_parallel,
         )
 
         self.enable_recompute = False
@@ -1470,7 +1422,7 @@ class DeepseekV3Model(DeepseekV3PretrainedModel):
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if position_embeddings is None:
             position_embeddings = paddle.stack(self.rotary_emb(inputs_embeds, position_ids=position_ids))
@@ -1508,7 +1460,7 @@ class DeepseekV3Model(DeepseekV3PretrainedModel):
         all_self_attns = () if output_attentions else None
         mtp_outputs = []
 
-        moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num > 0
+        moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num_before_dispatch > 0
 
         for idx in range(self.config.num_hidden_layers):
             decoder_layer = self.layers[idx]
@@ -1625,7 +1577,7 @@ class DeepseekV3PretrainingCriterion(nn.Layer):
         super(DeepseekV3PretrainingCriterion, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
             self.loss_func = mpu.ParallelCrossEntropy(ignore_index=self.ignore_index)
@@ -1695,8 +1647,10 @@ class DeepseekV3PretrainingCriterion(nn.Layer):
             masked_lm_labels_ori = masked_lm_labels
             masked_lm_labels = masked_lm_labels[:, : -self.config.num_nextn_predict_layers]
             seq_length = masked_lm_labels.shape[1]
-            if self.config.moe_subbatch_token_num > 0:
-                loss = subbatch_compute_loss(prediction_scores, masked_lm_labels, self.config.moe_subbatch_token_num)
+            if self.config.moe_subbatch_token_num_before_dispatch > 0:
+                loss = subbatch_compute_loss(
+                    prediction_scores, masked_lm_labels, self.config.moe_subbatch_token_num_before_dispatch
+                )
             else:
                 loss = compute_loss(prediction_scores, masked_lm_labels)
 
@@ -1704,9 +1658,11 @@ class DeepseekV3PretrainingCriterion(nn.Layer):
             for depth in range(self.config.num_nextn_predict_layers):
                 prediction_scores_cur_depth = mtp_logits[depth]
                 masked_lm_labels_cur_depth = masked_lm_labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
-                if self.config.moe_subbatch_token_num > 0:
+                if self.config.moe_subbatch_token_num_before_dispatch > 0:
                     res_cur_depth = subbatch_compute_loss(
-                        prediction_scores_cur_depth, masked_lm_labels_cur_depth, self.config.moe_subbatch_token_num
+                        prediction_scores_cur_depth,
+                        masked_lm_labels_cur_depth,
+                        self.config.moe_subbatch_token_num_before_dispatch,
                     )
                 else:
                     res_cur_depth = compute_loss(prediction_scores_cur_depth, masked_lm_labels_cur_depth)
@@ -1716,8 +1672,10 @@ class DeepseekV3PretrainingCriterion(nn.Layer):
             )
 
         else:
-            if self.config.moe_subbatch_token_num > 0:
-                loss = subbatch_compute_loss(prediction_scores, masked_lm_labels, self.config.moe_subbatch_token_num)
+            if self.config.moe_subbatch_token_num_before_dispatch > 0:
+                loss = subbatch_compute_loss(
+                    prediction_scores, masked_lm_labels, self.config.moe_subbatch_token_num_before_dispatch
+                )
             else:
                 loss = compute_loss(prediction_scores, masked_lm_labels)
 
@@ -1831,7 +1789,7 @@ class DeepseekV3ForCausalLM(DeepseekV3PretrainedModel):
             from paddlenlp_kernel.triton.cut_cross_entropy import linear_cross_entropy
 
             assert (
-                self.config.tensor_parallel_degree <= 1
+                self.config.tensor_model_parallel_size <= 1
             ), "The argument `use_fused_linear_cross_entropy` is imcompatiable with tensor parallel "
 
             masked_lm_loss = linear_cross_entropy(hidden_states, self.lm_head.weight, targets=labels)
@@ -1848,7 +1806,7 @@ class DeepseekV3ForCausalLM(DeepseekV3PretrainedModel):
         else:
             # if labels is None，means we need full output, instead of tensor_parallel_output
             # tensor_parallel_output is together with ParallelCrossEntropy
-            tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1
+            tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_model_parallel_size > 1
             logits = self.lm_head(hidden_states, tensor_parallel_output=tensor_parallel_output)
             mtp_logits = (
                 [
@@ -2043,7 +2001,7 @@ class DeepseekV3MTPLayerPipe(DeepseekV3MTPLayer):
         for depth in range(self.config.num_nextn_predict_layers):
             inputs_embeds_cur_depth = inputs_embeds_cur_depth_list[depth]
 
-            moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num > 0
+            moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num_before_dispatch > 0
             if moelayer_use_subbatch_recompute:
                 hidden_states = super().subbatch_recompute_forward(
                     hidden_states,
@@ -2208,7 +2166,7 @@ class DeepseekV3DecoderLayerPipe(DeepseekV3DecoderLayer):
 
         has_gradient = not hidden_states.stop_gradient
 
-        moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num > 0
+        moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num_before_dispatch > 0
         if moelayer_use_subbatch_recompute:
             hidden_states = super().subbatch_recompute_forward(
                 hidden_states,
