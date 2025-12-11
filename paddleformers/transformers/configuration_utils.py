@@ -27,7 +27,7 @@ import sys
 import warnings
 from dataclasses import field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
@@ -318,6 +318,182 @@ class LlmMetaConfig:
         ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
     ]
 
+    fleet_attributes = [
+        (
+            "position_embedding_type",
+            str,
+            "rope",
+            "Type of position embedding. Defaults to RoPE (Rotary Position Embedding).",
+        ),
+        (
+            "moe_router_enable_expert_bias",
+            bool,
+            False,
+            "Whether to enable expert-specific bias terms in the MoE router. Fine-tunes router preference for individual experts. Defaults to False (simplifies computation and avoids overfitting).",
+        ),
+        (
+            "moe_router_force_load_balancing",
+            bool,
+            True,
+            "Whether to enforce load balancing across MoE experts. Prevents overutilization of a small subset of experts. Defaults to True (critical optimization for MoE stability and efficiency).",
+        ),
+        ("moe_router_load_balancing_type", str, "seq_aux_loss", "Strategy for MoE expert load balancing."),
+        (
+            "moe_router_bias_update_rate",
+            float,
+            0.01,
+            "Update rate for MoE router biases (only effective if `moe_router_enable_expert_bias=True`). Controls the magnitude of bias adjustments to prevent unstable updates. Defaults to 0.01.",
+        ),
+        (
+            "moe_shared_expert_overlap",
+            bool,
+            False,
+            "Whether to allow shared experts to be reused across layers/modules. Reduces memory footprint but may limit model expressivity. Defaults to False (prioritizes model capacity).",
+        ),
+        (
+            "moe_dequant_input",
+            bool,
+            False,
+            "Whether to dequantize inputs to MoE experts (only applicable if inputs are quantized). Defaults to False (enable only for quantized inference/training pipelines).",
+        ),
+        (
+            "moe_expert_fusion",
+            bool,
+            True,
+            "Whether to enable operator fusion for MoE expert layers (e.g., Linear + Activation fusion). Improves training/inference throughput by reducing kernel launch overhead. Defaults to True.",
+        ),
+        (
+            "moe_router_fusion",
+            bool,
+            True,
+            "Whether to enable operator fusion for the MoE router (e.g., Gating + Softmax fusion). Reduces computation latency for expert selection. Defaults to True.",
+        ),
+        (
+            "moe_subbatch_token_num_after_dispatch",
+            int,
+            4096,
+            "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
+        ),
+        (
+            "moe_grouped_gemm",
+            bool,
+            True,
+            "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
+        ),
+        (
+            "gated_linear_unit",
+            bool,
+            False,
+            "Whether to use Gated Linear Units (GLU) instead of standard Linear layers. Enhances model expressivity (common in SwiGLU). Defaults to False (compatible with basic transformer architectures).",
+        ),
+        ("normalization", str, "RMSNorm", "Type of normalization layer. Defaults to RMSNorm."),
+        (
+            "fp8",
+            bool,
+            False,
+            "Whether to enable FP8 mixed-precision training/inference. Reduces memory usage and accelerates computation (requires hardware support). Defaults to False (enable only for Ampere+/Hopper GPUs with FP8 support).",
+        ),
+        (
+            "fp8_wgrad",
+            bool,
+            False,
+            "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
+        ),
+        (
+            "fp32_residual_connection",
+            bool,
+            True,
+            "Whether to use FP32 precision for residual connections. Mitigates numerical underflow/overflow in deep transformers. Defaults to True (standard practice for stable LLM training).",
+        ),
+        (
+            "softmax_scale",
+            float,
+            None,
+            "Scaling factor for Softmax inputs. If None, uses automatic scaling (e.g., sqrt(d_model) for attention). Defaults to None (adapts to model dimension automatically).",
+        ),
+        (
+            "softmax_type",
+            str,
+            "vanilla",
+            "Applies modified softmax from https://www.evanmiller.org/attention-is-off-by-one.html. Supports both TE FusedAttention and local unfused attention. Supports both a fixed offset and learnable offset.",
+        ),
+        ("init_method", Callable, None, "Method to initialize weights."),
+        (
+            "output_layer_init_method",
+            Callable,
+            None,
+            "Method to initialize weights of the output layer of both attention and MLP blocks.",
+        ),
+        (
+            "embedding_init_method",
+            Callable,
+            None,
+            "Method to initialize weights of the embedding layer. If None, will be set as described in init_method above.",
+        ),
+        (
+            "embedding_init_method_std",
+            float,
+            0.02,
+            "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
+        ),
+        ("recompute_method", str, None, "Determines which transformer layers will be recomputed."),
+        (
+            "recompute_num_layers",
+            int,
+            None,
+            "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
+        ),
+        ("recompute_modules", "Optional[List[str]]", None, "List of module names to apply recomputation."),
+        (
+            "recompute_mtp_granularity",
+            str,
+            "none",
+            "Recomputation granularity for MTP (Mixture of Token-Parallel) layers.",
+        ),
+        ("recompute_mtp_method", str, "none", "Recomputation method for MTP layers."),
+        ("recompute_mtp_modules", "Optional[List[str]]", None, "List of MTP module names to apply recomputation."),
+        ("cp_comm_type", str, None, "Communication type for checkpoint parallelism (CP)."),
+        ("dp_comm_overlap", bool, True, "Whether to overlap data parallelism (DP) communication with computation."),
+        (
+            "sharding_comm_overlap",
+            bool,
+            True,
+            "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True.",
+        ),
+        ("tp_async_allreduce", bool, False, "Whether to use asynchronous allreduce for tensor parallelism (TP)."),
+        (
+            "sp_async_reduce_scatter",
+            bool,
+            False,
+            "Whether to use asynchronous reduce-scatter for sharding parallelism (SP).",
+        ),
+        (
+            "overlap_p2p_comm",
+            bool,
+            True,
+            "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True.",
+        ),
+        ("batch_p2p_comm", bool, True, "Whether to batch point-to-point (P2P) communication requests."),
+        (
+            "deterministic_mode",
+            bool,
+            False,
+            "Whether to enable deterministic (reproducible) training/inference. Disables non-deterministic optimizations. Defaults to False (prioritizes speed over strict reproducibility).",
+        ),
+        (
+            "dynamic_shape",
+            bool,
+            True,
+            "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines).",
+        ),
+        (
+            "mtp_loss_scaling_factor",
+            float,
+            1.0,
+            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
+        ),
+    ]
+
     @classmethod
     def _get_defaults(cls):
         ret = {}
@@ -328,6 +504,7 @@ class LlmMetaConfig:
             cls.loss_attributes,
             cls.moe_attributes,
             cls.mtp_attributes,
+            cls.fleet_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values

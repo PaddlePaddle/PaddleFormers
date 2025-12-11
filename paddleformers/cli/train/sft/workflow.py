@@ -279,8 +279,7 @@ def run_sft(
             model_class = AutoModelForCausalLMPipe
 
     # Fleet args apply.
-    for key, value in fleet_args.__dict__.items():
-        setattr(model_config, key, value)
+    LlmMetaConfig.set_llm_config(model_config, fleet_args)
 
     if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(

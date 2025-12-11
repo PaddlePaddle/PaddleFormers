@@ -193,7 +193,3 @@ class FleetArguments:
     mtp_loss_scaling_factor: float = 1.0
     """Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions.
     Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."""
-
-    apply_rope_fusion: bool = True
-    """Whether to enable RoPE (Rotary Position Embedding) operator fusion. Accelerates position embedding computation.
-    Defaults to True (optimization for RoPE-enabled models)."""

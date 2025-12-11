@@ -178,11 +178,8 @@ def run_dpo(
     model_config.dpo_config = dpo_config
 
     # Fleet args apply.
-    for key, value in fleet_args.__dict__.items():
-        setattr(model_config, key, value)
-
-    # model_config.tensor_parallel_degree = training_args.tensor_parallel_degree
-    # model_config.pipeline_parallel_degree = training_args.tensor_parallel_degree
+    LlmMetaConfig.set_llm_config(model_config, fleet_args)
+    LlmMetaConfig.set_llm_config(ref_model_config, fleet_args)
 
     if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(
