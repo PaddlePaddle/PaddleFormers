@@ -140,14 +140,14 @@ class LoRAAutoModel(nn.Layer):
             self.lora_config.dtype = paddle.get_default_dtype()
         with dtype_guard(self.lora_config.dtype):
             self.model = self.get_lora_model(model, lora_config)
-        if (self.lora_config.tensor_parallel_degree > 1 or self.lora_config.pipeline_parallel_degree > 1) and (
+        if (self.lora_config.tensor_model_parallel_size > 1 or self.lora_config.pipeline_model_parallel_size > 1) and (
             self.lora_config.lora_use_mixer or self.lora_config.use_mora
         ):
             raise NotImplementedError("lora_use_mixer or mora is not supported in tensor parallel mode.")
-        if self.lora_config.tensor_parallel_degree != self.model.config.tensor_parallel_degree:
-            self.lora_config.tensor_parallel_degree = self.model.config.tensor_parallel_degree
+        if self.lora_config.tensor_model_parallel_size != self.model.config.tensor_model_parallel_size:
+            self.lora_config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
             logger.warning(
-                f"Reset tensor_parallel_degree of lora_config to {self.model.config.tensor_parallel_degree}."
+                f"Reset tensor_model_parallel_size of lora_config to {self.model.config.tensor_model_parallel_size}."
             )
 
         self.forward = self.model.forward
@@ -164,8 +164,8 @@ class LoRAAutoModel(nn.Layer):
         # init lora config & lora model
         if not isinstance(lora_config, LoRAAutoConfig):
             lora_config = LoRAAutoConfig.from_pretrained(lora_path)
-        # define a new variable to conserve original lora_config.tensor_parallel_degree value which will update while initializing lora model
-        lora_config_tensor_parallel_degree = lora_config.tensor_parallel_degree
+        # define a new variable to conserve original lora_config.tensor_model_parallel_size value which will update while initializing lora model
+        lora_config_tensor_model_parallel_size = lora_config.tensor_model_parallel_size
         lora_model = cls(model, lora_config)
 
         lora_model_index_file = os.path.join(lora_path, SAFE_PEFT_WEIGHTS_INDEX_NAME)
@@ -184,7 +184,7 @@ class LoRAAutoModel(nn.Layer):
             error_msgs = []
             for shard_file in resolved_archieve_file:
                 pre_tensor_parallel_split = False
-                if model.config.tensor_parallel_degree > 1:
+                if model.config.tensor_model_parallel_size > 1:
                     pre_tensor_parallel_split = True
                     tp_actions = lora_model._get_tensor_parallel_convert_actions(loaded_keys, is_split=True)
                 state_dict = load_state_dict(
@@ -205,7 +205,7 @@ class LoRAAutoModel(nn.Layer):
             return lora_model
 
         # define lora weight name
-        if lora_config_tensor_parallel_degree > 1:
+        if lora_config_tensor_model_parallel_size > 1:
             lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, f"tp{model.config.tensor_parallel_rank:0>2d}")
         else:
             lora_weight_name = LORA_WEIGHTS_NAME
@@ -218,15 +218,15 @@ class LoRAAutoModel(nn.Layer):
             logger.info(f"Loading the LoRA weights from {lora_weight_path}")
 
             if (
-                lora_config_tensor_parallel_degree > 1
-                and lora_config_tensor_parallel_degree != model.config.tensor_parallel_degree
+                lora_config_tensor_model_parallel_size > 1
+                and lora_config_tensor_model_parallel_size != model.config.tensor_model_parallel_size
             ):
                 raise NotImplementedError(
-                    f"{lora_config_tensor_parallel_degree} is not equal to {model.config.tensor_parallel_degree}. Please merge LoRA weights first."
+                    f"{lora_config_tensor_model_parallel_size} is not equal to {model.config.tensor_model_parallel_size}. Please merge LoRA weights first."
                 )
 
             # convert parameters to tensor parallel for mp model
-            if lora_config_tensor_parallel_degree <= 1 and model.config.tensor_parallel_degree > 1:
+            if lora_config_tensor_model_parallel_size <= 1 and model.config.tensor_model_parallel_size > 1:
                 lora_state_dict = lora_model._convert_tensor_parallel(lora_state_dict=lora_state_dict)
 
             # set lora state dict
@@ -309,12 +309,12 @@ class LoRAAutoModel(nn.Layer):
 
         if self.is_pipelinemodel:
             self.model._single_to_pp_mapping = None
-        if self.quantized and merge_tensor_parallel and self.lora_config.tensor_parallel_degree > 1:
+        if self.quantized and merge_tensor_parallel and self.lora_config.tensor_model_parallel_size > 1:
             merge_tensor_parallel = False
             logger.warning(
                 "Quantized strategy does not support merge_tensor_parallel. Set merge_tensor_parallel to False."
             )
-        if self.is_pipelinemodel and merge_tensor_parallel and self.lora_config.tensor_parallel_degree > 1:
+        if self.is_pipelinemodel and merge_tensor_parallel and self.lora_config.tensor_model_parallel_size > 1:
             merge_tensor_parallel = False
             logger.warning(
                 "Pipeline parallelism does not support merge_tensor_parallel. Set merge_tensor_parallel to False."
@@ -332,16 +332,16 @@ class LoRAAutoModel(nn.Layer):
 
         trainable_state_dict = self.get_trainable_state_dict(concat_init_lora=lora_config_to_save.loraga)
 
-        if merge_tensor_parallel and lora_config_to_save.tensor_parallel_degree > 1:
+        if merge_tensor_parallel and lora_config_to_save.tensor_model_parallel_size > 1:
             trainable_state_dict = self._merge_trainable_tensor_parallel(trainable_state_dict)
             if not is_main_process:
                 logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
                 return
             if variant is not None and "tp" in variant:
                 variant = "_".join([x for x in variant.split("_") if "tp" not in x])
-            lora_config_to_save.tensor_parallel_degree = -1
+            lora_config_to_save.tensor_model_parallel_size = -1
         else:
-            if lora_config_to_save.tensor_parallel_degree > 1:
+            if lora_config_to_save.tensor_model_parallel_size > 1:
                 if variant is None:
                     variant = weight_name_suffix()
 
@@ -356,7 +356,7 @@ class LoRAAutoModel(nn.Layer):
             if save_model_config:
                 model_config_to_save = copy.deepcopy(self.model.config)
                 if merge_tensor_parallel:
-                    model_config_to_save.tensor_parallel_degree = -1
+                    model_config_to_save.tensor_model_parallel_size = -1
                 model_config_to_save.save_pretrained(save_directory)
 
     def _find_and_replace_module(self, model, module_name, lora_config, enable_lora, layer_parallelize_plan):

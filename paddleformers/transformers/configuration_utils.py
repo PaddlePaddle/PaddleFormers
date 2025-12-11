@@ -244,12 +244,12 @@ class LlmMetaConfig:
 
     hybrid_parallel_attributes = [
         # tensor_parallel
-        ("tensor_parallel_degree", int, 1, "tensor_parallel_degree"),
+        ("tensor_model_parallel_size", int, 1, "tensor_model_parallel_size"),
         ("tensor_parallel_rank", int, 0, "tensor_parallel_rank"),
         ("tensor_parallel_output", bool, True, "tensor_parallel_output"),
         # pipeline_parallel
-        ("pipeline_parallel_degree", int, 1, "pipeline_parallel_degree"),
-        ("virtual_pp_degree", int, 1, "Virtual pipeline degree"),
+        ("pipeline_model_parallel_size", int, 1, "pipeline_model_parallel_size"),
+        ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         (
@@ -261,7 +261,7 @@ class LlmMetaConfig:
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
         ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
-        ("context_parallel_degree", int, 1, "context_parallel_degree"),
+        ("context_parallel_size", int, 1, "context_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
     ]
@@ -303,7 +303,12 @@ class LlmMetaConfig:
     ]
 
     moe_attributes = [
-        ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
+        (
+            "moe_subbatch_token_num_before_dispatch",
+            int,
+            0,
+            "The number of tokens in each subbatch for MoE model processing.",
+        ),
         ("using_fake_gate", bool, False, "Whether to fake gate."),
         ("ep_communication_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
@@ -511,7 +516,7 @@ class PretrainedConfig:
         problem_type (`str`, *optional*):
             Problem type for `XxxForSequenceClassification` models. Can be one of `"regression"`,
             `"single_label_classification"` or `"multi_label_classification"`.
-        moe_subbatch_token_num (`int`, *optional*, defaults to 0):
+        moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
         ep_communication_type (`str`, *optional*, defaults to `deepep`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
@@ -538,6 +543,9 @@ class PretrainedConfig:
         tie_word_embeddings (`bool`, *optional*, defaults to `True`):
             Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
             model has a output word embedding layer.
+
+        use_single_model_implementation (`bool`, *optional*, defaults to `False`):
+            Whether to run the model in single card mode. When enabled, all parallel degree configurations will be disabled.
 
         dtype (`str`, *optional*):
             The `dtype` of the weights. This attribute can be used to initialize the model to a non-default `dtype`
@@ -590,7 +598,7 @@ class PretrainedConfig:
         kwargs.pop("transformers_version", None)
         llm_meta = LlmMetaConfig._get_defaults()
         self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
-        self._unsavable_keys.remove("tensor_parallel_degree")
+        self._unsavable_keys.remove("tensor_model_parallel_size")
         self._unsavable_keys.remove("fuse_attention_qkv")
         self._unsavable_keys.remove("fuse_attention_ffn")
         self._unsavable_keys.add("_attn_implementation")
@@ -598,8 +606,8 @@ class PretrainedConfig:
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
             assert (
-                self.tensor_parallel_degree > 1
-            ), f"senquence-parallel only works in tensor parallel, got tensor parallel degree={self.tensor_parallel_degree}"
+                self.tensor_model_parallel_size > 1
+            ), f"senquence-parallel only works in tensor parallel, got tensor parallel degree={self.tensor_model_parallel_size}"
 
         self.chunk_size_feed_forward = kwargs.pop("chunk_size_feed_forward", 0)
         self.return_dict = kwargs.pop("return_dict", False)
@@ -608,6 +616,13 @@ class PretrainedConfig:
         self.dtype = kwargs.pop("dtype", None)
         self.use_cache = kwargs.pop("use_cache", False)
         self.tie_word_embeddings = kwargs.pop("tie_word_embeddings", True)
+
+        # for run model in single card mode
+        self.use_single_model_implementation = kwargs.pop("use_single_model_implementation", False)
+        if self.use_single_model_implementation:
+            self.tensor_model_parallel_size = 1
+            self.sep_parallel_degree = 1
+            self.context_parallel_size = 1
 
         # for transformers fuse
         self.fuse_linear = kwargs.pop("fuse_linear", False)
@@ -662,7 +677,7 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.moe_subbatch_token_num = kwargs.pop("moe_subbatch_token_num", 0)
+        self.moe_subbatch_token_num_before_dispatch = kwargs.pop("moe_subbatch_token_num_before_dispatch", 0)
         self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.using_fake_gate = kwargs.pop("using_fake_gate", False)

@@ -175,7 +175,7 @@ class TestMoraModel(unittest.TestCase):
             self.assertTrue(paddle.allclose(original_results[0], config_loaded_results[0]))
 
     def test_lora_module_raise_exception(self):
-        mora_config = LoRAConfig(target_modules=[".*norm1.*"], r=4, lora_alpha=8, enable_lora_list=None, use_mora=True)
+        mora_config = LoRAConfig(target_modules=[".*norm.*"], r=4, lora_alpha=8, enable_lora_list=None, use_mora=True)
         model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
         with self.assertRaises(ValueError):
             LoRAModel(model, mora_config)

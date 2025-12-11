@@ -58,7 +58,36 @@ class GLMMoEModelProvider(GPTModelProvider):
 
     bias_activation_fusion: bool = True
 
-    transform_rules = {"tensor_parallel_degree": "tensor_model_parallel_size", "dtype": "params_dtype"}
+    transform_rules = {
+        "tensor_parallel_degree": "tensor_model_parallel_size",
+        "pipeline_parallel_degree": "pipeline_model_parallel_size",
+        "context_parallel_degree": "context_parallel_size",
+        "expert_parallel_degree": "expert_model_parallel_size",
+        "dtype": "params_dtype",
+    }
+
+    # (@peiziliang) hard code
+    rotary_base: float = 1000000.0
+    rotary_percent: float = 0.5
+    moe_shared_expert_overlap: bool = True
+    moe_router_pre_softmax: bool = False
+    moe_permute_fusion: bool = True
+    moe_router_dtype: str = "fp32"
+    moe_router_enable_expert_bias: bool = True
+    moe_router_bias_update_rate: float = 0
+    persist_layer_norm: bool = True
+    moe_router_force_load_balancing: bool = True
+    share_embeddings_and_output_weights: bool = False
+
+    apply_rope_fusion: bool = True
+    mtp_loss_scaling_factor: float = 0.3
+    recompute_granularity: str = None
+    virtual_pipeline_model_parallel_size: int = None
+
+    rope_scaling: float = 1.0
+    bias_dropout_fusion: bool = True
+    router_aux_loss_coef: float = 0.001
+    moe_grouped_gemm: bool = True
 
 
 def eager_attention_forward(
@@ -138,21 +167,21 @@ class Glm4MoeAttention(nn.Layer):
         self.rope_scaling = config.rope_scaling
         self.attention_dropout = config.attention_dropout
 
-        self.tensor_parallel = config.tensor_parallel_degree > 1
+        self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
         self.attention_bias = config.attention_bias
         self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.num_attention_heads * self.head_dim
@@ -231,7 +260,7 @@ class Glm4MoeAttention(nn.Layer):
 
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
             else:
                 bsz, q_len, _ = hidden_states.shape
@@ -242,7 +271,7 @@ class Glm4MoeAttention(nn.Layer):
             mix_layer = self.qkv_proj(hidden_states)
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
                 target_shape = [
                     bsz,
@@ -400,12 +429,12 @@ class Glm4MoeMoE(nn.Layer):
     def __init__(self, config):
         if getattr(config, "disable_ffn_model_parallel", False):
             config = deepcopy(config)
-            config.tensor_parallel_degree = 1
+            config.tensor_model_parallel_size = 1
         super().__init__()
         self.config = config
         self.sequence_parallel = config.sequence_parallel
         # if sequence_parallel is True, expert Linear will call ColumnParallelLinear instead of ColumnSequenceParallelLinear
-        if self.sequence_parallel and config.tensor_parallel_degree > 1:
+        if self.sequence_parallel and config.tensor_model_parallel_size > 1:
             config = deepcopy(config)
             config.sequence_parallel = False
         self.experts = nn.LayerList(
@@ -496,7 +525,7 @@ class AddAuxiliaryLoss(paddle.autograd.PyLayer):
 
 class Glm4MoeFlexMoE(MoEFlexTokenLayer):
     """
-    A mixed expert module containing shared experts for expert_parallel_degree > 1 with deepep mode
+    A mixed expert module containing shared experts for expert_model_parallel_size > 1 with deepep mode
     """
 
     def __init__(self, config):
@@ -520,13 +549,13 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
             moe_group = hcg.get_expert_parallel_group()
         except:
             moe_group = None
-        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
-        if hasattr(dist, "fleet") and dist.is_initialized() and expert_parallel_degree > 1:
+        expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
+        if hasattr(dist, "fleet") and dist.is_initialized() and expert_model_parallel_size > 1:
             moe_group = hcg.get_expert_parallel_group()
             moe_grad_group = hcg.get_moe_sharding_parallel_group()
-        if expert_parallel_degree > 1 and config.tensor_parallel_degree >= 1:
+        if expert_model_parallel_size > 1 and config.tensor_model_parallel_size >= 1:
             mlp_config = deepcopy(config)
-            mlp_config.tensor_parallel_degree = 1
+            mlp_config.tensor_model_parallel_size = 1
         super().__init__(
             config=config,
             moe_num_experts=config.n_routed_experts,
@@ -539,7 +568,7 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
             gate=gate,
             moe_group=moe_group,
         )
-        if hasattr(dist, "fleet") and dist.is_initialized() and expert_parallel_degree > 1:
+        if hasattr(dist, "fleet") and dist.is_initialized() and expert_model_parallel_size > 1:
             self.is_mp_moe = False
             self.is_ep_moe = True
             for p in self.experts.parameters():
@@ -578,11 +607,11 @@ class Glm4MoeDecoderLayer(nn.Layer):
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
         except:
             moe_group = None
-        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+        expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
         if layer_idx >= config.first_k_dense_replace:
             self.mlp = (
                 Glm4MoeMoE(config)
-                if expert_parallel_degree <= 1
+                if expert_model_parallel_size <= 1
                 else (
                     QuickAccessMoEFactory.create_from_model_name(
                         pretrained_config=config,
@@ -663,13 +692,13 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_size = hidden_states.shape[-1]
         if self.config.sequence_parallel:
             # hidden_states shape:[b*s,h]
-            seq_len = self.config.max_sequence_length // self.config.tensor_parallel_degree
+            seq_len = self.config.max_sequence_length // self.config.tensor_model_parallel_size
             batch_size = hidden_states.shape[0] // seq_len
             assert (
                 batch_size > 0
             ), f"batch_size must larger than 0, but calulate batch_size:{batch_size}, hidden_states shape:{hidden_states.shape}"
             hidden_states = hidden_states.reshape([-1, batch_size, hidden_size])
-        sub_seq_len = self.config.moe_subbatch_token_num
+        sub_seq_len = self.config.moe_subbatch_token_num_before_dispatch
         seq_axis = 0 if self.config.sequence_parallel else 1
         seq_len = hidden_states.shape[seq_axis]
         assert seq_len % sub_seq_len == 0
@@ -815,7 +844,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -881,9 +910,9 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
                 except:
                     moe_group = None
-                expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
-                # TODO: merge disable_ffn_model_parallel and expert_parallel_degree
-                if expert_parallel_degree <= 1:
+                expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
+                # TODO: merge disable_ffn_model_parallel and expert_model_parallel_size
+                if expert_model_parallel_size <= 1:
                     # # if disable_ffn_model_parallel is True, disable expert layer tp plan
                     # if not config.disable_ffn_model_parallel:
                     if not config.fuse_attention_ffn:
@@ -1422,7 +1451,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if self.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
@@ -1454,7 +1483,9 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         all_hidden_states = () if output_hidden_states else None
 
         moelayer_use_subbatch_recompute = (
-            self.config.moe_subbatch_token_num > 0 if hasattr(self.config, "moe_subbatch_token_num") else False
+            self.config.moe_subbatch_token_num_before_dispatch > 0
+            if hasattr(self.config, "moe_subbatch_token_num_before_dispatch")
+            else False
         )
 
         for idx, (decoder_layer) in enumerate(self.layers):
@@ -1604,7 +1635,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         max_seq_len = hidden_states.shape[1]
         if self.config.sequence_parallel:
             # hidden_states shape:[b*s,h]
-            max_seq_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
+            max_seq_len = hidden_states.shape[0] * self.config.tensor_model_parallel_size
         if attention_mask is None:
             attn_mask = None
             attn_mask_startend_row_indices = None
@@ -1628,7 +1659,9 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
 
         has_gradient = not hidden_states.stop_gradient
         moelayer_use_subbatch_recompute = (
-            self.config.moe_subbatch_token_num > 0 if hasattr(self.config, "moe_subbatch_token_num") else False
+            self.config.moe_subbatch_token_num_before_dispatch > 0
+            if hasattr(self.config, "moe_subbatch_token_num_before_dispatch")
+            else False
         )
         if moelayer_use_subbatch_recompute:
             hidden_states = super().subbatch_recompute_forward(

@@ -207,7 +207,7 @@ class MoELayer(nn.Layer):
         for i in range(self.moe_num_experts):
             self.experts.append(expert_class(**expert_kwargs))
 
-        self.expert_parallel_degree, self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
+        self.expert_model_parallel_size, self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
             self.moe_num_experts, config
         )
         self._redistribute_experts(self.experts, config.moe_group)
@@ -234,19 +234,19 @@ class MoELayer(nn.Layer):
     def _parse_moe_expert_parallel(self, moe_num_experts, config):
         assert config.moe_group in ["dp", "mp", "None"], f"moe_group={config.moe_group} not in ['dp', 'mp', 'None']"
         if config.moe_group == "None":
-            expert_parallel_degree = 1
+            expert_model_parallel_size = 1
         else:
-            expert_parallel_degree = dist.fleet.auto.get_mesh().get_dim_size(config.moe_group)
+            expert_model_parallel_size = dist.fleet.auto.get_mesh().get_dim_size(config.moe_group)
         assert (
-            moe_num_experts >= expert_parallel_degree
-        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_parallel_degree}"
+            moe_num_experts >= expert_model_parallel_size
+        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
 
         assert (
-            moe_num_experts % expert_parallel_degree == 0
-        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_parallel_degree} == 0"
-        moe_num_experts_per_device = moe_num_experts // expert_parallel_degree
+            moe_num_experts % expert_model_parallel_size == 0
+        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
+        moe_num_experts_per_device = moe_num_experts // expert_model_parallel_size
 
-        return expert_parallel_degree, moe_num_experts_per_device
+        return expert_model_parallel_size, moe_num_experts_per_device
 
     def _post_init(self):
         for p in self.gate.parameters():
@@ -313,12 +313,12 @@ class MoELayer(nn.Layer):
 
         # Re-shape after all-to-all: ecm -> gecm
         dispatched_input = dispatched_input.reshape(
-            [self.expert_parallel_degree, self.moe_num_experts_per_device, -1, d_model]
+            [self.expert_model_parallel_size, self.moe_num_experts_per_device, -1, d_model]
         )
         expert_output = self.expert_forward(dispatched_input)
         # Re-shape before drop_tokens: gecm -> ecm
         expert_output = expert_output.reshape(
-            [self.expert_parallel_degree * self.moe_num_experts_per_device, -1, d_model]
+            [self.expert_model_parallel_size * self.moe_num_experts_per_device, -1, d_model]
         )
         expert_output = dist.reshard(expert_output, get_mesh(self.ipp), ori_dispatched_placements)
 

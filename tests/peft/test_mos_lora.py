@@ -125,7 +125,7 @@ class TestMosLoraModel(unittest.TestCase):
             enable_lora_list=[None, [True, False]],
             head_dim=2,
             lora_use_mixer=True,
-            tensor_parallel_degree=2,
+            tensor_model_parallel_size=2,
         )
         model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
         model.eval()
@@ -196,7 +196,7 @@ class TestMosLoraModel(unittest.TestCase):
 
     def test_lora_module_raise_exception(self):
         lora_config = LoRAConfig(
-            target_modules=[".*norm1.*"], r=4, lora_alpha=8, enable_lora_list=None, lora_use_mixer=True
+            target_modules=[".*norm.*"], r=4, lora_alpha=8, enable_lora_list=None, lora_use_mixer=True
         )
         model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
         with self.assertRaises(ValueError):

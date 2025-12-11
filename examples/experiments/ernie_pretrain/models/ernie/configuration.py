@@ -334,8 +334,8 @@ class ErnieMoEConfig(PretrainedConfig):
             ), "seqlen not provided in sequence-parallel when not using dygramic sequence length"
 
             assert (
-                self.tensor_parallel_degree > 1
-            ), f"sequence-parallel only works in mp, got mp={self.tensor_parallel_degree}"
+                self.tensor_model_parallel_size > 1
+            ), f"sequence-parallel only works in mp, got mp={self.tensor_model_parallel_size}"
 
         if use_recompute_moe:
             logger.warning("set `use_recompute_moe`=True, disabling `use_recompute`")

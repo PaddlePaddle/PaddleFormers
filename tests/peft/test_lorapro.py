@@ -215,7 +215,7 @@ class TestLoRAProModel(unittest.TestCase):
 
     def test_lorapro_module_raise_exception(self):
         lorapro_config = LoRAConfig(
-            target_modules=[".*norm1.*"], r=4, lora_alpha=8, enable_lora_list=None, lorapro=True
+            target_modules=[".*norm.*"], r=4, lora_alpha=8, enable_lora_list=None, lorapro=True
         )
         model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
         with self.assertRaises(ValueError):
