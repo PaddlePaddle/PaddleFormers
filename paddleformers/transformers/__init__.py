@@ -193,7 +193,7 @@ import_structure = {
     "llama.configuration": [
         "LlamaConfig",
     ],
-    "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe"],
+    "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
     "optimization": [

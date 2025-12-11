@@ -15,7 +15,7 @@
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Callable, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import paddle
 import paddle.distributed as dist
@@ -24,7 +24,6 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 from paddle.nn import functional as F
-from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
 
 from paddleformers.transformers.gpt_provider import GPTModelProvider
 
@@ -43,28 +42,52 @@ from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import Glm4MoeConfig
-
-if TYPE_CHECKING:
-    from paddlefleet.transformer import LayerSpec
 
 
 @dataclass
 class GLMMoEModelProvider(GPTModelProvider):
     """Base provider for GLM MoE Models."""
 
-    transformer_layer_spec: Union[
-        "LayerSpec", Callable[["GPTModelProvider"], "LayerSpec"]
-    ] = get_gpt_decoder_block_spec
-
     moe_router_load_balancing_type: str = "seq_aux_loss"
 
     gated_linear_unit: bool = True
 
     bias_activation_fusion: bool = True
+
+    transform_rules = {
+        "tensor_parallel_degree": "tensor_model_parallel_size",
+        "pipeline_parallel_degree": "pipeline_model_parallel_size",
+        "context_parallel_degree": "context_parallel_size",
+        "expert_parallel_degree": "expert_model_parallel_size",
+        "dtype": "params_dtype",
+    }
+
+    # (@peiziliang) hard code
+    rotary_base: float = 1000000.0
+    rotary_percent: float = 0.5
+    moe_shared_expert_overlap: bool = True
+    moe_router_pre_softmax: bool = False
+    moe_permute_fusion: bool = True
+    moe_router_dtype: str = "fp32"
+    moe_router_enable_expert_bias: bool = True
+    moe_router_bias_update_rate: float = 0
+    persist_layer_norm: bool = True
+    moe_router_force_load_balancing: bool = True
+    share_embeddings_and_output_weights: bool = False
+
+    apply_rope_fusion: bool = True
+    mtp_loss_scaling_factor: float = 0.3
+    recompute_granularity: str = None
+    virtual_pipeline_model_parallel_size: int = None
+
+    rope_scaling: float = 1.0
+    bias_dropout_fusion: bool = True
+    router_aux_loss_coef: float = 0.001
+    moe_grouped_gemm: bool = True
 
 
 def eager_attention_forward(
@@ -1262,17 +1285,43 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
         self.config = config
-        base = config.rope_theta
-        partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
         rope_parameters = self.config.rope_parameters
         self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
-        dim = int(head_dim * partial_rotary_factor)
 
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
-        self.attention_scaling = 1.0
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
+
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = self.inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[Glm4MoeConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        partial_rotary_factor = config.rope_parameters.get("partial_rotary_factor", 1.0)
+        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        dim = int(head_dim * partial_rotary_factor)
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @paddle.no_grad()
     @dynamic_rope_update
@@ -1502,6 +1551,7 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         gpt_model = model_provider.provide()
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         gpt_model.config_to_save = config
         return gpt_model
 
@@ -1518,35 +1568,6 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
-
-    def prepare_inputs_for_generation(
-        self,
-        input_ids,
-        use_cache=False,
-        past_key_values=None,
-        attention_mask=None,
-        inputs_embeds=None,
-        **kwargs,
-    ):
-        batch_size, seq_length = input_ids.shape
-        position_ids = kwargs.get("position_ids", paddle.arange(seq_length).expand((batch_size, seq_length)))
-        if past_key_values:
-            input_ids = input_ids[:, -1].unsqueeze(axis=-1)
-            position_ids = position_ids[:, -1].unsqueeze(-1)
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-        model_inputs.update(
-            {
-                "position_ids": position_ids,
-                "past_key_values": past_key_values,
-                "use_cache": use_cache,
-                "attention_mask": attention_mask,
-            }
-        )
-        return model_inputs
 
     def forward(
         self,

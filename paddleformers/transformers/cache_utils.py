@@ -213,7 +213,7 @@ class Cache:
         self.offloading = offloading
         if self.offloading:
             self.only_non_sliding = offload_only_non_sliding
-            self.prefetch_stream = paddle.Stream()
+            self.prefetch_stream = paddle.device.Stream()
 
     def __repr__(self):
         return f"{self.__class__.__name__}(layers={self.layers})"
@@ -235,7 +235,7 @@ class Cache:
             layer_idx = layer_idx if layer_idx < len(self.layers) else 0
 
         # Prefetch
-        with self.prefetch_stream:
+        with paddle.device.stream_guard(self.prefetch_stream):
             self.layers[layer_idx].prefetch()
 
     def offload(self, layer_idx: int, only_non_sliding: bool = True):
@@ -278,7 +278,10 @@ class Cache:
 
         if self.offloading:
             # Wait for the stream to finish if needed, and start prefetching the next layer
-            paddle.cuda.default_stream(key_states.place).wait_stream(self.prefetch_stream)
+            # Note: Since current_stream can't directly recognize key_states.place,
+            # we construct it as a string. However, this may cause unknown issues for other formats like xpu,
+            # so attention is needed. The directly returned place format is Place(gpu:0)
+            paddle.device.current_stream(f"gpu:{key_states.place.gpu_device_id()}").wait_stream(self.prefetch_stream)
             self.prefetch(layer_idx + 1, self.only_non_sliding)
 
         keys, values = self.layers[layer_idx].update(key_states, value_states, cache_kwargs)

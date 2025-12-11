@@ -14,6 +14,7 @@
 """Qwen3-Next model configuration"""
 
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 __all__ = [
     "Qwen3NextConfig",
@@ -241,6 +242,10 @@ class Qwen3NextConfig(PretrainedConfig):
         self.output_router_logits = output_router_logits
         self.router_aux_loss_coef = router_aux_loss_coef
         self.mlp_only_layers = mlp_only_layers
+
+        self.rope_parameters = rope_scaling
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
