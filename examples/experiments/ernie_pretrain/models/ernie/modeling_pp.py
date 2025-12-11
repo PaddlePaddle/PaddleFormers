@@ -94,7 +94,7 @@ class ErnieEmbeddingPipe(nn.Layer):
 
         super(ErnieEmbeddingPipe, self).__init__()
         self.use_moe = config.use_moe
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             self.embed_tokens = VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
@@ -533,12 +533,12 @@ class PipelinePretrainedModel(PretrainedModel):
                     first_key = k
                     break
             first_key = first_key.split(".")
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             prefixes = self.get_sequential_name_prefixs()
             for k in state_dict_keys:
                 name_splited = k.split(".")
-                if use_virtual_pp_degree:
+                if use_virtual_pipeline_model_parallel_size:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
@@ -613,7 +613,7 @@ class PipelinePretrainedModel(PretrainedModel):
         return state_dict
 
     def _init_weights(self, layer):
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             rng_tracker = get_rng_state_tracker().rng_state
         else:
             rng_tracker = contextlib.nullcontext
@@ -721,7 +721,7 @@ class PipelinePretrainedModel(PretrainedModel):
 def get_pp_vp_split_layers(config):
     hcg = fleet.get_hybrid_communicate_group()
     pp_size = max(hcg.get_pipe_parallel_world_size(), 1)
-    vp_size = max(config.virtual_pp_degree, 1)
+    vp_size = max(config.virtual_pipeline_model_parallel_size, 1)
     layer_num = config.num_hidden_layers
     selective_no_recompute_num = config.selective_no_recompute_num
 
@@ -810,17 +810,17 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         self.config = config
 
         hcg = fleet.get_hybrid_communicate_group()
-        tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
+        tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
-        logger.info(f"using vpp={config.virtual_pp_degree}")
+        logger.info(f"using vpp={config.virtual_pipeline_model_parallel_size}")
         if config.sequence_parallel:
             logger.info(f"using sequence_parallel, input seqlen={config.seqlen}")
             assert config.seqlen is not None
             assert (
-                config.tensor_parallel_degree > 1
-            ), f"sequence-parallel needs mp>1, got mp={config.tensor_parallel_degree}"
+                config.tensor_model_parallel_size > 1
+            ), f"sequence-parallel needs mp>1, got mp={config.tensor_model_parallel_size}"
 
-        config.tensor_parallel_degree = tensor_parallel_degree
+        config.tensor_model_parallel_size = tensor_model_parallel_size
         config.tensor_parallel_rank = tensor_parallel_rank
         PipelinePretrainedModel.init(self, config=config)
 
@@ -943,14 +943,14 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 "offload": False,
                 "partition": False,
             },
-            num_virtual_pipeline_stages=config.virtual_pp_degree,
+            num_virtual_pipeline_stages=config.virtual_pipeline_model_parallel_size,
         )
 
     def get_loss_fn(self, config):
         return ErniePretrainingCriterionPipe(config)
 
     def rename_model_params(self, func):
-        if self.config.virtual_pp_degree == 1:
+        if self.config.virtual_pipeline_model_parallel_size == 1:
             _layers = iter(self.run_function)
         else:
             _layers = (cc for c in self._model_chunks for cc in c.run_function)
@@ -984,7 +984,7 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self._set_pipeline_name_mapping()
 
         layer_idxs = []
-        if self.config.virtual_pp_degree == 1:
+        if self.config.virtual_pipeline_model_parallel_size == 1:
             _layers = iter(self.run_function)
         else:
             _layers = (cc for c in self._model_chunks for cc in c.run_function)

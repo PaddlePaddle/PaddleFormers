@@ -402,15 +402,15 @@ class GptOssAttention(nn.Layer):
 
         self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.num_attention_heads * self.head_dim
@@ -486,7 +486,7 @@ class GptOssAttention(nn.Layer):
         if self.sequence_parallel:
             if batch_size is None:
                 batch_size = (
-                    hidden_states.shape[0] * self.config.tensor_parallel_degree // self.config.max_sequence_length
+                    hidden_states.shape[0] * self.config.tensor_model_parallel_size // self.config.max_sequence_length
                 )
             q_len = self.config.max_sequence_length
             target_query_shape = [batch_size, q_len, self.num_heads, self.head_dim]
@@ -637,7 +637,7 @@ class GptOssPreTrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -652,7 +652,7 @@ class GptOssPreTrainedModel(PretrainedModel):
                 "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
             }
 
-            if not config.vocab_size % config.tensor_parallel_degree == 0:
+            if not config.vocab_size % config.tensor_model_parallel_size == 0:
                 base_actions.pop("lm_head.weight")
                 base_actions.pop("embed_tokens.weight")
             base_actions["layers.0.self_attn.sinks"] = partial(fn, is_column=False)
@@ -661,7 +661,7 @@ class GptOssPreTrainedModel(PretrainedModel):
             base_actions["layers.0.self_attn.q_proj.bias"] = partial(fn, is_column=True)
 
             # if we have enough num_key_value_heads to split, then split it.
-            if config.num_key_value_heads % config.tensor_parallel_degree == 0:
+            if config.num_key_value_heads % config.tensor_model_parallel_size == 0:
                 base_actions["layers.0.self_attn.k_proj.weight"] = partial(fn, is_column=True)
                 base_actions["layers.0.self_attn.v_proj.weight"] = partial(fn, is_column=True)
                 base_actions["layers.0.self_attn.k_proj.bias"] = partial(fn, is_column=True)

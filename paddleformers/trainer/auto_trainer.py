@@ -125,9 +125,9 @@ class AutoTrainer(Trainer):
                 )
 
         auto_dist_degree = {
-            "tensor_parallel": training_args.tensor_parallel_degree > 1,
+            "tensor_parallel": training_args.tensor_model_parallel_size > 1,
             "sequence_parallel": training_args.sequence_parallel,
-            "pipeline_parallel": training_args.pipeline_parallel_degree > 1,
+            "pipeline_parallel": training_args.pipeline_model_parallel_size > 1,
             "data_sharding_parallel": training_args.dataset_world_size > 1,
             "sharding": training_args.sharding,
             "sharding_mesh_dim": training_args.sharding_parallel_mesh_dimension,
@@ -150,7 +150,7 @@ class AutoTrainer(Trainer):
             else:
                 tr_loss = paddle.to_tensor([tensors])
 
-        if self.args.pipeline_parallel_degree <= 1:
+        if self.args.pipeline_model_parallel_size <= 1:
             return super()._nested_gather(tr_loss)
 
         paddle.distributed.broadcast(tr_loss, src=self.comm_group_in_pp.ranks[-1], group=self.comm_group_in_pp)
@@ -168,8 +168,8 @@ class AutoTrainer(Trainer):
         # error may occurs here.
         meshes = []
         meshes.append(_get_mesh(0))
-        if self.args.pipeline_parallel_degree > 1:
-            meshes.append(_get_mesh(self.args.pipeline_parallel_degree - 1))
+        if self.args.pipeline_model_parallel_size > 1:
+            meshes.append(_get_mesh(self.args.pipeline_model_parallel_size - 1))
         return meshes
 
     def _wrap_for_dist_loader(self, train_dataloader, dense_tensor_idx=None):
@@ -276,7 +276,7 @@ class AutoTrainer(Trainer):
         if self.args.gradient_accumulation_steps == 1:
             return [inputs]
 
-        if self.args.to_static and self.args.pipeline_parallel_degree > 1:
+        if self.args.to_static and self.args.pipeline_model_parallel_size > 1:
             return [inputs]
 
         if self.args.to_static and self._in_pir_mode and self.args.gradient_accumulation_steps > 1:
@@ -575,7 +575,7 @@ class AutoTrainer(Trainer):
                         tr_loss += tr_loss_step
 
                     disable_accumulation = False
-                    if self.args.pipeline_parallel_degree > 1 and self.args.to_static:
+                    if self.args.pipeline_model_parallel_size > 1 and self.args.to_static:
                         disable_accumulation = True
                     if self.args.to_static and self._in_pir_mode and self.args.gradient_accumulation_steps > 1:
                         disable_accumulation = True

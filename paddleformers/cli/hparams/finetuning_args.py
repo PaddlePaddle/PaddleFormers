@@ -172,13 +172,13 @@ class PreTrainingArguments(TrainingArguments):
         """
         # only mp0、pp0 need data
         if self.pp_need_data_degree:
-            assert self.pipeline_parallel_degree > 1
-            assert self.pp_need_data_degree >= 2 and self.pp_need_data_degree <= self.pipeline_parallel_degree, (
+            assert self.pipeline_model_parallel_size > 1
+            assert self.pp_need_data_degree >= 2 and self.pp_need_data_degree <= self.pipeline_model_parallel_size, (
                 self.pp_need_data_degree,
-                self.pipeline_parallel_degree,
+                self.pipeline_model_parallel_size,
             )
             # shift by 1 to avoid last pp no nee data
-            no_need_data_range = list(range(self.pp_need_data_degree - 1, self.pipeline_parallel_degree - 1))
+            no_need_data_range = list(range(self.pp_need_data_degree - 1, self.pipeline_model_parallel_size - 1))
             return self.tensor_parallel_rank == 0 and (self.pipeline_parallel_rank not in no_need_data_range)
         return self.pipeline_parallel_rank == 0 and self.tensor_parallel_rank == 0
 
@@ -189,8 +189,8 @@ class PreTrainingArguments(TrainingArguments):
         """
         if not self.pp_need_data_degree:
             return super().dataset_rank
-        no_need_data_range = list(range(self.pp_need_data_degree - 1, self.pipeline_parallel_degree - 1))
-        ranks = [i for i in range(self.pipeline_parallel_degree) if i not in no_need_data_range]
+        no_need_data_range = list(range(self.pp_need_data_degree - 1, self.pipeline_model_parallel_size - 1))
+        ranks = [i for i in range(self.pipeline_model_parallel_size) if i not in no_need_data_range]
         if self.pipeline_parallel_rank not in ranks:
             return None
         reeao_pp_rank = ranks.index(self.pipeline_parallel_rank)
@@ -451,7 +451,7 @@ class FinetuningArguments(
             raise ValueError(f"Unknown compute_type: {self.compute_type}")
         self.per_device_train_batch_size = self.batch_size
         self.per_device_eval_batch_size = self.batch_size
-        self.server_tp_degree = self.tensor_parallel_degree
+        self.server_tp_degree = self.tensor_model_parallel_size
 
         super().__post_init__()
 
@@ -466,13 +466,13 @@ class FinetuningArguments(
 
         self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
 
-        if self.pipeline_parallel_degree > 1:
+        if self.pipeline_model_parallel_size > 1:
             self.per_device_eval_batch_size = self.per_device_train_batch_size * self.gradient_accumulation_steps
             logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
             user_defined_strategy = fleet.fleet._user_defined_strategy
             user_defined_strategy.strategy.pipeline_configs.accumulate_steps = self.gradient_accumulation_steps
             if self.pp_need_data and not self.pp_need_data_degree:
-                self.pp_need_data_degree = self.pipeline_parallel_degree
+                self.pp_need_data_degree = self.pipeline_model_parallel_size
             if self.pp_need_data_degree:
                 assert self.gradient_accumulation_steps % self.pp_need_data_degree == 0, (
                     f"gradient_accumulation_steps[{self.gradient_accumulation_steps}] should be divisible by "

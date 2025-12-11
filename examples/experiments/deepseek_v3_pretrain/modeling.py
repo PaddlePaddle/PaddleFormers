@@ -218,20 +218,20 @@ class LMHeadFunction(paddle.autograd.PyLayer):
 
 def parallel_matmul(x: Tensor, y: Tensor, transpose_y=False, tensor_parallel_output=True):
     is_fleet_init = True
-    tensor_parallel_degree = 1
+    tensor_model_parallel_size = 1
     try:
         hcg = fleet.get_hybrid_communicate_group()
         model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
+        tensor_model_parallel_size = hcg.get_model_parallel_world_size()
     except AttributeError:
         is_fleet_init = False
 
     if paddle.in_dynamic_mode():
         y_is_distributed = y.is_distributed
     else:
-        y_is_distributed = tensor_parallel_degree > 1
+        y_is_distributed = tensor_model_parallel_size > 1
 
-    if is_fleet_init and tensor_parallel_degree > 1 and y_is_distributed:
+    if is_fleet_init and tensor_model_parallel_size > 1 and y_is_distributed:
         # if not running under distributed.launch, it will raise AttributeError: 'Fleet' object has no attribute '_hcg'
         input_parallel = paddle.distributed.collective._c_identity(x, group=model_parallel_group)
         logits = paddle.matmul(input_parallel, y, transpose_y=transpose_y)
@@ -269,7 +269,7 @@ class DeepseekV2MLP(nn.Layer):
             RowParallelLinear = linear_utils.RowParallelLinear
 
         with linear_dtype_gaurd():
-            if config.tensor_parallel_degree > 1 and not is_moe:
+            if config.tensor_model_parallel_size > 1 and not is_moe:
                 self.gate_proj = ColumnParallelLinear(
                     self.hidden_size,
                     self.intermediate_size,
@@ -409,7 +409,7 @@ class DeepseekV2MoE(MoELayer):
     """
 
     def __init__(self, config: DeepseekV2FastConfig, norm_weight=None, norm_eps=None):
-        assert config.tensor_parallel_degree <= 1, "tensor_parallel_degree should be 1"
+        assert config.tensor_model_parallel_size <= 1, "tensor_model_parallel_size should be 1"
 
         self.using_post_norm_recompute = config.using_post_norm_recompute
         if self.using_post_norm_recompute:
@@ -692,7 +692,7 @@ class DeepseekV2Attention(nn.Layer):
         Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
         # fmt: off
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             # for tensor parallel
             if config.sequence_parallel:
                 ColumnParallelLinear = linear_utils.ColumnSequenceParallelLinear
@@ -1294,7 +1294,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -1315,7 +1315,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
             else:
                 base_actions["lm_head.weight"] = partial(fn, is_column=True)
 
-            if not config.vocab_size % config.tensor_parallel_degree == 0:
+            if not config.vocab_size % config.tensor_model_parallel_size == 0:
                 base_actions.pop("lm_head.weight")
                 base_actions.pop("embed_tokens.weight")
 
@@ -1325,7 +1325,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
             base_actions["layers.0.self_attn.q_b_proj.weight"] = partial(fn, is_column=True)
 
             # if we have enough num_key_value_heads to split, then split it.
-            if config.num_key_value_heads % config.tensor_parallel_degree == 0:
+            if config.num_key_value_heads % config.tensor_model_parallel_size == 0:
                 base_actions["layers.0.self_attn.kv_b_proj.weight"] = partial(fn, is_column=True)
                 if config.use_fp8:
                     base_actions["layers.0.self_attn.kv_b_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
@@ -1341,8 +1341,8 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
 
             # moe unit routed experts
             moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
-            expert_parallel_degree = dist.get_world_size(moe_group)
-            if expert_parallel_degree <= 1:
+            expert_model_parallel_size = dist.get_world_size(moe_group)
+            if expert_model_parallel_size <= 1:
                 for e_i in range(config.n_routed_experts):
                     base_actions[f"layers.0.mlp.experts.{e_i}.up_proj.weight"] = partial(fn, is_column=True)
                     base_actions[f"layers.0.mlp.experts.{e_i}.gate_proj.weight"] = partial(fn, is_column=True)
@@ -1390,7 +1390,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
         return mappings
 
     def _init_weights(self, layer):
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             rng_tracker = get_rng_state_tracker().rng_state
         Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
@@ -1475,7 +1475,7 @@ class DeepseekV2ModelFast(DeepseekV2PretrainedModelFast):
         self.recompute_granularity = config.recompute_granularity
         self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
 
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
             self.embed_tokens = mpu.VocabParallelEmbedding(config.vocab_size, config.hidden_size)
         else:
             self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
@@ -1786,7 +1786,7 @@ class DeepseekV2PretrainingCriterionFast(nn.Layer):
         super(DeepseekV2PretrainingCriterionFast, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
             self.loss_func = mpu.ParallelCrossEntropy(ignore_index=self.ignore_index)
@@ -3076,8 +3076,8 @@ class DeepseekV2LMHead(nn.Layer):
         else:
             self.seq_length = config.seq_length
 
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
+            vocab_size = config.vocab_size // config.tensor_model_parallel_size
         else:
             vocab_size = config.vocab_size
 

@@ -86,7 +86,7 @@ def update_model_config_from_args(config: ErnieMoEConfig, model_args: dict):
 
 
 def get_tp_split_ckpt(args, path):
-    tp_degree = args.tensor_parallel_degree
+    tp_degree = args.tensor_model_parallel_size
     tp_rank = max(args.tensor_parallel_rank, 0)
 
     if tp_degree > 1:
@@ -204,8 +204,8 @@ def main():
     trainer_args = {k: formatv(v) for k, v in dict(config.trainer_args).items()}
     if trainer_args["moe_group"] == "ep":
         assert (
-            trainer_args.get("expert_parallel_degree", -1) > 1
-        ), "When moe_group is 'ep', 'expert_parallel_degree' must be set to greater than 1."
+            trainer_args.get("expert_model_parallel_size", -1) > 1
+        ), "When moe_group is 'ep', 'expert_model_parallel_size' must be set to greater than 1."
         assert (
             trainer_args.get("sharding_parallel_degree", -1) > 1
         ), "sharding_parallel_degree should > 1 in when moe_group is 'ep'."
@@ -411,13 +411,13 @@ def main():
         logger.info("using orthogonal loss callback")
         cfg.moe_orthogonal_loss_lambda = 0.0
 
-    if args.tensor_parallel_degree > 1:
+    if args.tensor_model_parallel_size > 1:
         cfg.sequence_parallel = args.sequence_parallel
-        cfg.tensor_parallel_degree = max(fleet.get_hybrid_communicate_group().get_model_parallel_world_size(), 1)
+        cfg.tensor_model_parallel_size = max(fleet.get_hybrid_communicate_group().get_model_parallel_world_size(), 1)
         cfg.tensor_parallel_rank = max(fleet.get_hybrid_communicate_group().get_model_parallel_rank(), 0)
     else:
         cfg.sequence_parallel = False
-        cfg.tensor_parallel_degree = 1
+        cfg.tensor_model_parallel_size = 1
         cfg.tensor_parallel_rank = 0
     cfg.micro_batch_size = args.per_device_train_batch_size
 
@@ -430,8 +430,8 @@ def main():
 
     cfg = update_model_config_from_args(cfg, model_config)
 
-    if args.pipeline_parallel_degree > 1:
-        cfg.virtual_pp_degree = args.virtual_pp_degree
+    if args.pipeline_model_parallel_size > 1:
+        cfg.virtual_pipeline_model_parallel_size = args.virtual_pipeline_model_parallel_size
         cfg.num_acc_steps = args.gradient_accumulation_steps
         cfg.moe_with_send_router_loss = args.moe_with_send_router_loss
         cfg.enable_delay_scale_loss = args.enable_delay_scale_loss

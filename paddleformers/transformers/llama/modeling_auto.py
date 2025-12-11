@@ -757,7 +757,7 @@ class LlamaPretrainedModelAuto(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -779,7 +779,7 @@ class LlamaPretrainedModelAuto(PretrainedModel):
             else:
                 base_actions["layers.0.self_attn.q_proj.weight"] = partial(fn, is_column=True)
                 # if we have enough num_key_value_heads to split, then split it.
-                if config.num_key_value_heads % config.tensor_parallel_degree == 0:
+                if config.num_key_value_heads % config.tensor_model_parallel_size == 0:
                     base_actions["layers.0.self_attn.k_proj.weight"] = partial(fn, is_column=True)
                     base_actions["layers.0.self_attn.v_proj.weight"] = partial(fn, is_column=True)
 
@@ -863,7 +863,7 @@ class LlamaModelAuto(LlamaPretrainedModelAuto):
 
         embedding_placements = (
             [dist.Replicate(), dist.Shard(1)]
-            if self.config.tensor_parallel_degree > 1
+            if self.config.tensor_model_parallel_size > 1
             else [dist.Replicate(), dist.Replicate()]
         )
         self.embed_tokens.weight = dist.shard_tensor(
@@ -1147,7 +1147,7 @@ class LlamaPretrainingCriterion3DAuto(paddle.nn.Layer):
         super(LlamaPretrainingCriterion3DAuto, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
         self.loss_func = paddle.nn.CrossEntropyLoss(reduction="none", ignore_index=self.ignore_index)
 
     def forward(self, prediction_scores, masked_lm_labels):
@@ -1350,7 +1350,7 @@ class LlamaForCausalLM3DAuto(LlamaPretrainedModelAuto):
         # if labels is None，means we need full output, instead of tensor_parallel_output
         # tensor_parallel_output is together with ParallelCrossEntropy
         tensor_parallel_output = (
-            self.config.tensor_parallel_output and labels is not None and self.config.tensor_parallel_degree > 1
+            self.config.tensor_parallel_output and labels is not None and self.config.tensor_model_parallel_size > 1
         )
 
         logits = self.lm_head(hidden_states, tensor_parallel_output=tensor_parallel_output)

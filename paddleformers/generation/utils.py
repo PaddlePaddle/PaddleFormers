@@ -1351,7 +1351,7 @@ class GenerationMixin(object):
             # multinomial already support fp16 and bf16 currently, fix issue: https://github.com/PaddlePaddle/Paddle/issues/51852
             next_tokens = paddle.multinomial(probs)
 
-            if self.config.tensor_parallel_degree > 1:
+            if self.config.tensor_model_parallel_size > 1:
                 # Maybe no need to broadcast if seed is set correctly.
                 from paddle.distributed import fleet
 
@@ -1362,7 +1362,7 @@ class GenerationMixin(object):
                 except:
                     group, src = None, 0
                 paddle.distributed.broadcast(next_tokens, src=src, group=group)
-            # config does not include pipeline_parallel_degree, and pipeline parallel
+            # config does not include pipeline_model_parallel_size, and pipeline parallel
             # uses trainer.model_wrapped to run in both train and predict mode
             # which has pp_group as a attribute
             # TODO(guosheng): only let the last stage of pipeline to do softmax

@@ -154,7 +154,7 @@ class TestLoKrLayer(unittest.TestCase):
 class TestLoKrModel(unittest.TestCase):
     def test_tp_raise_exception(self):
         with self.assertRaises(NotImplementedError):
-            lokr_config = LoKrConfig(**DEFAULT_MODEL_TEST_CONFIG, tensor_parallel_degree=2)
+            lokr_config = LoKrConfig(**DEFAULT_MODEL_TEST_CONFIG, tensor_model_parallel_size=2)
             model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
             lokr_model = LoKrModel(model, lokr_config)
             lokr_model.eval()
@@ -224,7 +224,7 @@ class TestLoKrConfig(unittest.TestCase):
             "decompose_both": False,
             "lokr_alpha": 0.0,
             "merge_weight": False,
-            "tensor_parallel_degree": -1,
+            "tensor_model_parallel_size": -1,
             "dtype": None,
         }
         self.assertEqual(config.to_dict(), expected_dict)

@@ -157,7 +157,7 @@ class Glm4MoeConfig(PretrainedConfig):
         seq_aux=True,
         topk_method="noaux_tc",
         using_flex_token=True,
-        moe_subbatch_token_num=0,
+        moe_subbatch_token_num_before_dispatch=0,
         sliding_window=None,
         **kwargs,
     ):
@@ -201,7 +201,7 @@ class Glm4MoeConfig(PretrainedConfig):
         self.topk_method = topk_method
         self.using_flex_token = using_flex_token
         self.use_fp8 = False
-        self.moe_subbatch_token_num = moe_subbatch_token_num
+        self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
 
         self.pp_seg_method = pp_seg_method
         self.disable_ffn_model_parallel = disable_ffn_model_parallel

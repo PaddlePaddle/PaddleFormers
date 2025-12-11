@@ -50,7 +50,7 @@ export ASCEND_RT_VISIBLE_DEVICES=0
 export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 ```
 
-* Note: In `Chat` module, the number of gpus configured by CUDA_VISIBLE_DEVICES should be equal to `tensor_parallel_degree` in the config.
+* Note: In `Chat` module, the number of gpus configured by CUDA_VISIBLE_DEVICES should be equal to `tensor_model_parallel_size` in the config.
 Alternatively, you can also unset CUDA_VISIBLE_DEVICES.
 
 # 1. CLI Usage

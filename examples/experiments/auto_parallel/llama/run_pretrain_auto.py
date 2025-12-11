@@ -200,9 +200,9 @@ class ModelArguments:
         default="full",
         metadata={"help": "Choose among ['full', 'core_attn', 'full_attn']"},
     )
-    virtual_pp_degree: int = field(
+    virtual_pipeline_model_parallel_size: int = field(
         default=1,
-        metadata={"help": "virtual_pp_degree"},
+        metadata={"help": "virtual_pipeline_model_parallel_size"},
     )
     continue_training: bool = field(
         default=False,
@@ -371,19 +371,19 @@ def init_seed(seed: int = 1234, args=None):
                 order = ["pp", "dp", "sharding", "mp", "sep"]
             elif args.hybrid_parallel_topo_order == "sharding_first":
                 order = ["dp", "sharding", "pp", "mp", "sep"]
-            if args.context_parallel_degree is not None and args.context_parallel_degree > 1:
-                sep_degree = args.context_parallel_degree
+            if args.context_parallel_size is not None and args.context_parallel_size > 1:
+                sep_degree = args.context_parallel_size
             elif args.sep_parallel_degree is not None and args.sep_parallel_degree > 1:
                 sep_degree = args.sep_parallel_degree
             else:
                 sep_degree = 1
-            sep_degree = args.sep_parallel_degree if args.sep_parallel_degree > 1 else args.context_parallel_degree
+            sep_degree = args.sep_parallel_degree if args.sep_parallel_degree > 1 else args.context_parallel_size
             topo = Topology(
                 dist.get_rank(),
                 dist.get_world_size(),
                 dp_degree=args.dataset_world_size,
-                pp_degree=args.pipeline_parallel_degree,
-                mp_degree=args.tensor_parallel_degree,
+                pp_degree=args.pipeline_model_parallel_size,
+                mp_degree=args.tensor_model_parallel_size,
                 sep_degree=sep_degree,
                 sharding_degree=1,  # auto_parallel's sharding is not orthogonal with dp, mp and pp
                 order=order,
@@ -415,13 +415,13 @@ def main():
     do_enable_linear_fused_grad_add = training_args.enable_linear_fused_grad_add
     do_enable_mp_async_allreduce = (
         training_args.enable_auto_parallel
-        and training_args.tensor_parallel_degree > 1
+        and training_args.tensor_model_parallel_size > 1
         and "enable_mp_async_allreduce" in training_args.tensor_parallel_config
         and not training_args.sequence_parallel
     )
     do_enable_sp_async_reduce_scatter = (
         training_args.enable_auto_parallel
-        and training_args.tensor_parallel_degree > 1
+        and training_args.tensor_model_parallel_size > 1
         and training_args.sequence_parallel
         and "enable_sp_async_reduce_scatter" in training_args.tensor_parallel_config
     )
@@ -500,7 +500,7 @@ def main():
     config.use_flash_attention = model_args.use_flash_attention
     config.use_fused_rms_norm = model_args.use_fused_rms_norm
     config.recompute_granularity = model_args.recompute_granularity
-    config.virtual_pp_degree = model_args.virtual_pp_degree
+    config.virtual_pipeline_model_parallel_size = model_args.virtual_pipeline_model_parallel_size
     config.sequence_parallel = training_args.sequence_parallel
 
     config.fuse_sequence_parallel_allreduce = training_args.fuse_sequence_parallel_allreduce
@@ -511,16 +511,16 @@ def main():
     config.recompute_use_reentrant = model_args.recompute_use_reentrant
 
     config.use_recompute = training_args.recompute
-    config.tensor_parallel_degree = training_args.tensor_parallel_degree
+    config.tensor_model_parallel_size = training_args.tensor_model_parallel_size
     config.tensor_parallel_rank = training_args.tensor_parallel_rank
     config.sharding_parallel_degree = training_args.sharding_parallel_degree
     config.to_static = training_args.to_static
     config.sep_parallel_degree = training_args.sep_parallel_degree
-    config.context_parallel_degree = training_args.context_parallel_degree
+    config.context_parallel_size = training_args.context_parallel_size
 
-    if training_args.strategy.pipeline.enable and config.virtual_pp_degree > 1:
+    if training_args.strategy.pipeline.enable and config.virtual_pipeline_model_parallel_size > 1:
         pipeline = training_args.strategy.pipeline
-        pipeline.vpp_degree = config.virtual_pp_degree
+        pipeline.vpp_degree = config.virtual_pipeline_model_parallel_size
         pipeline.vpp_seg_method = training_args.virtual_pipeline_seg_method
     if get_env_device() == "xpu" and training_args.gradient_accumulation_steps > 1:
         try:
@@ -536,7 +536,7 @@ def main():
 
     if (
         "replace_with_parallel_cross_entropy" in training_args.tensor_parallel_config
-        and config.tensor_parallel_degree > 1
+        and config.tensor_model_parallel_size > 1
         and config.to_static is False
     ):
         from llm.utils.replace_ops import replace_cross_entropy

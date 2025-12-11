@@ -123,7 +123,7 @@ class LlamaEmbeddingPipe(nn.Layer):
         self.config = config
         self.sequence_parallel = config.sequence_parallel
         self.hidden_size = config.hidden_size
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
             self.embed_tokens = fleet.meta_parallel.VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
@@ -205,8 +205,8 @@ class LlamaEmbeddingPipe(nn.Layer):
             )
             alibi = build_alibi_tensor(mask, self.config.num_attention_heads, dtype=input_embeds.dtype)
 
-            if self.config.tensor_parallel_degree > 1:
-                block_size = self.config.num_attention_heads // self.config.tensor_parallel_degree
+            if self.config.tensor_model_parallel_size > 1:
+                block_size = self.config.num_attention_heads // self.config.tensor_model_parallel_size
                 alibi = alibi[
                     :,
                     self.config.tensor_parallel_rank
@@ -388,17 +388,17 @@ class LlamaForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         self.pp_recompute_interval = self.config.pp_recompute_interval
         self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
 
-        virtual_pp_degree = getattr(self.config, "virtual_pp_degree", 1)
+        virtual_pipeline_model_parallel_size = getattr(self.config, "virtual_pipeline_model_parallel_size", 1)
 
         def get_hcg():
             return fleet.get_hybrid_communicate_group()
 
         hcg = get_hcg()
-        tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
+        tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
 
-        # TODO: fix tensor_parallel_degree rewrite in here
-        config.tensor_parallel_degree = tensor_parallel_degree
+        # TODO: fix tensor_model_parallel_size rewrite in here
+        config.tensor_model_parallel_size = tensor_model_parallel_size
         config.tensor_parallel_rank = tensor_parallel_rank
 
         if config.tie_word_embeddings:
@@ -454,7 +454,7 @@ class LlamaForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 "offload": False,
                 "partition": False,
             },
-            num_virtual_pipeline_stages=virtual_pp_degree,
+            num_virtual_pipeline_stages=virtual_pipeline_model_parallel_size,
         )
         # You should call init here, since there is a  diamond inheritance problem
         self.apply(self._init_weights)

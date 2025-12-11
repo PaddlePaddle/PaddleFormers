@@ -278,7 +278,7 @@ class VariableResolutionResamplerModel(nn.Layer):
         self.temporal_conv_size = temporal_conv_size
         self.use_recompute_resampler = config.use_recompute_resampler
         self.use_temporal_conv = config.use_temporal_conv
-        self.tensor_parallel_degree = config.tensor_parallel_degree
+        self.tensor_model_parallel_size = config.tensor_model_parallel_size
 
         # compress spatial
         self.spatial_dim = self.in_dim * self.spatial_conv_size * self.spatial_conv_size
@@ -296,7 +296,7 @@ class VariableResolutionResamplerModel(nn.Layer):
                         has_bias=True,
                         fuse_matmul_bias=True,
                     )
-                    if config.tensor_parallel_degree > 1
+                    if config.tensor_model_parallel_size > 1
                     else nn.Linear(self.spatial_dim, self.spatial_dim)
                 ),
                 nn.GELU(),
@@ -320,7 +320,7 @@ class VariableResolutionResamplerModel(nn.Layer):
             out_config.fuse_rms_norm = out_config.resampler_fuse_rms_norm
             self.after_norm = RMSNorm(out_config)
 
-            if config.tensor_parallel_degree > 1:
+            if config.tensor_model_parallel_size > 1:
                 for idx in [2, 3]:
                     mark_as_sequence_parallel_parameter(self.spatial_linear[idx].weight)
                     mark_as_sequence_parallel_parameter(self.spatial_linear[idx].bias)
@@ -361,17 +361,17 @@ class VariableResolutionResamplerModel(nn.Layer):
             x = self.spatial_conv_reshape(x, self.spatial_conv_size)
 
             num_pad = 0
-            if self.tensor_parallel_degree > 1:
+            if self.tensor_model_parallel_size > 1:
                 num_pad = (
-                    x.shape[0] + self.tensor_parallel_degree - 1
-                ) // self.tensor_parallel_degree * self.tensor_parallel_degree - x.shape[0]
+                    x.shape[0] + self.tensor_model_parallel_size - 1
+                ) // self.tensor_model_parallel_size * self.tensor_model_parallel_size - x.shape[0]
 
             if num_pad > 0:
                 x = paddle.nn.functional.pad(x, [0, num_pad, 0, 0])
 
             x = self.spatial_linear(x)
 
-            if self.tensor_parallel_degree > 1:
+            if self.tensor_model_parallel_size > 1:
                 x = AllGatherOp.apply(x)
 
             if num_pad > 0:
@@ -427,13 +427,13 @@ class VariableResolutionResamplerModel(nn.Layer):
 
         def fwd_temporal(x):
             num_pad = 0
-            if self.tensor_parallel_degree > 1:
+            if self.tensor_model_parallel_size > 1:
                 num_pad = (
-                    x.shape[0] + self.tensor_parallel_degree - 1
-                ) // self.tensor_parallel_degree * self.tensor_parallel_degree - x.shape[0]
+                    x.shape[0] + self.tensor_model_parallel_size - 1
+                ) // self.tensor_model_parallel_size * self.tensor_model_parallel_size - x.shape[0]
             if num_pad > 0:
                 x = paddle.nn.functional.pad(x, [0, num_pad, 0, 0])
-            if self.tensor_parallel_degree > 1:
+            if self.tensor_model_parallel_size > 1:
                 x = ScatterOp.apply(x, axis=0)
             x = self.temporal_linear(x)
 
@@ -445,7 +445,7 @@ class VariableResolutionResamplerModel(nn.Layer):
         def fwd_mlp(x):
             x = self.mlp(x)
             x = self.after_norm(x)
-            if self.tensor_parallel_degree > 1:
+            if self.tensor_model_parallel_size > 1:
                 x = AllGatherOp.apply(x)
             return x
 
@@ -473,7 +473,7 @@ class VariableResolutionResamplerModel(nn.Layer):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -645,7 +645,7 @@ def calc_multimodal_logits(
         )
     parallel_matmul_tp = partial(
         parallel_matmul,
-        tensor_parallel_degree=config.tensor_parallel_degree,
+        tensor_model_parallel_size=config.tensor_model_parallel_size,
         tensor_parallel_output=config.tensor_parallel_output,
         fuse_linear=config.fuse_linear,
         transpose_y=config.tie_word_embeddings,
@@ -737,7 +737,7 @@ class Ernie4_5_MoeVLHead(Ernie4_5_LMHead):
                     self.weight,
                     self.bias,
                     transpose_y=self.config.tie_word_embeddings,
-                    tensor_parallel_degree=self.config.tensor_parallel_degree,
+                    tensor_model_parallel_size=self.config.tensor_model_parallel_size,
                     tensor_parallel_output=False,
                     fuse_linear=self.config.fuse_linear,
                 ),
@@ -782,7 +782,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         self.modality_detach = config.modality_detach
 
         if config.mm_vocab_size > 0:
-            if config.tensor_parallel_degree > 1:
+            if config.tensor_model_parallel_size > 1:
                 self.mm_embed_tokens = VocabParallelEmbedding(config.mm_vocab_size, config.hidden_size)
             else:
                 self.mm_embed_tokens = nn.Embedding(config.mm_vocab_size, config.hidden_size)
@@ -824,7 +824,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -1092,7 +1092,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                     image_attention_mask,
                     grid_thw,
                 )
-                if self.config.tensor_parallel_degree > 1:
+                if self.config.tensor_model_parallel_size > 1:
                     S, C = image_features.shape
                     # When scatterOp cuts feature + 4-in-1, the features of the 4 tokens are merged together in advance.
                     image_features = image_features.reshape([-1, C * self.config.spatial_conv_size**2])

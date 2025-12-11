@@ -67,7 +67,7 @@ def initialize_lora_model(model, training_args, model_args, resume_from_checkpoi
             lora_alpha=model_args.lora_alpha,
             rslora=model_args.rslora,
             lora_plus_scale=model_args.lora_plus_scale,
-            tensor_parallel_degree=training_args.tensor_parallel_degree,
+            tensor_model_parallel_size=training_args.tensor_model_parallel_size,
             dtype=dtype,
             head_dim=model.config.text_config.hidden_size // model.config.text_config.num_attention_heads,
             base_model_name_or_path=model_args.model_name_or_path,

@@ -918,7 +918,7 @@ class LlamaPretrainingCriterionNet(paddle.nn.Layer):
         super(LlamaPretrainingCriterionNet, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
         self.loss_func = paddle.nn.CrossEntropyLoss(reduction="none", ignore_index=self.ignore_index)
 
     def forward(self, prediction_scores, masked_lm_labels):
@@ -1129,7 +1129,7 @@ class LlamaForCausalLMNet(LlamaPretrainedModelNet):
         # if labels is None，means we need full output, instead of tensor_parallel_output
         # tensor_parallel_output is together with ParallelCrossEntropy
         tensor_parallel_output = (
-            self.config.tensor_parallel_output and labels is not None and self.config.tensor_parallel_degree > 1
+            self.config.tensor_parallel_output and labels is not None and self.config.tensor_model_parallel_size > 1
         )
 
         logits = self.lm_head(hidden_states, tensor_parallel_output=tensor_parallel_output)

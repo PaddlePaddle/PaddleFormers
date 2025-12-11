@@ -125,7 +125,7 @@ def get_use_casual_mask():
 
 
 def build_alibi_tensor(
-    bool_attention_mask: Tensor, num_heads: int, dtype: paddle.dtype, tensor_parallel_degree=1
+    bool_attention_mask: Tensor, num_heads: int, dtype: paddle.dtype, tensor_model_parallel_size=1
 ) -> Tensor:
     batch_size, seq_length = bool_attention_mask.shape[0], bool_attention_mask.shape[-1]
     slopes = paddle.to_tensor(_get_interleave(num_heads), dtype="float32")
@@ -180,20 +180,20 @@ def assign_kv_heads(num_kv_heads: int, num_gpus: int):
 
 def parallel_matmul(x: Tensor, y: Tensor, transpose_y=False, tensor_parallel_output=True):
     is_fleet_init = True
-    tensor_parallel_degree = 1
+    tensor_model_parallel_size = 1
     try:
         hcg = fleet.get_hybrid_communicate_group()
         model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
+        tensor_model_parallel_size = hcg.get_model_parallel_world_size()
     except:
         is_fleet_init = False
 
     if paddle.in_dynamic_mode():
         y_is_distributed = y.is_distributed
     else:
-        y_is_distributed = tensor_parallel_degree > 1
+        y_is_distributed = tensor_model_parallel_size > 1
 
-    if is_fleet_init and tensor_parallel_degree > 1 and y_is_distributed:
+    if is_fleet_init and tensor_model_parallel_size > 1 and y_is_distributed:
         # if not running under distributed.launch, it will raise AttributeError: 'Fleet' object has no attribute '_hcg'
         input_parallel = paddle.distributed.collective._c_identity(x, group=model_parallel_group)
         logits = paddle.matmul(input_parallel, y, transpose_y=transpose_y)
@@ -245,7 +245,7 @@ def scaled_dot_product_attention(
         # Torch Flash Attention input [ bz, nhead, seqlen, head_dim]
 
     else:
-        if config.context_parallel_degree > 1:
+        if config.context_parallel_size > 1:
             raise ValueError("Context parallel requires `use_flash_attention=True`")
 
         #  [ bz, seqlen, nhead, head_dim] -> [bs, nhead, seq_len, head_dim]
@@ -611,7 +611,7 @@ class LlamaMLP(nn.Layer):
         self.skip_recompute_ops = skip_recompute_ops
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
-        self.tensor_parallel_degree = config.tensor_parallel_degree
+        self.tensor_model_parallel_size = config.tensor_model_parallel_size
         self.fuse_attention_ffn = config.fuse_attention_ffn
 
         if config.sequence_parallel:
@@ -635,7 +635,7 @@ class LlamaMLP(nn.Layer):
                 if skip_recompute_ops.get("mlp_row_ln", False):
                     RowParallelLinear = RRRowParallelLinear
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             if config.fuse_attention_ffn:
                 self.gate_up_fused_proj = ColumnParallelLinear(
                     self.hidden_size,
@@ -712,25 +712,25 @@ class LlamaAttention(nn.Layer):
         self.enable_recompute = False
         self.layerwise_recompute = layerwise_recompute
         self.recompute_granularity = config.recompute_granularity
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
-            if self.num_key_value_heads % config.tensor_parallel_degree == 0:
-                self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+            if self.num_key_value_heads % config.tensor_model_parallel_size == 0:
+                self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
             else:
                 if self.fuse_attention_qkv:
                     # TODO(Yuang): support fusion for kv when kv heads cannot be divided by mp
                     raise ValueError(
-                        f"fuse_attention_qkv can't be True when num_key_value_heads {config.num_key_value_heads} % tensor_parallel_degree {config.tensor_parallel_degree} != 0"
+                        f"fuse_attention_qkv can't be True when num_key_value_heads {config.num_key_value_heads} % tensor_model_parallel_size {config.tensor_model_parallel_size} != 0"
                     )
                 logger.warning(
-                    f"Get num_key_value_heads: {self.num_key_value_heads}, can't split to tensor_parallel_degree: {config.tensor_parallel_degree}, so we don't spilt key value weight."
+                    f"Get num_key_value_heads: {self.num_key_value_heads}, can't split to tensor_model_parallel_size: {config.tensor_model_parallel_size}, so we don't spilt key value weight."
                 )
                 self.kv_indices = paddle.to_tensor(
-                    assign_kv_heads(self.num_key_value_heads, config.tensor_parallel_degree)[
+                    assign_kv_heads(self.num_key_value_heads, config.tensor_model_parallel_size)[
                         config.tensor_parallel_rank
                     ]
                 )
@@ -764,7 +764,7 @@ class LlamaAttention(nn.Layer):
                 if skip_recompute_ops.get("attention_row_ln", False):
                     RowParallelLinear = RRRowParallelLinear
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             if self.fuse_attention_qkv:
                 self.qkv_proj = ColumnParallelLinear(
                     self.hidden_size,
@@ -828,7 +828,7 @@ class LlamaAttention(nn.Layer):
                     bias_attr=False,
                 )
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             self.o_proj = RowParallelLinear(
                 self.hidden_size,
                 self.hidden_size,
@@ -1045,7 +1045,7 @@ class LlamaAttention(nn.Layer):
             if self.reshard_layer is not None:
                 batch_size, seq_length, _, _ = query_states.shape
                 position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
-            if self.config.context_parallel_degree > 1:
+            if self.config.context_parallel_size > 1:
                 batch_size, seq_length, _, _ = query_states.shape
                 group = fleet.get_hybrid_communicate_group().get_sep_parallel_group()
                 chunk_size = seq_length // 2
@@ -1065,12 +1065,12 @@ class LlamaAttention(nn.Layer):
                     position_ids,
                     past_key_value,
                     self.rotary_emb,
-                    self.config.context_parallel_degree,
+                    self.config.context_parallel_size,
                 )
 
             else:
-                if self.config.context_parallel_degree > 1:
-                    kv_seq_len *= self.config.context_parallel_degree
+                if self.config.context_parallel_size > 1:
+                    kv_seq_len *= self.config.context_parallel_size
                 if self.config.use_long_sequence_strategies:
                     cos, sin = self.rotary_emb(seq_len=kv_seq_len)
                     cos = cos[None, :, None, :]
@@ -1365,7 +1365,7 @@ class LlamaPretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -1385,7 +1385,7 @@ class LlamaPretrainedModel(PretrainedModel):
             else:
                 base_actions["lm_head.weight"] = partial(fn, is_column=True)
 
-            if not config.vocab_size % config.tensor_parallel_degree == 0:
+            if not config.vocab_size % config.tensor_model_parallel_size == 0:
                 base_actions.pop("lm_head.weight")
                 base_actions.pop("embed_tokens.weight")
             # Column Linear
@@ -1394,7 +1394,7 @@ class LlamaPretrainedModel(PretrainedModel):
             else:
                 base_actions["layers.0.self_attn.q_proj.weight"] = partial(fn, is_column=True)
                 # if we have enough num_key_value_heads to split, then split it.
-                if config.num_key_value_heads % config.tensor_parallel_degree == 0:
+                if config.num_key_value_heads % config.tensor_model_parallel_size == 0:
                     base_actions["layers.0.self_attn.k_proj.weight"] = partial(fn, is_column=True)
                     base_actions["layers.0.self_attn.v_proj.weight"] = partial(fn, is_column=True)
 
@@ -1470,7 +1470,7 @@ class LlamaPretrainedModel(PretrainedModel):
 
     def _init_weights(self, layer):
         """Initialization hook"""
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             rng_tracker = get_rng_state_tracker().rng_state
         if isinstance(
             layer,
@@ -1540,7 +1540,7 @@ class LlamaModel(LlamaPretrainedModel):
 
         # Recompute defaults to False and is controlled by Trainer
         self.enable_recompute = False
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
             self.embed_tokens = mpu.VocabParallelEmbedding(
                 self.vocab_size,
                 self.hidden_size,
@@ -1704,7 +1704,7 @@ class LlamaModel(LlamaPretrainedModel):
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
-        if self.config.context_parallel_degree > 1 and (attention_mask is not None or self.config.alibi):
+        if self.config.context_parallel_size > 1 and (attention_mask is not None or self.config.alibi):
             raise NotImplementedError("Ring FlashAttention doesn't support attention_mask or alibi")
 
         # embed positions
@@ -1723,8 +1723,8 @@ class LlamaModel(LlamaPretrainedModel):
                 alibi = alibi_layer(attention_mask, self.config.num_attention_heads, dtype=inputs_embeds.dtype)
             else:
                 alibi = build_alibi_tensor(attention_mask, self.config.num_attention_heads, dtype=inputs_embeds.dtype)
-            if self.config.tensor_parallel_degree > 1:
-                block_size = self.config.num_attention_heads // self.config.tensor_parallel_degree
+            if self.config.tensor_model_parallel_size > 1:
+                block_size = self.config.num_attention_heads // self.config.tensor_model_parallel_size
                 alibi = alibi[
                     :,
                     self.config.tensor_parallel_rank
@@ -1854,8 +1854,8 @@ class LlamaPretrainingCriterion(paddle.nn.Layer):
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
         self.enable_parallel_cross_entropy = (
-            config.tensor_parallel_degree > 1
-            and config.vocab_size % config.tensor_parallel_degree == 0
+            config.tensor_model_parallel_size > 1
+            and config.vocab_size % config.tensor_model_parallel_size == 0
             and config.tensor_parallel_output
         )
 
@@ -1875,7 +1875,7 @@ class LlamaPretrainingCriterion(paddle.nn.Layer):
         with paddle.amp.auto_cast(False):
             masked_lm_loss = self.loss_func(prediction_scores.astype("float32"), masked_lm_labels.unsqueeze(2))
 
-            if self.config.sep_parallel_degree > 1 or self.config.context_parallel_degree > 1:
+            if self.config.sep_parallel_degree > 1 or self.config.context_parallel_size > 1:
                 _hcg = fleet.get_hybrid_communicate_group()
                 masked_lm_loss = ConcatMaskedLoss.apply(masked_lm_loss, axis=1, group=_hcg.get_sep_parallel_group())
             # skip ignore_index which loss == 0
@@ -1918,8 +1918,8 @@ class LlamaLMHead(nn.Layer):
     def __init__(self, config: LlamaConfig, embedding_weights=None, transpose_y=False):
         super(LlamaLMHead, self).__init__()
         self.config = config
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
+            vocab_size = config.vocab_size // config.tensor_model_parallel_size
         else:
             vocab_size = config.vocab_size
 
@@ -1966,13 +1966,13 @@ class LlamaLMHead(nn.Layer):
             if self.config.sep_parallel_degree > 1:
                 assert seq_length % self.config.sep_parallel_degree == 0
                 seq_length = seq_length // self.config.sep_parallel_degree
-            if self.config.context_parallel_degree > 1:
-                assert seq_length % self.config.context_parallel_degree == 0
-                seq_length = seq_length // self.config.context_parallel_degree
+            if self.config.context_parallel_size > 1:
+                assert seq_length % self.config.context_parallel_size == 0
+                seq_length = seq_length // self.config.context_parallel_size
             hidden_states = paddle.reshape_(hidden_states, [-1, seq_length, self.config.hidden_size])
 
         if tensor_parallel_output is None:
-            tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1
+            tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_model_parallel_size > 1
 
         if get_env_device() == "xpu" and self.xpu_parallel_matmul is not None:
             logits = self.xpu_parallel_matmul(
@@ -2124,7 +2124,7 @@ class LlamaForCausalLM(LlamaPretrainedModel):
             from paddlenlp_kernel.triton.cut_cross_entropy import linear_cross_entropy
 
             assert (
-                self.config.tensor_parallel_degree <= 1
+                self.config.tensor_model_parallel_size <= 1
             ), "The argument `use_fused_linear_cross_entropy` is imcompatiable with tensor parallel "
 
             masked_lm_loss = linear_cross_entropy(hidden_states, self.lm_head.weight, targets=labels)

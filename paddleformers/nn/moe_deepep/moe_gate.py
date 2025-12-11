@@ -132,13 +132,13 @@ class MoEGateMixin:
 
     def _cal_seq_aux_loss(self, probs, top_k, routing_map, max_seq_len):
         sub_max_seq_len = max_seq_len
-        if hasattr(self, "moe_subbatch_token_num") and self.moe_subbatch_token_num > 0:
-            sub_max_seq_len = self.moe_subbatch_token_num * self.tensor_parallel_degree
+        if hasattr(self, "moe_subbatch_token_num_before_dispatch") and self.moe_subbatch_token_num_before_dispatch > 0:
+            sub_max_seq_len = self.moe_subbatch_token_num_before_dispatch * self.tensor_model_parallel_size
 
         # all_probs and routing_map should be computed using the runtime local sequence length on each worker.
-        if self.tensor_parallel_degree > 1:
-            assert self.sequence_parallel and max_seq_len % self.tensor_parallel_degree == 0
-            local_seq_len = sub_max_seq_len // self.tensor_parallel_degree
+        if self.tensor_model_parallel_size > 1:
+            assert self.sequence_parallel and max_seq_len % self.tensor_model_parallel_size == 0
+            local_seq_len = sub_max_seq_len // self.tensor_model_parallel_size
             # [B*S, E]
             all_probs = AllGatherOp.apply(probs)
             # [B, S, E]
@@ -383,8 +383,8 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         n_group: int,
         topk_group: int,
         routed_scaling_factor: float,
-        moe_subbatch_token_num: int,
-        tensor_parallel_degree: int,
+        moe_subbatch_token_num_before_dispatch: int,
+        tensor_model_parallel_size: int,
         sequence_parallel: bool,
         transpose_gate_weight: bool,
     ):
@@ -402,8 +402,8 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         self.n_group = n_group
         self.topk_group = topk_group
         self.routed_scaling_factor = routed_scaling_factor
-        self.moe_subbatch_token_num = moe_subbatch_token_num
-        self.tensor_parallel_degree = tensor_parallel_degree
+        self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
+        self.tensor_model_parallel_size = tensor_model_parallel_size
         self.sequence_parallel = sequence_parallel
         self.transpose_gate_weight = transpose_gate_weight
 

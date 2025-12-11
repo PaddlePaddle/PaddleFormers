@@ -235,23 +235,23 @@ class TrainingArguments:
         sharding_parallel_mesh_dimension (`str`, *optional*, defaults to `dp`)
             Specifies the name of the dimension in a multi-dimensional parallelism mesh that is responsible for sharding.
             default `dp` for default parallelism mesh.
-        tensor_parallel_degree (`int`, *optional*, defaults to `-1`)
+        tensor_model_parallel_size (`int`, *optional*, defaults to `-1`)
             Tensor parallelism is parallel technique proposed in (https://arxiv.org/pdf/2104.04473.pdf see 2.3 Tensor Model Parallelism).
-            This technique splits one transformer layer into multi-cards (For examples, tensor_parallel_degree=4, will split a layer to 4-parts)
-            tensor_parallel_degree means split the transformer layer to how many parts.
-            default -1 for not use tensor parallel,  Suggest tensor_parallel_degree<=8 for better proformance.
+            This technique splits one transformer layer into multi-cards (For examples, tensor_model_parallel_size=4, will split a layer to 4-parts)
+            tensor_model_parallel_size means split the transformer layer to how many parts.
+            default -1 for not use tensor parallel,  Suggest tensor_model_parallel_size<=8 for better proformance.
             Note, this need model support in source code, currently GPT/BLOOM/LLAMA/BLOOM/CLM/CHATGLM is supported.
-        pipeline_parallel_degree (`int`, *optional*, defaults to `-1`)
+        pipeline_model_parallel_size (`int`, *optional*, defaults to `-1`)
             Pipeline parallelism is parallel technique proposed in (https://arxiv.org/pdf/2104.04473.pdf see 2.2 Pipeline Model Parallelism).
             Pipeline parallelism assigns multi-transformer layers to different cards, the micro batch data stream passed between cards like pipelines.
-            pipeline_parallel_degree means split all transformer layers to how many stages.
+            pipeline_model_parallel_size means split all transformer layers to how many stages.
             default -1 for not use pipeline parallel.
             Note. this need model support in source code, see llama modeling_pp.py file
         sep_parallel_degree (`int`, *optional*, defaults to `-1`)(
             The paddle sequence parallel strategy. It can reduce the GPU memory of activation to 1/sep, and it is orthogonal to
             data parallel, sharding stage1, tensor parallel and pipeline parallel strategy.
         )
-        context_parallel_degree (`int`, *optional*, defaults to `-1`)(
+        context_parallel_size (`int`, *optional*, defaults to `-1`)(
             Context parallelism is a parallel method that segments training data in the sequence dimension.
             This method uses Ring FlashAttention to ensure the correctness of the Attention result after segmentation. The complete attention score is obtained through ring communication and iterative updates.
         )
@@ -662,25 +662,25 @@ class TrainingArguments:
         metadata={"help": "Whether to load sharded model from EMA."},
     )
 
-    tensor_parallel_degree: int = field(
+    tensor_model_parallel_size: int = field(
         default=-1,
         metadata={
             "help": (
                 "Tensor parallelism is parallel technique proposed in (https://arxiv.org/pdf/2104.04473.pdf see 2.3 Tensor Model Parallelism). "
-                "This technique splits one transformer layer into multi-cards (For examples, tensor_parallel_degree=4, will split a layer to 4-parts) "
-                "tensor_parallel_degree means split the transformer layer to how many parts."
-                "default -1 for not use tensor parallel,  Suggest tensor_parallel_degree<=8 for better proformance."
+                "This technique splits one transformer layer into multi-cards (For examples, tensor_model_parallel_size=4, will split a layer to 4-parts) "
+                "tensor_model_parallel_size means split the transformer layer to how many parts."
+                "default -1 for not use tensor parallel,  Suggest tensor_model_parallel_size<=8 for better proformance."
                 "Note, this need model support in source code, currently GPT/BLOOM/LLAMA/BLOOM/CLM/CHATGLM is supported. "
             )
         },
     )
-    pipeline_parallel_degree: int = field(
+    pipeline_model_parallel_size: int = field(
         default=-1,
         metadata={
             "help": (
                 "Pipeline parallelism is parallel technique proposed in (https://arxiv.org/pdf/2104.04473.pdf see 2.2 Pipeline Model Parallelism). "
                 "Pipeline parallelism assigns multi-transformer layers to different cards, the micro batch data stream passed between cards like pipelines."
-                "pipeline_parallel_degree means split all transformer layers to how many stages."
+                "pipeline_model_parallel_size means split all transformer layers to how many stages."
                 "default -1 for not use pipeline parallel."
                 "Note. this need model support in source code, see llama modeling_pp.py file"
             )
@@ -703,7 +703,7 @@ class TrainingArguments:
             )
         },
     )
-    context_parallel_degree: int = field(
+    context_parallel_size: int = field(
         default=-1,
         metadata={
             "help": (
@@ -712,11 +712,11 @@ class TrainingArguments:
             )
         },
     )
-    expert_parallel_degree: int = field(
+    expert_model_parallel_size: int = field(
         default=-1,
         metadata={"help": ("The paddle expert data parallel strategy.")},
     )
-    expert_tensor_parallel_degree: int = field(
+    expert_tensor_model_parallel_size: int = field(
         default=-1,
         metadata={"help": ("The paddle expert tensor parallel strategy. Currently is not supported. DO NOT SET.")},
     )
@@ -1213,8 +1213,8 @@ class TrainingArguments:
             self.sharding = ""
             self.sharding_degree = -1
             self.sharding_parallel_degree = -1
-            self.tensor_parallel_degree = -1
-            self.pipeline_parallel_degree = -1
+            self.tensor_model_parallel_size = -1
+            self.pipeline_model_parallel_size = -1
 
         # convert to int
         self.log_level = -1
@@ -1291,7 +1291,7 @@ class TrainingArguments:
             raise ValueError("At most one of fp16 and bf16 can be True for full eval, but not both")
 
         self.optim = OptimizerNames(self.optim)
-        if self.optim == OptimizerNames.ADAMW_MINI and self.tensor_parallel_degree > 1:
+        if self.optim == OptimizerNames.ADAMW_MINI and self.tensor_model_parallel_size > 1:
             raise ValueError("AdamW Mini currently doesn't support tensor parallelism.")
 
         self._post_init_parallel_degree()
@@ -1310,7 +1310,9 @@ class TrainingArguments:
                 "2. enable_auto_parallel is set to True, which means the training will be executed in static mode of auto parallel."
             )
 
-        if self.distributed_dataloader and not (self.tensor_parallel_degree > 1 or self.pipeline_parallel_degree > 1):
+        if self.distributed_dataloader and not (
+            self.tensor_model_parallel_size > 1 or self.pipeline_model_parallel_size > 1
+        ):
             warnings.warn("We set `distributed_dataloader` to False if tp_degree <= 1 and pp_degree <= 1")
             self.distributed_dataloader = False
 
@@ -1325,7 +1327,7 @@ class TrainingArguments:
             if ShardingOption.OFFLOAD in self.sharding:
                 warnings.warn("`offload` is not supported NOW!")
 
-            if self.pipeline_parallel_degree > 1:
+            if self.pipeline_model_parallel_size > 1:
                 if ShardingOption.FULL_SHARD in self.sharding or ShardingOption.SHARD_GRAD_OP in self.sharding:
                     raise ValueError(
                         "pipeline parallel is not compatible for sharding stage2 or stage3, please using sharding stage1"
@@ -1335,7 +1337,7 @@ class TrainingArguments:
             if not paddle.distributed.parallel.parallel_helper._is_parallel_ctx_initialized():
                 strategy = fleet.DistributedStrategy()
                 assert self.data_parallel_config == "", "data_parallle_config is not supported in hybrid parallel"
-                if self.pipeline_parallel_degree > 1:
+                if self.pipeline_model_parallel_size > 1:
                     pipeline_parallel_config = split_parallel_config(self.pipeline_parallel_config)
                     for x in pipeline_parallel_config:
                         if len(x) > 0:
@@ -1439,7 +1441,7 @@ class TrainingArguments:
                                 self.per_device_train_batch_size * self.gradient_accumulation_steps
                             )
 
-                if self.tensor_parallel_degree > 1:
+                if self.tensor_model_parallel_size > 1:
                     strategy.tensor_parallel_configs = {"tensor_init_seed": self.seed}
 
                     mp_config = split_parallel_config(self.tensor_parallel_config)
@@ -1541,7 +1543,7 @@ class TrainingArguments:
                         order = ["dp", "sharding", "pp", "mp"]
                 if self.use_expert_parallel:
                     if not self.reorder_pipeline_priority:
-                        if self.moe_sharding_parallel_degree >= 1 and self.expert_parallel_degree > 1:
+                        if self.moe_sharding_parallel_degree >= 1 and self.expert_model_parallel_size > 1:
                             order.insert(-1, "ep")
                             sd_idx = order.index("sharding")
                             # if pp_first, the order = ["dp", "pp", "moe_sharding", "sharding", "sep", "ep", "mp"]
@@ -1551,7 +1553,7 @@ class TrainingArguments:
                                 sd_idx = order.index("sharding")
                                 order.insert(sd_idx, "cp")
                     else:
-                        if self.moe_sharding_parallel_degree >= 1 and self.expert_parallel_degree > 1:
+                        if self.moe_sharding_parallel_degree >= 1 and self.expert_model_parallel_size > 1:
                             if is_context_parallel_supported():
                                 order = ["sharding", "moe_sharding", "pp", "sep", "cp", "dp", "ep", "mp"]
                             else:
@@ -1562,38 +1564,38 @@ class TrainingArguments:
                 if is_context_parallel_supported():
                     hybrid_configs = {
                         "dp_degree": self.data_parallel_degree,
-                        "mp_degree": self.tensor_parallel_degree,
-                        "pp_degree": self.pipeline_parallel_degree,
+                        "mp_degree": self.tensor_model_parallel_size,
+                        "pp_degree": self.pipeline_model_parallel_size,
                         "sharding_degree": self.sharding_parallel_degree,
                         "sep_degree": self.sep_parallel_degree,
-                        "cp_degree": self.context_parallel_degree,
+                        "cp_degree": self.context_parallel_size,
                         "order": order,
                     }
                 elif is_segment_parallel_supported():
                     hybrid_configs = {
                         "dp_degree": self.data_parallel_degree,
-                        "mp_degree": self.tensor_parallel_degree,
-                        "pp_degree": self.pipeline_parallel_degree,
+                        "mp_degree": self.tensor_model_parallel_size,
+                        "pp_degree": self.pipeline_model_parallel_size,
                         "sharding_degree": self.sharding_parallel_degree,
                         "sep_degree": self.sep_parallel_degree
                         if self.sep_parallel_degree > 1
-                        else self.context_parallel_degree,
+                        else self.context_parallel_size,
                         "order": order,
                     }
                 else:
                     hybrid_configs = {
                         "dp_degree": self.data_parallel_degree,
-                        "mp_degree": self.tensor_parallel_degree,
-                        "pp_degree": self.pipeline_parallel_degree,
+                        "mp_degree": self.tensor_model_parallel_size,
+                        "pp_degree": self.pipeline_model_parallel_size,
                         "sharding_degree": self.sharding_parallel_degree,
                         "order": order,
                     }
 
-                if self.expert_parallel_degree > 1:
+                if self.expert_model_parallel_size > 1:
                     assert (
                         self.use_expert_parallel is True and self.moe_sharding_parallel_degree >= 0
-                    ), f"invalid expert_parallel_degree {self.expert_parallel_degree} and use_expert_paralle:{self.use_expert_parallel}."
-                    hybrid_configs["ep_degree"] = self.expert_parallel_degree
+                    ), f"invalid expert_model_parallel_size {self.expert_model_parallel_size} and use_expert_paralle:{self.use_expert_parallel}."
+                    hybrid_configs["ep_degree"] = self.expert_model_parallel_size
                     hybrid_configs["moe_sharding_degree"] = self.moe_sharding_parallel_degree
 
                 try:
@@ -1605,7 +1607,7 @@ class TrainingArguments:
                         "by current version of Paddle. Please try latest develop Paddle."
                     )
 
-                if self.pipeline_parallel_degree > 1:
+                if self.pipeline_model_parallel_size > 1:
                     hybrid_configs["pp_configs"] = dygraph_pp_configs
                     logger.info(f"using pipeline configs:{dygraph_pp_configs}")
 
@@ -1664,7 +1666,7 @@ class TrainingArguments:
                         if "enable_fuse_optimizer_states" in sharding_parallel_config:
                             strategy.hybrid_configs["sharding_configs"].enable_fuse_optimizer_states = True
 
-                        if self.pipeline_parallel_degree == 1:
+                        if self.pipeline_model_parallel_size == 1:
                             strategy.hybrid_configs["sharding_configs"].tensor_fusion = (
                                 True if "enable_stage1_tensor_fusion" in sharding_parallel_config else False
                             )
@@ -1725,23 +1727,26 @@ class TrainingArguments:
                 logger.info(strategy)
 
                 if self.reorder_pipeline_priority:
-                    if self.expert_parallel_degree > 1:
+                    if self.expert_model_parallel_size > 1:
                         self.add_moe_comm_group()
 
         elif self.enable_auto_parallel:
-            self.tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
+            self.tensor_model_parallel_size = max(self.tensor_model_parallel_size, 1)
             self.sep_parallel_degree = max(self.sep_parallel_degree, 1)
-            self.context_parallel_degree = max(self.context_parallel_degree, 1)
-            self.pipeline_parallel_degree = max(self.pipeline_parallel_degree, 1)
+            self.context_parallel_size = max(self.context_parallel_size, 1)
+            self.pipeline_model_parallel_size = max(self.pipeline_model_parallel_size, 1)
 
             assert (
-                world_size % (self.tensor_parallel_degree * self.pipeline_parallel_degree) == 0
-            ), f"Total world_size:{world_size} should be divided by tensor_parallel_degree: {self.tensor_parallel_degree} and pipeline_parallel_degree: {self.pipeline_parallel_degree}."
+                self.pipeline_model_parallel_size == 1
+            ), "Current not support pipeline parallel in auto parallel mode."
+            assert (
+                world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0
+            ), f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
 
             if self.sharding_parallel_degree == -1:
                 if len(self.sharding) > 0:
                     self.sharding_parallel_degree = world_size // (
-                        self.tensor_parallel_degree * self.sep_parallel_degree * self.pipeline_parallel_degree
+                        self.tensor_model_parallel_size * self.sep_parallel_degree * self.pipeline_model_parallel_size
                     )
 
             self.sharding_parallel_degree = max(self.sharding_parallel_degree, 1)
@@ -1751,9 +1756,9 @@ class TrainingArguments:
 
             self.data_parallel_degree = world_size // (
                 self.sharding_parallel_degree
-                * self.tensor_parallel_degree
+                * self.tensor_model_parallel_size
                 * self.sep_parallel_degree
-                * self.pipeline_parallel_degree
+                * self.pipeline_model_parallel_size
             )
 
             if ShardingOption.OFFLOAD in self.sharding:
@@ -1782,8 +1787,8 @@ class TrainingArguments:
             if "enable_allreduce_avg_in_gradinent_scale" in sequence_parallel_config:
                 strategy.gradient_scale_using_allreduce_avg = True
 
-            # navie-pp: pipeline_parallel_degree > 1 and gradient_accumulation_steps == 1
-            if self.pipeline_parallel_degree > 1 and self.gradient_accumulation_steps > 1:
+            # navie-pp: pipeline_model_parallel_size > 1 and gradient_accumulation_steps == 1
+            if self.pipeline_model_parallel_size > 1 and self.gradient_accumulation_steps > 1:
                 pipeline_parallel_config = split_parallel_config(self.pipeline_parallel_config)
                 for x in pipeline_parallel_config:
                     if len(x) > 0:
@@ -1810,7 +1815,7 @@ class TrainingArguments:
                 pipeline.accumulate_steps = self.gradient_accumulation_steps
                 pipeline.micro_batch_size = self.per_device_train_batch_size
                 pipeline.schedule_mode = self.pipeline_schedule_mode
-                pipeline.pp_degree = self.pipeline_parallel_degree
+                pipeline.pp_degree = self.pipeline_model_parallel_size
 
                 logger.info(f"PP configs:{strategy.pipeline}, use master_grad: {self.amp_master_grad}")
 
@@ -1833,7 +1838,7 @@ class TrainingArguments:
                 gradient_merge.k_steps = self.gradient_accumulation_steps
                 gradient_merge.avg = True
 
-            if self.tensor_parallel_degree > 1:
+            if self.tensor_model_parallel_size > 1:
                 mp_optimization = strategy.mp_optimization
                 mp_config = split_parallel_config(self.tensor_parallel_config)
 
@@ -1922,10 +1927,10 @@ class TrainingArguments:
             self.strategy = strategy
             if self.hybrid_parallel_topo_order == "pp_first":
                 order = ["pp", "dp", "mp"]
-                degree = [self.pipeline_parallel_degree, self.dataset_world_size, self.tensor_parallel_degree]
+                degree = [self.pipeline_model_parallel_size, self.dataset_world_size, self.tensor_model_parallel_size]
             elif self.hybrid_parallel_topo_order == "sharding_first":
                 order = ["dp", "pp", "mp"]
-                degree = [self.dataset_world_size, self.pipeline_parallel_degree, self.tensor_parallel_degree]
+                degree = [self.dataset_world_size, self.pipeline_model_parallel_size, self.tensor_model_parallel_size]
             mesh_dims = list(zip(order, degree))
             fleet.auto.create_mesh(mesh_dims)
 
@@ -1934,7 +1939,7 @@ class TrainingArguments:
                 order = ["pp", "dp", "sharding", "sep", "mp"]
             elif self.hybrid_parallel_topo_order == "sharding_first":
                 order = ["dp", "sharding", "pp", "sep", "mp"]
-                if self.expert_parallel_degree > 1:
+                if self.expert_model_parallel_size > 1:
                     logger.warning(
                         "Currently using sharding_first topo order, but pp_first is recommended when using experts parallel for performance."
                     )
@@ -1942,8 +1947,8 @@ class TrainingArguments:
             strategy = fleet.DistributedStrategy()
             strategy.hybrid_configs = {
                 "dp_degree": self.dataset_world_size,
-                "mp_degree": self.tensor_parallel_degree,
-                "pp_degree": self.pipeline_parallel_degree,
+                "mp_degree": self.tensor_model_parallel_size,
+                "pp_degree": self.pipeline_model_parallel_size,
                 "order": order,
             }
             fleet.init(is_collective=True, strategy=strategy)
@@ -2061,10 +2066,10 @@ class TrainingArguments:
                     raise ValueError(f"Refined recompute do not support {op_name}, please check.")
                 if (
                     op_name in ["mlp_row_ln", "attention_row_ln", "attention_column_ln", "mlp_column_ln"]
-                    and self.tensor_parallel_degree <= 1
+                    and self.tensor_model_parallel_size <= 1
                 ):
                     logger.warning(
-                        f"Refined recompute is only supported for the `{op_name}` operation when `tensor_parallel_degree` is greater than 1. \
+                        f"Refined recompute is only supported for the `{op_name}` operation when `tensor_model_parallel_size` is greater than 1. \
                             This refined recompute operation will be ignored."
                     )
                     continue
@@ -2135,30 +2140,30 @@ class TrainingArguments:
         world_size = paddle.distributed.get_world_size()
 
         if world_size > 1:
-            tensor_parallel_degree = max(self.tensor_parallel_degree, 1)
+            tensor_model_parallel_size = max(self.tensor_model_parallel_size, 1)
             sep_parallel_degree = max(self.sep_parallel_degree, 1)
-            context_parallel_degree = max(self.context_parallel_degree, 1)
-            pipeline_parallel_degree = max(self.pipeline_parallel_degree, 1)
-            expert_parallel_degree = max(self.expert_parallel_degree, 1)
-            expert_tensor_parallel_degree = max(self.expert_tensor_parallel_degree, 1)
+            context_parallel_size = max(self.context_parallel_size, 1)
+            pipeline_model_parallel_size = max(self.pipeline_model_parallel_size, 1)
+            expert_model_parallel_size = max(self.expert_model_parallel_size, 1)
+            expert_tensor_model_parallel_size = max(self.expert_tensor_model_parallel_size, 1)
 
-            # TODO(@gexiao): support expert_tensor_parallel_degree > 1 in the future
+            # TODO(@gexiao): support expert_tensor_model_parallel_size > 1 in the future
             assert (
-                expert_tensor_parallel_degree == 1
-            ), f"Currently only support expert_tensor_parallel_degree=1, but got expert_tensor_parallel_degree of {expert_tensor_parallel_degree}"
+                expert_tensor_model_parallel_size == 1
+            ), f"Currently only support expert_tensor_model_parallel_size=1, but got expert_tensor_model_parallel_size of {expert_tensor_model_parallel_size}"
 
             assert (
-                world_size % (self.tensor_parallel_degree * self.pipeline_parallel_degree) == 0
-            ), f"Total world_size:{world_size} should be divided by tensor_parallel_degree: {self.tensor_parallel_degree} and pipeline_parallel_degree: {self.pipeline_parallel_degree}."
+                world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0
+            ), f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
 
             assert not (
-                sep_parallel_degree > 1 and context_parallel_degree > 1
-            ), f"sep parallel and context parallel cannot be used together, sep_parallel_degree:{sep_parallel_degree}, context_parallel_degree:{context_parallel_degree}."
+                sep_parallel_degree > 1 and context_parallel_size > 1
+            ), f"sep parallel and context parallel cannot be used together, sep_parallel_degree:{sep_parallel_degree}, context_parallel_size:{context_parallel_size}."
 
             if self.sharding_parallel_degree == -1:
                 if len(self.sharding) > 0:
                     self.sharding_parallel_degree = world_size // (
-                        tensor_parallel_degree * sep_parallel_degree * pipeline_parallel_degree
+                        tensor_model_parallel_size * sep_parallel_degree * pipeline_model_parallel_size
                     )
 
             sharding_parallel_degree = max(self.sharding_parallel_degree, 1)
@@ -2167,20 +2172,25 @@ class TrainingArguments:
                 self.sharding = []
 
             self.data_parallel_degree = world_size // (
-                sharding_parallel_degree * tensor_parallel_degree * sep_parallel_degree * pipeline_parallel_degree
+                sharding_parallel_degree
+                * tensor_model_parallel_size
+                * sep_parallel_degree
+                * pipeline_model_parallel_size
             )
 
-            if expert_parallel_degree > 1:
-                moe_sharding_parallel_degree = world_size // (pipeline_parallel_degree * expert_parallel_degree)
+            if expert_model_parallel_size > 1:
+                moe_sharding_parallel_degree = world_size // (
+                    pipeline_model_parallel_size * expert_model_parallel_size
+                )
                 assert (
-                    self.expert_tensor_parallel_degree <= 1
-                ), "expert_tensor_parallel_degree > 1 is not supported when expert_parallel_degree > 1"
+                    self.expert_tensor_model_parallel_size <= 1
+                ), "expert_tensor_model_parallel_size > 1 is not supported when expert_model_parallel_size > 1"
             else:
                 moe_sharding_parallel_degree = 1
             moe_sharding_parallel_degree = max(moe_sharding_parallel_degree, 1)
             if moe_sharding_parallel_degree > 1 and self.data_parallel_degree > 1:
                 raise NotImplementedError(
-                    f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. But got data_parallel_degree: {self.data_parallel_degree}, expert_parallel_degree: {expert_parallel_degree}, moe_sharding_parallel_degree: {moe_sharding_parallel_degree}."
+                    f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. But got data_parallel_degree: {self.data_parallel_degree}, expert_model_parallel_size: {expert_model_parallel_size}, moe_sharding_parallel_degree: {moe_sharding_parallel_degree}."
                 )
 
             if sharding_parallel_degree > 1 and moe_sharding_parallel_degree > 1:
@@ -2189,37 +2199,37 @@ class TrainingArguments:
                 ), f"sharding_parallel_degree should be divided by moe_sharding_parallel_degree, current sharding_parallel_degree: {sharding_parallel_degree}, moe_sharding_parallel_degree: {moe_sharding_parallel_degree}."
 
             assert not (
-                self.data_parallel_degree > 1 and expert_parallel_degree > 1
+                self.data_parallel_degree > 1 and expert_model_parallel_size > 1
             ), f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. Currently data_parallel_degree is {self.data_parallel_degree}."
 
             if (
                 sharding_parallel_degree > 1
-                or tensor_parallel_degree > 1
-                or pipeline_parallel_degree > 1
+                or tensor_model_parallel_size > 1
+                or pipeline_model_parallel_size > 1
                 or self.sep_parallel_degree > 1
-                or self.context_parallel_degree > 1
-                or expert_parallel_degree > 1
-                or expert_tensor_parallel_degree > 1
+                or self.context_parallel_size > 1
+                or expert_model_parallel_size > 1
+                or expert_tensor_model_parallel_size > 1
             ):
                 self.use_hybrid_parallel = True
                 self.sharding_parallel_degree = sharding_parallel_degree
-                self.tensor_parallel_degree = tensor_parallel_degree
-                self.pipeline_parallel_degree = pipeline_parallel_degree
+                self.tensor_model_parallel_size = tensor_model_parallel_size
+                self.pipeline_model_parallel_size = pipeline_model_parallel_size
                 self.sep_parallel_degree = sep_parallel_degree
-                self.context_parallel_degree = context_parallel_degree
-                self.expert_parallel_degree = expert_parallel_degree
-                self.expert_tensor_parallel_degree = expert_tensor_parallel_degree
+                self.context_parallel_size = context_parallel_size
+                self.expert_model_parallel_size = expert_model_parallel_size
+                self.expert_tensor_model_parallel_size = expert_tensor_model_parallel_size
                 self.moe_sharding_parallel_degree = moe_sharding_parallel_degree
 
             if not self.use_hybrid_parallel:
                 self.sharding = []
                 self.sharding_parallel_degree = -1
-                self.tensor_parallel_degree = -1
-                self.pipeline_parallel_degree = -1
+                self.tensor_model_parallel_size = -1
+                self.pipeline_model_parallel_size = -1
                 self.sep_parallel_degree = -1
-                self.context_parallel_degree = -1
-                self.expert_parallel_degree = -1
-                self.expert_tensor_parallel_degree = -1
+                self.context_parallel_size = -1
+                self.expert_model_parallel_size = -1
+                self.expert_tensor_model_parallel_size = -1
 
         if self.hybrid_parallel_topo_order is None:
             self.hybrid_parallel_topo_order = "sharding_first"
@@ -2408,13 +2418,13 @@ class TrainingArguments:
     def optimizer_name_suffix(self):
         if self.use_hybrid_parallel:
             name = []
-            if self.tensor_parallel_degree > 1:
-                name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_parallel_degree))
-            if self.pipeline_parallel_degree > 1:
-                name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_parallel_degree))
+            if self.tensor_model_parallel_size > 1:
+                name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_model_parallel_size))
+            if self.pipeline_model_parallel_size > 1:
+                name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_model_parallel_size))
             if self.sharding_parallel_degree > 1:
                 name.append(self._format_name("shard", self.sharding_parallel_rank, self.sharding_parallel_degree))
-            if self.use_expert_parallel and self.expert_parallel_degree <= 1:
+            if self.use_expert_parallel and self.expert_model_parallel_size <= 1:
                 name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree))
             return "_".join(name)
         else:
@@ -2426,14 +2436,16 @@ class TrainingArguments:
     def weight_name_suffix(self):
         if self.use_hybrid_parallel:
             name = []
-            if self.tensor_parallel_degree > 1:
-                name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_parallel_degree))
-            if self.pipeline_parallel_degree > 1:
-                name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_parallel_degree))
-            if self.use_expert_parallel and self.expert_parallel_degree <= 1:
+            if self.tensor_model_parallel_size > 1:
+                name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_model_parallel_size))
+            if self.pipeline_model_parallel_size > 1:
+                name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_model_parallel_size))
+            if self.use_expert_parallel and self.expert_model_parallel_size <= 1:
                 name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree))
-            if self.use_expert_parallel and self.expert_parallel_degree > 1:
-                name.append(self._format_name("moe_sharding", self.expert_parallel_rank, self.expert_parallel_degree))
+            if self.use_expert_parallel and self.expert_model_parallel_size > 1:
+                name.append(
+                    self._format_name("moe_sharding", self.expert_parallel_rank, self.expert_model_parallel_size)
+                )
             return "_".join(name)
 
         else:
@@ -2446,19 +2458,19 @@ class TrainingArguments:
             sharding_parallel_degree = self.sharding_parallel_degree
         if self.use_hybrid_parallel:
             name = []
-            if self.tensor_parallel_degree > 1:
-                name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_parallel_degree))
-            if self.pipeline_parallel_degree > 1:
+            if self.tensor_model_parallel_size > 1:
+                name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_model_parallel_size))
+            if self.pipeline_model_parallel_size > 1:
                 if pp_id is None:
                     pp_id = self.pipeline_parallel_rank
                 assert isinstance(pp_id, int)
-                name.append(self._format_name("pp", pp_id, self.pipeline_parallel_degree))
+                name.append(self._format_name("pp", pp_id, self.pipeline_model_parallel_size))
             if sharding_parallel_degree > 1:
                 if shard_id is None:
                     shard_id = self.sharding_parallel_rank
                 assert isinstance(shard_id, int)
                 name.append(self._format_name("shard", shard_id, sharding_parallel_degree))
-            if self.use_expert_parallel and self.expert_parallel_degree <= 1:
+            if self.use_expert_parallel and self.expert_model_parallel_size <= 1:
                 if moe_id is None:
                     moe_id = self.data_parallel_rank
                 assert isinstance(moe_id, int)
@@ -2487,8 +2499,8 @@ class TrainingArguments:
         """
         if self.local_rank != -1:
             sd_size = max(self.sharding_parallel_degree, 1)
-            pp_size = max(self.pipeline_parallel_degree, 1)
-            tp_size = max(self.tensor_parallel_degree, 1)
+            pp_size = max(self.pipeline_model_parallel_size, 1)
+            tp_size = max(self.tensor_model_parallel_size, 1)
 
             dp_rank = max(self.data_parallel_rank, 0)
             sd_rank = max(self.sharding_parallel_rank, 0)
@@ -2565,7 +2577,7 @@ class TrainingArguments:
                 # save on dataset rank 0
                 return (
                     self.sharding_parallel_rank == 0 and (self.data_parallel_rank == 0 or self.use_expert_parallel)
-                ) or (self.expert_parallel_degree > 1 and self.moe_sharding_parallel_rank == 0)
+                ) or (self.expert_model_parallel_size > 1 and self.moe_sharding_parallel_rank == 0)
             else:
                 return self.process_index == 0 or self.use_expert_parallel
 

@@ -154,16 +154,16 @@ class Ernie4_5Attention(nn.Layer):
         self.head_dim = config.head_dim
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         logger.warning_once(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
         assert (
@@ -239,7 +239,7 @@ class Ernie4_5Attention(nn.Layer):
         """
         if self.config.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
             q_len = max_sequence_length
         else:
             bsz, q_len, _ = hidden_states.shape
@@ -412,7 +412,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )

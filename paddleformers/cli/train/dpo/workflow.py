@@ -75,20 +75,20 @@ def run_dpo(
         logger.warning(
             f"{training_args.loss_type} loss_type only supports reference_free. Set reference_free to True."
         )
-    if training_args.pipeline_parallel_degree > 1:
+    if training_args.pipeline_model_parallel_size > 1:
         assert (
             hasattr(training_args, "pipeline_parallel_config")
             and "enable_clear_every_step_cache" in training_args.pipeline_parallel_config
         ), "Should set '--pipeline_parallel_config enable_clear_every_step_cache' in bash script for pp."
     if training_args.sequence_parallel:
-        if training_args.pipeline_parallel_degree > 1:
+        if training_args.pipeline_model_parallel_size > 1:
             assert (
                 hasattr(training_args, "pipeline_parallel_config")
                 and "disable_partial_send_recv" in training_args.pipeline_parallel_config
             ), "Should set '--pipeline_parallel_config disable_partial_send_recv' in bash script for pp with sp."
-        if training_args.tensor_parallel_degree <= 1:
+        if training_args.tensor_model_parallel_size <= 1:
             training_args.sequence_parallel = False
-            logger.info("Tensor_parallel_degree = 1. Set sequence_parallel to False.")
+            logger.info("tensor_model_parallel_size = 1. Set sequence_parallel to False.")
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
     training_args.print_config(training_args, "Train")
@@ -157,7 +157,7 @@ def run_dpo(
 
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
 
-    if training_args.pipeline_parallel_degree > 1:
+    if training_args.pipeline_model_parallel_size > 1:
         model_class = AutoModelForCausalLMPipe
     else:
         model_class = AutoModelForCausalLM
@@ -185,7 +185,7 @@ def run_dpo(
             ref_model.set_state_dict(model.state_dict())
         else:
             ref_model = None
-    if training_args.pipeline_parallel_degree > 1:
+    if training_args.pipeline_model_parallel_size > 1:
         model.config.dpo_config = None
 
     if model_args.tokenizer_name_or_path is not None:
@@ -220,7 +220,7 @@ def run_dpo(
                 lora_alpha=2 * model_args.lora_rank if not model_args.rslora else 4,
                 rslora=model_args.rslora,
                 lora_plus_scale=model_args.lora_plus_scale,
-                tensor_parallel_degree=training_args.tensor_parallel_degree,
+                tensor_model_parallel_size=training_args.tensor_model_parallel_size,
                 dtype=dtype,
                 base_model_name_or_path=model_args.model_name_or_path,
                 use_quick_lora=model_args.use_quick_lora,
@@ -336,7 +336,7 @@ def run_dpo(
         train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
 
         if not training_args.autotuner_benchmark and not training_args.benchmark:
-            trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1, last_fc_to_hf=True)
+            trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
             trainer.log_metrics("train", train_result.metrics)
             trainer.save_metrics("train", train_result.metrics)
             trainer.save_state()
