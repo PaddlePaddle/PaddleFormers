@@ -110,11 +110,6 @@ class InternVisionConfig(PretrainedConfig):
         self.layer_norm_eps = layer_norm_eps
         self.hidden_act = hidden_act
         self.norm_type = norm_type
-        self.qkv_bias = qkv_bias
-        self.qk_normalization = qk_normalization
-        self.use_flash_attn = use_flash_attn
-        self.recompute = recompute
-        self.recompute_granularity = recompute_granularity
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs) -> 'PretrainedConfig':

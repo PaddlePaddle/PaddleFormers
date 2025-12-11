@@ -25,6 +25,7 @@ from paddle.distributed.fleet.recompute import recompute
 from ...generation.configuration_utils import GenerationConfig
 from ...nn.linear import Linear as GeneralLinear
 from ...utils import logger
+from ...nn.norm import Norm as GeneralNorm
 from .. import LlamaForCausalLM, Qwen2ForCausalLM
 from ..activations import ACT2FN
 from ..model_outputs import (
@@ -171,26 +172,6 @@ class InternRMSNorm(nn.Module):
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
         return self.weight * hidden_states.to(input_dtype)
-
-
-try:
-    from apex.normalization import FusedRMSNorm
-
-    InternRMSNorm = FusedRMSNorm  # noqa
-
-    logger.info("Discovered apex.normalization.FusedRMSNorm - will use it instead of InternRMSNorm")
-except ImportError:
-    # using the normal InternRMSNorm
-    pass
-except Exception:
-    logger.warning("discovered apex but it failed to load, falling back to InternRMSNorm")
-    pass
-
-
-NORM2FN = {
-    "rms_norm": InternRMSNorm,
-    "layer_norm": nn.LayerNorm,
-}
 
 
 class InternVisionEmbeddings(nn.Module):
@@ -342,8 +323,18 @@ class InternVisionEncoderLayer(nn.Module):
 
         self.attn = InternAttention(config)
         self.mlp = InternMLP(config)
-        self.norm1 = NORM2FN[self.norm_type](self.embed_dim, eps=config.layer_norm_eps)
-        self.norm2 = NORM2FN[self.norm_type](self.embed_dim, eps=config.layer_norm_eps)
+        self.norm1 = GeneralNorm.create(
+            config, hidden_size=self.embed_dim,
+            has_bias=False,
+            norm_eps=config.layer_norm_eps,
+            norm_type=self.norm_type
+        )
+        self.norm2 = GeneralNorm.create(
+            config, hidden_size=self.embed_dim,
+            has_bias=False,
+            norm_eps=config.layer_norm_eps,
+            norm_type=self.norm_type
+        )
 
         self.ls1 = nn.Parameter(config.initializer_factor * paddle.ones(self.embed_dim))
         self.ls2 = nn.Parameter(config.initializer_factor * paddle.ones(self.embed_dim))
@@ -402,7 +393,6 @@ class InternVisionEncoder(nn.Module):
 
         hidden_states = recompute(
             create_custorm_forward(layer_module),
-            hidden_states,
         )
 
     def forward(
@@ -687,7 +677,7 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         self.ps_version = config.ps_version
         use_flash_attn = use_flash_attn if has_flash_attn else False
         config.vision_config.use_flash_attn = True if use_flash_attn else False
-        config.llm_config._attn_implementation = "flash_attention_2" if use_flash_attn else "eager"
+        config.llm_config._attn_implementation = "sdqa" if use_flash_attn else "eager"
 
         logger.info(f"num_image_token: {self.num_image_token}")
         logger.info(f"ps_version: {self.ps_version}")

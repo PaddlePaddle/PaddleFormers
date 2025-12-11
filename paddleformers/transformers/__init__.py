@@ -315,6 +315,8 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "internvl_chat.configuration": ["InternVLChatConfig", "InternVisionConfig"],
+    "internvl_chat.modeling": ["InternVisionModel", "InternVLChatModel"]
 }
 
 if TYPE_CHECKING:
