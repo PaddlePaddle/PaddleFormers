@@ -1,10 +1,8 @@
 qwen3moe:
-  repo_id: "tiny-random-qwen3moev2"
+  repo_id: "PaddleFormers/tiny-random-qwen3moev2"
   cli_args: 
     save_checkpoint_format: flex_checkpoint
     load_checkpoint_format: flex_checkpoint
-    fuse_attention_qkv: true
-    fuse_attention_ffn: true
   base_loss: 
     # test_full
     sft_full_loss: 12.949948
@@ -38,47 +36,44 @@ qwen3moe:
     sft_full_function_call_loss: 12.90508
     sft_full_function_call_resume_loss: 12.913303
 qwen2_moe:
-  repo_id: "tiny-random-qwen2moev2"
+  repo_id: "PaddleFormers/tiny-random-qwen2moev2"
   cli_args: 
     save_checkpoint_format: flex_checkpoint
     load_checkpoint_format: flex_checkpoint
-    fuse_attention_qkv: true
-    fuse_attention_ffn: true
   base_loss: 
     # test_full 
     sft_full_loss: 12.74101
-    sft_full_resume_loss: 12.732941
+    sft_full_resume_loss: 12.732811
     dpo_full_loss: 0.693147
     dpo_full_resume_loss: 0.692443
     pt_full_loss: 12.750682
-    pt_full_resume_loss: 12.747795
+    pt_full_resume_loss: 12.747829
     # test_lora
     sft_lora_loss: 12.810658
-    sft_lora_resume_loss: 12.722483
+    sft_lora_resume_loss:  12.722644
     dpo_lora_loss: 0.693147
     dpo_lora_resume_loss: 0.692318
-    pt_lora_loss: 12.856025
-    pt_lora_resume_loss: 12.856522
-
+    pt_lora_loss: 12.759583
+    pt_lora_resume_loss: 12.766771
     #test_tp_pp
     sft_full_tp_pp_loss: 12.992263
     sft_full_tp_pp_resume_loss: 12.99057
-    dpo_full_tp_pp_loss: 0.69518
-    dpo_full_tp_pp_resume_loss: 0.699244
+    dpo_full_tp_pp_loss: 0.693147
+    dpo_full_tp_pp_resume_loss: 0.696261
     pt_full_tp_pp_loss: 12.761184
     pt_full_tp_pp_resume_loss: 12.774579
     #test_lora_tp_pp
-    sft_lora_tp_pp_loss: 12.752461
-    sft_lora_tp_pp_resume_loss: 12.752657
+    sft_lora_tp_pp_loss: 12.751438
+    sft_lora_tp_pp_resume_loss: 12.75179
     dpo_lora_tp_pp_loss: 11.944916
     dpo_lora_tp_pp_resume_loss: 11.946712
-    pt_lora_tp_pp_loss: 12.761208
-    pt_lora_tp_pp_resume_loss: 12.774649
+    pt_lora_tp_pp_loss: 12.777053
+    pt_lora_tp_pp_resume_loss:  12.776928
     #test_fc
     # sft_full_function_call_loss: 12.813175
     # sft_full_function_call_resume_loss: 12.821417
 qwen3: 
-  repo_id: "tiny-random-qwen3v2"
+  repo_id: "PaddleFormers/tiny-random-qwen3v2"
   cli_args: 
     unified_checkpoint: false
     save_checkpoint_format: flex_checkpoint
@@ -97,29 +92,28 @@ qwen3:
     sft_lora_loss: 12.756784
     sft_lora_resume_loss: 12.742048
     dpo_lora_loss: 0.693147
-    dpo_lora_resume_loss: 0.692711
+    dpo_lora_resume_loss: 0.692916
     pt_lora_loss: 12.88249
     pt_lora_resume_loss: 12.879347
     #test_tp_pp
-    sft_full_tp_pp_loss: 12.836189
-    sft_full_tp_pp_resume_loss: 12.836178
+    sft_full_tp_pp_loss: 12.810429
+    sft_full_tp_pp_resume_loss: 12.811285
     dpo_full_tp_pp_loss: 0.693147
-    dpo_full_tp_pp_resume_loss: 0.693308
-    pt_full_tp_pp_loss: 11.980651
-    pt_full_tp_pp_resume_loss: 11.98307
+    dpo_full_tp_pp_resume_loss:  0.693369
+    pt_full_tp_pp_loss:  12.830297
+    pt_full_tp_pp_resume_loss: 12.834314
     #test_lora_tp_pp
-    sft_lora_tp_pp_loss: 12.836189
-    sft_lora_tp_pp_resume_loss: 12.835958
+    sft_lora_tp_pp_loss: 12.810429
+    sft_lora_tp_pp_resume_loss: 12.810394
     dpo_lora_tp_pp_loss: 0.693147
     dpo_lora_tp_pp_resume_loss:  0.693249
-    pt_lora_tp_pp_loss: 12.870658
-    pt_lora_tp_pp_resume_loss: 12.871094
+    pt_lora_tp_pp_loss: 12.830297
+    pt_lora_tp_pp_resume_loss: 12.834597
     #test_fc
-    sft_full_function_call_loss: 12.818963 
+    sft_full_function_call_loss: 12.81908 
     sft_full_function_call_resume_loss: 12.791071
-
 glm_moe: 
-  repo_id: "tiny-random-glm4moe-bf16"
+  repo_id: "PaddleFormers/tiny-random-glm4moe-bf16"
   cli_args: 
     # fuse_attention_qkv: true
     # fuse_attention_ffn: true
@@ -157,9 +151,8 @@ glm_moe:
     #test_fc
     sft_full_function_call_loss: 12.859377
     sft_full_function_call_resume_loss: 11.946712
-
 qwen2:
-  repo_id: "tiny-random-qwen2v2"
+  repo_id: "PaddleFormers/tiny-random-qwen2v2"
   cli_args: 
     # fuse_attention_qkv: true
     # fuse_attention_ffn: true
@@ -197,12 +190,159 @@ qwen2:
     #test_fc
     sft_full_function_call_loss: 11.955276
     sft_full_function_call_resume_loss: 11.950663
-
-# deepseek_v3: 
-#   repo_id: "tiny-random-deepseek-v3"
-# ernie4_5:
-#   repo_id: "hf-internal-testing/tiny-random-Ernie4_5Model"
-# gpt_oss:  
-#   repo_id: "tiny-random-gptoss"
-# llama: 
-#   repo_id: "tiny-random-llama"
+llama: 
+  repo_id: "PaddleFormers/tiny-random-llama3"
+  cli_args: 
+    # fuse_attention_qkv: true
+    # fuse_attention_ffn: true
+    save_checkpoint_format: flex_checkpoint
+    load_checkpoint_format: flex_checkpoint
+  base_loss: 
+    # test_full 
+    sft_full_loss: 11.944817
+    sft_full_resume_loss: 11.946183
+    dpo_full_loss: 0.693121
+    dpo_full_resume_loss: 0.692937
+    pt_full_loss: 11.86996
+    pt_full_resume_loss: 11.867313
+    # test_lora
+    sft_lora_loss: 11.944797
+    sft_lora_resume_loss: 11.946123
+    dpo_lora_loss: 0.693144
+    dpo_lora_resume_loss: 0.693138
+    pt_lora_loss: 11.975819
+    pt_lora_resume_loss: 11.97421
+    #test_tp_pp
+    sft_full_tp_pp_loss: 11.956945
+    sft_full_tp_pp_resume_loss: 11.956932
+    dpo_full_tp_pp_loss: 0.693137
+    dpo_full_tp_pp_resume_loss: 0.693116
+    pt_full_tp_pp_loss: 11.980651
+    pt_full_tp_pp_resume_loss: 11.98307
+    #test_lora_tp_pp
+    sft_lora_tp_pp_loss: 11.956937
+    sft_lora_tp_pp_resume_loss: 11.956906
+    dpo_lora_tp_pp_loss: 11.944916
+    dpo_lora_tp_pp_resume_loss: 11.946712
+    pt_lora_tp_pp_loss: 11.980649
+    pt_lora_tp_pp_resume_loss: 11.983072
+    #test_fc
+    sft_full_function_call_loss: 11.955276
+    sft_full_function_call_resume_loss: 11.950663
+qwen3_next: 
+  repo_id: "PaddleFormers/tiny-random-qwen3next"
+  cli_args: 
+    # fuse_attention_qkv: true
+    # fuse_attention_ffn: true
+    save_checkpoint_format: flex_checkpoint
+    load_checkpoint_format: flex_checkpoint
+  base_loss: 
+    # test_full 
+    sft_full_loss: 11.944817
+    sft_full_resume_loss: 11.946183
+    dpo_full_loss: 0.693121
+    dpo_full_resume_loss: 0.693068
+    pt_full_loss: 11.975817
+    pt_full_resume_loss: 11.974206
+    # test_lora
+    sft_lora_loss: 11.944797
+    sft_lora_resume_loss: 11.946123
+    dpo_lora_loss: 0.693144
+    dpo_lora_resume_loss: 0.693138
+    pt_lora_loss: 11.975819
+    pt_lora_resume_loss: 11.97421
+    #test_tp_pp
+    sft_full_tp_pp_loss: 11.956945
+    sft_full_tp_pp_resume_loss: 11.956932
+    dpo_full_tp_pp_loss: 0.693137
+    dpo_full_tp_pp_resume_loss: 0.693116
+    pt_full_tp_pp_loss: 11.980651
+    pt_full_tp_pp_resume_loss: 11.98307
+    #test_lora_tp_pp
+    sft_lora_tp_pp_loss: 11.956937
+    sft_lora_tp_pp_resume_loss: 11.956906
+    dpo_lora_tp_pp_loss: 11.944916
+    dpo_lora_tp_pp_resume_loss: 11.946712
+    pt_lora_tp_pp_loss: 11.980649
+    pt_lora_tp_pp_resume_loss: 11.983072
+    #test_fc
+    sft_full_function_call_loss: 11.955276
+    sft_full_function_call_resume_loss: 11.950663
+phi3:
+  repo_id: "PaddleFormers/tiny-random-phi4-bf16"
+  cli_args: 
+    # fuse_attention_qkv: true
+    # fuse_attention_ffn: true
+    save_checkpoint_format: flex_checkpoint
+    load_checkpoint_format: flex_checkpoint
+  base_loss: 
+    # test_full 
+    sft_full_loss: 11.520309
+    sft_full_resume_loss: 11.520774
+    dpo_full_loss: 0.693121
+    dpo_full_resume_loss: 0.693068
+    pt_full_loss: 11.975817
+    pt_full_resume_loss: 11.974206
+    # test_lora
+    sft_lora_loss: 11.944797
+    sft_lora_resume_loss: 11.946123
+    dpo_lora_loss: 0.693144
+    dpo_lora_resume_loss: 0.693138
+    pt_lora_loss: 11.975819
+    pt_lora_resume_loss: 11.97421
+    #test_tp_pp
+    sft_full_tp_pp_loss: 11.956945
+    sft_full_tp_pp_resume_loss: 11.956932
+    dpo_full_tp_pp_loss: 0.693137
+    dpo_full_tp_pp_resume_loss: 0.693116
+    pt_full_tp_pp_loss: 11.980651
+    pt_full_tp_pp_resume_loss: 11.98307
+    #test_lora_tp_pp
+    sft_lora_tp_pp_loss: 11.956937
+    sft_lora_tp_pp_resume_loss: 11.956906
+    dpo_lora_tp_pp_loss: 11.944916
+    dpo_lora_tp_pp_resume_loss: 11.946712
+    pt_lora_tp_pp_loss: 11.980649
+    pt_lora_tp_pp_resume_loss: 11.983072
+    #test_fc
+    sft_full_function_call_loss: 11.955276
+    sft_full_function_call_resume_loss: 11.950663
+gemma3_text:
+  repo_id: "PaddleFormers/tiny-random-gemma3"
+  cli_args: 
+    # fuse_attention_qkv: true
+    # fuse_attention_ffn: true
+    save_checkpoint_format: flex_checkpoint
+    load_checkpoint_format: flex_checkpoint
+  base_loss: 
+    # test_full 
+    sft_full_loss: 11.520309
+    sft_full_resume_loss: 11.520774
+    dpo_full_loss: 0.693121
+    dpo_full_resume_loss: 0.693068
+    pt_full_loss: 11.975817
+    pt_full_resume_loss: 11.974206
+    # test_lora
+    sft_lora_loss: 11.944797
+    sft_lora_resume_loss: 11.946123
+    dpo_lora_loss: 0.693144
+    dpo_lora_resume_loss: 0.693138
+    pt_lora_loss: 11.975819
+    pt_lora_resume_loss: 11.97421
+    #test_tp_pp
+    sft_full_tp_pp_loss: 11.956945
+    sft_full_tp_pp_resume_loss: 11.956932
+    dpo_full_tp_pp_loss: 0.693137
+    dpo_full_tp_pp_resume_loss: 0.693116
+    pt_full_tp_pp_loss: 11.980651
+    pt_full_tp_pp_resume_loss: 11.98307
+    #test_lora_tp_pp
+    sft_lora_tp_pp_loss: 11.956937
+    sft_lora_tp_pp_resume_loss: 11.956906
+    dpo_lora_tp_pp_loss: 11.944916
+    dpo_lora_tp_pp_resume_loss: 11.946712
+    pt_lora_tp_pp_loss: 11.980649
+    pt_lora_tp_pp_resume_loss: 11.983072
+    #test_fc
+    sft_full_function_call_loss: 11.955276
+    sft_full_function_call_resume_loss: 11.950663

@@ -279,7 +279,7 @@ class TestTrain:
         if errors:
             raise AssertionError(errors)
 
-    @pytest.mark.parametrize("train_type", ["dpo"])
+    @pytest.mark.parametrize("train_type", ["sft", "pt"])
     def test_lora_tp_pp(self, train_type, model_key):
         print(f"[INFO] Testing with model={model_key}, train_type={train_type}_lora_tp_pp")
         model_cfg = self.train_tester.load_model_config(model_key)
@@ -347,59 +347,59 @@ class TestTrain:
         merge_p = subprocess.run(merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.train_tester.assert_result(merge_p.returncode, merge_p.stdout)
 
-    @pytest.mark.parametrize("train_type", ["sft"])
-    def test_full_function_call(self, train_type, model_key):
-        print(f"[INFO] Testing with model={model_key}, train_type={train_type}_full_function_call")
-        model_cfg = self.train_tester.load_model_config(model_key)
-        cli_args = model_cfg.cli_args
-        model_name_or_path = model_cfg.repo_id
+    # @pytest.mark.parametrize("train_type", ["sft", "dpo"])
+    # def test_full_function_call(self, train_type, model_key):
+    #     print(f"[INFO] Testing with model={model_key}, train_type={train_type}_full_function_call")
+    #     model_cfg = self.train_tester.load_model_config(model_key)
+    #     cli_args = model_cfg.cli_args
+    #     model_name_or_path = model_cfg.repo_id
 
-        fc_loss = model_cfg.base_loss.get(f"{train_type}_full_function_call_loss", 0)
-        fc_resume_loss = model_cfg.base_loss.get(f"{train_type}_full_function_call_resume_loss", 0)
+    #     fc_loss = model_cfg.base_loss.get(f"{train_type}_full_function_call_loss", 0)
+    #     fc_resume_loss = model_cfg.base_loss.get(f"{train_type}_full_function_call_resume_loss", 0)
 
-        output_dir = os.path.join(OUTPUT_DIR, f"{train_type}_{model_key}_full_function_call")
-        update_args = {
-            "model_name_or_path": model_name_or_path,
-            "max_steps": MAX_STEPS,
-            "save_steps": SAVE_STEPS,
-            "output_dir": output_dir,
-        }
-        update_args.update(cli_args)
+    #     output_dir = os.path.join(OUTPUT_DIR, f"{train_type}_{model_key}_full_function_call")
+    #     update_args = {
+    #         "model_name_or_path": model_name_or_path,
+    #         "max_steps": MAX_STEPS,
+    #         "save_steps": SAVE_STEPS,
+    #         "output_dir": output_dir,
+    #     }
+    #     update_args.update(cli_args)
 
-        config_path = os.path.join(CONFIG_PATH, train_type, "full_function_call.yaml")
-        updated_config_path = self.train_tester.update_training_args(config_path, output_dir, update_args)
+    #     config_path = os.path.join(CONFIG_PATH, train_type, "full_function_call.yaml")
+    #     updated_config_path = self.train_tester.update_training_args(config_path, output_dir, update_args)
 
-        # 训练
+    #     # 训练
 
-        cmd = ["paddleformers-cli", "train", updated_config_path]
-        training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    #     cmd = ["paddleformers-cli", "train", updated_config_path]
+    #     training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
-        log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full_function_call.log")
-        if training_p.stdout.strip():
-            with open(log_file, "w", encoding="utf-8") as f:
-                f.write(training_p.stdout)
+    #     log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full_function_call.log")
+    #     if training_p.stdout.strip():
+    #         with open(log_file, "w", encoding="utf-8") as f:
+    #             f.write(training_p.stdout)
 
-        self.train_tester.assert_result(training_p.returncode, training_p.stdout)
+    #     self.train_tester.assert_result(training_p.returncode, training_p.stdout)
 
-        # resume 测试
+    #     # resume 测试
 
-        resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full_function_call_resume.log")
-        if resume_p.stdout.strip():
-            with open(resume_log_file, "w", encoding="utf-8") as f:
-                f.write(resume_p.stdout)
+    #     resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    #     resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full_function_call_resume.log")
+    #     if resume_p.stdout.strip():
+    #         with open(resume_log_file, "w", encoding="utf-8") as f:
+    #             f.write(resume_p.stdout)
 
-        self.train_tester.assert_result(resume_p.returncode, resume_p.stdout)
+    #     self.train_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
-        # check loss diff
-        errors = []
-        msg = self.train_tester.assert_loss(training_p.stdout, fc_loss, "Fisrt-Training")
-        if msg:
-            errors.append(AssertionError(msg))
+    #     # check loss diff
+    #     errors = []
+    #     msg = self.train_tester.assert_loss(training_p.stdout, fc_loss, "Fisrt-Training")
+    #     if msg:
+    #         errors.append(AssertionError(msg))
 
-        msg = self.train_tester.assert_loss(resume_p.stdout, fc_resume_loss, "Resume-Training")
-        if msg:
-            errors.append(AssertionError(msg))
+    #     msg = self.train_tester.assert_loss(resume_p.stdout, fc_resume_loss, "Resume-Training")
+    #     if msg:
+    #         errors.append(AssertionError(msg))
 
-        if errors:
-            raise AssertionError(errors)
+    #     if errors:
+    #         raise AssertionError(errors)

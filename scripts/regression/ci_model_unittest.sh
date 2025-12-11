@@ -81,18 +81,14 @@ FLAGS_enable_CI=false
 TRANS_MODEL_DIR="paddleformers/transformers"
 TRAINER_DIR="paddleformers/trainer"
 CLI_DIR="paddleformers/cli"
-examples_DIR="exampls/congfig"
+examples_DIR="examples/congfig"
 
 for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $NF}'`; do
-    ext="${file_name##*.}"
-    echo "file_name: ${file_name}, ext: ${ext}"
-
-    # ignore non-existing files and docs
-    if [ ! -f ${file_name} ]; then
-        continue
-    elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
-        FLAGS_enable_CI=false
-        continue
+    echo "Checking file: $file_name"
+    
+    if [[ -f "$file_name" && "$file_name" =~ \.(py|python)$ ]]; then
+        echo "Detected changed Python file: $file_name"
+        FLAGS_enable_CI=true
     fi
 
     # check modified models files
@@ -101,7 +97,7 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $N
         if [[ "$models" == "" ]]; then
             models="$model_name"
         elif [[ ! ",$models," =~ ",$model_name," ]]; then
-            models="$models,$model_name"
+            models=${models:+$models,}$model_name
         fi
         FLAGS_enable_CI=true
         continue
@@ -112,9 +108,7 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $N
         models="glm_moe"
         FLAGS_enable_CI=true
         continue
-    fi   
-
-    
+    fi     
 done
 
 if [[ "$models" == "" ]]; then
@@ -141,10 +135,9 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     python -c "import paddle; print(paddle.device.device_count())"
     export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export FLAGS_tcp_store_using_libuv=0
-    
-    PYTHONPATH=$(pwd) \
-    COVERAGE_SOURCE=paddleformers \
-    PF_HOME=/home/models/ \
+    export PYTHONPATH=$(pwd)
+    export COVERAGE_SOURCE=paddleformers
+    export PF_HOME=/home/models/
     python -m pytest -s -v --models=$models ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
