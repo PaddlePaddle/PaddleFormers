@@ -44,7 +44,7 @@ from ..masking_utils import (
 )
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen3MoeConfig
 
@@ -84,21 +84,21 @@ class Qwen3MoeAttention(nn.Layer):
         self.num_key_value_heads = config.num_key_value_heads
         assert config.num_attention_heads // config.num_key_value_heads
 
-        self.tensor_parallel = config.tensor_parallel_degree > 1
+        self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
         self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
@@ -176,7 +176,7 @@ class Qwen3MoeAttention(nn.Layer):
 
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
             else:
                 bsz, q_len, _ = hidden_states.shape
@@ -188,7 +188,7 @@ class Qwen3MoeAttention(nn.Layer):
             mix_layer = self.qkv_proj(hidden_states)
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
                 target_shape = [
                     bsz,
@@ -284,7 +284,7 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
         self.top_k = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
         self.sequence_parallel = config.sequence_parallel
-        if self.sequence_parallel and config.tensor_parallel_degree > 1:
+        if self.sequence_parallel and config.tensor_model_parallel_size > 1:
             config = copy.deepcopy(config)
             config.sequence_parallel = False
 
@@ -368,7 +368,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
         except:
             moe_group = None
-        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+        expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
         if (layer_idx not in config.mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
         ):
@@ -383,7 +383,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
                     drop_tokens=False,
                     transpose_gate_weight=False,
                 )
-                if expert_parallel_degree > 1
+                if expert_model_parallel_size > 1
                 else Qwen3MoeSparseMoeBlock(config)
             )
         else:
@@ -471,17 +471,40 @@ class Qwen3MoeRotaryEmbedding(nn.Layer):
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
         self.config = config
-        base = config.rope_theta
-        partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
         rope_parameters = self.config.rope_parameters
         self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
-        dim = int(head_dim * partial_rotary_factor)
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
-        self.attention_scaling = 1.0
         self.register_buffer("inv_freq", inv_freq, persistable=False)
-        self.original_inv_freq = self.inv_freq
+        self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[Qwen3MoeConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
@@ -529,7 +552,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -577,9 +600,9 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                     moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
                 except Exception:
                     moe_group = None
-                expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
-                # TODO: merge disable_ffn_model_parallel and expert_parallel_degree
-                if expert_parallel_degree <= 1:
+                expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
+                # TODO: merge disable_ffn_model_parallel and expert_model_parallel_size
+                if expert_model_parallel_size <= 1:
                     # # if disable_ffn_model_parallel is True, disable expert layer tp plan
                     # if not config.disable_ffn_model_parallel:
                     actions.update(
@@ -638,6 +661,8 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.norm.weight -> {model_prefix}norm.weight",
+                f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
         }
 
@@ -669,7 +694,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
         # lm_head
         if config.tie_word_embeddings:
-            aoa_config["aoa_statements"] += ["model.embed_tokens.weight^T -> lm_head.weight"]
+            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
 
         return aoa_config
 
@@ -684,6 +709,8 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
         ]
 
         if not config.fuse_attention_qkv:
@@ -695,15 +722,15 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
             ]
+            for layer_id in range(config.num_hidden_layers):
+                for x in ("q", "k", "v"):
+                    aoa_statements += [
+                        f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
+                    ]
             if config.attention_bias:
                 aoa_statements += [
                     f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
-
-            aoa_statements += [
-                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
-            ]
 
         if not config.fuse_attention_ffn:
             aoa_statements += [
@@ -713,9 +740,13 @@ class Qwen3MoePretrainedModel(PretrainedModel):
         else:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
-                "model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight",
-                "model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight",
             ]
+            for layer_id in range(config.num_hidden_layers):
+                for expert_id in range(config.num_experts):
+                    aoa_statements += [
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
+                    ]
 
         if config.tie_word_embeddings:
             aoa_statements += ["lm_head.weight -> _"]
@@ -810,7 +841,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)

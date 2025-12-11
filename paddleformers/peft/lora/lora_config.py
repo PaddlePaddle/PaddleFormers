@@ -65,7 +65,7 @@ class LoRAConfig:
             "help": "Provides fine-grained control over `MergedLoRALinear`. If None, `LoRALinear` is used instead."
         },
     )
-    tensor_parallel_degree: int = field(default=-1, metadata={"help": "1 for not use tensor parallel"})
+    tensor_model_parallel_size: int = field(default=-1, metadata={"help": "1 for not use tensor parallel"})
     dtype: Optional[str] = field(default=None, metadata={"help": "The data type of tensor"})
     head_dim: Optional[int] = field(
         default=None,
@@ -191,7 +191,7 @@ class LoRAAutoConfig(LoRAConfig):
         default=False,
         metadata={"help": "Weather to use auto_parallel intermediate api"},
     )
-    pipeline_parallel_degree: bool = field(
+    pipeline_model_parallel_size: bool = field(
         default=False,
         metadata={"help": "Weather to use pipeline parallel"},
     )

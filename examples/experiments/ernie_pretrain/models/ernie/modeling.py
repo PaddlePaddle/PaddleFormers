@@ -138,7 +138,7 @@ def get_triangle_upper_mask(x, mask=None):
 
 def gqa_qkv_split_func(
     weight,
-    tensor_parallel_degree,
+    tensor_model_parallel_size,
     tensor_parallel_rank,
     num_attention_heads,
     num_key_value_heads,
@@ -154,22 +154,22 @@ def gqa_qkv_split_func(
         axis=-1,
     )
     if tensor_parallel_rank is None:
-        q_list = paddle.split(q, tensor_parallel_degree, axis=-1)
-        k_list = paddle.split(k, tensor_parallel_degree, axis=-1)
-        v_list = paddle.split(v, tensor_parallel_degree, axis=-1)
+        q_list = paddle.split(q, tensor_model_parallel_size, axis=-1)
+        k_list = paddle.split(k, tensor_model_parallel_size, axis=-1)
+        v_list = paddle.split(v, tensor_model_parallel_size, axis=-1)
         ret = [paddle.concat([q, k, v], axis=-1) for q, k, v in zip(q_list, k_list, v_list)]
         return ret
     else:
-        q = paddle.split(q, tensor_parallel_degree, axis=-1)[tensor_parallel_rank]
-        k = paddle.split(k, tensor_parallel_degree, axis=-1)[tensor_parallel_rank]
-        v = paddle.split(v, tensor_parallel_degree, axis=-1)[tensor_parallel_rank]
+        q = paddle.split(q, tensor_model_parallel_size, axis=-1)[tensor_parallel_rank]
+        k = paddle.split(k, tensor_model_parallel_size, axis=-1)[tensor_parallel_rank]
+        v = paddle.split(v, tensor_model_parallel_size, axis=-1)[tensor_parallel_rank]
         return paddle.concat([q, k, v], axis=-1)
 
 
 def gqa_qkv_merge_func(weight_list, num_attention_heads, num_key_value_heads, head_dim):
-    tensor_parallel_degree = len(weight_list)
-    num_attention_heads = num_attention_heads // tensor_parallel_degree
-    num_key_value_heads = num_key_value_heads // tensor_parallel_degree
+    tensor_model_parallel_size = len(weight_list)
+    num_attention_heads = num_attention_heads // tensor_model_parallel_size
+    num_key_value_heads = num_key_value_heads // tensor_model_parallel_size
     q_list, k_list, v_list = [], [], []
     for weight in weight_list:
         q, k, v = paddle.split(
@@ -192,12 +192,12 @@ def parallel_matmul(
     y,
     bias=None,
     transpose_y=False,
-    tensor_parallel_degree=1,
+    tensor_model_parallel_size=1,
     tensor_parallel_output=True,
     fuse_linear=False,
     training=True,
 ):
-    if tensor_parallel_degree > 1:
+    if tensor_model_parallel_size > 1:
         if isinstance(y, paddle.base.framework.EagerParamBase):
             assert y.is_distributed
 
@@ -249,7 +249,7 @@ def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_out
         weight,
         bias=bias,
         transpose_y=config.tie_word_embeddings,
-        tensor_parallel_degree=config.tensor_parallel_degree,
+        tensor_model_parallel_size=config.tensor_model_parallel_size,
         tensor_parallel_output=tensor_parallel_output,
         fuse_linear=config.fuse_linear,
         training=training,
@@ -427,7 +427,7 @@ def scaled_dot_product_attention(
             attn_weights = F.softmax_(attn_weights, axis=-1).astype(query_states.dtype)
 
         if config.attention_probs_dropout_prob > 0.0:
-            if config.tensor_parallel_degree > 1:
+            if config.tensor_model_parallel_size > 1:
                 with get_rng_state_tracker().rng_state("local_seed"):
                     attn_weights = F.dropout(
                         attn_weights,
@@ -722,7 +722,7 @@ class ErnieMLP(nn.Layer):
         self.intermediate_size = config.intermediate_size
         self.fuse_ffn = config.fuse_attn_ffn
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             ColumnLN = ColumnSequenceParallelLinear if config.sequence_parallel else ColumnParallelLinear
             RowLN = RowSequenceParallelLinear if config.sequence_parallel else RowParallelLinear
 
@@ -771,7 +771,7 @@ class ErnieMLP(nn.Layer):
                 self.gate_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
                 self.up_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             row_ln_configs = (
                 {"use_rr": config.use_recompute and config.skip_recompute_ops.get("mlp_row_ln", False)}
                 if config.sequence_parallel and get_env_device() == "gpu"
@@ -797,7 +797,7 @@ class ErnieMLP(nn.Layer):
 
     def forward(self, x):
         if (
-            self.config.tensor_parallel_degree <= 1
+            self.config.tensor_model_parallel_size <= 1
             and self.fuse_ffn
             and self.config.use_fp8_mlp
             and not self.config.use_bias
@@ -856,16 +856,16 @@ class ErnieAttention(nn.Layer):
             assert not config.rope_reorder, "does not support rope_reorder when rope_3d is on for now."
             assert config.freq_allocation is not None, "freq_allocation must be provided if rope_3d is on."
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
             if self.is_gqa:
                 assert (
-                    self.num_key_value_heads % config.tensor_parallel_degree == 0
-                ), f"num_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-                self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                    self.num_key_value_heads % config.tensor_model_parallel_size == 0
+                ), f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+                self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
         if self.is_gqa:
             logger.info(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
             assert (
@@ -876,7 +876,7 @@ class ErnieAttention(nn.Layer):
         else:
             q_hidden_size = kv_hidden_size = self.head_dim * config.num_attention_heads
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             ColumnLN = ColumnSequenceParallelLinear if config.sequence_parallel else ColumnParallelLinear
             RowLN = RowSequenceParallelLinear if config.sequence_parallel else RowParallelLinear
             column_ln_configs = (
@@ -946,7 +946,7 @@ class ErnieAttention(nn.Layer):
                     bias_attr=config.use_bias,
                 )
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             row_ln_configs = (
                 {"use_rr": config.use_recompute and config.skip_recompute_ops.get("attention_row_ln", False)}
                 if config.sequence_parallel and get_env_device() == "gpu"
@@ -1006,7 +1006,7 @@ class ErnieAttention(nn.Layer):
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         if self.config.sequence_parallel:
             if not self.config.using_dynamic_sequence_length:
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // self.config.seqlen
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // self.config.seqlen
                 q_len = self.config.seqlen
             else:
                 assert (
@@ -1014,7 +1014,7 @@ class ErnieAttention(nn.Layer):
                 ), "micro_batch_size should be set when using dygramic sequence length."
 
                 bsz = self.config.micro_batch_size
-                q_len = hidden_states.shape[0] * self.config.tensor_parallel_degree // bsz
+                q_len = hidden_states.shape[0] * self.config.tensor_model_parallel_size // bsz
         else:
             bsz, q_len, _ = hidden_states.shape
         query_states = key_states = value_states = mix_layer = None
@@ -1230,7 +1230,7 @@ class ErnieDecoderLayer(nn.Layer):
             inbatch_pack_offset=inbatch_pack_offset,
         )
 
-        if self.config.tensor_parallel_degree > 1 and self.config.hidden_dropout_prob > 0.0:
+        if self.config.tensor_model_parallel_size > 1 and self.config.hidden_dropout_prob > 0.0:
             current_seed = "local_seed" if self.config.sequence_parallel else "global_seed"
             with get_rng_state_tracker().rng_state(current_seed):
                 hidden_states = self.residual_add1(hidden_states, residual)
@@ -1241,7 +1241,7 @@ class ErnieDecoderLayer(nn.Layer):
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
 
-        if self.config.tensor_parallel_degree > 1 and self.config.hidden_dropout_prob > 0.0:
+        if self.config.tensor_model_parallel_size > 1 and self.config.hidden_dropout_prob > 0.0:
             current_seed = "local_seed" if self.config.sequence_parallel else "global_seed"
             with get_rng_state_tracker().rng_state(current_seed):
                 hidden_states = self.residual_add2(hidden_states, residual)
@@ -1346,7 +1346,7 @@ class ErniePretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -1355,7 +1355,7 @@ class ErniePretrainedModel(PretrainedModel):
             if is_split:
                 qkv_fn = partial(
                     gqa_qkv_split_func,
-                    tensor_parallel_degree=config.tensor_parallel_degree,
+                    tensor_model_parallel_size=config.tensor_model_parallel_size,
                     tensor_parallel_rank=config.tensor_parallel_rank,
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
@@ -1428,7 +1428,7 @@ class ErniePretrainedModel(PretrainedModel):
         return mappings
 
     def _init_weights(self, layer):
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             rng_tracker = get_rng_state_tracker().rng_state
         else:
             rng_tracker = contextlib.nullcontext
@@ -1483,7 +1483,7 @@ class ErnieModel(ErniePretrainedModel):
         self.hidden_size = config.hidden_size
         self.config = config
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             self.embed_tokens = VocabParallelEmbedding(
                 self.vocab_size,
                 self.hidden_size,
@@ -1706,7 +1706,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
         weight,
         bias,
         labels,
-        tensor_parallel_degree,
+        tensor_model_parallel_size,
         mp_group=None,
         ignore_index=-100,
         seq_chunk_size=8192,
@@ -1715,7 +1715,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
         training=True,
     ):
 
-        ctx.tensor_parallel_degree = tensor_parallel_degree
+        ctx.tensor_model_parallel_size = tensor_model_parallel_size
         ctx.ignore_index = ignore_index
         ctx.seq_chunk_size = seq_chunk_size
         ctx.transpose_y = transpose_y
@@ -1724,7 +1724,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
 
         ctx.hidden_states_shape = hidden_states.shape
 
-        if ctx.tensor_parallel_degree > 1:
+        if ctx.tensor_model_parallel_size > 1:
             ctx.mp_group = (
                 fleet.get_hybrid_communicate_group().get_model_parallel_group() if mp_group is None else mp_group
             )
@@ -1742,7 +1742,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
             hidden_states = hidden_states.reshape_([-1, hidden_states.shape[-1]])
 
             num_tokens_per_rank = []
-            if ctx.tensor_parallel_degree > 1:
+            if ctx.tensor_model_parallel_size > 1:
                 dist.stream.all_gather(
                     num_tokens_per_rank,
                     paddle.to_tensor(hidden_states.shape[0], dtype=paddle.int32),
@@ -1761,7 +1761,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                     )
                     labels_recv = paddle.empty([ctx.num_tokens_per_rank[idx]], dtype=labels.dtype)
 
-                if ctx.tensor_parallel_degree > 1:
+                if ctx.tensor_model_parallel_size > 1:
                     dist.stream.broadcast(
                         hidden_states_recv,
                         src=ctx.mp_group.ranks[idx],
@@ -1784,14 +1784,14 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                         weight,
                         bias=bias,
                         transpose_y=ctx.transpose_y,
-                        tensor_parallel_degree=ctx.tensor_parallel_degree,
+                        tensor_model_parallel_size=ctx.tensor_model_parallel_size,
                         tensor_parallel_output=True,
                         fuse_linear=ctx.fuse_linear,
                         training=ctx.training,
                     )
 
                     with paddle.amp.auto_cast(False):
-                        if ctx.tensor_parallel_degree > 1:
+                        if ctx.tensor_model_parallel_size > 1:
                             loss = mp_ops._c_softmax_with_cross_entropy(
                                 logits.cast("float32"),
                                 labels_chunk.unsqueeze(-1),
@@ -1859,7 +1859,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                         dtype=hidden_states.dtype,
                     )
                     labels_recv = paddle.empty([ctx.num_tokens_per_rank[idx]], dtype=labels.dtype)
-                if ctx.tensor_parallel_degree > 1:
+                if ctx.tensor_model_parallel_size > 1:
                     dist.stream.broadcast(
                         hidden_states_recv,
                         src=ctx.mp_group.ranks[idx],
@@ -1883,14 +1883,14 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                         weight,
                         bias=bias,
                         transpose_y=ctx.transpose_y,
-                        tensor_parallel_degree=ctx.tensor_parallel_degree,
+                        tensor_model_parallel_size=ctx.tensor_model_parallel_size,
                         tensor_parallel_output=True,
                         fuse_linear=ctx.fuse_linear,
                         training=ctx.training,
                     )
 
                     with paddle.amp.auto_cast(False):
-                        if ctx.tensor_parallel_degree > 1:
+                        if ctx.tensor_model_parallel_size > 1:
                             loss_chunk = mp_ops._c_softmax_with_cross_entropy(
                                 logits.cast("float32"),
                                 labels_chunk.unsqueeze(-1),
@@ -1942,7 +1942,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
         self.ignored_index = getattr(config, "ignored_index", -100)
         self.config = config
         self.return_tuple = return_tuple
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:
             self.loss_func = fleet.meta_parallel.ParallelCrossEntropy()
@@ -2015,7 +2015,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             outlinear_weight,
             outlinear_bias,
             masked_lm_labels,
-            self.config.tensor_parallel_degree,
+            self.config.tensor_model_parallel_size,
             ignore_index=self.ignored_index,
             seq_chunk_size=self.config.get("loss_subbatch_seqlen", 32768),
             transpose_y=self.config.tie_word_embeddings,
@@ -2120,8 +2120,8 @@ class ErnieLMHead(nn.Layer):
     def __init__(self, config):
         super(ErnieLMHead, self).__init__()
         self.config = config
-        if config.tensor_parallel_degree > 1:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1:
+            vocab_size = config.vocab_size // config.tensor_model_parallel_size
         else:
             vocab_size = config.vocab_size
 
@@ -2200,8 +2200,8 @@ class ErnieForCausalLM(ErniePretrainedModel):
                 assert config.seqlen is not None
 
             assert (
-                config.tensor_parallel_degree > 1
-            ), f"sequence-parallel needs mp>1, got mp={config.tensor_parallel_degree}"
+                config.tensor_model_parallel_size > 1
+            ), f"sequence-parallel needs mp>1, got mp={config.tensor_model_parallel_size}"
 
         new_initializer_range = math.sqrt(0.3333 / config.hidden_size)
         logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")

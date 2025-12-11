@@ -155,7 +155,7 @@ class AutoConfigTest(unittest.TestCase):
             "fuse_rms_norm": False,
             "apply_rope_fusion": False,
             "use_recompute": False,
-            "virtual_pp_degree": 1,
+            "virtual_pipeline_model_parallel_size": 1,
             "vocab_size": 32001,
         }
         config_str = json.dumps(config_dict, indent=2, sort_keys=True, ensure_ascii=False) + "\n"

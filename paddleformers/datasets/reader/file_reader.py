@@ -22,7 +22,7 @@ from paddleformers.utils.log import logger
 
 from .convertor import erniekit_convertor, messages_convertor
 from .download_manager import HuggingFaceDownload
-from .io import load_csv, load_json, load_jsonl, load_parquet, load_txt
+from .io import load_csv, load_json, load_parquet, load_txt
 
 DATA_INFO_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), "data_info.json")
 DATASET_WORKROOT = os.getenv("DATASET_WORKROOT", "/root/.cache/paddleformers")
@@ -39,7 +39,7 @@ class BaseReader(IterableDataset):
         self._split_multi_turn = split_multi_turn
         self.loader_map = {
             ".json": load_json,
-            ".jsonl": load_jsonl,
+            ".jsonl": load_json,
             ".txt": load_txt,
             ".csv": load_csv,
             ".parquet": load_parquet,
@@ -117,6 +117,26 @@ class FileReader(BaseReader):
             if not isinstance(system, str):
                 raise ValueError("System field must be a string.")
         data["system"] = system
+
+        # Convert the relative paths of multimode data into absolute paths
+        if "images" in data:
+            for idx in range(len(data["images"])):
+                if data["images"][idx].startswith("http") or os.path.isabs(data["images"][idx]):
+                    pass
+                else:
+                    data["images"][idx] = os.path.join(os.path.dirname(self._file_path), data["images"][idx])
+        if "videos" in data:
+            for idx in range(len(data["videos"])):
+                if data["videos"][idx].startswith("http") or os.path.isabs(data["videos"][idx]):
+                    pass
+                else:
+                    data["videos"][idx] = os.path.join(os.path.dirname(self._file_path), data["videos"][idx])
+        if "audios" in data:
+            for idx in range(len(data["audios"])):
+                if data["audios"][idx].startswith("http") or os.path.isabs(data["audios"][idx]):
+                    pass
+                else:
+                    data["audios"][idx] = os.path.join(os.path.dirname(self._file_path), data["audios"][idx])
 
         return data
 
