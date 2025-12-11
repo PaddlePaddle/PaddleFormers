@@ -357,6 +357,8 @@ class FlashMaskSinkPyLayer(PyLayer):
         sink_expanded = sink_reshaped.expand([batch_size, seq_len, num_heads, 1])
 
         # Compute sink multiplier: 1 / (exp(sink - lse) + 1)
+        if lse_transposed.shape != sink_expanded.shape:
+            lse_transposed = lse_transposed[:, : sink_expanded.shape[1], :, :]
         multiplier = 1 / (paddle.exp(sink_expanded - lse_transposed) + 1)
         final_out = (raw_output * multiplier).to(origin_dtype)
 
