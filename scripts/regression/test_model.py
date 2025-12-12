@@ -19,11 +19,12 @@ import re
 import shutil
 import subprocess
 import tempfile
-import pytest
-import yaml
+import time
 from dataclasses import dataclass
 from typing import Any, Dict
-import time
+
+import pytest
+import yaml
 
 CONFIG_PATH = "./examples/config/"
 LOG_PATH = "./model_unittest_logs"
@@ -54,7 +55,7 @@ class TrainTester:
             name=model_key,
             repo_id=model_cfg.get("repo_id"),
             cli_args=model_cfg.get("cli_args", {}),
-            base_loss=model_cfg.get("base_loss", {})
+            base_loss=model_cfg.get("base_loss", {}),
         )
 
     def update_training_args(self, yaml_path, tmp_dir, updates) -> str:
@@ -66,11 +67,10 @@ class TrainTester:
         updated_yaml_path = os.path.join(tmp_dir, f"updated_{os.path.basename(yaml_path)}")
         with open(updated_yaml_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config, f, indent=4, allow_unicode=True, sort_keys=False)
-        
+
         # with open(updated_yaml_path, "r", encoding="utf-8") as f:
         #     print("\n[INFO] Updated YAML Content:")
         #     print(f.read())
-
 
         return updated_yaml_path
 
@@ -88,7 +88,6 @@ class TrainTester:
         if abs(avg_loss - base_loss) > 0.0001:
             return f"{resume_flag} loss: {avg_loss}, base_loss: {base_loss}, exist diff!"
         return None
-
 
     def assert_result(self, ret_code, log_output):
         if ret_code != 0:
@@ -135,17 +134,16 @@ class TestTrain:
         ]
 
         # train
-        
+
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        full_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full.log")     
+        full_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full.log")
         if training_p.stdout and training_p.stdout.strip():
             with open(full_log_file, "w", encoding="utf-8") as f:
                 f.write(training_p.stdout)
 
-        
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
         time.sleep(3)
-        # resume 
+        # resume
         resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         full_resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full_resume.log")
         if resume_p.stdout and resume_p.stdout.strip():
@@ -190,7 +188,7 @@ class TestTrain:
 
         # 训练
         cmd = ["paddleformers-cli", "train", updated_config_path]
-        
+
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
         # 保存日志
@@ -200,10 +198,9 @@ class TestTrain:
                 f.write(training_p.stdout)
 
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
-        
 
         # resume 测试
-        
+
         resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         lora_resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_lora_resume.log")
         if resume_p.stdout.strip():
@@ -224,7 +221,6 @@ class TestTrain:
 
         if errors:
             raise AssertionError(errors)
-
 
         # merge 测试
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
@@ -249,11 +245,11 @@ class TestTrain:
         }
         update_args.update(cli_args)
 
-        config_path = os.path.join(CONFIG_PATH, train_type, f"full_tp_pp.yaml")
+        config_path = os.path.join(CONFIG_PATH, train_type, "full_tp_pp.yaml")
         updated_config_path = self.train_tester.update_training_args(config_path, output_dir, update_args)
 
         # 训练
-        
+
         cmd = ["paddleformers-cli", "train", updated_config_path]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -265,7 +261,7 @@ class TestTrain:
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
 
         # resume 测试
-        
+
         resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         full_tp_pp_resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full_tp_pp_resume.log")
         if resume_p.stdout.strip():
@@ -287,7 +283,7 @@ class TestTrain:
         if errors:
             raise AssertionError(errors)
 
-    @pytest.mark.parametrize("train_type", ["sft","pt"])
+    @pytest.mark.parametrize("train_type", ["sft", "pt"])
     def test_lora_tp_pp(self, train_type, model_key):
         print(f"[INFO] Testing with model={model_key}, train_type={train_type}_lora_tp_pp")
         model_cfg = self.train_tester.load_model_config(model_key)
@@ -305,7 +301,7 @@ class TestTrain:
         }
         update_args.update(cli_args)
         config_path = os.path.join(CONFIG_PATH, train_type, "lora_tp_pp.yaml")
-        
+
         updated_config_path = self.train_tester.update_training_args(config_path, output_dir, update_args)
 
         # 训练
@@ -319,7 +315,6 @@ class TestTrain:
                 f.write(training_p.stdout)
 
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
-        
 
         # resume 测试
         time.sleep(3)
@@ -330,7 +325,7 @@ class TestTrain:
                 f.write(resume_p.stdout)
 
         self.train_tester.assert_result(resume_p.returncode, resume_p.stdout)
-        
+
         # check loss diff
         errors = []
         msg = self.train_tester.assert_loss(training_p.stdout, lora_tp_pp_loss, "Fisrt-Training")
@@ -372,7 +367,7 @@ class TestTrain:
         updated_config_path = self.train_tester.update_training_args(config_path, output_dir, update_args)
 
         # 训练
-        
+
         cmd = ["paddleformers-cli", "train", updated_config_path]
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -382,10 +377,9 @@ class TestTrain:
                 f.write(training_p.stdout)
 
         self.train_tester.assert_result(training_p.returncode, training_p.stdout)
-        
 
         # resume 测试
-        
+
         resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_full_function_call_resume.log")
         if resume_p.stdout.strip():
@@ -406,4 +400,3 @@ class TestTrain:
 
         if errors:
             raise AssertionError(errors)
-        
