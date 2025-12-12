@@ -187,8 +187,7 @@ class LoRAModel(nn.Layer):
             self.lora_config.lora_use_mixer or self.lora_config.use_mora
         ):
             raise NotImplementedError("lora_use_mixer or mora is not supported in tensor parallel mode.")
-        if hasattr(self.model.config, "tensor_model_parallel_size"):
-            self.model.config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
+
         if self.lora_config.tensor_model_parallel_size != self.model.config.tensor_model_parallel_size:
             self.lora_config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
             logger.warning(
