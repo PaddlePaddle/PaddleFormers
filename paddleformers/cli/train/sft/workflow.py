@@ -74,7 +74,6 @@ os.environ["USE_CASUAL_MASK"] = "False"
 from paddleformers.cli.hparams import (
     DataArguments,
     FinetuningArguments,
-    FleetArguments,
     GeneratingArguments,
     ModelArguments,
 )
@@ -163,7 +162,6 @@ def run_sft(
     data_args: "DataArguments",
     generating_args: "GeneratingArguments",
     finetuning_args: "FinetuningArguments",
-    fleet_args: "FleetArguments",
 ):
     """_summary_
 
@@ -172,7 +170,6 @@ def run_sft(
         data_args (DataArguments): _description_
         generating_args (GeneratingArguments): _description_
         finetuning_args (FinetuningArguments): _description_
-        fleet_args (FleetArguments): _description_
         callbacks (Optional[list[&quot;TrainerCallback&quot;]], optional): _description_. Defaults to None.
 
     Raises:
@@ -277,9 +274,6 @@ def run_sft(
                 raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
 
             model_class = AutoModelForCausalLMPipe
-
-    # Fleet args apply.
-    LlmMetaConfig.set_llm_config(model_config, fleet_args)
 
     if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(

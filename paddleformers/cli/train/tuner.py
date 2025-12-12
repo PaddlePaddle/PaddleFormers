@@ -41,7 +41,7 @@ def _training_function(config: dict[str, Any]) -> None:
         ValueError: _description_
     """
     args = config.get("args")
-    model_args, data_args, preprocess_args, generating_args, finetuning_args, fleet_args = get_train_args(args)
+    model_args, data_args, preprocess_args, generating_args, finetuning_args = get_train_args(args)
 
     if "VL" in model_args.stage or model_args.stage == "dsv3_pretrain":
         pass
@@ -51,10 +51,10 @@ def _training_function(config: dict[str, Any]) -> None:
 
     if model_args.stage == "SFT" or model_args.stage == "PT" or model_args.stage == "VL-SFT":
         with paddle.amp.auto_cast(enable=False):
-            run_sft(model_args, data_args, generating_args, finetuning_args, fleet_args)
+            run_sft(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "DPO":
         with paddle.amp.auto_cast(enable=False):
-            run_dpo(model_args, data_args, generating_args, finetuning_args, fleet_args)
+            run_dpo(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "dsv3_pretrain":
         run_dsv3_pretrain(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "auto-parallel":

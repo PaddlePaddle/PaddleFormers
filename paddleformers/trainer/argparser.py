@@ -145,6 +145,9 @@ class PdArgumentParser(ArgumentParser):
                 kwargs["const"] = True
         elif isclass(origin_type) and issubclass(origin_type, list):
             # support one dimension list and two dimension list
+            print(field)
+            print(field.type)
+            print(get_args(field.type))
             if hasattr(get_args(field.type)[0], "__args__"):
                 kwargs["type"] = field.type.__args__[0].__args__[0]
                 kwargs["action"] = "append"

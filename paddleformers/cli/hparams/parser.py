@@ -35,7 +35,6 @@ from ..utils.process import (
 from .data_args import DataArguments
 from .export_args import ExportArguments
 from .finetuning_args import FinetuningArguments
-from .fleet_args import FleetArguments
 from .generating_args import GeneratingArguments
 from .model_args import ModelArguments
 from .preprocess_args import End2EndProcessorArguments
@@ -47,7 +46,6 @@ _TRAIN_ARGS = [
     End2EndProcessorArguments,
     GeneratingArguments,
     FinetuningArguments,
-    FleetArguments,
 ]
 _TRAIN_CLS = tuple[
     ModelArguments,
@@ -55,7 +53,6 @@ _TRAIN_CLS = tuple[
     End2EndProcessorArguments,
     GeneratingArguments,
     FinetuningArguments,
-    FleetArguments,
 ]
 _EVAL_ARGS = [ModelArguments, DataArguments, GeneratingArguments, FinetuningArguments]
 _EVAL_CLS = tuple[ModelArguments, DataArguments, GeneratingArguments, FinetuningArguments]
@@ -201,7 +198,7 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
     Returns:
         _TRAIN_CLS: _description_
     """
-    model_args, data_args, preprocess_args, generating_args, finetuning_args, fleet_args = _parse_train_args(args)
+    model_args, data_args, preprocess_args, generating_args, finetuning_args = _parse_train_args(args)
 
     if model_args.stage == "VL-SFT":
         os.environ["NCCL_DEBUG"] = "INFO"
@@ -227,7 +224,7 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
 
         os.environ["FLAGS_call_stack_level"] = "2"
         os.environ["FLAGS_eager_communication_connection"] = "0"
-    return model_args, data_args, preprocess_args, generating_args, finetuning_args, fleet_args
+    return model_args, data_args, preprocess_args, generating_args, finetuning_args
 
 
 def get_eval_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _EVAL_CLS:

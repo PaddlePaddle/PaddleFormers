@@ -373,7 +373,14 @@ class FinetuningArguments(
         default=None,
         metadata={"help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."},
     )
-
+    deterministic_mode: bool = field(
+        default=False,
+        metadata={"help": "Whether to use deterministic mode."},
+    )
+    cp_comm_type: str = field(
+        default=None,
+        metadata={"help": "Communication type."},
+    )
     # fp8
     use_fp8: bool = field(
         default=False,

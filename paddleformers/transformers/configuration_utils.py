@@ -320,6 +320,60 @@ class LlmMetaConfig:
 
     fleet_attributes = [
         (
+            "multi_latent_attention",
+            bool,
+            False,
+            "Whether to enable multi-latent attention mechanism. Defaults to False.",
+        ),
+        (
+            "no_rope_freq",
+            bool,
+            False,
+            "Whether to disable RoPE (Rotary Position Embedding) frequency scaling. Defaults to False (enable frequency scaling).",
+        ),
+        (
+            "moe_deepep_num_sms",
+            bool,
+            False,
+            "Whether to enable DeepEP (Deep Expert Pruning) with SMS (Sub-Model Selection) for MoE. Defaults to False.",
+        ),
+        (
+            "moe_token_dispatcher_type",
+            str,
+            None,
+            "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
+        ),
+        (
+            "moe_pad_expert_input_to_capacity",
+            bool,
+            False,
+            "Whether to pad MoE expert inputs to match expert capacity. Defaults to False (no padding).",
+        ),
+        (
+            "moe_token_drop_policy",
+            bool,
+            False,
+            "Whether to enable token dropping policy for MoE (discard low-importance tokens). Defaults to False.",
+        ),
+        (
+            "moe_expert_capacity_factor",
+            float,
+            0.0,
+            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (use default capacity).",
+        ),
+        (
+            "router_aux_loss_coef",
+            float,
+            0.0,
+            "Coefficient for MoE router auxiliary loss (encourages balanced expert usage). Defaults to 0.0 (disable auxiliary loss).",
+        ),
+        (
+            "router_z_loss_coef",
+            float,
+            0.0,
+            "Coefficient for MoE router Z-loss (regularizes router logits to avoid extreme values). Defaults to 0.0 (disable Z-loss).",
+        ),
+        (
             "position_embedding_type",
             str,
             "rope",
@@ -443,7 +497,7 @@ class LlmMetaConfig:
             None,
             "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
         ),
-        ("recompute_modules", "Optional[List[str]]", None, "List of module names to apply recomputation."),
+        ("recompute_modules", str, None, "List of module names to apply recomputation."),
         (
             "recompute_mtp_granularity",
             str,
@@ -451,8 +505,7 @@ class LlmMetaConfig:
             "Recomputation granularity for MTP (Mixture of Token-Parallel) layers.",
         ),
         ("recompute_mtp_method", str, "none", "Recomputation method for MTP layers."),
-        ("recompute_mtp_modules", "Optional[List[str]]", None, "List of MTP module names to apply recomputation."),
-        ("cp_comm_type", str, None, "Communication type for checkpoint parallelism (CP)."),
+        ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
         ("dp_comm_overlap", bool, True, "Whether to overlap data parallelism (DP) communication with computation."),
         (
             "sharding_comm_overlap",
@@ -492,6 +545,12 @@ class LlmMetaConfig:
             1.0,
             "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
         ),
+        (
+            "lt",
+            float,
+            1.0,
+            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
+        ),
     ]
 
     @classmethod
@@ -520,6 +579,7 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
+            cls.fleet_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -535,6 +595,7 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
+            cls.fleet_attributes,
         ]:
             for attr in attrs:
                 ret.add(attr[0])
