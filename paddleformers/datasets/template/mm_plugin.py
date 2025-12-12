@@ -509,7 +509,7 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
             mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
-            num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0  # hard code for now
+            num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0
             video_metadata = mm_inputs.get("video_metadata", {})
 
         else:
@@ -521,8 +521,13 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         for idx, message in enumerate(messages):
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
+                if num_image_tokens >= len(image_grid_thw):
+                    raise ValueError(f"Found more {IMAGE_PLACEHOLDER} tags than actual images provided.")
+
                 image_seqlen = (
-                    image_grid_thw[num_image_tokens].prod() // image_merge_length if self.expand_mm_tokens else 1
+                    image_grid_thw[num_image_tokens].prod().item() // image_merge_length
+                    if self.expand_mm_tokens
+                    else 1
                 )
                 content = content.replace(
                     IMAGE_PLACEHOLDER,
@@ -532,6 +537,9 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
                 num_image_tokens += 1
 
             while VIDEO_PLACEHOLDER in content:
+                if num_video_tokens >= len(video_grid_thw):
+                    raise ValueError(f"Found more {VIDEO_PLACEHOLDER} tags than actual videos provided.")
+
                 metadata = video_metadata[idx]
                 timestamps = processor._calculate_timestamps(
                     metadata.frames_indices,

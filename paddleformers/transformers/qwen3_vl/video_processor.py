@@ -1,5 +1,6 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# coding=utf-8
 # Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
+# Copyright 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,17 +13,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Video processor class for Qwen3-VL."""
+"""video processor class for Qwen3-VL."""
 
 import math
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import paddle
-import paddle.nn.functional as F
 
 from ..image_processing_utils import BatchFeature
+from ..image_utils import ChannelDimension, PILImageResampling, SizeDict, get_image_size
+from ..processing_utils import VideosKwargs
 from ..video_processing_utils import BaseVideoProcessor
+from ..video_utils import VideoMetadata, group_videos_by_shape, reorder_videos
 
 
 def smart_resize(
@@ -34,9 +37,6 @@ def smart_resize(
     min_pixels: int = 128 * 128,
     max_pixels: int = 16 * 16 * 2 * 2 * 2 * 6144,
 ):
-    """
-    Calculates the target height and width to fit within pixel limits while maintaining aspect ratio.
-    """
     if height < factor or width < factor:
         raise ValueError(f"height:{height} or width:{width} must be larger than factor:{factor}")
     elif max(height, width) / min(height, width) > 200:
@@ -59,156 +59,184 @@ def smart_resize(
     return h_bar, w_bar
 
 
+class Qwen3VLVideoProcessorInitKwargs(VideosKwargs, total=False):
+    patch_size: int
+    temporal_patch_size: int
+    merge_size: int
+    min_frames: int
+    max_frames: int
+
+
 class Qwen3VLVideoProcessor(BaseVideoProcessor):
+    resample = PILImageResampling.BICUBIC
+    size = {"shortest_edge": 128 * 32 * 32, "longest_edge": 32 * 32 * 768}
+    image_mean = [0.5, 0.5, 0.5]
+    image_std = [0.5, 0.5, 0.5]
+    do_resize = True
+    do_rescale = True
+    do_normalize = True
+    do_convert_rgb = True
+    patch_size = 16
+    temporal_patch_size = 2
+    merge_size = 2
+    fps = 2
+    min_frames = 4
+    max_frames = 768
+    do_sample_frames = True
+    valid_kwargs = Qwen3VLVideoProcessorInitKwargs
     model_input_names = ["pixel_values_videos", "video_grid_thw"]
 
-    def __init__(
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.size is not None and (
+            self.size.get("shortest_edge", None) is None or self.size.get("longest_edge", None) is None
+        ):
+            raise ValueError("size must contain 'shortest_edge' and 'longest_edge' keys.")
+
+    def _further_process_kwargs(
         self,
+        size: Optional[SizeDict] = None,
+        **kwargs,
+    ) -> dict:
+        if size is not None and ("shortest_edge" not in size or "longest_edge" not in size):
+            raise ValueError("size must contain 'shortest_edge' and 'longest_edge' keys.")
+        return super()._further_process_kwargs(size=size, **kwargs)
+
+    def sample_frames(
+        self,
+        metadata: VideoMetadata,
+        num_frames: Optional[int] = None,
+        fps: Optional[Union[int, float]] = None,
+        **kwargs,
+    ):
+        if fps is not None and num_frames is not None:
+            raise ValueError("`num_frames` and `fps` are mutually exclusive arguments, please use only one!")
+
+        total_num_frames = metadata.total_num_frames
+        fps = fps if fps is not None else self.fps
+
+        if num_frames is None and fps is not None:
+            if metadata.fps is None:
+                metadata.fps = 24
+            num_frames = int(total_num_frames / metadata.fps * fps)
+            num_frames = min(max(num_frames, self.min_frames), self.max_frames, total_num_frames)
+
+        if num_frames is None:
+            num_frames = min(max(total_num_frames, self.min_frames), self.max_frames)
+
+        indices = np.linspace(0, total_num_frames - 1, num_frames).round().astype(int)
+        return indices
+
+    def _preprocess(
+        self,
+        videos: list[paddle.Tensor],
+        do_convert_rgb: bool = True,
         do_resize: bool = True,
+        size: Optional[SizeDict] = None,
+        interpolation: PILImageResampling = PILImageResampling.BICUBIC,
         do_rescale: bool = True,
         rescale_factor: float = 1 / 255.0,
         do_normalize: bool = True,
-        image_mean: Optional[Union[float, List[float]]] = [0.5, 0.5, 0.5],
-        image_std: Optional[Union[float, List[float]]] = [0.5, 0.5, 0.5],
-        patch_size: int = 16,
-        temporal_patch_size: int = 2,
-        merge_size: int = 2,
-        min_frames: int = 4,
-        max_frames: int = 768,
-        fps: float = 2.0,
+        image_mean: Optional[Union[float, list[float]]] = None,
+        image_std: Optional[Union[float, list[float]]] = None,
+        patch_size: Optional[int] = None,
+        temporal_patch_size: Optional[int] = None,
+        merge_size: Optional[int] = None,
+        return_tensors=None,
         **kwargs,
-    ) -> None:
-        super().__init__(**kwargs)
-        self.do_resize = do_resize
-        self.do_rescale = do_rescale
-        self.rescale_factor = rescale_factor
-        self.do_normalize = do_normalize
-        self.image_mean = image_mean if image_mean is not None else [0.5, 0.5, 0.5]
-        self.image_std = image_std if image_std is not None else [0.5, 0.5, 0.5]
-        self.patch_size = patch_size
-        self.temporal_patch_size = temporal_patch_size
-        self.merge_size = merge_size
-        self.min_frames = min_frames
-        self.max_frames = max_frames
-        self.fps = fps
-        self.resample = "bicubic"
+    ):
+        grouped_videos, grouped_videos_index = group_videos_by_shape(videos)
+        resized_videos_grouped = {}
 
-    def preprocess(
-        self,
-        videos: List[paddle.Tensor],
-        do_resize: bool = None,
-        do_rescale: bool = None,
-        do_normalize: bool = None,
-        image_mean: Optional[Union[float, List[float]]] = None,
-        image_std: Optional[Union[float, List[float]]] = None,
-        **kwargs,
-    ) -> BatchFeature:
-        """
-        Preprocess the video.
-        Args:
-            videos: List of tensors, each with shape [T, C, H, W] (channel-first).
-        """
-        do_resize = do_resize if do_resize is not None else self.do_resize
-        do_rescale = do_rescale if do_rescale is not None else self.do_rescale
-        do_normalize = do_normalize if do_normalize is not None else self.do_normalize
-        image_mean = image_mean if image_mean is not None else self.image_mean
-        image_std = image_std if image_std is not None else self.image_std
-
-        pixel_values_videos = []
-        video_grid_thw = []
-
-        for video in videos:
-            # Ensure input is a Paddle Tensor
-            if isinstance(video, np.ndarray):
-                video = paddle.to_tensor(video)
-
-            # Ensure format [T, C, H, W]
-            # If the input is [T, H, W, C], convert to [T, C, H, W]
-            if video.shape[-1] == 3:
-                video = video.transpose([0, 3, 1, 2])
-
-            T, C, H, W = video.shape
-
-            # 1. Smart Resize
+        for shape, stacked_videos in grouped_videos.items():
+            B, T, C, H, W = stacked_videos.shape
+            num_frames, height, width = T, H, W
             if do_resize:
-                # Calculate target size specific to Qwen3 logic
                 resized_height, resized_width = smart_resize(
-                    num_frames=T,
-                    height=H,
-                    width=W,
-                    temporal_factor=self.temporal_patch_size,
-                    factor=self.patch_size * self.merge_size,
+                    num_frames=num_frames,
+                    height=height,
+                    width=width,
+                    temporal_factor=temporal_patch_size,
+                    factor=patch_size * merge_size,
+                    min_pixels=size["shortest_edge"],
+                    max_pixels=size["longest_edge"],
                 )
-
-                # Resize frames
-                # Treat temporal dimension as batch for 2D interpolation
-                video = F.interpolate(
-                    video, size=(resized_height, resized_width), mode=self.resample, align_corners=False
+                stacked_videos = self.resize(
+                    stacked_videos,
+                    size=SizeDict(height=resized_height, width=resized_width),
+                    interpolation=interpolation,
                 )
+            resized_videos_grouped[shape] = stacked_videos
+        resized_videos = reorder_videos(resized_videos_grouped, grouped_videos_index)
 
-            # 2. Rescale
-            if do_rescale:
-                video = video.astype("float32") * self.rescale_factor
+        grouped_videos, grouped_videos_index = group_videos_by_shape(resized_videos)
+        processed_videos_grouped = {}
+        processed_grids = {}
+        for shape, stacked_videos in grouped_videos.items():
+            resized_height, resized_width = get_image_size(stacked_videos[0], channel_dim=ChannelDimension.FIRST)
 
-            # 3. Normalize
-            if do_normalize:
-                mean = paddle.to_tensor(image_mean).reshape([1, 3, 1, 1])
-                std = paddle.to_tensor(image_std).reshape([1, 3, 1, 1])
-                video = (video - mean) / std
+            stacked_videos = self.rescale_and_normalize(
+                stacked_videos, do_rescale, rescale_factor, do_normalize, image_mean, image_std
+            )
+            patches = stacked_videos
 
-            # 4. Temporal Padding
-            # Ensure frame count is divisible by temporal_patch_size
-            T_new = video.shape[0]
-            if T_new % self.temporal_patch_size != 0:
-                pad_len = self.temporal_patch_size - (T_new % self.temporal_patch_size)
-                # Repeat the last frame for padding
-                last_frame = video[-1:].tile([pad_len, 1, 1, 1])
-                video = paddle.concat([video, last_frame], axis=0)
+            T = patches.shape[1]
+            if -T % temporal_patch_size != 0:
+                pad = -T % temporal_patch_size
+                repeats = patches[:, -1:].tile([1, pad, 1, 1, 1])
+                patches = paddle.concat((patches, repeats), axis=1)
 
-            # 5. Reshape to 3D Tubelets
-            # Current shape: [T, C, H, W]
-            patches = video
-            T, C, H, W = patches.shape
+            batch_size, grid_t, channel = patches.shape[:3]
+            grid_t = grid_t // temporal_patch_size
+            grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
 
-            grid_t = T // self.temporal_patch_size
-            grid_h = H // self.patch_size
-            grid_w = W // self.patch_size
-
-            # Reshape logic to extract 3D patches
-            # Matches HF Qwen3-VL implementation logic
+            # Paddle 9-dim fix
+            bg_dim = batch_size * grid_t
             patches = patches.reshape(
                 [
-                    grid_t,
-                    self.temporal_patch_size,
-                    C,
-                    grid_h // self.merge_size,
-                    self.merge_size,
-                    self.patch_size,
-                    grid_w // self.merge_size,
-                    self.merge_size,
-                    self.patch_size,
+                    bg_dim,
+                    temporal_patch_size,
+                    channel,
+                    grid_h // merge_size,
+                    merge_size,
+                    patch_size,
+                    grid_w // merge_size,
+                    merge_size,
+                    patch_size,
                 ]
             )
-
-            # Permute to organize patches
-            # Indices: 0:Gt, 1:t_ps, 2:C, 3:Gh_m, 4:m_h, 5:p_h, 6:Gw_m, 7:m_w, 8:p_w
-            # Target: Gt, Gh_m, Gw_m, m_h, m_w, C, t_ps, p_h, p_w
             patches = patches.transpose([0, 3, 6, 4, 7, 2, 1, 5, 8])
-
-            # Flatten
             flatten_patches = patches.reshape(
                 [
+                    batch_size,
                     grid_t * grid_h * grid_w,
-                    C
-                    * self.temporal_patch_size
-                    * self.patch_size
-                    * self.patch_size
-                    * self.merge_size
-                    * self.merge_size,
+                    channel * temporal_patch_size * patch_size * patch_size,
                 ]
             )
 
-            pixel_values_videos.append(flatten_patches)
-            video_grid_thw.append(paddle.to_tensor([grid_t, grid_h, grid_w], dtype="int64"))
+            processed_videos_grouped[shape] = flatten_patches
+            processed_grids[shape] = [[grid_t, grid_h, grid_w]] * batch_size
 
-        return BatchFeature({"pixel_values_videos": pixel_values_videos, "video_grid_thw": video_grid_thw})
+        processed_videos = reorder_videos(processed_videos_grouped, grouped_videos_index)
+        processed_grids = reorder_videos(processed_grids, grouped_videos_index)
+
+        pixel_values_videos = paddle.cat(processed_videos, dim=0)
+        video_grid_thw = paddle.to_tensor(processed_grids)
+
+        # pixel_values_videos_tensor = paddle.concat(processed_videos, axis=0)
+
+        # =========================================================================
+        # 核心修改 2: 显式转 Numpy + 显式构造 Return Dict
+        # =========================================================================
+        # pixel_values_videos = pixel_values_videos_tensor.numpy().astype("float32")
+        # video_grid_thw = np.array(processed_grids, dtype="int64")
+
+        data = {
+            "pixel_values_videos": pixel_values_videos,
+            "video_grid_thw": video_grid_thw,
+        }
+
+        return BatchFeature(data=data, tensor_type=None)
+
+
+__all__ = ["Qwen3VLVideoProcessor"]

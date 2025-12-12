@@ -220,7 +220,7 @@ class Qwen3VLTextConfig(PretrainedConfig):
         standardize_rope_params(self, rope_theta=rope_theta)
         if self.rope_parameters["rope_type"] == "mrope":
             self.rope_parameters["rope_type"] = "default"
-        rope_config_validation(self, ignore_keys={"mrope_section"})
+        rope_config_validation(self, ignore_keys={"mrope_section", "mrope_interleaved"})
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
 

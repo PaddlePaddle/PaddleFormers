@@ -800,6 +800,7 @@ class Qwen3VLRotaryEmbedding(nn.Layer):
 
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = inv_freq
+        self.mrope_section = config.rope_parameters.get("mrope_section", [24, 20, 20])
 
     @staticmethod
     def compute_default_rope_parameters(
@@ -826,6 +827,24 @@ class Qwen3VLRotaryEmbedding(nn.Layer):
         inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
         return inv_freq, attention_factor
 
+    # todo 检查是否有问题 和 torch 实现一样
+    def apply_interleaved_mrope(self, freqs, mrope_section):
+        """Apply interleaved MRoPE to 3D rotary embeddings.
+        Reorganizes frequency layout from chunked [TTT...HHH...WWW] to
+        interleaved [THWTHWTHW...TT], preserving frequency continuity.
+        args:
+            x: (3, bs, seq_len, head_dim // 2)
+            mrope_section: (3,)
+        returns:
+            x_t: (bs, seq_len, head_dim // 2)
+        """
+        freqs_t = freqs[0]  # just overwrite the first dimension T
+        for dim, offset in enumerate((1, 2), start=1):  # H, W
+            length = mrope_section[dim] * 3
+            idx = slice(offset, length, 3)
+            freqs_t[..., idx] = freqs[dim, ..., idx]
+        return freqs_t
+
     def forward(self, x, position_ids):
         # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
         # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
@@ -842,6 +861,7 @@ class Qwen3VLRotaryEmbedding(nn.Layer):
             position_ids_expanded = position_ids.unsqueeze(2).cast(paddle.float32)
 
             freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 1, 3, 2])
+            freqs = self.apply_interleaved_mrope(freqs, self.mrope_section)
             emb = paddle.cat((freqs, freqs), axis=-1)
             cos = paddle.cos(emb) * self.attention_scaling
             sin = paddle.sin(emb) * self.attention_scaling
@@ -853,28 +873,16 @@ class Qwen2MLP(MLP):
     pass
 
 
-def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim=1):
-    """Applies Rotary Position Embedding with Multimodal Sections to the query and key tensors (https://qwenlm.github.io/blog/qwen2-vl/).
-
-    Explanation:
-        Multimodal 3D rotary position embedding is an extension to 1D rotary position embedding. The input embedding
-        sequence contains vision (images / videos) embedding and text embedding or just contains text embedding. For
-        vision embedding part, we apply rotary position embedding on temporal, height and width dimension separately.
-        Here we split the channel dimension to 3 chunks for the temporal, height and width rotary position embedding.
-        For text embedding part, we just apply 1D rotary position embedding. The three rotary position index (temporal,
-        height and width) of text embedding is always the same, so the text embedding rotary position embedding has no
-        difference with modern LLMs.
+def apply_multimodal_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
+    """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
-        q (`paddle.Tensor`): The query tensor.
-        k (`paddle.Tensor`): The key tensor.
-        cos (`paddle.Tensor`): The cosine part of the rotary embedding.
-        sin (`paddle.Tensor`): The sine part of the rotary embedding.
-        position_ids (`paddle.Tensor`):
-            The position indices of the tokens corresponding to the query and key tensors. For example, this can be
-            used to pass offsetted position ids when working with a KV-cache.
-        mrope_section(`List(int)`):
-            Multimodal rope section is for channel dimension of temporal, height and width in rope calculation.
+        q (`torch.Tensor`): The query tensor.
+        k (`torch.Tensor`): The key tensor.
+        cos (`torch.Tensor`): The cosine part of the rotary embedding.
+        sin (`torch.Tensor`): The sine part of the rotary embedding.
+        position_ids (`torch.Tensor`, *optional*):
+            Deprecated and unused.
         unsqueeze_dim (`int`, *optional*, defaults to 1):
             The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
             sin[position_ids] so that they can be properly broadcasted to the dimensions of q and k. For example, note
@@ -885,14 +893,8 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim
     Returns:
         `tuple(paddle.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
-    mrope_section = mrope_section * 2
-    cos = paddle.cat(x=[m[i % 3] for i, m in enumerate(cos.split(mrope_section, axis=-1))], axis=-1).unsqueeze(
-        axis=unsqueeze_dim
-    )
-    sin = paddle.cat(x=[m[i % 3] for i, m in enumerate(sin.split(mrope_section, axis=-1))], axis=-1).unsqueeze(
-        axis=unsqueeze_dim
-    )
-
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
@@ -1033,9 +1035,7 @@ class Qwen3VLAttention(nn.Layer):
         # value_states = value_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_multimodal_rotary_pos_emb(
-            query_states, key_states, cos, sin, self.config.rope_parameters["mrope_section"]
-        )
+        query_states, key_states = apply_multimodal_rotary_pos_emb(query_states, key_states, cos, sin)
 
         # [bs, num_head, seq_len, head_dim]
         if past_key_values is not None:

@@ -265,7 +265,6 @@ class Qwen3VLProcessor(ProcessorMixin):
         names_from_processor = list(
             dict.fromkeys(tokenizer_input_names + image_processor_input_names + video_processor_input_names)
         )
-        # Qwen3 移除了 second_per_grid_ts
         return names_from_processor
 
 
