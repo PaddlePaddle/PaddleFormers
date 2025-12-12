@@ -35,6 +35,8 @@ from paddle.distributed.utils.launch_utils import (
 )
 
 from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
+from paddleformers.transformers.auto.configuration import MODEL_NAMES_MAPPING
+from paddleformers.transformers.auto.modeling import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 from paddleformers.transformers.configuration_utils import PretrainedConfig
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils.env import CONFIG_NAME, LEGACY_CONFIG_NAME  # MODEL_HOME,
@@ -206,6 +208,17 @@ def check_two_model_parameter(first_model: PretrainedModel, second_model: Pretra
     assert diff.sum().item() == 0
 
 
+def get_values(model_mapping):
+    result = []
+    for model in model_mapping.values():
+        if isinstance(model, (list, tuple)):
+            result += list(model)
+        else:
+            result.append(model)
+
+    return result
+
+
 class ModelTesterMixin:
     model_tester = None
     base_model_class: Optional[Type[PretrainedModel]] = None
@@ -218,11 +231,12 @@ class ModelTesterMixin:
     test_tie_weights = False
     use_test_inputs_embeds = False
     use_test_model_name_list = True
+    test_all_params_have_gradient = True
     is_encoder_decoder = False
     has_attentions = True
     model_split_percents = [0.5, 0.7, 0.9]
 
-    def _prepare_for_class(self, inputs_dict, model_class):
+    def _prepare_for_class(self, inputs_dict, model_class, return_labels=False):
         inputs_dict = copy.deepcopy(inputs_dict)
         if model_class.__name__.endswith("ForMultipleChoice"):
             inputs_dict = {
@@ -231,6 +245,13 @@ class ModelTesterMixin:
                 else v
                 for k, v in inputs_dict.items()
             }
+
+        if return_labels:
+            if model_class.__name__ in get_values(MODEL_FOR_CAUSAL_LM_MAPPING_NAMES):
+                inputs_dict["labels"] = paddle.zeros(
+                    (self.model_tester.batch_size, self.model_tester.seq_length), dtype=paddle.int64
+                )
+
         return inputs_dict
 
     def _make_model_instance(self, config, model_class):
@@ -274,6 +295,16 @@ class ModelTesterMixin:
             else:
                 check_save_load(first, second)
 
+    def test_recompute_training_full_enable(self):
+        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+
+        for model_class in self.all_model_classes:
+            config.recompute = True
+            config.recompute_granularity = "full"
+            model = self._make_model_instance(config, model_class)
+            self.assertTrue(model.config.recompute)
+            self.assertEqual(model.config.recompute_granularity, "full")
+
     def test_determinism(self):
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
 
@@ -298,6 +329,103 @@ class ModelTesterMixin:
             else:
                 check_determinism(first, second)
 
+    def check_recompute_training(self, recompute_granularity="full", recompute_use_reentrant=True):
+        if not self.model_tester.is_training:
+            self.skipTest(reason="ModelTester is not configured to run training tests")
+
+        for model_class in self.all_model_classes:
+            with self.subTest(model_class.__name__):
+                if model_class.__name__ in [
+                    *get_values(MODEL_NAMES_MAPPING),
+                ]:
+                    continue
+
+                config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+
+                config.use_cache = False
+
+                # make sure that test runs are consistent by disabling dropout
+                #
+                # Note: attention_probs_dropout_prob seem to influence classifier.bias in BertForMultipleChoice
+                # (and other Bert derived models). Sometimes classifier.bias is None when
+                # attention_probs_dropout_prob > 0. This might indicate a bug somewhere.
+                if hasattr(config, "hidden_dropout_prob"):
+                    config.hidden_dropout_prob = 0.0
+                if hasattr(config, "attention_probs_dropout_prob"):
+                    config.attention_probs_dropout_prob = 0.0
+
+                inputs = self._prepare_for_class(inputs_dict, model_class, return_labels=True)
+                inputs["return_dict"] = True
+
+                paddle.seed(0)
+                model = model_class(config)
+                model.train()
+
+                # unfreeze additional layers
+                for p in model.parameters():
+                    p.stop_gradient = False
+
+                # do a non-recompute run, so we can compare the set of non-zero gradients later. we skip None
+                # grads here to collect a reference set of modules that have non-zero gradients (to filter layers like
+                # MoE that drop out parts of the model).
+                optimizer = paddle.optimizer.SGD(learning_rate=0.01, parameters=model.parameters())
+                paddle.seed(0)
+                loss = model(**inputs).loss
+                if isinstance(loss, (list, tuple)):
+                    loss = loss[0]
+                loss.backward()
+                grad_expected_params = [(n, p) for n, p in model.named_parameters() if p.grad is not None]
+                non_zero_grads_normal = {n for n, p in grad_expected_params if p.grad.abs().sum() > 0}
+
+                # reset all gradients to zero for the comparison with the recompute run
+                optimizer.clear_grad()
+
+                # now enable recompute and compare the gradients
+                model.config.recompute = True
+                model.config.recompute_granularity = recompute_granularity
+                model.config.recompute_use_reentrant = recompute_use_reentrant
+
+                optimizer = paddle.optimizer.SGD(learning_rate=0.01, parameters=model.parameters())
+                paddle.seed(0)
+                loss = model(**inputs).loss
+                if isinstance(loss, (list, tuple)):
+                    loss = loss[0]
+                loss.backward()
+                optimizer.step()
+
+                # check that all the parameters that had non-zero gradients before, have non-zero grads with gradient
+                # checkpointing. divergence indicates a different forward-pass environment that needs special handling.
+                non_zero_grads_gradcp = {n for n, p in grad_expected_params if p.grad.abs().sum() > 0}
+                self.assertEqual(non_zero_grads_gradcp, non_zero_grads_normal)
+
+                if self.test_all_params_have_gradient:
+                    for k, v in model.named_parameters():
+                        if v.requires_grad and v.grad is None:
+                            if "expert" in k:
+                                print(
+                                    f"None for {k}, Probaby running a MOE, make sure grad is not NONE on EVERY layer. At LEAST 1 of the expert layer should have grads!"
+                                )
+                            else:
+                                with self.subTest(f"{k}"):
+                                    self.assertTrue(
+                                        v.grad is not None, f"{k} in {model_class.__name__} has no gradient!"
+                                    )
+
+    def test_recompute_training_full(self):
+        self.check_recompute_training(recompute_granularity="full")
+
+    def test_recompute_training_full_attn(self):
+        self.check_recompute_training(recompute_granularity="full_attn")
+
+    def test_recompute_training_core_attn(self):
+        self.check_recompute_training(recompute_granularity="core_attn")
+
+    def test_recompute_training_use_reentrant(self):
+        self.check_recompute_training(recompute_use_reentrant=True)
+
+    def test_recompute_training_use_reentrant_false(self):
+        self.check_recompute_training(recompute_use_reentrant=False)
+
     def test_forward_signature(self):
         config, _ = self.model_tester.prepare_config_and_inputs_for_common()
 
@@ -309,10 +437,25 @@ class ModelTesterMixin:
             expected_arg_names = ["input_ids"]
             self.assertListEqual(arg_names[:1], expected_arg_names)
 
-    @unittest.skip("Not implemented yet")
     def test_training(self):
         # TODO(guosheng): add more tests for training if loss is implemented
-        pass
+        if not self.model_tester.is_training:
+            self.skipTest(reason="ModelTester is not configured to run training tests")
+
+        for model_class in self.all_model_classes:
+            config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+
+            if model_class.__name__ in [*get_values(MODEL_NAMES_MAPPING)]:
+                continue
+
+            model = model_class(config)
+            model.train()
+            inputs = self._prepare_for_class(inputs_dict, model_class, return_labels=True)
+            inputs["return_dict"] = True
+            loss = model(**inputs).loss
+            if isinstance(loss, (list, tuple)):
+                loss = loss[0]
+            loss.backward()
 
     @unittest.skip("Not implemented yet")
     def test_training_gradient_checkpointing(self):
