@@ -444,6 +444,10 @@ class TrainingArguments:
             whether to run distributed training in auto parallel mode.
         use_intermediate_api (`bool`, *optional*, defaults to `True`):
             whether to use auto_parallel intermediate API if `enable_auto_parallel=True`.
+
+        use_cache (`bool`, *optional*, defaults to `False`):
+            Whether or not to enable cache for the model. For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`.
+
     """
 
     output_dir: str = field(
@@ -1226,6 +1230,13 @@ class TrainingArguments:
     use_intermediate_api: bool = field(
         default=True,
         metadata={"help": "whether to use auto_parallel intermediate API."},
+    )
+
+    use_cache: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether or not to use cache for the model For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`."
+        },
     )
 
     def __post_init__(self):

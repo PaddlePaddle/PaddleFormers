@@ -30,6 +30,7 @@ import os
 import random
 import threading
 import time
+from collections import namedtuple
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
@@ -51,7 +52,7 @@ from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
 from transformers.tokenization_utils_base import BatchEncoding
 
-from ..ops import Topology
+# from ..ops import Topology
 from ..trainer.argparser import strtobool
 from ..transformers.model_utils import replace_name_and_gen_index, save_full_param
 from ..utils.env import PREFIX_CHECKPOINT_DIR, _re_checkpoint  # noqa for compatibility
@@ -96,6 +97,74 @@ def log_trainer_start():
         start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
         logger.info(f"The Training Main Process Started Successfully. time: {start_time}, pid: {os.getpid()}")
         os.environ["MAIN_PROCESS_STARTED"] = "1"
+
+
+GroupInfo = namedtuple("GroupInfo", ["size", "rank", "world"])
+
+
+class Topology:
+    def __init__(
+        self,
+        device_rank,
+        world_size,
+        dp_degree=None,
+        pp_degree=1,
+        sharding_degree=1,
+        mp_degree=1,
+        sep_degree=1,
+        order=["dp", "pp", "sharding", "mp", "sep"],
+    ):
+        assert set(order) == {"dp", "pp", "sharding", "mp", "sep"}, f"Illegal order : {order}"
+        self.order = order
+
+        degree_map = {
+            "dp": dp_degree,
+            "pp": pp_degree,
+            "sharding": sharding_degree,
+            "mp": mp_degree,
+            "sep": sep_degree,
+        }
+        shape = [degree_map[key] for key in self.order]
+
+        arr = np.arange(0, dp_degree * pp_degree * sharding_degree * mp_degree * sep_degree).reshape(shape)
+        ranks = [rank[0] for rank in np.where(arr == device_rank)]
+
+        self.world = GroupInfo(size=world_size, rank=device_rank, world=list(range(0, world_size)))
+        worlds = []
+        for i in range(len(ranks)):
+            indexes = tuple(ranks[:i] + [slice(None)] + ranks[(i + 1) :])
+            worlds.append(arr[indexes])
+
+        for i, key in enumerate(self.order):
+            if key == "dp":
+                self.dp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "pp":
+                self.pp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "sharding":
+                self.sharding_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "mp":
+                self.mp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "sep":
+                self.sep_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+
+        self.is_last = self.pp_info.rank == self.pp_info.size - 1
+
+        data_arr = np.arange(0, dp_degree * sharding_degree).reshape([dp_degree, sharding_degree])
+        for i, key in enumerate(self.order):
+            if key != "dp" and key != "sharding":
+                data_arr = np.expand_dims(data_arr, axis=i).repeat(degree_map[key], axis=i)
+
+        self.data_info = GroupInfo(
+            size=int(self.dp_info.size * self.sharding_info.size),
+            rank=int(self.dp_info.rank * self.sharding_info.size + self.sharding_info.rank),
+            world=data_arr.reshape(-1).tolist(),
+        )
+
+        assert self.data_info.world[device_rank] == self.data_info.rank, "Data rank calculate error!"
+        self.data_inner_times = self.world.size // self.data_info.size
+
+    def __repr__(self):
+        return f"dp_info:\n\t {self.dp_info}, \npp_info:\n\t {self.pp_info}, \nsharding_info:\n\t {self.sharding_info}, \nmp_info:\n\t {self.mp_info}, \nsep_info:\n\t {self.sep_info}, \ndata_info:\n\t {self.data_info}, \norder:\n\t {self.order}"
 
 
 def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):

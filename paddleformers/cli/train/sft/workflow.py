@@ -272,7 +272,6 @@ def run_sft(
         if training_args.pipeline_model_parallel_size > 1:
             if data_args.eval_with_do_generation and training_args.do_eval:
                 raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
-
             model_class = AutoModelForCausalLMPipe
 
     if model_args.continue_training and not training_args.autotuner_benchmark:
@@ -559,7 +558,8 @@ def create_peft_model(model_args, training_args, dtype, model):
             model = LoRAModel(model, lora_config)
         else:
             model = LoRAModel.from_pretrained(model=model, lora_path=model_args.lora_path)
-
+        if hasattr(model, "_set_pipeline_name_mapping"):
+            model._set_pipeline_name_mapping()
         model.print_trainable_parameters()
 
     return model

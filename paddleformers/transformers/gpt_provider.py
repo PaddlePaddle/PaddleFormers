@@ -150,7 +150,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
             GPTModel: Configured PaddleFleet GPT model instance
         """
         assert HAS_PADDLEFLEET
-        vp_size = self.virtual_pipeline_model_parallel_size
+        vp_size = self.virtual_pipeline_model_parallel_size > 1
         is_pipeline_asymmetric = getattr(self, "account_for_embedding_in_pipeline_split", False) or getattr(
             self, "account_for_loss_in_pipeline_split", False
         )
@@ -184,7 +184,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         """
 
         with model_init_device_context():
-            model = gpt_builder(self, num_stages=1)
+            model = gpt_builder(self, num_stages=1, seg_method="layer:TransformerLayer")
 
         return model
 
