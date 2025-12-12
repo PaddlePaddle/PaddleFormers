@@ -41,6 +41,7 @@ except ImportError:
     get_static_model_on_pdc = None
 
 from config import get_config
+from model_config import ModelConfig
 from models.ernie import ErnieMoEConfig
 from models.ernie.modeling_moe import ErnieMoEForCausalLM
 from models.ernie.modeling_pp import ErnieMoEForCausalLMPipe
@@ -64,7 +65,6 @@ from paddleformers.data.causal_dataset import (
 from paddleformers.datasets.finetuning import collate_fn
 from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
 from paddleformers.trainer import TrainingArguments
-from paddleformers.trl import ModelConfig
 
 try:
     from paddleformers.trainer.trainer_utils import log_trainer_start

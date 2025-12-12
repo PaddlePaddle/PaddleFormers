@@ -47,8 +47,6 @@ from paddleformers.transformers import (
     AutoTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
-from paddleformers.trl import DPOTrainer
-from paddleformers.trl.llm_utils import get_lora_target_modules
 from paddleformers.utils.log import logger
 
 from ...hparams import (
@@ -57,8 +55,10 @@ from ...hparams import (
     GeneratingArguments,
     ModelArguments,
 )
+from ...utils.llm_utils import get_lora_target_modules
 from .dpo_argument import DPOConfig
 from .dpo_estimate_training import dpo_estimate_training
+from .dpo_trainer import DPOTrainer
 
 
 def run_dpo(
