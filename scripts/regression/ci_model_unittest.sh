@@ -27,12 +27,14 @@ AGILE_COMPILE_BRANCH=$3
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
-    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
-    # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
-    python setup.py bdist_wheel > /dev/null
-    uv pip install dist/p****.whl --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
+    python -m pip install -r requirements.txt
+    python -m pip install -r requirements-dev.txt
+    python -m pip install -r tests/requirements.txt
+    python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
+    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off --force-reinstall
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    uv pip install -r tests/requirements.txt --system -i https://pypi.tuna.tsinghua.edu.cn/simple --index-strategy unsafe-best-match
+    python setup.py bdist_wheel > /dev/null
+    python -m pip install  dist/p****.whl
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
@@ -74,27 +76,48 @@ print_info() {
 }
 
 get_diff_TO_case(){
-export FLAGS_enable_CI=false
-if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
-    # Scheduled Regression Test
-    FLAGS_enable_CI=true
-else
-    for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
-        ext="${file_name##*.}"
-        echo "file_name: ${file_name}, ext: ${file_name##*.}"
-        
-        if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
-            continue
-        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
-            continue
-        else
-            FLAGS_enable_CI=true
+models=""
+FLAGS_enable_CI=false
+TRANS_MODEL_DIR="paddleformers/transformers"
+TRAINER_DIR="paddleformers/trainer"
+CLI_DIR="paddleformers/cli"
+examples_DIR="examples/congfig"
+
+for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $NF}'`; do
+    echo "Checking file: $file_name"
+    
+    if [[ -f "$file_name" && "$file_name" =~ \.(py|python)$ ]]; then
+        echo "Detected changed Python file: $file_name"
+        FLAGS_enable_CI=true
+    fi
+
+    # check modified models files
+    if [[ "$file_name" == ${TRANS_MODEL_DIR}/* ]]; then
+        model_name=$(echo "$file_name" | awk -F'/' '{print $3}')
+        if [[ "$models" == "" ]]; then
+            models="$model_name"
+        elif [[ ! ",$models," =~ ",$model_name," ]]; then
+            models=${models:+$models,}$model_name
         fi
-    done
+        FLAGS_enable_CI=true
+        continue
+    fi
+    
+    # check modified files which need to run model ci
+    if [[ "$file_name" == ${TRAINER_DIR}/* ]] || [[ "$file_name" == ${CLI_DIR}/* ]] ||  [[ "$file_name" == ${examples_DIR}/* ]]; then
+        models="glm_moe"
+        FLAGS_enable_CI=true
+        continue
+    fi     
+done
+
+if [[ "$models" == "" ]]; then
+    FLAGS_enable_CI=false 
 fi
 }
-
 get_diff_TO_case
+echo "models: $models"
+echo "FLAGS_enable_CI: $FLAGS_enable_CI"
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     install_requirements
@@ -112,9 +135,10 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     python -c "import paddle; print(paddle.device.device_count())"
     export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export FLAGS_tcp_store_using_libuv=0
-    PYTHONPATH=$(pwd) \
-    COVERAGE_SOURCE=paddleformers \
-    python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
+    export PYTHONPATH=$(pwd)
+    export COVERAGE_SOURCE=paddleformers
+    export PF_HOME=/home/models/
+    python -m pytest -s -v --models=$models ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
 
