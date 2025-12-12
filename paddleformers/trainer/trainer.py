@@ -106,7 +106,7 @@ from ..data import (
     default_data_collator,
     init_dataloader_comm_group,
 )
-from ..peft import LoKrModel, LoRAModel, PrefixModelForCausalLM, ReFTModel, VeRAModel
+from ..peft import LoRAModel
 from ..peft.lora import QuantizationLoRABaseLinear
 from ..quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
@@ -143,7 +143,6 @@ from ..utils import empty_device_cache
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     EMA_STATE_DIC,
-    LOKR_WEIGHTS_NAME,
     LORA_WEIGHTS_NAME,
     MASTER_WEIGHT_DIC,
     MODEL_META_NAME,
@@ -156,7 +155,6 @@ from ..utils.env import (
     PADDLE_WEIGHTS_NAME,
     PREFIX_CHECKPOINT_DIR,
     PREFIX_HF_CHECKPOINT_DIR,
-    PREFIX_WEIGHTS_NAME,
     SAFE_MASTER_WEIGHTS_INDEX_NAME,
     SAFE_PEFT_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_INDEX_NAME,
@@ -164,7 +162,6 @@ from ..utils.env import (
     SCHEDULER_NAME,
     TRAINER_STATE_NAME,
     TRAINING_ARGS_NAME,
-    VERA_WEIGHTS_NAME,
 )
 from ..utils.fault_tolerance import LOSS_INF_ERROR, LOSS_NAN_ERROR
 from ..utils.import_utils import is_datasets_available, is_paddle_cuda_available
@@ -570,13 +567,7 @@ class Trainer:
         if train_dataset is not None and not isinstance(train_dataset, collections.abc.Sized) and args.max_steps <= 0:
             raise ValueError("train_dataset does not implement __len__, max_steps has to be specified")
 
-        if (
-            isinstance(self.model, LoRAModel)
-            or isinstance(self.model, PrefixModelForCausalLM)
-            or isinstance(self.model, VeRAModel)
-            or isinstance(self.model, LoKrModel)
-            or isinstance(self.model, ReFTModel)
-        ):
+        if isinstance(self.model, LoRAModel):
             if (
                 self.args.save_checkpoint_format == "unified_checkpoint"
                 and "skip_save_model_weight" in self.args.unified_checkpoint_config
@@ -731,19 +722,6 @@ class Trainer:
                     weights_file = os.path.join(resume_from_checkpoint, LORA_WEIGHTS_NAME)
                     if self.model.lora_config.tensor_model_parallel_size > 1:
                         convert_tp = True
-            elif isinstance(self.model, PrefixModelForCausalLM):
-                weights_file = os.path.join(resume_from_checkpoint, PREFIX_WEIGHTS_NAME)
-                if self.model.prefix_config.tensor_model_parallel_size > 1:
-                    convert_tp = True
-            elif isinstance(self.model, VeRAModel):
-                weights_file = os.path.join(resume_from_checkpoint, VERA_WEIGHTS_NAME)
-            elif isinstance(self.model, LoKrModel):
-                weights_file = os.path.join(resume_from_checkpoint, LOKR_WEIGHTS_NAME)
-            elif isinstance(self.model, ReFTModel):
-                self.model.from_pretrained(
-                    resume_from_checkpoint, self.model.model, convert_from_hf=self.args.convert_from_hf
-                )
-                return
 
             if self.args.dataset_rank == 0:
                 logger.info(f"Loading model from {resume_from_checkpoint} .")
@@ -868,13 +846,7 @@ class Trainer:
                         self.runtime_timer.stop()
                         return
 
-            if (
-                isinstance(self.model, LoRAModel)
-                or isinstance(self.model, PrefixModelForCausalLM)
-                or isinstance(self.model, VeRAModel)
-                or isinstance(self.model, LoKrModel)
-                or isinstance(self.model, ReFTModel)
-            ):
+            if isinstance(self.model, LoRAModel):
                 self._load_from_peft_checkpoint(resume_from_checkpoint)
                 if isinstance(self.model, LoRAModel) and self.model.lora_config.loraga:
                     self.model.reinit_base_model = True
@@ -2207,7 +2179,7 @@ class Trainer:
                 logger.info(
                     f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric})."
                 )
-                if isinstance(self.model, LoRAModel) or isinstance(self.model, PrefixModelForCausalLM):
+                if isinstance(self.model, LoRAModel):
                     self._load_best_model_from_peft_checkpoint()
                 else:
                     if self.args.load_checkpoint_format == "unified_checkpoint":
@@ -2281,11 +2253,6 @@ class Trainer:
                 best_model_path = os.path.join(self.state.best_model_checkpoint, LORA_WEIGHTS_NAME)
                 if self.model.lora_config.tensor_model_parallel_size > 1:
                     convert_tp = True
-
-        elif isinstance(self.model, PrefixModelForCausalLM):
-            best_model_path = os.path.join(self.state.best_model_checkpoint, PREFIX_WEIGHTS_NAME)
-            if self.model.prefix_config.tensor_model_parallel_size > 1:
-                convert_tp = True
 
         if os.path.exists(best_model_path):
             # We load the model state dict on the CPU to avoid an OOM error.
@@ -3023,47 +2990,6 @@ class Trainer:
 
             return model
 
-        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
-            prepare_pipeline_inputs_func = (
-                model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
-            )
-            model = paddlefleet_dist_model.distributed_model(model)
-            if prepare_pipeline_inputs_func is not None:
-                model._prepare_pipeline_inputs_func = prepare_pipeline_inputs_func
-            else:
-
-                def _prepare_pipeline_inputs_func(inputs):
-                    first_stage_keys = ["input_ids", "attention_mask", "position_ids"]
-                    last_stage_keys = ["labels"]
-
-                    def get_expected_keys(inputs, keys):
-                        ret = tuple([inputs.pop(k) for k in keys if k in inputs])
-                        if len(ret) == 1:
-                            ret = ret[0]
-                        return ret
-
-                    if type(inputs) is dict or type(inputs) is OrderedDict:
-                        return [
-                            get_expected_keys(inputs, first_stage_keys),
-                            get_expected_keys(inputs, last_stage_keys),
-                        ]
-
-                    keys = list(inputs[0].keys())
-                    inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
-                    first_stage_inputs_batch = inputs_batch
-                    last_stage_inputs = first_stage_inputs_batch.pop("labels")
-                    outputs = (
-                        first_stage_inputs_batch,
-                        last_stage_inputs,
-                    )
-                    return outputs
-
-                logger.warning(
-                    "Using default prepare pipeline inputs func, only support input_ids and labels as inputs."
-                )
-                model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
-            return model
-
         # train/eval could be run multiple-times - if already wrapped, don't re-wrap it again
         if unwrap_model(model) is not model:
             return model
@@ -3112,7 +3038,7 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
-        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
+        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
             in_pipeline_parallel_mode = True
         else:
             in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
@@ -3155,7 +3081,10 @@ class Trainer:
             )
             if isinstance(model, LoRAModel):
                 model = model.model
-            model = fleet.distributed_model(model)
+            if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+                model = paddlefleet_dist_model.distributed_model(model)
+            else:
+                model = fleet.distributed_model(model)
             if prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = prepare_pipeline_inputs_func
             else:
@@ -3178,6 +3107,14 @@ class Trainer:
 
                     keys = list(inputs[0].keys())
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
+                    if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
+                        first_stage_inputs_batch = inputs_batch
+                        last_stage_inputs = first_stage_inputs_batch.pop("labels")
+                        outputs = (
+                            first_stage_inputs_batch,
+                            last_stage_inputs,
+                        )
+                        return outputs
                     return [
                         get_expected_keys(inputs_batch, first_stage_keys),
                         get_expected_keys(inputs_batch, last_stage_keys),
@@ -3655,7 +3592,7 @@ class Trainer:
                 self.model.quantized or self.args.pipeline_model_parallel_size > 1
             ):
                 self.save_model(output_dir)
-            elif isinstance(self.model, LoRAModel) or isinstance(self.model, PrefixModelForCausalLM):
+            elif isinstance(self.model, LoRAModel):
                 self.save_model(output_dir, True)
             else:
                 self.save_model(output_dir)
@@ -4057,13 +3994,7 @@ class Trainer:
                 return
             merge_tensor_parallel = merge_tensor_parallel and self.args.use_hybrid_parallel
             # peft model
-            if (
-                isinstance(self.model, LoRAModel)
-                or isinstance(self.model, PrefixModelForCausalLM)
-                or isinstance(self.model, VeRAModel)
-                or isinstance(self.model, LoKrModel)
-                or isinstance(self.model, ReFTModel)
-            ):
+            if isinstance(self.model, LoRAModel):
                 self.model.save_pretrained(
                     output_dir,
                     variant=self.args.weight_name_suffix,
@@ -4912,7 +4843,7 @@ class Trainer:
 
     def is_unified_checkpoint(self, resume_from_checkpoint, safe_serialization=True):
         is_unified_checkpoint_type = False
-        if isinstance(self.model, LoRAModel) or isinstance(self.model, PrefixModelForCausalLM):
+        if isinstance(self.model, LoRAModel):
             weights_index_name = (
                 PADDLE_PEFT_WEIGHTS_INDEX_NAME if not safe_serialization else SAFE_PEFT_WEIGHTS_INDEX_NAME
             )

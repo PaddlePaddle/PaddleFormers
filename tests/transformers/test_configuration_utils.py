@@ -18,7 +18,7 @@ import tempfile
 import unittest
 from typing import Dict, Optional
 
-from paddleformers.transformers import BertConfig
+from paddleformers.transformers import Qwen3Config
 from paddleformers.transformers.configuration_utils import (
     PretrainedConfig,
     attribute_map,
@@ -131,57 +131,57 @@ class ConfigurationUtilsTest(unittest.TestCase):
 
 
 class StandardConfigMappingTest(unittest.TestCase):
-    def test_bert_config_mapping(self):
-        # create new fake-bert class to prevent static-attributed modified by this test
-        class FakeBertConfig(BertConfig):
+    def test_qwen3_config_mapping(self):
+        # create new fake-qwen3 class to prevent static-attributed modified by this test
+        class FakeQwen3Config(Qwen3Config):
             pass
 
-        config = FakeBertConfig.from_pretrained("Paddleformers/tiny-random-bert")
+        config = FakeQwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3")
         hidden_size = config.hidden_size
 
-        FakeBertConfig.attribute_map = {"fake_field": "hidden_size"}
+        FakeQwen3Config.attribute_map = {"fake_field": "hidden_size"}
 
-        loaded_config = FakeBertConfig.from_pretrained("Paddleformers/tiny-random-bert")
+        loaded_config = FakeQwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3")
         fake_field = loaded_config.fake_field
         self.assertEqual(fake_field, hidden_size)
 
     @slow
     def test_from_pretrained_cache_dir(self):
-        model_id = "Paddleformers/tiny-random-bert"
+        model_id = "Paddleformers/tiny-random-qwen3"
         with tempfile.TemporaryDirectory() as tempdir:
-            BertConfig.from_pretrained(model_id, cache_dir=tempdir)
+            Qwen3Config.from_pretrained(model_id, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
 
     def test_load_from_hf(self):
         """test load config from hf"""
-        config = BertConfig.from_pretrained("Baicai003/tiny-bert", download_hub="huggingface")
-        self.assertEqual(config.hidden_size, 16)
+        config = Qwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3", download_hub="huggingface")
+        self.assertEqual(config.hidden_size, 4096)
 
         with tempfile.TemporaryDirectory() as tempdir:
             config.save_pretrained(tempdir)
 
             self.assertTrue(os.path.exists(os.path.join(tempdir, CONFIG_NAME)))
 
-            loaded_config = BertConfig.from_pretrained(tempdir)
-            self.assertEqual(loaded_config.hidden_size, 16)
+            loaded_config = Qwen3Config.from_pretrained(tempdir)
+            self.assertEqual(loaded_config.hidden_size, 4096)
 
     def test_config_mapping(self):
-        # create new fake-bert class to prevent static-attributed modified by this test
-        class FakeBertConfig(BertConfig):
+        # create new fake-qwen3 class to prevent static-attributed modified by this test
+        class FakeQwen3Config(Qwen3Config):
             pass
 
         with tempfile.TemporaryDirectory() as tempdir:
-            config = FakeBertConfig.from_pretrained("PaddleFormers/tiny-random-bert")
+            config = FakeQwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3")
             config.save_pretrained(tempdir)
 
             # rename `config.json` -> `model_config.json`
             shutil.move(os.path.join(tempdir, CONFIG_NAME), os.path.join(tempdir, LEGACY_CONFIG_NAME))
 
-            FakeBertConfig.attribute_map = {"fake_field": "hidden_size"}
+            FakeQwen3Config.attribute_map = {"fake_field": "hidden_size"}
 
-            loaded_config = FakeBertConfig.from_pretrained(tempdir)
+            loaded_config = FakeQwen3Config.from_pretrained(tempdir)
             self.assertEqual(loaded_config.fake_field, config.hidden_size)
 
 

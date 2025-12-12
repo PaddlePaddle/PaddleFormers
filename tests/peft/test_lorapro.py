@@ -26,7 +26,7 @@ import paddle
 from parameterized import parameterized
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
-from paddleformers.transformers import AutoModel, BertModel
+from paddleformers.transformers import AutoModelForCausalLM, Qwen3ForCausalLM
 from paddleformers.utils.optimizer import AdamWLoRAPro
 
 
@@ -100,7 +100,7 @@ class TestLoRAProModel(unittest.TestCase):
             head_dim=2,
             lorapro=True,
         )
-        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
+        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
         model.eval()
         original_results_1 = model(input_ids)
@@ -110,7 +110,7 @@ class TestLoRAProModel(unittest.TestCase):
         original_results_2 = restored_model(input_ids)
         self.assertIsNotNone(original_results_1)
         self.assertIsNotNone(original_results_2)
-        self.assertIsInstance(restored_model, BertModel)
+        self.assertIsInstance(restored_model, Qwen3ForCausalLM)
         self.assertTrue(paddle.allclose(original_results_1[0], original_results_2[0]))
 
     @parameterized.expand([(None,), ("all",), ("lora",)])
@@ -125,10 +125,9 @@ class TestLoRAProModel(unittest.TestCase):
             lorapro=True,
         )
         # turn off plm dropout for to test train vs test
-        model = AutoModel.from_pretrained(
-            "Paddleformers/tiny-random-bert",
-            hidden_dropout_prob=0,
-            attention_probs_dropout_prob=0,
+        model = AutoModelForCausalLM.from_pretrained(
+            "Paddleformers/tiny-random-qwen3",
+            convert_from_hf=True,
         )
         lorapro_model = LoRAModel(model, lorapro_config)
         lorapro_model.mark_only_lora_as_trainable()
@@ -158,7 +157,7 @@ class TestLoRAProModel(unittest.TestCase):
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
             lorapro_config = LoRAConfig(target_modules=[".*q_proj.*", ".*v_proj.*"], r=4, lora_alpha=8, lorapro=True)
-            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
+            model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
             lorapro_model = LoRAModel(model, lorapro_config)
             lorapro_model.eval()
             original_results = lorapro_model(input_ids)
@@ -186,7 +185,7 @@ class TestLoRAProModel(unittest.TestCase):
             lorapro=True,
         )
 
-        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
+        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
         lorapro_model = LoRAModel(model, lorapro_config)
         lorapro_model.mark_only_lora_as_trainable()
 
@@ -216,9 +215,9 @@ class TestLoRAProModel(unittest.TestCase):
 
     def test_lorapro_module_raise_exception(self):
         lorapro_config = LoRAConfig(
-            target_modules=[".*norm1.*"], r=4, lora_alpha=8, enable_lora_list=None, lorapro=True
+            target_modules=[".*norm.*"], r=4, lora_alpha=8, enable_lora_list=None, lorapro=True
         )
-        model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
+        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
         with self.assertRaises(ValueError):
             LoRAModel(model, lorapro_config)
 
