@@ -26,8 +26,6 @@ defaults:
   run:
     shell: bash
 
-
-
 jobs:
   integration-test-H20-single-card:
     name: Integration test (H20, single card)
@@ -60,6 +58,7 @@ jobs:
             -e BRANCH \
             -e PR_ID \
             -e COMMIT_ID \
+            -e work_dir \
             -e PADDLE_ROOT \
             -e ci_scripts \
             -e CACHE_DIR \
@@ -143,16 +142,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          mkdir -p /workspace/PaddleFleet/coveragedata-single
-          export COVERAGE_FILE=/workspace/PaddleFleet/coveragedata-single/.coverage
-          export COVERAGE_RCFILE=/workspace/PaddleFleet/ci/.coveragerc
           bash -x PaddleFleet/ci/integration_test/glm45_single_card.sh
           glm45_single_card_exit_code=$?
-          ls -a /workspace/PaddleFleet/coveragedata-single
-          source /workspace/PaddleFleet/.venv/bin/activate
-          uv run coverage combine
-          uv run coverage xml -o /workspace/PaddleFleet/coveragedata-single/coverage.xml
-          uv run coverage report -m
           if [[ "$glm45_single_card_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 single-card.\033[0m"
             exit 1
@@ -166,16 +157,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          mkdir -p /workspace/PaddleFleet/coveragedata-qwen
-          export COVERAGE_FILE=/workspace/PaddleFleet/coveragedata-qwen/.coverage
-          export COVERAGE_RCFILE=/workspace/PaddleFleet/ci/.coveragerc
           bash -x PaddleFleet/ci/integration_test/qwen3_single_card.sh
           qwen3_single_card_exit_code=$?
-          ls -a /workspace/PaddleFleet/coveragedata-qwen
-          source /workspace/PaddleFleet/.venv/bin/activate
-          uv run coverage combine
-          uv run coverage xml -o /workspace/PaddleFleet/coveragedata-qwen/coverage.xml
-          uv run coverage report -m
           if [[ "$qwen3_single_card_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: Qwen3-30B-A3B single-card.\033[0m"
             exit 1
@@ -213,6 +196,7 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -e BRANCH \
             -e PR_ID \
+            -e work_dir \
             -e COMMIT_ID \
             -e PADDLE_ROOT \
             -e ci_scripts \
@@ -295,17 +279,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          mkdir -p /workspace/PaddleFleet/coveragedata-multi
-          export COVERAGE_FILE=/workspace/PaddleFleet/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/PaddleFleet/ci/.coveragerc
           bash -x PaddleFleet/ci/integration_test/glm45.sh
           glm45_exit_code=$?
-          ls -a /workspace/PaddleFleet/coveragedata-multi
-          source /workspace/PaddleFleet/.venv/bin/activate
-          uv run coverage --version
-          uv run coverage combine
-          uv run coverage xml -o /workspace/PaddleFleet/coveragedata-multi/coverage.xml
-          uv run coverage report -m
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
             exit 1
@@ -314,6 +289,117 @@ jobs:
           fi
           '
 
+      - name: Terminate and delete the container
+        if: ${{ always() }}
+        run: |
+          set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
+          docker rm -f ${{ env.container_name }}
+
+  integration-test-a100:
+    name: Integration test (A100)
+    runs-on:
+      group: Distribute
+    env:
+      PIP_CACHE_DIR: /root/.cache/pip
+      CACHE_DIR: /root/.cache
+      TASK: formers-fleet-CI-${{ github.event.pull_request.number }}-integration-test-A100
+    steps:
+      - name: Check docker image and run container
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker pull $docker_image
+          docker run -d -t --name ${container_name} --gpus all --shm-size=32G \
+            -v "/dev/shm:/dev/shm"  \
+            -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
+            -v ${{ github.workspace }}/../../../proxy:/root/proxy \
+            -v /ssd1/paddle-1/action_cache:/root/.cache \
+            -v ${{ github.workspace }}:/workspace \
+            -e BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e work_dir \
+            -e PADDLE_ROOT \
+            -e ci_scripts \
+            -e CACHE_DIR \
+            -e no_proxy \
+            -e CI_name \
+            -e PIP_CACHE_DIR \
+            -e GITHUB_SHA="${{ github.event.pull_request.head.sha }}" \
+            -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
+            -e GITHUB_BASE_SHA="${{ github.event.pull_request.base.sha }}" \
+            -e GITHUB_REPO_NAME="${{ github.repository }}" \
+            -e GITHUB_EVENT_NAME="${{ github.event_name }}" \
+            -e GITHUB_EVENT_PULL_REQUEST_NUMBER="${{ github.event.pull_request.number }}" \
+            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -w /workspace --network host ${docker_image}
+
+      - name: Install PaddleFleet
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          rm -rf * .[^.]*
+          source /root/proxy
+          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          cd PaddleFleet
+          git config --global --add safe.directory /workspace/PaddleFleet
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          mkdir -p /root/.cache/pip
+          pip cache dir
+          pip install --upgrade pip
+          echo "Install uv"
+          pip install uv
+          echo "uv sync"
+          uv sync --group ci > /dev/null
+          export UV_SKIP_WHEEL_FILENAME_CHECK=1
+          uv pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          '
+
+      - name: Install PaddleFormers
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          cd PaddleFormers
+          git config --global --add safe.directory /workspace/PaddleFormers
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          git pull --no-edit origin pull/${PR_ID}/head
+          source ../PaddleFleet/.venv/bin/activate
+          pip install -e .
+          '
+
+      - name: Proprocess for integration test
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          bash -x PaddleFleet/ci/integration_test/preprocess.sh
+          preprocess_exit_code=$?
+          if [[ "$preprocess_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mPreprocess failed.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mPreprocess succeeded.\033[0m"
+          fi
+          '
+
+      - name: Integration test (GLM4.5)
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          bash -x PaddleFleet/ci/integration_test/glm45_a100.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
+          fi
+          '
 
       - name: Terminate and delete the container
         if: ${{ always() }}
