@@ -32,7 +32,7 @@ class Qwen3VLProcessorKwargs(ProcessingKwargs, total=False):
             "padding": False,
             "return_mm_token_type_ids": False,
         },
-        "videos_kwargs": {"return_metadata": True},  # Qwen3 必须开启元数据返回
+        "videos_kwargs": {"return_metadata": True},
     }
 
 
@@ -73,7 +73,6 @@ class Qwen3VLProcessor(ProcessorMixin):
         )
         super().__init__(image_processor, tokenizer, video_processor, chat_template=chat_template)
 
-        # Qwen3 新增：Vision Start/End Token 初始化
         self.vision_start_token = (
             "<|vision_start|>" if not hasattr(tokenizer, "vision_start_token") else tokenizer.vision_start_token
         )
@@ -121,21 +120,16 @@ class Qwen3VLProcessor(ProcessorMixin):
             videos_inputs = self.video_processor(videos=videos, **output_kwargs["videos_kwargs"])
             video_grid_thw = videos_inputs["video_grid_thw"]
 
-            # Qwen3: 如果用户没有显式要求返回 metadata，这里将其 pop 出来用于内部计算，但不返回给最终结果
-            # 但如果 kwargs 里要求了 return_metadata，则保留
             if not kwargs.get("return_metadata"):
                 video_metadata = videos_inputs.pop("video_metadata")
             else:
                 video_metadata = videos_inputs["video_metadata"]
-
-            # 注意：Qwen3 移除了 second_per_grid_ts 的计算和返回
 
         if not isinstance(text, list):
             text = [text]
 
         text = text.copy()  # below lines change text in-place
 
-        # 1. Image 替换逻辑 (基本未变)
         if images is not None:
             merge_length = self.image_processor.merge_size**2
             index = 0
@@ -146,7 +140,6 @@ class Qwen3VLProcessor(ProcessorMixin):
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.image_token)
 
-        # 2. Video 替换逻辑 (大幅修改：增加时间戳和 vision start/end)
         if videos is not None:
             merge_length = self.video_processor.merge_size**2
             index = 0
@@ -156,31 +149,26 @@ class Qwen3VLProcessor(ProcessorMixin):
                     if metadata.fps is None:
                         metadata.fps = 24 if metadata.fps is None else metadata.fps
 
-                    # 计算时间戳
                     curr_timestamp = self._calculate_timestamps(
                         metadata.frames_indices,
                         metadata.fps,
                         self.video_processor.merge_size,
                     )
 
-                    # 构建复杂的 Video Placeholder 字符串
                     video_placeholder = ""
-                    # 视频帧数 (时间维度)
+
                     num_video_frames = video_grid_thw[index][0].item()
-                    # 每一帧对应的 spatial tokens 数量 (H*W / merge^2)
+
                     frame_seqlen = video_grid_thw[index][1:].prod() // merge_length
 
                     for frame_idx in range(num_video_frames):
                         curr_time = curr_timestamp[frame_idx]
-                        # 格式: <1.2 seconds><|vision_start|><|video_pad|>...<|video_pad|><|vision_end|>
-                        # 注意这里中间填充的是 placeholder，最后统一替换回 video_token
+
                         video_placeholder += f"<{curr_time:.1f} seconds>"
                         video_placeholder += (
                             self.vision_start_token + "<|placeholder|>" * frame_seqlen.item() + self.vision_end_token
                         )
 
-                    # 替换 text 中的 video token
-                    # 有些情况输入可能已经包含了 vision_start/end (例如 vllm)，这里做兼容处理
                     full_video_token = f"{self.vision_start_token}{self.video_token}{self.vision_end_token}"
                     if full_video_token in text[i]:
                         text[i] = text[i].replace(full_video_token, video_placeholder, 1)
@@ -188,7 +176,6 @@ class Qwen3VLProcessor(ProcessorMixin):
                         text[i] = text[i].replace(self.video_token, video_placeholder, 1)
                     index += 1
 
-                # 将 placeholder 替换回真正的 video token ID 对应的字符
                 text[i] = text[i].replace("<|placeholder|>", self.video_token)
 
         return_tensors = output_kwargs["text_kwargs"].pop("return_tensors", None)

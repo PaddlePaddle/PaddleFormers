@@ -1018,8 +1018,8 @@ class Qwen3VLAttention(nn.Layer):
 
         # apply qk_norm
         # todo 这里一定要确认形状是不是对了，并且 reshape 好像有问题，需要确认。这里的逻辑可能也有问题，特别是来会转换这两步
-        target_shape_q = [bsz, q_len, self.num_heads, self.head_dim]
-        target_shape_kv = [bsz, q_len, self.num_key_value_heads, self.head_dim]
+        target_shape_q = [bsz, q_len, -1, self.head_dim]
+        target_shape_kv = [bsz, q_len, -1, self.head_dim]
         query_states = query_states.reshape(shape=target_shape_q)
         key_states = key_states.reshape(shape=target_shape_kv)
         value_states = value_states.reshape(shape=target_shape_kv)
@@ -1057,7 +1057,6 @@ class Qwen3VLAttention(nn.Layer):
 
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
-        attn_output = attn_output.reshape([bsz, q_len, -1]).contiguous()
         attn_output = self.o_proj(attn_output)
         if not output_attentions:
             attn_weights = None
@@ -1905,7 +1904,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-        logits = self.lm_head(hidden_states[:, slice_indices, :])
+        logits = self.lm_head(hidden_states[..., slice_indices, :])
 
         loss = None
         if labels is not None:

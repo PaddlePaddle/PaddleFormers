@@ -223,14 +223,6 @@ class Qwen3VLVideoProcessor(BaseVideoProcessor):
         pixel_values_videos = paddle.cat(processed_videos, dim=0)
         video_grid_thw = paddle.to_tensor(processed_grids)
 
-        # pixel_values_videos_tensor = paddle.concat(processed_videos, axis=0)
-
-        # =========================================================================
-        # 核心修改 2: 显式转 Numpy + 显式构造 Return Dict
-        # =========================================================================
-        # pixel_values_videos = pixel_values_videos_tensor.numpy().astype("float32")
-        # video_grid_thw = np.array(processed_grids, dtype="int64")
-
         data = {
             "pixel_values_videos": pixel_values_videos,
             "video_grid_thw": video_grid_thw,
