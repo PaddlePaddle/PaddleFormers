@@ -3018,8 +3018,7 @@ class Trainer:
                     param.initialize()
 
             return model
-        if HAS_PADDLEFLEET and isinstance(model, LoRAModel):
-            model = model.model
+
         if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
             prepare_pipeline_inputs_func = (
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None

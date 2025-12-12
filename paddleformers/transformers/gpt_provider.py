@@ -184,7 +184,17 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         """
 
         with model_init_device_context():
-            model = gpt_builder(self, num_stages=1)
+            fleet_model = gpt_builder(self, num_stages=1, seg_method="layer:TransformerLayer")
+            # Convert original FleetGPTModel to our GPTModel to correctly inherit PretrainedModel methods
+            model = GPTModel.__new__(GPTModel)
+            # Manually copy all attributes
+            for attr_name in dir(fleet_model):
+                if not attr_name.startswith("__"):
+                    try:
+                        attr_value = getattr(fleet_model, attr_name)
+                        setattr(model, attr_name, attr_value)
+                    except:
+                        pass
 
         return model
 
