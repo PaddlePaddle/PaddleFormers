@@ -511,9 +511,10 @@ class DeepseekV3MoEFlexToken(MoEFlexTokenLayer):
 class DeepseekV3Attention(nn.Layer):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
-    def __init__(self, config: DeepseekV3Config):
+    def __init__(self, config: DeepseekV3Config, layer_idx: int):
         super().__init__()
         self.config = config
+        self.layer_idx = layer_idx
         self.attention_dropout = config.attention_dropout
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
@@ -782,7 +783,7 @@ class DeepseekV3DecoderLayer(nn.Layer):
         self.sequence_parallel = config.sequence_parallel
         self.hidden_size = config.hidden_size
 
-        self.self_attn = DeepseekV3Attention(config=config)
+        self.self_attn = DeepseekV3Attention(config=config, layer_idx=layer_idx)
 
         try:
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()

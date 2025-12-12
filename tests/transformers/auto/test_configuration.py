@@ -22,7 +22,7 @@ import unittest
 
 from paddleformers.transformers import AutoConfig
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
-from paddleformers.transformers.bert.configuration import BertConfig
+from paddleformers.transformers.qwen3.configuration import Qwen3Config
 from paddleformers.utils.env import CONFIG_NAME
 from tests.testing_utils import slow
 
@@ -31,9 +31,9 @@ from ...utils.test_module.custom_configuration import CustomConfig
 
 class AutoConfigTest(unittest.TestCase):
     def test_built_in_model_class_config(self):
-        config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-bert", download_hub="aistudio")
+        config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-qwen3", download_hub="aistudio")
         number = random.randint(0, 10000)
-        self.assertEqual(config.hidden_size, 32)
+        self.assertEqual(config.hidden_size, 128)
         config.hidden_size = number
 
         with tempfile.TemporaryDirectory() as tempdir:
@@ -77,7 +77,7 @@ class AutoConfigTest(unittest.TestCase):
 
     def test_load_from_legacy_config(self):
         number = random.randint(0, 10000)
-        legacy_config = {"init_class": "BertModel", "hidden_size": number}
+        legacy_config = {"init_class": "Qwen3Model", "hidden_size": number}
         with tempfile.TemporaryDirectory() as tempdir:
             with open(os.path.join(tempdir, AutoConfig.legacy_config_file), "w", encoding="utf-8") as f:
                 json.dump(legacy_config, f, ensure_ascii=False)
@@ -94,7 +94,7 @@ class AutoConfigTest(unittest.TestCase):
                 AutoConfig.register("model", CustomConfig)
             # Trying to register something existing in the PaddleFormers library will raise an error
             with self.assertRaises(ValueError):
-                AutoConfig.register("bert", BertConfig)
+                AutoConfig.register("qwen3", Qwen3Config)
 
             # Now that the config is registered, it can be used as any other config with the auto-API
             config = CustomConfig()
@@ -109,7 +109,7 @@ class AutoConfigTest(unittest.TestCase):
 
     @slow
     def test_from_pretrained_cache_dir(self):
-        model_id = "Paddleformers/tiny-random-bert"
+        model_id = "Paddleformers/tiny-random-qwen3"
         with tempfile.TemporaryDirectory() as tempdir:
             AutoConfig.from_pretrained(model_id, download_hub="aistudio", cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))

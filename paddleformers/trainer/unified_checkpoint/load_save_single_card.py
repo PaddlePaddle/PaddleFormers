@@ -19,7 +19,7 @@ import os
 
 import paddle
 
-from ...peft import LoRAModel, PrefixModelForCausalLM
+from ...peft import LoRAModel
 from ...transformers.conversion_utils import ConversionMixin
 from ...transformers.model_utils import (
     _load_state_dict_into_model,
@@ -72,7 +72,7 @@ def save_single_card_checkpoint(model_to_save, output_dir, save_to_hf=False):
         transpose_weight_keys = getattr(model_to_save, "transpose_weight_keys", None)
         state_dict = ConversionMixin.convert_transpose_selected_weights(state_dict, transpose_weight_keys)
 
-    if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
+    if isinstance(model_to_save, LoRAModel):
         weight_filename = "peft_model-00001-of-00001.safetensors"
         index_filename = SAFE_PEFT_WEIGHTS_INDEX_NAME
     else:
@@ -89,8 +89,6 @@ def save_single_card_checkpoint(model_to_save, output_dir, save_to_hf=False):
     sharded_index_json["weight_map"] = index_weight_file
     if isinstance(model_to_save, LoRAModel):
         sharded_index_json["type"] = "lora"
-    elif isinstance(model_to_save, PrefixModelForCausalLM):
-        sharded_index_json["type"] = "ptuning"
 
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, index_filename)
@@ -170,7 +168,7 @@ def save_single_card_optimizer(model, optimizer, output_dir):
 
 
 def load_single_card_checkpoint(model, resume_from_checkpoint: str, convert_from_hf=False):
-    if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
+    if isinstance(model, LoRAModel):
         index_filename = SAFE_PEFT_WEIGHTS_INDEX_NAME
     else:
         index_filename = SAFE_WEIGHTS_INDEX_NAME
