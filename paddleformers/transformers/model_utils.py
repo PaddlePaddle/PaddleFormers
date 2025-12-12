@@ -1149,7 +1149,7 @@ def save_full_param(
     itr: Iterator[tuple[str, Tensor]],
     save_dir: str,
     rank: int,
-    world_size: int,
+    moe_sharding_world_size: int,
     max_shard_size: str = "2GB",
     num_saver_ranks: int = 8,
 ) -> None:
@@ -1166,7 +1166,7 @@ def save_full_param(
         itr (Iterator): An iterator that yields (param_key, param_tensor).
         save_dir (str): The directory where shard files will be saved.
         rank (int): The rank of the current process.
-        world_size (int): The total number of processes.
+        moe_sharding_world_size (int): The total number of processes.
         max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
         num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
     """
@@ -1175,15 +1175,15 @@ def save_full_param(
 
     # 1. Non-saver ranks simply consume the iterator to stay in sync.
     if rank >= num_saver_ranks:
-        logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Consuming iterator for synchronization...")
+        logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Consuming iterator for synchronization...")
         for _ in itr:
             pass
-        logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Iterator consumption complete.")
+        logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Iterator consumption complete.")
         return
 
     max_shard_size_bytes = _parse_size(max_shard_size)
     logger.info(
-        f"[Rank {rank}/{world_size}] (Saver) Initializing save. "
+        f"[Rank {rank}/{moe_sharding_world_size}] (Saver) Initializing save. "
         f"Max shard size set to: {max_shard_size_bytes / 1024**3:.2f} GB"
     )
 
@@ -1203,7 +1203,7 @@ def save_full_param(
         save_path = os.path.join(save_dir, shard_filename)
 
         logger.info(
-            f"[Rank {rank}/{world_size}] Saving sub-shard {sub_shard_index}... "
+            f"[Rank {rank}/{moe_sharding_world_size}] Saving sub-shard {sub_shard_index}... "
             f"Size: {current_shard_size_bytes / 1024**2:.2f} MB, "
             f"Params: {len(current_shard_state_dict)}, "
             f"Path: {save_path}"
@@ -1216,7 +1216,7 @@ def save_full_param(
         current_shard_state_dict = {}
         current_shard_size_bytes = 0
 
-    logger.info(f"[Rank {rank}/{world_size}] Starting to process the weight iterator...")
+    logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Starting to process the weight iterator...")
 
     total_size = 0
 
@@ -1237,7 +1237,7 @@ def save_full_param(
     if use_dist:
         dist.barrier()
 
-    logger.info(f"[Rank {rank}/{world_size}] (Saver) All shards saved successfully.")
+    logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Saver) All shards saved successfully.")
     return total_size
 
 
