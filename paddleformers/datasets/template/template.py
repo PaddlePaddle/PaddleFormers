@@ -641,17 +641,15 @@ register_template(
 
 
 register_template(
-    name="ernie4_5_moe_vl",
+    name="ernie4_5_moe_vl_thinking",
     format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
-    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),
-    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
-    format_function=FunctionFormatter(slots=["{{content}}<|im_end|>\n"], tool_format="qwen"),
-    format_observation=StringFormatter(
-        slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n<|im_start|>assistant\n"]
-    ),
-    format_tools=ToolFormatter(tool_format="qwen"),
-    default_system="You are a helpful assistant.",
-    stop_words=["<|im_end|>"],
+    format_assistant=StringFormatter(slots=["{{content}}<|end_of_sentence|>"]),
+    format_system=StringFormatter(slots=["{{content}}\n"]),
+    format_function=FunctionFormatter(slots=["{{content}}\n<|end_of_sentence|>"], tool_format="ernie"),
+    format_observation=StringFormatter(slots=["User: <tool_output>\n{{content}}\n</tool_output>\n\nAssistant: "]),
+    format_tools=ToolFormatter(tool_format="ernie"),
+    format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
+    stop_words=["<|end_of_sentence|>"],
     replace_eos=True,
     mm_plugin=get_mm_plugin(name="qwen2_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
 )
