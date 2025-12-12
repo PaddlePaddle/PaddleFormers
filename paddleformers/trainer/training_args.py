@@ -1361,6 +1361,7 @@ class TrainingArguments:
 
         # use_hybrid_parallel
         if self.use_hybrid_parallel:
+
             if ShardingOption.OFFLOAD in self.sharding:
                 warnings.warn("`offload` is not supported NOW!")
 
@@ -1374,12 +1375,7 @@ class TrainingArguments:
             if not paddle.distributed.parallel.parallel_helper._is_parallel_ctx_initialized():
                 strategy = fleet.DistributedStrategy()
                 assert self.data_parallel_config == "", "data_parallle_config is not supported in hybrid parallel"
-                strategy.pipeline_configs = {
-                    "accumulate_steps": self.gradient_accumulation_steps,
-                    "micro_batch_size": self.per_device_train_batch_size,
-                }
-                logger.info(f"PP configs:{strategy.pipeline_configs}, use master_grad: {self.amp_master_grad}")
-                if self.pipeline_model_parallel_size > 1:
+                if self.pipeline_model_parallel_size > 1 or HAS_PADDLEFLEET:
                     pipeline_parallel_config = split_parallel_config(self.pipeline_parallel_config)
                     for x in pipeline_parallel_config:
                         if len(x) > 0:
@@ -1414,12 +1410,13 @@ class TrainingArguments:
                         )
                         enable_partial_send_recv = False
 
-                    strategy.pipeline_configs["enable_partial_send_recv"] = enable_partial_send_recv
-                    strategy.pipeline_configs["p2p_cache_shape"] = (
-                        False if "disable_p2p_cache_shape" in pipeline_parallel_config else True
-                    )
-                    # strategy.pipeline_configs["delay_scale_loss"] = True Fix ME
-
+                    strategy.pipeline_configs = {
+                        "accumulate_steps": self.gradient_accumulation_steps,
+                        "micro_batch_size": self.per_device_train_batch_size,
+                        "enable_partial_send_recv": enable_partial_send_recv,
+                        "p2p_cache_shape": False if "disable_p2p_cache_shape" in pipeline_parallel_config else True,
+                        # "delay_scale_loss": True, Fix ME
+                    }
                     logger.info(f"PP configs:{strategy.pipeline_configs}, use master_grad: {self.amp_master_grad}")
 
                     using_comm_overlap = (
