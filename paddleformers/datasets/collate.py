@@ -183,7 +183,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
         position_ids = [sum([seq.position_ids for seq in batch_sequence], [])]
         # padding
         padded_token_ids = pad_batch_data(token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
-        padded_labels = pad_batch_data(labels, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
+        padded_labels = pad_batch_data(labels, pad_idx=-100, max_seq_len=max_seq_len)
         padded_position_ids = pad_batch_data(position_ids, pad_idx=0, max_seq_len=max_seq_len)
         return_list.append(
             [

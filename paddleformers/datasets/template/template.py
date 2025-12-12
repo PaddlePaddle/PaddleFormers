@@ -149,7 +149,7 @@ class Template:
             elif message["role"] == Role.ASSISTANT:
                 elements += self.format_assistant.apply(content=message["content"])
                 if "tool_calls" in message:
-                    elements += self.format_assistant.apply(content=message["tool_calls"])
+                    elements += self.format_function.apply(content=message["tool_calls"], thought_words=self.thought_words)
             elif message["role"] == Role.OBSERVATION:
                 elements += self.format_observation.apply(content=message["content"])
             elif message["role"] == Role.FUNCTION:
