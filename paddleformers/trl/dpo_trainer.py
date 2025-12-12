@@ -15,6 +15,7 @@ from collections import OrderedDict, defaultdict
 
 import paddle
 import paddle.nn.functional as F
+import paddlefleet.distributed.model as paddlefleet_dist_model
 from paddle.distributed import fleet
 
 from ..nn.criterion import CriterionLayer
@@ -207,15 +208,25 @@ class DPOTrainer(Trainer):
             level=self.args.fp16_opt_level,
             dtype=self.amp_dtype,
         )
-        model = fleet.distributed_model(model)
-        if self.args.pipeline_model_parallel_size > 1:
-            model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
+        # if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+        if True:
+            model = paddlefleet_dist_model.distributed_model(model)
+            model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
+            return model
+
+        model = paddlefleet_dist_model.distributed_model(model)
+        model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
 
         return model
 
     def _wrap_model(self, model, training=True):
         """Wrap model."""
         model = super()._wrap_model(model, training)
+        # if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+        if True:
+            model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
+            return model
+
         if self.args.pipeline_model_parallel_size > 1:
             model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
         return model
@@ -426,11 +437,17 @@ class DPOTrainer(Trainer):
                 model.train()
             else:
                 ref_model = self.ref_model_wrapped
+                ref_model.micro_batch_size = self.args.per_device_train_batch_size
+                ref_model.accumulate_steps = self.args.gradient_accumulation_steps
                 ref_model_config_backup = ref_model.micro_batch_size, ref_model.accumulate_steps
                 ref_model.accumulate_steps = model.accumulate_steps
                 ref_model.micro_batch_size = model.micro_batch_size
                 with paddle.no_grad():
                     with self.autocast_smart_context_manager():
+                        inheritance_chain = ref_model.__class__.mro()
+                        print("Python 实例继承关系：")
+                        for cls in inheritance_chain:
+                            print(f"→ {cls.__name__}")  # 只打印类名（简洁）
                         ref_model.eval_batch(data=[inputs, labels], compute_loss=True)
                 ref_model.micro_batch_size, ref_model.accumulate_steps = ref_model_config_backup
             reference_chosen_logps = infohub.reference_chosen_logps
@@ -564,6 +581,48 @@ def prepare_pipeline_dpo_inputs_func(inputs):
     keys = list(inputs[0].keys())
     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
     return [
-        get_expected_keys(inputs_batch, first_stage_keys),
-        get_expected_keys(inputs_batch, last_stage_keys),
+        inputs_batch,
+        first_stage_keys,
+        inputs_batch,
+        last_stage_keys,
     ]
+
+
+def _prepare_pipeline_dpo_inputs_func_fleet(inputs):
+    """Prepare pipeline inputs"""
+    if "attention_mask" in inputs:
+        first_stage_keys = [
+            "input_ids",
+            "attention_mask",
+            "position_ids",
+        ]
+    else:
+        first_stage_keys = [
+            "input_ids",
+            "attn_mask_start_row_indices",
+            "attn_mask_startend_row_indices",
+            "position_ids",
+        ]
+
+    last_stage_keys = [
+        "chosen_labels",
+        "rejected_labels",
+        "response_indexs",
+        "score_deltas",
+        "reference_chosen_logps",
+        "reference_rejected_logps",
+    ]
+
+    first_stage_inputs_batch = inputs
+    last_stage_inputs = [
+        first_stage_inputs_batch.pop(key)
+        for key in last_stage_keys
+        if key in first_stage_inputs_batch and first_stage_inputs_batch[key]
+    ]
+    print(last_stage_inputs)
+    last_stage_inputs = [list(row) for row in zip(*last_stage_inputs)]
+    outputs = (
+        first_stage_inputs_batch,
+        last_stage_inputs,
+    )
+    return outputs
