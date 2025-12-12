@@ -380,6 +380,9 @@ class SFTDataSet(IterableDataset):
         loss_mask = []
         while turn_index >= 0:
             tokens_src, tokens_target = encoded_pairs[turn_index]
+            if len(tokens_target) == 0:
+                logger.warning(f"[SKIP] The length of encoded assistant tokens is 0: {example}")
+                return None
             if len(tokens_src) + len(tokens_target) > (
                 self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
             ):
@@ -414,6 +417,7 @@ class SFTDataSet(IterableDataset):
                     logger.warning(f"This data is too long: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
             except Exception:
                 logger.warning("[SKIP] wrong example")
+            return None
 
         if self.use_template:
             if self.begin_token_id is not None and self.end_of_response_id is not None:

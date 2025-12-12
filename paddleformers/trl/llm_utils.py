@@ -33,7 +33,6 @@ if TYPE_CHECKING:
 from ..generation import GenerationConfig
 from ..transformers import (  # ChatGLMv2Tokenizer,
     AutoTokenizer,
-    DeepseekV2ForCausalLMPipe,
     DeepseekV3ForCausalLMPipe,
     Glm4MoeForCausalLMPipe,
     LlamaForCausalLMPipe,
@@ -156,6 +155,25 @@ def get_lora_target_modules(model):
             ".*w2.*",
             ".*w3.*",
         ]
+    elif model.config.model_type == "qwen2_5_vl":
+        target_modules = [
+            # llm
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_proj.*",
+            "model.language_model.*up_proj.*",
+            "model.language_model.*down_proj.*",
+            # vision
+            "model.visual.*attn.qkv.*",
+            "model.visual.*attn.proj.*",
+            "model.visual.*gate_proj.*",
+            "model.visual.*up_proj.*",
+            "model.visual.*down_proj.*",
+            # alinger
+            "model.visual.merger.mlp\.[02].*",
+        ]
     elif model.config.model_type == "qwen2_moe":
         target_modules = [
             ".*qkv_proj.*",
@@ -191,9 +209,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
-    elif model.config.model_type in ["deepseek_v2", "deepseek_v3"] or isinstance(
-        model, (DeepseekV2ForCausalLMPipe, DeepseekV3ForCausalLMPipe)
-    ):
+    elif model.config.model_type in ["deepseek_v3"] or isinstance(model, (DeepseekV3ForCausalLMPipe)):
         target_modules = [
             ".*q_proj.*",
             ".*q_a_proj.*",
@@ -872,7 +888,7 @@ def init_dist_env():
 
         if is_fleet_init:
             # If Fleet is already initialized, get tensor parallel degree and rank
-            tensor_parallel_degree = hcg.get_model_parallel_world_size()
+            tensor_model_parallel_size = hcg.get_model_parallel_world_size()
             tensor_parallel_rank = hcg.get_model_parallel_rank()
         else:
             # If Fleet is not initialized, set up the distributed strategy and initialize Fleet
@@ -887,14 +903,14 @@ def init_dist_env():
             hcg = fleet.get_hybrid_communicate_group()  # Get the hybrid communicate group after initialization
 
             # Get tensor parallel degree and rank after Fleet initialization
-            tensor_parallel_degree = hcg.get_model_parallel_world_size()
+            tensor_model_parallel_size = hcg.get_model_parallel_world_size()
             tensor_parallel_rank = hcg.get_model_parallel_rank()
     else:
         # If not in a distributed environment, set tensor parallel degree and rank to 1 and 0 respectively
-        tensor_parallel_degree = 1
+        tensor_model_parallel_size = 1
         tensor_parallel_rank = 0
 
-    return tensor_parallel_rank, tensor_parallel_degree
+    return tensor_parallel_rank, tensor_model_parallel_size
 
 
 def get_eos_token_id(

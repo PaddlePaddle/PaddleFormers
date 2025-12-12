@@ -90,9 +90,9 @@ class DPOAutoTrainer(Trainer):
                 sequence_parallel = model_args.sequence_parallel
 
         auto_dist_degree = {
-            "tensor_parallel": kwargs["args"].tensor_parallel_degree > 1,
+            "tensor_parallel": kwargs["args"].tensor_model_parallel_size > 1,
             "sequence_parallel": sequence_parallel,
-            "pipeline_parallel": kwargs["args"].pipeline_parallel_degree > 1,
+            "pipeline_parallel": kwargs["args"].pipeline_model_parallel_size > 1,
             "data_sharding_parallel": kwargs["args"].dataset_world_size > 1,
             "sharding": kwargs["args"].sharding,
             "sharding_mesh_dim": kwargs["args"].sharding_parallel_mesh_dimension,
@@ -255,7 +255,7 @@ class DPOAutoTrainer(Trainer):
             dtype=self.amp_dtype,
         )
         model = fleet.distributed_model(model)
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
 
         return model
@@ -263,7 +263,7 @@ class DPOAutoTrainer(Trainer):
     def _wrap_model(self, model, training=True):
         """Wrap model."""
         model = super()._wrap_model(model, training)
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
         return model
 
@@ -275,7 +275,7 @@ class DPOAutoTrainer(Trainer):
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
 
         """prediction_step"""
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
             return self.prediction_pipeline_step(self.ref_model_wrapped, model, inputs)
@@ -717,7 +717,7 @@ class DPOAutoTrainer(Trainer):
                         tr_loss += tr_loss_step
 
                     disable_accumulation = False
-                    if self.args.pipeline_parallel_degree > 1 and self.args.to_static:
+                    if self.args.pipeline_model_parallel_size > 1 and self.args.to_static:
                         disable_accumulation = True
                     if self.args.to_static and self._in_pir_mode and self.args.gradient_accumulation_steps > 1:
                         disable_accumulation = True
@@ -834,7 +834,7 @@ class DPOAutoTrainer(Trainer):
         if self.args.gradient_accumulation_steps == 1:
             return [inputs]
 
-        if self.args.to_static and self.args.pipeline_parallel_degree > 1:
+        if self.args.to_static and self.args.pipeline_model_parallel_size > 1:
             return [inputs]
 
         if self.args.to_static and self._in_pir_mode and self.args.gradient_accumulation_steps > 1:
@@ -902,10 +902,10 @@ class DPOAutoTrainer(Trainer):
         elif isinstance(data, (list, tuple)):
             data_num = len(data)
         assert data_num >= 2
-        if self.args.pipeline_parallel_degree > 1:
+        if self.args.pipeline_model_parallel_size > 1:
             for i in range(1, data_num):
                 meshes.append(_get_mesh(0))
-            meshes[-1] = _get_mesh(self.args.pipeline_parallel_degree - 1)
+            meshes[-1] = _get_mesh(self.args.pipeline_model_parallel_size - 1)
         return meshes
 
     def _wrap_for_dist_loader(self, train_dataloader):

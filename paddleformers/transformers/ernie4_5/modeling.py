@@ -43,7 +43,7 @@ from ..model_outputs import (
     CausalLMOutputWithCrossAttentions,
 )
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..tensor_parallel_utils import model_parallel_dropout
 from .configuration import Ernie4_5Config
 
@@ -121,6 +121,38 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
         self.base = config.rope_theta
         rope_parameters = config.rope_parameters
         self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
+
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[Ernie4_5Config] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
@@ -134,18 +166,19 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
         Returns:
             Tensor: Rotary position embeddings of shape [1, 1, seq_length, head_dim]
         """
-        indices = paddle.arange(0, self.head_dim, 2, dtype="float32")
-        indices = 1 / self.base ** (indices / self.head_dim)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-        sinusoid_inp = position_ids.unsqueeze(-1).astype("float32") * indices.unsqueeze(
-            0
-        )  # [b, s, 1] * [1, d/2] -> [b, s, d/2]
-        emb = paddle.cat((sinusoid_inp, sinusoid_inp), axis=-1)
-        cos = emb.cos()
-        sin = emb.sin()
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        # keeping it in full precision
-        return cos, sin
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+            return cos.astype(dtype=x.dtype), sin.astype(dtype=x.dtype)
 
 
 class Ernie4_5Attention(nn.Layer):
@@ -168,16 +201,16 @@ class Ernie4_5Attention(nn.Layer):
         self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         logger.warning_once(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
         assert (
@@ -264,7 +297,7 @@ class Ernie4_5Attention(nn.Layer):
         if not self.fuse_attention_qkv:
             if self.config.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
             else:
                 bsz, q_len, _ = hidden_states.shape
@@ -276,7 +309,7 @@ class Ernie4_5Attention(nn.Layer):
             mix_layer = self.qkv_proj(hidden_states)
             if self.config.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
                 target_shape = [
                     bsz,
@@ -457,7 +490,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -748,7 +781,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if self.config.sequence_parallel:
             inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])

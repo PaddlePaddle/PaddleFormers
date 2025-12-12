@@ -16,6 +16,7 @@ import unittest
 
 import paddle
 
+from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
 from paddleformers.transformers.cache_utils import (
     DynamicCache,
     DynamicLayer,
@@ -375,6 +376,126 @@ class CacheUtilsTest(unittest.TestCase):
 
         self.assertEqual(cache.layers[0].keys.shape, expected_shape)
         self.assertEqual(cache.layers[1].keys.shape, expected_shape)
+
+
+class ModelIntegrationTest(unittest.TestCase):
+    """
+    Integration tests utilizing actual models to verify cache behavior
+    without offloading enabled.
+    """
+
+    def setUp(self):
+        self.model_id = "PaddleFormers/tiny-random-qwen3"
+        self.device = paddle.get_device()
+
+    def test_model_inference_standard(self):
+        """
+        Standard integration test: Load a model and run inference with use_cache=True.
+        Verifies that DynamicCache is used by default and populated correctly.
+        """
+        tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+        model = AutoModelForCausalLM.from_pretrained(self.model_id, convert_from_hf=True, return_dict=True)
+        model.to(self.device)
+        model.eval()
+
+        input_text = "Hello, world!"
+        inputs = tokenizer(input_text, return_tensors="pd")
+        # Ensure inputs are on correct device
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        # 1. Forward pass (prefill)
+        with paddle.no_grad():
+            outputs = model(**inputs, use_cache=True)
+
+        # 2. Verify cache existence
+        self.assertIsNotNone(outputs.past_key_values)
+        self.assertIsInstance(outputs.past_key_values, DynamicCache)
+        self.assertEqual(len(outputs.past_key_values), model.config.num_hidden_layers)
+
+        # 3. Verify cache device (Should match model device, NOT CPU/Offloaded)
+        first_layer_keys = outputs.past_key_values.layers[0].keys
+        # Check if they are on the same device as the model parameters
+        model_place = model.parameters()[0].place
+        self.assertEqual(
+            first_layer_keys.place.gpu_device_id(), model_place.gpu_device_id() if model_place.is_gpu_place() else 0
+        )
+
+        # 4. Generate next token to verify cache update
+        next_token = paddle.to_tensor([[123]]).to(self.device)
+        with paddle.no_grad():
+            outputs_next = model(input_ids=next_token, past_key_values=outputs.past_key_values, use_cache=True)
+
+        new_seq_len = outputs_next.past_key_values.get_seq_length(0)
+        # Expected: original input length + 1
+        self.assertEqual(new_seq_len, inputs["input_ids"].shape[1] + 1)
+
+
+@unittest.skipIf(not paddle.device.is_compiled_with_cuda(), "Offloading requires CUDA")
+class CacheOffloadingTest(unittest.TestCase):
+    """
+    Test the offloading functionality of DynamicCache.
+    These tests require a GPU environment because the offloading mechanism
+    in cache_utils.py specifically uses `gpu_device_id()` and GPU streams.
+    """
+
+    def setUp(self):
+        self.device = "gpu"
+        # Create some random tensors on GPU
+        self.key_states = paddle.randn([1, 1, 5, 4]).to(self.device)
+        self.value_states = paddle.randn([1, 1, 5, 4]).to(self.device)
+
+    def test_offloading_basic_logic(self):
+        """
+        Unit test for offloading
+        """
+        # Initialize DynamicCache with offloading=True
+        cache = DynamicCache(offloading=True)
+
+        # Update
+        key_states = paddle.randn((1, 4, 10, 32))
+        value_states = paddle.randn((1, 4, 10, 32))
+        cache.update(key_states, value_states, layer_idx=0)
+        self.assertTrue(cache.offloading)
+        self.assertEqual(cache.get_seq_length(0), 10)
+
+    def test_model_inference_with_offloading(self):
+        """
+        Integration test: Load a tiny random Qwen3 model, enable offloading in cache,
+        and perform inference. Verify that generation works and cache is used.
+        """
+        model_id = "PaddleFormers/tiny-random-qwen3"
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        model = AutoModelForCausalLM.from_pretrained(model_id, convert_from_hf=True, return_dict=True)
+        model.to(self.device)
+        model.eval()
+
+        input_text = "Hello, world!"
+        inputs = tokenizer(input_text, return_tensors="pd")
+
+        # Manually move tensors to device to avoid BatchEncoding backend check issues
+        # (AutoTokenizer might return a standard HF BatchEncoding which checks for torch)
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        # 1. Initialize DynamicCache with offloading enabled
+        past_key_values = DynamicCache(config=model.config, offloading=True)
+
+        # 2. Run a forward pass (prefill)
+        with paddle.no_grad():
+            outputs = model(**inputs, past_key_values=past_key_values, use_cache=True, return_dict=True)
+
+        # 3. Check if cache is populated and offloaded
+        self.assertIsNotNone(outputs.past_key_values)
+        self.assertEqual(len(outputs.past_key_values), model.config.num_hidden_layers)
+
+        # 4. Run a decoding step (generate one new token)
+        next_token = paddle.to_tensor([[123]]).to(self.device)  # Dummy token
+        with paddle.no_grad():
+            outputs_next = model(input_ids=next_token, past_key_values=outputs.past_key_values, use_cache=True)
+
+        # Check cache grew
+        new_seq_len = outputs_next.past_key_values.get_seq_length(0)
+        old_seq_len = inputs["input_ids"].shape[1]
+        self.assertEqual(new_seq_len, old_seq_len + 1)
 
 
 if __name__ == "__main__":
