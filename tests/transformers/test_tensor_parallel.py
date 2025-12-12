@@ -50,7 +50,7 @@ def prepare_config(config):
     config.num_key_value_heads = 16
     config.intermediate_size = config.hidden_size * 3
     config.layer_types = ["full_attention"] * config.num_hidden_layers
-    config.tensor_parallel_degree = tp_size
+    config.tensor_model_parallel_size = tp_size
     config.tensor_parallel_rank = tp_rank
     config.head_dim = config.hidden_size // config.num_attention_heads
     return config

@@ -18,7 +18,7 @@ import tempfile
 import unittest
 from typing import Dict, Optional
 
-from paddleformers.transformers import BertConfig
+from paddleformers.transformers import Qwen3Config
 from paddleformers.transformers.configuration_utils import (
     PretrainedConfig,
     attribute_map,
@@ -91,12 +91,12 @@ class ConfigurationUtilsTest(unittest.TestCase):
         config = FakeSimplePretrainedModelConfig(a=10, b=11, c=12)
         config.fuse_attention_qkv = True
         config.use_fused_rms_norm = True
-        config.tensor_parallel_degree = 8
+        config.tensor_model_parallel_size = 8
         config.tensor_parallel_output = True
 
         config.quantization_config.quant_type = "weight_only_int8"
         str_config = str(config)
-        assert "tensor_parallel_degree" in str_config
+        assert "tensor_model_parallel_size" in str_config
 
         config.test_nonsave = "test"
         config.test_nonsave_2 = "test"
@@ -109,7 +109,7 @@ class ConfigurationUtilsTest(unittest.TestCase):
             loaded_config = json.load(open(os.path.join(tp, "config.json"), "r"))
             assert "fuse_attention_qkv" in loaded_config, "fuse qkv is need to save"
             assert "use_fused_rms_norm" not in loaded_config, "use_fused_rms_norm don't need to save"
-            assert "tensor_parallel_degree" in loaded_config, "tensor_parallel_degree need to save"
+            assert "tensor_model_parallel_size" in loaded_config, "tensor_model_parallel_size need to save"
             assert "paddleformers_version" in loaded_config, "always save paddleformers_version"
             assert (
                 "quantization_config" in loaded_config and "quant_type" in loaded_config["quantization_config"]
@@ -131,57 +131,57 @@ class ConfigurationUtilsTest(unittest.TestCase):
 
 
 class StandardConfigMappingTest(unittest.TestCase):
-    def test_bert_config_mapping(self):
-        # create new fake-bert class to prevent static-attributed modified by this test
-        class FakeBertConfig(BertConfig):
+    def test_qwen3_config_mapping(self):
+        # create new fake-qwen3 class to prevent static-attributed modified by this test
+        class FakeQwen3Config(Qwen3Config):
             pass
 
-        config = FakeBertConfig.from_pretrained("Paddleformers/tiny-random-bert")
+        config = FakeQwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3")
         hidden_size = config.hidden_size
 
-        FakeBertConfig.attribute_map = {"fake_field": "hidden_size"}
+        FakeQwen3Config.attribute_map = {"fake_field": "hidden_size"}
 
-        loaded_config = FakeBertConfig.from_pretrained("Paddleformers/tiny-random-bert")
+        loaded_config = FakeQwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3")
         fake_field = loaded_config.fake_field
         self.assertEqual(fake_field, hidden_size)
 
     @slow
     def test_from_pretrained_cache_dir(self):
-        model_id = "Paddleformers/tiny-random-bert"
+        model_id = "Paddleformers/tiny-random-qwen3"
         with tempfile.TemporaryDirectory() as tempdir:
-            BertConfig.from_pretrained(model_id, cache_dir=tempdir)
+            Qwen3Config.from_pretrained(model_id, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
 
     def test_load_from_hf(self):
         """test load config from hf"""
-        config = BertConfig.from_pretrained("Baicai003/tiny-bert", download_hub="huggingface")
-        self.assertEqual(config.hidden_size, 16)
+        config = Qwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3", download_hub="huggingface")
+        self.assertEqual(config.hidden_size, 4096)
 
         with tempfile.TemporaryDirectory() as tempdir:
             config.save_pretrained(tempdir)
 
             self.assertTrue(os.path.exists(os.path.join(tempdir, CONFIG_NAME)))
 
-            loaded_config = BertConfig.from_pretrained(tempdir)
-            self.assertEqual(loaded_config.hidden_size, 16)
+            loaded_config = Qwen3Config.from_pretrained(tempdir)
+            self.assertEqual(loaded_config.hidden_size, 4096)
 
     def test_config_mapping(self):
-        # create new fake-bert class to prevent static-attributed modified by this test
-        class FakeBertConfig(BertConfig):
+        # create new fake-qwen3 class to prevent static-attributed modified by this test
+        class FakeQwen3Config(Qwen3Config):
             pass
 
         with tempfile.TemporaryDirectory() as tempdir:
-            config = FakeBertConfig.from_pretrained("PaddleFormers/tiny-random-bert")
+            config = FakeQwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3")
             config.save_pretrained(tempdir)
 
             # rename `config.json` -> `model_config.json`
             shutil.move(os.path.join(tempdir, CONFIG_NAME), os.path.join(tempdir, LEGACY_CONFIG_NAME))
 
-            FakeBertConfig.attribute_map = {"fake_field": "hidden_size"}
+            FakeQwen3Config.attribute_map = {"fake_field": "hidden_size"}
 
-            loaded_config = FakeBertConfig.from_pretrained(tempdir)
+            loaded_config = FakeQwen3Config.from_pretrained(tempdir)
             self.assertEqual(loaded_config.fake_field, config.hidden_size)
 
 
@@ -189,7 +189,7 @@ class TestTensorParallelConveter(unittest.TestCase):
     def test_qkv_convertor(self):
         """test_qkv_convertor"""
         hidden_size = 8
-        tensor_parallel_degree = 4
+        tensor_model_parallel_size = 4
         num_attention_heads = 4
         # head_dim = hidden_size // num_attention_heads
         import numpy as np
@@ -211,7 +211,7 @@ class TestTensorParallelConveter(unittest.TestCase):
             [0, 1, 8, 9, 16, 17, 2, 3, 10, 11, 18, 19, 4, 5, 12, 13, 20, 21, 6, 7, 14, 15, 22, 23],
         )
 
-        mp_qkv_splited = normal_fuse_split_tp(tensor_parallel_qkv, tensor_parallel_degree)
+        mp_qkv_splited = normal_fuse_split_tp(tensor_parallel_qkv, tensor_model_parallel_size)
         new_tensor_parallel_qkv = normal_fuse_merge_tp(mp_qkv_splited)
         # print("mp_qkv_splited", mp_qkv_splited[0])
         np.testing.assert_equal(new_tensor_parallel_qkv, tensor_parallel_qkv)
