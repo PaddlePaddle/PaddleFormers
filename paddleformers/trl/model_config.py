@@ -30,14 +30,6 @@ class ModelConfig:
         default=False,
         metadata={"help": "GPT3 model, use fast layernorm"},
     )
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
     hidden_dropout_prob: float = field(default=0.1, metadata={"help": "The hidden dropout prob."})
     attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "The attention hidden dropout prob."})
 

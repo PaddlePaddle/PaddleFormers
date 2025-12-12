@@ -25,7 +25,7 @@ from paddleformers.utils.log import logger
 # isort: off
 # fmt: off
 # isort: on
-from paddleformers.datasets.dpo import create_dataset
+from paddleformers.datasets.loader import create_dataset
 
 
 def calculate_acc_steps(num_samples, train_batch, dataset_world_size, per_device_train_batch_size):
@@ -89,6 +89,7 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
             "packing": data_args.packing,
             "mix_strategy": data_args.mix_strategy,
             "encode_one_turn": data_args.encode_one_turn,
+            "stage": "DPO",
         }
         train_dataset = create_dataset(
             task_group=data_args.train_dataset_path,
@@ -101,8 +102,8 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
         if training_args.num_of_gpus > 0:
             dataset_world_size = (
                 training_args.num_of_gpus
-                // max(1, training_args.tensor_parallel_degree)
-                // max(1, training_args.pipeline_parallel_degree))
+                // max(1, training_args.tensor_model_parallel_size)
+                // max(1, training_args.pipeline_model_parallel_size))
             if dataset_world_size < 1:
                 raise ValueError("dataset_world_size must be positive, please verify your config")
         else:
@@ -116,7 +117,7 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
                 break
             train_batch += 1
             for sequence in sequences:
-                train_tokens += len(sequence.input_ids)
+                train_tokens += len(sequence.token_ids)
                 num_samples += 1
         if training_args.gradient_accumulation_steps < 0:
             training_args.gradient_accumulation_steps = calculate_acc_steps(
@@ -141,8 +142,8 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
             "gradient_accumulation_steps": int(training_args.gradient_accumulation_steps),
             "num_of_gpus": int(training_args.num_of_gpus),
             "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
-            "pipeline_parallel_degree": int(max(1, training_args.pipeline_parallel_degree)),
-            "tensor_parallel_degree": int(max(1, training_args.tensor_parallel_degree)),
+            "pipeline_model_parallel_size": int(max(1, training_args.pipeline_model_parallel_size)),
+            "tensor_model_parallel_size": int(max(1, training_args.tensor_model_parallel_size)),
             "seed": int(training_args.seed),
             "num_samples_each_epoch": int(data_args.num_samples_each_epoch),
             "max_seq_len": int(data_args.max_seq_len),
@@ -164,8 +165,8 @@ def dpo_estimate_training(tokenizer, data_args, training_args, config, train_dat
             "gradient_accumulation_steps": int(training_args.gradient_accumulation_steps),
             "num_of_gpus": int(training_args.num_of_gpus),
             "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
-            "pipeline_parallel_degree": int(max(1, training_args.pipeline_parallel_degree)),
-            "tensor_parallel_degree": int(max(1, training_args.tensor_parallel_degree)),
+            "pipeline_model_parallel_size": int(max(1, training_args.pipeline_model_parallel_size)),
+            "tensor_model_parallel_size": int(max(1, training_args.tensor_model_parallel_size)),
             "seed": int(training_args.seed),
             "num_samples_each_epoch": 6000000,
             "max_seq_len": int(data_args.max_seq_len),

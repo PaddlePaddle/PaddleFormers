@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import math
 import os
 import random
@@ -40,12 +39,7 @@ from paddleformers.trainer import (
     speed_metrics,
 )
 from paddleformers.trainer.trainer import Trainer
-from paddleformers.transformers import (
-    AutoConfig,
-    AutoTokenizer,
-    CosineAnnealingWithWarmupDecay,
-    LinearAnnealingWithWarmupDecay,
-)
+from paddleformers.transformers import AutoConfig, AutoTokenizer
 from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
@@ -55,7 +49,11 @@ from paddleformers.utils.tools import get_env_device
 os.environ["USE_CASUAL_MASK"] = "True"
 
 
-from glm45_provider import GLM45AirModelDebugProvider
+from glm45_provider import (
+    GLM45AirModelDebugProvider,
+    GLM45AirModelSingleCardDebugProvider,
+)
+from qwen_provider import Qwen3MoEModelSingleCardProvider
 
 from paddleformers.trainer.utils.doc import add_start_docstrings
 
@@ -88,6 +86,11 @@ class PreTrainingArguments(TrainingArguments):
     unified_checkpoint: bool = field(
         default=True,
         metadata={"help": "Enable fused linear grad add strategy."},
+    )
+
+    model_provider_type: str = field(
+        default="GLM",
+        metadata={"help": "name of the model provider."},
     )
 
     def __post_init__(self):
@@ -123,7 +126,7 @@ class DataArguments:
     split: str = field(default="949,50,1", metadata={"help": "Train/valid/test data split."})
 
     max_seq_length: int = field(
-        default=1024,
+        default=8192,
         metadata={
             "help": "The maximum total input sequence length after tokenization. Sequences longer "
             "than this will be truncated, sequences shorter will be padded."
@@ -166,15 +169,6 @@ class ModelArguments:
     hidden_dropout_prob: float = field(default=0.1, metadata={"help": "The hidden dropout prob."})
     attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "The attention hidden dropout prob."})
 
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
-
     continue_training: bool = field(
         default=False,
         metadata={
@@ -185,11 +179,15 @@ class ModelArguments:
         default=None,
         metadata={"help": "num_hidden_layers."},
     )
+    use_global_causal_attn: bool = field(
+        default=False, metadata={"help": "Whether to use global causal attention in packing data"}
+    )
 
 
 def create_pretrained_dataset(
     data_args,
     training_args,
+    model_args,
     data_file,
     tokenizer,
     need_data=True,
@@ -239,16 +237,52 @@ def create_pretrained_dataset(
 
     from paddleformers.data import Stack
 
-    def _collate_data(data, stack_fn=Stack()):
-        tokens_ = stack_fn([x["text"] for x in data])
+    def _collate_data(batch, stack_fn=Stack()):
+        # origin no mask data
+        # tokens_ = stack_fn([x["text"] for x in batch])
 
-        labels = copy.deepcopy(tokens_)[:, 1:]
-        tokens = tokens_[:, :-1]
+        # labels = copy.deepcopy(tokens_)[:, 1:]
+        # tokens = tokens_[:, :-1]
 
-        return {
-            "input_ids": tokens,
-            "labels": labels,
-        }
+        # return {
+        #     "input_ids": tokens,
+        #     "labels": labels,
+        # }
+
+        # data with attn_mask_startend_row_indices for flashmask
+        input_keys = ["input_ids", "labels", "position_ids", "attn_mask_startend_row_indices"]
+        return_list = []
+        for batch_sequence in batch:
+            # tokens
+            padded_token_ids = np.array([batch_sequence["text"][:-1]])
+            # labels
+            padded_labels = np.array([batch_sequence["text"][1:]])
+            # position_ids
+            padded_position_ids = np.array([sum(batch_sequence["position_ids"], [])[:-1]])
+            return_list.append(
+                [
+                    padded_token_ids,
+                    padded_labels,
+                    padded_position_ids,
+                ]
+            )
+            # attn mask
+            oral_position_ids = batch_sequence["position_ids"]
+            from paddleformers.datasets.collate import (
+                gen_attn_mask_startend_row_indices,
+            )
+
+            return_list[-1].append(
+                gen_attn_mask_startend_row_indices(
+                    oral_position_ids,
+                    data_args.max_seq_length + training_args.num_nextn_predict_layers,
+                    model_args.use_global_causal_attn,
+                )[:, :, :-1, :]
+            )
+
+        return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
+        input_dict = dict(zip(input_keys, return_list))
+        return input_dict
 
     if need_data:
         if training_args.do_train:
@@ -464,19 +498,17 @@ def main():
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
         config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
-    if model_args.fuse_attention_qkv is not None:
-        config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
-        assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."
+        assert (
+            config.tensor_model_parallel_size > 1
+        ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
         config.num_attention_heads % config.sep_parallel_degree == 0
     ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
     assert (
-        config.seq_length % config.context_parallel_degree == 0
-    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_degree {config.context_parallel_degree}"
+        config.seq_length % config.context_parallel_size == 0
+    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
 
     if training_args.sharding_parallel_config is not None:
         # for stage1 overlap optimization
@@ -507,11 +539,16 @@ def main():
     #        dtype = "float16"
     #    if training_args.bf16:
     #        dtype = "bfloat16"
-
-    model_provider = GLM45AirModelDebugProvider()
-    # Set MoE layer frequency configuration
-    if hasattr(config, "n_routed_experts") and config.n_routed_experts > 0:
-        model_provider.moe_layer_freq = 1  # Default to expert layer every layer
+    if training_args.model_provider_type == "GLM_single_card":
+        training_args.save_checkpoint_format = None
+        model_provider = GLM45AirModelSingleCardDebugProvider()
+    elif training_args.model_provider_type == "GLM_muiti_cards":
+        model_provider = GLM45AirModelDebugProvider()
+    elif training_args.model_provider_type == "qwen_single_card":
+        training_args.save_checkpoint_format = None
+        model_provider = Qwen3MoEModelSingleCardProvider()
+    else:
+        raise ValueError(f"Unsupported model provider type: {training_args.model_provider_type}")
     model = model_provider.provide()
 
     if training_args.recompute:
@@ -521,33 +558,13 @@ def main():
     if training_args.decay_steps is None:
         training_args.decay_steps = training_args.max_steps
 
-    if training_args.warmup_steps > 0:
-        warmup_steps = training_args.warmup_steps
-    else:
-        warmup_steps = training_args.warmup_ratio * training_args.max_steps
-
     lr_scheduler = None
-    if training_args.lr_scheduler_type.value == "cosine":
-        lr_scheduler = CosineAnnealingWithWarmupDecay(
-            max_lr=training_args.learning_rate,
-            min_lr=training_args.min_learning_rate,
-            warmup_step=warmup_steps,
-            decay_step=training_args.decay_steps,
-            last_epoch=0,
-        )
-    elif training_args.lr_scheduler_type.value == "linear":
-        lr_scheduler = LinearAnnealingWithWarmupDecay(
-            max_lr=training_args.learning_rate,
-            min_lr=training_args.min_learning_rate,
-            warmup_step=warmup_steps,
-            decay_step=training_args.decay_steps,
-            last_epoch=0,
-        )
 
     data_file = get_train_data_file(data_args)
     train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(
         data_args,
         training_args,
+        model_args,
         data_file,
         tokenizer,
         need_data=training_args.should_load_dataset,

@@ -193,7 +193,6 @@ def _flashmask_attention_backward_dispatch(
     Note: Only FlashMask v1 doesn't support custom softmax_scale.
     """
     fa_version = _get_fa_version()
-
     if fa_version == 2:
         # FlashMask v1 doesn't support custom softmax_scale
         seed_offset = paddle.zeros(shape=[2], dtype="int64")
@@ -207,8 +206,9 @@ def _flashmask_attention_backward_dispatch(
         # FlashMask v2 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
         if hasattr(paddle.base.libpaddle.pir.ops, "flashmask_attention_v2_grad"):
+            block_mask = None
             grad_q, grad_k, grad_v = _C_ops.flashmask_attention_v2_grad(
-                query, key, value, output, lse, startend_row_indices, grad_output, softmax_scale, causal
+                query, key, value, output, lse, startend_row_indices, block_mask, grad_output, softmax_scale, causal
             )
         else:
             assert False, "flashmask_attention_v2_grad is not supported, may be due to paddle version"
@@ -357,6 +357,8 @@ class FlashMaskSinkPyLayer(PyLayer):
         sink_expanded = sink_reshaped.expand([batch_size, seq_len, num_heads, 1])
 
         # Compute sink multiplier: 1 / (exp(sink - lse) + 1)
+        if lse_transposed.shape != sink_expanded.shape:
+            lse_transposed = lse_transposed[:, : sink_expanded.shape[1], :, :]
         multiplier = 1 / (paddle.exp(sink_expanded - lse_transposed) + 1)
         final_out = (raw_output * multiplier).to(origin_dtype)
 

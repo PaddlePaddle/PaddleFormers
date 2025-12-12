@@ -34,7 +34,7 @@ class PrefixConfig:
     prefix_projection_hidden_size: Optional[int] = field(
         default=None, metadata={"help": "The hidden embedding dimension of the transformer model"}
     )
-    tensor_parallel_degree: int = field(default=-1, metadata={"help": ("1 for not use tensor parallel")})
+    tensor_model_parallel_size: int = field(default=-1, metadata={"help": ("1 for not use tensor parallel")})
     dtype: Optional[str] = field(default=None, metadata={"help": "The data type of tensor"})
 
     @property

@@ -1144,102 +1144,6 @@ def _parse_size(size_str: str) -> int:
         raise ValueError(f"Unknown unit: '{unit}'")
 
 
-def save_full_param(
-    itr: Iterator[tuple[str, Tensor]],
-    save_dir: str,
-    rank: int,
-    world_size: int,
-    max_shard_size: str = "2GB",
-    num_saver_ranks: int = 8,
-) -> None:
-    """
-    Saves model weights from an iterator into shards, supporting max shard size
-    and a limited number of saver ranks.
-
-    Only ranks less than `num_saver_ranks` will perform disk I/O. All other ranks
-    will iterate through the data to maintain synchronization but will not save.
-    The parameter distribution logic is based on `num_saver_ranks`, ensuring all
-    parameters are handled by a designated saver rank.
-
-    Args:
-        itr (Iterator): An iterator that yields (param_key, param_tensor).
-        save_dir (str): The directory where shard files will be saved.
-        rank (int): The rank of the current process.
-        world_size (int): The total number of processes.
-        max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
-        num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
-    """
-
-    use_dist = True if paddle.distributed.get_world_size() > 1 else False
-
-    # 1. Non-saver ranks simply consume the iterator to stay in sync.
-    if rank >= num_saver_ranks:
-        logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Consuming iterator for synchronization...")
-        for _ in itr:
-            pass
-        logger.info(f"[Rank {rank}/{world_size}] (Non-saver) Iterator consumption complete.")
-        return
-
-    max_shard_size_bytes = _parse_size(max_shard_size)
-    logger.info(
-        f"[Rank {rank}/{world_size}] (Saver) Initializing save. "
-        f"Max shard size set to: {max_shard_size_bytes / 1024**3:.2f} GB"
-    )
-
-    os.makedirs(save_dir, exist_ok=True)
-
-    current_shard_state_dict = {}
-    current_shard_size_bytes = 0
-    sub_shard_index = 0
-
-    def _save_current_shard():
-        nonlocal sub_shard_index, current_shard_state_dict, current_shard_size_bytes
-        if not current_shard_state_dict:
-            return
-
-        # Filename includes the main shard number (rank) and the sub-shard index
-        shard_filename = f"shard_{rank}-{sub_shard_index}.safetensors"
-        save_path = os.path.join(save_dir, shard_filename)
-
-        logger.info(
-            f"[Rank {rank}/{world_size}] Saving sub-shard {sub_shard_index}... "
-            f"Size: {current_shard_size_bytes / 1024**2:.2f} MB, "
-            f"Params: {len(current_shard_state_dict)}, "
-            f"Path: {save_path}"
-        )
-
-        save_file(current_shard_state_dict, save_path)
-
-        # Reset for the next shard
-        sub_shard_index += 1
-        current_shard_state_dict = {}
-        current_shard_size_bytes = 0
-
-    logger.info(f"[Rank {rank}/{world_size}] Starting to process the weight iterator...")
-
-    total_size = 0
-
-    for i, (param_key, param) in enumerate(itr):
-        param_size_bytes = param.numel() * param.element_size()
-        total_size += param_size_bytes.item()
-        if i % num_saver_ranks == rank:
-            if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
-                _save_current_shard()
-
-            current_shard_state_dict[param_key] = param
-            current_shard_size_bytes += param_size_bytes
-
-            if current_shard_size_bytes >= max_shard_size_bytes:
-                _save_current_shard()
-    _save_current_shard()
-
-    if use_dist:
-        dist.barrier()
-
-    logger.info(f"[Rank {rank}/{world_size}] (Saver) All shards saved successfully.")
-    return total_size
-
-
 def clean_unrelated_safetensors(save_dir):
     use_dist = True if paddle.distributed.get_world_size() > 1 else False
 
@@ -1268,34 +1172,6 @@ def clean_unrelated_safetensors(save_dir):
 
     if use_dist:
         dist.barrier()
-
-
-def replace_name_and_gen_index(path, total_size):
-    index_mapping = {}
-    safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
-    total_files_num = len(safetensor_files)
-    cur_file_index = 0
-    for file in safetensor_files:
-        cur_file_index += 1
-        file_path = os.path.join(path, file)
-        new_file_name = f"model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
-        with safe_open(file_path, framework="np") as f:
-            for key in f.keys():
-                index_mapping[key] = new_file_name
-        new_file_path = os.path.join(path, new_file_name)
-        os.rename(file_path, new_file_path)
-    index_file_name = "model.safetensors.index.json"
-    index_infos = {}
-    index_infos["metadata"] = {}
-    index_infos["metadata"]["total_size"] = total_size
-    index_infos["weight_map"] = index_mapping
-    with open(os.path.join(path, index_file_name), "w") as f:
-        json.dump(index_infos, f, indent=4)
-    # For PDC signal
-    if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
-        for i in range(paddle.distributed.get_world_size()):
-            saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
-            paddle.save(i, saved_signal_path)
 
 
 def get_common_folder(file_list):
@@ -1509,11 +1385,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             predictor_args : PredictorArgument
                 The args of the predictor.
         """
-        tensor_parallel_degree = kwargs.pop("tensor_parallel_degree", 1)
+        tensor_model_parallel_size = kwargs.pop("tensor_model_parallel_size", 1)
         tensor_parallel_rank = kwargs.pop("tensor_parallel_rank", 0)
 
         if predictor_args.mode == "dynamic" or predictor_args.speculate_method in ["eagle", "mtp"]:
-            config.tensor_parallel_degree = tensor_parallel_degree
+            config.tensor_model_parallel_size = tensor_model_parallel_size
             config.tensor_parallel_rank = tensor_parallel_rank
             config.model_name_or_path = predictor_args.model_name_or_path
             config.quant_type = predictor_args.quant_type
@@ -2414,6 +2290,23 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 origin_expected_keys = [k.replace("quant_weight", "weight") for k in expected_keys]
                 expected_keys_set = set(expected_keys + origin_expected_keys)
 
+            # Add original (pre-fuse) keys so that shards containing q/k/v or gate/up are not skipped
+            try:
+                fuse_actions, _ = cls.get_fuse_or_split_param_convert_actions(
+                    config, loaded_keys, is_fuse=True, ignore_error=True
+                )
+                logger.info(
+                    f"Getting fuse_actions for determine expected keys set succeed, "
+                    f"number of fuse actions: {len(fuse_actions)}"
+                )
+            except Exception as e:
+                logger.warning(f"get_fuse_or_split_param_convert_actions failed when building expected_keys_set: {e}")
+                fuse_actions = {}
+            for keys in fuse_actions.keys():
+                fused_key = keys[-1]
+                if fused_key in expected_keys_set:
+                    expected_keys_set.update(keys[:-1])
+
             if key_mapping is not None:
                 # Determine the precise set of original checkpoint keys that are actually needed for the current file.
                 # This set will be used to identify which sharded checkpoint files are relevant and must be loaded.
@@ -2554,7 +2447,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     config,
                     loaded_keys,
                     pre_tensor_parallel_split=True
-                    if config is not None and config.tensor_parallel_degree > 1
+                    if config is not None and config.tensor_model_parallel_size > 1
                     else False,
                 )
                 missing_keys = list(set(missing_keys) - set(new_keys))
@@ -2605,7 +2498,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 if quantization_linear_list is not None:
                     if (
                         shard_file.endswith(".safetensors")
-                        and config.tensor_parallel_degree > 1
+                        and config.tensor_model_parallel_size > 1
                         and "tp" not in os.path.split(shard_file)[-1]
                     ):
                         pre_tensor_parallel_split = True
@@ -2646,7 +2539,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 else:
                     if (
                         shard_file.endswith(".safetensors")
-                        and config.tensor_parallel_degree > 1
+                        and config.tensor_model_parallel_size > 1
                         and "tp" not in os.path.split(shard_file)[-1]
                     ):
                         pre_tensor_parallel_split = True
@@ -2717,7 +2610,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     ignore_mismatched_sizes,
                 )
 
-                if config.tensor_parallel_degree > 1 and ".tp" not in shard_file and not pre_tensor_parallel_split:
+                if config.tensor_model_parallel_size > 1 and ".tp" not in shard_file and not pre_tensor_parallel_split:
                     logger.info("Converting state_dict to Tensor Parallel Format")
                     # ignore error for multi shard, since only parts of data
                     state_dict = cls.convert_tensor_parallel(
@@ -2996,9 +2889,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         if not is_sharded and state_dict is None:
             # 4. loading non-sharded ckpt from the state dict
-            if config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model_state.pdparams"):
+            if config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith("model_state.pdparams"):
                 state_dict = cls.convert_tensor_parallel(resolved_archive_file, config)
-            elif config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model.safetensors"):
+            elif config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith("model.safetensors"):
                 with safe_open(resolved_archive_file, framework="np", device="cpu") as f:
                     loaded_keys = f.keys()
                 tp_actions = cls.get_tensor_parallel_convert_actions(config, loaded_keys)
@@ -3154,7 +3047,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         is_main_process: bool = True,
         state_dict: Optional[dict] = None,
         save_function: Callable = paddle.save,
-        max_shard_size: Union[int, str] = "10GB",
+        max_shard_size: Union[int, str] = "1GB",
         safe_serialization: bool = False,
         variant: Optional[str] = None,
         *args,
@@ -3216,26 +3109,26 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
-        if hasattr(self.__class__, "_gen_inv_aoa_config") and save_checkpoint_format == "flex_checkpoint":
-            aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+        if (
+            hasattr(self.__class__, "_gen_inv_aoa_config") or hasattr(self, "_gen_inv_aoa_config")
+        ) and save_checkpoint_format == "flex_checkpoint":
+            if hasattr(self.__class__, "_gen_inv_aoa_config"):
+                aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+            else:
+                aoa_config = self._gen_inv_aoa_config(model_to_save.config)
 
             clean_unrelated_safetensors(save_dir)
 
-            itr = model_to_save.full(aoa_config=aoa_config)
-            total_saved_size = save_full_param(
-                itr=itr,
-                save_dir=save_dir,
-                rank=paddle.distributed.get_rank(),
-                world_size=paddle.distributed.get_world_size(),
-                max_shard_size=max_shard_size,
-                num_saver_ranks=min(8, paddle.distributed.get_world_size()),
-            )
+            HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:
                 model_to_save.config.dtype = str(dtype).split(".")[1]
             if config_to_save is None:
-                config_to_save = copy.deepcopy(model_to_save.config)
+                if hasattr(model_to_save, "config_to_save"):
+                    config_to_save = copy.deepcopy(model_to_save.config_to_save)
+                else:
+                    config_to_save = copy.deepcopy(model_to_save.config)
 
             # Attach architecture to the config
             config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
@@ -3244,8 +3137,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
-                # Organize the files in this directory into the Hugging Face (HF) format.
-                replace_name_and_gen_index(save_directory, total_saved_size)
             return
 
         # save the string version of dtype to the config, e.g. convert paddle.float32 => "float32"
@@ -3260,7 +3151,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Save the model
         if state_dict is None:
             state_dict = model_to_save.state_dict()
-            if config_to_save.tensor_parallel_degree > 1:
+            if config_to_save.tensor_model_parallel_size > 1:
                 if not config_to_save.quantization_config.is_support_merge_tensor_parallel() and merge_tensor_parallel:
                     logger.warning(
                         f"Quantization strategy: {config_to_save.quantization_config.weight_quantize_algo} does not support merge tensor parallel, thus we set merge_tensor_parallel to False."
@@ -3268,7 +3159,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     merge_tensor_parallel = False
                 if merge_tensor_parallel:
                     state_dict = model_to_save.merge_tensor_parallel(state_dict, config_to_save)
-                    config_to_save.tensor_parallel_degree = 1
+                    config_to_save.tensor_model_parallel_size = 1
                     if config_to_save.tensor_parallel_rank != 0:
                         logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
                         return
@@ -3533,12 +3424,12 @@ class PipelinePretrainedModel(PretrainedModel):
             first_key = first_key.split(".")
             # if use virtual pp_degree, the prefix is like 0.0.xxx
             # else it will be like 0.xxx
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             prefixes = self.get_sequential_name_prefixes()
             for k in state_dict_keys:
                 name_splited = k.split(".")
-                if use_virtual_pp_degree:
+                if use_virtual_pipeline_model_parallel_size:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
@@ -3757,7 +3648,7 @@ def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=
         config (`AutoConfig`): The model config.
         return_numpy (bool): Whether load the tp checkpoint as numpy.
     """
-    if config.tensor_parallel_degree == 1 or config.tensor_parallel_degree == -1:
+    if config.tensor_model_parallel_size == 1 or config.tensor_model_parallel_size == -1:
         return load_sharded_checkpoint_as_one(folder, return_numpy=return_numpy)
     else:
         rank_model_path = os.path.join(folder, f"model_state.tp0{config.tensor_parallel_rank}.pdparams")
@@ -3822,3 +3713,235 @@ def clean_model_class_name(class_name, suffixes_to_strip: Union[str, List[str]] 
 
     pattern = f"({'|'.join(map(re.escape, suffixes_to_strip))})$"
     return re.sub(pattern, "", class_name)
+
+
+def save_full_param(
+    itr: Iterator[tuple[str, Tensor]],
+    save_dir: str,
+    rank: int,
+    moe_sharding_world_size: int,
+    max_shard_size: str = "2GB",
+    num_saver_ranks: int = 8,
+) -> None:
+    """
+    Saves model weights from an iterator into shards, supporting max shard size
+    and a limited number of saver ranks.
+
+    Only ranks less than `num_saver_ranks` will perform disk I/O. All other ranks
+    will iterate through the data to maintain synchronization but will not save.
+    The parameter distribution logic is based on `num_saver_ranks`, ensuring all
+    parameters are handled by a designated saver rank.
+
+    Args:
+        itr (Iterator): An iterator that yields (param_key, param_tensor).
+        save_dir (str): The directory where shard files will be saved.
+        rank (int): The rank of the current process.
+        moe_sharding_world_size (int): The total number of processes.
+        max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
+        num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
+    """
+
+    # 1. Non-saver ranks simply consume the iterator to stay in sync.
+    if rank >= num_saver_ranks:
+        logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Consuming iterator for synchronization...")
+        for _ in itr:
+            pass
+        logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Iterator consumption complete.")
+        return
+
+    max_shard_size_bytes = _parse_size(max_shard_size)
+    logger.info(
+        f"[Rank {rank}/{moe_sharding_world_size}] (Saver) Initializing save. "
+        f"Max shard size set to: {max_shard_size_bytes / 1024**3:.2f} GB"
+    )
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    current_shard_state_dict = {}
+    current_shard_size_bytes = 0
+    sub_shard_index = 0
+
+    def _save_current_shard():
+        nonlocal sub_shard_index, current_shard_state_dict, current_shard_size_bytes
+        if not current_shard_state_dict:
+            return
+
+        # Filename includes the main shard number (rank) and the sub-shard index
+        cur_rank = paddle.distributed.get_rank()
+        shard_filename = f"shard_{cur_rank}-{sub_shard_index}.safetensors"
+        save_path = os.path.join(save_dir, shard_filename)
+
+        logger.info(
+            f"[Rank {rank}/{moe_sharding_world_size}] Saving sub-shard {sub_shard_index}... "
+            f"Size: {current_shard_size_bytes / 1024**2:.2f} MB, "
+            f"Params: {len(current_shard_state_dict)}, "
+            f"Path: {save_path}"
+        )
+
+        save_file(current_shard_state_dict, save_path)
+
+        # Reset for the next shard
+        sub_shard_index += 1
+        current_shard_state_dict = {}
+        current_shard_size_bytes = 0
+
+    logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Starting to process the weight iterator...")
+
+    total_size = 0
+
+    for i, (param_key, param) in enumerate(itr):
+        param_size_bytes = param.numel() * param.element_size()
+        total_size += param_size_bytes.item()
+        if i % num_saver_ranks == rank:
+            if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
+                _save_current_shard()
+
+            current_shard_state_dict[param_key] = param
+            current_shard_size_bytes += param_size_bytes
+
+            if current_shard_size_bytes >= max_shard_size_bytes:
+                _save_current_shard()
+    _save_current_shard()
+    logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Saver) All shards saved successfully.")
+    return total_size
+
+
+def replace_name_and_gen_index(path, total_size):
+    index_mapping = {}
+    cur_rank = paddle.distributed.get_rank()
+    safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
+    files_num = len(safetensor_files)
+    all_files_num = []
+    if paddle.distributed.get_world_size() > 1:
+        paddle.distributed.all_gather_object(all_files_num, files_num)
+    else:
+        all_files_num.append(files_num)
+    total_files_num = sum(all_files_num)
+
+    start_idx = []
+    acc = 1
+    for files_num in all_files_num:
+        start_idx.append(acc)
+        acc += files_num
+
+    env_local_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
+    env_local_rank = dist.get_rank() % env_local_size
+    assert env_local_rank >= 0, f"expected positive local rank, got {env_local_rank}"
+
+    cur_file_index = start_idx[cur_rank] // env_local_size
+    total_files_num = total_files_num // env_local_size
+
+    index_mapping = {}
+    if env_local_rank == 0:
+        for file in safetensor_files:
+            cur_file_index += 1
+            file_path = os.path.join(path, file)
+            new_file_name = f"model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
+            with safe_open(file_path, framework="np") as f:
+                for key in f.keys():
+                    index_mapping[key] = new_file_name
+            new_file_path = os.path.join(path, new_file_name)
+            os.rename(file_path, new_file_path)
+
+    index_mapping_list = []
+    if paddle.distributed.get_world_size() > 1:
+        paddle.distributed.all_gather_object(index_mapping_list, index_mapping)
+    else:
+        index_mapping_list.append(index_mapping)
+    index_mapping = {}
+    for mapping in index_mapping_list:
+        index_mapping.update(mapping)
+
+    if env_local_rank == 0:
+        index_file_name = "model.safetensors.index.json"
+        index_infos = {}
+        index_infos["metadata"] = {}
+        index_infos["metadata"]["total_size"] = total_size
+        index_infos["weight_map"] = dict(sorted(index_mapping.items()))
+        with open(os.path.join(path, index_file_name), "w") as f:
+            json.dump(index_infos, f, indent=4)
+
+        # For PDC signal
+        if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
+            for i in range(paddle.distributed.get_world_size()):
+                saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
+                paddle.save(i, saved_signal_path)
+
+
+class HFFormatFullParamSaver:
+    def __init__(
+        self,
+        model,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        self.model = model
+        self.aoa_config = aoa_config
+        self.h_group = h_group
+        self.v_group = v_group
+        self.num_splits = num_splits
+        self.shard_idx = shard_idx
+        self.saved_in_one_node = saved_in_one_node
+        self.memory_growth_threshold = memory_growth_threshold
+        self.determin_saver_based_group()
+
+    def get_full_param_iter(self):
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
+
+            param_iter = self.model.full(
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = self.model.full(
+                aoa_config=self.aoa_config, memory_growth_threshold=self.memory_growth_threshold
+            )
+        return param_iter
+
+    def determin_saver_based_group(self):
+        self.num_saver_ranks = paddle.distributed.get_world_size()
+        self.rank = paddle.distributed.get_rank()
+
+        if self.h_group and self.v_group:
+            self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
+            self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
+
+        if self.saved_in_one_node:
+            local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
+            self.num_saver_ranks = min(local_world_size, self.num_saver_ranks)
+
+    def save_checkpoint(self, path, max_shard_size="16GB"):
+        total_saved_size = save_full_param(
+            itr=self.get_full_param_iter(),
+            save_dir=path,
+            rank=self.rank,
+            moe_sharding_world_size=self.num_saver_ranks,
+            max_shard_size=max_shard_size,
+            num_saver_ranks=self.num_saver_ranks,
+        )
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
+
+        # TODO(): fix total size
+        all_sizes = []
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.all_gather_object(all_sizes, total_saved_size)
+        else:
+            all_sizes.append(total_saved_size)
+        total_size = sum(all_sizes)
+        replace_name_and_gen_index(path, total_size)
+        return total_saved_size

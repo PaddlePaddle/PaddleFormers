@@ -439,6 +439,7 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             "Paddleformers/tiny-random-llama3",
             download_hub="aistudio",
             convert_from_hf=True,
+            dtype="float32",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -446,15 +447,15 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 64]
+        expected_shape = [1, 11, 512]
         self.assertEqual(output.shape, expected_shape)
 
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [0.02366970, -0.42482421, 0.47202760],
-                    [-0.12180223, 0.00559035, 0.83846688],
-                    [0.45073321, 0.25703996, 1.36826384],
+                    [1.33794415, -0.19816241, -1.59525776],
+                    [1.69990170, -0.31080112, -1.62164509],
+                    [1.70097589, -0.30771524, -1.16779113],
                 ]
             ],
             dtype=output.dtype,
@@ -467,6 +468,7 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             "Paddleformers/tiny-random-llama3",
             download_hub="aistudio",
             convert_from_hf=True,
+            dtype="float32",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -474,14 +476,14 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
 
-        expected_shape = [1, 11, 64]
+        expected_shape = [1, 11, 512]
         self.assertEqual(output.shape, expected_shape)
         expected_slice = paddle.to_tensor(
             [
                 [
-                    [0.02366970, -0.42482421, 0.47202760],
-                    [-0.12180223, 0.00559035, 0.83846688],
-                    [0.45073321, 0.25703996, 1.36826384],
+                    [1.33794415, -0.19816241, -1.59525776],
+                    [1.69990170, -0.31080112, -1.62164509],
+                    [1.70097589, -0.30771524, -1.16779113],
                 ]
             ],
             dtype=output.dtype,

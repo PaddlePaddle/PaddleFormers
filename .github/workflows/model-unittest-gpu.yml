@@ -51,23 +51,17 @@ jobs:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
+          PIP_CACHE_DIR: /root/.cache/pip
           paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
           echo "Workspace path: ${{ github.workspace }}"
           DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
-          if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
-            GPU_OPTION="--runtime=nvidia"
-          else
-            GPU_OPTION="--gpus all"
-          fi
-          echo "DOCKER_VER=${DOCKER_VER}"
-          echo "GPU_OPTION=${GPU_OPTION}"
-          docker run -d -t ${GPU_OPTION} --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          docker run -d -t --gpus all --runtime=nvidia --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v ${work_dir}/../../..:${work_dir}/../../.. \
             -v ${work_dir}:/workspace \
-            -v /home/.cache/pip:/home/.cache/pip \
+            -v /home/.cache/:/root/.cache/ \
             -v /home/paddle-1/models/:/home/models/ \
             -e "BRANCH=$BRANCH" \
             -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
@@ -83,6 +77,7 @@ jobs:
             -e HF_PROXY_PATH=${work_dir}/../../../proxy_huggingface \
             -e AISTUDIO_PROXY_PATH=${work_dir}/../../../proxy_aistudio \
             -e PF_HOME=/home/models/ \
+            -e PIP_CACHE_DIR \
             -w /workspace --privileged ${IMAGE_NAME}
             
       - name: Download Code
@@ -96,6 +91,7 @@ jobs:
             tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
             echo "work_dir = ${work_dir}"
             source ${work_dir}/../../../proxy
+            pip install uv
             cd PaddleFormers
             git config --global user.name "PaddleCI"
             git config --global user.email "paddle_ci@example.com"
@@ -119,7 +115,9 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
-          pip config set global.cache-dir "/home/.cache/pip"
+          mkdir -p /root/.cache/pip
+          pip cache dir
+          uv cache dir
           set -e
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
@@ -127,7 +125,7 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
-          timeout 60m bash scripts/regression/ci_model_unittest.sh ${paddle_whl} false ${AGILE_COMPILE_BRANCH}
+          timeout 60m bash -x scripts/regression/ci_model_unittest.sh ${paddle_whl} false ${AGILE_COMPILE_BRANCH}
           '
           
       - name: Upload Products

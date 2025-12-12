@@ -51,7 +51,7 @@ from ...utils.log import logger
 from .. import linear_utils
 from ..linear_utils import Linear
 from ..long_sequence_strategies import LongSequenceStrategies
-from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast, ModelOutput
+from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
 from ..utils import caculate_llm_per_token_flops
 from .configuration import QWenConfig
@@ -96,15 +96,15 @@ def get_use_casual_mask():
 
 def parallel_matmul(x: Tensor, y: Tensor, tensor_parallel_output=True):
     is_fleet_init = True
-    tensor_parallel_degree = 1
+    tensor_model_parallel_size = 1
     try:
         hcg = fleet.get_hybrid_communicate_group()
         model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
+        tensor_model_parallel_size = hcg.get_model_parallel_world_size()
     except:
         is_fleet_init = False
 
-    if is_fleet_init and tensor_parallel_degree > 1 and y.is_distributed:
+    if is_fleet_init and tensor_model_parallel_size > 1 and y.is_distributed:
         # if not running under distributed.launch, it will raise AttributeError: 'Fleet' object has no attribute '_hcg'
         input_parallel = paddle.distributed.collective._c_identity(x, group=model_parallel_group)
         logits = paddle.matmul(input_parallel, y, transpose_y=False)
@@ -177,10 +177,10 @@ class QWenAttention(nn.Layer):
                 if skip_recompute_ops.get("attention_row_ln", False):
                     RowParallelLinear = RRRowParallelLinear
 
-        if config.tensor_parallel_degree > 1:
-            if config.num_attention_heads % config.tensor_parallel_degree != 0:
-                raise ValueError("num_attention_heads has to be divisible by tensor_parallel_degree")
-            self.num_heads = config.num_attention_heads // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1:
+            if config.num_attention_heads % config.tensor_model_parallel_size != 0:
+                raise ValueError("num_attention_heads has to be divisible by tensor_model_parallel_size")
+            self.num_heads = config.num_attention_heads // config.tensor_model_parallel_size
             self.c_attn = ColumnParallelLinear(
                 config.hidden_size,
                 3 * self.projection_size,
@@ -259,6 +259,7 @@ class QWenAttention(nn.Layer):
                     attn_mask=attention_mask,
                     is_causal=attention_mask is None,
                     enable=skip_recompute,
+                    enable_gqa=True,
                 )
                 attn_weights = None
 
@@ -443,7 +444,7 @@ class QWenMLP(nn.Layer):
                 if skip_recompute_ops.get("mlp_row_ln", False):
                     RowParallelLinear = RRRowParallelLinear
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             if self.fuse_attention_ffn:
                 self.gate_up_fused_proj = ColumnParallelLinear(
                     config.hidden_size,
@@ -595,7 +596,7 @@ class QWenPretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -705,7 +706,7 @@ class QWenPretrainedModel(PretrainedModel):
 
     def _init_weights(self, module):
         """Initialize the weights."""
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             rng_tracker = get_rng_state_tracker().rng_state
         if isinstance(
             module,
@@ -757,7 +758,7 @@ class QWenModel(QWenPretrainedModel):
         self.recompute_granularity = config.recompute_granularity
         self.sequence_parallel = config.sequence_parallel
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             self.wte = mpu.VocabParallelEmbedding(
                 self.vocab_size,
                 self.embed_dim,
@@ -981,8 +982,8 @@ class QWenLMHead(nn.Layer):
     def __init__(self, config: QWenConfig):
         super(QWenLMHead, self).__init__()
         self.config = config
-        if config.tensor_parallel_degree > 1:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1:
+            vocab_size = config.vocab_size // config.tensor_model_parallel_size
         else:
             vocab_size = config.vocab_size
 
@@ -1009,7 +1010,7 @@ class QWenLMHead(nn.Layer):
             hidden_states = paddle.reshape_(hidden_states, [-1, seq_length, self.config.hidden_size])
 
         if tensor_parallel_output is None:
-            tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1
+            tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_model_parallel_size > 1
 
         logits = parallel_matmul(hidden_states, self.weight, tensor_parallel_output=tensor_parallel_output)
         return logits
@@ -1026,7 +1027,7 @@ class QWenPretrainingCriterion(paddle.nn.Layer):
         super(QWenPretrainingCriterion, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
             self.loss_func = mpu.ParallelCrossEntropy(ignore_index=self.ignore_index)
@@ -1064,63 +1065,6 @@ class QWenForCausalLM(QWenPretrainedModel):
 
     def set_output_embeddings(self, new_embeddings):
         self.lm_head = new_embeddings
-
-    @staticmethod
-    def update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder=False):
-        # Update the model inputs during generation.
-        # Note that If `token_type_ids` and `attention_mask` in `model_kwargs`
-        # and they contain pad value, the result vectors updated by this method
-        # may be different from expected. In this case, you need to rewrite the
-        # method.
-
-        # update cache
-        if isinstance(outputs, tuple) and len(outputs) > 1 and not isinstance(outputs[1], paddle.Tensor):
-            model_kwargs["cache"] = outputs[1]
-            model_kwargs["past_key_values"] = outputs[1]
-
-        if isinstance(outputs, ModelOutput) and "past_key_values" in outputs:
-            model_kwargs["cache"] = outputs.past_key_values
-            model_kwargs["past_key_values"] = outputs.past_key_values
-
-        if "position_ids" in model_kwargs and model_kwargs["position_ids"] is not None:
-            position_ids = model_kwargs["position_ids"]
-            model_kwargs["position_ids"] = paddle.cat([position_ids, position_ids[..., -1:] + 1], axis=-1)
-
-        # update attention_mask
-        if not is_encoder_decoder and "attention_mask" in model_kwargs:
-            attention_mask = model_kwargs["attention_mask"]
-            if attention_mask is not None and len(attention_mask.shape) == 2:
-                model_kwargs["attention_mask"] = paddle.cat(
-                    [attention_mask, paddle.ones([attention_mask.shape[0], 1], dtype=attention_mask.dtype)], axis=-1
-                )
-            else:
-                model_kwargs["attention_mask"] = None
-
-        return model_kwargs
-
-    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, inputs_embeds=None, **kwargs):
-        attention_mask = kwargs.get("attention_mask", None)
-        position_ids = kwargs.get("position_ids", None)
-
-        if past_key_values:
-            input_ids = input_ids[:, -1].unsqueeze(-1)
-            if position_ids is not None:
-                position_ids = position_ids[:, -1].unsqueeze(-1)
-
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-
-        model_inputs.update(
-            {
-                "past_key_values": past_key_values,
-                "use_cache": kwargs.get("use_cache"),
-                "attention_mask": attention_mask,
-                "position_ids": position_ids,
-            }
-        )
-        return model_inputs
 
     @staticmethod
     def prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id):
@@ -1171,7 +1115,7 @@ class QWenForCausalLM(QWenPretrainedModel):
             from paddlenlp_kernel.triton.cut_cross_entropy import linear_cross_entropy
 
             assert (
-                self.config.tensor_parallel_degree <= 1
+                self.config.tensor_model_parallel_size <= 1
             ), "The argument `use_fused_linear_cross_entropy` is imcompatiable with tensor parallel "
 
             masked_lm_loss = linear_cross_entropy(hidden_states, self.lm_head.weight, targets=labels)

@@ -17,16 +17,12 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, List, Optional, Union
+from typing import Callable, List, Optional, Union
 
 import paddle
 import paddle.nn.functional as F
-from gpt_provider import GPTModelProvider
-from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
 
-if TYPE_CHECKING:
-    from paddlefleet.spec_utils import LayerSpec
-
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 logger = logging.getLogger(__name__)
 
@@ -35,30 +31,26 @@ logger = logging.getLogger(__name__)
 class GLMMoEModelProvider(GPTModelProvider):
     """Base provider for GLM MoE Models."""
 
-    transformer_layer_spec: Union[
-        "LayerSpec", Callable[["GPTModelProvider"], "LayerSpec"]
-    ] = get_gpt_decoder_block_spec
-
     normalization: str = "RMSNorm"
-    activation_func: Callable = F.silu
+    hidden_act: Callable = F.silu
     gated_linear_unit: bool = True
-    add_bias_linear: bool = False
-    add_qkv_bias: bool = True
+    use_bias: bool = False
+    attention_bias: bool = False
     seq_length: int = 131072
     init_method_std: int = 0.02
-    hidden_dropout: float = 0.0
+    hidden_dropout_prob: float = 0.0
     vocab_size: int = 151552
     share_embeddings_and_output_weights: Optional[bool] = False
-    layernorm_epsilon: float = 1e-5
+    rms_norm_eps: float = 1e-5
     autocast_dtype: paddle.dtype = paddle.bfloat16
     params_dtype: paddle.dtype = paddle.bfloat16
     bf16: bool = True
 
     # Attention
-    num_query_groups: int = 8
+    num_key_value_heads: int = 8
     num_attention_heads: int = 96
     attention_dropout: float = 0.0
-    kv_channels: int = 128
+    head_dim: int = 128
 
     # RoPE
     position_embedding_type: str = "rope"
@@ -66,18 +58,20 @@ class GLMMoEModelProvider(GPTModelProvider):
     rotary_percent: float = 0.5
 
     # MoE specific parameters
-    moe_router_topk: int = 8
+    num_experts_per_tok: int = 8
     moe_shared_expert_overlap: bool = True
     moe_token_dispatcher_type: str = "deepep"
     moe_router_load_balancing_type: str = "seq_aux_loss"
-    moe_aux_loss_coeff: float = 1e-3
+    router_aux_loss_coef: float = 1e-3
     moe_router_pre_softmax: bool = False
     moe_grouped_gemm: bool = True
-    moe_router_score_function: str = "sigmoid"
+    scoring_func: str = "sigmoid"
     moe_permute_fusion: bool = True
     moe_router_dtype: str = "fp32"
     moe_router_enable_expert_bias: bool = True
     moe_router_bias_update_rate: float = 0
+    norm_topk_prob = True
+    topk_method: str = "noaux_tc"
 
     # optimization
     persist_layer_norm: bool = True
@@ -85,7 +79,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     bias_dropout_fusion: bool = True
 
     # MTP
-    mtp_num_layers: Optional[int] = 1
+    num_nextn_predict_layers: Optional[int] = 1
     mtp_loss_scaling_factor: Optional[
         float
     ] = 0.3  # https://arxiv.org/pdf/2508.06471 0.3 for the first 15T tokens, 0.1 for the remaining tokens.
@@ -97,17 +91,17 @@ class GLM45ModelProvider355B(GLMMoEModelProvider):
     Provider for GLM 4.5 355B-A32B: https://huggingface.co/zai-org/GLM-4.5
     """
 
-    num_layers: int = 92
+    num_hidden_layers: int = 92
     moe_num_experts: int = 160
     hidden_size: int = 5120
-    ffn_hidden_size: int = 12288
+    intermediate_size: int = 12288
     moe_layer_freq: Union[int, List[int]] = field(
         default_factory=lambda: [0] * 3 + [1] * 89
     )  # first three layers are dense
     moe_ffn_hidden_size: int = 1536
     moe_shared_expert_intermediate_size: int = 1536
-    qk_layernorm: bool = True
-    moe_router_topk_scaling_factor: float = 2.5
+    use_qk_norm: bool = True
+    routed_scaling_factor: float = 2.5
 
 
 @dataclass
@@ -116,17 +110,18 @@ class GLM45AirModelProvider106B(GLMMoEModelProvider):
     Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
     """
 
-    num_layers: int = 46
-    moe_num_experts: int = 128
+    num_hidden_layers: int = 46
+    n_routed_experts: int = 128
     hidden_size: int = 4096
-    ffn_hidden_size: int = 10944
+    intermediate_size: int = 10944
     moe_layer_freq: Union[int, List[int]] = field(
         default_factory=lambda: [0] * 1 + [1] * 45
     )  # first one layer is dense
-    moe_ffn_hidden_size: int = 1408
-    moe_shared_expert_intermediate_size: int = 1408
-    qk_layernorm: bool = False
-    moe_router_topk_scaling_factor: float = 1.0
+    moe_intermediate_size: int = 1408
+    n_shared_experts: int = 1
+    use_qk_norm: bool = False
+    routed_scaling_factor: float = 1.0
+    rope_theta: float = 1000000.0
 
 
 @dataclass
@@ -135,11 +130,46 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
     """
 
-    num_layers: int = 10
-    moe_num_shared_experts: int = 1
-    hidden_size: int = 128
-    ffn_hidden_size: int = 128
-    moe_intermediate_size: int = 1408
-    mtp_num_layers: Optional[int] = 0
+    num_hidden_layers: int = 10
+    moe_layer_freq: Union[int, List[int]] = field(
+        default_factory=lambda: [0] * 1 + [1] * 9
+    )  # first one layer is dense
+    seq_length: int = 8192  # default value is 131072
+
+    # all args below will be removed when config system is ready
+    num_nextn_predict_layers: Optional[int] = 0
+    sequence_parallel: bool = True
+    expert_model_parallel_size: int = 16
+    tensor_model_parallel_size: int = 4
+    moe_router_force_load_balancing: bool = True
+    apply_rope_fusion: bool = True
+
+
+@dataclass
+class GLM45AirModelSingleCardDebugProvider(GLMMoEModelProvider):
+    """
+    Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
+    """
+
     use_bias: bool = False
-    vocab_size: int = 37888
+    num_hidden_layers: int = 2
+    num_attention_heads: int = 8
+    router_aux_loss_coef: float = 1e-4
+    num_key_value_heads: int = 8
+    seq_length: int = 8192
+    num_experts_per_tok: int = 4
+    hidden_size: int = 512
+    act_fn: Callable = F.silu
+    intermediate_size: int = 1024
+    moe_layer_freq: Union[int, List[int]] = field(
+        default_factory=lambda: [0] * 1 + [1] * 1
+    )  # first one layer is dense
+    n_routed_experts: int = 8
+
+    moe_intermediate_size: int = 1408
+    n_shared_experts: int = 1
+    use_qk_norm: bool = False
+    routed_scaling_factor: float = 1.0
+    num_nextn_predict_layers: Optional[int] = 0
+
+    transpose_gate_weight: bool = True

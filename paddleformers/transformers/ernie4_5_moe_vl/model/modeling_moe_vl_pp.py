@@ -95,12 +95,12 @@ class PipelinePretrainedModel(PipelinePretrainedModelBase):
             first_key = first_key.split(".")
             # if use virtual pp_degree, the prefix is like 0.0.xxx
             # else it will be like 0.xxx
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             prefixes = self.get_sequential_name_prefixes()
             for k in state_dict_keys:
                 name_splited = k.split(".")
-                if use_virtual_pp_degree:
+                if use_virtual_pipeline_model_parallel_size:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
@@ -389,28 +389,6 @@ def get_send_recv_pairs(diff_rank2size):
         len(send_rank_size_pairs) == 0 and len(recv_rank_size_pairs) == 0
     ), f"send={send_rank_size_pairs} and recv={recv_rank_size_pairs} heap should be empty"
     return send_recv_pairs
-
-
-def partition_numbers(nums, m):
-    """
-    Args:
-    nums: List[int] - Sorted list of positive integers
-    m: int - Number of piles to partition into.
-
-    Returns:
-    List[List[int]] - A list containing m lists
-    """
-    heap = [(0, 0, i) for i in range(m)]
-    heapq.heapify(heap)
-    piles = [[] for _ in range(m)]
-    for num in reversed(nums):
-        sum_pile, count_pile, pile_index = heapq.heappop(heap)
-        piles[pile_index].append(num)
-        sum_pile += num[1] * num[2]
-        count_pile += 1
-        heapq.heappush(heap, (sum_pile, count_pile, pile_index))
-
-    return piles
 
 
 def shard_data_in_pp_group(
@@ -1026,6 +1004,7 @@ def multimodal_data_provider(
     pp_stage_id = hcg.get_stage_id()
     is_first_stage = pp_stage_id == 0
     is_last_stage = pp_stage_id == pp_stages - 1
+    device = paddle.get_device()
 
     def check_len(list_of_ten, is_input, num_sample_per_pp_data=1):
         if not image_fea_concated and is_input:
@@ -1069,8 +1048,8 @@ def multimodal_data_provider(
             if start == end:
                 return None
             if image_fea_concated:
-                return x.slice((0,), start, end).clone().cuda()
-            return x.cuda()._slice(start, end)
+                return x.slice((0,), start, end).clone().to(device)
+            return x.to(device)._slice(start, end)
 
         if image_fea_concated:
             split_offset = [
@@ -1211,6 +1190,8 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
     _init_weights = Ernie4_5_VLMoeForConditionalGeneration._init_weights
     _keep_in_fp32_modules = Ernie4_5_VLMoeForConditionalGeneration._keep_in_fp32_modules
     transpose_weight_keys = Ernie4_5_VLMoeForConditionalGeneration.transpose_weight_keys
+    _gen_aoa_config = Ernie4_5_VLMoeForConditionalGeneration._gen_aoa_config
+    _gen_inv_aoa_config = Ernie4_5_VLMoeForConditionalGeneration._gen_inv_aoa_config
     pipe_model_type = "torch"
 
     def _prepare_pipeline_inputs_func(self, data: Union[List, Dict]):
@@ -1490,7 +1471,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             else:
                 assert images.dtype == paddle.bfloat16, images.dtype
             image_fea = self.vision_model.extract_feature(images, grid_thw)
-            if self.config.tensor_parallel_degree > 1:
+            if self.config.tensor_model_parallel_size > 1:
                 if getattr(self.config.vision_config, "variable_resolution", False):
                     S, C = image_fea.shape
                     image_fea = image_fea.reshape([-1, C * self.config.spatial_conv_size**2])
@@ -1629,16 +1610,16 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         )
         self.balanced_image_shape = None
 
-        tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
+        tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
-        logger.info(f"using vpp={config.virtual_pp_degree}")
+        logger.info(f"using vpp={config.virtual_pipeline_model_parallel_size}")
         if config.sequence_parallel:
             logger.info(f"using sequence_parallel, input seqlen={config.max_sequence_length}")
             assert config.max_sequence_length is not None
             assert (
-                config.tensor_parallel_degree > 1
-            ), f"sequence-parallel needs mp>1, got mp={config.tensor_parallel_degree}"
-        config.tensor_parallel_degree = tensor_parallel_degree
+                config.tensor_model_parallel_size > 1
+            ), f"sequence-parallel needs mp>1, got mp={config.tensor_model_parallel_size}"
+        config.tensor_model_parallel_size = tensor_model_parallel_size
         config.tensor_parallel_rank = tensor_parallel_rank
 
         logger.info("variable resolution vision model")
@@ -1738,7 +1719,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
                 "offload": False,
                 "partition": False,
             },
-            num_virtual_pipeline_stages=config.virtual_pp_degree,
+            num_virtual_pipeline_stages=config.virtual_pipeline_model_parallel_size,
         )
         self.model = Ernie4_5_VLModel(self.config)
         self._modality_param_mapping = None
@@ -1776,7 +1757,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             if not name_split[0].isdigit():
                 pipe = None
             else:
-                if self.config.virtual_pp_degree > 1:
+                if self.config.virtual_pipeline_model_parallel_size > 1:
                     pipe = self._sub_layers[name_split[0]]._sub_layers[name_split[1]]
                 else:
                     pipe = self._sub_layers[name_split[0]]

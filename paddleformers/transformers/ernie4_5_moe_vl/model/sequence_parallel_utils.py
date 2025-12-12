@@ -16,9 +16,7 @@ import hashlib
 
 import numpy as np
 import paddle
-from paddle import distributed as dist
 from paddle.autograd import PyLayer
-from paddle.distributed import fleet
 
 from .distributed.common_dist_utils import (
     all_gather_group,
@@ -50,60 +48,6 @@ if not hasattr(paddle.Tensor, "_md5sum"):
         return hashlib.md5(array_bytes).hexdigest()
 
     paddle.Tensor._md5sum = _md5sum
-
-
-class _AllToAll(paddle.autograd.PyLayer):
-    @staticmethod
-    def forward(
-        ctx,
-        input,
-        group,
-        output_split_sizes=None,
-        input_split_sizes=None,
-    ):
-        """
-        All-to-all communication in the group.
-
-        Args:
-            ctx (Any): Context object.
-            input (Tensor): Input tensor.
-            group (Group): The group object.
-
-        Returns:
-            Tensor: Output tensor.
-        """
-
-        ctx.group = group
-        ctx.input_split_sizes = input_split_sizes
-        ctx.output_split_sizes = output_split_sizes
-        # return input
-        if dist.get_world_size(group) <= 1:
-            return input
-        if input_split_sizes is None and output_split_sizes is None:
-            output = paddle.empty_like(input)
-            task = dist.stream.alltoall_single(output, input, None, None, group, True, True)
-            task.wait()
-        else:
-            out_sizes = [sum(output_split_sizes)]
-            out_sizes.extend(input.shape[1:])
-            output = paddle.empty(out_sizes, dtype=input.dtype)
-            task = dist.stream.alltoall_single(
-                output, input, output_split_sizes, input_split_sizes, group, sync_op=False
-            )
-            task.wait()
-        return output
-
-    @staticmethod
-    def backward(ctx, *grad_output):
-        """
-        all-to-all backward
-
-        """
-        # return grad_output
-        if ctx.input_split_sizes is None and ctx.output_split_sizes is None:
-            return _AllToAll.apply(*grad_output, ctx.group)
-        else:
-            return _AllToAll.apply(*grad_output, ctx.group, ctx.input_split_sizes, ctx.output_split_sizes)
 
 
 class AllGatherVarlenOpV2(PyLayer):
@@ -229,82 +173,6 @@ class AllGatherOp(PyLayer):
         return reduce_scatter_group(grad, group=ctx.group)
 
 
-class AllGatherVarlenOp(PyLayer):
-    """the shape of allgather can be not same for each rank"""
-
-    @staticmethod
-    def forward(ctx, input, group=None):
-        """forward"""
-        hcg = fleet.get_hybrid_communicate_group()
-        if group is None:
-            group = hcg.get_model_parallel_group()
-
-        shape0 = paddle.to_tensor([input.shape[0]])
-        shape0_all = paddle.empty(shape=[group.nranks], dtype=shape0.dtype)
-        dist.stream.all_gather(shape0_all, shape0, group=group, use_calc_stream=True)
-        shape0_all = shape0_all.numpy()
-        max_shape0 = shape0_all.max()
-
-        indices = []
-        for idx, s in enumerate(shape0_all):
-            offset = idx * max_shape0
-            indices.append(list(range(offset, offset + s)))
-        indices = np.concatenate(indices, axis=0)
-        indices = indices.reshape([-1] + [1] * (len(input.shape) - 1))
-        indices = paddle.to_tensor(indices, dtype=paddle.int32)
-
-        padding = max_shape0 - input.shape[0]
-
-        ctx.shape0 = input.shape[0]
-        ctx.max_shape0 = max_shape0
-        ctx.shape0_all = shape0_all
-        ctx.padding = padding
-        ctx.indices = indices
-        ctx.group = group
-
-        if padding > 0:
-            input_shape = input.shape
-            input_shape[0] = padding
-            padding_tensor = paddle.empty(shape=input_shape, dtype=input.dtype)
-            input = paddle.concat([input, padding_tensor], axis=0)
-        output = all_gather_group(input, group)
-        output = paddle.take_along_axis(output, indices, axis=0)
-
-        return output
-
-    @staticmethod
-    def backward(ctx, grad):
-        """backward"""
-        input_shape = grad.shape
-        input_shape[0] = ctx.max_shape0 * ctx.shape0_all.shape[0]
-        output = paddle.zeros(shape=input_shape, dtype=grad.dtype)
-
-        grad = paddle.scatter(output, ctx.indices, grad)
-
-        grad = scatter_axis(grad, ctx.group)
-
-        if ctx.padding > 0:
-            grad = grad[: ctx.shape0]
-        return grad
-
-
-def sequence_parallel_sparse_mask_labels(labels, ignore_label=-100):
-    """allgather sparse label and return sparse idx"""
-    hcg = fleet.get_hybrid_communicate_group()
-    group = hcg.get_model_parallel_group()
-    labels = labels.flatten()
-    labels_local = paddle.split(labels, group.nranks)[group.rank]
-
-    tgt_index = paddle.nonzero(labels_local != ignore_label).squeeze()
-    if tgt_index.numel() == 0:
-        tgt_index = paddle.to_tensor([0])
-
-    tgt_index = tgt_index.reshape([-1]).astype(paddle.int32)
-    labels_local_gather = paddle.take_along_axis(labels_local, tgt_index, axis=0)
-    labels_all_gather = AllGatherVarlenOp.apply(labels_local_gather)
-    return labels_all_gather, tgt_index.reshape([-1, 1])
-
-
 ###################################################
 #                                                 #
 #        Modified Parallel Linear Operator        #
@@ -314,16 +182,3 @@ def sequence_parallel_sparse_mask_labels(labels, ignore_label=-100):
 
 def mark_as_sequence_parallel_parameter(parameter):
     parameter.sequence_parallel = True
-
-
-class MPScale(PyLayer):
-    @staticmethod
-    def forward(ctx, x, mp_degree):
-        """forward"""
-        out = paddle.scale(x, 1.0 / mp_degree)
-        return out
-
-    @staticmethod
-    def backward(ctx, dout):
-        """backward"""
-        return dout

@@ -53,11 +53,11 @@ __all__ = [
 MAPPING_NAMES = OrderedDict(
     [
         ("Bert", "bert"),
-        ("DeepseekV2", "deepseek_v2"),
         ("DeepseekV3", "deepseek_v3"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoeForConditionalGeneration", "ernie4_5_moe_vl"),
+        ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
         ("QWen", "qwen"),
         ("Qwen2", "qwen2"),
@@ -65,6 +65,7 @@ MAPPING_NAMES = OrderedDict(
         ("Qwen2Moe", "qwen2_moe"),
         ("Qwen3", "qwen3"),
         ("Qwen3Moe", "qwen3_moe"),
+        ("Qwen3Next", "qwen3_next"),
         ("Glm4Moe", "glm4_moe"),
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
@@ -115,7 +116,10 @@ def get_name_mapping(task="Model"):
     """
     NAME_MAPPING = OrderedDict()
     for key, value in MAPPING_NAMES.items():
-        import_class = key + task
+        if key in MAPPING_SPACIAL_KEY and task == "Model":
+            import_class = MAPPING_SPACIAL_KEY[key] + task
+        else:
+            import_class = key + task
         new_key = key + "Model_Import_Class"
         NAME_MAPPING[new_key] = import_class
         NAME_MAPPING[import_class] = value
@@ -212,6 +216,9 @@ class _BaseAutoModelClass:
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
         try:
             model_class = getattr(import_class, init_class)
+            return model_class
+        except AttributeError:
+            model_class = getattr(import_class, init_class + "Fleet")
             return model_class
         except AttributeError as err:
             try:
