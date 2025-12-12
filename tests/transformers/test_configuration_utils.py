@@ -91,12 +91,12 @@ class ConfigurationUtilsTest(unittest.TestCase):
         config = FakeSimplePretrainedModelConfig(a=10, b=11, c=12)
         config.fuse_attention_qkv = True
         config.use_fused_rms_norm = True
-        config.tensor_parallel_degree = 8
+        config.tensor_model_parallel_size = 8
         config.tensor_parallel_output = True
 
         config.quantization_config.quant_type = "weight_only_int8"
         str_config = str(config)
-        assert "tensor_parallel_degree" in str_config
+        assert "tensor_model_parallel_size" in str_config
 
         config.test_nonsave = "test"
         config.test_nonsave_2 = "test"
@@ -109,7 +109,7 @@ class ConfigurationUtilsTest(unittest.TestCase):
             loaded_config = json.load(open(os.path.join(tp, "config.json"), "r"))
             assert "fuse_attention_qkv" in loaded_config, "fuse qkv is need to save"
             assert "use_fused_rms_norm" not in loaded_config, "use_fused_rms_norm don't need to save"
-            assert "tensor_parallel_degree" in loaded_config, "tensor_parallel_degree need to save"
+            assert "tensor_model_parallel_size" in loaded_config, "tensor_model_parallel_size need to save"
             assert "paddleformers_version" in loaded_config, "always save paddleformers_version"
             assert (
                 "quantization_config" in loaded_config and "quant_type" in loaded_config["quantization_config"]
@@ -189,7 +189,7 @@ class TestTensorParallelConveter(unittest.TestCase):
     def test_qkv_convertor(self):
         """test_qkv_convertor"""
         hidden_size = 8
-        tensor_parallel_degree = 4
+        tensor_model_parallel_size = 4
         num_attention_heads = 4
         # head_dim = hidden_size // num_attention_heads
         import numpy as np
@@ -211,7 +211,7 @@ class TestTensorParallelConveter(unittest.TestCase):
             [0, 1, 8, 9, 16, 17, 2, 3, 10, 11, 18, 19, 4, 5, 12, 13, 20, 21, 6, 7, 14, 15, 22, 23],
         )
 
-        mp_qkv_splited = normal_fuse_split_tp(tensor_parallel_qkv, tensor_parallel_degree)
+        mp_qkv_splited = normal_fuse_split_tp(tensor_parallel_qkv, tensor_model_parallel_size)
         new_tensor_parallel_qkv = normal_fuse_merge_tp(mp_qkv_splited)
         # print("mp_qkv_splited", mp_qkv_splited[0])
         np.testing.assert_equal(new_tensor_parallel_qkv, tensor_parallel_qkv)

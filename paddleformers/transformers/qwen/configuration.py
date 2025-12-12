@@ -34,7 +34,7 @@ class QWenConfig(PretrainedConfig):
         initializer_range=0.02,
         max_position_embeddings=8192,
         scale_attn_weights=True,
-        use_cache=True,
+        use_cache=False,
         kv_channels=128,
         rotary_pct=1.0,
         rotary_emb_base=10000,

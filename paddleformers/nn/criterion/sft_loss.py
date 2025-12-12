@@ -74,7 +74,7 @@ def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias
             None,
             transpose_y,
             self.config.vocab_size,
-            self.config.tensor_parallel_degree,
+            self.config.tensor_model_parallel_size,
             self.config.tensor_parallel_output,
             False,
             self.loss_subbatch_sequence_length,

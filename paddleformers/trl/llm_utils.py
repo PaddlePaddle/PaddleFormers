@@ -888,7 +888,7 @@ def init_dist_env():
 
         if is_fleet_init:
             # If Fleet is already initialized, get tensor parallel degree and rank
-            tensor_parallel_degree = hcg.get_model_parallel_world_size()
+            tensor_model_parallel_size = hcg.get_model_parallel_world_size()
             tensor_parallel_rank = hcg.get_model_parallel_rank()
         else:
             # If Fleet is not initialized, set up the distributed strategy and initialize Fleet
@@ -903,14 +903,14 @@ def init_dist_env():
             hcg = fleet.get_hybrid_communicate_group()  # Get the hybrid communicate group after initialization
 
             # Get tensor parallel degree and rank after Fleet initialization
-            tensor_parallel_degree = hcg.get_model_parallel_world_size()
+            tensor_model_parallel_size = hcg.get_model_parallel_world_size()
             tensor_parallel_rank = hcg.get_model_parallel_rank()
     else:
         # If not in a distributed environment, set tensor parallel degree and rank to 1 and 0 respectively
-        tensor_parallel_degree = 1
+        tensor_model_parallel_size = 1
         tensor_parallel_rank = 0
 
-    return tensor_parallel_rank, tensor_parallel_degree
+    return tensor_parallel_rank, tensor_model_parallel_size
 
 
 def get_eos_token_id(
