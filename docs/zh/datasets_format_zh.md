@@ -2,19 +2,23 @@
 
 ## 数据流文件格式支持
 
-当前预训练、后训练数据流只支持`jsonl`格式的数据
+当前预训练、后训练数据流支持`jsonl`、`json`、`parquet`格式的数据
 
 ## 1. 预训练数据流
 
 ### 1.1. 在线数据流
 
-预训练数据流中，每条数据都是一个字典，包含以下字段：
+#### 1.1.1. erniekit 格式
 
-- `text` : `str, List(str)`, 预训练文本。
+使用 `erniekit` 格式需要在 `train(/eval)_dataset_type` 处指定为 `erniekit`
+
+erniekit 格式：每条数据都是一个字典，包含以下字段：
+
+- `text` : `str, List(str)`
 
 样例数据：
 
-```text
+```json
 {"text": ["一个需要连续输入值的分类问题的示例是房屋价格预测。房屋的价格通常基于诸如平方英尺、位置、卧室和浴室数量以及像后院或车库等功能这样的因素定价。为了准确预测房屋价格，这些标准必须作为连续输入值输入到分类模型中。"]}
 ...
 ```
@@ -26,11 +30,26 @@ wget https://paddleformers.bj.bcebos.com/datasets/pt_data.tar.gz
 mkdir -p data/pt && tar -xf pt_data.tar.gz -C data/pt/
 ```
 
+#### 1.1.2. messages 格式
+
+使用 `messages` 格式需要在 `train(/eval)_dataset_type` 处指定为 `messages`
+
+messages 格式：每条数据都是一个字典，包含以下字段：
+
+- `messages` : `List(Dict）`
+
+样例数据：
+
+```json
+{"messages": {"role": "assistant", "content": "一个需要连续输入值的分类问题的示例是房屋价格预测。房屋的价格通常基于诸如平方英尺、位置、卧室和浴室数量以及像后院或车库等功能这样的因素定价。为了准确预测房屋价格，这些标准必须作为连续输入值输入到分类模型中。"}}
+...
+```
+
 ### 1.2. 离线数据流
 
 我们也可以选择使用离线的比特预训练数据流，更节省内存。
 
-为了方便测试，我们也提供了[离线预训练demo数据集](https://paddleformers.bj.bcebos.com/datasets/pretrain_offline_data.tar.gz)可以直接使用：
+为了方便测试，我们也提供了[离线预训练 demo 数据集](https://paddleformers.bj.bcebos.com/datasets/pretrain_offline_data.tar.gz)可以直接使用：
 
 ```shell
 wget https://paddleformers.bj.bcebos.com/datasets/pretrain_offline_data.tar.gz
@@ -41,7 +60,7 @@ tar -xf pretrain_offline_data.tar.gz -C data/pre-training/
 
 下载一个文本数据集，例如 https://modelscope.cn/datasets/BazingaLyn/mini_pretrain_dataset
 
-格式需为jsonl，每行格式例如BazingaLyn/mini_pretrain_dataset/pretrain_hq_v7.jsonl：
+格式需为 jsonl，每行格式例如 BazingaLyn/mini_pretrain_dataset/pretrain_hq_v7.jsonl：
 ```text
 {"text": "番茄炒蛋\n材料：\n鸡蛋3个、番茄1个、油、盐、糖、水淀粉\n做法：..."}
 {"text": "请描述一下如何正确规划个人理财。正确规划个人理财需要以下几个步骤..."}
@@ -63,35 +82,35 @@ python -u examples/tools/create_pretraining_data.py \
 ```
 
 - 参数说明
- 
+
 | 参数名              | 类型        | 说明                 |
 |--------------------|----------- |-----------------|
 | `--model_name_or_path`     | string     | 模型路径  |
 | `--data_format`    | string     | 支持的文件格式，当前只支持 JSON |
-| `--input_path`     | string     | 输入的json文件的路径  |
-| `--append_eos`     | store_true | 是否在document的结尾添加eos token  |
+| `--input_path`     | string     | 输入的 json 文件的路径  |
+| `--append_eos`     | store_true | 是否在 document 的结尾添加 eos token  |
 | `--output_prefix`  | str        | 输出文件的前缀    |
 | `--workers`        | int        | 运行的进程数     |
 | `--log_interval`   | int        | 打印日志间隔   |
-| `--data_impl`      | str        | 制作的数据集类型，默认为mmap，也可以选择lazy |
+| `--data_impl`      | str        | 制作的数据集类型，默认为 mmap，也可以选择 lazy |
 
-## 2. SFT数据流
+## 2. SFT 数据流
 
-### erniekit格式
+### erniekit 格式
 
 使用 `erniekit` 格式需要在 `train(/eval)_dataset_type` 处指定为 `erniekit`
 
-SFT数据流中，每条数据都是一个字典，包含以下字段：
+SFT 数据流中，每条数据都是一个字典，包含以下字段：
 
 - `src` : `str, List(str)`, 模型的输入指令（instruction）、提示（prompt），模型应该执行的任务。
 - `tgt` : `str, List(str)`, 模型的输出。
 - `system(optional)` : 系统配置
 - `label(optional)`: Training flag (1=参与训练, 0=不参与训练)
-- `is_system(optional)` : 标志src的第一条数据是否是system
+- `is_system(optional)` : 标志 src 的第一条数据是否是 system
 
 Notes:
 * `src` 和 `tgt` 为支持多轮对话的列表（List）对象
-* 每个训练样本均为JSON格式，多个样本以换行符分隔
+* 每个训练样本均为 JSON 格式，多个样本以换行符分隔
 
 样例数据：
 ```json
@@ -117,13 +136,13 @@ mkdir -p data/sft && tar -xf alpaca_demo.gz -C data/sft/ --strip-components=1
 ```
 
 
-### chatml格式
+### messages 格式
 
-使用 `chatml` 格式需要在 `train(/eval)_dataset_type` 处指定为 `chatml`
+使用 `messages` 格式需要在 `train(/eval)_dataset_type` 处指定为 `messages`
 
-SFT数据流中，每条数据都是一个字典，包含以下字段：
+SFT 数据流中，每条数据都是一个字典，包含以下字段：
 
-- `messages` : `List(Dict)`, 每个字典包含 `role`、`content`、`tool_calls(optional)` 三种key。
+- `messages` : `List(Dict)`, 每个字典包含 `role`、`content`、`tool_calls(optional)` 三种 key。
     - `role` 的值可以选择 `system`, `user`, `assistant` 或 `tool(optional)`。
     - `content`为具体的对话内容。
     - `tool_calls(optional)` 为申请工具调用。
@@ -131,7 +150,7 @@ SFT数据流中，每条数据都是一个字典，包含以下字段：
 - `label(optional)`: Training flag (1=参与训练, 0=不参与训练)
 
 Notes:
-* 每个训练样本均为JSON格式，多个样本以换行符分隔
+* 每个训练样本均为 JSON 格式，多个样本以换行符分隔
 
 样例数据：
 
@@ -147,9 +166,9 @@ Notes:
 ]
 ```
 
-- 注意：在 `examples/data/sft_think-train.jsonl` 和 `examples/data/sft_think-eval.jsonl` 中提供的demo数据集来自由nvidia发布的 [OpenCodeReasoning数据集](https://huggingface.co/datasets/nvidia/OpenCodeReasoning)。该数据集需要遵循 Creative Commons Attribution 4.0 International License (CC BY 4.0) 协议。
+- 注意：在 `examples/data/sft_think-train.jsonl` 和 `examples/data/sft_think-eval.jsonl` 中提供的 demo 数据集来自由 nvidia 发布的 [OpenCodeReasoning 数据集](https://huggingface.co/datasets/nvidia/OpenCodeReasoning)。该数据集需要遵循 Creative Commons Attribution 4.0 International License (CC BY 4.0) 协议。
 
-用于function call训练的demo数据：
+用于 function call 训练的 demo 数据：
 
 ```json
 [
@@ -168,30 +187,30 @@ Notes:
 ]
 ```
 
-为了方便测试，我们也提供了 `chatml` function call SFT 数据集可以直接使用：
+为了方便测试，我们也提供了 `messages` function call SFT 数据集可以直接使用：
 ```bash
 wget https://paddleformers.bj.bcebos.com/datasets/sft_function_call_demo.tar.gz
 
 mkdir -p data/sft && tar -zxf sft_function_call_demo.tar.gz -C data/sft/
 ```
 
-## 3. DPO数据流
+## 3. DPO 数据流
 
-### erniekit格式
+### erniekit 格式
 
 使用 `erniekit` 格式需要在 `train(/eval)_dataset_type` 处指定为 `erniekit`
 
-DPO数据流中，每条数据都是一个字典，包含以下字段：
+DPO 数据流中，每条数据都是一个字典，包含以下字段：
 
 - `system(optional)`: 系统配置
 - `src` : `str, List(str)`, 用户对话内容
-- `tgt` : `str, List(str)`, 系统回复内容（比src少一个）
+- `tgt` : `str, List(str)`, 系统回复内容（比 src 少一个）
 - `response` : `str, List(str)`, 包含 chosen 和 rejected 回复。
 - `sort` : `List(int)`, sort 值用于区分 response 中 chosen 和 rejected（sort 值小的是 rejected，sort 值大的是 chosen）。
-- `is_system(optional)` : 标志src的第一条数据是否是system
+- `is_system(optional)` : 标志 src 的第一条数据是否是 system
 
 Notes:
-* 每个训练样本均为JSON格式，多个样本以换行符分隔
+* 每个训练样本均为 JSON 格式，多个样本以换行符分隔
 
 样例数据：
 
@@ -226,11 +245,11 @@ wget https://bj.bcebos.com/paddlenlp/datasets/examples/ultrafeedback_binarized.t
 mkdir -p data/dpo && tar -zxf ultrafeedback_binarized.tar.gz -C data/dpo/ --strip-components=1
 ```
 
-### chatml 格式
+### messages 格式
 
-使用 `chatml` 格式需要在 `train(/eval)_dataset_type` 处指定为 `chatml`
+使用 `messages` 格式需要在 `train(/eval)_dataset_type` 处指定为 `messages`
 
-DPO数据流中，每条数据都是一个字典，包含以下字段：
+DPO 数据流中，每条数据都是一个字典，包含以下字段：
 - `messages` : `List(dict)`, 对话历史列表。
   - 普通轮次：包含 `role` (`"user"` 或 `"assistant"`) 和 `content` (`str`) 字段。
   - 偏好/非偏好轮次（用于偏好学习）：包含以下两个关键字段，用于表示对同一用户查询的不同系统回复的偏好排序。
@@ -239,7 +258,7 @@ DPO数据流中，每条数据都是一个字典，包含以下字段：
 - `tools` : `List(dict)`, 对话中可能用到的工具（函数）的定义列表。
 - `label` : `List(int)`, 用于区分 `preferred_output` 和 `non_preferred_output` 的排序标签。其中 0 对应 `non_preferred_output` (rejected)， 1 对应 `preferred_output` (chosen)。
 
-详细的数据格式可见[function call说明](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/examples/best_practices/function_call.md)
+详细的数据格式可见[function call 说明](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/examples/best_practices/function_call.md)
 
 样例数据
 ```json
@@ -303,9 +322,107 @@ DPO数据流中，每条数据都是一个字典，包含以下字段：
 }
 ```
 
-为了方便测试，我们也提供了 `chatml` function call DPO 数据集可以直接使用：
+为了方便测试，我们也提供了 `messages` function call DPO 数据集可以直接使用：
 ```bash
 wget https://paddleformers.bj.bcebos.com/datasets/dpo_function_call_1k.tar.gz
 
 mkdir -p data/dpo_fc && tar -zxf dpo_function_call_1k.tar.gz -C data/dpo_fc/
+```
+
+## 4. 多模 SFT 数据流
+
+### erniekit 格式
+
+使用 `erniekit` 格式需要在 `train(/eval)_dataset_type` 处指定为 `erniekit`
+
+SFT 数据流中，每条数据都是一个字典，包含以下字段：
+
+* `text_info`: 纯文本的列表，每个元素包含一个 `text` 和一个 `tag`
+  * `text`: 来自使用者的问题或系统回复的文字内容
+  * `tag`: 遮挡标签 (`no_mask`=包含在训练中, `mask`=排除)
+* `image_info`: 图像组成的列表，每个元素包含一个 `image_url` 和一个 `matched_text_index`
+  * `image_url`: 线上下载图像的网址或本地存取图像的路径
+  * `matched_text_index`: `text_info` 中匹配文字的索引
+    * 预设值: `matched_text_index=0` 表示图像与第一个文字匹配，并将其放置在第一个文字之前
+* `is_system(optional)`: 系统标志 (1=系统配置 0=无系统配置)
+  * 系统配置 = 如果 `is_system=1`，则为 `text_info[0]`
+
+注意：
+* 通过将 `image_info` 替换为 `video_info` 来支持视频数据
+* 请确保 `mask` 和 `no_mask` 在 `text_info` 中交替出现
+
+这是一个 SFT VL 数据集的多图像示例：
+
+```json
+{
+    "image_info": [
+        {"matched_text_index": 0, "image_url": "./DoclingMatix/218/0.png"},
+        {"matched_text_index": 0, "image_url": "./DoclingMatix/218/1.png"}
+    ],
+    "text_info": [
+        {"text": "What is the purpose of the resolution discussed in the text?", "tag": "mask"},
+        {"text": "The purpose of the resolution is to approve the redevelopment contract of the Philadelphia Redevelopment Authority for the redevelopment and urban renewal of a portion of the Haddington Urban Renewal Area, Unit Nos. 2 and 3, and to authorize the Redevelopment Authority to execute the redevelopment contract with Danielle M. Carson-Varns.", "tag": "no_mask"},
+        {"text": "Who introduced Resolution No. 160204 to the City Council?", "tag": "mask"},
+        {"text": "Councilmember Blackwell introduced Resolution No. 160204 to the City Council.", "tag": "no_mask"},
+        ...
+    ]
+}
+```
+
+这是一个 SFT VL 数据集的单视频示例：
+```json
+{
+    "video_info": [
+        {"matched_text_index": 0, "image_url": "./NExTVideo/1027/4789497818.mp4"}
+    ],
+    "text_info": [
+        {"text": "how does the man sit on the grass?\nA. kneel\nB. one leg in the air\nC. sitting on bicycle seat\nD. legs spread out\nE. squatting down\n Answer with the option's letter from the given choices directly.", "tag": "mask"},
+        {"text": "D", "tag": "no_mask"}
+    ]
+}
+```
+
+这是一个 SFT VL 数据集的系统配置示例:
+```json
+{
+    "is_system": 1,
+    "text_info": [
+        {"text": "Your role as ...", "tag": "mask"},
+        {"text": "好的", "tag": "no_mask"},
+        {"text": "What is written...", "tag": "mask"},
+        {"text": "<think>So I've got...", "tag": "no_mask"},
+        ...
+    ]
+    "image_info": [...]
+}
+```
+
+为了方便测试，我们也提供了用于快速训练的 demo 数据，请根据您的需要下载[数据](https://paddleformers.bj.bcebos.com/datasets/DoclingMatix.tar.gz)，并将其解压缩到`tests/fixtures/dummy/sft-vl/`：
+
+```shell
+wget https://paddleformers.bj.bcebos.com/datasets/DoclingMatix.tar.gz
+tar -xf DoclingMatix.tar.gz -C tests/fixtures/dummy/sft-vl/
+```
+
+### messages 格式
+
+使用 `messages` 格式需要在 `train(/eval)_dataset_type` 处指定为 `messages`
+
+多模 messages 格式需要在纯文 messages 格式的基础上加上`images`、`videos`、`audios`几个 key，用于传入多模态资源的`url`或者`path`，同时在`messages`中插入`<image>`、`<video>`、`<audio>`标签来表述插入多模态数据的位置：
+
+纯文：
+```json
+{"messages": [{"role": "assistant", "content": "预训练的文本在这里"}]}
+```
+加入图片：
+```json
+{"messages": [{"role": "assistant", "content": "<image>是一只小狗，<image>是一只小猫"}], "images": ["/xxx/x.jpg", "/xxx/x.png"]}
+```
+加入音频：
+```json
+{"messages": [{"role": "assistant", "content": "<audio>描述了今天天气真不错"}], "audios": ["/xxx/x.wav"]}
+```
+加入图片与视频：
+```json
+{"messages": [{"role": "assistant", "content": "<image>是一个大象，<video>是一只狮子在跑步"}], "images": ["/xxx/x.jpg"], "videos": ["/xxx/x.mp4"]}
 ```

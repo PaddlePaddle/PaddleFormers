@@ -1385,11 +1385,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             predictor_args : PredictorArgument
                 The args of the predictor.
         """
-        tensor_parallel_degree = kwargs.pop("tensor_parallel_degree", 1)
+        tensor_model_parallel_size = kwargs.pop("tensor_model_parallel_size", 1)
         tensor_parallel_rank = kwargs.pop("tensor_parallel_rank", 0)
 
         if predictor_args.mode == "dynamic" or predictor_args.speculate_method in ["eagle", "mtp"]:
-            config.tensor_parallel_degree = tensor_parallel_degree
+            config.tensor_model_parallel_size = tensor_model_parallel_size
             config.tensor_parallel_rank = tensor_parallel_rank
             config.model_name_or_path = predictor_args.model_name_or_path
             config.quant_type = predictor_args.quant_type
@@ -2447,7 +2447,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     config,
                     loaded_keys,
                     pre_tensor_parallel_split=True
-                    if config is not None and config.tensor_parallel_degree > 1
+                    if config is not None and config.tensor_model_parallel_size > 1
                     else False,
                 )
                 missing_keys = list(set(missing_keys) - set(new_keys))
@@ -2498,7 +2498,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 if quantization_linear_list is not None:
                     if (
                         shard_file.endswith(".safetensors")
-                        and config.tensor_parallel_degree > 1
+                        and config.tensor_model_parallel_size > 1
                         and "tp" not in os.path.split(shard_file)[-1]
                     ):
                         pre_tensor_parallel_split = True
@@ -2539,7 +2539,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 else:
                     if (
                         shard_file.endswith(".safetensors")
-                        and config.tensor_parallel_degree > 1
+                        and config.tensor_model_parallel_size > 1
                         and "tp" not in os.path.split(shard_file)[-1]
                     ):
                         pre_tensor_parallel_split = True
@@ -2610,7 +2610,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     ignore_mismatched_sizes,
                 )
 
-                if config.tensor_parallel_degree > 1 and ".tp" not in shard_file and not pre_tensor_parallel_split:
+                if config.tensor_model_parallel_size > 1 and ".tp" not in shard_file and not pre_tensor_parallel_split:
                     logger.info("Converting state_dict to Tensor Parallel Format")
                     # ignore error for multi shard, since only parts of data
                     state_dict = cls.convert_tensor_parallel(
@@ -2889,9 +2889,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         if not is_sharded and state_dict is None:
             # 4. loading non-sharded ckpt from the state dict
-            if config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model_state.pdparams"):
+            if config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith("model_state.pdparams"):
                 state_dict = cls.convert_tensor_parallel(resolved_archive_file, config)
-            elif config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model.safetensors"):
+            elif config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith("model.safetensors"):
                 with safe_open(resolved_archive_file, framework="np", device="cpu") as f:
                     loaded_keys = f.keys()
                 tp_actions = cls.get_tensor_parallel_convert_actions(config, loaded_keys)
@@ -3109,20 +3109,26 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
-        if hasattr(self.__class__, "_gen_inv_aoa_config") and save_checkpoint_format == "flex_checkpoint":
-            aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+        if (
+            hasattr(self.__class__, "_gen_inv_aoa_config") or hasattr(self, "_gen_inv_aoa_config")
+        ) and save_checkpoint_format == "flex_checkpoint":
+            if hasattr(self.__class__, "_gen_inv_aoa_config"):
+                aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+            else:
+                aoa_config = self._gen_inv_aoa_config(model_to_save.config)
 
             clean_unrelated_safetensors(save_dir)
 
-            total_saved_size = HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(
-                save_dir, max_shard_size
-            )
+            HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:
                 model_to_save.config.dtype = str(dtype).split(".")[1]
             if config_to_save is None:
-                config_to_save = copy.deepcopy(model_to_save.config)
+                if hasattr(model_to_save, "config_to_save"):
+                    config_to_save = copy.deepcopy(model_to_save.config_to_save)
+                else:
+                    config_to_save = copy.deepcopy(model_to_save.config)
 
             # Attach architecture to the config
             config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
@@ -3131,8 +3137,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
-                # Organize the files in this directory into the Hugging Face (HF) format.
-                replace_name_and_gen_index(save_directory, total_saved_size)
             return
 
         # save the string version of dtype to the config, e.g. convert paddle.float32 => "float32"
@@ -3147,7 +3151,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Save the model
         if state_dict is None:
             state_dict = model_to_save.state_dict()
-            if config_to_save.tensor_parallel_degree > 1:
+            if config_to_save.tensor_model_parallel_size > 1:
                 if not config_to_save.quantization_config.is_support_merge_tensor_parallel() and merge_tensor_parallel:
                     logger.warning(
                         f"Quantization strategy: {config_to_save.quantization_config.weight_quantize_algo} does not support merge tensor parallel, thus we set merge_tensor_parallel to False."
@@ -3155,7 +3159,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     merge_tensor_parallel = False
                 if merge_tensor_parallel:
                     state_dict = model_to_save.merge_tensor_parallel(state_dict, config_to_save)
-                    config_to_save.tensor_parallel_degree = 1
+                    config_to_save.tensor_model_parallel_size = 1
                     if config_to_save.tensor_parallel_rank != 0:
                         logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
                         return
@@ -3420,12 +3424,12 @@ class PipelinePretrainedModel(PretrainedModel):
             first_key = first_key.split(".")
             # if use virtual pp_degree, the prefix is like 0.0.xxx
             # else it will be like 0.xxx
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             prefixes = self.get_sequential_name_prefixes()
             for k in state_dict_keys:
                 name_splited = k.split(".")
-                if use_virtual_pp_degree:
+                if use_virtual_pipeline_model_parallel_size:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
@@ -3644,7 +3648,7 @@ def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=
         config (`AutoConfig`): The model config.
         return_numpy (bool): Whether load the tp checkpoint as numpy.
     """
-    if config.tensor_parallel_degree == 1 or config.tensor_parallel_degree == -1:
+    if config.tensor_model_parallel_size == 1 or config.tensor_model_parallel_size == -1:
         return load_sharded_checkpoint_as_one(folder, return_numpy=return_numpy)
     else:
         rank_model_path = os.path.join(folder, f"model_state.tp0{config.tensor_parallel_rank}.pdparams")
@@ -3820,8 +3824,8 @@ def replace_name_and_gen_index(path, total_size):
         start_idx.append(acc)
         acc += files_num
 
-    env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", 0))
     env_local_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
+    env_local_rank = dist.get_rank() % env_local_size
     assert env_local_rank >= 0, f"expected positive local rank, got {env_local_rank}"
 
     cur_file_index = start_idx[cur_rank] // env_local_size

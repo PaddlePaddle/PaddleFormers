@@ -11,9 +11,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Package"""
+import sys
+from typing import TYPE_CHECKING
 
-"""Learning rate scheduler related classes"""
-from .cosine_lr import get_cosine_schedule_with_warmup
-from .wsd_lr import get_wsd_schedule_with_warmup
+from ...utils.lazy_import import _LazyModule
 
-__all__ = ["get_cosine_schedule_with_warmup", "get_wsd_schedule_with_warmup"]
+import_structure = {
+    "image_processor": ["PaddleOCRVLImageProcessor"],
+    "processor": ["PaddleOCRVLProcessor"],
+    "configuration": ["PaddleOCRVLConfig"],
+    "modeling": ["PaddleOCRVLForConditionalGeneration"],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .image_processor import *
+    from .modeling import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

@@ -16,7 +16,7 @@ from typing import Tuple, Union
 import paddle
 import paddle.nn as nn
 from paddle.distributed.fleet.utils import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp
 
 from ...transformers.sequence_parallel_utils import (
     AllGatherVarlenOp,
@@ -74,7 +74,7 @@ def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias
             None,
             transpose_y,
             self.config.vocab_size,
-            self.config.tensor_parallel_degree,
+            self.config.tensor_model_parallel_size,
             self.config.tensor_parallel_output,
             False,
             self.loss_subbatch_sequence_length,
@@ -155,7 +155,7 @@ def sft_loss_forward(
     else:
         if self.sequence_parallel:
             if hidden_states is not None:
-                hidden_states = AllGatherOp.apply(hidden_states)
+                hidden_states = GatherOp.apply(hidden_states)
 
     masked_lm_labels = labels
     # bsz,seq_len,hidden_size or seq_len,hidden_size
