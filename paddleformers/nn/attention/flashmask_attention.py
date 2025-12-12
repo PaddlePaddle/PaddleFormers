@@ -37,6 +37,12 @@ def flashmask_attention_forward(
     query = query.transpose(1, 2)
     key = key.transpose(1, 2)
     value = value.transpose(1, 2)
+
+    # NOTE: flashmask_v2 currently does not support the configuration where headdim_q != headdim_v.
+    fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])["FLAGS_flash_attn_version"]
+    if query.shape[-1] != value.shape[-1] and attn_mask_startend_row_indices is not None and fa_version == 3:
+        paddle.set_flags({"FLAGS_flash_attn_version": 2})
+
     if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.ndim == 3:
         attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
     if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
