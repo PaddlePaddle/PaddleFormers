@@ -1320,7 +1320,7 @@ class Trainer:
             ):
                 self._load_from_checkpoint(resume_from_checkpoint)
 
-            if self.args.should_load_sharding_stage1_model:
+            if self.args.should_load_sharding_stage1_model and self.args.load_checkpoint_format != "flex_checkpoint":
                 model = self._wrap_model_and_load_sharded_checkpoint(resume_from_checkpoint)
 
             elif self.args.should_save_sharding_stage1_model and not (
