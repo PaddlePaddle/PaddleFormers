@@ -415,28 +415,6 @@ class TrainingArguments:
             Defaults to False.
         save_hf_steps (`int`, *optional*, defaults to -1):
             Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
-        hybrid_parallel_expert_grad_scale (float, optional, defaults to None)(
-            Scaling factor for expert gradients when Expert Parallel is enabled.
-
-            When Expert Parallel is enabled, the number of tokens processed by each MoE expert
-            may change due to variations in context parallel degree, tensor parallel degree, or
-            expert parallel degree. To ensure that the gradient scale for each expert remains
-            consistent and is not affected by such changes, this factor should be applied to
-            the expert gradients.
-
-            The value is defined as the ratio of the current configuration to a reference (base) configuration:
-
-            .. math::
-                hybrid\\_parallel\\_expert\\_grad\\_scale} =
-                    \\frac{tensor\\_parallel\\_degree}{expert\\_parallel\\_degree}
-        )
-        enable_auto_parallel (`bool`, *optional*, defaults to `False`):
-            whether to run distributed training in auto parallel mode.
-        use_intermediate_api (`bool`, *optional*, defaults to `True`):
-            whether to use auto_parallel intermediate API if `enable_auto_parallel=True`.
-
-        use_cache (`bool`, *optional*, defaults to `False`):
-            Whether or not to enable cache for the model. For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`.
 
         load_from_hf (bool, optional):
             Whether to load a checkpoint in the HuggingFace format.
