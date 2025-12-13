@@ -1405,7 +1405,11 @@ def download_recovery_ckpt_from_pdc(recovery_checkpoint_path, timeout):
 
 def _insert_sync(self, sync_var, src, mp_group, sync_mode):
     # Get device type where the sync_var is located
-    original_device = "pin_memory" if str(sync_var.place) == "Place(gpu_pinned)" else "Other"
+    original_device = (
+        "pin_memory"
+        if str(sync_var.place) == "Place(gpu_pinned)" or str(sync_var.place) == "Place(xpu_pinned)"
+        else "Other"
+    )
 
     # If the sync_var is on pin memory, first move it to CUDA or other decives
     if original_device == "pin_memory":
@@ -1428,7 +1432,10 @@ def _insert_sync(self, sync_var, src, mp_group, sync_mode):
 
     # Move it back to pin memory
     if original_device == "pin_memory":
-        sync_var = paddle.to_tensor(sync_var, place=paddle.CUDAPinnedPlace())
+        if get_env_device() == "gpu":
+            sync_var = paddle.to_tensor(sync_var, place=paddle.CUDAPinnedPlace())
+        elif get_env_device() == "xpu":
+            sync_var = paddle.to_tensor(sync_var, place=paddle.XPUPinnedPlace())
 
 
 def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):

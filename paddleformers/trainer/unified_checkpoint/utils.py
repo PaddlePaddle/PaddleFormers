@@ -63,6 +63,8 @@ optimizer_non_scaler_name = [
 DEST_PLACE = paddle.CPUPlace()
 if paddle.device.is_compiled_with_cuda():
     DEST_PLACE = paddle.CUDAPinnedPlace()
+elif paddle.device.is_compiled_with_xpu():
+    DEST_PLACE = paddle.XPUPinnedPlace()
 
 
 class UnifiedCheckpointOption(ExplicitEnum):
