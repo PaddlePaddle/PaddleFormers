@@ -92,7 +92,6 @@ import_structure = {
     ],
     "tools": [
         "device_guard",
-        "paddle_device",
     ],
     "downloader": ["get_weights_path_from_url"],
     "type_validators": [

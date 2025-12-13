@@ -27,7 +27,6 @@ from typing import Optional, Tuple, Type, Union
 import pip
 
 from paddleformers.utils.log import logger
-from paddleformers.utils.tools import paddle_device
 
 _original_import = builtins.__import__
 _imported_modules = {}
@@ -209,6 +208,8 @@ def is_protobuf_available():
 
 def is_paddle_cuda_available() -> bool:
     if is_paddle_available():
+        from .tools import paddle_device
+
         return paddle_device.device_count() > 0
     else:
         return False
