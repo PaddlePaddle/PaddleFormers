@@ -1522,11 +1522,6 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             filter_sharded_params,
         )
 
-        # filter_sharded_params = sharded_state_dict_compatibility(filter_sharded_params, return_sharded_state_dict=True)
-        # exclude_parameters_in_state_dict = sharded_state_dict_compatibility(
-        #     exclude_parameters_in_state_dict, return_sharded_state_dict=True
-        # )
-
         state_dict = model_to_save.state_dict()
         # tmp wa should_save_sharding_stage1_model
         if self.args.should_save_sharding_stage1_model or self.args.save_checkpoint_format == "flex_checkpoint":

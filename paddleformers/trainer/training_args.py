@@ -1205,26 +1205,6 @@ class TrainingArguments:
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
 
-    hybrid_parallel_expert_grad_scale: Optional[float] = field(
-        default=None,
-        metadata={"help": ("Scaling factor for expert gradients.")},
-    )
-    use_intermediate_api: bool = field(
-        default=True,
-        metadata={"help": "whether to use auto_parallel intermediate API."},
-    )
-    offload_fp8_expert_master_weight: bool = field(
-        default=True,
-        metadata={"help": "Offload FP8 expert weights."},
-    )
-
-    use_cache: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether or not to use cache for the model For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`."
-        },
-    )
-
     load_from_hf: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to load a checkpoint in the HuggingFace format."},
