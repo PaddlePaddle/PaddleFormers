@@ -130,11 +130,7 @@ class ModularMoELayer(nn.Layer):
         expert_args = {}
         expert_args["config"] = routed_expert_pretrained_config
         expert_args["intermediate_size"] = self.moe_intermediate_size
-        # Add more arguments for different models
-        if self.model_type == "qwen3_moe":
-            pass
-        elif self.model_type == "glm4_moe":
-            expert_args["fuse_up_gate"] = self.fuse_up_gate
+        expert_args["fuse_up_gate"] = self.fuse_up_gate
 
         self.experts = nn.LayerList([])
         for i in range(self.num_experts):
@@ -153,11 +149,7 @@ class ModularMoELayer(nn.Layer):
         shared_expert_args = {}
         shared_expert_args["config"] = shared_expert_pretrained_config
         shared_expert_args["intermediate_size"] = self.moe_intermediate_size * self.num_shared_experts
-        # Add more arguments for different models
-        if self.model_type == "qwen3_moe":
-            pass
-        elif self.model_type == "glm4_moe":
-            shared_expert_args["fuse_up_gate"] = self.fuse_up_gate
+        shared_expert_args["fuse_up_gate"] = self.fuse_up_gate
 
         if self.num_shared_experts > 0:
             self.shared_experts = self.expert_class(**shared_expert_args)
