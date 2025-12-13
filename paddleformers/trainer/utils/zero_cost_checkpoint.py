@@ -53,6 +53,7 @@ from paddle.incubate.tensor.manipulation import (
 from paddle.optimizer.fusion_utils import FusionStorageHelper
 
 from paddleformers.trainer.utils.sharding_io import GroupGetter
+from paddleformers.utils.tools import paddle_device
 
 from ...transformers.model_utils import unwrap_optimizer
 from . import reshard as reshard_util
@@ -128,10 +129,10 @@ class ZCCWorkerStatus(Enum):
 
 def showmem(msg):
     return (
-        f"{msg} mem_alloc: {paddle.device.cuda.memory_allocated():.3e}"
-        f" Bytes/{paddle.device.cuda.max_memory_allocated():.3e} Bytes"
-        f"mem_reserv: {paddle.device.cuda.memory_reserved():.3e} "
-        f"Bytes/{paddle.device.cuda.max_memory_reserved():.3e} Bytes"
+        f"{msg} mem_alloc: {paddle_device.memory_allocated():.3e}"
+        f" Bytes/{paddle_device.max_memory_allocated():.3e} Bytes"
+        f"mem_reserv: {paddle_device.memory_reserved():.3e} "
+        f"Bytes/{paddle_device.max_memory_reserved():.3e} Bytes"
     )
 
 

@@ -167,7 +167,7 @@ from ..utils.fault_tolerance import LOSS_INF_ERROR, LOSS_NAN_ERROR
 from ..utils.import_utils import is_datasets_available, is_paddle_cuda_available
 from ..utils.log import MetricsDumper, logger
 from ..utils.pdc_sdk import FLASH_DEVICE
-from ..utils.tools import get_env_device
+from ..utils.tools import get_env_device, paddle_device
 from .argparser import strtobool
 from .integrations import get_reporting_integration_callbacks
 from .plugins.timer import RuntimeTimer, get_timers, set_timers
@@ -2421,8 +2421,8 @@ class Trainer:
                 if is_paddle_cuda_available():
                     logs.update(
                         {
-                            "gpu_max_memory_allocated": paddle.device.cuda.max_memory_allocated() >> 20,
-                            "gpu_max_memory_reserved": paddle.device.cuda.max_memory_reserved() >> 20,
+                            "gpu_max_memory_allocated": paddle_device.max_memory_allocated() >> 20,
+                            "gpu_max_memory_reserved": paddle_device.max_memory_reserved() >> 20,
                         }
                     )
 

@@ -22,10 +22,12 @@ from functools import partial
 import numpy as np
 import paddle
 
+from paddleformers.utils.tools import paddle_device
+
 is_sm90 = (
     paddle.base.core.is_compiled_with_cuda()
-    and paddle.device.cuda.get_device_capability()[0] == 9
-    and paddle.device.cuda.get_device_capability()[1] == 0
+    and paddle_device.get_device_capability()[0] == 9
+    and paddle_device.get_device_capability()[1] == 0
 )
 if is_sm90:
     os.environ["FLAGS_flash_attn_version"] = "3"
