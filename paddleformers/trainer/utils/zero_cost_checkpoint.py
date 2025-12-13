@@ -1386,7 +1386,7 @@ class DistInfoCollectorValidator:
         return True, None
 
 
-def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None, save_replicas=False):
+def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None, replicate_saved_into_local=False):
     with paddle.base.dygraph.guard():
         assert isinstance(state_dict, dict), "The state_dict should be a dictionary."
         flat_state_dict, mapping = flatten_state_dict(state_dict)
@@ -1466,7 +1466,7 @@ def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None, save_replicas
                 selected_main_file = min(candidates, key=lambda f: file_load[f])
                 file_load[selected_main_file] += 1
 
-                if save_replicas:
+                if replicate_saved_into_local:
                     lti_main = replace(lti, replica_id=0)
                     out[lti_main] = selected_main_file
                     replica_id = 1
@@ -1601,7 +1601,9 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
         self.ckpt_data_name, self.ckpt_meta_name = create_ckpt_file_name()
         # self.model_ckpt_meta, self.model_state_filter = saved_ckptmeta(model.sharded_state_dict(), self.ckpt_data_name)
         self.model_ckpt_meta, self.model_state_filter = saved_ckptmeta(
-            self.manipulated_state_dict, self.ckpt_data_name, save_replicas=self.args.save_replicas
+            self.manipulated_state_dict,
+            self.ckpt_data_name,
+            replicate_saved_into_local=self.args.replicate_saved_into_local,
         )
 
         # opt state dict ckpt meta and filter
@@ -1616,10 +1618,10 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
                 opt_state_dict[k] = v
 
         self.opt_ckpt_meta, self.opt_state_filter = saved_ckptmeta(
-            opt_state_dict, self.ckpt_data_name, save_replicas=self.args.save_replicas
+            opt_state_dict, self.ckpt_data_name, replicate_saved_into_local=self.args.replicate_saved_into_local
         )
         self.master_weight_ckpt_meta, self.master_weights_filter = saved_ckptmeta(
-            master_weights, self.ckpt_data_name, save_replicas=self.args.save_replicas
+            master_weights, self.ckpt_data_name, replicate_saved_into_local=self.args.replicate_saved_into_local
         )
 
         # gen unified name mapping for optimzier

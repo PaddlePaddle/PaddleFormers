@@ -1052,6 +1052,7 @@ class Trainer:
         dist.save_state_dict(
             model_sharded_state_dict,
             model_state_dict_path,
+            save_replicas=self.args.replicate_saved_into_local,
         )
 
     def _save_flex_optimizer_state(self, output_dir):
@@ -1069,12 +1070,14 @@ class Trainer:
         dist.save_state_dict(
             optimizer_states,
             optimizer_state_dict_path,
+            save_replicas=self.args.replicate_saved_into_local,
         )
 
         master_weights_path = os.path.join(output_dir, MASTER_WEIGHT_DIC)
         dist.save_state_dict(
             master_weights,
             master_weights_path,
+            save_replicas=self.args.replicate_saved_into_local,
         )
 
         saved_signal_path = os.path.join(output_dir, f"saved_signal_{dist.get_rank()}")
