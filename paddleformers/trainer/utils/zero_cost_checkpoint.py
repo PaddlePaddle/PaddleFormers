@@ -1269,7 +1269,7 @@ class DistInfoCollectorValidator:
         if pp_rank is None:
             pp_rank = self.args.pipeline_parallel_rank
         suffix = f"tp{tp_rank:0>2d}_pp{pp_rank:0>2d}"
-        if self.args.expert_parallel_degree > 1:
+        if self.args.expert_model_parallel_size > 1:
             ep_rank = self.args.expert_parallel_rank
             return f"{suffix}_ep{ep_rank:0>2d}"
         else:
@@ -1314,7 +1314,7 @@ class DistInfoCollectorValidator:
         sharding_metas = {k: v for e in sharding_metas_list for (k, v) in e.items()}
         sharding_metas_list = self._all_gather_simple_object(sharding_metas, self.hcg.get_pipe_parallel_group())
         sharding_metas = {k: v for e in sharding_metas_list for (k, v) in e.items()}
-        if self.args.expert_parallel_degree > 1:
+        if self.args.expert_model_parallel_size > 1:
             sharding_metas_list = self._all_gather_simple_object(sharding_metas, self.hcg.get_expert_parallel_group())
             sharding_metas = {k: v for e in sharding_metas_list for (k, v) in e.items()}
         return sharding_metas
