@@ -286,39 +286,33 @@ class Qwen3VisionModel(VisionLayer):
     
     def __init__(
         self,
-        transformer_config: TransformerConfig,
+        config: TransformerConfig,
         transformer_layer_spec: LayerSpec,
-        patch_size: int = 16,
-        spatial_merge_size: int = 2,
-        temporal_patch_size: int = 2,
-        in_channels: int = 3,
-        num_heads: int = 16,
-        num_position_embeddings: int = 2034,
     ):
-        super.__init__(transformer_config)
-        self.spatial_merge_size = spatial_merge_size
+        super.__init__(config)
+        self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = self.spatial_merge_size * self.spatial_merge_size
-        self.patch_size = patch_size
-        self.temporal_patch_size = temporal_patch_size
-        self.in_channels = in_channels
-        self.embed_dim = transformer_config.hidden_size
-        self.merge_hidden_size = self.embed_dim * (spatial_merge_size ** 2)
+        self.patch_size = config.patch_size
+        self.temporal_patch_size = config.temporal_patch_size
+        self.in_channels = config.in_channels
+        self.embed_dim = config.hidden_size
+        self.merge_hidden_size = self.embed_dim * (config.spatial_merge_size ** 2)
         
         kernel_size = [self.temporal_patch_size, self.patch_size, self.patch_size]
         self.conv1 = nn.Conv3d(
             self.in_channels, self.embed_dim, kernel_size=kernel_size, stride=kernel_size, bias=True
         )
         
-        self.pos_embed = nn.Embedding(num_position_embeddings, transformer_config.hidden_size)
-        self.num_grid_per_side = int(num_position_embeddings ** 0.5)
+        self.pos_embed = nn.Embedding(config.num_position_embeddings, config.hidden_size)
+        self.num_grid_per_side = int(config.num_position_embeddings ** 0.5)
         
-        head_dim = transformer_config.hidden_size // num_heads
+        head_dim = config.hidden_size // config.num_attention_heads
         self.rotary_pos_emb = VisionRotaryEmbedding(head_dim // 2)
         
         self.model_type = ModelType.encoder_or_decoder
         
         self.decoder = Qwen3VLVisionTransformerBlock(
-            config=transformer_config,
+            config=config,
             spec=transformer_layer_spec,
             pre_process=True,
             post_process=True,
@@ -410,7 +404,7 @@ class Qwen3VisionModel(VisionLayer):
         patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws)])
 
         patch_pos_embeds_permute = []
-        merge_size = self.config.spatial_merge_size
+        merge_size = self.spatial_merge_size
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
             pos_embed = pos_embed.repeat(t, 1)
             pos_embed = (
@@ -455,7 +449,7 @@ class Qwen3VisionModel(VisionLayer):
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
         
         seq_len, _ = hidden_states.size()
-        hidden_states = hidden_states.reshape(seq_len, -1)
+        hidden_states = hidden_states.reshape([seq_len, -1])
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         rotary_pos_cos = rotary_pos_emb.cos()
