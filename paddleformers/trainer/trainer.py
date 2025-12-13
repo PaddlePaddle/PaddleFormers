@@ -1000,7 +1000,7 @@ class Trainer:
             except Exception:
                 moe_sharding_group = None
 
-            if (moe_sharding_group is None or moe_sharding_group.nranks <= 1) or True:
+            if moe_sharding_group is None or moe_sharding_group.nranks <= 1:
                 # when moe_sharding_group is None, we use the default process_group
                 logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
                 dist.load_state_dict(
