@@ -1077,6 +1077,10 @@ class Trainer:
             master_weights_path,
         )
 
+        saved_signal_path = os.path.join(output_dir, f"saved_signal_{dist.get_rank()}")
+        with open(saved_signal_path, mode="w+") as f:
+            f.write("1")
+
     def _load_flex_checkpoint(self, resume_from_checkpoint):
         def get_metadata_file_name(path):
             files = os.listdir(path)
