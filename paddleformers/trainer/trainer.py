@@ -1124,7 +1124,7 @@ class Trainer:
                 opt_states_path,
                 aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
-                comm_method=self.args.comm_method,
+                comm_method=self.args.flex_ckpt_comm_method,
             )
 
             if not self.args.sharded_model_from_ema:
@@ -1133,7 +1133,7 @@ class Trainer:
                     master_weights_path,
                     aoa_config=self.args.aoa_config,
                     offload=self.args.load_via_cpu,
-                    comm_method=self.args.comm_method,
+                    comm_method=self.args.flex_ckpt_comm_method,
                 )
 
             for v in optimizer_sharded_state_dict.values():
@@ -1178,7 +1178,7 @@ class Trainer:
                 model_states_path,
                 aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
-                comm_method=self.args.comm_method,
+                comm_method=self.args.flex_ckpt_comm_method,
             )
 
         if self.args.bf16 and (not self.args.ignore_load_lr_and_optim) and should_load_stage1:
