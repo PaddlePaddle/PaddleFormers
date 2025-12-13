@@ -1499,27 +1499,78 @@ def init_nccl_config(nccl_comm_group_config, strategy):
     return strategy
 
 
-def save_hf_checkpoint(
-    model,
-    aoa_config,
-    h_group,
-    v_group,
-    num_splits,
-    shard_idx,
-    path,
-):
-    itr = model.full(
-        aoa_config=aoa_config, h_group=h_group, v_group=v_group, num_splits=num_splits, shard_idx=shard_idx
-    )
-    num_saver_ranks = h_group.nranks * v_group.nranks
-    rank = h_group.rank + v_group.rank * h_group.nranks
-    total_saved_size = save_full_param(
-        itr=itr,
-        save_dir=path,
-        rank=rank,
-        moe_sharding_world_size=num_saver_ranks,
-        max_shard_size="16GB",
-        num_saver_ranks=num_saver_ranks,
-    )
-    paddle.distributed.barrier()
-    replace_name_and_gen_index(path, total_saved_size)
+class HFFormatFullParamSaver:
+    def __init__(
+        self,
+        model,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        self.model = model
+        self.aoa_config = aoa_config
+        self.h_group = h_group
+        self.v_group = v_group
+        self.num_splits = num_splits
+        self.shard_idx = shard_idx
+        self.saved_in_one_node = saved_in_one_node
+        self.memory_growth_threshold = memory_growth_threshold
+        self.determin_saver_based_group()
+
+    def get_full_param_iter(self):
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
+
+            param_iter = self.model.full(
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = self.model.full(aoa_config=self.aoa_config)
+        return param_iter
+
+    def determin_saver_based_group(self):
+        self.num_saver_ranks = paddle.distributed.get_world_size()
+        self.rank = paddle.distributed.get_rank()
+
+        if self.h_group and self.v_group:
+            self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
+            self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
+
+        if self.saved_in_one_node:
+            local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
+            self.num_saver_ranks = min(local_world_size, self.num_saver_ranks)
+
+    def save_checkpoint(self, path, max_shard_size="16GB"):
+        total_saved_size = save_full_param(
+            itr=self.get_full_param_iter(),
+            save_dir=path,
+            rank=self.rank,
+            moe_sharding_world_size=self.num_saver_ranks,
+            max_shard_size=max_shard_size,
+            num_saver_ranks=self.num_saver_ranks,
+        )
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
+
+        # TODO(): fix total size
+        all_sizes = []
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.all_gather_object(all_sizes, total_saved_size)
+        else:
+            all_sizes.append(total_saved_size)
+        total_size = sum(all_sizes)
+        replace_name_and_gen_index(path, total_size)
+        return total_saved_size

@@ -415,6 +415,43 @@ class TrainingArguments:
             Defaults to False.
         save_hf_steps (`int`, *optional*, defaults to -1):
             Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
+        hybrid_parallel_expert_grad_scale (float, optional, defaults to None)(
+            Scaling factor for expert gradients when Expert Parallel is enabled.
+
+            When Expert Parallel is enabled, the number of tokens processed by each MoE expert
+            may change due to variations in context parallel degree, tensor parallel degree, or
+            expert parallel degree. To ensure that the gradient scale for each expert remains
+            consistent and is not affected by such changes, this factor should be applied to
+            the expert gradients.
+
+            The value is defined as the ratio of the current configuration to a reference (base) configuration:
+
+            .. math::
+                hybrid\\_parallel\\_expert\\_grad\\_scale} =
+                    \\frac{tensor\\_parallel\\_degree}{expert\\_parallel\\_degree}
+        )
+        enable_auto_parallel (`bool`, *optional*, defaults to `False`):
+            whether to run distributed training in auto parallel mode.
+        use_intermediate_api (`bool`, *optional*, defaults to `True`):
+            whether to use auto_parallel intermediate API if `enable_auto_parallel=True`.
+
+        use_cache (`bool`, *optional*, defaults to `False`):
+            Whether or not to enable cache for the model. For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`.
+
+        load_from_hf (bool, optional):
+            Whether to load a checkpoint in the HuggingFace format.
+            Defaults to False.
+
+        flex_ckpt_comm_method (str, optional):
+            Communication method used for checkpoint resharding.
+            Choices are "send_recv", "broadcast", "multi_group_broadcast", and "grouped_send_recv".
+            Defaults to "broadcast".
+
+        replicate_saved_into_local (bool, optional):
+            Whether to save checkpoint replicas into local files in a distributed save/load system.
+            If set to True, replicas will be stored locally on each node/machine.
+            Defaults to False.
+
     """
 
     output_dir: str = field(
@@ -1189,6 +1226,47 @@ class TrainingArguments:
     )
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
+
+    hybrid_parallel_expert_grad_scale: Optional[float] = field(
+        default=None,
+        metadata={"help": ("Scaling factor for expert gradients.")},
+    )
+    use_intermediate_api: bool = field(
+        default=True,
+        metadata={"help": "whether to use auto_parallel intermediate API."},
+    )
+    offload_fp8_expert_master_weight: bool = field(
+        default=True,
+        metadata={"help": "Offload FP8 expert weights."},
+    )
+
+    use_cache: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether or not to use cache for the model For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`."
+        },
+    )
+
+    load_from_hf: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to load a checkpoint in the HuggingFace format."},
+    )
+
+    flex_ckpt_comm_method: Optional[str] = field(
+        default="broadcast",
+        metadata={
+            "help": (
+                "Communication method used by FlexCheckpoint for checkpoint resharding. "
+                'Choices are "send_recv", "broadcast", "multi_group_broadcast", and "grouped_send_recv". '
+                'Default is "broadcast".'
+            )
+        },
+    )
+
+    replicate_saved_into_local: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to save replicas cross files in distributed save load system."},
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()

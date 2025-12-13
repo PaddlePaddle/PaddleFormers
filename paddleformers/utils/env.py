@@ -173,3 +173,6 @@ EMA_STATE_DIC = "ema_state"
 
 # hf checkpoint dir name
 PREFIX_HF_CHECKPOINT_DIR = "hf_checkpoint"
+
+# FlexCheckpoint auto generated metadata file name
+FLEX_CKPT_AUTO_GENERATED_METADATA = "flex-ckpt.auto_generated.metadata"

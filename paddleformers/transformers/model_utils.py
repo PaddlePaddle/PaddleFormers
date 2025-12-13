@@ -79,6 +79,7 @@ from ..utils.env import (
     ASYMMETRY_QUANT_SCALE_MAX,
     ASYMMETRY_QUANT_SCALE_MIN,
     CONFIG_NAME,
+    FLEX_CKPT_AUTO_GENERATED_METADATA,
     PADDLE_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_NAME,
     PYTORCH_WEIGHTS_INDEX_NAME,
@@ -2956,6 +2957,16 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         if hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
             aoa_config = cls._gen_aoa_config(config)
             sharded_state_dict = model.sharded_state_dict()
+            metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
+
+            # delete the existing metadata file if it exists
+            try:
+                os.remove(metadata_path)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.error(f"Failed to delete {metadata_path}: {e}")
+
             dist.load_state_dict(
                 sharded_state_dict,
                 path=ckpt_path,
@@ -2963,6 +2974,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 safetensors=True,
                 offload=load_via_cpu,
             )
+
             for v in sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
                     del v.local_tensor.target_tensor
