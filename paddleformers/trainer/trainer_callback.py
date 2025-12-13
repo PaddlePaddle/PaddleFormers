@@ -35,6 +35,7 @@ from paddle.distributed.fleet.utils.hybrid_parallel_util import (
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     is_sequence_parallel_parameter,
 )
+from paddlefleet.models.gpt import GPTModel
 from tqdm.auto import tqdm
 
 from ..transformers.moe_gate import PretrainedMoEGate
@@ -688,14 +689,20 @@ class FP8QuantWeightCallback(TrainerCallback):
         global skip_count
 
         if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
+            self.moe_weights_name = []
+            self.use_fp8 = True
+            if isinstance(model, GPTModel):
+                self.use_fp8 = model.use_fp8()
+            if not self.use_fp8:
+                return
             model.fp8_quant_weight(True, quant_transpose=True)
             optimizer.clear_param_storage("moe_expert")
             optimizer.clear_param_storage("rms_linear")
             optimizer.clear_param_storage("memory_attn")
             optimizer.clear_param_storage("attn_out_project")
             optimizer.clear_param_storage("shared_expert")
-
-            self.moe_weights_name = []
+            if not args.offload_fp8_expert_master_weight:
+                return
             for param in optimizer._inner_opt._parameter_list:
                 color = getattr(param, "color", -1)
                 if isinstance(color, dict) and color["color"] == "moe_expert":
