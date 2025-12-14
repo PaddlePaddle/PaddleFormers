@@ -15,6 +15,7 @@
 from abc import Callable
 
 from dataclasses import dataclass
+from doctest import REPORT_NDIFF
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
@@ -117,14 +118,14 @@ class MultimodalProjectorProvider(TransformerConfig):
             model.set_input_tensor = MethodType(set_input_tensor, model)
             return model
         
-        mlp_gelu_match = re.match(r"mlp(\d+)x_gelu$", self.projector_type)
+        mlp_gelu_match = REPORT_NDIFF.match(r"mlp(\d+)x_gelu$", self.projector_type)
         if mlp_gelu_match:
             mlp_depth = int(mlp_gelu_match.groups(1))
             modules = [nn.Linear(self.input_size, self.intermediate_size, bias=True, dtype=self.params_dtype)]
             for _ in range(1, mlp_depth):
                 modules.append(nn.GELU())
                 modules.append(
-                    nn.Linear(self.intermediate_size, self.hidden_sizes, bias=True, dtype=self.params_dtype)
+                    nn.Linear(self.intermediate_size, self.hidden_size, bias=True, dtype=self.params_dtype)
                 )
             model = nn.Sequential(*modules)
             from types import MethodType
@@ -529,3 +530,182 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
                     dtype=input_ids.dtype,
                 )
             return position_ids, mrope_position_deltas
+    def get_video_features(
+        self, pixel_values_videos: paddle.FloatTensor, video_grid_thw: paddle.LongTensor | None = None,
+    ):
+        return self.get_image_features(pixel_values_videos, video_grid_thw)
+    
+    def get_image_features(
+        self, pixel_values: paddle.FloatTensor, image_grid_thw: paddle.LongTensor | None = None
+    ):
+        pixel_values = pixel_values.to(self.vision_model._dtype)
+        image_embeds, deepstack_image_embeds = self.vision_model(pixel_values, image_grid_thw=image_grid_thw)
+        split_sizes = (image_grid_thw.prod(-1) // self.vision_model.spatial_merge_size ** 2).tolist()
+        image_embeds = paddle.split(image_embeds, split_sizes)
+        return image_embeds, deepstack_image_embeds
+    
+    def get_placehodler_mask(
+        self,
+        input_ids: paddle.LongTensor,
+        inputs_embeds: paddle.FloatTensor,
+        image_features: paddle.FloatTensor | None = None,
+        video_features: paddle.FloatTensor | None = None,
+    ):
+        if input_ids is None:
+            special_image_mask = inputs_embeds == self.get_input_embeddings()(
+                paddle.to_tensor(IMAGE_TOKEN_INDEX, dtype="long")
+            )
+            special_image_mask = special_image_mask.all(-1)
+            special_video_mask = inputs_embeds == self.get_input_embeddings()(
+                paddle.to_tensor(VIDEO_TOKEN_INDEX, dtype="long")
+            )
+            special_video_mask = special_video_mask.all(-1)
+        else:
+            special_image_mask = input_ids == IMAGE_TOKEN_INDEX
+            special_video_mask = input_ids == VIDEO_TOKEN_INDEX
+        
+        n_image_tokens = special_image_mask.sum()
+        special_image_mask = special_image_mask.unsqueeze(-1).expand_as(inputs_embeds)
+        if image_features is not None and inputs_embeds[special_image_mask].numel() != image_features.numel():
+            raise ValueError(
+                f"Image features and image tokens do not match: tokens: {n_image_tokens}, features: {image_features.shape[0]}"
+            )
+        
+        n_video_tokens = special_video_mask.sum()
+        if video_features is not None and inputs_embeds[special_video_mask].numel() != video_features.numel():
+            raise ValueError(
+                f"Videos features and video tokens do not match: tokens: {n_video_tokens}, features {video_features.shape[0]}"
+            )
+
+        return special_image_mask, special_video_mask
+
+    def forward(
+        self,
+        input_ids: paddle.LongTensor = None,
+        attention_mask: paddle.Tensor | None = None,
+        position_ids: paddle.LongTensor | None = None,
+        loss_mask: paddle.Tensor | None = None,
+        labels: paddle.Tensor | None = None,
+        inference_params = None,
+        pixel_values: paddle.Tensor | None = None,
+        pixel_values_videos=None,
+        image_grid_thw=None,
+        video_grid_thw=None,
+        runtime_gather_output: bool | None = None,
+    ) -> paddle.Tensor:
+        use_inference_kv_cache = (
+            inference_params is not None and "image_tokens_count" in inference_params.key_value_memory_dict
+        )
+        if self.add_encoder and pixel_values is not None:
+            pixel_values.to(self.vision_model.parameters()[0].dtype)
+            if self.config.freeze_vision_model:
+                with paddle.no_grad():
+                    image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
+            else:
+                image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
+        
+        if self.add_encoder and pixel_values_videos is not None:
+            pixel_values_videos.to(next(self.vision_model.parameters()).dtype)
+            if self.config.freeze_vision_model:
+                with paddle.no_grad():
+                    video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
+            else:
+                video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
+            
+
+        
+        language_embeds = None
+        
+        language_seq_len = input_ids.shape[1]
+        if language_seq_len > self._language_max_sequence_length:
+            input_ids = input_ids[:, : self._language_max_sequence_length]
+            if position_ids is not None:
+                position_ids = position_ids[:, : self._language_max_sequence_length]
+            
+            if labels is not None and labels.shape[1] > self._language_max_sequence_length:
+                labels = labels[:, : self._language_max_sequence_length]
+                loss_mask = loss_mask[:, : self._language_max_sequence_length]
+        
+        if self._language_is_pipeline_parallel and language_seq_len < self._language_max_sequence_length:
+            padded_seq_len = self._language_max_sequence_length - language_seq_len
+            input_ids = F.pad(input_ids, (0, padded_seq_len))
+            if position_ids is not None:
+                position_ids = F.pad(position_ids, (0, padded_seq_len))
+        
+        if position_ids is None and input_ids is not None:
+            position_ids, _ = self.get_rope_index(
+                input_ids, image_grid_thw, video_grid_thw, attention_mask
+            )
+        
+        if self.pre_process:
+
+            # Note: This adds absolute position embedding but not RoPE.
+            # Each image is counted as one position.
+            # RoPE is added in language_model forward. Each image embedding is one position.
+            input_ids_text = input_ids.clone()
+            # MultiModal Token indices are assumed to be values
+            input_ids_text[input_ids_text < 0] = 0
+
+            language_embeddings = self.language_model.embedding(
+                input_ids=input_ids_text, position_ids=None
+            )  # [decoder_seq_len, b, h_language]
+
+            language_embeddings = language_embeddings.transpose(1, 0).contiguous()  # [b, decoder_seq_len, h_language]
+        
+        image_mask, video_mask = self.get_placehodler_mask(input_ids, language_embeddings, image_embeds, video_embeds)
+        input_embeds = language_embeds.masked_scatter(image_mask)
+        input_embeds = input_embeds.masked_scatter(video_mask)
+        
+        visual_pos_masks = None
+        deepstack_visual_embeds = None
+        if image_mask and video_mask is not None:
+            image_mask = image_mask[..., 0]
+            video_mask = video_mask[..., 0]
+            visual_pos_masks = image_mask | video_mask
+            deepstack_visual_embeds = []
+            image_mask_joint = image_mask[visual_pos_masks]
+            video_mask_joint = video_mask[visual_pos_masks]
+            for img_embed, vid_embed in zip(deepstack_image_embeds, deepstack_video_embeds):
+                embed_joint = img_embed.new_zeros(visual_pos_masks.sum(), img_embed.shape[-1]).to(img_embed.device)
+                embed_joint[image_mask_joint, :] = img_embed
+                embed_joint[video_mask_joint, :] = vid_embed
+                deepstack_visual_embeds.append(embed_joint)
+        elif image_mask is not None:
+            image_mask = image_mask[..., 0]
+            visual_pos_masks = image_mask
+            deepstack_visual_embeds = deepstack_image_embeds
+        elif video_mask is not None:
+            video_mask = video_mask[..., 0]
+            visual_pos_masks = video_mask
+            deepstack_visual_embeds = deepstack_video_embeds
+        
+        output = self.language_model(
+            input_ids=None,
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            decoder_input=input_embeds,
+            labels=labels,
+            runtime_gather_output=runtime_gather_output,
+        )
+        
+        if labels is None or loss_mask is None:
+            return output
+        else:
+            return output, loss_mask.contiguous()
+    
+    def set_input_tensor(self, input_tensor) -> None:
+        """Set model chunk input tensor."""
+        # This is usually handled in schedules.py but some inference code still
+        # gives us non-lists or None
+        if not isinstance(input_tensor, list):
+            input_tensor = [input_tensor]
+        assert len(input_tensor) == 1, 'input_tensor should only be length 1 for llava'
+
+        if self.add_encoder and self.add_decoder:
+            self.vision_model.set_input_tensor(input_tensor[0])
+        elif self.add_encoder:
+            self.vision_model.set_input_tensor(input_tensor[0])
+        elif self.pre_process:
+            self.encoder_hidden_state = input_tensor[0]
+        else:
+            self.language_model.set_input_tensor(input_tensor[0])

@@ -21,7 +21,9 @@ from paddlefleet.models.common.vision_layer.vision_layer import VisionLayer
 from paddlefleet.packed_seq_params import PackedSeqParams
 from paddlefleet.process_groups_config import ProcessGroupCollection
 from paddlefleet.spec_utils import LayerSpec
+from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
 from paddlefleet.transformer.enums import ModelType
+from paddlefleet.transformer.mlp import MLP, MLPSublayersSpec
 from paddlefleet.transformer.transformer_block import TransformerBlock, TransformerBlockSublayersSpec
 from paddlefleet.transformer.transformer_config import TransformerConfig
 from paddlefleet.utils import WrappedTensor, deprecate_inference_params
@@ -51,6 +53,26 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
             pg_collection=pg_collection,
             vp_stage=vp_stage,
         )
+        self.deepstack_visual_indexes = config.deepstack_visual_indexes
+        self.merger = MLP(
+            sublayers_spec=MLPSublayersSpec(
+                up_gate_proj=ColumnParallelLinear,
+                down_proj=RowParallelLinear,
+                hidden_act=F.gelu,
+            ),
+            intermediate_size=config.hidden_size
+        )
+        
+        self.deepstack_merger_list = nn.ModuleList([
+            MLP(
+                sublayers_spec=MLPSublayersSpec(
+                    up_gate_proj=ColumnParallelLinear,
+                    down_proj=RowParallelLinear,
+                    hidden_act=F.gelu,
+                ),
+                intermediate_size=config.hidden_size
+            ) for _ in range(config.deepstack_visual_indexes)
+        ])
     
     def forward(
         self,
@@ -147,7 +169,9 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                     attention_bias=attention_bias,
                     packed_seq_params=packed_seq_params,
                 )
+                hidden_states, deepstack_feature_lists = hidden_states
             else:
+                deepstack_feature_lists = []
                 for l_no, layer in enumerate(self.layers):
                     packed_seq_params_now = packed_seq_params
                     
@@ -169,10 +193,18 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                         and self.group_prefetch_offload_commit_async is not None
                     ):
                         hidden_states = self.group_prefetch_offload_commit_async(hidden_states)
+                    
+                    if l_no in self.deepstack_visual_indexes:
+                        deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(l_no)](hidden_states)
+                        deepstack_feature_lists.append(deepstack_feature)
                     print(f"fleet vision {l_no} hidden_states", hidden_states._md5sum())
         
         if self.norm is not None:
             hidden_states = self.norm(hidden_states)
+        
+        hidden_states = self.merger(hidden_states)
+        
+        return hidden_states, deepstack_feature_lists
     
     def _checkpointed_forward(
         self,
@@ -186,6 +218,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
     ):
         def custom(start: int, end: int):
             def custom_forwrad(hidden_states, attention_mask, context, context_mask, rotary_pos_emb):
+                deepstack_feature_lists = []
                 for index in range(start, end):
                     packed_seq_params_now = packed_seq_params
                     layer = self._get_layer(index)
@@ -200,7 +233,10 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                         inference_context=None,
                         packed_seq_params=packed_seq_params_now,
                     )
-                return hidden_states, context
+                    if index in self.deepstack_visual_indexes:
+                        deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(index)](hidden_states)
+                        deepstack_feature_lists.append(deepstack_feature)
+                return (hidden_states, deepstack_feature_lists), context
             
             return custom_forwrad
         
@@ -228,7 +264,8 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                     context_mask,
                     rotary_pos_emb,
                 )
-            
+
+        deepstack_feature_lists = []
         if self.config.recompute_method == "uniform":
             # Uniformly divide the total number of Transformer layers and checkpoint
             # the input activation of each divided chunk.
@@ -238,6 +275,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                 hidden_states, context = checkpoint_handler(
                     custom(layer_index, layer_index + self.config.recompute_num_layers)
                 )
+                deepstack_feature_lists.extend(hidden_states[1])
                 layer_index += self.config.recompute_num_layers
         
         elif self.config.recompute_method == "block":
@@ -256,15 +294,17 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                     and layer_index < self.config.recompute_num_layers + recompute_skip_num_layers
                 ):
                     hidden_states, context = checkpoint_handler(custom(layer_index, layer_index + 1))
+                    deepstack_feature_lists.extend(hidden_states[1])
                 else:
                     hidden_states, context = custom(layer_index, layer_index + 1)(
                         hidden_states, attention_mask, context, context_mask, rotary_pos_emb
                     )
+                    deepstack_feature_lists.extend(hidden_states[1])
         
         else:
             raise ValueError(f"Invalid activation recompute method: {self.config.recompute_method}.")
         
-        return hidden_states
+        return hidden_states[0], deepstack_feature_lists
 
 
 class VisionRotaryEmbedding(nn.Module):
@@ -279,6 +319,7 @@ class VisionRotaryEmbedding(nn.Module):
         seq = paddle.arange(seqlen, dtype=self.inv_freq.dtype)
         freqs = paddle.outer(seq, self.inv_freq)
         return freqs
+
 
 
 class Qwen3VisionModel(VisionLayer):
