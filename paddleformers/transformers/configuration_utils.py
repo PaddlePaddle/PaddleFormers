@@ -303,7 +303,12 @@ class LlmMetaConfig:
     ]
 
     moe_attributes = [
-        ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
+        (
+            "moe_subbatch_token_num_before_dispatch",
+            int,
+            0,
+            "The number of tokens in each subbatch for MoE model processing.",
+        ),
         ("using_fake_gate", bool, False, "Whether to fake gate."),
         ("ep_communication_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
@@ -511,7 +516,7 @@ class PretrainedConfig:
         problem_type (`str`, *optional*):
             Problem type for `XxxForSequenceClassification` models. Can be one of `"regression"`,
             `"single_label_classification"` or `"multi_label_classification"`.
-        moe_subbatch_token_num (`int`, *optional*, defaults to 0):
+        moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
         ep_communication_type (`str`, *optional*, defaults to `deepep`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
@@ -663,7 +668,7 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.moe_subbatch_token_num = kwargs.pop("moe_subbatch_token_num", 0)
+        self.moe_subbatch_token_num_before_dispatch = kwargs.pop("moe_subbatch_token_num_before_dispatch", 0)
         self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.using_fake_gate = kwargs.pop("using_fake_gate", False)

@@ -74,7 +74,9 @@ class ModularMoELayer(nn.Layer):
         self.topk_group = pretrained_config.get("topk_group", 1)
         self.routed_scaling_factor = pretrained_config.get("routed_scaling_factor", 1.0)
         self.aux_loss_alpha = pretrained_config.get("aux_loss_alpha", 0.0)
-        self.moe_subbatch_token_num = pretrained_config.get("moe_subbatch_token_num", -1)
+        self.moe_subbatch_token_num_before_dispatch = pretrained_config.get(
+            "moe_subbatch_token_num_before_dispatch", -1
+        )
         try:
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
         except Exception:
@@ -108,7 +110,7 @@ class ModularMoELayer(nn.Layer):
             n_group=self.n_group,
             topk_group=self.topk_group,
             routed_scaling_factor=self.routed_scaling_factor,
-            moe_subbatch_token_num=self.moe_subbatch_token_num,
+            moe_subbatch_token_num_before_dispatch=self.moe_subbatch_token_num_before_dispatch,
             tensor_model_parallel_size=self.tensor_model_parallel_size,
             sequence_parallel=self.sequence_parallel,
             transpose_gate_weight=self.transpose_gate_weight,

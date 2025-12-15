@@ -879,7 +879,7 @@ class DeepseekV2DecoderLayer(nn.Layer):
         residual = attn_outputs[1]
         self_attn_weights = attn_outputs[2] if output_attentions else None
         present_key_value = attn_outputs[3] if use_cache else None
-        sub_seq_len = self.config.moe_subbatch_token_num
+        sub_seq_len = self.config.moe_subbatch_token_num_before_dispatch
         seq_axis = 0 if self.config.sequence_parallel else 1
         seq_len = hidden_states.shape[seq_axis]
         assert seq_len % sub_seq_len == 0
@@ -1512,7 +1512,7 @@ class DeepseekV2Model(DeepseekV2PretrainedModel):
         next_decoder_cache = () if use_cache else None
         mtp_outputs = []
 
-        moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num > 0
+        moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num_before_dispatch > 0
 
         for idx in range(self.config.num_hidden_layers):
             decoder_layer = self.layers[idx]
@@ -1708,8 +1708,10 @@ class DeepseekV2PretrainingCriterion(nn.Layer):
             masked_lm_labels_ori = masked_lm_labels
             masked_lm_labels = masked_lm_labels[:, : -self.config.num_nextn_predict_layers]
             seq_length = masked_lm_labels.shape[1]
-            if self.config.moe_subbatch_token_num > 0:
-                loss = subbatch_compute_loss(prediction_scores, masked_lm_labels, self.config.moe_subbatch_token_num)
+            if self.config.moe_subbatch_token_num_before_dispatch > 0:
+                loss = subbatch_compute_loss(
+                    prediction_scores, masked_lm_labels, self.config.moe_subbatch_token_num_before_dispatch
+                )
             else:
                 loss = compute_loss(prediction_scores, masked_lm_labels)
 
@@ -1717,9 +1719,11 @@ class DeepseekV2PretrainingCriterion(nn.Layer):
             for depth in range(self.config.num_nextn_predict_layers):
                 prediction_scores_cur_depth = mtp_logits[depth]
                 masked_lm_labels_cur_depth = masked_lm_labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
-                if self.config.moe_subbatch_token_num > 0:
+                if self.config.moe_subbatch_token_num_before_dispatch > 0:
                     res_cur_depth = subbatch_compute_loss(
-                        prediction_scores_cur_depth, masked_lm_labels_cur_depth, self.config.moe_subbatch_token_num
+                        prediction_scores_cur_depth,
+                        masked_lm_labels_cur_depth,
+                        self.config.moe_subbatch_token_num_before_dispatch,
                     )
                 else:
                     res_cur_depth = compute_loss(prediction_scores_cur_depth, masked_lm_labels_cur_depth)
@@ -1729,8 +1733,10 @@ class DeepseekV2PretrainingCriterion(nn.Layer):
             )
 
         else:
-            if self.config.moe_subbatch_token_num > 0:
-                loss = subbatch_compute_loss(prediction_scores, masked_lm_labels, self.config.moe_subbatch_token_num)
+            if self.config.moe_subbatch_token_num_before_dispatch > 0:
+                loss = subbatch_compute_loss(
+                    prediction_scores, masked_lm_labels, self.config.moe_subbatch_token_num_before_dispatch
+                )
             else:
                 loss = compute_loss(prediction_scores, masked_lm_labels)
 
@@ -2086,7 +2092,7 @@ class DeepseekV2MTPLayerPipe(DeepseekV2MTPLayer):
         for depth in range(self.config.num_nextn_predict_layers):
             inputs_embeds_cur_depth = inputs_embeds_cur_depth_list[depth]
 
-            moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num > 0
+            moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num_before_dispatch > 0
             if moelayer_use_subbatch_recompute:
                 hidden_states = super().subbatch_recompute_forward(
                     hidden_states,
@@ -2251,7 +2257,7 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
 
         has_gradient = not hidden_states.stop_gradient
 
-        moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num > 0
+        moelayer_use_subbatch_recompute = self.config.moe_subbatch_token_num_before_dispatch > 0
         if moelayer_use_subbatch_recompute:
             hidden_states = super().subbatch_recompute_forward(
                 hidden_states,

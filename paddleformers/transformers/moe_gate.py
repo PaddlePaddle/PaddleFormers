@@ -134,8 +134,10 @@ class MoEGateMixin:
         max_seq_len = self.config.seq_length
 
         sub_max_seq_len = max_seq_len
-        if self.config.moe_subbatch_token_num > 0:
-            sub_max_seq_len = self.config.moe_subbatch_token_num * self.config.tensor_model_parallel_size
+        if self.config.moe_subbatch_token_num_before_dispatch > 0:
+            sub_max_seq_len = (
+                self.config.moe_subbatch_token_num_before_dispatch * self.config.tensor_model_parallel_size
+            )
 
         # all_probs and routing_map should be computed using the runtime local sequence length on each worker.
         if self.config.tensor_model_parallel_size > 1:
