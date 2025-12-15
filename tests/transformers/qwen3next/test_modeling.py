@@ -351,7 +351,8 @@ class Qwen3NextCompatibilityTest:
         torch_model = Qwen3NextModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
+        
+        # 4. compare the result
         self.assertTrue(
             np.allclose(
                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
