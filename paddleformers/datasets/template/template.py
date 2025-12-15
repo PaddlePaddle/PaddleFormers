@@ -148,7 +148,7 @@ class Template:
         Turn t: query                          resp.
         """
         system = system or self.default_system
-        last_mask = True
+        encoded_messages = []
         for i, message in enumerate(messages):
             elements = []
 
