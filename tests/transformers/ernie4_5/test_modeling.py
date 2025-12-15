@@ -516,6 +516,52 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                 )
             )
 
+            # 3. forward with fc
+            from paddleformers.transformers import Ernie4_5Config, Ernie4_5ForCausalLM
+
+            uc_load_model = Ernie4_5ForCausalLM.from_pretrained(
+                self.torch_model_path,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="unified_checkpoint",
+            )
+            fc_load_model = Ernie4_5ForCausalLM.from_pretrained(
+                self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
+            uc_load_model.eval()
+            fc_load_model.eval()
+            uc_logit = uc_load_model(paddle.to_tensor(input_ids))[0]
+            fc_logit = fc_load_model(paddle.to_tensor(input_ids))[0]
+            self.assertTrue(
+                np.allclose(
+                    uc_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    fc_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    atol=1e-5,
+                    rtol=1e-5,
+                )
+            )
+
+            model_config = Ernie4_5Config.from_pretrained(self.torch_model_path)
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
+            fc_fused_load_model = Ernie4_5ForCausalLM.from_pretrained(
+                self.torch_model_path,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+            fc_fused_load_model.eval()
+            fc_fused_logit = fc_fused_load_model(paddle.to_tensor(input_ids))[0]
+            self.assertTrue(
+                np.allclose(
+                    fc_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    fc_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    atol=1e-5,
+                    rtol=1e-5,
+                )
+            )
+
     @parameterized.expand([("Ernie4_5Model",), ("Ernie4_5ForCausalLM",)])
     @require_package("transformers", "torch")
     def test_ernie4_5_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):

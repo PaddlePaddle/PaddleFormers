@@ -1682,8 +1682,18 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         return ret
 
 
-class Glm4MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe):
-    pass
+class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
+    is_fleet = True
+
+    def __new__(cls, config):
+        model_provider_class = GLMMoEModelProvider
+        model_provider = model_provider_class.from_config(config)
+        gpt_model = model_provider.provide()
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        gpt_model.config_to_save = config
+        return gpt_model
 
 
 class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):

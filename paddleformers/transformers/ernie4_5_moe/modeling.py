@@ -162,7 +162,7 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
 class Ernie4_5_MoeMLP(Ernie4_5MLP):
     """Mixture of Experts (MoE) variant of ERNIE's MLP layer."""
 
-    def __init__(self, config, hidden_size, moe_intermediate_size, layer_idx=0):
+    def __init__(self, config, hidden_size, moe_intermediate_size, layer_idx=0, **kwargs):
         """Initialize the MoE MLP layer.
 
         Args:
@@ -174,7 +174,9 @@ class Ernie4_5_MoeMLP(Ernie4_5MLP):
             config = deepcopy(config)
             config.tensor_model_parallel_size = 1
 
-        super().__init__(config, hidden_size=hidden_size, intermediate_size=moe_intermediate_size, layer_idx=layer_idx)
+        super().__init__(
+            config, hidden_size=hidden_size, intermediate_size=moe_intermediate_size, layer_idx=layer_idx, **kwargs
+        )
         self.moe_dropout_prob = config.moe_dropout_prob
         self.fuse_swiglu = config.fuse_swiglu
         if self.fuse_swiglu:
@@ -283,7 +285,13 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
             if i // moe_num_experts_per_device == moe_rank:
                 config.disable_ffn_model_parallel = True  # no-split expert
                 experts.append(
-                    Ernie4_5_MoeMLP(deepcopy(config), config.hidden_size, config.moe_intermediate_size, layer_idx)
+                    Ernie4_5_MoeMLP(
+                        deepcopy(config),
+                        config.hidden_size,
+                        config.moe_intermediate_size,
+                        layer_idx,
+                        fuse_up_gate=config.fuse_attention_ffn,
+                    )
                 )
             else:
                 experts.append(None)
@@ -297,7 +305,10 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
         if config.moe_num_shared_experts > 0:
             config.disable_ffn_model_parallel = False  # split shared epxert
             shared_experts = Ernie4_5_MoeMLP(
-                deepcopy(config), config.hidden_size, config.moe_intermediate_size * config.moe_num_shared_experts
+                deepcopy(config),
+                config.hidden_size,
+                config.moe_intermediate_size * config.moe_num_shared_experts,
+                fuse_up_gate=config.fuse_attention_ffn,
             )
         use_expert_out_alltoall = use_expert_out_alltoall = "alltoall" in config.moe_multimodal_dispatch_use_allgather
         use_padding = "unpad" not in config.moe_multimodal_dispatch_use_allgather
@@ -348,7 +359,12 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         ):
             self.mlp = Ernie4_5_MoeSparseMoeBlock(config, layer_idx)
         else:
-            self.mlp = Ernie4_5MLP(config, hidden_size=config.hidden_size, intermediate_size=config.intermediate_size)
+            self.mlp = Ernie4_5MLP(
+                config,
+                hidden_size=config.hidden_size,
+                intermediate_size=config.intermediate_size,
+                fuse_up_gate=config.fuse_attention_ffn,
+            )
 
         if config.sequence_parallel and isinstance(
             self.mlp, Ernie4_5_MoeSparseMoeBlock
@@ -635,6 +651,192 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
         base_actions = make_base_actions()
         mappings = expand_actions(base_actions, config.num_hidden_layers)
         return mappings
+
+    @classmethod
+    def _gen_aoa_config(cls, config: Ernie4_5_MoeConfig):
+        model_prefix = "" if cls == cls.base_model_class else "model."
+        aoa_config = {
+            "aoa_statements": [
+                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+                f"model.norm.weight -> {model_prefix}norm.weight",
+                f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias, dtype='float32'",
+                f"model.layers.$LAYER_ID.mlp.gate.weight -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+                f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+                f"model.mtp_block.$LAYER_ID.input_layernorm.weight -> {model_prefix}mtp_block.$LAYER_ID.input_layernorm.weight",
+                f"model.mtp_block.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}mtp_block.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.mtp_block.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}mtp_block.$LAYER_ID.mlp.down_proj.weight",
+                f"model.mtp_block.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}mtp_block.$LAYER_ID.self_attn.o_proj.weight",
+                f"model.mtp_emb_norm.$LAYER_ID.weight -> {model_prefix}mtp_emb_norm.$LAYER_ID.weight",
+                f"model.mtp_hidden_norm.$LAYER_ID.weight -> {model_prefix}mtp_hidden_norm.$LAYER_ID.weight",
+                f"model.mtp_linear_proj.$LAYER_ID.weight^T -> {model_prefix}mtp_linear_proj.$LAYER_ID.weight",
+            ]
+        }
+
+        # attention qkv
+        if not config.fuse_attention_qkv:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+            aoa_config["aoa_statements"] += [
+                f"model.mtp_block.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}mtp_block.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+                f"model.mtp_block.$LAYER_ID.self_attn.q_proj.weight^T, model.mtp_block.$LAYER_ID.self_attn.k_proj.weight^T, model.mtp_block.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}mtp_block.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+            ]
+            if config.use_bias:
+                aoa_config["aoa_statements"] += [
+                    f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                    f"model.mtp_block.$LAYER_ID.self_attn.q_proj.bias, model.mtp_block.$LAYER_ID.self_attn.k_proj.bias, model.mtp_block.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}mtp_block.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                ]
+
+        # FFN
+        if not config.fuse_attention_ffn:
+            aoa_config["aoa_statements"] += (
+                [
+                    f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
+                    for p in ("gate", "up")
+                ]
+                + [
+                    f"model.layers.$LAYER_ID.mlp.shared_experts.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.{p}_proj.weight"
+                    for p in ("gate", "up")
+                ]
+                + [
+                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight"
+                    for p in ("gate", "up")
+                ]
+                + [
+                    f"model.mtp_block.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}mtp_block.$LAYER_ID.mlp.{p}_proj.weight"
+                    for p in ("gate", "up")
+                ]
+            )
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+                f"model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
+                f"model.mtp_block.$LAYER_ID.mlp.gate_proj.weight^T, model.mtp_block.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}mtp_block.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+            ]
+
+        if config.tie_word_embeddings:
+            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+
+        return aoa_config
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: Ernie4_5_MoeConfig):
+        model_prefix = "" if cls == cls.base_model_class else "model."
+        aoa_statements = [
+            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            f"{model_prefix}norm.weight -> model.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias",
+            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+            f"{model_prefix}mtp_block.$LAYER_ID.input_layernorm.weight -> model.mtp_block.$LAYER_ID.input_layernorm.weight",
+            f"{model_prefix}mtp_block.$LAYER_ID.post_attention_layernorm.weight -> model.mtp_block.$LAYER_ID.post_attention_layernorm.weight",
+            f"{model_prefix}mtp_block.$LAYER_ID.mlp.down_proj.weight^T -> model.mtp_block.$LAYER_ID.mlp.down_proj.weight",
+            f"{model_prefix}mtp_block.$LAYER_ID.self_attn.o_proj.weight^T -> model.mtp_block.$LAYER_ID.self_attn.o_proj.weight",
+            f"{model_prefix}mtp_emb_norm.$LAYER_ID.weight -> model.mtp_emb_norm.$LAYER_ID.weight",
+            f"{model_prefix}mtp_hidden_norm.$LAYER_ID.weight -> model.mtp_hidden_norm.$LAYER_ID.weight",
+            f"{model_prefix}mtp_linear_proj.$LAYER_ID.weight^T -> model.mtp_linear_proj.$LAYER_ID.weight",
+        ]
+
+        if not config.fuse_attention_qkv:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+            aoa_statements += [
+                f"{model_prefix}mtp_block.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.mtp_block.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+                f"{model_prefix}mtp_block.$LAYER_ID.self_attn.qkv_proj.weight -> model.mtp_block.$LAYER_ID.self_attn.q_proj.weight, model.mtp_block.$LAYER_ID.self_attn.k_proj.weight, model.mtp_block.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+            ]
+            for x in ("q", "k", "v"):
+                for layer_id in range(config.num_hidden_layers):
+                    aoa_statements += [
+                        f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight",
+                    ]
+                for layer_id in range(config.num_nextn_predict_layers):
+                    aoa_statements += [
+                        f"model.mtp_block.{layer_id}.self_attn.{x}_proj.weight^T -> model.mtp_block.{layer_id}.self_attn.{x}_proj.weight",
+                    ]
+            if config.use_bias:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                    f"{model_prefix}mtp_block.$LAYER_ID.self_attn.qkv_proj.bias -> model.mtp_block.$LAYER_ID.self_attn.q_proj.bias, model.mtp_block.$LAYER_ID.self_attn.k_proj.bias, model.mtp_block.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                ]
+
+        if not config.fuse_attention_ffn:
+            aoa_statements += (
+                [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
+                    for y in ("gate", "up")
+                ]
+                + [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.{y}_proj.weight"
+                    for y in ("gate", "up")
+                ]
+                + [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight"
+                    for y in ("gate", "up")
+                ]
+                + [
+                    f"{model_prefix}mtp_block.$LAYER_ID.mlp.{y}_proj.weight^T -> model.mtp_block.$LAYER_ID.mlp.{y}_proj.weight"
+                    for y in ("gate", "up")
+                ]
+            )
+        else:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.gate_proj.weight, model.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
+                f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight, fused_ffn",
+                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
+                f"{model_prefix}mtp_block.$LAYER_ID.mlp.up_gate_proj.weight -> model.mtp_block.$LAYER_ID.mlp.gate_proj.weight, model.mtp_block.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
+            ]
+            # mlp
+            for layer_id in range(config.moe_layer_start_index):
+                for y in ("gate", "up"):
+                    aoa_statements += [
+                        f"model.layers.{layer_id}.mlp.{y}_proj.weight^T -> model.layers.{layer_id}.mlp.{y}_proj.weight",
+                    ]
+            # experts
+            for layer_id in range(config.moe_layer_start_index, config.num_hidden_layers):
+                for y in ("gate", "up"):
+                    aoa_statements += [
+                        f"model.layers.{layer_id}.mlp.shared_experts.{y}_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.{y}_proj.weight"
+                    ]
+                    for expert_id in range(config.moe_num_experts):
+                        aoa_statements += [
+                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.{y}_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.{y}_proj.weight"
+                        ]
+            # mtp
+            for layer_id in range(config.num_nextn_predict_layers):
+                for y in ("gate", "up"):
+                    aoa_statements += [
+                        f"model.mtp_block.{layer_id}.mlp.{y}_proj.weight^T -> model.mtp_block.{layer_id}.mlp.{y}_proj.weight"
+                    ]
+
+        if config.tie_word_embeddings:
+            aoa_statements += ["lm_head.weight -> _"]
+
+        aoa_config = {"aoa_statements": aoa_statements}
+        return aoa_config
 
 
 @register_base_model
@@ -1234,6 +1436,8 @@ class Ernie4_5_MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = Ernie4_5_MoeModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Ernie4_5_MoeModel.transpose_weight_keys
+    _gen_aoa_config = Ernie4_5_MoeForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = Ernie4_5_MoeForCausalLM._gen_inv_aoa_config
 
 
 __all__ = ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"]
