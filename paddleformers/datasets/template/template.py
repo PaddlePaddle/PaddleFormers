@@ -148,20 +148,9 @@ class Template:
         Turn t: query                          resp.
         """
         system = system or self.default_system
-        encoded_messages = []
-        elements = []
         last_mask = True
         for i, message in enumerate(messages):
-            if message["role"] == Role.USER or message["role"] == Role.OBSERVATION:
-                mask = True
-            elif message["role"] == Role.ASSISTANT or message["role"] == Role.FUNCTION:
-                mask = False
-            else:
-                raise NotImplementedError("Unexpected role: {}".format(message["role"]))
-
-            if mask != last_mask:
-                encoded_messages.append(self._convert_elements_to_ids(tokenizer, elements))
-                elements = []
+            elements = []
 
             if i == 0:
                 elements += self.format_prefix.apply()
@@ -180,9 +169,7 @@ class Template:
             else:
                 raise NotImplementedError("Unexpected role: {}".format(message["role"]))
 
-            last_mask = mask
-
-        encoded_messages.append(self._convert_elements_to_ids(tokenizer, elements))
+            encoded_messages.append(self._convert_elements_to_ids(tokenizer, elements))
 
         return encoded_messages
 
