@@ -109,6 +109,14 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $N
     fi     
 done
 
+if [[ -n "$models" ]]; then
+    model_count=$(echo "$models" | awk -F',' '{print NF}')
+    if [[ "$model_count" -gt 2 ]]; then
+        echo "[INFO] More than 2 models changed ($models), fallback to glm_moe"
+        models="glm_moe"
+    fi
+fi
+
 if [[ "$models" == "" ]]; then
     FLAGS_enable_CI=false 
 fi
