@@ -936,7 +936,7 @@ class Trainer:
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint):
 
-        non_zcc_ema_callback = NonZCCEMACallback.create_ema_buffer(
+        non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
             args=self.args,
             resume_from_checkpoint=resume_from_checkpoint,
             sharding_io=self.sharding_io,
