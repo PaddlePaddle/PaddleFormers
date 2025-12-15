@@ -655,7 +655,7 @@ class DeepseekV2Attention(nn.Layer):
         self.q_head_dim = config.qk_nope_head_dim + config.qk_rope_head_dim
 
         self.is_causal = True
-        self.fuse_rope = config.use_fused_rope
+        self.apply_rope_fusion = config.apply_rope_fusion
 
         if config.num_nextn_predict_layers > 0:
             self.seq_length = config.seq_length - config.num_nextn_predict_layers
@@ -858,7 +858,7 @@ class DeepseekV2Attention(nn.Layer):
             cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
             cos = cos[None, :, None, :]
             sin = sin[None, :, None, :]
-            q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids, self.fuse_rope)
+            q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids, self.apply_rope_fusion)
 
             query_states = paddle.cat([q_nope, q_pe], axis=-1)
             key_states = paddle.cat([k_nope, k_pe], axis=-1)
@@ -1975,7 +1975,7 @@ class DeepseekV2RMSNorm(nn.Layer):
             mark_as_sequence_parallel_parameter(self.weight)
 
     def forward(self, hidden_states):
-        if self.config.use_fused_rms_norm:
+        if self.config.fuse_rms_norm:
             return RmsNormFunction.apply(hidden_states, self.weight, self.variance_epsilon)
 
         with paddle.amp.auto_cast(False):
@@ -1991,7 +1991,7 @@ class DeepseekV2RMSNorm(nn.Layer):
         return f"hidden_size={self.hidden_size}, dtype={self.weight.dtype}"
 
 
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids, apply_rope_fusion=False):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
@@ -2018,7 +2018,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
     b, s, h, d = k.shape
     k = k.reshape([b, s, h, d // 2, 2]).transpose([0, 1, 2, 4, 3]).reshape([b, s, h, d])
 
-    if (get_env_device() == "xpu" or get_env_device() == "gpu") and fuse_rope:
+    if (get_env_device() == "xpu" or get_env_device() == "gpu") and apply_rope_fusion:
         q_embed, k_embed, _ = fused_rotary_position_embedding(
             q,
             k,

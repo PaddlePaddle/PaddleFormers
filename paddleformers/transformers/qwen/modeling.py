@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import math
 import os
 import warnings
@@ -50,7 +51,6 @@ from ...utils.converter import StateDictNameMapping, init_name_mappings
 from ...utils.log import logger
 from .. import linear_utils
 from ..linear_utils import Linear
-from ..long_sequence_strategies import LongSequenceStrategies
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
 from ..utils import caculate_llm_per_token_flops
@@ -87,6 +87,60 @@ try:
     from paddle.incubate.nn.functional import fused_rotary_position_embedding
 except:
     fused_rotary_position_embedding = None
+
+
+all_strategy_types = ["embedding_strategies", "attention_strategies"]
+
+
+class LongSequenceStrategies:
+    @classmethod
+    def build_long_sequence_strategy(cls, strategy_type=None, stratety_name=None, **init_args):
+        """
+
+        **init_args:   head_dim,
+                       max_position_embeddings,
+                       rope_scaling_type,
+                       rope_scaling_factor,
+                       ...
+
+        strategy_type: "None" ---------------走原始的built-in模块
+                       "embedding_strategies"、
+                       "attention_strategies"
+                       ...
+
+        stratety_name: "RotaryEmbedding"、
+                       "LinearScalingRotaryEmbedding"、
+                       "NTKScalingRotaryEmbedding"、
+                       "DynamicNTKScalingRotaryEmbedding"、
+                       "AttentionWithLinearBias"
+                       ...
+
+        """
+
+        """
+        paddleformers.transformers.long_sequence_strategies.{strategy_type<->import_class)}.{stratety_name<->strategy_class)}
+        paddleformers.transformers.long_sequence_strategies.{embedding_strategies}.{RoPE,...}
+        paddleformers.transformers.long_sequence_strategies.{attention_strategies}.{ALiBi,...}
+        """
+        try:
+            import_class = importlib.import_module(
+                f"paddleformers.transformers.long_sequence_strategies.{strategy_type}"
+            )
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(
+                f"Wrong strategy type {strategy_type}. module only supports the following types: "
+                + ", ".join(m for m in all_strategy_types)
+            )
+        try:
+            strategy_class = getattr(import_class, stratety_name)
+        except:
+            all_strategy_classes = import_class.__all__
+            raise LookupError(
+                f"module '{import_class.__name__}' only supports the following classes: "
+                + ", ".join(m for m in all_strategy_classes)
+            )
+        strategy_instance = strategy_class(**init_args)
+        return strategy_instance
 
 
 def get_use_casual_mask():
@@ -230,7 +284,7 @@ class QWenAttention(nn.Layer):
         bsz, q_len, num_heads, head_dim = query.shape
         _, kv_seq_len, _, _ = value.shape
 
-        if self.config.use_flash_attention and flash_attention is not None:
+        if self.config._attn_implementation == "sdpa" and flash_attention is not None:
             # Flash Attention now ignore attention mask
             # Current Flash Attention doesn't support attn maskt
             # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
@@ -361,7 +415,7 @@ class QWenAttention(nn.Layer):
 
         if rotary_pos_emb is not None:
             cos, sin = rotary_pos_emb
-            if self.config.use_fused_rope:
+            if self.config.apply_rope_fusion:
                 query, key, _ = fused_rotary_position_embedding(
                     query,
                     key,
@@ -1221,7 +1275,7 @@ class QWenRMSNorm(nn.Layer):
         return x * paddle.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
-        if self.config.use_fused_rms_norm:
+        if self.config.fuse_rms_norm:
             return paddle.incubate.nn.functional.fused_rms_norm_ext(x, self.weight, self.eps)[0].astype(
                 self.weight.dtype
             )

@@ -31,7 +31,7 @@
   "fuse_attn_ffn": true,
   "fuse_linear": true,
   "rope_reorder": false,
-  "fuse_rope": true,
+  "apply_rope_fusion": true,
   "fuse_swiglu": true,
   "fuse_gate_detach_matmul": true,
   "remove_tail_layer": 2,
