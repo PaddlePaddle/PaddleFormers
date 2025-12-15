@@ -1193,11 +1193,11 @@ class EMABuffer(ABC):
         if ema_loss_threshold is None or loss < ema_loss_threshold:
             logger.info(f"EMA accumulating for step {global_step} ...")
             self._ema_impl(
-                state_dict=self._get_ema_master_weight(),
+                state_dict=self._get_master_weight(),
                 ema_state_dict=self.master_weights,
             )
             self._ema_impl(
-                state_dict=self._get_ema_model_state(),
+                state_dict=self._get_master_weight(),
                 ema_state_dict=self.model_params,
             )
             logger.info(f"EMA accumulate done for step {global_step}")
@@ -1219,11 +1219,11 @@ class EMABuffer(ABC):
             ema_state_dict[k] = v
 
     @abstractmethod
-    def _get_ema_master_weight(self):
+    def _get_master_weight(self):
         pass
 
     @abstractmethod
-    def _get_ema_model_state(self):
+    def _get_model_state(self):
         pass
 
     @abstractmethod
@@ -1242,13 +1242,13 @@ class EMABufferShardingIOBased(EMABuffer):
         path = path.replace("optimizer", "ema")
         return os.path.join(base_path, path)
 
-    def _get_ema_model_state(self):
+    def _get_model_state(self):
         return self.sharding_io.manipulate_state_dict_and_config(
             unwrap_model(self.sharding_io.model),
             merge_tensor_parallel=False,
         )[0]
 
-    def _get_ema_master_weight(self):
+    def _get_master_weight(self):
         return self.sharding_io.optimizer.state_dict()["master_weights"]
 
     def _check_consistent_dist_strategy(self, resume_from_checkpoint):
@@ -1268,11 +1268,11 @@ class EMABufferFcBased(EMABuffer):
     def _check_consistent_dist_strategy(self, resume_from_checkpoint):
         return DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(resume_from_checkpoint)
 
-    def _get_ema_model_state(self):
+    def _get_model_state(self):
         assert self.model is not None, "expected model is not None"
         return self.model.state_dict()
 
-    def _get_ema_master_weight(self):
+    def _get_master_weight(self):
         assert self.optimizer is not None, "expected optimizer is not None"
         return self.optimizer.state_dict()["master_weights"]
 
