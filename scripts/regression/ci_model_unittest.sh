@@ -74,27 +74,56 @@ print_info() {
 }
 
 get_diff_TO_case(){
-export FLAGS_enable_CI=false
-if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
-    # Scheduled Regression Test
-    FLAGS_enable_CI=true
-else
-    for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
-        ext="${file_name##*.}"
-        echo "file_name: ${file_name}, ext: ${file_name##*.}"
-        
-        if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
-            continue
-        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
-            continue
-        else
-            FLAGS_enable_CI=true
+models=""
+FLAGS_enable_CI=false
+TRANS_MODEL_DIR="paddleformers/transformers"
+TRAINER_DIR="paddleformers/trainer"
+CLI_DIR="paddleformers/cli"
+examples_DIR="examples/congfig"
+
+for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $NF}'`; do
+    echo "Checking file: $file_name"
+    
+    if [[ -f "$file_name" && "$file_name" =~ \.(py|python)$ ]]; then
+        echo "Detected changed Python file: $file_name"
+        FLAGS_enable_CI=true
+    fi
+
+    # check modified models files
+    if [[ "$file_name" == ${TRANS_MODEL_DIR}/* ]]; then
+        model_name=$(echo "$file_name" | awk -F'/' '{print $3}')
+        if [[ "$models" == "" ]]; then
+            models="$model_name"
+        elif [[ ! ",$models," =~ ",$model_name," ]]; then
+            models=${models:+$models,}$model_name
         fi
-    done
+        FLAGS_enable_CI=true
+        continue
+    fi
+    
+    # check modified files which need to run model ci
+    if [[ "$file_name" == ${TRAINER_DIR}/* ]] || [[ "$file_name" == ${CLI_DIR}/* ]] ||  [[ "$file_name" == ${examples_DIR}/* ]]; then
+        models="glm_moe"
+        FLAGS_enable_CI=true
+        continue
+    fi     
+done
+
+if [[ -n "$models" ]]; then
+    model_count=$(echo "$models" | awk -F',' '{print NF}')
+    if [[ "$model_count" -gt 2 ]]; then
+        echo "[INFO] More than 2 models changed ($models), fallback to glm_moe"
+        models="glm_moe"
+    fi
+fi
+
+if [[ "$models" == "" ]]; then
+    FLAGS_enable_CI=false 
 fi
 }
-
 get_diff_TO_case
+echo "models: $models"
+echo "FLAGS_enable_CI: $FLAGS_enable_CI"
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     install_requirements
@@ -112,9 +141,10 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     python -c "import paddle; print(paddle.device.device_count())"
     export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export FLAGS_tcp_store_using_libuv=0
-    PYTHONPATH=$(pwd) \
-    COVERAGE_SOURCE=paddleformers \
-    python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
+    export PYTHONPATH=$(pwd)
+    export COVERAGE_SOURCE=paddleformers
+    export PF_HOME=/home/models/
+    python -m pytest -s -v --models=$models ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
 
