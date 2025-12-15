@@ -1260,13 +1260,18 @@ class EMABufferFcBased(EMABuffer):
         self.hcg = hcg
         self.model = model
         self.optimizer = optimizer
+        self.dist_info_collector_and_validator = DistInfoCollectorValidator(args, hcg)
+
         super().__init__(resume_from_checkpoint, args, offload)
+
+    def _get_model_meta(self):
+        return self.dist_info_collector_and_validator.gather_distributed_model_meta(self.model, self.optimizer)
 
     def _ema_path(self, base_path):
         return os.path.join(base_path, "ema_state", f"{dist.get_rank()}_0.distcp")
 
     def _check_consistent_dist_strategy(self, resume_from_checkpoint):
-        return DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(resume_from_checkpoint)
+        return self.dist_info_collector_and_validator.check_same_strategy(os.path.dirname(resume_from_checkpoint))
 
     def _get_model_state(self):
         assert self.model is not None, "expected model is not None"
@@ -1275,6 +1280,14 @@ class EMABufferFcBased(EMABuffer):
     def _get_master_weight(self):
         assert self.optimizer is not None, "expected optimizer is not None"
         return self.optimizer.state_dict()["master_weights"]
+
+    def save(self, global_step):
+        model_meta_content = self._get_model_meta()
+        model_meta_path = os.path.join(self.args.output_dir, MODEL_META_NAME)
+        with open(model_meta_path, "w") as f:
+            json.dump(model_meta_content, f)
+
+        super().save(global_step)
 
 
 class NonZCCEMACallback(TrainerCallback):
