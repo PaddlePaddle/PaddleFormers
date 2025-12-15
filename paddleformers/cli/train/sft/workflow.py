@@ -22,10 +22,12 @@ from functools import partial
 import numpy as np
 import paddle
 
+from paddleformers.utils.tools import paddle_device
+
 is_sm90 = (
     paddle.base.core.is_compiled_with_cuda()
-    and paddle.device.cuda.get_device_capability()[0] == 9
-    and paddle.device.cuda.get_device_capability()[1] == 0
+    and paddle_device.get_device_capability()[0] == 9
+    and paddle_device.get_device_capability()[1] == 0
 )
 if is_sm90:
     os.environ["FLAGS_flash_attn_version"] = "3"
@@ -336,7 +338,6 @@ def run_sft(
         "is_pretraining": True if model_args.stage.lower() == "pt" else False,
         "truncate_packing": data_args.truncate_packing,
         "stage": model_args.stage,
-        "is_valid": False,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
     }
@@ -344,7 +345,6 @@ def run_sft(
     dataset_config.update(
         {
             "template": data_args.template,
-            "train_on_prompt": False,
             "tool_format": None,
             "default_system": None,
             "enable_thinking": True,
@@ -373,11 +373,11 @@ def run_sft(
             sub_dataset_type=data_args.train_dataset_type,
             **dataset_config,
         )
-        dataset_config["is_valid"] = True
         eval_dataset = create_dataset_sft(
             task_group=data_args.eval_dataset_path,
             task_group_prob=data_args.eval_dataset_prob,
             sub_dataset_type=data_args.eval_dataset_type,
+            is_valid=True,
             **dataset_config,
         )
 

@@ -564,7 +564,7 @@ class LlamaModel(LlamaPretrainedModel):
                 paddle.arange(kv_seq_len, seq_length + kv_seq_len, dtype=paddle.int64).unsqueeze(0).tile((bsz, 1))
             )
 
-        # TODO(littleherozzzx): check self.config.fuse_rope
+        # TODO(littleherozzzx): check self.config.apply_rope_fusion
         mask_kwargs = {
             "config": self.config,
             "inputs_embeds": inputs_embeds,

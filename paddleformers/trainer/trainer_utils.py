@@ -60,7 +60,7 @@ from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
 from ..utils.import_utils import is_paddle_cuda_available, is_psutil_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import PDCErrorCode, PDCErrorMessageMap, pdc_tool
-from ..utils.tools import get_env_device
+from ..utils.tools import get_env_device, paddle_device
 from .utils.helper import distributed_file
 
 __all__ = [
@@ -991,11 +991,11 @@ class TrainerMemoryTracker:
 
         if self.paddle is not None:
             # self.paddle.cuda.reset_peak_memory_stats()?
-            self.paddle.device.cuda.empty_cache()
+            self.paddle_device.empty_cache()
 
         # gpu
         if self.paddle is not None:
-            self.gpu_mem_used_at_start = self.paddle.device.cuda.memory_allocated()
+            self.gpu_mem_used_at_start = paddle_device.memory_allocated()
 
         # cpu
         self.cpu_mem_used_at_start = self.cpu_mem_used()
@@ -1019,7 +1019,7 @@ class TrainerMemoryTracker:
         gc.collect()
 
         if self.paddle is not None:
-            self.paddle.device.cuda.empty_cache()
+            paddle_device.empty_cache()
 
         # concepts:
         # - alloc_delta:  the difference of allocated memory between the end and the start
@@ -1028,8 +1028,8 @@ class TrainerMemoryTracker:
 
         # gpu
         if self.paddle is not None:
-            self.gpu_mem_used_now = self.paddle.device.cuda.memory_allocated()
-            self.gpu_mem_used_peak = self.paddle.device.cuda.max_memory_allocated()
+            self.gpu_mem_used_now = paddle_device.memory_allocated()
+            self.gpu_mem_used_peak = paddle_device.max_memory_allocated()
             self.gpu[self.cur_stage] = dict(
                 begin=self.gpu_mem_used_at_start,
                 end=self.gpu_mem_used_now,
@@ -1060,7 +1060,7 @@ class TrainerMemoryTracker:
 
         if hasattr(self, "gpu_mem_used_peak"):
             metrics["gpu_mem_max_memory_allocated"] = self.gpu_mem_used_peak
-            metrics["gpu_mem_max_memory_reserved"] = self.paddle.device.cuda.max_memory_reserved()
+            metrics["gpu_mem_max_memory_reserved"] = paddle_device.max_memory_reserved()
 
         # since we don't have a way to return init metrics, we push them into the first of train/val/predict
         stages = [stage]

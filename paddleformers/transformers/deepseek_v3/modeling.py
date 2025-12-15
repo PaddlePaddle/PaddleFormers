@@ -201,7 +201,7 @@ def rotate_half(x):
     return paddle.cat([-x2, x1], axis=-1)  # shape is the same as x
 
 
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids, apply_rope_fusion=False):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
@@ -535,7 +535,7 @@ class DeepseekV3Attention(nn.Layer):
         self.q_head_dim = config.qk_nope_head_dim + config.qk_rope_head_dim
 
         self.is_causal = True
-        self.fuse_rope = config.use_fused_rope
+        self.apply_rope_fusion = config.apply_rope_fusion
 
         self.seq_length = config.seq_length
         self.tensor_parallel = config.tensor_model_parallel_size > 1
@@ -702,7 +702,7 @@ class DeepseekV3Attention(nn.Layer):
         cos, sin = position_embeddings[0], position_embeddings[1]
         cos = cos[None, :, None, :]
         sin = sin[None, :, None, :]
-        q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids, self.fuse_rope)
+        q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids, self.apply_rope_fusion)
         query_states = paddle.cat([q_nope, q_pe], axis=-1)
         key_states = paddle.cat([k_nope, k_pe], axis=-1)
 
@@ -1551,7 +1551,7 @@ class DeepseekV3Model(DeepseekV3PretrainedModel):
         if past_key_values is not None:
             seq_length_with_past += past_key_values_length
 
-        if position_ids is None and not self.config.fuse_rope:
+        if position_ids is None and not self.config.apply_rope_fusion:
             position_ids = (
                 paddle.arange(
                     0,
@@ -2234,7 +2234,7 @@ class DeepseekV3EmbeddingPipe(EmbeddingPipe):
             )
         attn_mask = attn_mask_startend_row_indices if attn_mask_startend_row_indices is not None else attn_mask
 
-        if position_ids is None and not self.config.fuse_rope:
+        if position_ids is None and not self.config.apply_rope_fusion:
             position_ids = (
                 paddle.arange(
                     0,

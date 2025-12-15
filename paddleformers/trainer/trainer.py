@@ -167,7 +167,7 @@ from ..utils.fault_tolerance import LOSS_INF_ERROR, LOSS_NAN_ERROR
 from ..utils.import_utils import is_datasets_available, is_paddle_cuda_available
 from ..utils.log import MetricsDumper, logger
 from ..utils.pdc_sdk import FLASH_DEVICE
-from ..utils.tools import get_env_device
+from ..utils.tools import get_env_device, paddle_device
 from .argparser import strtobool
 from .integrations import get_reporting_integration_callbacks
 from .plugins.timer import RuntimeTimer, get_timers, set_timers
@@ -1108,7 +1108,7 @@ class Trainer:
             except Exception:
                 moe_sharding_group = None
 
-            if (moe_sharding_group is None or moe_sharding_group.nranks <= 1) or True:
+            if moe_sharding_group is None or moe_sharding_group.nranks <= 1:
                 # when moe_sharding_group is None, we use the default process_group
                 logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
                 dist.load_state_dict(
@@ -1219,13 +1219,9 @@ class Trainer:
 
             self._load_scheduler(resume_from_checkpoint)
 
-        from .trainer_utils import ShardingOption
-
-        should_load_stage1 = self.args.sharding_parallel_degree > 1 and ShardingOption.SHARD_OP in self.args.sharding
-        logger.debug(f"should_load_stage1 = {should_load_stage1}")
         logger.debug(f"sharded_model_from_ema = {self.args.sharded_model_from_ema}")
 
-        if should_load_stage1 and self.args.sharded_model_from_ema:
+        if self.args.sharded_model_from_ema:
             ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
             ema_state_dict = paddle.load(ema_states_path)
             ema_master_weights = ema_state_dict.pop("master_weights", None)
@@ -1258,7 +1254,7 @@ class Trainer:
                 comm_method=self.args.flex_ckpt_comm_method,
             )
 
-        if self.args.bf16 and (not self.args.ignore_load_lr_and_optim) and should_load_stage1:
+        if self.args.bf16 and (not self.args.ignore_load_lr_and_optim):
             opt_state_dict = self.optimizer.state_dict()
 
             def recover_params_from_master_weight(opt_state_dict, group):
@@ -2517,8 +2513,8 @@ class Trainer:
                 if is_paddle_cuda_available():
                     logs.update(
                         {
-                            "gpu_max_memory_allocated": paddle.device.cuda.max_memory_allocated() >> 20,
-                            "gpu_max_memory_reserved": paddle.device.cuda.max_memory_reserved() >> 20,
+                            "gpu_max_memory_allocated": paddle_device.max_memory_allocated() >> 20,
+                            "gpu_max_memory_reserved": paddle_device.max_memory_reserved() >> 20,
                         }
                     )
 
