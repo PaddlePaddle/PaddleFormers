@@ -1043,7 +1043,17 @@ class Trainer:
         logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint):
-        self.add_callback(NonZCCEMACallback(resume_from_checkpoint, self.args, self.sharding_io))
+
+        non_zcc_ema_callback = NonZCCEMACallback.create_ema_buffer(
+            args=self.args,
+            resume_from_checkpoint=resume_from_checkpoint,
+            sharding_io=self.sharding_io,
+            model=self.model,
+            optimizer=self.optimizer,
+            hcg=self.hcg,
+        )
+
+        self.add_callback(non_zcc_ema_callback)
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
