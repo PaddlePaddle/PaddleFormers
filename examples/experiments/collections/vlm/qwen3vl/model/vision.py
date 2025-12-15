@@ -129,7 +129,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         if not self.pre_process:
             hidden_states = self.input_tensor
         
-         # Viewless tensor.
+        # Viewless tensor.
         # - We only need to create a viewless tensor in the case of micro batch
         #   size (mbs) == 1, since in this case, 'hidden_states.transpose()'
         #   above creates a view tensor, and '.contiguous()' is a pass-through.
@@ -150,7 +150,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         if self.config.sequence_parallel:
             rng_context = tensor_parallel.get_cuda_rng_tracker().fork()
         else:
-            rng_context = nullcontext()        
+            rng_context = nullcontext()
         # If fp8_recipe is delayed, wrap the entire pass with get_fp8_context(),
         # otherwise do nothing extra at the outer level
         # if we are using other fp8 recipes, then the context manager enter&exit are free

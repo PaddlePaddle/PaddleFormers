@@ -13,18 +13,23 @@
 # limitations under the License.
 
 from abc import Callable
+from contextlib import nullcontext
 
 from dataclasses import dataclass
 from doctest import REPORT_NDIFF
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
-from paddlefleet import parallel_state
+from paddlefleet import parallel_state, tensor_parallel
+from paddlefleet.packed_seq_params import PackedSeqParams
+from paddlefleet.process_groups_config import ProcessGroupCollection
 from paddlefleet.spec_utils import LayerSpec
 from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
 from paddlefleet.transformer.enums import ModelType
+from paddlefleet.transformer.layer import FleetLayer
 from paddlefleet.transformer.mlp import MLP, MLPSublayersSpec
-
+from paddlefleet.utils import WrappedTensor, deprecate_inference_params
+from paddlefleet.transformer.transformer_block import TransformerBlock, TransformerBlockSublayersSpec
 from paddlefleet.transformer.transformer_config import TransformerConfig
 from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
 from paddlefleet.models.vision.multimodal_projector import MultimodalProjector as MCoreMultiModalProjector
@@ -709,3 +714,117 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
             self.encoder_hidden_state = input_tensor[0]
         else:
             self.language_model.set_input_tensor(input_tensor[0])
+
+
+class Qwen3VLTextTransformerBlock(TransformerBlock):
+    def __init__(
+        config: TransformerConfig,
+        spec: TransformerBlockSublayersSpec | LayerSpec,
+        post_layer_norm: bool = True,
+        pre_process: bool = True,
+        post_process: bool = True,
+        pg_collection: ProcessGroupCollection | None = None,
+        vp_stage: int | None = None,
+    ) -> None:
+        super().__init__(
+            config,
+            spec=spec,
+            post_layer_norm=post_layer_norm,
+            pre_process=pre_process,
+            post_process=post_process,
+            pg_collection=pg_collection,
+            vp_stage=vp_stage,
+        )
+    
+    def forward(
+        self,
+        hidden_states: paddle.Tensor | WrappedTensor,
+        attention_mask: paddle.Tensor | None,
+        context: paddle.Tensor | None = None,
+        context_mask: paddle.Tensor | None = None,
+        rotary_pos_emb: paddle.Tensor | None = None,
+        rotaty_pos_cos: paddle.Tensor | None = None,
+        rotary_pos_sin: paddle.Tensor | None = None,
+        attention_bias: paddle.Tensor | None = None,
+        inference_context = None,
+        packed_seq_params: PackedSeqParams | None = None,
+        sequence_len_offset: paddle.Tensor | None = None,
+        visual_pos_masks: paddle.Tensor | None = None,
+        deepstack_visual_embeds: paddle.Tensor | None = None,
+        *,
+        inference_params = None,
+    ):
+        inference_context = deprecate_inference_params(inference_context, inference_params)
+        
+        if isinstance(hidden_states, WrappedTensor):
+            hidden_states = hidden_states.unwrap()
+        
+        if not self.pre_process:
+            hidden_states = self.input_tensor
+        
+        # Viewless tensor.
+        # - We only need to create a viewless tensor in the case of micro batch
+        #   size (mbs) == 1, since in this case, 'hidden_states.transpose()'
+        #   above creates a view tensor, and '.contiguous()' is a pass-through.
+        #   For mbs >= 2, '.contiguous()' creates a new tensor, eliminating
+        #   the need to make it viewless.
+        #
+        #   However, we don't explicitly check mbs == 1 here because
+        #   make_viewless_tensor() has negligible overhead when its input
+        #   is already viewless.
+        #
+        # - For the 'else' case above, calling make_viewless_tensor() here is
+        #   likely redundant, since p2p_communication.py (likely originator)
+        #   already creates viewless tensors. That said, make_viewless_tensor()
+        #   is called here to be future-proof and corner-case-proof.
+    
+        # hidden_states = make_viewless_tensor(inp=hidden_states, requires_grad=True, keep_graph=True)
+        
+        if self.config.sequence_parallel:
+            rng_context = tensor_parallel.get_cuda_rng_tracker().fork()
+        else:
+            rng_context = nullcontext()
+        # If fp8_recipe is delayed, wrap the entire pass with get_fp8_context(),
+        # otherwise do nothing extra at the outer level
+        # if we are using other fp8 recipes, then the context manager enter&exit are free
+        # we can wrap fp8_context within the for loop over layers, so that we can fine-grained
+        # control which layer will be fp8 or bf16
+        print("fleet vision 0 hidden_states", hidden_states._md5sum())
+        
+        with rng_context:
+            if self.recompute_granularity == "full" and self.training:
+                pass
+            else:
+                packed_seq_params_now = packed_seq_params
+                for l_no, layer in self.layers:
+                    hidden_states = layer(
+                        hidden_states,
+                        attention_mask=attention_mask,
+                        context=context,
+                        context_mask=context_mask,
+                        rotary_pos_emb=rotary_pos_emb,
+                        rotaty_pos_cos=rotaty_pos_cos,
+                        rotary_pos_sin=rotary_pos_sin,
+                        attention_bias=attention_bias,
+                        packed_seq_params=packed_seq_params_now,
+                    )
+                    if deepstack_visual_embeds is not None and l_no in range(len(deepstack_visual_embeds)):
+                        hidden_states = self._deepstack_process(
+                            hidden_states,
+                            visual_pos_masks,
+                            deepstack_visual_embeds[l_no],
+                        )
+                    print(f"fleet vision {l_no} hidden_states", hidden_states._md5sum())
+                if self.norm is not None:
+                    hidden_states = self.norm(hidden_states)
+                
+                return hidden_states
+    
+    def _deepstack_process(
+        self, hidden_states: paddle.Tensor, visual_pos_masks: paddle.Tensor, visual_embeds: paddle.Tensor
+    ):
+        visual_embeds = visual_embeds.to(hidden_states.dtype)
+        hidden_states = hidden_states.clone()
+        local_this = hidden_states[visual_pos_masks, :] + visual_embeds
+        hidden_states[visual_pos_masks, :] = local_this
+        return hidden_states
