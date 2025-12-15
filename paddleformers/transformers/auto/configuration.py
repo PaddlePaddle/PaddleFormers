@@ -33,7 +33,6 @@ __all__ = [
 
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
-        ("bert", "BertConfig"),
         ("deepseek_v3", "DeepseekV3Config"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
@@ -59,7 +58,6 @@ CONFIG_MAPPING_NAMES = OrderedDict(
 MODEL_NAMES_MAPPING = OrderedDict(
     # Base model mapping
     [
-        ("bert", "Bert"),
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
         ("ernie4_5", "Ernie4_5"),

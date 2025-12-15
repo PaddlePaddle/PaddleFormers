@@ -86,11 +86,11 @@ trainer_args:
     use_train_part_sharding: 1
     pre_alloc_memory: 60
 
-    pipeline_parallel_degree: 12
-    tensor_parallel_degree: 1
-    virtual_pp_degree: 1
+    pipeline_model_parallel_size: 12
+    tensor_model_parallel_size: 1
+    virtual_pipeline_model_parallel_size: 1
     data_parallel_degree: 1
-    expert_parallel_degree: 8
+    expert_model_parallel_size: 8
     sharding: "stage1"
     sharding_parallel_degree: 168
     amp_master_grad: 1

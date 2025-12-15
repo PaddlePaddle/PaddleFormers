@@ -272,7 +272,7 @@ class LlamaModelTester:
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
         model = LlamaForCausalLM(config)
         config.num_key_value_heads = 8  # gqa
-        config.use_fused_rope = True
+        config.apply_rope_fusion = True
         model.eval()
 
         result = model(

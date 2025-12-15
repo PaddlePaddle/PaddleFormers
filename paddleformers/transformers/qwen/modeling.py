@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import math
 import os
 import warnings
@@ -50,7 +51,6 @@ from ...utils.converter import StateDictNameMapping, init_name_mappings
 from ...utils.log import logger
 from .. import linear_utils
 from ..linear_utils import Linear
-from ..long_sequence_strategies import LongSequenceStrategies
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
 from ..utils import caculate_llm_per_token_flops
@@ -89,6 +89,60 @@ except:
     fused_rotary_position_embedding = None
 
 
+all_strategy_types = ["embedding_strategies", "attention_strategies"]
+
+
+class LongSequenceStrategies:
+    @classmethod
+    def build_long_sequence_strategy(cls, strategy_type=None, stratety_name=None, **init_args):
+        """
+
+        **init_args:   head_dim,
+                       max_position_embeddings,
+                       rope_scaling_type,
+                       rope_scaling_factor,
+                       ...
+
+        strategy_type: "None" ---------------走原始的built-in模块
+                       "embedding_strategies"、
+                       "attention_strategies"
+                       ...
+
+        stratety_name: "RotaryEmbedding"、
+                       "LinearScalingRotaryEmbedding"、
+                       "NTKScalingRotaryEmbedding"、
+                       "DynamicNTKScalingRotaryEmbedding"、
+                       "AttentionWithLinearBias"
+                       ...
+
+        """
+
+        """
+        paddleformers.transformers.long_sequence_strategies.{strategy_type<->import_class)}.{stratety_name<->strategy_class)}
+        paddleformers.transformers.long_sequence_strategies.{embedding_strategies}.{RoPE,...}
+        paddleformers.transformers.long_sequence_strategies.{attention_strategies}.{ALiBi,...}
+        """
+        try:
+            import_class = importlib.import_module(
+                f"paddleformers.transformers.long_sequence_strategies.{strategy_type}"
+            )
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(
+                f"Wrong strategy type {strategy_type}. module only supports the following types: "
+                + ", ".join(m for m in all_strategy_types)
+            )
+        try:
+            strategy_class = getattr(import_class, stratety_name)
+        except:
+            all_strategy_classes = import_class.__all__
+            raise LookupError(
+                f"module '{import_class.__name__}' only supports the following classes: "
+                + ", ".join(m for m in all_strategy_classes)
+            )
+        strategy_instance = strategy_class(**init_args)
+        return strategy_instance
+
+
 def get_use_casual_mask():
     """Get the value of the 'USE_CASUAL_MASK' environment variable."""
     return os.getenv("USE_CASUAL_MASK", "False") == "True"
@@ -96,15 +150,15 @@ def get_use_casual_mask():
 
 def parallel_matmul(x: Tensor, y: Tensor, tensor_parallel_output=True):
     is_fleet_init = True
-    tensor_parallel_degree = 1
+    tensor_model_parallel_size = 1
     try:
         hcg = fleet.get_hybrid_communicate_group()
         model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
+        tensor_model_parallel_size = hcg.get_model_parallel_world_size()
     except:
         is_fleet_init = False
 
-    if is_fleet_init and tensor_parallel_degree > 1 and y.is_distributed:
+    if is_fleet_init and tensor_model_parallel_size > 1 and y.is_distributed:
         # if not running under distributed.launch, it will raise AttributeError: 'Fleet' object has no attribute '_hcg'
         input_parallel = paddle.distributed.collective._c_identity(x, group=model_parallel_group)
         logits = paddle.matmul(input_parallel, y, transpose_y=False)
@@ -177,10 +231,10 @@ class QWenAttention(nn.Layer):
                 if skip_recompute_ops.get("attention_row_ln", False):
                     RowParallelLinear = RRRowParallelLinear
 
-        if config.tensor_parallel_degree > 1:
-            if config.num_attention_heads % config.tensor_parallel_degree != 0:
-                raise ValueError("num_attention_heads has to be divisible by tensor_parallel_degree")
-            self.num_heads = config.num_attention_heads // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1:
+            if config.num_attention_heads % config.tensor_model_parallel_size != 0:
+                raise ValueError("num_attention_heads has to be divisible by tensor_model_parallel_size")
+            self.num_heads = config.num_attention_heads // config.tensor_model_parallel_size
             self.c_attn = ColumnParallelLinear(
                 config.hidden_size,
                 3 * self.projection_size,
@@ -230,7 +284,7 @@ class QWenAttention(nn.Layer):
         bsz, q_len, num_heads, head_dim = query.shape
         _, kv_seq_len, _, _ = value.shape
 
-        if self.config.use_flash_attention and flash_attention is not None:
+        if self.config._attn_implementation == "sdpa" and flash_attention is not None:
             # Flash Attention now ignore attention mask
             # Current Flash Attention doesn't support attn maskt
             # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
@@ -361,7 +415,7 @@ class QWenAttention(nn.Layer):
 
         if rotary_pos_emb is not None:
             cos, sin = rotary_pos_emb
-            if self.config.use_fused_rope:
+            if self.config.apply_rope_fusion:
                 query, key, _ = fused_rotary_position_embedding(
                     query,
                     key,
@@ -444,7 +498,7 @@ class QWenMLP(nn.Layer):
                 if skip_recompute_ops.get("mlp_row_ln", False):
                     RowParallelLinear = RRRowParallelLinear
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             if self.fuse_attention_ffn:
                 self.gate_up_fused_proj = ColumnParallelLinear(
                     config.hidden_size,
@@ -596,7 +650,7 @@ class QWenPretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -706,7 +760,7 @@ class QWenPretrainedModel(PretrainedModel):
 
     def _init_weights(self, module):
         """Initialize the weights."""
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             rng_tracker = get_rng_state_tracker().rng_state
         if isinstance(
             module,
@@ -758,7 +812,7 @@ class QWenModel(QWenPretrainedModel):
         self.recompute_granularity = config.recompute_granularity
         self.sequence_parallel = config.sequence_parallel
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             self.wte = mpu.VocabParallelEmbedding(
                 self.vocab_size,
                 self.embed_dim,
@@ -982,8 +1036,8 @@ class QWenLMHead(nn.Layer):
     def __init__(self, config: QWenConfig):
         super(QWenLMHead, self).__init__()
         self.config = config
-        if config.tensor_parallel_degree > 1:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1:
+            vocab_size = config.vocab_size // config.tensor_model_parallel_size
         else:
             vocab_size = config.vocab_size
 
@@ -1010,7 +1064,7 @@ class QWenLMHead(nn.Layer):
             hidden_states = paddle.reshape_(hidden_states, [-1, seq_length, self.config.hidden_size])
 
         if tensor_parallel_output is None:
-            tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1
+            tensor_parallel_output = self.config.tensor_parallel_output and self.config.tensor_model_parallel_size > 1
 
         logits = parallel_matmul(hidden_states, self.weight, tensor_parallel_output=tensor_parallel_output)
         return logits
@@ -1027,7 +1081,7 @@ class QWenPretrainingCriterion(paddle.nn.Layer):
         super(QWenPretrainingCriterion, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
             self.loss_func = mpu.ParallelCrossEntropy(ignore_index=self.ignore_index)
@@ -1115,7 +1169,7 @@ class QWenForCausalLM(QWenPretrainedModel):
             from paddlenlp_kernel.triton.cut_cross_entropy import linear_cross_entropy
 
             assert (
-                self.config.tensor_parallel_degree <= 1
+                self.config.tensor_model_parallel_size <= 1
             ), "The argument `use_fused_linear_cross_entropy` is imcompatiable with tensor parallel "
 
             masked_lm_loss = linear_cross_entropy(hidden_states, self.lm_head.weight, targets=labels)
@@ -1221,7 +1275,7 @@ class QWenRMSNorm(nn.Layer):
         return x * paddle.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
-        if self.config.use_fused_rms_norm:
+        if self.config.fuse_rms_norm:
             return paddle.incubate.nn.functional.fused_rms_norm_ext(x, self.weight, self.eps)[0].astype(
                 self.weight.dtype
             )
