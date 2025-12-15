@@ -36,7 +36,7 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Glm4MoeMLP
 from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
+from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
@@ -1529,7 +1529,10 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
     def __new__(cls, config):
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
-        gpt_model = model_provider.provide()
+        loss_fn = None
+        if hasattr(config, "dpo_config"):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings

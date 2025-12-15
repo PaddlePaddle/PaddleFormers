@@ -214,8 +214,9 @@ class DPOTrainer(Trainer):
             model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
             return model
 
-        model = paddlefleet_dist_model.distributed_model(model)
-        model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
+        model = fleet.distributed_model(model)
+        if self.args.pipeline_model_parallel_size > 1:
+            model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
 
         return model
 
@@ -348,7 +349,9 @@ class DPOTrainer(Trainer):
                 loss = model.eval_batch(data=[inputs, labels], compute_loss=True)
 
         # broadcast DPO_INFO_KEYS
-        self.broadcast_last_stage_infohub_tensor()
+        if self.args.pipeline_model_parallel_size > 1:
+            self.broadcast_last_stage_infohub_tensor()
+
         # metrics
         metric_inputs = dict(
             reference_chosen_logps=infohub.reference_chosen_logps,
@@ -375,6 +378,13 @@ class DPOTrainer(Trainer):
         train_eval,
     ):
         metrics = {}
+        if isinstance(policy_chosen_logps, list):
+            # (LiuTing) For fleet pp model single card training.
+            policy_chosen_logps = paddle.cat(policy_chosen_logps, axis=0)
+            reference_chosen_logps = paddle.cat(reference_chosen_logps, axis=0)
+            policy_rejected_logps = paddle.cat(policy_rejected_logps, axis=0)
+            reference_rejected_logps = paddle.cat(reference_rejected_logps, axis=0)
+
         chosen_rewards = self.dpo_config.beta * (policy_chosen_logps - reference_chosen_logps)
         rejected_rewards = self.dpo_config.beta * (policy_rejected_logps - reference_rejected_logps)
         reward_accuracies = (chosen_rewards > rejected_rewards).astype(paddle.float32)
@@ -386,6 +396,12 @@ class DPOTrainer(Trainer):
         metrics[f"{prefix}rewards/margins"] = (chosen_rewards - rejected_rewards).mean()
         metrics[f"{prefix}logps/rejected"] = policy_rejected_logps.mean()
         metrics[f"{prefix}logps/chosen"] = policy_chosen_logps.mean()
+
+        if isinstance(dpo_loss, list):
+            # (LiuTing) For fleet pp model single card training.
+            dpo_loss = paddle.stack(dpo_loss).mean().detach()
+            sft_loss = paddle.stack(sft_loss).mean().detach()
+
         metrics[f"{prefix}{self.dpo_config.loss_type}_loss"] = dpo_loss
         metrics[f"{prefix}sft_loss"] = sft_loss
         if self.dpo_config.loss_type == "or":
@@ -444,10 +460,6 @@ class DPOTrainer(Trainer):
                 ref_model.micro_batch_size = model.micro_batch_size
                 with paddle.no_grad():
                     with self.autocast_smart_context_manager():
-                        inheritance_chain = ref_model.__class__.mro()
-                        print("Python 实例继承关系：")
-                        for cls in inheritance_chain:
-                            print(f"→ {cls.__name__}")  # 只打印类名（简洁）
                         ref_model.eval_batch(data=[inputs, labels], compute_loss=True)
                 ref_model.micro_batch_size, ref_model.accumulate_steps = ref_model_config_backup
             reference_chosen_logps = infohub.reference_chosen_logps
@@ -456,7 +468,11 @@ class DPOTrainer(Trainer):
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
         if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
-            labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
+            # if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+            if True:
+                labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
+            else:
+                labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
         train_inputs = [inputs, labels]
         train_inputs = model._prepare_training(train_inputs, self.optimizer, self.lr_scheduler)
         model.optimizer = None  # we do not use `PipelineParallel` to handler optimizer step
@@ -466,7 +482,8 @@ class DPOTrainer(Trainer):
         model.micro_batch_size, model.accumulate_steps = model_config_backup
 
         # broadcast DPO_INFO_KEYS
-        self.broadcast_last_stage_infohub_tensor()
+        if self.args.pipeline_model_parallel_size > 1:
+            self.broadcast_last_stage_infohub_tensor()
 
         # metrics
         metric_inputs = dict(
@@ -589,20 +606,14 @@ def prepare_pipeline_dpo_inputs_func(inputs):
 
 
 def _prepare_pipeline_dpo_inputs_func_fleet(inputs):
-    """Prepare pipeline inputs"""
-    if "attention_mask" in inputs:
-        first_stage_keys = [
-            "input_ids",
-            "attention_mask",
-            "position_ids",
-        ]
-    else:
-        first_stage_keys = [
-            "input_ids",
-            "attn_mask_start_row_indices",
-            "attn_mask_startend_row_indices",
-            "position_ids",
-        ]
+    """
+    Prepare pipeline inputs
+    first_stage_keys = [
+        "input_ids",
+        "attention_mask",
+        "position_ids",
+    ]
+    """
 
     last_stage_keys = [
         "chosen_labels",
@@ -614,15 +625,22 @@ def _prepare_pipeline_dpo_inputs_func_fleet(inputs):
     ]
 
     first_stage_inputs_batch = inputs
+    acc_steps = len(inputs["input_ids"])
+    first_stage_inputs_batch = {k: [None] * acc_steps if v is None else v for k, v in first_stage_inputs_batch.items()}
     last_stage_inputs = [
-        first_stage_inputs_batch.pop(key)
-        for key in last_stage_keys
-        if key in first_stage_inputs_batch and first_stage_inputs_batch[key]
+        first_stage_inputs_batch.pop(key) for key in last_stage_keys if key in first_stage_inputs_batch
     ]
-    print(last_stage_inputs)
     last_stage_inputs = [list(row) for row in zip(*last_stage_inputs)]
     outputs = (
         first_stage_inputs_batch,
         last_stage_inputs,
     )
     return outputs
+
+
+def fleet_merge_dpo_labels(labels, logprobs):
+    reference_chosen_logps, reference_rejected_logps = logprobs
+    return [
+        sub_labels[:-2] + [reference_chosen_logps[idx], reference_rejected_logps[idx]]
+        for idx, sub_labels in enumerate(labels)
+    ]
