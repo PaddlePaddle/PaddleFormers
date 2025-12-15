@@ -15,7 +15,6 @@ from collections import OrderedDict, defaultdict
 
 import paddle
 import paddle.nn.functional as F
-import paddlefleet.distributed.model as paddlefleet_dist_model
 from paddle.distributed import fleet
 
 from paddleformers.nn.criterion import CriterionLayer
@@ -23,6 +22,14 @@ from paddleformers.peft.lora.lora_model import AVAILABLE_LAYERS
 from paddleformers.trainer import Trainer
 from paddleformers.transformers.model_utils import unwrap_model
 from paddleformers.utils import infohub
+
+try:
+    import paddlefleet.distributed.model as paddlefleet_dist_model
+    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
+
+    HAS_PADDLEFLEET = True
+except:
+    HAS_PADDLEFLEET = False
 
 DPO_INFO_KEYS = [
     "reference_chosen_logps",
@@ -208,8 +215,7 @@ class DPOTrainer(Trainer):
             level=self.args.fp16_opt_level,
             dtype=self.amp_dtype,
         )
-        # if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
-        if True:
+        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
             model = paddlefleet_dist_model.distributed_model(model)
             model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
             return model
@@ -223,8 +229,7 @@ class DPOTrainer(Trainer):
     def _wrap_model(self, model, training=True):
         """Wrap model."""
         model = super()._wrap_model(model, training)
-        # if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
-        if True:
+        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
             model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
             return model
 
@@ -468,8 +473,7 @@ class DPOTrainer(Trainer):
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
         if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
-            # if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
-            if True:
+            if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
