@@ -19,6 +19,7 @@
 import re
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum, unique
 from typing import TYPE_CHECKING, Optional
 
@@ -542,24 +543,11 @@ register_template(
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
 )
 
-register_template(
-    name="glm4",
-    format_user=StringFormatter(slots=["<|user|>\n{{content}}<|assistant|>"]),
-    format_assistant=StringFormatter(slots=["\n{{content}}"]),
-    format_system=StringFormatter(slots=["<|system|>\n{{content}}"]),
-    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="glm4"),
-    format_observation=StringFormatter(slots=["<|observation|>\n{{content}}<|assistant|>"]),
-    format_tools=ToolFormatter(tool_format="glm4"),
-    format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
-    stop_words=["<|user|>", "<|observation|>"],
-    efficient_eos=True,
-)
-
 
 # copied from glm4 template
 register_template(
     name="glm4_moe",
-    format_user=StringFormatter(slots=["<|user|>\n{{content}}<|assistant|>"]),
+    format_user=StringFormatter(slots=["<|user|>\n{{content}}<|assistant|>\n"]),
     format_assistant=StringFormatter(slots=["\n{{content}}"]),
     format_system=StringFormatter(slots=["<|system|>\n{{content}}"]),
     format_function=FunctionFormatter(slots=["{{content}}"], tool_format="glm4_moe"),
@@ -567,7 +555,9 @@ register_template(
     format_tools=ToolFormatter(tool_format="glm4_moe"),
     format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
     stop_words=["<|user|>", "<|observation|>"],
+    thought_words=("<think>", "</think>"),
     efficient_eos=True,
+    replace_eos=True,
     template_class=ReasoningTemplate,
 )
 
@@ -607,6 +597,29 @@ register_template(
 
 register_template(
     name="deepseek3",
-    format_user=StringFormatter(slots=["<｜User｜>{{content}}<｜Assistant｜>"]),
+    format_system=StringFormatter(slots=["{{content}}\n\n"]),
+    format_user=StringFormatter(slots=["<｜User｜>{{content}}\n\n<｜Assistant｜>"]),
     format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+)
+
+
+def _get_gpt_oss_prefix():
+    today = datetime.now().strftime("%Y-%m-%d")
+    return (
+        "<|start|>system<|message|>You are ChatGPT, a large language model trained by OpenAI.\n"
+        f"Knowledge cutoff: 2024-06\nCurrent date: {today}\n\nReasoning: medium\n\n"
+        "# Valid channels: analysis, commentary, final. "
+        "Channel must be included for every message.<|end|>"
+    )
+
+
+register_template(
+    name="gpt",
+    format_user=StringFormatter(slots=["<|start|>user<|message|>{{content}}<|end|><|start|>assistant"]),
+    format_assistant=StringFormatter(slots=["<|channel|>final<|message|>{{content}}<|end|>"]),
+    format_system=StringFormatter(slots=["<|start|>developer<|message|># Instructions\n\n{{content}}<|end|>"]),
+    format_prefix=EmptyFormatter(slots=[_get_gpt_oss_prefix()]),
+    default_system="You are ChatGPT, a large language model trained by OpenAI.",
+    efficient_eos=True,
+    template_class=Template,
 )
