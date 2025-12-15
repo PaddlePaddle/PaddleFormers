@@ -1282,7 +1282,7 @@ class NonZCCEMACallback(TrainerCallback):
         self.buffer = ema_buffer
 
     @staticmethod
-    def create_ema_buffer(
+    def create_nonzcc_callback(
         args, resume_from_checkpoint, sharding_io=None, model=None, optimizer=None, hcg=None, offload=True
     ):
         if args.save_checkpoint_format == "flex_checkpoint":
