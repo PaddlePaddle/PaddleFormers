@@ -1138,7 +1138,6 @@ class Trainer:
                 ), f"{k} not in ema_master_weights, emas_master_weight keys {ema_master_weights.keys()}"
                 paddle.assign(ema_master_weights[k], opt_master_weights[k])
 
-            ema_state_dict = reshard_util.all_gather_state_dict(ema_state_dict, lambda x: True, self.sharding_group)
             self.model.set_state_dict(ema_state_dict)
         else:
 
