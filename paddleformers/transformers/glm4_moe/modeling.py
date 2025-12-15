@@ -649,7 +649,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
                 batch_size > 0
             ), f"batch_size must larger than 0, but calulate batch_size:{batch_size}, hidden_states shape:{hidden_states.shape}"
             hidden_states = hidden_states.reshape([-1, batch_size, hidden_size])
-        sub_seq_len = self.config.moe_subbatch_token_num_before_dispatch
+        sub_seq_len = self.config.moe_subbatch_token_num
         seq_axis = 0 if self.config.sequence_parallel else 1
         seq_len = hidden_states.shape[seq_axis]
         assert seq_len % sub_seq_len == 0
@@ -1369,9 +1369,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         next_decoder_cache = () if use_cache else None
 
         moelayer_use_subbatch_recompute = (
-            self.config.moe_subbatch_token_num_before_dispatch > 0
-            if hasattr(self.config, "moe_subbatch_token_num_before_dispatch")
-            else False
+            self.config.moe_subbatch_token_num > 0 if hasattr(self.config, "moe_subbatch_token_num") else False
         )
 
         for idx, (decoder_layer) in enumerate(self.layers):
@@ -1592,9 +1590,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
 
         has_gradient = not hidden_states.stop_gradient
         moelayer_use_subbatch_recompute = (
-            self.config.moe_subbatch_token_num_before_dispatch > 0
-            if hasattr(self.config, "moe_subbatch_token_num_before_dispatch")
-            else False
+            self.config.moe_subbatch_token_num > 0 if hasattr(self.config, "moe_subbatch_token_num") else False
         )
         if moelayer_use_subbatch_recompute:
             hidden_states = super().subbatch_recompute_forward(

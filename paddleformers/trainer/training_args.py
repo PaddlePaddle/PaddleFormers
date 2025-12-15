@@ -1773,9 +1773,6 @@ class TrainingArguments:
             self.pipeline_model_parallel_size = max(self.pipeline_model_parallel_size, 1)
 
             assert (
-                self.pipeline_model_parallel_size == 1
-            ), "Current not support pipeline parallel in auto parallel mode."
-            assert (
                 world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0
             ), f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
 
