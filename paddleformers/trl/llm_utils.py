@@ -28,7 +28,10 @@ from paddle.distributed import fleet
 from sklearn.metrics import accuracy_score
 
 if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+    try:
+        from transformers.tokenization_utils import PreTrainedTokenizer
+    except:
+        from transformers.tokenization_utils import PythonBackend as PreTrainedTokenizer
 
 from ..generation import GenerationConfig
 from ..transformers import (  # ChatGLMv2Tokenizer,

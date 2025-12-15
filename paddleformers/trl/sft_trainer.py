@@ -26,7 +26,10 @@ from paddle.distributed import fleet
 from paddle.io import BatchSampler, DataLoader, DistributedBatchSampler
 
 if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+    try:
+        from transformers.tokenization_utils import PreTrainedTokenizer
+    except:
+        from transformers.tokenization_utils import PythonBackend as PreTrainedTokenizer
 
 from ..data import DataCollator, DataCollatorForSeq2Seq
 from ..trainer import Trainer
