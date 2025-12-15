@@ -1196,7 +1196,7 @@ class EMABuffer(ABC):
                 ema_state_dict=self.master_weights,
             )
             self._ema_impl(
-                state_dict=self._get_master_weight(),
+                state_dict=self._get_model_state(),
                 ema_state_dict=self.model_params,
             )
             logger.info(f"EMA accumulate done for step {global_step}")
