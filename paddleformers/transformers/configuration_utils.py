@@ -528,12 +528,6 @@ class LlmMetaConfig:
         ),
         ("batch_p2p_comm", bool, True, "Whether to batch point-to-point (P2P) communication requests."),
         (
-            "deterministic_mode",
-            bool,
-            False,
-            "Whether to enable deterministic (reproducible) training/inference. Disables non-deterministic optimizations. Defaults to False (prioritizes speed over strict reproducibility).",
-        ),
-        (
             "dynamic_shape",
             bool,
             True,
