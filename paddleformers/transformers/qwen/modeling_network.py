@@ -134,7 +134,7 @@ class QWenAttentionNet(nn.Layer):
         # Support the flash attention and normal attention
         bsz, q_len, num_heads, head_dim = query.shape
         _, kv_seq_len, _, _ = value.shape
-        if self.config.use_flash_attention and flash_attention is not None:
+        if self.config._attn_implementation == "sdpa" and flash_attention is not None:
             # Flash Attention now ignore attention mask
             # Current Flash Attention doesn't support attn maskt
             # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
@@ -238,7 +238,7 @@ class QWenAttentionNet(nn.Layer):
 
         if rotary_pos_emb is not None:
             cos, sin = rotary_pos_emb
-            if self.config.use_fused_rope:
+            if self.config.apply_rope_fusion:
                 query, key, _ = fused_rotary_position_embedding(
                     query,
                     key,
@@ -583,7 +583,7 @@ class QWenPretrainingCriterionNet(paddle.nn.Layer):
         super(QWenPretrainingCriterionNet, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         self.loss_func = paddle.nn.CrossEntropyLoss(reduction="none", ignore_index=self.ignore_index)
 
@@ -648,7 +648,7 @@ class QWenForCausalLMNet(QWenPretrainedModelNet):
         # if labels is None，means we need full output, instead of tensor_parallel_output
         # tensor_parallel_output is together with ParallelCrossEntropy
         tensor_parallel_output = (
-            self.config.tensor_parallel_output and labels is not None and self.config.tensor_parallel_degree > 1
+            self.config.tensor_parallel_output and labels is not None and self.config.tensor_model_parallel_size > 1
         )
         lm_logits = self.lm_head(hidden_states, tensor_parallel_output=tensor_parallel_output)
 
@@ -813,7 +813,7 @@ class QWenRMSNormNet(nn.Layer):
         return x * paddle.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
-        if self.config.use_fused_rms_norm:
+        if self.config.fuse_rms_norm:
             return paddle.incubate.nn.functional.fused_rms_norm_ext(x, self.weight, self.eps)[0].astype(
                 self.weight.dtype
             )

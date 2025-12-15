@@ -78,6 +78,7 @@ from ..utils.env import (
     ASYMMETRY_QUANT_SCALE_MAX,
     ASYMMETRY_QUANT_SCALE_MIN,
     CONFIG_NAME,
+    FLEX_CKPT_AUTO_GENERATED_METADATA,
     PADDLE_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_NAME,
     PYTORCH_WEIGHTS_INDEX_NAME,
@@ -1385,11 +1386,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             predictor_args : PredictorArgument
                 The args of the predictor.
         """
-        tensor_parallel_degree = kwargs.pop("tensor_parallel_degree", 1)
+        tensor_model_parallel_size = kwargs.pop("tensor_model_parallel_size", 1)
         tensor_parallel_rank = kwargs.pop("tensor_parallel_rank", 0)
 
         if predictor_args.mode == "dynamic" or predictor_args.speculate_method in ["eagle", "mtp"]:
-            config.tensor_parallel_degree = tensor_parallel_degree
+            config.tensor_model_parallel_size = tensor_model_parallel_size
             config.tensor_parallel_rank = tensor_parallel_rank
             config.model_name_or_path = predictor_args.model_name_or_path
             config.quant_type = predictor_args.quant_type
@@ -2447,7 +2448,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     config,
                     loaded_keys,
                     pre_tensor_parallel_split=True
-                    if config is not None and config.tensor_parallel_degree > 1
+                    if config is not None and config.tensor_model_parallel_size > 1
                     else False,
                 )
                 missing_keys = list(set(missing_keys) - set(new_keys))
@@ -2498,7 +2499,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 if quantization_linear_list is not None:
                     if (
                         shard_file.endswith(".safetensors")
-                        and config.tensor_parallel_degree > 1
+                        and config.tensor_model_parallel_size > 1
                         and "tp" not in os.path.split(shard_file)[-1]
                     ):
                         pre_tensor_parallel_split = True
@@ -2539,7 +2540,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 else:
                     if (
                         shard_file.endswith(".safetensors")
-                        and config.tensor_parallel_degree > 1
+                        and config.tensor_model_parallel_size > 1
                         and "tp" not in os.path.split(shard_file)[-1]
                     ):
                         pre_tensor_parallel_split = True
@@ -2610,7 +2611,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     ignore_mismatched_sizes,
                 )
 
-                if config.tensor_parallel_degree > 1 and ".tp" not in shard_file and not pre_tensor_parallel_split:
+                if config.tensor_model_parallel_size > 1 and ".tp" not in shard_file and not pre_tensor_parallel_split:
                     logger.info("Converting state_dict to Tensor Parallel Format")
                     # ignore error for multi shard, since only parts of data
                     state_dict = cls.convert_tensor_parallel(
@@ -2874,6 +2875,16 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         if hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
             aoa_config = cls._gen_aoa_config(config)
             sharded_state_dict = model.sharded_state_dict()
+            metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
+
+            # delete the existing metadata file if it exists
+            try:
+                os.remove(metadata_path)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.error(f"Failed to delete {metadata_path}: {e}")
+
             dist.load_state_dict(
                 sharded_state_dict,
                 path=ckpt_path,
@@ -2881,6 +2892,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 safetensors=True,
                 offload=load_via_cpu,
             )
+
             for v in sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
                     del v.local_tensor.target_tensor
@@ -2889,9 +2901,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         if not is_sharded and state_dict is None:
             # 4. loading non-sharded ckpt from the state dict
-            if config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model_state.pdparams"):
+            if config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith("model_state.pdparams"):
                 state_dict = cls.convert_tensor_parallel(resolved_archive_file, config)
-            elif config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model.safetensors"):
+            elif config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith("model.safetensors"):
                 with safe_open(resolved_archive_file, framework="np", device="cpu") as f:
                     loaded_keys = f.keys()
                 tp_actions = cls.get_tensor_parallel_convert_actions(config, loaded_keys)
@@ -3151,7 +3163,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Save the model
         if state_dict is None:
             state_dict = model_to_save.state_dict()
-            if config_to_save.tensor_parallel_degree > 1:
+            if config_to_save.tensor_model_parallel_size > 1:
                 if not config_to_save.quantization_config.is_support_merge_tensor_parallel() and merge_tensor_parallel:
                     logger.warning(
                         f"Quantization strategy: {config_to_save.quantization_config.weight_quantize_algo} does not support merge tensor parallel, thus we set merge_tensor_parallel to False."
@@ -3159,7 +3171,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     merge_tensor_parallel = False
                 if merge_tensor_parallel:
                     state_dict = model_to_save.merge_tensor_parallel(state_dict, config_to_save)
-                    config_to_save.tensor_parallel_degree = 1
+                    config_to_save.tensor_model_parallel_size = 1
                     if config_to_save.tensor_parallel_rank != 0:
                         logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
                         return
@@ -3424,12 +3436,12 @@ class PipelinePretrainedModel(PretrainedModel):
             first_key = first_key.split(".")
             # if use virtual pp_degree, the prefix is like 0.0.xxx
             # else it will be like 0.xxx
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             prefixes = self.get_sequential_name_prefixes()
             for k in state_dict_keys:
                 name_splited = k.split(".")
-                if use_virtual_pp_degree:
+                if use_virtual_pipeline_model_parallel_size:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
@@ -3648,7 +3660,7 @@ def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=
         config (`AutoConfig`): The model config.
         return_numpy (bool): Whether load the tp checkpoint as numpy.
     """
-    if config.tensor_parallel_degree == 1 or config.tensor_parallel_degree == -1:
+    if config.tensor_model_parallel_size == 1 or config.tensor_model_parallel_size == -1:
         return load_sharded_checkpoint_as_one(folder, return_numpy=return_numpy)
     else:
         rank_model_path = os.path.join(folder, f"model_state.tp0{config.tensor_parallel_rank}.pdparams")

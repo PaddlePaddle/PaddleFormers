@@ -648,7 +648,7 @@ class PaddleOCREncoder(nn.Layer):
         else:
             attn_cu_seqlens = cu_seqlens
 
-        if self.config.use_flash_attention or attention_mask is None:
+        if self.config._attn_implementation == "sdpa" or attention_mask is None:
             cu_seqlens_rm_first = cu_seqlens[1:]
             cu_seqlens_rm_last = cu_seqlens[:-1]
             repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
@@ -1141,16 +1141,16 @@ class Ernie4_5Attention(nn.Layer):
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.rope_scaling = config.rope_scaling
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         logger.warning_once(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
         assert (
@@ -1226,7 +1226,7 @@ class Ernie4_5Attention(nn.Layer):
         """
         if self.config.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
             q_len = max_sequence_length
         else:
             bsz, q_len, _ = hidden_states.shape
@@ -1236,7 +1236,7 @@ class Ernie4_5Attention(nn.Layer):
         value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(2, 1)
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
-        if self.config.fuse_rope:
+        if self.config.apply_rope_fusion:
             query_states, key_states = apply_fused_rope(query_states, key_states, self.config.rope_theta)
         else:
             cos, sin = position_embeddings
@@ -1729,7 +1729,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         if position_ids is None:
             position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))
 
-        if not self.config.fuse_rope:
+        if not self.config.apply_rope_fusion:
             position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin
         else:
             position_embeddings = None
@@ -2040,7 +2040,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
 
     def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
         """Avoid using attention_mask with flash_attn on generation."""
-        if self.config.use_flash_attention:
+        if self.config._attn_implementation == "sdpa":
             return None
         return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
 

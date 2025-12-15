@@ -95,12 +95,12 @@ class PipelinePretrainedModel(PipelinePretrainedModelBase):
             first_key = first_key.split(".")
             # if use virtual pp_degree, the prefix is like 0.0.xxx
             # else it will be like 0.xxx
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             prefixes = self.get_sequential_name_prefixes()
             for k in state_dict_keys:
                 name_splited = k.split(".")
-                if use_virtual_pp_degree:
+                if use_virtual_pipeline_model_parallel_size:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
@@ -1471,7 +1471,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             else:
                 assert images.dtype == paddle.bfloat16, images.dtype
             image_fea = self.vision_model.extract_feature(images, grid_thw)
-            if self.config.tensor_parallel_degree > 1:
+            if self.config.tensor_model_parallel_size > 1:
                 if getattr(self.config.vision_config, "variable_resolution", False):
                     S, C = image_fea.shape
                     image_fea = image_fea.reshape([-1, C * self.config.spatial_conv_size**2])
@@ -1610,16 +1610,16 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         )
         self.balanced_image_shape = None
 
-        tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
+        tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
-        logger.info(f"using vpp={config.virtual_pp_degree}")
+        logger.info(f"using vpp={config.virtual_pipeline_model_parallel_size}")
         if config.sequence_parallel:
             logger.info(f"using sequence_parallel, input seqlen={config.max_sequence_length}")
             assert config.max_sequence_length is not None
             assert (
-                config.tensor_parallel_degree > 1
-            ), f"sequence-parallel needs mp>1, got mp={config.tensor_parallel_degree}"
-        config.tensor_parallel_degree = tensor_parallel_degree
+                config.tensor_model_parallel_size > 1
+            ), f"sequence-parallel needs mp>1, got mp={config.tensor_model_parallel_size}"
+        config.tensor_model_parallel_size = tensor_model_parallel_size
         config.tensor_parallel_rank = tensor_parallel_rank
 
         logger.info("variable resolution vision model")
@@ -1719,7 +1719,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
                 "offload": False,
                 "partition": False,
             },
-            num_virtual_pipeline_stages=config.virtual_pp_degree,
+            num_virtual_pipeline_stages=config.virtual_pipeline_model_parallel_size,
         )
         self.model = Ernie4_5_VLModel(self.config)
         self._modality_param_mapping = None
@@ -1757,7 +1757,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             if not name_split[0].isdigit():
                 pipe = None
             else:
-                if self.config.virtual_pp_degree > 1:
+                if self.config.virtual_pipeline_model_parallel_size > 1:
                     pipe = self._sub_layers[name_split[0]]._sub_layers[name_split[1]]
                 else:
                     pipe = self._sub_layers[name_split[0]]

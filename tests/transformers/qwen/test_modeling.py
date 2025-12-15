@@ -55,7 +55,6 @@ class QWenModelTester:
         bias=False,
         parallel_attn=True,
         output_attentions=False,
-        use_flash_attention=False,
     ):
         self.parent = parent
         self.batch_size = batch_size
@@ -85,7 +84,6 @@ class QWenModelTester:
         self.bias = bias
         self.parallel_attn = parallel_attn
         self.output_attentions = output_attentions
-        self.use_flash_attention = use_flash_attention
 
     def prepare_config_and_inputs(self):
         input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype="int64")
@@ -148,7 +146,6 @@ class QWenModelTester:
             output_attentions=self.output_attentions,
             seq_length=self.seq_length,
             kv_channels=self.hidden_size // self.num_attention_heads,
-            use_flash_attention=self.use_flash_attention,
         )
 
     def create_and_check_model(
