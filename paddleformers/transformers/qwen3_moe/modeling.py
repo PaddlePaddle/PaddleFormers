@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass, field
 from functools import partial
 from typing import Optional, Tuple, Union
 
@@ -26,6 +27,8 @@ from paddle import Tensor, nn
 from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
+
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -47,6 +50,53 @@ from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen3MoeConfig
+
+
+@dataclass
+class Qwem3MoEModelProvider(GPTModelProvider):
+    """Base provider for Qwen3 MoE Models."""
+
+    moe_router_load_balancing_type: str = "seq_aux_loss"
+
+    gated_linear_unit: bool = True
+
+    bias_activation_fusion: bool = True
+
+    transform_rules = {
+        "tensor_parallel_degree": "tensor_model_parallel_size",
+        "pipeline_parallel_degree": "pipeline_model_parallel_size",
+        "context_parallel_degree": "context_parallel_size",
+        "expert_parallel_degree": "expert_model_parallel_size",
+        "dtype": "params_dtype",
+    }
+
+    # (@peiziliang) hard code
+    rotary_base: float = 1000000.0
+    moe_shared_expert_overlap: bool = True
+    moe_router_pre_softmax: bool = False
+    moe_permute_fusion: bool = True
+    moe_router_dtype: str = "fp32"
+    moe_router_enable_expert_bias: bool = True
+    moe_router_bias_update_rate: float = 0
+    persist_layer_norm: bool = True
+    moe_router_force_load_balancing: bool = True
+    share_embeddings_and_output_weights: bool = False
+
+    apply_rope_fusion: bool = False
+    recompute_granularity: str = None
+    virtual_pipeline_model_parallel_size: int = None
+
+    rope_scaling: float = 1.0
+    bias_dropout_fusion: bool = True
+    router_aux_loss_coef: float = 0.001
+    moe_grouped_gemm: bool = True
+    moe_layer_freq = [1] * 2
+    
+    n_routed_experts = 128
+    n_shared_experts = 0
+    
+    # def __post_init__(self):
+    #     print(self)
 
 
 def rotate_half(x):
@@ -338,15 +388,27 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
                     fake_top_x = paddle.zeros(1, dtype=paddle.int64)
                     fakse_current_state = hidden_states[fake_top_x, None].reshape([-1, hidden_states.shape[-1]])
                     fake_state = expert_layer(fakse_current_state * 0)
-                    final_hidden_states.index_add_(index=fake_top_x, axis=0, value=fake_state.to(hidden_states.dtype))
+                    final_hidden_states_tmp = paddle.zeros_like(final_hidden_states)
+                    final_hidden_states_tmp = paddle.scatter(
+                        final_hidden_states_tmp,
+                        fake_top_x,
+                        fake_state.to(hidden_states.dtype),
+                        overwrite=False,
+                    )
+                    final_hidden_states = final_hidden_states + final_hidden_states_tmp
                 else:
                     continue
             else:
                 current_state = hidden_states[idx, None].reshape([-1, hidden_states.shape[-1]])
                 current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
-                final_hidden_states.index_add_(
-                    index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
+                final_hidden_states_tmp = paddle.zeros_like(final_hidden_states)
+                final_hidden_states_tmp = paddle.scatter(
+                    final_hidden_states_tmp,
+                    idx.reshape([-1]),
+                    current_hidden_states.to(hidden_states.dtype),
+                    overwrite=False,
                 )
+                final_hidden_states = final_hidden_states + final_hidden_states_tmp
 
         final_hidden_states = paddle.reshape(final_hidden_states, orig_shape)
 
@@ -651,20 +713,38 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: Qwen3MoeConfig):
+        is_fleet = getattr(cls, "is_fleet", False)
         model_prefix = "" if cls == cls.base_model_class else "model."
-        aoa_config = {
-            "aoa_statements": [
-                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
-                f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
-                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
-                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
-                f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
-                f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
-                f"model.norm.weight -> {model_prefix}norm.weight",
-                f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
-                f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
-            ]
-        }
+        if is_fleet:
+            aoa_config = {
+                "aoa_statements": [
+                    "model.embed_tokens.weight -> model.embedding.embed_tokens.weight",
+                    f"lm_head.weight -> model.lm_head.weight",
+                    f"model.norm.weight -> {model_prefix}norm.weight",
+                    f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                    f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                    f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
+                    f"model.layers.$LAYER_ID.mlp.gate.weight -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                    f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+                    f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+                    f"model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+                ]
+            }
+        else:
+            aoa_config = {
+                "aoa_statements": [
+                    f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                    f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+                    f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+                    f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                    f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                    f"model.norm.weight -> {model_prefix}norm.weight",
+                    f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
+                    f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
+                ]
+            }
 
         # attention qkv
         if not config.fuse_attention_qkv:
@@ -700,19 +780,40 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen3MoeConfig):
-        model_prefix = "" if cls == cls.base_model_class else "model."
-        aoa_statements = [
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
-            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
-            f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
-            f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
-            f"{model_prefix}norm.weight -> model.norm.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
-        ]
+        is_fleet = getattr(cls, "is_fleet", False)
+        print(f"_gen_inv_aoa_config is_fleet: {is_fleet}")
+        if is_fleet:
+            model_prefix = "" if cls == cls.base_model_class else "model."
+            print("model_prefix: ", model_prefix)
+            aoa_statements = [
+                # do cast
+                f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
+                # do transpose
+                f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+                "embedding.embed_tokens.weight -> model.embed_tokens.weight",
+                f"{model_prefix}norm.weight -> model.norm.weight",
+                f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+                f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
+            ]
+        else:
+            model_prefix = "" if cls == cls.base_model_class else "model."
+            aoa_statements = [
+                f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+                f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+                f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+                f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"{model_prefix}norm.weight -> model.norm.weight",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
+            ]
 
+        
         if not config.fuse_attention_qkv:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
@@ -879,6 +980,16 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
 
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
+        
+        # print(f"hidden_states._md5sum(): {hidden_states._md5sum()}")
+        # print(f"hidden_states: {hidden_states}")
+        
+        # print(f"rotary_pos_cos._md5sum(): {position_embeddings[0]._md5sum()}")
+        # print(f"rotary_pos_cos: {position_embeddings[0]}")
+        
+        # print(f"rotary_pos_sin._md5sum(): {position_embeddings[1]._md5sum()}")
+        # print(f"rotary_pos_sin: {position_embeddings[1]}")
+        # breakpoint()
 
         for idx, (decoder_layer) in enumerate(self.layers):
             has_gradient = not hidden_states.stop_gradient
@@ -989,6 +1100,24 @@ def load_balancing_loss_func(gate_logits, num_experts, top_k=2, attention_mask=N
 
 
 class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
+    is_fleet = True
+
+    def __new__(cls, config):
+        print(f"run Qwen3MoeForCausalLMFleet ...")
+        model_provider_class = Qwem3MoEModelProvider
+        print(f"model_provider_class.moe_layer_freq: {model_provider_class.moe_layer_freq}")
+        model_provider = model_provider_class.from_config(config)
+        gpt_model = model_provider.provide()
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        gpt_model.config_to_save = config
+        print(f"gpt_model state_dict keys: ", gpt_model.state_dict().keys(), "\n")
+        print(gpt_model)
+        return gpt_model
+
+
+class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -1133,5 +1262,6 @@ __all__ = [
     "Qwen3MoeModel",
     "Qwen3MoePretrainedModel",
     "Qwen3MoeForCausalLM",
+    "Qwen3MoeForCausalLMFleet",
     "Qwen3MoeForCausalLMPipe",
 ]
