@@ -25,7 +25,7 @@ import paddle
 from paddle.distributed import fleet
 from src.utils import logger
 
-from paddleformers.utils.tools import get_env_device
+from paddleformers.utils.tools import get_env_device, paddle_device
 
 try:
     from paddle.distributed.utils.process_utils import SUCCESS_CODE, set_affinity
@@ -251,7 +251,7 @@ def main():
         logger.info("set enable_optimizer_timer to True")
 
     if get_env_device() == "gpu":
-        prop = paddle.device.cuda.get_device_properties()
+        prop = paddle_device.get_device_properties()
         if prop.total_memory < args.pre_alloc_memory * 1024 * 1024 * 1024:
             logger.warning("Invalid value for `pre_alloc_memory`, so pre-allocating just failed.")
         elif args.pre_alloc_memory > 0:

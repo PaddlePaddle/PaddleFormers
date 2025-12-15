@@ -12,11 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import paddle
-
 from .log import logger
-from .tools import get_env_device
+from .tools import get_env_device, paddle_device
 
 __all__ = [
     "empty_device_cache",
@@ -25,10 +22,8 @@ __all__ = [
 
 def empty_device_cache():
     device = get_env_device()
-    if device == "gpu":
-        paddle.device.cuda.empty_cache()
-    elif device == "xpu":
-        paddle.device.xpu.empty_cache()
+    if device != "cpu":
+        paddle_device.empty_cache()
     else:
         if not getattr(empty_device_cache, "has_warned", False):
             logger.warning(
