@@ -285,7 +285,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             "sharding_parallel_degree": int(training_args.sharding_parallel_degree),
             "num_samples_each_epoch": data_args.num_samples_each_epoch,
             "max_seq_len": int(data_args.max_seq_len),
-            "seed": data_args.seed,
+            "seed": training_args.seed,
             "valid": False,
             "train_samples": 0,
         }

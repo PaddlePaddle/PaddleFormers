@@ -80,18 +80,8 @@ print(tokenizer.batch_decode(outputs[0], skip_special_tokens=True))
 ### SFT Training
 
 Getting started with supervised fine-tuning (SFT) using PaddleFormers:
-```python
-from paddleformers.trl import SFTConfig, SFTTrainer
-from datasets import load_dataset
-dataset = load_dataset("ZHUI/alpaca_demo", split="train")
-
-training_args = SFTConfig(output_dir="Qwen/Qwen3-0.6B-SFT", device="gpu", model_init_kwargs={"convert_from_hf": True})
-trainer = SFTTrainer(
-    args=training_args,
-    model="Qwen/Qwen3-0.6B-Base",
-    train_dataset=dataset,
-)
-trainer.train()
+```bash
+paddleformers-cli train examples/config/sft/full.yaml
 ```
 
 ## Community

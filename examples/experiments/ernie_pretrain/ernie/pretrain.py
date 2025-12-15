@@ -25,7 +25,7 @@ import paddle
 from paddle.distributed import fleet
 from src.utils import logger
 
-from paddleformers.utils.tools import get_env_device
+from paddleformers.utils.tools import get_env_device, paddle_device
 
 try:
     from paddle.distributed.utils.process_utils import SUCCESS_CODE, set_affinity
@@ -41,6 +41,7 @@ except ImportError:
     get_static_model_on_pdc = None
 
 from config import get_config
+from model_config import ModelConfig
 from models.ernie import ErnieMoEConfig
 from models.ernie.modeling_moe import ErnieMoEForCausalLM
 from models.ernie.modeling_pp import ErnieMoEForCausalLMPipe
@@ -64,7 +65,6 @@ from paddleformers.data.causal_dataset import (
 from paddleformers.datasets.finetuning import collate_fn
 from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
 from paddleformers.trainer import TrainingArguments
-from paddleformers.trl import ModelConfig
 
 try:
     from paddleformers.trainer.trainer_utils import log_trainer_start
@@ -251,7 +251,7 @@ def main():
         logger.info("set enable_optimizer_timer to True")
 
     if get_env_device() == "gpu":
-        prop = paddle.device.cuda.get_device_properties()
+        prop = paddle_device.get_device_properties()
         if prop.total_memory < args.pre_alloc_memory * 1024 * 1024 * 1024:
             logger.warning("Invalid value for `pre_alloc_memory`, so pre-allocating just failed.")
         elif args.pre_alloc_memory > 0:

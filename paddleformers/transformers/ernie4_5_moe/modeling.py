@@ -1109,7 +1109,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
 
         hidden_states = inputs_embeds
 
-        if self.config.fuse_rope:
+        if self.config.apply_rope_fusion:
             position_embeddings = None
         else:
             position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin
@@ -1313,7 +1313,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
 
     def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
         """Avoid using attention_mask with flash_attn on generation."""
-        if self.config.use_flash_attention:
+        if self.config._attn_implementation == "sdpa":
             return None
         return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
 
