@@ -103,9 +103,25 @@ class FileReader(BaseReader):
         if len(data["messages"]) == 0:
             raise ValueError("Ignore example with empty messages.")
 
+        for index in range(len(data["messages"])):
+            # Fix the role names for tool call and tool response
+            if data["messages"][index]["role"] == "tool" or data["messages"][index]["role"] == "tool_response":
+                data["messages"][index]["role"] = "observation"
+            if data["messages"][index]["role"] == "tool_call" or data["messages"][index]["role"] == "tool_calls":
+                data["messages"][index]["role"] = "function"
+            # Convert the content of tool call and tool response into a string
+            if (
+                data["messages"][index]["role"] == "observation" or data["messages"][index]["role"] == "function"
+            ) and not isinstance(data["messages"][index]["content"], str):
+                data["messages"][index]["content"] = json.dumps(data["messages"][index]["content"])
+            if "tool_calls" in data["messages"][index] and not isinstance(data["messages"][index]["tool_calls"], str):
+                data["messages"][index]["tool_calls"] = json.dumps(data["messages"][index]["tool_calls"])
+
+        # Convert the content of tool list into a string
         if "tools" in data and not isinstance(data["tools"], str):
             data["tools"] = json.dumps(data["tools"], ensure_ascii=False)
 
+        # If no label is input, it means each response needs to be learned.
         if "label" not in data:
             data["label"] = [
                 1 for turn in data["messages"] if ("assistant" in turn["role"] or "function" in turn["role"])
@@ -116,6 +132,7 @@ class FileReader(BaseReader):
             system = data["messages"][0]["content"]
             if not isinstance(system, str):
                 raise ValueError("System field must be a string.")
+            data["messages"] = data["messages"][1:]
         data["system"] = system
 
         # Convert the relative paths of multimode data into absolute paths

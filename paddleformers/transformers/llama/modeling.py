@@ -564,7 +564,7 @@ class LlamaModel(LlamaPretrainedModel):
                 paddle.arange(kv_seq_len, seq_length + kv_seq_len, dtype=paddle.int64).unsqueeze(0).tile((bsz, 1))
             )
 
-        # TODO(littleherozzzx): check self.config.fuse_rope
+        # TODO(littleherozzzx): check self.config.apply_rope_fusion
         mask_kwargs = {
             "config": self.config,
             "inputs_embeds": inputs_embeds,
@@ -641,13 +641,19 @@ class LlamaModel(LlamaPretrainedModel):
         past_key_values: Cache | None,
         use_cache: bool,
     ):
+        cos, sin = position_embeddings
+        cos = cos.clone()
+        sin = sin.clone()
+
+        position_embeddings_safe = (cos, sin)
+
         hidden_states = recompute(
             layer_module,
             hidden_states,
             attention_mask,
             attn_mask_startend_row_indices,
             position_ids,
-            position_embeddings,
+            position_embeddings_safe,
             past_key_values,
             use_cache,
         )

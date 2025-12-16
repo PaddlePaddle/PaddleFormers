@@ -21,7 +21,7 @@ import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
 
-from ...peft import LoRAModel, PrefixModelForCausalLM
+from ...peft import LoRAModel
 from ...trainer.utils.helper import distributed_isfile
 from ...transformers.model_utils import (
     PretrainedModel,
@@ -39,7 +39,6 @@ from ...utils.env import (
     PADDLE_MASTER_WEIGHTS_INDEX_NAME,
     PADDLE_PEFT_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_INDEX_NAME,
-    PAST_KEY_VALUES_FILE_NAME,
     SAFE_MASTER_WEIGHTS_INDEX_NAME,
     SAFE_PEFT_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_INDEX_NAME,
@@ -165,7 +164,7 @@ def select_model_weight_index(model, resume_from_checkpoint, safe_serialization,
     """
 
     # find model weight index file
-    if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
+    if isinstance(model, LoRAModel):
         index_filename = SAFE_PEFT_WEIGHTS_INDEX_NAME if safe_serialization else PADDLE_PEFT_WEIGHTS_INDEX_NAME
     else:
         index_filename = SAFE_WEIGHTS_INDEX_NAME if safe_serialization else PADDLE_WEIGHTS_INDEX_NAME
@@ -216,8 +215,6 @@ def get_expected_state_dict(model_to_save, **kwargs):
         concat_additional_adapter = kwargs.get("concat_additional_adapter", False)
         concat_init_lora = model_to_save.lora_config.loraga and concat_additional_adapter
         state_dict = model_to_save.get_trainable_state_dict(concat_init_lora=concat_init_lora)
-    elif isinstance(model_to_save, PrefixModelForCausalLM):
-        state_dict = model_to_save.prefix_encoder.state_dict()
 
     return state_dict
 
@@ -731,24 +728,6 @@ def rename_shard_file(args, shard_file, file_name):
     return shard_file
 
 
-def save_prefix_past_key_value(model_to_save, save_directory):
-    """
-    Used only for PrefixModelForCausalLM.
-    """
-    past_key_value = model_to_save.prefix_encoder(model_to_save.prefix_tokens.unsqueeze(0).expand([1, -1]))
-    past_key_value = past_key_value.reshape(
-        [
-            model_to_save.prefix_config.num_prefix_tokens,
-            2,
-            model_to_save.prefix_config.num_hidden_layers,
-            model_to_save.num_heads,
-            model_to_save.head_dim,
-        ]
-    )
-    past_key_value = paddle.transpose(past_key_value, perm=[2, 1, 3, 0, 4]).cpu().numpy()
-    np.save(os.path.join(save_directory, PAST_KEY_VALUES_FILE_NAME), past_key_value)
-
-
 def is_sharding_split_param_mode(args):
     return (
         args.sharding_parallel_degree > 1
@@ -773,17 +752,14 @@ def save_model_config(model_to_save, save_directory, save_to_hf=False):
 
         return config_to_save
 
-    # Save prefix model past_key_values
-    if isinstance(model_to_save, PrefixModelForCausalLM):
-        save_prefix_past_key_value(model_to_save, save_directory)
-        model_to_save.prefix_config.save_pretrained(save_directory)
+    # Save lora model past_key_values
     if isinstance(model_to_save, LoRAModel):
         model_to_save.lora_config.save_pretrained(save_directory)
 
     # save the config
     config_to_save = save_config(model_to_save)
     # Attach architecture to the config
-    if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
+    if isinstance(model_to_save, LoRAModel):
         config_to_save.architectures = [clean_model_class_name(model_to_save.model.__class__.__name__)]
     else:
         config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]

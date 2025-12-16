@@ -30,15 +30,15 @@ from sklearn.metrics import accuracy_score
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..generation import GenerationConfig
-from ..transformers import (  # ChatGLMv2Tokenizer,
+from paddleformers.generation import GenerationConfig
+from paddleformers.transformers import (  # ChatGLMv2Tokenizer,
     AutoTokenizer,
     DeepseekV3ForCausalLMPipe,
     Glm4MoeForCausalLMPipe,
     LlamaForCausalLMPipe,
     PretrainedConfig,
 )
-from ..utils.log import logger
+from paddleformers.utils.log import logger
 
 
 def compute_metrics(eval_preds):

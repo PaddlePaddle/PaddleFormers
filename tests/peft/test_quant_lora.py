@@ -25,7 +25,7 @@ from paddle.quantization.quanters.abs_max import FakeQuanterWithAbsMaxObserverLa
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
 from paddleformers.peft.lora.lora_quant_layers import QuantedLoRALinear
-from paddleformers.transformers import AutoModel
+from paddleformers.transformers import AutoModelForCausalLM
 
 
 class TestQuantedLoraLayer(unittest.TestCase):
@@ -102,7 +102,7 @@ class TestQuantedLoRAModel(unittest.TestCase):
             r=4,
             lora_alpha=8,
         )
-        cls.model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
+        cls.model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
         cls.lora_model = LoRAModel(cls.model, lora_config)
         cls.lora_model.mark_only_lora_as_trainable()
         # lora_B parameter is initialized to 0, therefore AB = 0 and W + AB = W

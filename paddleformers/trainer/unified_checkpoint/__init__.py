@@ -59,7 +59,6 @@ import_structure = {
         "UnifiedCheckpointHandler",
     ],
     "lora_model": ["LoRAModel"],
-    "prefix_model": ["PrefixModelForCausalLM"],
     "model_utils": ["PretrainedModel"],
     "async_handler": ["AsyncCheckpointHandler"],
     "shared_memory_utils": [],

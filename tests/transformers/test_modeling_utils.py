@@ -16,19 +16,19 @@ import os
 import unittest
 from tempfile import TemporaryDirectory
 
-from paddleformers.transformers import BertModel
+from paddleformers.transformers import Qwen3ForCausalLM
 from paddleformers.utils.env import CONFIG_NAME, PADDLE_WEIGHTS_NAME
 from tests.testing_utils import slow
 
 
-def download_bert_model(model_name: str):
+def download_qwen3_model(model_name: str):
     """set the global method: multiprocessing can not pickle local method
 
     Args:
         model_name (str): the model name
     """
 
-    model = BertModel.from_pretrained(model_name)
+    model = Qwen3ForCausalLM.from_pretrained(model_name)
     # free the model resource
     del model
 
@@ -38,9 +38,9 @@ class TestModeling(unittest.TestCase):
 
     @slow
     def test_from_pretrained_cache_dir_community_model(self):
-        model_name = "Paddleformers/tiny-random-bert"
+        model_name = "Paddleformers/tiny-random-qwen3"
         with TemporaryDirectory() as tempdir:
-            BertModel.from_pretrained(model_name, cache_dir=tempdir)
+            Qwen3ForCausalLM.from_pretrained(model_name, cache_dir=tempdir, convert_from_hf=True)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, PADDLE_WEIGHTS_NAME)))
             # check against double appending model_name in cache_dir
@@ -48,9 +48,9 @@ class TestModeling(unittest.TestCase):
 
     @slow
     def test_from_pretrained_cache_dir_pretrained_init(self):
-        model_name = "PaddleFormers/tiny-random-bert"
+        model_name = "PaddleFormers/tiny-random-qwen3"
         with TemporaryDirectory() as tempdir:
-            BertModel.from_pretrained(model_name, cache_dir=tempdir)
+            Qwen3ForCausalLM.from_pretrained(model_name, cache_dir=tempdir, convert_from_hf=True)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, PADDLE_WEIGHTS_NAME)))
             # check against double appending model_name in cache_dir

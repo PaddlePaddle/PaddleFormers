@@ -51,6 +51,7 @@ os.environ["USE_CASUAL_MASK"] = "True"
 
 from glm45_provider import (
     GLM45AirModelDebugProvider,
+    GLM45AirModelDebugProviderFP8,
     GLM45AirModelSingleCardDebugProvider,
 )
 from qwen_provider import Qwen3MoEModelSingleCardProvider
@@ -544,6 +545,8 @@ def main():
         model_provider = GLM45AirModelSingleCardDebugProvider()
     elif training_args.model_provider_type == "GLM_muiti_cards":
         model_provider = GLM45AirModelDebugProvider()
+    elif training_args.model_provider_type == "GLM_muiti_cards_fp8":
+        model_provider = GLM45AirModelDebugProviderFP8()
     elif training_args.model_provider_type == "qwen_single_card":
         training_args.save_checkpoint_format = None
         model_provider = Qwen3MoEModelSingleCardProvider()

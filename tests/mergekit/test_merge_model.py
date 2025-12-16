@@ -19,7 +19,7 @@ from tempfile import TemporaryDirectory
 from parameterized import parameterized
 
 from paddleformers.mergekit import MergeConfig, MergeModel
-from paddleformers.transformers import AutoModel
+from paddleformers.transformers import AutoModelForCausalLM
 from tests.testing_utils import require_package
 
 
@@ -27,7 +27,9 @@ class TestMergeModel(unittest.TestCase):
     @parameterized.expand([("slerp",), ("della",), ("dare_linear",), ("ties",)])
     def test_merge_model_np(self, merge_method):
         with TemporaryDirectory() as tempdir:
-            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert", dtype="bfloat16")
+            model = AutoModelForCausalLM.from_pretrained(
+                "Paddleformers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
+            )
             pd_path = os.path.join(tempdir, "pd_model")
             model.save_pretrained(pd_path)
             safe_path = os.path.join(tempdir, "safe_model")
@@ -71,7 +73,9 @@ class TestMergeModel(unittest.TestCase):
     @parameterized.expand([("slerp",), ("della",), ("dare_linear",), ("ties",)])
     def test_merge_model_pd(self, merge_method):
         with TemporaryDirectory() as tempdir:
-            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert", dtype="bfloat16")
+            model = AutoModelForCausalLM.from_pretrained(
+                "Paddleformers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
+            )
             pd_path = os.path.join(tempdir, "pd_model")
             model.save_pretrained(pd_path)
             safe_path = os.path.join(tempdir, "safe_model")
@@ -148,8 +152,8 @@ class TestMergeModel(unittest.TestCase):
             )
 
             # create lora model
+            from paddleformers.cli.utils import get_lora_target_modules
             from paddleformers.peft import LoRAConfig, LoRAModel
-            from paddleformers.trl.llm_utils import get_lora_target_modules
 
             target_modules = get_lora_target_modules(fused_base_model)
             lora_config = LoRAConfig(

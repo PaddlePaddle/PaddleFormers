@@ -444,6 +444,24 @@ class TrainingArguments:
             whether to run distributed training in auto parallel mode.
         use_intermediate_api (`bool`, *optional*, defaults to `True`):
             whether to use auto_parallel intermediate API if `enable_auto_parallel=True`.
+
+        use_cache (`bool`, *optional*, defaults to `False`):
+            Whether or not to enable cache for the model. For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`.
+
+        load_from_hf (bool, optional):
+            Whether to load a checkpoint in the HuggingFace format.
+            Defaults to False.
+
+        flex_ckpt_comm_method (str, optional):
+            Communication method used for checkpoint resharding.
+            Choices are "send_recv", "broadcast", "multi_group_broadcast", and "grouped_send_recv".
+            Defaults to "broadcast".
+
+        replicate_saved_into_local (bool, optional):
+            Whether to save checkpoint replicas into local files in a distributed save/load system.
+            If set to True, replicas will be stored locally on each node/machine.
+            Defaults to False.
+
     """
 
     output_dir: str = field(
@@ -1227,6 +1245,38 @@ class TrainingArguments:
         default=True,
         metadata={"help": "whether to use auto_parallel intermediate API."},
     )
+    offload_fp8_expert_master_weight: bool = field(
+        default=True,
+        metadata={"help": "Offload FP8 expert weights."},
+    )
+
+    use_cache: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether or not to use cache for the model For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`."
+        },
+    )
+
+    load_from_hf: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to load a checkpoint in the HuggingFace format."},
+    )
+
+    flex_ckpt_comm_method: Optional[str] = field(
+        default="broadcast",
+        metadata={
+            "help": (
+                "Communication method used by FlexCheckpoint for checkpoint resharding. "
+                'Choices are "send_recv", "broadcast", "multi_group_broadcast", and "grouped_send_recv". '
+                'Default is "broadcast".'
+            )
+        },
+    )
+
+    replicate_saved_into_local: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to save replicas cross files in distributed save load system."},
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1361,7 +1411,6 @@ class TrainingArguments:
 
         # use_hybrid_parallel
         if self.use_hybrid_parallel:
-
             if ShardingOption.OFFLOAD in self.sharding:
                 warnings.warn("`offload` is not supported NOW!")
 
@@ -1375,7 +1424,7 @@ class TrainingArguments:
             if not paddle.distributed.parallel.parallel_helper._is_parallel_ctx_initialized():
                 strategy = fleet.DistributedStrategy()
                 assert self.data_parallel_config == "", "data_parallle_config is not supported in hybrid parallel"
-                if self.pipeline_model_parallel_size > 1:
+                if self.pipeline_model_parallel_size > 1 or HAS_PADDLEFLEET:
                     pipeline_parallel_config = split_parallel_config(self.pipeline_parallel_config)
                     for x in pipeline_parallel_config:
                         if len(x) > 0:

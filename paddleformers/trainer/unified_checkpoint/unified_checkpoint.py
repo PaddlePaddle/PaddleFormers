@@ -21,7 +21,7 @@ import random
 import paddle
 from paddle.distributed import fleet
 
-from ...peft import LoRAModel, PrefixModelForCausalLM
+from ...peft import LoRAModel
 from ...transformers.conversion_utils import ConversionMixin
 from ...transformers.model_utils import (
     PretrainedModel,
@@ -37,7 +37,6 @@ from ...utils.env import (
     PADDLE_MASTER_WEIGHTS_NAME,
     PADDLE_OPTIMIZER_NAME,
     PADDLE_WEIGHTS_NAME,
-    PREFIX_WEIGHTS_NAME,
     SAFE_MASTER_WEIGHTS_INDEX_NAME,
     SAFE_MASTER_WEIGHTS_NAME,
     SAFE_OPTIMIZER_INDEX_NAME,
@@ -110,10 +109,10 @@ class UnifiedCheckpointHandler:
             model_to_save = model
         elif isinstance(unwrap_model(model), PretrainedModel):
             model_to_save = unwrap_model(model)
-        elif isinstance(model, PrefixModelForCausalLM) or isinstance(model, LoRAModel):
+        elif isinstance(model, LoRAModel):
             model_to_save = model
         else:
-            raise ValueError("Unified checkpoint only supports PretrainedModel, LoRAModel and PrefixModelForCausalLM!")
+            raise ValueError("Unified checkpoint only supports PretrainedModel, LoRAModel!")
 
         # Under non distributed environment.
         if paddle.distributed.get_world_size() <= 1:
@@ -155,7 +154,7 @@ class UnifiedCheckpointHandler:
                 save_to_hf=save_to_hf,
             )
             if sharded_index is not None:
-                if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
+                if isinstance(model_to_save, LoRAModel):
                     index_name = SAFE_PEFT_WEIGHTS_INDEX_NAME
                 else:
                     index_name = SAFE_WEIGHTS_INDEX_NAME
@@ -626,7 +625,7 @@ def unified_checkpoint_into_shards(
     )
 
     if config_to_save.tensor_model_parallel_size > 1:
-        if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
+        if isinstance(model_to_save, LoRAModel):
             tp_actions = model_to_save._get_tensor_parallel_convert_actions(
                 all_filter_keys, is_split=False, ignore_error=True
             )
@@ -646,8 +645,6 @@ def unified_checkpoint_into_shards(
     total_size = 0
     if isinstance(model_to_save, LoRAModel):
         weights_name = SAFE_PEFT_WEIGHTS_NAME if safe_serialization else LORA_WEIGHTS_NAME
-    elif isinstance(model_to_save, PrefixModelForCausalLM):
-        weights_name = SAFE_PEFT_WEIGHTS_NAME if safe_serialization else PREFIX_WEIGHTS_NAME
     else:
         weights_name = SAFE_WEIGHTS_NAME if safe_serialization else PADDLE_WEIGHTS_NAME
 
@@ -674,8 +671,6 @@ def unified_checkpoint_into_shards(
     if sharded_index is not None:
         if isinstance(model_to_save, LoRAModel):
             sharded_index["type"] = "lora"
-        elif isinstance(model_to_save, PrefixModelForCausalLM):
-            sharded_index["type"] = "ptuning"
 
     empty_device_cache()
 
@@ -757,7 +752,7 @@ def unified_optimizer_into_shards(
             base_model_key = key.split("/")[0]
             if base_model_key not in model_keys:
                 model_keys.append(base_model_key)
-        if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
+        if isinstance(model, LoRAModel):
             tp_actions = model._get_tensor_parallel_convert_actions(model_keys, is_split=False, ignore_error=True)
         else:
             tp_actions = model.get_tensor_parallel_convert_actions(

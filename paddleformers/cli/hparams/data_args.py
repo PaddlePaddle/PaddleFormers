@@ -90,7 +90,7 @@ class DataArguments:
         metadata={"help": "Number of candidate responses."},
     )
     mask_out_eos_token: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Mask out eos token"},
     )
     random_shuffle: bool = field(

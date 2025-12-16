@@ -62,25 +62,6 @@ import_structure = {
         "dispatching",
         "MoEFlexTokenLayer",
     ],
-    "bert.modeling": [
-        "BertForSequenceClassification",
-        "BertPretrainingHeads",
-        "BertForMaskedLM",
-        "BertForPretraining",
-        "BertPretrainedModel",
-        "BertForTokenClassification",
-        "BertForMultipleChoice",
-        "BertModel",
-        "BertPretrainingCriterion",
-        "BertForQuestionAnswering",
-    ],
-    "bert.tokenizer": ["BertTokenizer"],
-    "bert.tokenizer_fast": ["BertTokenizerFast"],
-    "bert.configuration": [
-        "BERT_PRETRAINED_INIT_CONFIGURATION",
-        "BertConfig",
-        "BERT_PRETRAINED_RESOURCE_FILES_MAP",
-    ],
     "auto.configuration": ["AutoConfig"],
     "auto.image_processing": ["AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
     "auto.modeling": [
@@ -185,7 +166,6 @@ import_structure = {
     "paddleocr_vl.modeling": ["PaddleOCRVLForConditionalGeneration"],
     "paddleocr_vl.image_processor": ["PaddleOCRVLImageProcessor"],
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
-    "export": ["export_model"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
@@ -204,34 +184,6 @@ import_structure = {
         "CosineAnnealingWithWarmupDecay",
         "LinearAnnealingWithWarmupDecay",
     ],
-    "qwen.configuration": ["QWenConfig"],
-    "qwen.modeling": [
-        "QWenBlock",
-        "QWenForCausalLM",
-        "QWenLMHeadModel",
-        "QWenPretrainedModel",
-        "QWenModel",
-        "QWenLMHead",
-        "QWenPretrainingCriterion",
-    ],
-    "qwen.modeling_auto": [
-        "QWenBlockAuto",
-        "QWenForCausalLM3DAuto",
-        "QWenPretrainedModelAuto",
-        "QWenModelAuto",
-        "QWenLMHeadAuto",
-        "QWenPretrainingCriterionAuto",
-    ],
-    "qwen.modeling_network": [
-        "QWenBlockNet",
-        "QWenForCausalLMNet",
-        "QWenPretrainedModelNet",
-        "QWenModelNet",
-        "QWenLMHeadNet",
-        "QWenPretrainingCriterionNet",
-    ],
-    "qwen.modeling_pp": ["QWenForCausalLMPipe"],
-    "qwen.tokenizer": ["QWenTokenizer"],
     "qwen2.configuration": ["Qwen2Config"],
     "qwen2.modeling": [
         "Qwen2Model",
@@ -292,11 +244,9 @@ import_structure = {
         "Qwen3NextForCausalLMPipe",
         "Qwen3NextPretrainingCriterion",
     ],
-    "bert": [],
     "llama": [],
     "qwen2": [],
     "qwen3": [],
-    "qwen": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
@@ -341,7 +291,6 @@ if TYPE_CHECKING:
     from .tensor_parallel_utils import parallel_matmul, fused_head_and_loss_fn
     from .moe_gate import *
     from .moe_layer import *
-    from .export import export_model
 
     with suppress(Exception):
         from paddle.distributed.fleet.utils.sequence_parallel_utils import (
@@ -354,11 +303,6 @@ if TYPE_CHECKING:
             mark_as_sequence_parallel_parameter,
             register_sequence_parallel_allreduce_hooks,
         )
-
-    # isort: split
-    from .bert.modeling import *
-    from .bert.tokenizer import *
-    from .bert.configuration import *
 
     # isort: split
     from .auto.configuration import *
@@ -374,7 +318,6 @@ if TYPE_CHECKING:
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
-    from .qwen import *
     from .qwen2 import *
     from .qwen2_5_vl import *
     from .qwen2_moe import *
