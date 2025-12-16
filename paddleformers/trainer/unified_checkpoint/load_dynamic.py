@@ -22,7 +22,7 @@ import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
 
-from ...peft import LoRAModel, PrefixModelForCausalLM
+from ...peft import LoRAModel
 from ...transformers.model_utils import _load_state_dict_into_model
 from ...transformers.utils import device_guard, is_safetensors_available
 from ...utils.env import (
@@ -287,7 +287,7 @@ def load_unified_checkpoint_dynamically(args, model, resume_from_checkpoint, saf
         tp_actions = {}
     else:
         # Get corresponding tensor parallel actions.
-        if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
+        if isinstance(model, LoRAModel):
             tp_actions = model._get_tensor_parallel_convert_actions(
                 set(all_tp_keys), is_split=True, ignore_error=True, config=config_revise
             )
@@ -429,7 +429,7 @@ def load_unified_optimizer_dynamically(args, model, optimizer, resume_from_check
     if len(all_tp_keys) == 0:
         tp_actions = {}
     else:
-        if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
+        if isinstance(model, LoRAModel):
             tp_actions = model._get_tensor_parallel_convert_actions(
                 set(all_tp_keys), is_split=True, ignore_error=True, config=config_revise
             )

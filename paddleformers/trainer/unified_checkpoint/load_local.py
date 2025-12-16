@@ -20,7 +20,7 @@ import os
 import paddle
 from tqdm.auto import tqdm
 
-from ...peft import LoRAModel, PrefixModelForCausalLM
+from ...peft import LoRAModel
 from ...transformers.model_utils import (
     _load_state_dict_into_model,
     faster_set_state_dict,
@@ -76,7 +76,7 @@ def load_unified_checkpoint_locally(
     missing_keys = expected_keys - set(loaded_keys)
 
     use_fast_set = True
-    if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
+    if isinstance(model, LoRAModel):
         use_fast_set = False
 
     if len(missing_keys) > 0:
@@ -109,7 +109,7 @@ def load_unified_checkpoint_locally(
         if shard_file.endswith(".safetensors") and model.config.tensor_model_parallel_size > 1:
             pre_tensor_parallel_split = True
             assert loaded_keys is not None, "loaded_keys is not None."
-            if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
+            if isinstance(model, LoRAModel):
                 tp_actions = model._get_tensor_parallel_convert_actions(
                     set(loaded_keys), is_split=True, ignore_error=True
                 )
@@ -233,8 +233,9 @@ def load_unified_optimizer_locally(args, model, optimizer, resume_from_checkpoin
 
             if shard_file.endswith(".safetensors"):
                 # assert model_keys is not None, "model_keys is None." TODO: correct the assert
+
                 if model.config.tensor_model_parallel_size > 1:
-                    if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
+                    if isinstance(model, LoRAModel):
                         tp_actions = model._get_tensor_parallel_convert_actions(
                             model_keys, is_split=True, ignore_error=True
                         )

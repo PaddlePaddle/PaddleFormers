@@ -18,7 +18,6 @@
 
 
 import json
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, NamedTuple, Union
@@ -50,6 +49,23 @@ QWEN_TOOL_PROMPT = (
 )
 
 
+GLM4_TOOL_PROMPT = (
+    "你是一个名为 ChatGLM 的人工智能助手。你是基于智谱 AI 公司训练的语言模型 GLM-4 模型开发的，" "你的任务是针对用户的问题和要求提供适当的答复和支持。\n\n# 可用工具{tool_text}"
+)
+
+GLM4_MOE_TOOL_PROMPT = (
+    "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\n"
+    "You are provided with function signatures within <tools></tools> XML tags:\n<tools>{tool_text}"
+    "\n</tools>\n\nFor each function call, output the function name and arguments within the following XML format:"
+    "\n<tool_call>{{function-name}}"
+    "\n<arg_key>{{arg-key-1}}</arg_key>"
+    "\n<arg_value>{{arg-value-1}}</arg_value>"
+    "\n<arg_key>{{arg-key-2}}</arg_key>"
+    "\n<arg_value>{{arg-value-2}}</arg_value>"
+    "\n...\n</tool_call>\n"
+)
+
+
 @dataclass
 class ToolUtils(ABC):
     """Base class for tool utilities."""
@@ -64,15 +80,6 @@ class ToolUtils(ABC):
     @abstractmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
         r"""Generate the assistant message including all the tool calls."""
-        ...
-
-    @staticmethod
-    @abstractmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        r"""Extract all the function calls from the assistant message.
-
-        It should be an inverse function of `function_formatter`.
-        """
         ...
 
 
@@ -119,26 +126,6 @@ class DefaultToolUtils(ToolUtils):
     def function_formatter(functions: list["FunctionCall"]) -> str:
         return "\n".join([f"Action: {name}\nAction Input: {arguments}" for name, arguments in functions])
 
-    @override
-    @staticmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        regex = re.compile(r"Action:\s*([a-zA-Z0-9_]+)\s*Action Input:\s*(.+?)(?=\s*Action:|\s*$)", re.DOTALL)
-        action_match: list[tuple[str, str]] = re.findall(regex, content)
-        if not action_match:
-            return content
-
-        results = []
-        for match in action_match:
-            tool_name = match[0].strip()
-            tool_input = match[1].strip().strip('"').strip("```")
-            try:
-                arguments = json.loads(tool_input)
-                results.append(FunctionCall(tool_name, json.dumps(arguments, ensure_ascii=False)))
-            except json.JSONDecodeError:
-                return content
-
-        return results
-
 
 class QwenToolUtils(ToolUtils):
     r"""Qwen 2.5 tool using template."""
@@ -162,32 +149,82 @@ class QwenToolUtils(ToolUtils):
         ]
         return "\n".join([f"<tool_call>\n{text}\n</tool_call>" for text in function_texts])
 
+
+class GLM4ToolUtils(ToolUtils):
+    r"""GLM-4 tool using template."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text = ""
+        for tool in tools:
+            tool = tool.get("function", "") if tool.get("type") == "function" else tool
+            tool_text += "\n\n## {name}\n\n{body}\n在调用上述函数时，请使用 Json 格式表示调用的参数。".format(
+                name=tool["name"], body=json.dumps(tool, indent=4, ensure_ascii=False)
+            )
+
+        return GLM4_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        if len(functions) > 1:
+            raise ValueError("GLM-4 does not support parallel functions.")
+
+        return f"{functions[0].name}\n{functions[0].arguments}"
+
     @override
     @staticmethod
     def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        regex = re.compile(r"<tool_call>(.+?)</tool_call>(?=\s*<tool_call>|\s*$)", re.DOTALL)
-        tool_match: list[str] = re.findall(regex, content)
-        if not tool_match:
+        if "\n" not in content:
             return content
 
-        results = []
-        for tool in tool_match:
-            try:
-                tool = json.loads(tool.strip())
-            except json.JSONDecodeError:
-                return content
+        tool_name, tool_input = content.split("\n", maxsplit=1)
+        try:
+            arguments = json.loads(tool_input.strip())
+        except json.JSONDecodeError:
+            return content
 
-            if "name" not in tool or "arguments" not in tool:
-                return content
+        return [FunctionCall(tool_name, json.dumps(arguments, ensure_ascii=False))]
 
-            results.append(FunctionCall(tool["name"], json.dumps(tool["arguments"], ensure_ascii=False)))
 
-        return results
+class GLM4MOEToolUtils(QwenToolUtils):
+    r"""GLM-4-MOE tool using template."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text = ""
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text += "\n" + json.dumps(wrapped_tool, ensure_ascii=False)
+
+        return GLM4_MOE_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_json = [
+            {"func_name": name, "func_key_values": json.loads(arguments)} for name, arguments in functions
+        ]
+        function_texts = []
+        for func in function_json:
+            prompt = "\n<tool_call>" + func["func_name"]
+            for key, value in func["func_key_values"].items():
+                prompt += "\n<arg_key>" + key + "</arg_key>"
+                if not isinstance(value, str):
+                    value = json.dumps(value, ensure_ascii=False)
+                prompt += "\n<arg_value>" + value + "</arg_value>"
+            function_texts.append(prompt)
+
+        return "\n".join(function_texts)
 
 
 TOOLS = {
     "default": DefaultToolUtils(),
     "qwen": QwenToolUtils(),
+    "glm4": GLM4ToolUtils(),
+    "glm4_moe": GLM4MOEToolUtils(),
 }
 
 
