@@ -1655,7 +1655,10 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Whether to use deterministic mode."},
     )
-
+    cp_comm_type: str = field(
+        default=None,
+        metadata={"help": "Communication type."},
+    )
     replicate_saved_into_local: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to save replicas cross files in distributed save load system."},
