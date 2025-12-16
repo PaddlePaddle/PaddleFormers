@@ -17,8 +17,8 @@
 set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
-export nlp_dir=/github/workspace/PaddleFormers
-export log_path=/github/workspace/PaddleFormers/unittest_logs
+export nlp_dir=/workspace/PaddleFormers
+export log_path=/workspace/PaddleFormers/unittest_logs
 cd $nlp_dir
 if [ ! -d "unittest_logs" ];then
     mkdir unittest_logs
@@ -37,14 +37,12 @@ AGILE_COMPILE_BRANCH=$4
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
-    python -m pip install -r requirements.txt
-    python -m pip install -r requirements-dev.txt
-    python -m pip install -r tests/requirements.txt
-    python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
-    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
-    python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
+    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
+    # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     python setup.py bdist_wheel > /dev/null
-    python -m pip install  dist/p****.whl
+    uv pip install dist/p****.whl --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
+    python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
+    uv pip install -r tests/requirements.txt --system -i https://pypi.tuna.tsinghua.edu.cn/simple --index-strategy unsafe-best-match
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt

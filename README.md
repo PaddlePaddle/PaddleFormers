@@ -42,12 +42,22 @@ Requires Python 3.8+ and [PaddlePaddle](https://www.paddlepaddle.org.cn/install/
 
 ```bash
 # Install via pip
-pip install paddleformers
+# cuda12.6
+pip install paddleformers --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+# cuda12.9
+pip install paddleformers --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+# cuda13.0
+pip install paddleformers --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
 
 # Install development version
 git clone https://github.com/PaddlePaddle/PaddleFormers.git
 cd PaddleFormers
-pip install -e .
+# cuda12.6
+pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+# cuda12.9
+pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+# cuda13.0
+pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
 ```
 
 ## Quickstart
@@ -70,18 +80,8 @@ print(tokenizer.batch_decode(outputs[0], skip_special_tokens=True))
 ### SFT Training
 
 Getting started with supervised fine-tuning (SFT) using PaddleFormers:
-```python
-from paddleformers.trl import SFTConfig, SFTTrainer
-from datasets import load_dataset
-dataset = load_dataset("ZHUI/alpaca_demo", split="train")
-
-training_args = SFTConfig(output_dir="Qwen/Qwen3-0.6B-SFT", device="gpu", model_init_kwargs={"convert_from_hf": True})
-trainer = SFTTrainer(
-    args=training_args,
-    model="Qwen/Qwen3-0.6B-Base",
-    train_dataset=dataset,
-)
-trainer.train()
+```bash
+paddleformers-cli train examples/config/sft/full.yaml
 ```
 
 ## Community

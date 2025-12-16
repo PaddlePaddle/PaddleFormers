@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from copy import deepcopy
+from dataclasses import dataclass
 from functools import partial
 from typing import Optional, Tuple, Union
 
@@ -23,6 +24,8 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
 from paddle.nn import functional as F
+
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.attention.utils import repeat_kv
@@ -39,10 +42,48 @@ from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from ..moe_layer import MoEFlexTokenLayer
 from .configuration import Glm4MoeConfig
+
+
+@dataclass
+class GLMMoEModelProvider(GPTModelProvider):
+    """Base provider for GLM MoE Models."""
+
+    moe_router_load_balancing_type: str = "seq_aux_loss"
+
+    gated_linear_unit: bool = True
+
+    bias_activation_fusion: bool = True
+
+    transform_rules = {
+        "dtype": "params_dtype",
+    }
+
+    # (@peiziliang) hard code
+    rotary_base: float = 1000000.0
+    rotary_percent: float = 0.5
+    moe_shared_expert_overlap: bool = True
+    moe_router_pre_softmax: bool = False
+    moe_permute_fusion: bool = True
+    moe_router_dtype: str = "fp32"
+    moe_router_enable_expert_bias: bool = True
+    moe_router_bias_update_rate: float = 0
+    persist_layer_norm: bool = True
+    moe_router_force_load_balancing: bool = True
+    share_embeddings_and_output_weights: bool = False
+
+    apply_rope_fusion: bool = True
+    mtp_loss_scaling_factor: float = 0.3
+    recompute_granularity: str = None
+    virtual_pipeline_model_parallel_size: int = None
+
+    rope_scaling: float = 1.0
+    bias_dropout_fusion: bool = True
+    router_aux_loss_coef: float = 0.001
+    moe_grouped_gemm: bool = True
 
 
 def eager_attention_forward(
@@ -122,21 +163,21 @@ class Glm4MoeAttention(nn.Layer):
         self.rope_scaling = config.rope_scaling
         self.attention_dropout = config.attention_dropout
 
-        self.tensor_parallel = config.tensor_parallel_degree > 1
+        self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
         self.attention_bias = config.attention_bias
         self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.num_attention_heads * self.head_dim
@@ -215,7 +256,7 @@ class Glm4MoeAttention(nn.Layer):
 
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
             else:
                 bsz, q_len, _ = hidden_states.shape
@@ -226,7 +267,7 @@ class Glm4MoeAttention(nn.Layer):
             mix_layer = self.qkv_proj(hidden_states)
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_parallel_degree // max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
                 q_len = max_sequence_length
                 target_shape = [
                     bsz,
@@ -384,12 +425,12 @@ class Glm4MoeMoE(nn.Layer):
     def __init__(self, config):
         if getattr(config, "disable_ffn_model_parallel", False):
             config = deepcopy(config)
-            config.tensor_parallel_degree = 1
+            config.tensor_model_parallel_size = 1
         super().__init__()
         self.config = config
         self.sequence_parallel = config.sequence_parallel
         # if sequence_parallel is True, expert Linear will call ColumnParallelLinear instead of ColumnSequenceParallelLinear
-        if self.sequence_parallel and config.tensor_parallel_degree > 1:
+        if self.sequence_parallel and config.tensor_model_parallel_size > 1:
             config = deepcopy(config)
             config.sequence_parallel = False
         self.experts = nn.LayerList(
@@ -480,7 +521,7 @@ class AddAuxiliaryLoss(paddle.autograd.PyLayer):
 
 class Glm4MoeFlexMoE(MoEFlexTokenLayer):
     """
-    A mixed expert module containing shared experts for expert_parallel_degree > 1 with deepep mode
+    A mixed expert module containing shared experts for expert_model_parallel_size > 1 with deepep mode
     """
 
     def __init__(self, config):
@@ -504,13 +545,13 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
             moe_group = hcg.get_expert_parallel_group()
         except:
             moe_group = None
-        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
-        if hasattr(dist, "fleet") and dist.is_initialized() and expert_parallel_degree > 1:
+        expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
+        if hasattr(dist, "fleet") and dist.is_initialized() and expert_model_parallel_size > 1:
             moe_group = hcg.get_expert_parallel_group()
             moe_grad_group = hcg.get_moe_sharding_parallel_group()
-        if expert_parallel_degree > 1 and config.tensor_parallel_degree >= 1:
+        if expert_model_parallel_size > 1 and config.tensor_model_parallel_size >= 1:
             mlp_config = deepcopy(config)
-            mlp_config.tensor_parallel_degree = 1
+            mlp_config.tensor_model_parallel_size = 1
         super().__init__(
             config=config,
             moe_num_experts=config.n_routed_experts,
@@ -523,7 +564,7 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
             gate=gate,
             moe_group=moe_group,
         )
-        if hasattr(dist, "fleet") and dist.is_initialized() and expert_parallel_degree > 1:
+        if hasattr(dist, "fleet") and dist.is_initialized() and expert_model_parallel_size > 1:
             self.is_mp_moe = False
             self.is_ep_moe = True
             for p in self.experts.parameters():
@@ -562,11 +603,11 @@ class Glm4MoeDecoderLayer(nn.Layer):
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
         except:
             moe_group = None
-        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+        expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
         if layer_idx >= config.first_k_dense_replace:
             self.mlp = (
                 Glm4MoeMoE(config)
-                if expert_parallel_degree <= 1
+                if expert_model_parallel_size <= 1
                 else (
                     QuickAccessMoEFactory.create_from_model_name(
                         pretrained_config=config,
@@ -647,13 +688,13 @@ class Glm4MoeDecoderLayer(nn.Layer):
         hidden_size = hidden_states.shape[-1]
         if self.config.sequence_parallel:
             # hidden_states shape:[b*s,h]
-            seq_len = self.config.max_sequence_length // self.config.tensor_parallel_degree
+            seq_len = self.config.max_sequence_length // self.config.tensor_model_parallel_size
             batch_size = hidden_states.shape[0] // seq_len
             assert (
                 batch_size > 0
             ), f"batch_size must larger than 0, but calulate batch_size:{batch_size}, hidden_states shape:{hidden_states.shape}"
             hidden_states = hidden_states.reshape([-1, batch_size, hidden_size])
-        sub_seq_len = self.config.moe_subbatch_token_num
+        sub_seq_len = self.config.moe_subbatch_token_num_before_dispatch
         seq_axis = 0 if self.config.sequence_parallel else 1
         seq_len = hidden_states.shape[seq_axis]
         assert seq_len % sub_seq_len == 0
@@ -799,7 +840,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -865,9 +906,9 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
                 except:
                     moe_group = None
-                expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
-                # TODO: merge disable_ffn_model_parallel and expert_parallel_degree
-                if expert_parallel_degree <= 1:
+                expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
+                # TODO: merge disable_ffn_model_parallel and expert_model_parallel_size
+                if expert_model_parallel_size <= 1:
                     # # if disable_ffn_model_parallel is True, disable expert layer tp plan
                     # if not config.disable_ffn_model_parallel:
                     if not config.fuse_attention_ffn:
@@ -1064,9 +1105,9 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_aoa_config(cls, config: Glm4MoeConfig):
         model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
         aoa_config = {
             "aoa_statements": [
-                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
                 f"model.norm.weight -> {model_prefix}norm.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
@@ -1078,6 +1119,15 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
             ]
         }
+        if is_fleet:
+            aoa_config["aoa_statements"] += [
+                f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
+                f"_ -> {model_prefix}lm_head.weight",
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+            ]
 
         # attention qkv
         if not config.fuse_attention_qkv:
@@ -1120,6 +1170,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_inv_aoa_config(cls, config: Glm4MoeConfig):
         model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
         aoa_statements = [
             # do cast
             f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
@@ -1128,12 +1179,21 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
-            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
-            f"{model_prefix}norm.weight -> model.norm.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
+            f"{model_prefix}norm.weight -> model.norm.weight",
         ]
+
+        if is_fleet:
+            aoa_statements += [
+                "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
+                f"{model_prefix}lm_head.weight -> _",
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            ]
 
         if not config.fuse_attention_qkv:
             aoa_statements += [
@@ -1204,17 +1264,43 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
         self.config = config
-        base = config.rope_theta
-        partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
         rope_parameters = self.config.rope_parameters
         self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
-        dim = int(head_dim * partial_rotary_factor)
 
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
-        self.attention_scaling = 1.0
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
+
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = self.inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[Glm4MoeConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        partial_rotary_factor = config.rope_parameters.get("partial_rotary_factor", 1.0)
+        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        dim = int(head_dim * partial_rotary_factor)
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @paddle.no_grad()
     @dynamic_rope_update
@@ -1239,6 +1325,11 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
             sin = paddle.sin(emb) * self.attention_scaling
 
         return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
+
+
+@register_base_model
+class Glm4MoeModelFleet(Glm4MoePreTrainedModel):
+    pass
 
 
 @register_base_model
@@ -1339,7 +1430,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if self.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
@@ -1371,7 +1462,9 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         all_hidden_states = () if output_hidden_states else None
 
         moelayer_use_subbatch_recompute = (
-            self.config.moe_subbatch_token_num > 0 if hasattr(self.config, "moe_subbatch_token_num") else False
+            self.config.moe_subbatch_token_num_before_dispatch > 0
+            if hasattr(self.config, "moe_subbatch_token_num_before_dispatch")
+            else False
         )
 
         for idx, (decoder_layer) in enumerate(self.layers):
@@ -1430,6 +1523,20 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         )
 
 
+class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
+    is_fleet = True
+
+    def __new__(cls, config):
+        model_provider_class = GLMMoEModelProvider
+        model_provider = model_provider_class.from_config(config)
+        gpt_model = model_provider.provide()
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        gpt_model.config_to_save = config
+        return gpt_model
+
+
 class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
@@ -1442,35 +1549,6 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
-
-    def prepare_inputs_for_generation(
-        self,
-        input_ids,
-        use_cache=False,
-        past_key_values=None,
-        attention_mask=None,
-        inputs_embeds=None,
-        **kwargs,
-    ):
-        batch_size, seq_length = input_ids.shape
-        position_ids = kwargs.get("position_ids", paddle.arange(seq_length).expand((batch_size, seq_length)))
-        if past_key_values:
-            input_ids = input_ids[:, -1].unsqueeze(axis=-1)
-            position_ids = position_ids[:, -1].unsqueeze(-1)
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-        model_inputs.update(
-            {
-                "position_ids": position_ids,
-                "past_key_values": past_key_values,
-                "use_cache": use_cache,
-                "attention_mask": attention_mask,
-            }
-        )
-        return model_inputs
 
     def forward(
         self,
@@ -1536,7 +1614,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         max_seq_len = hidden_states.shape[1]
         if self.config.sequence_parallel:
             # hidden_states shape:[b*s,h]
-            max_seq_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
+            max_seq_len = hidden_states.shape[0] * self.config.tensor_model_parallel_size
         if attention_mask is None:
             attn_mask = None
             attn_mask_startend_row_indices = None
@@ -1560,7 +1638,9 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
 
         has_gradient = not hidden_states.stop_gradient
         moelayer_use_subbatch_recompute = (
-            self.config.moe_subbatch_token_num > 0 if hasattr(self.config, "moe_subbatch_token_num") else False
+            self.config.moe_subbatch_token_num_before_dispatch > 0
+            if hasattr(self.config, "moe_subbatch_token_num_before_dispatch")
+            else False
         )
         if moelayer_use_subbatch_recompute:
             hidden_states = super().subbatch_recompute_forward(
@@ -1602,6 +1682,20 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         return ret
 
 
+class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
+    is_fleet = True
+
+    def __new__(cls, config):
+        model_provider_class = GLMMoEModelProvider
+        model_provider = model_provider_class.from_config(config)
+        gpt_model = model_provider.provide()
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        gpt_model.config_to_save = config
+        return gpt_model
+
+
 class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
@@ -1617,4 +1711,11 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _gen_inv_aoa_config = Glm4MoeForCausalLM._gen_inv_aoa_config
 
 
-__all__ = ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"]
+__all__ = [
+    "Glm4MoeForCausalLMPipeFleet",
+    "Glm4MoeModelFleet",
+    "Glm4MoeForCausalLMFleet",
+    "Glm4MoeForCausalLMPipe",
+    "Glm4MoeModel",
+    "Glm4MoeForCausalLM",
+]

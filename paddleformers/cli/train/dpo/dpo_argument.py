@@ -20,7 +20,8 @@ from paddleformers.trainer import TrainingArguments
 from paddleformers.trainer.trainer_utils import IntervalStrategy
 from paddleformers.trainer.utils.doc import add_start_docstrings
 from paddleformers.transformers.configuration_utils import llmmetaclass
-from paddleformers.trl import DataConfig
+
+from .data_config import DataConfig
 
 
 @dataclass
@@ -138,14 +139,6 @@ class DPOModelArgument:
     weight_quantize_algo: str = field(
         default=None,
         metadata={"help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."},
-    )
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
     )
     use_attn_mask_startend_row_indices: bool = field(
         default=True,

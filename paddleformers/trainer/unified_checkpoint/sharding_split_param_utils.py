@@ -24,7 +24,7 @@ from paddle.distributed import fleet
 from safetensors import safe_open
 from tqdm.auto import tqdm
 
-from ...peft import LoRAModel, PrefixModelForCausalLM
+from ...peft import LoRAModel
 from ...transformers.model_utils import _add_variant, load_state_dict, unwrap_model
 from ...transformers.utils import device_guard
 from ...utils.env import (
@@ -277,8 +277,8 @@ def load_unified_optimizer_split_param(args, model, optimizer, resume_from_check
     ):
         returned_state_dict = {}
 
-        if model.config.tensor_parallel_degree > 1:
-            if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
+        if model.config.tensor_model_parallel_size > 1:
+            if isinstance(model, LoRAModel):
                 tp_actions = model._get_tensor_parallel_convert_actions(model_keys, is_split=True, ignore_error=True)
             else:
                 tp_actions = model.get_tensor_parallel_convert_actions(model.config, model_keys, ignore_error=True)
@@ -288,7 +288,7 @@ def load_unified_optimizer_split_param(args, model, optimizer, resume_from_check
         for shard_file in resolved_archive_file:
             if expected_keys.isdisjoint(sharded_metadata["file_map"][os.path.split(shard_file)[-1]]):
                 continue
-            if model.config.tensor_parallel_degree > 1:
+            if model.config.tensor_model_parallel_size > 1:
                 state_dict = load_state_dict(
                     shard_file,
                     tp_actions,

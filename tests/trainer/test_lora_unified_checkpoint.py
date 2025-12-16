@@ -62,11 +62,10 @@
 #     "eval_with_do_generation": "false",
 #     "recompute": "true",
 #     "save_total_limit": 1,
-#     "tensor_parallel_degree": 1,
-#     "pipeline_parallel_degree": 1,
+#     "tensor_model_parallel_size": 1,
+#     "pipeline_model_parallel_size": 1,
 #     "lora": "true",
 #     "zero_padding": "false",
-#     "use_flash_attention": "false",
 #     "unified_checkpoint": 1,
 # }
 

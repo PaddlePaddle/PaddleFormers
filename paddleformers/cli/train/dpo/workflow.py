@@ -26,7 +26,9 @@ is_sm90 = (
 )
 if is_sm90:
     os.environ["FLAGS_flash_attn_version"] = "3"
-from paddleformers.datasets.dpo import collate_fn, create_dataset
+from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
+from paddleformers.datasets.loader import create_dataset
+from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
@@ -41,11 +43,10 @@ from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
+    AutoProcessor,
     AutoTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
-from paddleformers.trl import DPOTrainer
-from paddleformers.trl.llm_utils import get_lora_target_modules
 from paddleformers.utils.log import logger
 
 from ...hparams import (
@@ -54,8 +55,10 @@ from ...hparams import (
     GeneratingArguments,
     ModelArguments,
 )
+from ...utils.llm_utils import get_lora_target_modules
 from .dpo_argument import DPOConfig
 from .dpo_estimate_training import dpo_estimate_training
+from .dpo_trainer import DPOTrainer
 
 
 def run_dpo(
@@ -82,20 +85,20 @@ def run_dpo(
         logger.warning(
             f"{training_args.loss_type} loss_type only supports reference_free. Set reference_free to True."
         )
-    if training_args.pipeline_parallel_degree > 1:
+    if training_args.pipeline_model_parallel_size > 1:
         assert (
             hasattr(training_args, "pipeline_parallel_config")
             and "enable_clear_every_step_cache" in training_args.pipeline_parallel_config
         ), "Should set '--pipeline_parallel_config enable_clear_every_step_cache' in bash script for pp."
     if training_args.sequence_parallel:
-        if training_args.pipeline_parallel_degree > 1:
+        if training_args.pipeline_model_parallel_size > 1:
             assert (
                 hasattr(training_args, "pipeline_parallel_config")
                 and "disable_partial_send_recv" in training_args.pipeline_parallel_config
             ), "Should set '--pipeline_parallel_config disable_partial_send_recv' in bash script for pp with sp."
-        if training_args.tensor_parallel_degree <= 1:
+        if training_args.tensor_model_parallel_size <= 1:
             training_args.sequence_parallel = False
-            logger.info("Tensor_parallel_degree = 1. Set sequence_parallel to False.")
+            logger.info("tensor_model_parallel_size = 1. Set sequence_parallel to False.")
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
     training_args.print_config(training_args, "Train")
@@ -164,7 +167,7 @@ def run_dpo(
 
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
 
-    if training_args.pipeline_parallel_degree > 1:
+    if training_args.pipeline_model_parallel_size > 1:
         model_class = AutoModelForCausalLMPipe
     else:
         model_class = AutoModelForCausalLM
@@ -189,9 +192,10 @@ def run_dpo(
         model = model_class.from_config(model_config)
         if not training_args.reference_free and not model_args.lora:
             ref_model = model_class.from_config(ref_model_config)
+            ref_model.set_state_dict(model.state_dict())
         else:
             ref_model = None
-    if training_args.pipeline_parallel_degree > 1:
+    if training_args.pipeline_model_parallel_size > 1:
         model.config.dpo_config = None
 
     if model_args.tokenizer_name_or_path is not None:
@@ -200,6 +204,10 @@ def run_dpo(
         tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
+
+    processor = None
+    if model_args.stage == "VL-DPO":
+        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
 
     logger.info("Loading model & tokenizer successfully !")
 
@@ -225,7 +233,7 @@ def run_dpo(
                 lora_alpha=2 * model_args.lora_rank if not model_args.rslora else 4,
                 rslora=model_args.rslora,
                 lora_plus_scale=model_args.lora_plus_scale,
-                tensor_parallel_degree=training_args.tensor_parallel_degree,
+                tensor_model_parallel_size=training_args.tensor_model_parallel_size,
                 dtype=dtype,
                 base_model_name_or_path=model_args.model_name_or_path,
                 use_quick_lora=model_args.use_quick_lora,
@@ -239,6 +247,7 @@ def run_dpo(
     logger.info("Start to create dataset")
     dataset_config = {
         "tokenizer": tokenizer,
+        "processor": processor,
         "max_seq_len": data_args.max_seq_len,
         "max_prompt_len": data_args.max_prompt_len,
         "random_seed": training_args.seed,
@@ -253,7 +262,28 @@ def run_dpo(
         "packing": data_args.packing,
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
+        "stage": model_args.stage,
+        "template_backend": data_args.template_backend,
     }
+
+    dataset_config.update(
+        {
+            "template": data_args.template,
+            "tool_format": None,
+            "default_system": None,
+            "enable_thinking": True,
+        }
+    )
+
+    if dataset_config["template_backend"] == "custom":
+        template_instance = get_template_and_fix_tokenizer(dataset_config)
+    else:
+        template_instance = None
+    dataset_config.update(
+        {
+            "template_instance": template_instance,
+        }
+    )
     if training_args.max_steps == -1:
         if data_args.mix_strategy == "random":
             raise ValueError(
@@ -341,7 +371,7 @@ def run_dpo(
         train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
 
         if not training_args.autotuner_benchmark and not training_args.benchmark:
-            trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1, last_fc_to_hf=True)
+            trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
             trainer.log_metrics("train", train_result.metrics)
             trainer.save_metrics("train", train_result.metrics)
             trainer.save_state()

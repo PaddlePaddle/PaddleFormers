@@ -94,12 +94,15 @@ class DynamicLayer(CacheLayerMixin):
 
     is_sliding = False
 
-    def lazy_initialization(self, key_states: paddle.Tensor):
+    def lazy_initialization(self, key_states: paddle.Tensor, value_states: paddle.Tensor):
         self.dtype, self.place = key_states.dtype, key_states.place
-        B, N, _, H = key_states.shape
-        initial_shape = [B, N, 0, H]
-        self.keys = paddle.empty(initial_shape, dtype=self.dtype, device=self.place)
-        self.values = paddle.empty(initial_shape, dtype=self.dtype, device=self.place)
+        B, N, _, H_k = key_states.shape
+        _, _, _, H_v = value_states.shape
+        initial_keys_shape = [B, N, 0, H_k]
+        initial_values_shape = [B, N, 0, H_v]
+
+        self.keys = paddle.empty(initial_keys_shape, dtype=self.dtype, device=self.place)
+        self.values = paddle.empty(initial_values_shape, dtype=self.dtype, device=self.place)
         self.is_initialized = True
 
     def update(
@@ -121,7 +124,7 @@ class DynamicLayer(CacheLayerMixin):
         """
         # Lazy initialization
         if not self.is_initialized:
-            self.lazy_initialization(key_states)
+            self.lazy_initialization(key_states, value_states)
         # the shape of the key and value states is [B,N,S,H].
         self.keys = paddle.concat([self.keys, key_states], axis=-2)
         self.values = paddle.concat([self.values, value_states], axis=-2)
@@ -213,7 +216,7 @@ class Cache:
         self.offloading = offloading
         if self.offloading:
             self.only_non_sliding = offload_only_non_sliding
-            self.prefetch_stream = paddle.Stream()
+            self.prefetch_stream = paddle.device.Stream()
 
     def __repr__(self):
         return f"{self.__class__.__name__}(layers={self.layers})"
@@ -235,7 +238,7 @@ class Cache:
             layer_idx = layer_idx if layer_idx < len(self.layers) else 0
 
         # Prefetch
-        with self.prefetch_stream:
+        with paddle.device.stream_guard(self.prefetch_stream):
             self.layers[layer_idx].prefetch()
 
     def offload(self, layer_idx: int, only_non_sliding: bool = True):
@@ -278,7 +281,10 @@ class Cache:
 
         if self.offloading:
             # Wait for the stream to finish if needed, and start prefetching the next layer
-            paddle.cuda.default_stream(key_states.place).wait_stream(self.prefetch_stream)
+            # Note: Since current_stream can't directly recognize key_states.place,
+            # we construct it as a string. However, this may cause unknown issues for other formats like xpu,
+            # so attention is needed. The directly returned place format is Place(gpu:0)
+            paddle.device.current_stream(f"gpu:{key_states.place.gpu_device_id()}").wait_stream(self.prefetch_stream)
             self.prefetch(layer_idx + 1, self.only_non_sliding)
 
         keys, values = self.layers[layer_idx].update(key_states, value_states, cache_kwargs)
@@ -299,9 +305,10 @@ class Cache:
         # this fake tensor approach. It has size 0 on the -2 dimension, so it does not allocate any data (it only
         # creates an empty tensor with correct shape, dtype and device), which is very efficient and practical
         fake_keys_tensor = paddle.zeros((batch_size, num_heads, 0, head_dim), dtype=dtype, device=device)
+        fake_valuess_tensor = paddle.zeros((batch_size, num_heads, 0, head_dim), dtype=dtype, device=device)
         # Init all layers
         for layer in self.layers:
-            layer.lazy_initialization(fake_keys_tensor)
+            layer.lazy_initialization(fake_keys_tensor, fake_valuess_tensor)
 
     def get_seq_length(self, layer_idx: int = 0) -> int:
         """Returns the sequence length of the cache for the given layer."""
@@ -429,7 +436,7 @@ class DynamicCache(Cache):
     >>> model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2-0.5B-Instruct")
     >>> tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B-Instruct")
 
-    >>> inputs = tokenizer(text="My name is Qwen2", return_tensors="pt")
+    >>> inputs = tokenizer(text="My name is Qwen2", return_tensors="pd")
 
     >>> # Prepare a cache class and pass it to model's forward
     >>> past_key_values = DynamicCache(config=model.config)
@@ -518,8 +525,8 @@ class DynamicSlidingWindowLayer(DynamicLayer):
         self.cumulative_length = 0
         self._sliding_window_tensor = paddle.to_tensor(self.sliding_window, dtype=paddle.int64)
 
-    def lazy_initialization(self, key_states: paddle.Tensor) -> None:
-        super().lazy_initialization(key_states)
+    def lazy_initialization(self, key_states: paddle.Tensor, value_states: paddle.Tensor) -> None:
+        super().lazy_initialization(key_states, value_states)
         self._sliding_window_tensor = self._sliding_window_tensor.to(self.place)
 
     def update(
@@ -541,7 +548,7 @@ class DynamicSlidingWindowLayer(DynamicLayer):
         """
         # Lazy initialization
         if not self.is_initialized:
-            self.lazy_initialization(key_states)
+            self.lazy_initialization(key_states, value_states)
 
         self.cumulative_length += key_states.shape[-2]
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
+from functools import partial
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -36,7 +36,7 @@ from ..masking_utils import (
 )
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import dynamic_rope_update
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import GptOssConfig
 
 
@@ -224,92 +224,6 @@ class GptOssMLP(nn.Layer):
         return routed_out, router_scores
 
 
-def _compute_yarn_parameters(config, device: paddle.device, seq_len: Optional[int] = None) -> tuple[Tensor, float]:
-    """
-    Computes the inverse frequencies with NTK scaling. Please refer to the
-    [original paper](https://huggingface.co/papers/2309.00071)
-    Args:
-        config: The model configuration.
-        device: The device to use for initialization of the inverse frequencies.
-        seq_len: The current sequence length. Unused for this type of RoPE.
-    Returns:
-        Tuple of (Tensor, float), containing the inverse frequencies for the RoPE embeddings and the
-        post-processing scaling factor applied to the computed cos/sin.
-    """
-
-    base = config.rope_theta
-    partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-    head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-    dim = int(head_dim * partial_rotary_factor)
-    factor = config.rope_parameters["factor"]
-    attention_factor = config.rope_parameters.get("attention_factor")
-    mscale = config.rope_parameters.get("mscale")
-    mscale_all_dim = config.rope_parameters.get("mscale_all_dim")
-
-    # Handling the situation of embedding the original maximum position
-    if "original_max_position_embeddings" in config.rope_parameters:
-        original_max_position_embeddings = config.rope_parameters["original_max_position_embeddings"]
-        factor = config.max_position_embeddings / original_max_position_embeddings
-    else:
-        original_max_position_embeddings = config.max_position_embeddings
-
-    def get_mscale(scale, mscale=1):
-        if scale <= 1:
-            return 1.0
-        return 0.1 * mscale * math.log(scale) + 1.0
-
-    # Set attention factor
-    if attention_factor is None:
-        if mscale and mscale_all_dim:
-            attention_factor = float(get_mscale(factor, mscale) / get_mscale(factor, mscale_all_dim))
-        else:
-            attention_factor = get_mscale(factor)
-
-    # Optional configuration parameters
-    beta_fast = config.rope_parameters.get("beta_fast") or 32
-    beta_slow = config.rope_parameters.get("beta_slow") or 1
-
-    # Auxiliary function for calculating inverse frequency
-    def find_correction_dim(num_rotations, dim, base, max_position_embeddings):
-        """Inverse dimension formula based on the number of rotations to calculate dimensions"""
-        return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
-
-    def find_correction_range(low_rot, high_rot, dim, base, max_position_embeddings, truncate):
-        """Find the boundary of dimension range based on rotation"""
-        low = find_correction_dim(low_rot, dim, base, max_position_embeddings)
-        high = find_correction_dim(high_rot, dim, base, max_position_embeddings)
-        if truncate:
-            low = math.floor(low)
-            high = math.ceil(high)
-        return max(low, 0), min(high, dim - 1)
-
-    def linear_ramp_factor(min_val, max_val, dim):
-        if min_val == max_val:
-            max_val += 0.001  # 防止奇点
-
-        # Create a linear function using arange
-        linear_func = (paddle.arange(dim, dtype=paddle.float32) - min_val) / (max_val - min_val)
-        ramp_func = paddle.clip(linear_func, 0, 1)
-        return ramp_func
-
-    # Calculate position frequency
-    # Specify device and data type in Paddle
-    pos_freqs = base ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim)
-    inv_freq_extrapolation = 1.0 / pos_freqs
-    inv_freq_interpolation = 1.0 / (factor * pos_freqs)
-
-    truncate = config.rope_parameters.get("truncate", True)
-    low, high = find_correction_range(beta_fast, beta_slow, dim, base, original_max_position_embeddings, truncate)
-
-    # Obtain n-dimensional rotation scaling correction for extrapolation
-    inv_freq_extrapolation_factor = 1 - linear_ramp_factor(low, high, dim // 2).to(device=device, dtype=paddle.float32)
-    inv_freq = (
-        inv_freq_interpolation * (1 - inv_freq_extrapolation_factor)
-        + inv_freq_extrapolation * inv_freq_extrapolation_factor
-    )
-    return inv_freq, attention_factor
-
-
 class GptOssRotaryEmbedding(nn.Layer):
     def __init__(self, config: GptOssConfig, device=None):
         super().__init__()
@@ -322,17 +236,39 @@ class GptOssRotaryEmbedding(nn.Layer):
         self.original_max_seq_len = config.max_position_embeddings
 
         self.config = config
-        self.rope_init_fn = _compute_yarn_parameters
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
-        inv_freq, self.attention_scaling = self.rope_init_fn(self.config, device)
-        # todo : inv_freq会不会变？
-        self.inv_freq = self.create_parameter(
-            shape=inv_freq.shape,
-            dtype=inv_freq.dtype,
-            default_initializer=paddle.nn.initializer.Assign(inv_freq),
-        )
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
         self.inv_freq.stop_gradient = True
-        self.original_inv_freq = self.inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[GptOssConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
 
     @paddle.no_grad()
     @dynamic_rope_update
@@ -406,15 +342,15 @@ class GptOssAttention(nn.Layer):
 
         self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
             assert (
-                self.num_key_value_heads % config.tensor_parallel_degree == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.num_attention_heads * self.head_dim
@@ -490,7 +426,7 @@ class GptOssAttention(nn.Layer):
         if self.sequence_parallel:
             if batch_size is None:
                 batch_size = (
-                    hidden_states.shape[0] * self.config.tensor_parallel_degree // self.config.max_sequence_length
+                    hidden_states.shape[0] * self.config.tensor_model_parallel_size // self.config.max_sequence_length
                 )
             q_len = self.config.max_sequence_length
             target_query_shape = [batch_size, q_len, self.num_heads, self.head_dim]
@@ -632,6 +568,53 @@ class GptOssPreTrainedModel(PretrainedModel):
     base_model_prefix = "model"
     keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+    @classmethod
+    def _get_tensor_parallel_mappings(cls, config: GptOssConfig, is_split=True):
+        from ..conversion_utils import split_or_merge_func
+
+        fn = split_or_merge_func(
+            is_split=is_split,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
+            tensor_parallel_rank=config.tensor_parallel_rank,
+            num_attention_heads=config.num_attention_heads,
+        )
+
+        def get_tensor_parallel_split_mappings(num_layers, num_experts):
+            final_actions = {}
+
+            base_actions = {
+                "lm_head.weight": partial(fn, is_column=False),
+                # Row Linear
+                "embed_tokens.weight": partial(fn, is_column=False),
+                "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
+            }
+
+            if not config.vocab_size % config.tensor_model_parallel_size == 0:
+                base_actions.pop("lm_head.weight")
+                base_actions.pop("embed_tokens.weight")
+            base_actions["layers.0.self_attn.sinks"] = partial(fn, is_column=False)
+            # Column Linear
+            base_actions["layers.0.self_attn.q_proj.weight"] = partial(fn, is_column=True)
+            base_actions["layers.0.self_attn.q_proj.bias"] = partial(fn, is_column=True)
+
+            # if we have enough num_key_value_heads to split, then split it.
+            if config.num_key_value_heads % config.tensor_model_parallel_size == 0:
+                base_actions["layers.0.self_attn.k_proj.weight"] = partial(fn, is_column=True)
+                base_actions["layers.0.self_attn.v_proj.weight"] = partial(fn, is_column=True)
+                base_actions["layers.0.self_attn.k_proj.bias"] = partial(fn, is_column=True)
+                base_actions["layers.0.self_attn.v_proj.bias"] = partial(fn, is_column=True)
+
+            for key, action in base_actions.items():
+                if "layers.0." in key:
+                    for i in range(num_layers):
+                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
+                final_actions[key] = action
+
+            return final_actions
+
+        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers, config.num_experts)
+        return mappings
 
     @classmethod
     def _gen_aoa_config(cls, config: GptOssConfig):
@@ -896,7 +879,7 @@ class GptOssModel(GptOssPreTrainedModel):
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         if self.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]

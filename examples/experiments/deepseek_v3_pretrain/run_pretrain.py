@@ -48,7 +48,7 @@ from paddleformers.transformers import (
     LinearAnnealingWithWarmupDecay,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
-from paddleformers.transformers.deepseek_v2 import DeepseekV2ForCausalLM
+from paddleformers.transformers.deepseek_v3 import DeepseekV3ForCausalLM
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
 
@@ -164,15 +164,6 @@ class ModelArguments:
 
     hidden_dropout_prob: float = field(default=0.1, metadata={"help": "The hidden dropout prob."})
     attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "The attention hidden dropout prob."})
-
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
 
     continue_training: bool = field(
         default=False,
@@ -436,19 +427,17 @@ def main():
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
         config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
-    if model_args.fuse_attention_qkv is not None:
-        config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
-        assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."
+        assert (
+            config.tensor_model_parallel_size > 1
+        ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
         config.num_attention_heads % config.sep_parallel_degree == 0
     ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
     assert (
-        config.seq_length % config.context_parallel_degree == 0
-    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_degree {config.context_parallel_degree}"
+        config.seq_length % config.context_parallel_size == 0
+    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
 
     if training_args.sharding_parallel_config is not None:
         # for stage1 overlap optimization
@@ -480,8 +469,8 @@ def main():
         if training_args.bf16:
             dtype = "bfloat16"
 
-    model_class = DeepseekV2ForCausalLM
-    if training_args.pipeline_parallel_degree > 1:
+    model_class = DeepseekV3ForCausalLM
+    if training_args.pipeline_model_parallel_size > 1:
         model_class = DeepseekV2ForCausalLMPipe
         if "LLama" in str(config.architectures):
             try:
@@ -520,9 +509,9 @@ def main():
         # config.using_flex_token = True
         # config.num_nextn_predict_layers = 1
         # config.using_fake_gate = True
-        # config.use_fused_rms_norm = True
+        # config.fuse_rms_norm = True
         # config.fuse_attention_ffn = True
-        # config.use_fused_rope = True
+        # config.apply_rope_fusion = True
         # config.token_drop_steps = 0
         model = model_class.from_config(config, dtype=dtype)
 

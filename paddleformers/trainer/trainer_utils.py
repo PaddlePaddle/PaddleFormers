@@ -30,6 +30,7 @@ import os
 import random
 import threading
 import time
+from collections import namedtuple
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
@@ -49,19 +50,17 @@ from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_sta
 )
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
-from safetensors import safe_open
-from safetensors.paddle import save_file
 from transformers.tokenization_utils_base import BatchEncoding
 
-from ..ops import Topology
+# from ..ops import Topology
 from ..trainer.argparser import strtobool
-from ..transformers.model_utils import _parse_size
+from ..transformers.model_utils import replace_name_and_gen_index, save_full_param
 from ..utils.env import PREFIX_CHECKPOINT_DIR, _re_checkpoint  # noqa for compatibility
 from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
 from ..utils.import_utils import is_paddle_cuda_available, is_psutil_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import PDCErrorCode, PDCErrorMessageMap, pdc_tool
-from ..utils.tools import get_env_device
+from ..utils.tools import get_env_device, paddle_device
 from .utils.helper import distributed_file
 
 __all__ = [
@@ -71,6 +70,7 @@ __all__ = [
     "IntervalStrategy",
     "SchedulerType",
     "set_seed",
+    "set_random_seed",
     "speed_metrics",
     "get_last_checkpoint",
     "get_scheduler",
@@ -97,6 +97,74 @@ def log_trainer_start():
         start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
         logger.info(f"The Training Main Process Started Successfully. time: {start_time}, pid: {os.getpid()}")
         os.environ["MAIN_PROCESS_STARTED"] = "1"
+
+
+GroupInfo = namedtuple("GroupInfo", ["size", "rank", "world"])
+
+
+class Topology:
+    def __init__(
+        self,
+        device_rank,
+        world_size,
+        dp_degree=None,
+        pp_degree=1,
+        sharding_degree=1,
+        mp_degree=1,
+        sep_degree=1,
+        order=["dp", "pp", "sharding", "mp", "sep"],
+    ):
+        assert set(order) == {"dp", "pp", "sharding", "mp", "sep"}, f"Illegal order : {order}"
+        self.order = order
+
+        degree_map = {
+            "dp": dp_degree,
+            "pp": pp_degree,
+            "sharding": sharding_degree,
+            "mp": mp_degree,
+            "sep": sep_degree,
+        }
+        shape = [degree_map[key] for key in self.order]
+
+        arr = np.arange(0, dp_degree * pp_degree * sharding_degree * mp_degree * sep_degree).reshape(shape)
+        ranks = [rank[0] for rank in np.where(arr == device_rank)]
+
+        self.world = GroupInfo(size=world_size, rank=device_rank, world=list(range(0, world_size)))
+        worlds = []
+        for i in range(len(ranks)):
+            indexes = tuple(ranks[:i] + [slice(None)] + ranks[(i + 1) :])
+            worlds.append(arr[indexes])
+
+        for i, key in enumerate(self.order):
+            if key == "dp":
+                self.dp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "pp":
+                self.pp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "sharding":
+                self.sharding_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "mp":
+                self.mp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "sep":
+                self.sep_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+
+        self.is_last = self.pp_info.rank == self.pp_info.size - 1
+
+        data_arr = np.arange(0, dp_degree * sharding_degree).reshape([dp_degree, sharding_degree])
+        for i, key in enumerate(self.order):
+            if key != "dp" and key != "sharding":
+                data_arr = np.expand_dims(data_arr, axis=i).repeat(degree_map[key], axis=i)
+
+        self.data_info = GroupInfo(
+            size=int(self.dp_info.size * self.sharding_info.size),
+            rank=int(self.dp_info.rank * self.sharding_info.size + self.sharding_info.rank),
+            world=data_arr.reshape(-1).tolist(),
+        )
+
+        assert self.data_info.world[device_rank] == self.data_info.rank, "Data rank calculate error!"
+        self.data_inner_times = self.world.size // self.data_info.size
+
+    def __repr__(self):
+        return f"dp_info:\n\t {self.dp_info}, \npp_info:\n\t {self.pp_info}, \nsharding_info:\n\t {self.sharding_info}, \nmp_info:\n\t {self.mp_info}, \nsep_info:\n\t {self.sep_info}, \ndata_info:\n\t {self.data_info}, \norder:\n\t {self.order}"
 
 
 def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
@@ -132,6 +200,8 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
         sep_size = topo.sep_info.size
 
         sharding_rank = topo.sharding_info.rank
+
+        cp_rank, cp_size = 0, 1
     elif hcg is not None and paddle.distributed.get_world_size() > 1:
         # obtain rank message of hybrid parallel
 
@@ -150,8 +220,15 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
         dp_rank = hcg.get_data_parallel_rank()
         dp_size = hcg.get_data_parallel_world_size()
 
-        sharding_rank = hcg.get_sharding_parallel_rank()
+        if hasattr(fleet, "get_context_parallel_rank"):
+            cp_rank = hcg.get_context_parallel_rank()
+            cp_size = hcg.get_context_parallel_world_size()
+            sharding_rank = hcg.get_sharding_parallel_rank(with_context_parallel=cp_size > 1)
+        else:
+            cp_rank, cp_size = 0, 1
+            sharding_rank = hcg.get_sharding_parallel_rank()
     else:
+        cp_rank, cp_size = 0, 1
         mp_rank, mp_size = 0, 1
         sep_rank, sep_size = 0, 1
         pp_rank, pp_size = 0, 1
@@ -159,23 +236,41 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
         sharding_rank, _ = 0, 1
 
     seed_offset = seed
-    global_seed = (
-        seed_offset
-        + sep_rank * (mp_size)
-        + pp_rank * (mp_size * sep_size)
-        + dp_rank * (mp_size * sep_size * pp_size)
-        + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
-    )
+    if cp_size == 1:
+        global_seed = (
+            seed_offset
+            + sep_rank * (mp_size)
+            + pp_rank * (mp_size * sep_size)
+            + dp_rank * (mp_size * sep_size * pp_size)
+            + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
+        )
 
-    seed_offset += paddle.distributed.get_world_size()
-    local_seed = (
-        seed_offset
-        + mp_rank
-        + sep_rank * (mp_size)
-        + pp_rank * (mp_size * sep_size)
-        + dp_rank * (mp_size * sep_size * pp_size)
-        + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
-    )
+        seed_offset += paddle.distributed.get_world_size()
+        local_seed = (
+            seed_offset
+            + mp_rank
+            + sep_rank * (mp_size)
+            + pp_rank * (mp_size * sep_size)
+            + dp_rank * (mp_size * sep_size * pp_size)
+            + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
+        )
+    else:
+        assert sep_size == 1, f"When cp_size != 1, sep_size must be 1, but get sep_size = {sep_size}"
+        global_seed = (
+            seed_offset
+            + pp_rank * (mp_size * cp_size)
+            + dp_rank * (mp_size * cp_size * pp_size)
+            + sharding_rank * (mp_size * cp_size * pp_size * dp_size)
+        )
+        seed_offset += paddle.distributed.get_world_size()
+        local_seed = (
+            seed_offset
+            + mp_rank
+            + cp_rank * mp_size
+            + pp_rank * (mp_size * cp_size)
+            + dp_rank * (mp_size * cp_size * pp_size)
+            + sharding_rank * (mp_size * cp_size * pp_size * dp_size)
+        )
 
     # NOTE: the commented seeds are set only for precision validation
     random_seed = seed + 100 * pp_rank
@@ -201,6 +296,33 @@ def set_seed(seed: int = 1234, topo=None):
         "The global seed is set to {}, local seed is set to {} and "
         "random seed is set to {}.".format(global_seed, local_seed, random_seed)
     )
+
+
+def set_random_seed(
+    seed_: int,
+    data_parallel_random_init: bool = False,
+    te_rng_tracker: bool = False,
+    inference_rng_tracker: bool = False,
+    use_cudagraphable_rng: bool = False,
+):
+    """Set random seed for reproducability."""
+    if seed_ is not None and seed_ > 0:
+        import paddlefleet
+
+        # Ensure that different pipeline MP stages get different seeds.
+        seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
+        # Ensure different data parallel ranks get different seeds
+        if data_parallel_random_init:
+            seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
+        random.seed(seed)
+        np.random.seed(seed)
+        paddle.manual_seed(seed)
+        if paddle.cuda.device_count() > 0:
+            paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
+                seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
+            )
+    else:
+        raise ValueError("Seed ({}) should be a positive integer.".format(seed_))
 
 
 def _switch_mode(mode="dynamic"):
@@ -869,11 +991,11 @@ class TrainerMemoryTracker:
 
         if self.paddle is not None:
             # self.paddle.cuda.reset_peak_memory_stats()?
-            self.paddle.device.cuda.empty_cache()
+            self.paddle_device.empty_cache()
 
         # gpu
         if self.paddle is not None:
-            self.gpu_mem_used_at_start = self.paddle.device.cuda.memory_allocated()
+            self.gpu_mem_used_at_start = paddle_device.memory_allocated()
 
         # cpu
         self.cpu_mem_used_at_start = self.cpu_mem_used()
@@ -897,7 +1019,7 @@ class TrainerMemoryTracker:
         gc.collect()
 
         if self.paddle is not None:
-            self.paddle.device.cuda.empty_cache()
+            paddle_device.empty_cache()
 
         # concepts:
         # - alloc_delta:  the difference of allocated memory between the end and the start
@@ -906,8 +1028,8 @@ class TrainerMemoryTracker:
 
         # gpu
         if self.paddle is not None:
-            self.gpu_mem_used_now = self.paddle.device.cuda.memory_allocated()
-            self.gpu_mem_used_peak = self.paddle.device.cuda.max_memory_allocated()
+            self.gpu_mem_used_now = paddle_device.memory_allocated()
+            self.gpu_mem_used_peak = paddle_device.max_memory_allocated()
             self.gpu[self.cur_stage] = dict(
                 begin=self.gpu_mem_used_at_start,
                 end=self.gpu_mem_used_now,
@@ -938,7 +1060,7 @@ class TrainerMemoryTracker:
 
         if hasattr(self, "gpu_mem_used_peak"):
             metrics["gpu_mem_max_memory_allocated"] = self.gpu_mem_used_peak
-            metrics["gpu_mem_max_memory_reserved"] = self.paddle.device.cuda.max_memory_reserved()
+            metrics["gpu_mem_max_memory_reserved"] = paddle_device.max_memory_reserved()
 
         # since we don't have a way to return init metrics, we push them into the first of train/val/predict
         stages = [stage]
@@ -1501,176 +1623,78 @@ def init_nccl_config(nccl_comm_group_config, strategy):
     return strategy
 
 
-# TODO(): refine later.
-def save_full_param_tmp(
-    itr,
-    save_dir: str,
-    rank: int,
-    moe_sharding_world_size: int,
-    max_shard_size: str = "2GB",
-    num_saver_ranks: int = 8,
-) -> None:
-    """
-    Saves model weights from an iterator into shards, supporting max shard size
-    and a limited number of saver ranks.
+class HFFormatFullParamSaver:
+    def __init__(
+        self,
+        model,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        self.model = model
+        self.aoa_config = aoa_config
+        self.h_group = h_group
+        self.v_group = v_group
+        self.num_splits = num_splits
+        self.shard_idx = shard_idx
+        self.saved_in_one_node = saved_in_one_node
+        self.memory_growth_threshold = memory_growth_threshold
+        self.determin_saver_based_group()
 
-    Only ranks less than `num_saver_ranks` will perform disk I/O. All other ranks
-    will iterate through the data to maintain synchronization but will not save.
-    The parameter distribution logic is based on `num_saver_ranks`, ensuring all
-    parameters are handled by a designated saver rank.
+    def get_full_param_iter(self):
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
 
-    Args:
-        itr (Iterator): An iterator that yields (param_key, param_tensor).
-        save_dir (str): The directory where shard files will be saved.
-        rank (int): The rank of the current process.
-        moe_sharding_world_size (int): The total number of processes.
-        max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
-        num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
-    """
+            param_iter = self.model.full(
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = self.model.full(aoa_config=self.aoa_config)
+        return param_iter
 
-    # 1. Non-saver ranks simply consume the iterator to stay in sync.
-    if rank >= num_saver_ranks:
-        logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Consuming iterator for synchronization...")
-        for _ in itr:
-            pass
-        logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Iterator consumption complete.")
-        return
+    def determin_saver_based_group(self):
+        self.num_saver_ranks = paddle.distributed.get_world_size()
+        self.rank = paddle.distributed.get_rank()
 
-    max_shard_size_bytes = _parse_size(max_shard_size)
-    logger.info(
-        f"[Rank {rank}/{moe_sharding_world_size}] (Saver) Initializing save. "
-        f"Max shard size set to: {max_shard_size_bytes / 1024**3:.2f} GB"
-    )
+        if self.h_group and self.v_group:
+            self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
+            self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
 
-    os.makedirs(save_dir, exist_ok=True)
+        if self.saved_in_one_node:
+            local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
+            self.num_saver_ranks = min(local_world_size, self.num_saver_ranks)
 
-    current_shard_state_dict = {}
-    current_shard_size_bytes = 0
-    sub_shard_index = 0
-
-    def _save_current_shard():
-        nonlocal sub_shard_index, current_shard_state_dict, current_shard_size_bytes
-        if not current_shard_state_dict:
-            return
-
-        # Filename includes the main shard number (rank) and the sub-shard index
-        cur_rank = paddle.distributed.get_rank()
-        shard_filename = f"shard_{cur_rank}-{sub_shard_index}.safetensors"
-        save_path = os.path.join(save_dir, shard_filename)
-
-        logger.info(
-            f"[Rank {rank}/{moe_sharding_world_size}] Saving sub-shard {sub_shard_index}... "
-            f"Size: {current_shard_size_bytes / 1024**2:.2f} MB, "
-            f"Params: {len(current_shard_state_dict)}, "
-            f"Path: {save_path}"
+    def save_checkpoint(self, path, max_shard_size="16GB"):
+        total_saved_size = save_full_param(
+            itr=self.get_full_param_iter(),
+            save_dir=path,
+            rank=self.rank,
+            moe_sharding_world_size=self.num_saver_ranks,
+            max_shard_size=max_shard_size,
+            num_saver_ranks=self.num_saver_ranks,
         )
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
 
-        save_file(current_shard_state_dict, save_path)
-
-        # Reset for the next shard
-        sub_shard_index += 1
-        current_shard_state_dict = {}
-        current_shard_size_bytes = 0
-
-    logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Starting to process the weight iterator...")
-
-    total_size = 0
-
-    for i, (param_key, param) in enumerate(itr):
-        param_size_bytes = param.numel() * param.element_size()
-        total_size += param_size_bytes.item()
-        if i % num_saver_ranks == rank:
-            if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
-                _save_current_shard()
-
-            current_shard_state_dict[param_key] = param
-            current_shard_size_bytes += param_size_bytes
-
-            if current_shard_size_bytes >= max_shard_size_bytes:
-                _save_current_shard()
-    _save_current_shard()
-    logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Saver) All shards saved successfully.")
-    return total_size
-
-
-# TODO(): refine later.
-def replace_name_and_gen_index_tmp(path, cur_rank_total_size):
-    index_mapping = {}
-    cur_rank = paddle.distributed.get_rank()
-    safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
-    files_num = len(safetensor_files)
-    all_files_num = []
-    paddle.distributed.all_gather_object(all_files_num, files_num)
-    total_files_num = sum(all_files_num)
-
-    all_sizes = []
-    paddle.distributed.all_gather_object(all_sizes, cur_rank_total_size)
-    total_size = sum(all_sizes)
-
-    start_idx = []
-    acc = 1
-    for files_num in all_files_num:
-        start_idx.append(acc)
-        acc += files_num
-
-    env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
-    env_local_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
-    assert env_local_rank >= 0
-
-    cur_file_index = start_idx[cur_rank] // env_local_size
-    total_files_num = total_files_num // env_local_size
-
-    total_size = total_size // env_local_size
-
-    index_mapping = {}
-    if env_local_rank == 0:
-        for file in safetensor_files:
-            cur_file_index += 1
-            file_path = os.path.join(path, file)
-            new_file_name = f"model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
-            with safe_open(file_path, framework="np") as f:
-                for key in f.keys():
-                    index_mapping[key] = new_file_name
-            new_file_path = os.path.join(path, new_file_name)
-            os.rename(file_path, new_file_path)
-
-    index_mapping_list = []
-    paddle.distributed.all_gather_object(index_mapping_list, index_mapping)
-    index_mapping = {}
-    for mapping in index_mapping_list:
-        index_mapping.update(mapping)
-
-    if env_local_rank == 0:
-        index_file_name = "model.safetensors.index.json"
-        index_infos = {}
-        index_infos["metadata"] = {}
-        index_infos["metadata"]["total_size"] = total_size
-        index_infos["weight_map"] = dict(sorted(index_mapping.items()))
-        with open(os.path.join(path, index_file_name), "w") as f:
-            json.dump(index_infos, f, indent=4)
-
-
-def save_hf_checkpoint(
-    model,
-    aoa_config,
-    h_group,
-    v_group,
-    num_splits,
-    shard_idx,
-    path,
-):
-    itr = model.full(
-        aoa_config=aoa_config, h_group=h_group, v_group=v_group, num_splits=num_splits, shard_idx=shard_idx
-    )
-    num_saver_ranks = h_group.nranks * v_group.nranks
-    rank = h_group.rank + v_group.rank * h_group.nranks
-    total_saved_size = save_full_param_tmp(
-        itr=itr,
-        save_dir=path,
-        rank=rank,
-        moe_sharding_world_size=num_saver_ranks,
-        max_shard_size="16GB",
-        num_saver_ranks=num_saver_ranks,
-    )
-    paddle.distributed.barrier()
-    replace_name_and_gen_index_tmp(path, total_saved_size)
+        # TODO(): fix total size
+        all_sizes = []
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.all_gather_object(all_sizes, total_saved_size)
+        else:
+            all_sizes.append(total_saved_size)
+        total_size = sum(all_sizes)
+        replace_name_and_gen_index(path, total_size)
+        return total_saved_size

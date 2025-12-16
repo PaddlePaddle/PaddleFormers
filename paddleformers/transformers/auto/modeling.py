@@ -52,14 +52,12 @@ __all__ = [
 
 MAPPING_NAMES = OrderedDict(
     [
-        ("Bert", "bert"),
-        ("DeepseekV2", "deepseek_v2"),
         ("DeepseekV3", "deepseek_v3"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoeForConditionalGeneration", "ernie4_5_moe_vl"),
+        ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
-        ("QWen", "qwen"),
         ("Qwen2", "qwen2"),
         ("Qwen2_5_VL", "qwen2_5_vl"),
         ("Qwen2Moe", "qwen2_moe"),
@@ -216,6 +214,9 @@ class _BaseAutoModelClass:
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
         try:
             model_class = getattr(import_class, init_class)
+            return model_class
+        except AttributeError:
+            model_class = getattr(import_class, init_class + "Fleet")
             return model_class
         except AttributeError as err:
             try:
