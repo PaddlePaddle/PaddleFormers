@@ -337,6 +337,7 @@ class Qwen25VLVisionProvider(TransformerConfig):
     fullatt_block_indexes: List[int] = field(default_factory=lambda: [7, 15, 23, 31])
     model_version: str = "qwen25-vl"
     fp8:bool = False
+    high_precision_rope: bool = True
 
     def provide(self) -> "Qwen25VisionModel":
         # pylint: disable=C0115,C0116
