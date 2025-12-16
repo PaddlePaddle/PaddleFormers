@@ -828,3 +828,132 @@ class Qwen3VLTextTransformerBlock(TransformerBlock):
         local_this = hidden_states[visual_pos_masks, :] + visual_embeds
         hidden_states[visual_pos_masks, :] = local_this
         return hidden_states
+    
+    def _checkpoint_forward(
+        self,
+        hidden_states: paddle.Tensor,
+        attention_mask: paddle.Tensor,
+        context: paddle.Tensor,
+        context_mask: paddle.Tensor,
+        rotary_pos_emb: paddle.Tensor,
+        attentioin_bias: paddle.Tensor,
+        packed_seq_params: PackedSeqParams,
+        deepstack_visual_embeds: paddle.Tensor,
+        visual_pos_masks: paddle.Tensor,
+    ):
+        def custom(start: int, end: int):
+            def custom_forward(
+                hidden_states, attention_mask, context, context_mask, rotary_pos_emb,
+                deepstack_visual_embeds, visual_pos_masks
+            ):
+                for index in range(start, end):
+                    packed_seq_params_now = packed_seq_params
+                    layer = self._get_layer(index)
+                    
+                    hidden_states, context = layer(
+                        hidden_states=hidden_states,
+                        attentioin_mask=attention_mask,
+                        context=context,
+                        context_mask=context_mask,
+                        rotary_pos_emb=rotary_pos_emb,
+                        attentioin_bias=attentioin_bias,
+                        inference_params=None,
+                        packed_seq_params=packed_seq_params_now,
+                    )
+                    if deepstack_visual_embeds is not None and index in range(len(deepstack_visual_embeds)):
+                        hidden_states = self._deepstack_process(
+                            hidden_states,
+                            visual_pos_masks,
+                            deepstack_visual_embeds[index],
+                        )
+                return hidden_states, context
+            return custom_forward
+        
+        def checkpoint_handler(forward_func):
+            if self.config.fp8:
+                return te_checkpoint(
+                    forward_func,
+                    self.config.distribute_saved_activations,
+                    tensor_parallel.random.get_cuda_rng_tracker,
+                    parallel_state.get_tensor_model_parallel_group(),
+                    hidden_states,
+                    attention_mask,
+                    context,
+                    context_mask,
+                    rotary_pos_emb,
+                    deepstack_visual_embeds,
+                    visual_pos_masks
+                )
+            else:
+                return tensor_parallel.checkpoint(
+                    forward_func,
+                    self.config.distribute_saved_activations,
+                    hidden_states,
+                    attention_mask,
+                    context,
+                    context_mask,
+                    rotary_pos_emb,
+                    deepstack_visual_embeds,
+                    visual_pos_masks,
+                )
+        
+        if self.config.recompute_method == "uniform":
+            layer_index = 0
+            while layer_index < self.num_layers_per_pipeline_rank:
+                hidden_states, context = checkpoint_handler(
+                    custom(layer_index, layer_index + self.config.recompute_num_layers),
+                )
+        
+        elif self.config.recompute_method == "block":
+            recompute_skip_num_layers = 0
+            for layer_index in range(self.num_layers_per_pipeline_rank):
+                # Skip recomputation when input grad computation is not needed.
+                # Need to have at least one input tensor with gradient computation
+                # for re-enterant autograd engine.
+                if self.config.fp8 and not hidden_states.requires_grad:
+                    recompute_skip_num_layers += 1
+                if (
+                    layer_index >= recompute_skip_num_layers
+                    and layer_index < self.config.recompute_num_layers + recompute_skip_num_layers
+                ):
+                    hidden_states, context = checkpoint_handler(custom(layer_index, layer_index + 1))
+                else:
+                    hidden_states, context = custom(layer_index, layer_index + 1)(
+                        hidden_states, attention_mask, context, context_mask, rotary_pos_emb
+                    )
+        
+        else:
+            raise ValueError(f"Invalid activation recompute method: {self.config.recompute_method}")
+
+
+class Qwen3VLTextRotaryEmbedding(nn.Module):
+    def __init__(
+        self, config: TransformerConfig,
+    ):
+        super().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
+        
+        self.config = config
+        
+        self.rope_type = self.config.rope_parameters["rope_type"]
+        
+
+
+class Qwen3VLTextModel(FleetLayer):
+    def __init__(
+        self,
+        config: TransformerConfig,
+        transformer_layer_spec: LayerSpec,
+    ):
+        super.__init__(config)
+        self.vocab_size = config.vocab_size
+        self.padding_idx = PAD_TOKEN_INDEX
+        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
+        # self.rotary_emb =
+        self.decoder = Qwen3VLTextTransformerBlock(
+            config=config,
+            spec=transformer_layer_spec,
+            pre_process=True,
+            post_process=True,
+        )
