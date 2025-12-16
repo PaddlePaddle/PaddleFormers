@@ -31,6 +31,7 @@ import_structure = {
         "_check_video_is_nested_images",
         "MMPluginMixin",
         "BasePlugin",
+        "ErnieVLPlugin",
         "Qwen2VLPlugin",
         "Qwen3VLPlugin",
         "register_mm_plugin",

@@ -368,6 +368,9 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
 
             image = to_channel_dimension_format(image, data_format, input_channel_dim=input_data_format)  # [C, H, W]
 
+            if image.dtype != "uint8":
+                image = image.astype("bfloat16")
+
             processed_images.append(image)
         patches = np.array(processed_images)
         if data_format == ChannelDimension.LAST:

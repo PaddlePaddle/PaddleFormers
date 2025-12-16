@@ -79,7 +79,7 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
         video_min_pixels: int = 299 * 28 * 28,
         video_max_pixels: int = 1196 * 28 * 28,
         video_target_frames: int = -1,
-        video_frames_sample: str = "leading",
+        video_frames_sample: str = "middle",
         video_max_frames: int = 180,
         video_min_frames: int = 16,
         video_fps: int = 2,

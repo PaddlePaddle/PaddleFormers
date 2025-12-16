@@ -623,5 +623,7 @@ register_template(
     format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
     stop_words=["<|end_of_sentence|>"],
     replace_eos=True,
-    mm_plugin=get_mm_plugin(name="qwen2_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
+    mm_plugin=get_mm_plugin(name="ernie_vl", image_token="<|IMAGE_PLACEHOLDER|>", video_token="<|IMAGE_PLACEHOLDER|>"),
+    template_class=ReasoningTemplate,
+    thought_words=("\n<think>\n", "\n</think>\n\n"),
 )

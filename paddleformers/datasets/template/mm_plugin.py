@@ -23,6 +23,7 @@ import inspect
 import io
 import math
 import os
+import random
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import BinaryIO, Optional
@@ -302,6 +303,237 @@ class BasePlugin(MMPluginMixin):
         r"""Build batched multimodal inputs for VLMs."""
         self._validate_input(processor, images, videos, audios)
         return self._get_mm_inputs(images, videos, audios, processor)
+
+
+@dataclass
+class ErnieVLPlugin(BasePlugin):
+    image_bos_token: str = "<|IMAGE_START|>"
+    image_eos_token: str = "<|IMAGE_END|>"
+    vision_bos_token: str = "<|VIDEO_START|>"
+    vision_eos_token: str = "<|VIDEO_END|>"
+
+    def convert_to_rgb(self, image: Image.Image) -> Image.Image:
+        def has_transparent_background(img):
+            """has_transparent_background"""
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                # Check for any pixel with alpha channel less than 255 (fully opaque)
+                alpha = img.convert("RGBA").split()[-1]
+                if alpha.getextrema()[0] < 255:
+                    return True
+            return False
+
+        def add_white_background(img):
+            """
+            Add a white background to a transparent background image
+            """
+            if img.mode != "RGBA":
+                img = img.convert("RGBA")
+            # Create an image with a white background and the same size as the original image
+            img_white_background = Image.new("RGBA", img.size, (255, 255, 255))
+
+            # Paste the original image onto a white background
+            img_white_background.paste(img, (0, 0), img)
+
+            return img_white_background
+
+        def change_I16_to_L(img):
+            """
+            Convert image from I;16 mode to L mode
+            """
+            # Since the point function in I mode only supports addition, subtraction, and multiplication, the following * (1 / 256) cannot be changed to division.
+            return img.point(lambda i: i * (1 / 256)).convert("L")
+
+        try:
+            if image.mode == "I;16":
+                image = change_I16_to_L(image)
+            if has_transparent_background(image):
+                image = add_white_background(image)
+        except Exception:
+            pass
+        return image.convert("RGB")
+
+    @override
+    def _preprocess_image(self, image, **kwargs):
+        image = self.convert_to_rgb(image)
+        return image
+
+    @override
+    def _get_video_sample_indices(self, video_stream, video_fps, video_maxlen, frames_sample, **kwargs):
+        r"""Compute video sample indices according to fps."""
+        total_frames = video_stream.frames
+        if total_frames == 0:  # infinite video
+            return np.linspace(0, video_maxlen - 1, video_maxlen).astype(np.int32)
+
+        sample_frames = max(1, math.floor(float(video_stream.duration * video_stream.time_base) * video_fps))
+        sample_frames = min(total_frames, video_maxlen, sample_frames)
+
+        assert frames_sample in ["rand", "middle", "leading"]
+        intervals = np.linspace(start=0, stop=total_frames, num=sample_frames + 1).astype(int)
+
+        ranges = []
+        for idx, interv in enumerate(intervals[:-1]):
+            ranges.append((interv, intervals[idx + 1] - 1))
+        if self.video_frames_sample == "rand":
+            try:
+                frame_indices = [random.choice(range(x[0], x[1])) for x in ranges]
+            except Exception:
+                frame_indices = np.random.permutation(total_frames)[:sample_frames]
+                frame_indices.sort()
+                frame_indices = list(frame_indices)
+        elif self.video_frames_sample == "leading":
+            frame_indices = [x[0] for x in ranges]
+        elif self.video_frames_sample == "middle":
+            frame_indices = [(x[0] + x[1]) // 2 for x in ranges]
+        else:
+            raise NotImplementedError
+
+        time_stamps = [frame_idx * video_stream.duration / total_frames for frame_idx in frame_indices]
+        return frame_indices, time_stamps
+
+    @override
+    def _regularize_videos(self, videos, **kwargs):
+        results, time_stamps_per_video = [], []
+        processor = kwargs.get("processor", None)
+        for video in videos:
+            frames = []
+            if _check_video_is_nested_images(video):
+                for frame in video:
+                    if not is_valid_image(frame) and not isinstance(frame, dict) and not os.path.exists(frame):
+                        raise ValueError("Invalid image found in video frames.")
+
+                frames = video
+                time_stamps = [idx / kwargs.get("video_fps", 2.0) for idx in range(len(frames))]
+            else:
+                # container = av.open(video, "r")
+                container = None
+                video_stream = next(stream for stream in container.streams if stream.type == "video")
+                sample_indices, time_stamps = self._get_video_sample_indices(video_stream, **kwargs)
+                container.seek(0)
+                for frame_idx, frame in enumerate(container.decode(video_stream)):
+                    if frame_idx in sample_indices:
+                        frames.append(frame.to_image())
+
+            if len(frames) % 2 != 0:
+                frames.append(frames[-1])
+                time_stamps.append(time_stamps[-1])
+
+            frames = self._regularize_images(frames, **kwargs)["images"]
+            rendered_frames = []
+            for frame, time_stamp in zip(frames, time_stamps):
+                try:
+                    frame = processor.render_frame_timestamp(frame, time_stamp)
+                except:
+                    rendered_frames = frames
+                    break
+                rendered_frames.append(frame)
+
+            results.append(rendered_frames)
+            time_stamps_per_video.append(time_stamps)
+
+        return {"videos": results, "time_stamps_per_video": time_stamps_per_video}
+
+    @override
+    def _get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+    ):
+        image_processor = getattr(processor, "image_processor", None)
+        mm_inputs = {}
+        if len(images) != 0:
+            images = self._regularize_images(
+                images,
+                image_max_pixels=getattr(processor, "max_pixels", 28 * 28 * 1280),
+                image_min_pixels=getattr(processor, "min_pixels", 56 * 56),
+            )["images"]
+            mm_inputs.update(
+                image_processor(
+                    images=images,
+                    # do_rescale=False,
+                    # do_normalize=False,
+                    return_tensors="pd",
+                )
+            )
+
+            # images = mm_inputs["pixel_values"]
+            # print("images: ", images)
+            # exit()
+            # print("image_processor.rescale_factor: ", image_processor.rescale_factor)
+            # print("image_processor.image_mean: ", image_processor.image_mean)
+            # print("image_processor.image_std: ", image_processor.image_std)
+            # images = image_processor.rescale_factor * images.astype("float32")
+            # images = (images - image_processor.image_mean) / image_processor.image_std
+            # images = images.astype("bfloat16")
+            # print("images: ", images)
+
+        if len(videos) != 0:
+            video_data = self._regularize_videos(
+                videos,
+                image_max_pixels=getattr(processor, "video_max_pixels", 28 * 28 * 1280),
+                image_min_pixels=getattr(processor, "video_min_pixels", 56 * 56),
+                video_fps=getattr(processor, "video_fps", 2.0),
+                video_maxlen=getattr(processor, "video_maxlen", 180),
+                frames_sample=getattr(processor, "frames_sample", "middle"),
+                processor=processor,
+            )
+            mm_inputs.update(image_processor(images=None, videos=video_data["videos"], return_tensors="pd"))
+            temporal_patch_size: int = getattr(image_processor, "temporal_patch_size", 2)
+            if "second_per_grid_ts" in processor.model_input_names:
+                mm_inputs["second_per_grid_ts"] = [temporal_patch_size / fps for fps in video_data["fps_per_video"]]
+
+        return mm_inputs
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        num_image_tokens, num_video_tokens = 0, 0
+        messages = deepcopy(messages)
+        image_processor = getattr(processor, "image_processor")
+
+        merge_length = getattr(image_processor, "merge_size") ** 2
+        if self.expand_mm_tokens:
+            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            video_grid_thw = mm_inputs.get("video_grid_thw", [])
+        else:
+            image_grid_thw = [None] * len(images)
+            video_grid_thw = [None] * len(videos)
+
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                image_seqlen = (
+                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                )
+                content = content.replace(
+                    IMAGE_PLACEHOLDER,
+                    f"Picture {num_image_tokens + 1}:{self.image_bos_token}{self.image_token * image_seqlen}{self.image_eos_token}",
+                    1,
+                )
+                num_image_tokens += 1
+
+            while VIDEO_PLACEHOLDER in content:
+                video_seqlen = video_grid_thw[num_video_tokens].prod() // merge_length if self.expand_mm_tokens else 1
+                content = content.replace(
+                    VIDEO_PLACEHOLDER,
+                    f"Video {num_video_tokens + 1}:{self.vision_bos_token}{self.video_token * video_seqlen}{self.vision_eos_token}",
+                    1,
+                )
+                num_video_tokens += 1
+
+            message["content"] = content
+
+        return messages
 
 
 @dataclass
@@ -695,6 +927,7 @@ class GLM4VPlugin(Qwen2VLPlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
