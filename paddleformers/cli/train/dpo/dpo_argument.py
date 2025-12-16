@@ -20,7 +20,8 @@ from paddleformers.trainer import TrainingArguments
 from paddleformers.trainer.trainer_utils import IntervalStrategy
 from paddleformers.trainer.utils.doc import add_start_docstrings
 from paddleformers.transformers.configuration_utils import llmmetaclass
-from paddleformers.trl import DataConfig
+
+from .data_config import DataConfig
 
 
 @dataclass

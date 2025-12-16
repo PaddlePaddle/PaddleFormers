@@ -28,14 +28,15 @@ from paddle.io import BatchSampler, DataLoader, DistributedBatchSampler
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..data import DataCollator, DataCollatorForSeq2Seq
-from ..trainer import Trainer
-from ..trainer.trainer_callback import TrainerCallback
-from ..trainer.trainer_utils import EvalPrediction, has_length
-from ..transformers import AutoModelForCausalLM, AutoTokenizer
-from ..transformers.model_utils import PretrainedModel
-from ..utils.log import logger
-from .extras.dataset_formatting import get_formatting_func_from_dataset
+from paddleformers.data import DataCollator, DataCollatorForSeq2Seq
+from paddleformers.trainer import Trainer
+from paddleformers.trainer.trainer_callback import TrainerCallback
+from paddleformers.trainer.trainer_utils import EvalPrediction, has_length
+from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
+from paddleformers.transformers.model_utils import PretrainedModel
+from paddleformers.utils.log import logger
+
+from .dataset_formatting import get_formatting_func_from_dataset
 from .sft_config import SFTConfig
 
 __all__ = ["SFTTrainer"]

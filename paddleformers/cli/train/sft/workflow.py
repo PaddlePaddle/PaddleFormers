@@ -62,13 +62,9 @@ from paddleformers.transformers import (
     LlamaTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
-from paddleformers.trl import SFTTrainer
-from paddleformers.trl.llm_utils import compute_metrics, get_lora_target_modules
-from paddleformers.trl.mllm_utils import (
-    freeze_model_parameters,
-    get_multimodel_lora_target_modules,
-)
 from paddleformers.utils.log import logger
+
+from .sft_trainer import SFTTrainer
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "False"
@@ -78,6 +74,12 @@ from paddleformers.cli.hparams import (
     FinetuningArguments,
     GeneratingArguments,
     ModelArguments,
+)
+from paddleformers.cli.utils import (
+    compute_metrics,
+    freeze_model_parameters,
+    get_lora_target_modules,
+    get_multimodel_lora_target_modules,
 )
 
 
