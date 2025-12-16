@@ -1631,19 +1631,16 @@ class TrainingArguments:
         default=True,
         metadata={"help": "Offload FP8 expert weights."},
     )
-
     use_cache: bool = field(
         default=False,
         metadata={
             "help": "Whether or not to use cache for the model For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`."
         },
     )
-
     load_from_hf: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to load a checkpoint in the HuggingFace format."},
     )
-
     flex_ckpt_comm_method: Optional[str] = field(
         default="broadcast",
         metadata={
@@ -1653,6 +1650,10 @@ class TrainingArguments:
                 'Default is "broadcast".'
             )
         },
+    )
+    deterministic_mode: bool = field(
+        default=False,
+        metadata={"help": "Whether to use deterministic mode."},
     )
 
     replicate_saved_into_local: Optional[bool] = field(
