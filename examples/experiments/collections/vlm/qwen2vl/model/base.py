@@ -52,7 +52,7 @@ MODEL_CONFIG_ATTR = [
     'use_bias',
     'add_qkv_bias',
     'gated_linear_unit',
-    'activation_func',
+    'hidden_act',
     'n_routed_experts',
     'rotary_interleaved',
     'sliding_window',
@@ -84,9 +84,9 @@ class MultimodalProjectorProvider(TransformerConfig):
     input_size: Optional[int] = 1024
     hidden_size: int = 1024
     intermediate_size: int = 1024
-    activation_func: Callable = F.gelu
+    hidden_act: Callable = F.gelu
     bias: bool = True
-    bias_activation_fusion: bool = True
+    bias_activation_fusion: bool = False
     num_hidden_layers: int = 1  # placeholder, NOT used!
     num_attention_heads: int = 8  # placeholder, NOT used!
 
@@ -156,7 +156,8 @@ class Qwen2Provider(GPTModelProvider):
     """
 
     normalization: str = "RMSNorm"
-    activation_func: Callable = F.silu
+    fuse_rms_norm: bool = True
+    hidden_act: Callable = F.silu
     gated_linear_unit: bool = True
     use_bias: bool = False
     add_qkv_bias: bool = True
@@ -169,6 +170,10 @@ class Qwen2Provider(GPTModelProvider):
     rms_norm_eps: float = 1e-6
     rotary_base: float = 1000000.0
     position_embedding_type: str = "rope"
+    multimodal_embedding: bool = False
+    image_token_id: int = IMAGE_TOKEN_INDEX
+    video_token_id: int = VIDEO_TOKEN_INDEX
+    # mrope_section = [16,28,28]
 
 def qwen2vl_data_step(dataloader_iter, model_version) -> Dict[str, paddle.Tensor]:
     """Qwen2VL Data Step"""
@@ -258,7 +263,7 @@ class Qwen2VLVisionProvider(TransformerConfig):
     attention_dropout: float = 0.0
     intermediate_size: int = 5120  # 1280 * 4
     gated_linear_unit: bool = True
-    activation_func: Callable = paddle.nn.functional.gelu
+    hidden_act: Callable = paddle.nn.functional.gelu
     head_dim: int = 80
     num_key_value_heads: int = 16
     layernorm_zero_centered_gamma: bool = False
@@ -317,7 +322,7 @@ class Qwen25VLVisionProvider(TransformerConfig):
     attention_dropout: float = 0.0
     intermediate_size: int = 3420
     gated_linear_unit: bool = True
-    activation_func: Callable = paddle.nn.functional.silu  # Qwen 2.5-VL uses swiGLU as activation function
+    hidden_act: Callable = paddle.nn.functional.silu  # Qwen 2.5-VL uses swiGLU as activation function
     head_dim: int = 80
     num_key_value_heads: int = 16
     apply_query_key_layer_scaling: bool = False
@@ -325,13 +330,13 @@ class Qwen25VLVisionProvider(TransformerConfig):
     bias_dropout_fusion: bool = False
     attention_softmax_in_fp32: bool = True
     normalization: str = 'RMSNorm'  # set the normalization to RMSNorm for Qwen2.5-VL
+    fuse_rms_norm: bool = True
     apply_rope_fusion: bool = True
     rms_norm_eps: float = 1e-6
     transformer_layer_spec: LayerSpec = None
     fullatt_block_indexes: List[int] = field(default_factory=lambda: [7, 15, 23, 31])
     model_version: str = "qwen25-vl"
     fp8:bool = False
-    apply_vision_rope: bool = True
 
     def provide(self) -> "Qwen25VisionModel":
         # pylint: disable=C0115,C0116
@@ -432,7 +437,7 @@ class Qwen2VLProvider(TransformerConfig):
         self.language_transformer_config.tp_comm_overlap = self.tp_comm_overlap
         self.vision_transformer_config.tp_comm_overlap = False
         self.vision_projection_config.tp_comm_overlap = False
-
+        self.__post_init__()
         # During fake lightning initialization, pass 0 to bypass the assertion that vp_stage must be
         # non-None when using virtual pipeline model parallelism
         vp_stage = vp_stage or 0
@@ -463,6 +468,7 @@ class Qwen2VLProvider(TransformerConfig):
             # https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct/blob/main/config.json
             # https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct/blob/main/config.json
             self.language_transformer_config.mrope_section = [16, 24, 24]
+            self.language_transformer_config.multimodal_embedding = True 
 
 class MCoreQwen2VLModel(MCoreLLaVAModel):
     """Qwen2VL Model Base Model Class"""
@@ -799,14 +805,6 @@ class MCoreQwen2VLModel(MCoreLLaVAModel):
 
             window_index = self.vision_model.window_index if self.model_version == "qwen25-vl" else None
 
-            # if self._drop_vision_class_token:
-            #     class_token_len = getattr(self.vision_model, "class_token_len", 1)
-            #     image_embeddings = image_embeddings[:, class_token_len:, :]
-            #     if self.model_version == "qwen25-vl":
-            #         window_index = [idx - class_token_len for idx in window_index if idx >= class_token_len]
-            #     else:
-            #         window_index = None
-
             image_embeddings = self.vision_projection(image_embeddings)
             if self.model_version == "qwen25-vl":
                 reverse_indices = paddle.argsort(window_index)
@@ -834,64 +832,22 @@ class MCoreQwen2VLModel(MCoreLLaVAModel):
         # language_embeddings is a container for text, image and video embeddings; to feed to decoder
         language_embeddings = None
 
-        language_seq_len = input_ids.shape[1]
-        # chunk if input seq_len > _language_max_sequence_length
-        if language_seq_len > self._language_max_sequence_length:
-            input_ids = input_ids[:, : self._language_max_sequence_length]
-            if position_ids is not None:
-                position_ids = position_ids[:, :, : self._language_max_sequence_length]
-
-            if labels is not None and labels.shape[1] > self._language_max_sequence_length:
-                labels = labels[:, : self._language_max_sequence_length]
-                loss_mask = loss_mask[:, : self._language_max_sequence_length]
-
-        # Pipeline parallel expects fixed input size. Check if we need to pad.
-        if self._language_is_pipeline_parallel and language_seq_len < self._language_max_sequence_length:
-            padded_seq_len = self._language_max_sequence_length - language_seq_len
-            input_ids = paddle.nn.functional.pad(input_ids, (0, padded_seq_len))
-            if position_ids is not None:
-                position_ids = paddle.nn.functional.pad(position_ids, (0, padded_seq_len))
-
         if position_ids is None and input_ids is not None:
             position_ids, _ = self.get_rope_index(
                 input_ids, image_grid_thw, video_grid_thw, second_per_grid_ts, attention_mask
             )
 
-        # Create the language_embeddings (if this is the first language model stage).
-        if self.pre_process:
-
-            # Note: This adds absolute position embedding but not RoPE.
-            # Each image is counted as one position.
-            # RoPE is added in language_model forward. Each image embedding is one position.
-            input_ids_text = input_ids.clone()
-            # MultiModal Token indices are assumed to be values
-            input_ids_text[input_ids_text < 0] = 0
-
-            language_embeddings = self.language_model.embedding(
-                input_ids=input_ids_text, position_ids=None
-            )  # [decoder_seq_len, b, h_language]
-
-            language_embeddings = language_embeddings.transpose(1, 0).contiguous()  # [b, decoder_seq_len, h_language]
-        # # Preprocess input, labels and loss mask.
-        # combined_embeddings, final_labels, final_loss_mask, final_attention_mask = self._preprocess_data(
-        #     input_ids,
-        #     loss_mask=loss_mask,
-        #     labels=labels,
-        #     language_embeddings=language_embeddings,
-        #     image_embeddings=image_embeddings,
-        #     video_embeddings=video_embeddings,
-        #     attention_mask=attention_mask,
-        # )  # [decoder_seq_len, b, h_language], [b, decoder_seq_len], [b, decoder_seq_len]
-        combined_embeddings = self.combine_embedding(input_ids,language_embeddings,image_embeddings,video_embeddings)
-
-        output = self.language_model(
-            input_ids=None,
-            position_ids=position_ids,
-            attention_mask=attention_mask,
-            decoder_input=combined_embeddings,
-            labels=labels,
-            runtime_gather_output=runtime_gather_output,
-        )  # output shape: [batch_size, seq length, vocab_size]
+        input_dict = {
+            "input_ids":input_ids,
+            "position_ids":position_ids,
+            "attention_mask":None,
+            "decoder_input":None,
+            "image_embeds":image_embeddings,
+            "video_embeds":video_embeddings,
+            "labels":labels,
+            "runtime_gather_output":runtime_gather_output,
+        }
+        output = self.language_model(input_dict)  # output shape: [batch_size, seq length, vocab_size]
 
         if labels is None or loss_mask is None:
             return output
@@ -910,27 +866,35 @@ class MCoreQwen2VLModel(MCoreLLaVAModel):
         equal to the length of multimodal features. If the lengths are different, an error is raised.
         """
         if input_ids is None:
+            # 从嵌入中获取图像和视频标记的掩码
             special_image_mask = inputs_embeds == self.language_model.embedding((
                 paddle.to_tensor(IMAGE_TOKEN_INDEX, dtype="int64")
             ))
-            special_image_mask = special_image_mask.all(-1)
+            special_image_mask = special_image_mask.all(-1)  # 确保所有维度匹配
             special_video_mask = inputs_embeds == self.language_model.embedding((
                 paddle.to_tensor(VIDEO_TOKEN_INDEX, dtype="int64")
             ))
             special_video_mask = special_video_mask.all(-1)
         else:
+            # 直接从输入ID中获取图像和视频标记的掩码
             special_image_mask = input_ids == IMAGE_TOKEN_INDEX
             special_video_mask = input_ids == VIDEO_TOKEN_INDEX
-        special_image_mask=special_image_mask.transpose(1,0).unsqueeze(-1)
-        n_image_tokens = special_image_mask.sum()
-        special_image_mask = special_image_mask.expand_as(inputs_embeds)
+        
+        # 处理图像标记掩码
+        special_image_mask=special_image_mask.transpose(1,0).unsqueeze(-1)  # 调整维度
+        n_image_tokens = special_image_mask.sum()  # 计算图像标记数量
+        special_image_mask = special_image_mask.expand_as(inputs_embeds)  # 扩展掩码维度
+        # 验证图像特征数量与标记数量是否匹配
         if image_features is not None and inputs_embeds[special_image_mask].numel() != image_features.numel():
             raise ValueError(
                 f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {image_features.shape[0]}"
             )
+        
+        # 处理视频标记掩码
         special_video_mask=special_video_mask.transpose(1,0).unsqueeze(-1)
         n_video_tokens = special_video_mask.sum()
         special_video_mask = special_video_mask.expand_as(inputs_embeds)
+        # 验证视频特征数量与标记数量是否匹配
         if video_features is not None and inputs_embeds[special_video_mask].numel() != video_features.numel():
             raise ValueError(
                 f"Videos features and video tokens do not match: tokens: {n_video_tokens}, features {video_features.shape[0]}"
@@ -938,174 +902,8 @@ class MCoreQwen2VLModel(MCoreLLaVAModel):
 
         return special_image_mask, special_video_mask
 
-    def combine_embedding(
-            self,
-            input_ids: paddle.Tensor,
-            language_embeddings: Optional[paddle.Tensor] = None,
-            image_embeddings: Optional[paddle.Tensor] = None,
-            video_embeddings: Optional[paddle.Tensor] = None,
-    ):
-        
-        if image_embeddings is not None:
-            image_mask, _ = self.get_placeholder_mask(
-                input_ids, inputs_embeds=language_embeddings, image_features=image_embeddings
-            )
-            combine_embeds = language_embeddings.masked_scatter(image_mask, image_embeddings)
-
-        if video_embeddings is not None:
-            _, video_mask = self.get_placeholder_mask(
-                input_ids, inputs_embeds=language_embeddings, video_features=video_embeddings
-            )
-            combine_embeds  = language_embeddings.masked_scatter(video_mask, video_embeddings)
-
-        return combine_embeds
     # override _preprocess_data() in megatron-lm/megatron/core/models/multimodal/llava_model.py
-    def _preprocess_data(
-        self,
-        input_ids: paddle.Tensor,
-        loss_mask: Optional[paddle.Tensor] = None,
-        labels: Optional[paddle.Tensor] = None,
-        language_embeddings: Optional[paddle.Tensor] = None,
-        image_embeddings: Optional[paddle.Tensor] = None,
-        video_embeddings: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
-        use_inference_kv_cache: Optional[bool] = False,
-        attention_mask: Optional[paddle.Tensor] = None,
-    ):
-        """
-        MCoreQwen2VLModel uses its own version of _preprocess_data instead of MCoreLLaVAModel's (in
-        megatron-lm/megatron/core/models/multimodal/llava_model.py)
-
-        This function handles several data preprocess requirements:
-            - merge image and/or video embeddings into language embedding
-            - padding inputs variables (e.g. labels/loss masks) for pipeline_parallel case
-            - truncate inputs variables (e.g. labels/loss masks) if exceeding max seq length
-
-        This function won't shift labels as forward() and _preprocess_data() in MCoreQwen2VLModel
-        expect labels from input arguments already handle this shift.
-
-        About merging image/video embeddings: language_embeddings may include num of imgage_token
-        placeholders, and this function will put each imgage_token from image_embeddings into
-        placeholder within language_embeddings(1:1 mapping), when image_embeddings/video_embeddings
-        is available and it's the 1st pipeline_parallel stage
-        """
-
-        assert self.add_decoder, "input text preprocessing is only needed for the language model"
-
-        # No pre- or postprocessing needed.
-        # With pipeline parallel > 2, this means a chunk in the middle of the model.
-        if not self.pre_process and not self.post_process:
-            return None, None, None, None
-
-        # If using the inference KV cache, the image tokens are already computed.
-        if use_inference_kv_cache:
-            return language_embeddings, loss_mask, labels, attention_mask
-
-        # img_seq_len = self._img_seq_len
-        batch_size, language_seq_len = input_ids.shape
-
-        has_labels = labels is not None
-        if has_labels:
-            assert (
-                labels.shape == loss_mask.shape
-            ), f"mismatching labels shape {labels.shape} and loss mask shape {loss_mask.shape}"
-
-        has_images = image_embeddings is not None
-        has_videos = video_embeddings is not None
-
-        #
-        # Create the final input embedding (if this is the first language model stage).
-        #
-        final_embedding = None
-        if self.pre_process:
-            final_embedding = language_embeddings
-
-            # merge image embeddings into language_embeddings
-            if has_images:
-                # has images, merge image_embeddings into final_embedding
-                n_image_tokens = (input_ids == IMAGE_TOKEN_INDEX).sum().item()
-                n_image_features = image_embeddings.shape[0]
-                print("n_image_tokens ",n_image_tokens)
-                print("input_ids ",input_ids,input_ids == IMAGE_TOKEN_INDEX)
-                if n_image_tokens != n_image_features:
-                    raise ValueError(
-                        f"Image features and image tokens do not match: tokens: {n_image_tokens}, "
-                        f"features {n_image_features}"
-                    )
-
-                image_mask = (
-                    (input_ids == IMAGE_TOKEN_INDEX)
-                    .unsqueeze(-1)
-                    .expand_as(final_embedding)
-                    .to(final_embedding.place)
-                )
-                image_embeddings = image_embeddings.to(final_embedding.place, final_embedding.dtype)
-                final_embedding = final_embedding.masked_scatter(
-                    image_mask, image_embeddings
-                )  #  [b, seq_len, h_language]
-
-            # merge video embeddings into final_embedding
-            if has_videos:
-                # has images, merge image_embeddings into final_embedding
-                n_video_tokens = (input_ids == VIDEO_TOKEN_INDEX).sum().item()
-                n_video_features = video_embeddings.shape[0]
-
-                if n_video_tokens != n_video_features:
-                    raise ValueError(
-                        f"Video features and video tokens do not match: tokens: {n_video_tokens}, "
-                        f"features {n_video_features}"
-                    )
-
-                video_mask = (
-                    (input_ids == VIDEO_TOKEN_INDEX)
-                    .unsqueeze(-1)
-                    .expand_as(final_embedding)
-                    .to(final_embedding.place)
-                )
-                video_embeddings = video_embeddings.to(final_embedding.place, final_embedding.dtype)
-                final_embedding = final_embedding.masked_scatter(video_mask, video_embeddings)
-
-        #
-        # Create the final labels and loss mask (if this is the last language model stage).
-        #
-        final_labels, final_loss_mask = None, None
-
-        if self.post_process and has_labels:
-
-            # Pipeline parallel expects fixed input size. Check if we need to pad
-            if self._language_is_pipeline_parallel and labels.shape[1] < self._language_max_sequence_length:
-                max_seq_len = self._language_max_sequence_length
-                final_labels = paddle.full(
-                    (batch_size, max_seq_len), IGNORE_INDEX, dtype=labels.dtype, place=labels.place
-                )
-                final_loss_mask = paddle.full(
-                    (batch_size, max_seq_len), 0, dtype=loss_mask.dtype, place=loss_mask.place
-                )
-                final_labels[:, : labels.shape[1]] = labels[:, :]
-                final_loss_mask[:, : labels.shape[1]] = loss_mask[:, :]
-            else:
-                final_labels, final_loss_mask = labels, loss_mask
-
-        if final_embedding is not None and final_labels is not None:
-            assert (
-                final_embedding.shape[:2] == final_labels.shape == final_loss_mask.shape
-            ), "unexpected shapes after data preprocessing"
-
-        if final_embedding is not None:
-            # Truncate if exceeding the language model's max sequence length.
-            if final_embedding.shape[1] > self._language_max_sequence_length:
-                final_embedding = final_embedding[:, : self._language_max_sequence_length]
-
-            # TODO: check and add self.context_parallel_lm to MCoreQwen2VLModel
-            # # Transpose to [s,b,h] if not using CP because CP Sharding expects seq in dim=1
-            final_embedding = final_embedding.transpose(1, 0).contiguous()  #  [seq_len, bs, h_language]
-
-        truncate_labels = final_labels is not None and final_labels.shape[1] > self._language_max_sequence_length
-        if truncate_labels:
-            final_labels = final_labels[:, : self._language_max_sequence_length]
-            final_loss_mask = final_loss_mask[:, : self._language_max_sequence_length]
-        return final_embedding, final_labels, final_loss_mask, attention_mask
-
+    # donot use in formers
     def set_input_tensor(self, input_tensor) -> None:
         """Set model chunk input tensor."""
         # This is usually handled in schedules.py but some inference code still

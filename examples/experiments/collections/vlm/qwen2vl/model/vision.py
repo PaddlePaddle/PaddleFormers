@@ -65,8 +65,6 @@ class Qwen25VLVisionTransformerBlock(TransformerBlock):
         context: Optional[Tensor] = None,
         context_mask: Optional[Tensor] = None,
         rotary_pos_emb: Optional[Tensor] = None,
-        rotary_pos_cos: Optional[Tensor] = None,
-        rotary_pos_sin: Optional[Tensor] = None,
         attention_bias: Optional[Tensor] = None,
         inference_context = None,
         packed_seq_params: Optional[PackedSeqParams] = None,
@@ -82,7 +80,7 @@ class Qwen25VLVisionTransformerBlock(TransformerBlock):
         self-attention, optional cross-attention, and feed-forward operations.
 
         Args:
-            hidden_states (Union[Tensor, WrappedTensor]): Input tensor of shape [s, b, h]
+            hidden_states (Union[Tensor, WrappedTensor]): Input tensor of shape [b, s, h]
                 where s is the sequence length, b is the batch size, and h is the hidden size.
                 Can be passed as a WrappedTensor during inference to avoid an obsolete
                 reference in the calling function.
@@ -142,7 +140,7 @@ class Qwen25VLVisionTransformerBlock(TransformerBlock):
         # if we are using other fp8 recipes, then the context manager enter&exit are free
         # we can wrap fp8_context within the for loop over layers, so that we can fine-grained
         # control which layer will be fp8 or bf16
-        print(f"fleet vision {0} hidden_states ",hidden_states._md5sum())
+
         with rng_context:
             # Forward pass.
             if self.config.recompute_granularity == 'full' and self.training:
@@ -164,32 +162,28 @@ class Qwen25VLVisionTransformerBlock(TransformerBlock):
                     else:
                         #use window attention
                         packed_seq_params_now = packed_seq_params
-                    hidden_states, context = layer(
-                        hidden_states=hidden_states,
-                        attention_mask=attention_mask,
-                        context=context,
-                        context_mask=context_mask,
-                        rotary_pos_emb=rotary_pos_emb,
-                        rotary_pos_cos=rotary_pos_cos,
-                        rotary_pos_sin=rotary_pos_sin,
-                        attention_bias=attention_bias,
-                        packed_seq_params=packed_seq_params_now,
-                    )
-
+                    dict_args={
+                        "hidden_states":hidden_states,
+                        "attention_mask":attention_mask,
+                        "context":context,
+                        "context_mask":context_mask,
+                        "rotary_pos_emb":rotary_pos_emb,
+                        "attention_bias":attention_bias,
+                        "packed_seq_params":packed_seq_params_now,
+                    }
+                    res_dict = layer(dict_args)
+                    hidden_states=res_dict["hidden_states"]
+                    context=res_dict["context"]
                     if (
                         paddle.is_grad_enabled()
                         and self.config.cpu_offloading
                         and self.group_prefetch_offload_commit_async is not None
                     ):
                         hidden_states = self.group_prefetch_offload_commit_async(hidden_states)
-                    print(f"fleet vision {l_no} hidden_states ",hidden_states._md5sum())
         # Final layer norm.
         if self.norm is not None:
             hidden_states = self.norm(hidden_states)
-            # TENorm produces a "viewed" tensor. This will result in schedule.py's
-            # deallocate_output_tensor() throwing an error, so a viewless tensor is
-            # created to prevent this.
-            # hidden_states = make_viewless_tensor(inp=hidden_states, requires_grad=True, keep_graph=True)
+
 
         return hidden_states
 
@@ -459,7 +453,7 @@ class Qwen2VisionModel(VisionLayer):
         x = x.view(-1, self.in_channels, self.temporal_patch_size, self.patch_dim, self.patch_dim)
         x = self.conv1(x).view(-1, self.visual_hidden_size)  # [seqlen, hidden_size]
         # add batch dim
-        x = x.unsqueeze(1)  # [seqlen, 1, hidden_size], THD format, bs=1
+        x = x.unsqueeze(0)  # [1, seqlen, hidden_size], THD format, bs=1
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
         # from https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/models/common/embeddings/rotary_pos_embedding.py#L158
         rotary_pos_emb = paddle.concat((rotary_pos_emb, rotary_pos_emb), dim=-1)
@@ -469,7 +463,7 @@ class Qwen2VisionModel(VisionLayer):
         packed_seq_params = self.get_packed_seq_params(grid_thw)
         x = self.decoder(x, attention_mask, rotary_pos_emb=rotary_pos_emb, packed_seq_params=packed_seq_params)
 
-        x = x.squeeze(1).view(-1, self.merge_hidden_size)
+        x = x.squeeze(0).view(-1, self.merge_hidden_size)
         return x
 
 
@@ -689,7 +683,7 @@ class Qwen25VisionModel(VisionLayer):
         x = x.reshape([seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1])
         x = x[window_index, :, :]
         x = x.reshape([seq_len, -1])
-        x = x.unsqueeze(1)
+        x = x.unsqueeze(0)
 
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
         rotary_pos_emb = rotary_pos_emb.reshape([seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1])
@@ -698,23 +692,19 @@ class Qwen25VisionModel(VisionLayer):
 
         # from https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/models/common/embeddings/rotary_pos_embedding.py#L158
         rotary_pos_emb = paddle.concat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        rotary_pos_cos = rotary_pos_emb.cos()
-        rotary_pos_sin = rotary_pos_emb.sin()
         # https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/models/common/embeddings/rotary_pos_embedding.py#L164
-        rotary_pos_emb = rotary_pos_emb[:, None, None, :]
+        rotary_pos_emb = rotary_pos_emb[None ,:, None, :]
 
         packed_seq_params_full = self.get_packed_seq_params(grid_thw)
         packed_seq_params = self.get_packed_seq_params(None, cu_window_seqlens)
-
+        #x: [b,s,h]
         x = self.decoder(
             x,
             attention_mask,
             rotary_pos_emb=rotary_pos_emb,
-            rotary_pos_cos=rotary_pos_cos,
-            rotary_pos_sin=rotary_pos_sin,
             packed_seq_params=packed_seq_params,
             packed_seq_params_full=packed_seq_params_full,
         )
-        x = x.squeeze(1).view(-1, self.merge_hidden_size)
+        x = x.squeeze(0).view(-1, self.merge_hidden_size)
         self.window_index = window_index
         return x

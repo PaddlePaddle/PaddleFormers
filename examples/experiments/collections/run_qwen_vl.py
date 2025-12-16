@@ -2,7 +2,7 @@ import copy
 import re
 import paddle
 from paddleformers.transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, process_vision_info
-
+paddle.seed(42)
 model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
     "Qwen/Qwen2.5-VL-3B-Instruct", convert_from_hf=True,
 ).eval()
@@ -99,7 +99,7 @@ def map_layer_name(original_name):
     mapping_rules = [
         ("model.language_model.layers","language_model"),
         ("model.language_model.embed_tokens.weight","language_model.0.embedding.embed_tokens.weight"),
-        ("model.language_model.norm","language_model.37.norm_cls"),
+        ("model.language_model.norm","language_model.37.norm"),
         ("model.visual.patch_embed.proj","vision_model.conv1"),
         ("model.visual.merger.mlp.0","vision_projection.encoder.up_gate_proj"),
         ("model.visual.merger.mlp.2","vision_projection.encoder.down_proj"),
@@ -142,33 +142,43 @@ print("fleet_model ")
 fleet_state_dict = {}
 
 for name, param in fleet_model.named_parameters():
-    print("fleet ",name,param.name,param.shape)
     fleet_state_dict[name]=param
 
 
-# print(model.language_model)
 for name, param in model.named_parameters():
-    print("formers ",name,param.name,param.shape)
     fleet_name = map_layer_name(name)
     if fleet_name not in fleet_state_dict:
         print(f"name {name} duiying {fleet_name} not found")
         raise ValueError("fuck my life")
+    if "vision_model.decoder.layers.0.mlp.up_gate_proj.weight" in fleet_name:
+        print(name,param._md5sum(),fleet_model.vision_model.decoder.layers[0].mlp.up_gate_proj.weight._md5sum())
     paddle.assign(param,fleet_state_dict[fleet_name])
 
 for name, param in fleet_model.named_parameters():
-    # print(name,param.name,param.shape)
+    if "vision_model.decoder.layers.0.mlp.up_gate_proj.weight" in name:
+       print(name,param._md5sum(),fleet_model.vision_model.decoder.layers[0].mlp.up_gate_proj.weight._md5sum())    
     fleet_state_dict[name]=param
-       
+
 for name, param in model.named_parameters():
     fleet_name = map_layer_name(name)
     if not paddle.equal_all(param.cast('float32'),fleet_state_dict[fleet_name].cast('float32')):
         print(f"name {name} duiying {fleet_name} not equal")
+        raise ValueError("fuck my life twice")
+
+for name, param in fleet_model.named_parameters():
+    if "vision_model.decoder.layers.0.mlp.up_gate_proj.weight" in name:
+        print(name,param._md5sum(),fleet_model.vision_model.decoder.layers[0].mlp.up_gate_proj.weight._md5sum())    
+        break
+print(fleet_model.vision_model.decoder.layers[0].self_attn.o_proj.weight._md5sum())
+print(fleet_model.vision_model.decoder.layers[0].mlp.up_gate_proj.weight._md5sum())
+
+print(inputs)
 
 paddle.seed(42)
 with paddle.no_grad():
-    output = model(**inputs)
-print(output)
+    output_formers = model(**inputs)
 paddle.seed(42)
 with paddle.no_grad():
-    output = fleet_model(**inputs)
-print(output)
+    output_fleet = fleet_model(**inputs)
+print(output_formers['logits'],output_formers['logits']._md5sum())
+print(output_fleet,output_fleet._md5sum())

@@ -7,7 +7,7 @@ unset PADDLE_ELASTIC_TIMEOUT
 export NNODES=1
 export PADDLE_TRAINERS_NUM=1
 export FLAGS_selected_gpus=1
-export Align_Fleet=0
+export Align_Fleet=1
 
 export PYTHONPATH=$PYTHONPATH:../..:../../..:/root/paddlejob/gpfs/zhangweilong/PaddleFleet/src/
 source /root/paddlejob/gpfs/zhangweilong/py310_zwl/bin/activate

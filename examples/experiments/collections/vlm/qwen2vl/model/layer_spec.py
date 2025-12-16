@@ -25,7 +25,7 @@ from paddlefleet.transformer.transformer_layer import TransformerLayer, Transfor
 HAVE_TE = False
 
 from paddlefleet.fusions.fused_layer_norm import FusedLayerNorm
-from paddlefleet.fusions.fused_rms_norm import FusedRmsNorm
+from paddlefleet.transformer.paddle_norm import FusedRMSNorm
 
 def get_layer_spec(is_vit, normalization) -> LayerSpec:
     """Transformer Layer Spec"""
@@ -33,7 +33,7 @@ def get_layer_spec(is_vit, normalization) -> LayerSpec:
     if normalization == "LayerNorm":
         norm = FusedLayerNorm
     elif normalization == "RMSNorm":
-        norm = FusedRmsNorm
+        norm = FusedRMSNorm
     else:
         raise RuntimeError("unknown normalization", normalization)
 
