@@ -28,9 +28,32 @@ import_structure = {
         "remove_paddle_shm_files",
         "set_cuda_environment",
     ],
+    "llm_utils": [
+        "compute_metrics",
+        "get_prefix_tuning_params",
+        "get_lora_target_modules",
+        "pad_batch_data",
+        "dybatch_preprocess",
+        "load_real_time_tokens",
+        "init_chat_template",
+        "get_model_max_position_embeddings",
+        "read_res",
+        "read_res_dynamic_insert",
+        "speculate_read_res",
+        "get_rotary_position_embedding",
+        "init_dist_env",
+        "get_eos_token_id",
+        "set_triton_cache",
+    ],
+    "mllm_utils": [
+        "freeze_model_parameters",
+        "get_multimodel_lora_target_modules",
+    ],
 }
 
 if TYPE_CHECKING:
+    from .llm_utils import *
+    from .mllm_utils import *
     from .process import *
 else:
     sys.modules[__name__] = _LazyModule(
