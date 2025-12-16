@@ -17,10 +17,12 @@ from contextlib import nullcontext
 
 from dataclasses import dataclass
 from doctest import REPORT_NDIFF
+import re
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 from paddlefleet import parallel_state, tensor_parallel
+from paddlefleet.models.gpt.gpt_model import GPTModel
 from paddlefleet.packed_seq_params import PackedSeqParams
 from paddlefleet.process_groups_config import ProcessGroupCollection
 from paddlefleet.spec_utils import LayerSpec
@@ -33,7 +35,7 @@ from paddlefleet.transformer.transformer_block import TransformerBlock, Transfor
 from paddlefleet.transformer.transformer_config import TransformerConfig
 from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
 from paddlefleet.models.vision.multimodal_projector import MultimodalProjector as MCoreMultiModalProjector
-from paddleformers.transformers.masking_utils import create_causal_mask
+from paddleformers.transformers.masking_utils import create_causal_mask_and_row_indices, create_sliding_window_causal_mask_and_row_indices
 from paddleformers.transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from paddleformers.transformers.gpt_provider import GPTModelProvider
 from paddleformers.transformers.cache_utils import Cache
@@ -718,109 +720,26 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
             self.language_model.set_input_tensor(input_tensor[0])
 
 
-class Qwen3VLTextTransformerBlock(TransformerBlock):
-    def __init__(
-        config: TransformerConfig,
-        spec: TransformerBlockSublayersSpec | LayerSpec,
-        post_layer_norm: bool = True,
-        pre_process: bool = True,
-        post_process: bool = True,
-        pg_collection: ProcessGroupCollection | None = None,
-        vp_stage: int | None = None,
-    ) -> None:
-        super().__init__(
-            config,
-            spec=spec,
-            post_layer_norm=post_layer_norm,
-            pre_process=pre_process,
-            post_process=post_process,
-            pg_collection=pg_collection,
-            vp_stage=vp_stage,
-        )
-    
-    def forward(
-        self,
-        hidden_states: paddle.Tensor | WrappedTensor,
-        attention_mask: paddle.Tensor | None,
-        context: paddle.Tensor | None = None,
-        context_mask: paddle.Tensor | None = None,
-        rotary_pos_emb: paddle.Tensor | None = None,
-        rotaty_pos_cos: paddle.Tensor | None = None,
-        rotary_pos_sin: paddle.Tensor | None = None,
-        attention_bias: paddle.Tensor | None = None,
-        inference_context = None,
-        packed_seq_params: PackedSeqParams | None = None,
-        sequence_len_offset: paddle.Tensor | None = None,
-        visual_pos_masks: paddle.Tensor | None = None,
-        deepstack_visual_embeds: paddle.Tensor | None = None,
-        *,
-        inference_params = None,
-    ):
-        inference_context = deprecate_inference_params(inference_context, inference_params)
-        
-        if isinstance(hidden_states, WrappedTensor):
-            hidden_states = hidden_states.unwrap()
-        
-        if not self.pre_process:
-            hidden_states = self.input_tensor
-        
-        # Viewless tensor.
-        # - We only need to create a viewless tensor in the case of micro batch
-        #   size (mbs) == 1, since in this case, 'hidden_states.transpose()'
-        #   above creates a view tensor, and '.contiguous()' is a pass-through.
-        #   For mbs >= 2, '.contiguous()' creates a new tensor, eliminating
-        #   the need to make it viewless.
-        #
-        #   However, we don't explicitly check mbs == 1 here because
-        #   make_viewless_tensor() has negligible overhead when its input
-        #   is already viewless.
-        #
-        # - For the 'else' case above, calling make_viewless_tensor() here is
-        #   likely redundant, since p2p_communication.py (likely originator)
-        #   already creates viewless tensors. That said, make_viewless_tensor()
-        #   is called here to be future-proof and corner-case-proof.
-    
-        # hidden_states = make_viewless_tensor(inp=hidden_states, requires_grad=True, keep_graph=True)
-        
-        if self.config.sequence_parallel:
-            rng_context = tensor_parallel.get_cuda_rng_tracker().fork()
-        else:
-            rng_context = nullcontext()
-        # If fp8_recipe is delayed, wrap the entire pass with get_fp8_context(),
-        # otherwise do nothing extra at the outer level
-        # if we are using other fp8 recipes, then the context manager enter&exit are free
-        # we can wrap fp8_context within the for loop over layers, so that we can fine-grained
-        # control which layer will be fp8 or bf16
-        print("fleet vision 0 hidden_states", hidden_states._md5sum())
-        
-        with rng_context:
-            if self.recompute_granularity == "full" and self.training:
-                pass
-            else:
-                packed_seq_params_now = packed_seq_params
-                for l_no, layer in self.layers:
-                    hidden_states = layer(
-                        hidden_states,
-                        attention_mask=attention_mask,
-                        context=context,
-                        context_mask=context_mask,
-                        rotary_pos_emb=rotary_pos_emb,
-                        rotaty_pos_cos=rotaty_pos_cos,
-                        rotary_pos_sin=rotary_pos_sin,
-                        attention_bias=attention_bias,
-                        packed_seq_params=packed_seq_params_now,
-                    )
-                    if deepstack_visual_embeds is not None and l_no in range(len(deepstack_visual_embeds)):
-                        hidden_states = self._deepstack_process(
-                            hidden_states,
-                            visual_pos_masks,
-                            deepstack_visual_embeds[l_no],
-                        )
-                    print(f"fleet vision {l_no} hidden_states", hidden_states._md5sum())
-                if self.norm is not None:
-                    hidden_states = self.norm(hidden_states)
-                
-                return hidden_states
+class Qwen3TextModel(GPTModel):
+    def forward_function(self, start, end):
+        run_function = self.run_function
+        def excute_func(**kwargs):
+            for layer in run_function[start:end]:
+                hidden_states = layer(**kwargs)
+                l_no_match = re.search(r"layer_(\d+)", layer.full_name())
+                if l_no_match:
+                    layer_index = int(l_no_match.group(1))
+                    if kwargs.get("deepstack_visual_embeds", None) is not None:
+                        deepstack_visual_embeds = kwargs["deepstack_visual_embeds"]
+                        visual_pos_masks = kwargs["visual_pos_masks"]
+                        if layer_index in range(len(deepstack_visual_embeds)):
+                            hidden_states = self._deepstack_process(
+                                hidden_states,
+                                visual_pos_masks,
+                                deepstack_visual_embeds[layer_index],
+                            )
+            return hidden_states
+        return excute_func
     
     def _deepstack_process(
         self, hidden_states: paddle.Tensor, visual_pos_masks: paddle.Tensor, visual_embeds: paddle.Tensor
@@ -830,223 +749,3 @@ class Qwen3VLTextTransformerBlock(TransformerBlock):
         local_this = hidden_states[visual_pos_masks, :] + visual_embeds
         hidden_states[visual_pos_masks, :] = local_this
         return hidden_states
-    
-    def _checkpoint_forward(
-        self,
-        hidden_states: paddle.Tensor,
-        attention_mask: paddle.Tensor,
-        context: paddle.Tensor,
-        context_mask: paddle.Tensor,
-        rotary_pos_emb: paddle.Tensor,
-        attentioin_bias: paddle.Tensor,
-        packed_seq_params: PackedSeqParams,
-        deepstack_visual_embeds: paddle.Tensor,
-        visual_pos_masks: paddle.Tensor,
-    ):
-        def custom(start: int, end: int):
-            def custom_forward(
-                hidden_states, attention_mask, context, context_mask, rotary_pos_emb,
-                deepstack_visual_embeds, visual_pos_masks
-            ):
-                for index in range(start, end):
-                    packed_seq_params_now = packed_seq_params
-                    layer = self._get_layer(index)
-                    
-                    hidden_states, context = layer(
-                        hidden_states=hidden_states,
-                        attentioin_mask=attention_mask,
-                        context=context,
-                        context_mask=context_mask,
-                        rotary_pos_emb=rotary_pos_emb,
-                        attentioin_bias=attentioin_bias,
-                        inference_params=None,
-                        packed_seq_params=packed_seq_params_now,
-                    )
-                    if deepstack_visual_embeds is not None and index in range(len(deepstack_visual_embeds)):
-                        hidden_states = self._deepstack_process(
-                            hidden_states,
-                            visual_pos_masks,
-                            deepstack_visual_embeds[index],
-                        )
-                return hidden_states, context
-            return custom_forward
-        
-        def checkpoint_handler(forward_func):
-            if self.config.fp8:
-                return te_checkpoint(
-                    forward_func,
-                    self.config.distribute_saved_activations,
-                    tensor_parallel.random.get_cuda_rng_tracker,
-                    parallel_state.get_tensor_model_parallel_group(),
-                    hidden_states,
-                    attention_mask,
-                    context,
-                    context_mask,
-                    rotary_pos_emb,
-                    deepstack_visual_embeds,
-                    visual_pos_masks
-                )
-            else:
-                return tensor_parallel.checkpoint(
-                    forward_func,
-                    self.config.distribute_saved_activations,
-                    hidden_states,
-                    attention_mask,
-                    context,
-                    context_mask,
-                    rotary_pos_emb,
-                    deepstack_visual_embeds,
-                    visual_pos_masks,
-                )
-        
-        if self.config.recompute_method == "uniform":
-            layer_index = 0
-            while layer_index < self.num_layers_per_pipeline_rank:
-                hidden_states, context = checkpoint_handler(
-                    custom(layer_index, layer_index + self.config.recompute_num_layers),
-                )
-        
-        elif self.config.recompute_method == "block":
-            recompute_skip_num_layers = 0
-            for layer_index in range(self.num_layers_per_pipeline_rank):
-                # Skip recomputation when input grad computation is not needed.
-                # Need to have at least one input tensor with gradient computation
-                # for re-enterant autograd engine.
-                if self.config.fp8 and not hidden_states.requires_grad:
-                    recompute_skip_num_layers += 1
-                if (
-                    layer_index >= recompute_skip_num_layers
-                    and layer_index < self.config.recompute_num_layers + recompute_skip_num_layers
-                ):
-                    hidden_states, context = checkpoint_handler(custom(layer_index, layer_index + 1))
-                else:
-                    hidden_states, context = custom(layer_index, layer_index + 1)(
-                        hidden_states, attention_mask, context, context_mask, rotary_pos_emb
-                    )
-        
-        else:
-            raise ValueError(f"Invalid activation recompute method: {self.config.recompute_method}")
-
-
-class Qwen3VLTextRotaryEmbedding(nn.Module):
-    inv_freq: paddle.Tensor
-    def __init__(
-        self, config: TransformerConfig, device=None,
-    ):
-        super().__init__()
-        self.max_seq_len_cached = config.max_position_embeddings
-        self.original_max_seq_len = config.max_position_embeddings
-        
-        self.config = config
-        
-        self.rope_type = self.config.rope_parameters["rope_type"]
-        rope_init_fn: Callable = self.compute_default_rope_parameters
-        if self.rope_type != "default":
-            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
-        inv_freq, self.attention_scaling = rope_init_fn(config, device)
-        
-        self.register_buffer("inv_freq", inv_freq, persistent=False)
-        self.original_inv_freq = inv_freq
-        
-        self.mrope_section = config.rope_paramegers.get("mrope_section", [24, 20, 20])
-    
-    @staticmethod
-    def compute_rope_default_parameters(
-        config: TransformerConfig | None = None,
-        seq_len: int | None = None,
-    ) -> tuple[paddle.Tensor, float]:
-        base = config.rope_parameters["rope_theta"]
-        dim = getattr(config, "head_dim", None)
-        attention_factor = 1.0
-        inv_freq = 1.0 / (
-            base ** (paddle.arange(0, dim, 2, dtype="int64").to(dtype=paddle.float32) / dim)
-        )
-        return inv_freq, attention_factor
-    
-    @paddle.no_grad()
-    @dynamic_rope_update
-    def forward(self, x, position_ids: paddle.Tensor):
-        if position_ids.ndim == 2:
-            position_ids = position_ids[None, ...].expand(3, position_ids.shape[0], -1)
-        inv_freq_expanded = self.inv_freq[None, ...].float().expand(3, position_ids.shape[1], -1, 1).to(x.place)
-        position_ids_expanded = position_ids[:, :, None, :].float().to(x.place)
-        with paddle.amp.auto_cast(False):
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
-            freqs = self.apply_interleaved_mrope(freqs, self.mrope_section)
-            emb = paddle.cat((freqs, freqs), dim=-1)
-            cos = emb.cos()
-            sin = emb.sin()
-        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
-    
-    def apply_interleaved_mrope(self, freqs, mrope_sections):
-        freqs_t = freqs[0]
-        for dim, offset in enumerate((1, 2), start=1):
-            length = mrope_sections[dim] * 3
-            idx = slice(offset, length, 3)
-            freqs_t[..., idx] =freqs[dim, ...m idx]
-        return freqs_t
-
-
-class Qwen3VLTextModel(FleetLayer):
-    def __init__(
-        self,
-        config: TransformerConfig,
-        transformer_layer_spec: LayerSpec,
-    ):
-        super.__init__(config)
-        self.vocab_size = config.vocab_size
-        self.padding_idx = PAD_TOKEN_INDEX
-        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
-        self.rotary_emb = Qwen3VLTextRotaryEmbedding(config)
-        self.decoder = Qwen3VLTextTransformerBlock(
-            config=config,
-            spec=transformer_layer_spec,
-            pre_process=True,
-            post_process=True,
-        )
-    
-    def forward(
-        self,
-        input_ids: paddle.LongTensor = None,
-        attention_mask: paddle.Tensor = None,
-        position_ids: paddle.LongTensor = None,
-        past_key_values: Cache = None,
-        inputs_embeds: paddle.FloatTensor = None,
-        use_cache: bool = None,
-        cache_position: paddle.LongTensor = None,
-        visual_pos_masks: paddle.Tensor = None,
-        deepstack_visual_embeds: list[paddle.Tensor] = None,
-    ):
-        if input_ids is None and input_embeds is None:
-            raise ValueError("You must specify exactly one of `input_ids` or `input_embeds`.")
-        
-        if input_embeds is None:
-            input_embeds = self.embed_tokens(input_ids)
-
-        if cache_position is None:
-            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-            cache_position = paddle.arange(
-                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
-            )
-        
-        if position_ids is None:
-            position_ids = cache_position.view(1, 1, -1).expand(3, inputs_embeds.shape[0], -1)
-        elif position_ids.ndim == 2:
-            position_ids = position_ids[None, ...].expand(3, position_ids.shape[0], -1)
-
-        if position_ids.ndim == 3 and position_ids.shape[0] == 4:
-            text_position_ids = position_ids[0]
-            position_ids = position_ids[1:]
-        else:
-            text_position_ids = position_ids[0]
-        
-        attention_mask = create_causal_mask(
-            config=self.config,
-            input_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            cache_position=cache_position,
-            past_key_values=past_key_values,
-            position_ids=text_position_ids,
-        )
-
-        hidden_states = inputs_embeds
