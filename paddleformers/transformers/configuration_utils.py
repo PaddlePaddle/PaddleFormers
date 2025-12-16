@@ -264,6 +264,237 @@ class LlmMetaConfig:
         ("context_parallel_size", int, 1, "context_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
+        ("dp_comm_overlap", bool, True, "Whether to overlap data parallelism (DP) communication with computation."),
+        (
+            "sharding_comm_overlap",
+            bool,
+            True,
+            "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True.",
+        ),
+        ("tp_async_allreduce", bool, False, "Whether to use asynchronous allreduce for tensor parallelism (TP)."),
+        (
+            "sp_async_reduce_scatter",
+            bool,
+            False,
+            "Whether to use asynchronous reduce-scatter for sharding parallelism (SP).",
+        ),
+        (
+            "overlap_p2p_comm",
+            bool,
+            True,
+            "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True.",
+        ),
+        ("batch_p2p_comm", bool, True, "Whether to batch point-to-point (P2P) communication requests."),
+        (
+            "dynamic_shape",
+            bool,
+            True,
+            "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines).",
+        ),
+        (
+            "dp_allreduce_avg_in_gradinent_scale",
+            bool,
+            False,
+            "Replace `allreduce_sum + scale` pattern with `allreduce_avg` when scaling gradient in data_parallel/sequence_parallel, which improves performance. ONLY supported for auto mode now.",
+        ),
+        (
+            "sp_allreduce_avg_in_gradinent_scale",
+            bool,
+            False,
+            "Replace `allreduce_sum + scale` pattern with `allreduce_avg` when scaling gradient in data_parallel/sequence_parallel, which improves performance. ONLY supported for auto mode now.",
+        ),
+        (
+            "gradient_sync_after_accumulate",
+            bool,
+            False,
+            "Move gradient sync operations from backward into optimizer step when gradient accumulate is enabled, which reduces sync times to improve performance but increases memory usage. ONLY supported for auto mode now.",
+        ),
+        (
+            "mp_async_allreduce",
+            bool,
+            False,
+            "Support all_reduce(dx) overlap with matmul(dw) in ColumnParallelLinear backward when set to True, which can accelerate model parallel performance.",
+        ),
+        (
+            "mp_skip_c_identity",
+            bool,
+            False,
+            "Support skipping c_identity in ColumnParallelLinear and RowParallelLinear. Only works when mp_async_allreduce is True. Can accelerate model parallel further.",
+        ),
+        (
+            "mp_fused_linear_param_grad_add",
+            bool,
+            False,
+            "Support fused_linear_param_grad_add in ColumnParallelLinear (requires cuda >= 11.6). Only works when mp_async_allreduce is True. Can accelerate model parallel further.",
+        ),
+        (
+            "sp_async_reduce_scatter",
+            bool,
+            False,
+            "Support async reduce_scatter in ColumnSequenceParallelLinear. Only works when sp_async_reduce_scatter is True. Can accelerate sequence parallel further.",
+        ),
+        (
+            "tp_delay_scale_loss",
+            bool,
+            False,
+            "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios.",
+        ),
+        (
+            "pp_delay_scale_loss",
+            bool,
+            False,
+            "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios.",
+        ),
+        (
+            "pp_sync_param",
+            bool,
+            False,
+            "In optimizer step, use broadcast to sync parameters whose attribute 'is_distributed' is False.",
+        ),
+        (
+            "tp_sync_param",
+            bool,
+            False,
+            "In optimizer step, use broadcast to sync parameters whose attribute 'is_distributed' is False.",
+        ),
+        (
+            "sync_grad",
+            bool,
+            False,
+            "In optimizer step, use broadcast to sync gradients whose attribute 'is_distributed' is False.",
+        ),
+        (
+            "tp_sync_moment",
+            bool,
+            False,
+            "In optimizer step, use broadcast to sync momentums whose attribute 'is_distributed' is False.",
+        ),
+        (
+            "pp_sync_moment",
+            bool,
+            False,
+            "In optimizer step, use broadcast to sync momentums whose attribute 'is_distributed' is False.",
+        ),
+        (
+            "replace_with_c_embedding",
+            bool,
+            False,
+            "Support replacing col-sliced embedding with row-sliced c_embedding when set to True, which is used in PIR auto_parallel.",
+        ),
+        (
+            "replace_with_parallel_cross_entropy",
+            bool,
+            False,
+            "Replace 'cross_entropy_with_softmax' OP with 'c_softmax_with_cross_entropy' OP in PIR static graph, which can improve model parallel performance.",
+        ),
+        (
+            "p2p_cache_shape",
+            bool,
+            False,
+            "Set this when maximum sequence length is varying (disables p2p cache shape).",
+        ),
+        (
+            "partial_send_recv",
+            bool,
+            False,
+            "Optimize send speed for tensor parallel (disables partial send/recv).",
+        ),
+        (
+            "dp_comm_overlap",
+            bool,
+            False,
+            "Fuse data parallel gradient communication.",
+        ),
+        (
+            "sharding_comm_overlap",
+            bool,
+            False,
+            "Fuse sharding stage 1 parallel gradient communication.",
+        ),
+        (
+            "release_grads",
+            bool,
+            False,
+            "Reduce peak memory usage by releasing gradients after each iteration. The creation of gradients will be postponed until backward propagation of the next iteration.",
+        ),
+        (
+            "overlap_p2p_comm",
+            bool,
+            False,
+            "Overlap p2p communication with computation.",
+        ),
+        (
+            "clear_every_step_cache",
+            bool,
+            False,
+            "Clear every step cache for pipeline parallel.",
+        ),
+        (
+            "non_batch_p2p_comm",
+            bool,
+            False,
+            "Disable batched send/recv in pipeline parallel mode.",
+        ),
+        (
+            "auto_parallel_sync_shared_params",
+            bool,
+            False,
+            "Optimize parameter sharing between two stages in a pipeline parallel scenario.",
+        ),
+        (
+            "stage1_tensor_fusion",
+            bool,
+            False,
+            "Fuse small tensors into big tensor chunks to accelerate communications. May increase memory occupation.",
+        ),
+        (
+            "tensor_fusion",
+            bool,
+            False,
+            "Fuse small tensors into big tensor chunks to accelerate communications. May increase memory occupation. Only used for semi auto mode.",
+        ),
+        (
+            "stage1_overlap",
+            bool,
+            False,
+            "Fuse small tensors into big tensor chunks to accelerate communications and overlap communication with backward computation. May harm backward speed.",
+        ),
+        (
+            "overlap",
+            bool,
+            False,
+            "Fuse small tensors into big tensor chunks to accelerate communications and overlap communication with backward computation. May harm backward speed. Only used for semi auto mode.",
+        ),
+        (
+            "stage2_overlap",
+            bool,
+            False,
+            "Overlap stage2 NCCL communication with computation. Constraints: logging_step should be bigger than 1 for broadcast overlap, and no other sync should be called during training for broadcast overlap.",
+        ),
+        (
+            "stage1_broadcast_overlap",
+            bool,
+            False,
+            "Overlap stage1 V1 broadcast with next step forward computation. Constraints: logging_step should be bigger than 1 for broadcast overlap forward compute, and no other sync should be called during training for broadcast overlap.",
+        ),
+        (
+            "stage1_allgather_overlap",
+            bool,
+            False,
+            "Overlap stage1 V2 allgather with next step forward computation. Constraints: logging_step should be bigger than 1 for allgather overlap forward compute, and no other sync should be called during training for allgather overlap.",
+        ),
+        (
+            "stage1_reduce_avg",
+            bool,
+            False,
+            "Replace reduce_avg with original reduce_sum+scale in stage1, which can be used for accuracy verification (disables stage1 reduce_avg).",
+        ),
+        (
+            "fuse_optimizer_states",
+            bool,
+            False,
+            "Fuse optimizer states to a single storage.",
+        ),
     ]
 
     recompute_attributes = [
@@ -283,6 +514,22 @@ class LlmMetaConfig:
             "refined_recompute, Choose from 'mlp_row_ln', 'mlp_column_ln', 'attention_row_ln', 'attention_column_ln', 'flash_attn']",
         ),
         ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
+        ("recompute_method", str, None, "Determines which transformer layers will be recomputed."),
+        (
+            "recompute_num_layers",
+            int,
+            None,
+            "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
+        ),
+        ("recompute_modules", str, None, "List of module names to apply recomputation."),
+        (
+            "recompute_mtp_granularity",
+            str,
+            "none",
+            "Recomputation granularity for MTP (Mixture of Token-Parallel) layers.",
+        ),
+        ("recompute_mtp_method", str, "none", "Recomputation method for MTP layers."),
+        ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
     ]
 
     loss_attributes = [
@@ -312,25 +559,6 @@ class LlmMetaConfig:
         ("using_fake_gate", bool, False, "Whether to fake gate."),
         ("ep_communication_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
-    ]
-
-    mtp_attributes = [
-        ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
-    ]
-
-    fleet_attributes = [
-        (
-            "multi_latent_attention",
-            bool,
-            False,
-            "Whether to enable multi-latent attention mechanism. Defaults to False.",
-        ),
-        (
-            "no_rope_freq",
-            bool,
-            False,
-            "Whether to disable RoPE (Rotary Position Embedding) frequency scaling. Defaults to False (enable frequency scaling).",
-        ),
         (
             "moe_deepep_num_sms",
             bool,
@@ -372,12 +600,6 @@ class LlmMetaConfig:
             float,
             0.0,
             "Coefficient for MoE router Z-loss (regularizes router logits to avoid extreme values). Defaults to 0.0 (disable Z-loss).",
-        ),
-        (
-            "position_embedding_type",
-            str,
-            "rope",
-            "Type of position embedding. Defaults to RoPE (Rotary Position Embedding).",
         ),
         (
             "moe_router_enable_expert_bias",
@@ -434,13 +656,19 @@ class LlmMetaConfig:
             True,
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
         ),
+    ]
+
+    mtp_attributes = [
+        ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
         (
-            "gated_linear_unit",
-            bool,
-            False,
-            "Whether to use Gated Linear Units (GLU) instead of standard Linear layers. Enhances model expressivity (common in SwiGLU). Defaults to False (compatible with basic transformer architectures).",
+            "mtp_loss_scaling_factor",
+            float,
+            1.0,
+            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
         ),
-        ("normalization", str, "RMSNorm", "Type of normalization layer. Defaults to RMSNorm."),
+    ]
+
+    fp8_attributes = [
         (
             "fp8",
             bool,
@@ -453,6 +681,34 @@ class LlmMetaConfig:
             False,
             "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
         ),
+    ]
+
+    model_attributes = [
+        (
+            "multi_latent_attention",
+            bool,
+            False,
+            "Whether to enable multi-latent attention mechanism. Defaults to False.",
+        ),
+        (
+            "no_rope_freq",
+            bool,
+            False,
+            "Whether to disable RoPE (Rotary Position Embedding) frequency scaling. Defaults to False (enable frequency scaling).",
+        ),
+        (
+            "position_embedding_type",
+            str,
+            "rope",
+            "Type of position embedding. Defaults to RoPE (Rotary Position Embedding).",
+        ),
+        (
+            "gated_linear_unit",
+            bool,
+            False,
+            "Whether to use Gated Linear Units (GLU) instead of standard Linear layers. Enhances model expressivity (common in SwiGLU). Defaults to False (compatible with basic transformer architectures).",
+        ),
+        ("normalization", str, "RMSNorm", "Type of normalization layer. Defaults to RMSNorm."),
         (
             "fp32_residual_connection",
             bool,
@@ -490,61 +746,6 @@ class LlmMetaConfig:
             0.02,
             "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
         ),
-        ("recompute_method", str, None, "Determines which transformer layers will be recomputed."),
-        (
-            "recompute_num_layers",
-            int,
-            None,
-            "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
-        ),
-        ("recompute_modules", str, None, "List of module names to apply recomputation."),
-        (
-            "recompute_mtp_granularity",
-            str,
-            "none",
-            "Recomputation granularity for MTP (Mixture of Token-Parallel) layers.",
-        ),
-        ("recompute_mtp_method", str, "none", "Recomputation method for MTP layers."),
-        ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
-        ("dp_comm_overlap", bool, True, "Whether to overlap data parallelism (DP) communication with computation."),
-        (
-            "sharding_comm_overlap",
-            bool,
-            True,
-            "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True.",
-        ),
-        ("tp_async_allreduce", bool, False, "Whether to use asynchronous allreduce for tensor parallelism (TP)."),
-        (
-            "sp_async_reduce_scatter",
-            bool,
-            False,
-            "Whether to use asynchronous reduce-scatter for sharding parallelism (SP).",
-        ),
-        (
-            "overlap_p2p_comm",
-            bool,
-            True,
-            "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True.",
-        ),
-        ("batch_p2p_comm", bool, True, "Whether to batch point-to-point (P2P) communication requests."),
-        (
-            "dynamic_shape",
-            bool,
-            True,
-            "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines).",
-        ),
-        (
-            "mtp_loss_scaling_factor",
-            float,
-            1.0,
-            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
-        ),
-        (
-            "lt",
-            float,
-            1.0,
-            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
-        ),
     ]
 
     @classmethod
@@ -557,7 +758,8 @@ class LlmMetaConfig:
             cls.loss_attributes,
             cls.moe_attributes,
             cls.mtp_attributes,
-            cls.fleet_attributes,
+            cls.fp8_attributes,
+            cls.model_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -573,7 +775,8 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
-            cls.fleet_attributes,
+            cls.fp8_attributes,
+            cls.model_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -589,7 +792,8 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
-            cls.fleet_attributes,
+            cls.fp8_attributes,
+            cls.model_attributes,
         ]:
             for attr in attrs:
                 ret.add(attr[0])

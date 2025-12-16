@@ -25,7 +25,7 @@ import types
 import warnings
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import paddle
 import paddle.distributed as dist
@@ -1227,6 +1227,388 @@ class TrainingArguments:
         default=True,
         metadata={"help": "whether to use auto_parallel intermediate API."},
     )
+    multi_latent_attention: bool = field(
+        default=False, metadata={"help": "Whether to enable multi-latent attention mechanism. Defaults to False."}
+    )
+    no_rope_freq: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to disable RoPE (Rotary Position Embedding) frequency scaling. Defaults to False (enable frequency scaling)."
+        },
+    )
+    moe_deepep_num_sms: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to enable DeepEP (Deep Expert Pruning) with SMS (Sub-Model Selection) for MoE. Defaults to False."
+        },
+    )
+    moe_token_dispatcher_type: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher)."
+        },
+    )
+    moe_pad_expert_input_to_capacity: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to pad MoE expert inputs to match expert capacity. Defaults to False (no padding)."
+        },
+    )
+    moe_token_drop_policy: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to enable token dropping policy for MoE (discard low-importance tokens). Defaults to False."
+        },
+    )
+    moe_expert_capacity_factor: float = field(
+        default=0.0,
+        metadata={
+            "help": "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (use default capacity)."
+        },
+    )
+    router_aux_loss_coef: float = field(
+        default=0.0,
+        metadata={
+            "help": "Coefficient for MoE router auxiliary loss (encourages balanced expert usage). Defaults to 0.0 (disable auxiliary loss)."
+        },
+    )
+    router_z_loss_coef: float = field(
+        default=0.0,
+        metadata={
+            "help": "Coefficient for MoE router Z-loss (regularizes router logits to avoid extreme values). Defaults to 0.0 (disable Z-loss)."
+        },
+    )
+    position_embedding_type: str = field(
+        default="rope", metadata={"help": "Type of position embedding. Defaults to RoPE (Rotary Position Embedding)."}
+    )
+    moe_router_enable_expert_bias: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to enable expert-specific bias terms in the MoE router. Fine-tunes router preference for individual experts. Defaults to False (simplifies computation and avoids overfitting)."
+        },
+    )
+    moe_router_force_load_balancing: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to enforce load balancing across MoE experts. Prevents overutilization of a small subset of experts. Defaults to True (critical optimization for MoE stability and efficiency)."
+        },
+    )
+    moe_router_load_balancing_type: str = field(
+        default="seq_aux_loss", metadata={"help": "Strategy for MoE expert load balancing."}
+    )
+    moe_router_bias_update_rate: float = field(
+        default=0.01,
+        metadata={
+            "help": "Update rate for MoE router biases (only effective if `moe_router_enable_expert_bias=True`). Controls the magnitude of bias adjustments to prevent unstable updates. Defaults to 0.01."
+        },
+    )
+    moe_shared_expert_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to allow shared experts to be reused across layers/modules. Reduces memory footprint but may limit model expressivity. Defaults to False (prioritizes model capacity)."
+        },
+    )
+    moe_dequant_input: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to dequantize inputs to MoE experts (only applicable if inputs are quantized). Defaults to False (enable only for quantized inference/training pipelines)."
+        },
+    )
+    moe_expert_fusion: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to enable operator fusion for MoE expert layers (e.g., Linear + Activation fusion). Improves training/inference throughput by reducing kernel launch overhead. Defaults to True."
+        },
+    )
+    moe_router_fusion: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to enable operator fusion for the MoE router (e.g., Gating + Softmax fusion). Reduces computation latency for expert selection. Defaults to True."
+        },
+    )
+    moe_subbatch_token_num_after_dispatch: int = field(
+        default=4096,
+        metadata={
+            "help": "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs)."
+        },
+    )
+    moe_grouped_gemm: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True."
+        },
+    )
+    gated_linear_unit: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to use Gated Linear Units (GLU) instead of standard Linear layers. Enhances model expressivity (common in SwiGLU). Defaults to False (compatible with basic transformer architectures)."
+        },
+    )
+    normalization: str = field(
+        default="RMSNorm", metadata={"help": "Type of normalization layer. Defaults to RMSNorm."}
+    )
+    fp8: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to enable FP8 mixed-precision training/inference. Reduces memory usage and accelerates computation (requires hardware support). Defaults to False (enable only for Ampere+/Hopper GPUs with FP8 support)."
+        },
+    )
+    fp8_wgrad: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False."
+        },
+    )
+    fp32_residual_connection: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to use FP32 precision for residual connections. Mitigates numerical underflow/overflow in deep transformers. Defaults to True (standard practice for stable LLM training)."
+        },
+    )
+    softmax_scale: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "Scaling factor for Softmax inputs. If None, uses automatic scaling (e.g., sqrt(d_model) for attention). Defaults to None (adapts to model dimension automatically)."
+        },
+    )
+    softmax_type: str = field(
+        default="vanilla",
+        metadata={
+            "help": "Applies modified softmax from https://www.evanmiller.org/attention-is-off-by-one.html. Supports both TE FusedAttention and local unfused attention. Supports both a fixed offset and learnable offset."
+        },
+    )
+    init_method: Optional[Callable] = field(default=None, metadata={"help": "Method to initialize weights."})
+    output_layer_init_method: Optional[Callable] = field(
+        default=None,
+        metadata={"help": "Method to initialize weights of the output layer of both attention and MLP blocks."},
+    )
+    embedding_init_method: Optional[Callable] = field(
+        default=None,
+        metadata={
+            "help": "Method to initialize weights of the embedding layer. If None, will be set as described in init_method above."
+        },
+    )
+    embedding_init_method_std: float = field(
+        default=0.02,
+        metadata={
+            "help": "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation)."
+        },
+    )
+    recompute_method: Optional[str] = field(
+        default=None, metadata={"help": "Determines which transformer layers will be recomputed."}
+    )
+    recompute_num_layers: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit."
+        },
+    )
+    recompute_modules: Optional[str] = field(
+        default=None, metadata={"help": "List of module names to apply recomputation."}
+    )
+    recompute_mtp_granularity: str = field(
+        default="none", metadata={"help": "Recomputation granularity for MTP (Mixture of Token-Parallel) layers."}
+    )
+    recompute_mtp_method: str = field(default="none", metadata={"help": "Recomputation method for MTP layers."})
+    recompute_mtp_modules: Optional[str] = field(
+        default=None, metadata={"help": "List of MTP module names to apply recomputation."}
+    )
+    dp_comm_overlap: bool = field(
+        default=True, metadata={"help": "Whether to overlap data parallelism (DP) communication with computation."}
+    )
+    sharding_comm_overlap: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
+        },
+    )
+    tp_async_allreduce: bool = field(
+        default=False, metadata={"help": "Whether to use asynchronous allreduce for tensor parallelism (TP)."}
+    )
+    sp_async_reduce_scatter: bool = field(
+        default=False, metadata={"help": "Whether to use asynchronous reduce-scatter for sharding parallelism (SP)."}
+    )
+    overlap_p2p_comm: bool = field(
+        default=True,
+        metadata={"help": "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True."},
+    )
+    batch_p2p_comm: bool = field(
+        default=True, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
+    )
+    dynamic_shape: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
+        },
+    )
+    mtp_loss_scaling_factor: float = field(
+        default=1.0,
+        metadata={
+            "help": "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."
+        },
+    )
+    dp_allreduce_avg_in_gradinent_scale: bool = field(
+        default=False,
+        metadata={
+            "help": "Replace `allreduce_sum + scale` pattern with `allreduce_avg` when scaling gradient in data_parallel/sequence_parallel, which improves performance. ONLY supported for auto mode now."
+        },
+    )
+    sp_allreduce_avg_in_gradinent_scale: bool = field(
+        default=False,
+        metadata={
+            "help": "Replace `allreduce_sum + scale` pattern with `allreduce_avg` when scaling gradient in data_parallel/sequence_parallel, which improves performance. ONLY supported for auto mode now."
+        },
+    )
+    gradient_sync_after_accumulate: bool = field(
+        default=False,
+        metadata={
+            "help": "Move gradient sync operations from backward into optimizer step when gradient accumulate is enabled, which reduces sync times to improve performance but increases memory usage. ONLY supported for auto mode now."
+        },
+    )
+    mp_async_allreduce: bool = field(
+        default=False,
+        metadata={
+            "help": "Support all_reduce(dx) overlap with matmul(dw) in ColumnParallelLinear backward when set to True, which can accelerate model parallel performance."
+        },
+    )
+    mp_skip_c_identity: bool = field(
+        default=False,
+        metadata={
+            "help": "Support skipping c_identity in ColumnParallelLinear and RowParallelLinear. Only works when mp_async_allreduce is True. Can accelerate model parallel further."
+        },
+    )
+    mp_fused_linear_param_grad_add: bool = field(
+        default=False,
+        metadata={
+            "help": "Support fused_linear_param_grad_add in ColumnParallelLinear (requires cuda >= 11.6). Only works when mp_async_allreduce is True. Can accelerate model parallel further."
+        },
+    )
+    tp_delay_scale_loss: bool = field(
+        default=False,
+        metadata={
+            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
+        },
+    )
+    pp_delay_scale_loss: bool = field(
+        default=False,
+        metadata={
+            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
+        },
+    )
+    pp_sync_param: bool = field(
+        default=False,
+        metadata={
+            "help": "In optimizer step, use broadcast to sync parameters whose attribute 'is_distributed' is False."
+        },
+    )
+    tp_sync_param: bool = field(
+        default=False,
+        metadata={
+            "help": "In optimizer step, use broadcast to sync parameters whose attribute 'is_distributed' is False."
+        },
+    )
+    sync_grad: bool = field(
+        default=False,
+        metadata={
+            "help": "In optimizer step, use broadcast to sync gradients whose attribute 'is_distributed' is False."
+        },
+    )
+    tp_sync_moment: bool = field(
+        default=False,
+        metadata={
+            "help": "In optimizer step, use broadcast to sync momentums whose attribute 'is_distributed' is False."
+        },
+    )
+    pp_sync_moment: bool = field(
+        default=False,
+        metadata={
+            "help": "In optimizer step, use broadcast to sync momentums whose attribute 'is_distributed' is False."
+        },
+    )
+    replace_with_c_embedding: bool = field(
+        default=False,
+        metadata={
+            "help": "Support replacing col-sliced embedding with row-sliced c_embedding when set to True, which is used in PIR auto_parallel."
+        },
+    )
+    replace_with_parallel_cross_entropy: bool = field(
+        default=False,
+        metadata={
+            "help": "Replace 'cross_entropy_with_softmax' OP with 'c_softmax_with_cross_entropy' OP in PIR static graph, which can improve model parallel performance."
+        },
+    )
+    p2p_cache_shape: bool = field(
+        default=False,
+        metadata={"help": "Set this when maximum sequence length is varying (disables p2p cache shape)."},
+    )
+    partial_send_recv: bool = field(
+        default=False, metadata={"help": "Optimize send speed for tensor parallel (disables partial send/recv)."}
+    )
+    release_grads: bool = field(
+        default=False,
+        metadata={
+            "help": "Reduce peak memory usage by releasing gradients after each iteration. The creation of gradients will be postponed until backward propagation of the next iteration."
+        },
+    )
+    clear_every_step_cache: bool = field(
+        default=False, metadata={"help": "Clear every step cache for pipeline parallel."}
+    )
+    non_batch_p2p_comm: bool = field(
+        default=False, metadata={"help": "Disable batched send/recv in pipeline parallel mode."}
+    )
+    auto_parallel_sync_shared_params: bool = field(
+        default=False,
+        metadata={"help": "Optimize parameter sharing between two stages in a pipeline parallel scenario."},
+    )
+    stage1_tensor_fusion: bool = field(
+        default=False,
+        metadata={
+            "help": "Fuse small tensors into big tensor chunks to accelerate communications. May increase memory occupation."
+        },
+    )
+    tensor_fusion: bool = field(
+        default=False,
+        metadata={
+            "help": "Fuse small tensors into big tensor chunks to accelerate communications. May increase memory occupation. Only used for semi auto mode."
+        },
+    )
+    stage1_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Fuse small tensors into big tensor chunks to accelerate communications and overlap communication with backward computation. May harm backward speed."
+        },
+    )
+    overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Fuse small tensors into big tensor chunks to accelerate communications and overlap communication with backward computation. May harm backward speed. Only used for semi auto mode."
+        },
+    )
+    stage2_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Overlap stage2 NCCL communication with computation. Constraints: logging_step should be bigger than 1 for broadcast overlap, and no other sync should be called during training for broadcast overlap."
+        },
+    )
+    stage1_broadcast_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Overlap stage1 V1 broadcast with next step forward computation. Constraints: logging_step should be bigger than 1 for broadcast overlap forward compute, and no other sync should be called during training for broadcast overlap."
+        },
+    )
+    stage1_allgather_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Overlap stage1 V2 allgather with next step forward computation. Constraints: logging_step should be bigger than 1 for allgather overlap forward compute, and no other sync should be called during training for allgather overlap."
+        },
+    )
+    stage1_reduce_avg: bool = field(
+        default=False,
+        metadata={
+            "help": "Replace reduce_avg with original reduce_sum+scale in stage1, which can be used for accuracy verification (disables stage1 reduce_avg)."
+        },
+    )
+    fuse_optimizer_states: bool = field(default=False, metadata={"help": "Fuse optimizer states to a single storage."})
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
