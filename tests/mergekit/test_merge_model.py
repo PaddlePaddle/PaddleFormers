@@ -28,7 +28,7 @@ class TestMergeModel(unittest.TestCase):
     def test_merge_model_np(self, merge_method):
         with TemporaryDirectory() as tempdir:
             model = AutoModelForCausalLM.from_pretrained(
-                "Paddleformers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
             )
             pd_path = os.path.join(tempdir, "pd_model")
             model.save_pretrained(pd_path)
@@ -74,7 +74,7 @@ class TestMergeModel(unittest.TestCase):
     def test_merge_model_pd(self, merge_method):
         with TemporaryDirectory() as tempdir:
             model = AutoModelForCausalLM.from_pretrained(
-                "Paddleformers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
             )
             pd_path = os.path.join(tempdir, "pd_model")
             model.save_pretrained(pd_path)

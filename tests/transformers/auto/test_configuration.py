@@ -109,7 +109,7 @@ class AutoConfigTest(unittest.TestCase):
 
     @slow
     def test_from_pretrained_cache_dir(self):
-        model_id = "Paddleformers/tiny-random-qwen3"
+        model_id = "PaddleFormers/tiny-random-qwen3"
         with tempfile.TemporaryDirectory() as tempdir:
             AutoConfig.from_pretrained(model_id, download_hub="aistudio", cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))

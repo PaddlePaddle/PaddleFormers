@@ -104,7 +104,7 @@ class TestMosLoraModel(unittest.TestCase):
             head_dim=2,
             lora_use_mixer=True,
         )
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
         model.eval()
         original_results_1 = model(input_ids)
@@ -127,7 +127,7 @@ class TestMosLoraModel(unittest.TestCase):
             lora_use_mixer=True,
             tensor_model_parallel_size=2,
         )
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         model.eval()
         with self.assertRaises(NotImplementedError):
             LoRAModel(model, lora_config)
@@ -145,7 +145,7 @@ class TestMosLoraModel(unittest.TestCase):
         )
         # turn off plm dropout for to test train vs test
         model = AutoModelForCausalLM.from_pretrained(
-            "Paddleformers/tiny-random-qwen3",
+            "PaddleFormers/tiny-random-qwen3",
             convert_from_hf=True,
         )
         lora_model = LoRAModel(model, lora_config)
@@ -178,7 +178,7 @@ class TestMosLoraModel(unittest.TestCase):
             lora_config = LoRAConfig(
                 target_modules=[".*q_proj.*", ".*v_proj.*"], r=4, lora_alpha=8, lora_use_mixer=True
             )
-            model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+            model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()
             original_results = lora_model(input_ids)
@@ -198,7 +198,7 @@ class TestMosLoraModel(unittest.TestCase):
         lora_config = LoRAConfig(
             target_modules=[".*norm.*"], r=4, lora_alpha=8, enable_lora_list=None, lora_use_mixer=True
         )
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         with self.assertRaises(ValueError):
             LoRAModel(model, lora_config)
 

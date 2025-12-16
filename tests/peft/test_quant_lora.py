@@ -102,7 +102,7 @@ class TestQuantedLoRAModel(unittest.TestCase):
             r=4,
             lora_alpha=8,
         )
-        cls.model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        cls.model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         cls.lora_model = LoRAModel(cls.model, lora_config)
         cls.lora_model.mark_only_lora_as_trainable()
         # lora_B parameter is initialized to 0, therefore AB = 0 and W + AB = W

@@ -136,18 +136,18 @@ class StandardConfigMappingTest(unittest.TestCase):
         class FakeQwen3Config(Qwen3Config):
             pass
 
-        config = FakeQwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3")
+        config = FakeQwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3")
         hidden_size = config.hidden_size
 
         FakeQwen3Config.attribute_map = {"fake_field": "hidden_size"}
 
-        loaded_config = FakeQwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3")
+        loaded_config = FakeQwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3")
         fake_field = loaded_config.fake_field
         self.assertEqual(fake_field, hidden_size)
 
     @slow
     def test_from_pretrained_cache_dir(self):
-        model_id = "Paddleformers/tiny-random-qwen3"
+        model_id = "PaddleFormers/tiny-random-qwen3"
         with tempfile.TemporaryDirectory() as tempdir:
             Qwen3Config.from_pretrained(model_id, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))

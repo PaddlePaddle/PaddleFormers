@@ -93,7 +93,7 @@ class TestLoraModel(unittest.TestCase):
             enable_lora_list=[None, [True, False]],
             head_dim=2,
         )
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
         model.eval()
         original_results_1 = model(input_ids)
@@ -118,7 +118,7 @@ class TestLoraModel(unittest.TestCase):
         )
         # turn off plm dropout for to test train vs test
         model = AutoModelForCausalLM.from_pretrained(
-            "Paddleformers/tiny-random-qwen3",
+            "PaddleFormers/tiny-random-qwen3",
             convert_from_hf=True,
         )
         lora_model = LoRAModel(model, lora_config)
@@ -153,7 +153,7 @@ class TestLoraModel(unittest.TestCase):
                 r=4,
                 lora_alpha=8,
             )
-            model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+            model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()
             original_results = lora_model(input_ids)
@@ -176,7 +176,7 @@ class TestLoraModel(unittest.TestCase):
             lora_alpha=8,
             enable_lora_list=None,
         )
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         with self.assertRaises(ValueError):
             LoRAModel(model, lora_config)
 

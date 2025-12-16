@@ -128,7 +128,7 @@ class TestFromPretrained(unittest.TestCase):
             str_src_dtype = str(src_dtype)[dtype_prefix_len:]
             str_dst_dtype = str(dst_dtype)[dtype_prefix_len:]
 
-            config = AutoConfig.from_pretrained("Paddleformers/tiny-random-qwen3")
+            config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-qwen3")
             model = Qwen3Model.from_config(config, dtype=str_src_dtype)
 
             with tempfile.TemporaryDirectory() as tmp_dir:
@@ -276,7 +276,7 @@ class TestShardCheckpoint(unittest.TestCase):
             self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_variant_local(self):
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2")
@@ -296,7 +296,7 @@ class TestShardCheckpoint(unittest.TestCase):
             self.assertTrue(paddle.allclose(p1, p2))
 
     def test_checkpoint_variant_local_sharded(self):
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2", max_shard_size="50kB")
@@ -326,7 +326,7 @@ class TestShardCheckpoint(unittest.TestCase):
 
     @require_package("safetensors")
     def test_checkpoint_variant_local_safe(self):
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2", safe_serialization=True)
@@ -348,7 +348,7 @@ class TestShardCheckpoint(unittest.TestCase):
 
     @require_package("safetensors")
     def test_checkpoint_variant_local_sharded_safe(self):
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             model.save_pretrained(tmp_dir, variant="v2", max_shard_size="50kB", safe_serialization=True)
