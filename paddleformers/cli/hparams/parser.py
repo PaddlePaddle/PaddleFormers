@@ -200,10 +200,6 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
     """
     model_args, data_args, preprocess_args, generating_args, finetuning_args = _parse_train_args(args)
 
-    if finetuning_args.deterministic_mode:
-        os.environ["FLAGS_cudnn_deterministic"] = "1"
-        os.environ["FLAGS_embedding_deterministic"] = "1"
-
     if model_args.stage == "VL-SFT":
         os.environ["NCCL_DEBUG"] = "INFO"
         os.environ["PYTHONUNBUFFERED"] = "1"
