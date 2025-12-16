@@ -33,14 +33,12 @@ __all__ = [
 
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
-        ("bert", "BertConfig"),
         ("deepseek_v3", "DeepseekV3Config"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
         ("llama", "LlamaConfig"),
-        ("qwen", "QWenConfig"),
         ("qwen2", "Qwen2Config"),
         ("qwen2_5_vl", "Qwen2_5_VLConfig"),
         ("qwen2_5_vl_text", "Qwen2_5_VLTextConfig"),
@@ -59,7 +57,6 @@ CONFIG_MAPPING_NAMES = OrderedDict(
 MODEL_NAMES_MAPPING = OrderedDict(
     # Base model mapping
     [
-        ("bert", "Bert"),
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
         ("ernie4_5", "Ernie4_5"),
@@ -67,7 +64,6 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
         ("llama", "Llama"),
-        ("qwen", "QWen"),
         ("qwen2", "Qwen2"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
         ("qwen2_5_vl_text", "Qwen2_5_VL"),

@@ -42,7 +42,6 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         tokens_per_second=2,
         recompute=False,
         recompute_granularity="core_attn",
-        use_flash_attention=False,
         use_sparse_flash_attn=False,
         _attn_implementation="eager",
         **kwargs,
@@ -64,7 +63,6 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         self.tokens_per_second = tokens_per_second
         self.recompute = recompute
         self.recompute_granularity = recompute_granularity
-        self.use_flash_attention = use_flash_attention
         self.use_sparse_flash_attn = use_sparse_flash_attn
         self._attn_implementation = _attn_implementation
 
@@ -99,7 +97,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         rope_scaling=None,
         rms_norm_eps=1e-6,
         use_cache=False,
-        use_flash_attention=False,
         use_sparse_flash_attn=False,
         _attn_implementation="eager",
         recompute=False,
@@ -142,7 +139,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.num_attention_heads = num_attention_heads
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-        self.use_flash_attention = use_flash_attention
         self.use_sparse_flash_attn = use_sparse_flash_attn
         self._attn_implementation = _attn_implementation
         self.recompute = recompute
@@ -187,7 +183,7 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.token_balance_seqlen = False
         self.fuse_ln = False
         self.cachekv_quant = False
-        self.fuse_rope = False
+        self.apply_rope_fusion = False
         self.fuse_swiglu = False
         self.freq_allocation = 20
 
