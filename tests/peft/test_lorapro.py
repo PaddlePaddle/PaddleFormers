@@ -173,7 +173,7 @@ class TestLoRAProModel(unittest.TestCase):
             config_loaded_results = config_loaded_lorapro_model(input_ids)
             self.assertTrue(paddle.allclose(original_results[0], config_loaded_results[0]))
 
-    @parameterized.expand([("zero",), ("symmetry",)])
+    @parameterized.expand([("zero",), ("sylvester",), ("symmetry",)])
     def test_lorapro_modes(self, x_mode):
         """Test if AdamWLoRAPro optimizer with different x_modes can perform optimization steps"""
         lorapro_config = LoRAConfig(
