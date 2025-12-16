@@ -150,7 +150,6 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
             GPTModel: Configured PaddleFleet GPT model instance
         """
         assert HAS_PADDLEFLEET
-        vp_size = self.virtual_pipeline_model_parallel_size and self.virtual_pipeline_model_parallel_size > 1
         pp_size = self.pipeline_model_parallel_size
 
         is_pipeline_asymmetric = getattr(self, "account_for_embedding_in_pipeline_split", False) or getattr(
@@ -160,13 +159,6 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
             getattr(self, "num_layers_in_first_pipeline_stage", None)
             or getattr(self, "num_layers_in_last_pipeline_stage", None)
         ) is not None
-        is_flexible_pp_layout = is_pipeline_asymmetric or (
-            getattr(self, "pipeline_model_parallel_layout", None) is not None
-        )
-        if vp_size and not is_flexible_pp_layout:
-            assert (
-                self.num_layers // pp_size
-            ) % vp_size == 0, "Make sure the number of model chunks is the same across all pipeline stages."
 
         # Initialize model as meta data instead of allocating data on a device
         model_init_device_context = contextlib.nullcontext
@@ -185,7 +177,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         """
 
         with model_init_device_context():
-            fleet_model = gpt_builder(self, num_stages=pp_size, seg_method="layer:TransformerLayer")
+            fleet_model = gpt_builder(self, num_stages=pp_size, seg_method="layer:TransformerLayer|EmptyLayer")
             # Convert original FleetGPTModel to our GPTModel to correctly inherit PretrainedModel methods
             model = GPTModel.__new__(GPTModel)
             # Manually copy all attributes

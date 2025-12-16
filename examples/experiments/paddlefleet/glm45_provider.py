@@ -130,17 +130,20 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air
     """
 
-    num_hidden_layers: int = 10
+    num_hidden_layers: int = 7
     moe_layer_freq: Union[int, List[int]] = field(
-        default_factory=lambda: [0] * 1 + [1] * 9
+        default_factory=lambda: [0] * 1 + [1] * 6
     )  # first one layer is dense
     seq_length: int = 8192  # default value is 131072
+    num_layers_in_last_pipeline_stage: int = 1
 
     # all args below will be removed when config system is ready
     num_nextn_predict_layers: Optional[int] = 0
     sequence_parallel: bool = True
-    expert_model_parallel_size: int = 16
+    expert_model_parallel_size: int = 4
     tensor_model_parallel_size: int = 4
+    pipeline_model_parallel_size: int = 4
+    virtual_pipeline_model_parallel_size: int = 2
     moe_router_force_load_balancing: bool = True
     apply_rope_fusion: bool = True
 
