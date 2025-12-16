@@ -33,8 +33,10 @@ from paddlefleet.transformer.transformer_block import TransformerBlock, Transfor
 from paddlefleet.transformer.transformer_config import TransformerConfig
 from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
 from paddlefleet.models.vision.multimodal_projector import MultimodalProjector as MCoreMultiModalProjector
-
-from PaddleFormers.paddleformers.transformers.gpt_provider import GPTModelProvider
+from paddleformers.transformers.masking_utils import create_causal_mask
+from paddleformers.transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
+from paddleformers.transformers.gpt_provider import GPTModelProvider
+from paddleformers.transformers.cache_utils import Cache
 
 from .layer_spec import get_layer_spec
 from .vision import Qwen3VisionModel
@@ -75,7 +77,7 @@ MODEL_CONFIG_ATTR = [
 class MultimodalProjectorProvider(TransformerConfig):
     projector_type: str = "mlp2x_gelu"
     layer_spec = None
-    input_size: int | None = 1024
+    input_size: int = 1024
     hidden_size: int = 1024
     intermediate_size: int = 1024
     activation_func: Callable = F.gelu
@@ -927,8 +929,9 @@ class Qwen3VLTextTransformerBlock(TransformerBlock):
 
 
 class Qwen3VLTextRotaryEmbedding(nn.Module):
+    inv_freq: paddle.Tensor
     def __init__(
-        self, config: TransformerConfig,
+        self, config: TransformerConfig, device=None,
     ):
         super().__init__()
         self.max_seq_len_cached = config.max_position_embeddings
@@ -937,7 +940,51 @@ class Qwen3VLTextRotaryEmbedding(nn.Module):
         self.config = config
         
         self.rope_type = self.config.rope_parameters["rope_type"]
+        rope_init_fn: Callable = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(config, device)
         
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
+        self.original_inv_freq = inv_freq
+        
+        self.mrope_section = config.rope_paramegers.get("mrope_section", [24, 20, 20])
+    
+    @staticmethod
+    def compute_rope_default_parameters(
+        config: TransformerConfig | None = None,
+        seq_len: int | None = None,
+    ) -> tuple[paddle.Tensor, float]:
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None)
+        attention_factor = 1.0
+        inv_freq = 1.0 / (
+            base ** (paddle.arange(0, dim, 2, dtype="int64").to(dtype=paddle.float32) / dim)
+        )
+        return inv_freq, attention_factor
+    
+    @paddle.no_grad()
+    @dynamic_rope_update
+    def forward(self, x, position_ids: paddle.Tensor):
+        if position_ids.ndim == 2:
+            position_ids = position_ids[None, ...].expand(3, position_ids.shape[0], -1)
+        inv_freq_expanded = self.inv_freq[None, ...].float().expand(3, position_ids.shape[1], -1, 1).to(x.place)
+        position_ids_expanded = position_ids[:, :, None, :].float().to(x.place)
+        with paddle.amp.auto_cast(False):
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
+            freqs = self.apply_interleaved_mrope(freqs, self.mrope_section)
+            emb = paddle.cat((freqs, freqs), dim=-1)
+            cos = emb.cos()
+            sin = emb.sin()
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+    
+    def apply_interleaved_mrope(self, freqs, mrope_sections):
+        freqs_t = freqs[0]
+        for dim, offset in enumerate((1, 2), start=1):
+            length = mrope_sections[dim] * 3
+            idx = slice(offset, length, 3)
+            freqs_t[..., idx] =freqs[dim, ...m idx]
+        return freqs_t
 
 
 class Qwen3VLTextModel(FleetLayer):
@@ -950,10 +997,56 @@ class Qwen3VLTextModel(FleetLayer):
         self.vocab_size = config.vocab_size
         self.padding_idx = PAD_TOKEN_INDEX
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
-        # self.rotary_emb =
+        self.rotary_emb = Qwen3VLTextRotaryEmbedding(config)
         self.decoder = Qwen3VLTextTransformerBlock(
             config=config,
             spec=transformer_layer_spec,
             pre_process=True,
             post_process=True,
         )
+    
+    def forward(
+        self,
+        input_ids: paddle.LongTensor = None,
+        attention_mask: paddle.Tensor = None,
+        position_ids: paddle.LongTensor = None,
+        past_key_values: Cache = None,
+        inputs_embeds: paddle.FloatTensor = None,
+        use_cache: bool = None,
+        cache_position: paddle.LongTensor = None,
+        visual_pos_masks: paddle.Tensor = None,
+        deepstack_visual_embeds: list[paddle.Tensor] = None,
+    ):
+        if input_ids is None and input_embeds is None:
+            raise ValueError("You must specify exactly one of `input_ids` or `input_embeds`.")
+        
+        if input_embeds is None:
+            input_embeds = self.embed_tokens(input_ids)
+
+        if cache_position is None:
+            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+            cache_position = paddle.arange(
+                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+            )
+        
+        if position_ids is None:
+            position_ids = cache_position.view(1, 1, -1).expand(3, inputs_embeds.shape[0], -1)
+        elif position_ids.ndim == 2:
+            position_ids = position_ids[None, ...].expand(3, position_ids.shape[0], -1)
+
+        if position_ids.ndim == 3 and position_ids.shape[0] == 4:
+            text_position_ids = position_ids[0]
+            position_ids = position_ids[1:]
+        else:
+            text_position_ids = position_ids[0]
+        
+        attention_mask = create_causal_mask(
+            config=self.config,
+            input_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            cache_position=cache_position,
+            past_key_values=past_key_values,
+            position_ids=text_position_ids,
+        )
+
+        hidden_states = inputs_embeds
