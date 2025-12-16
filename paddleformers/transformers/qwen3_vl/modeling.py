@@ -28,6 +28,7 @@ import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
 from paddle.distributed.fleet.utils import recompute
+from paddle.distributed.fleet import get_hybrid_communicate_group
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ...nn.activation import ACT2FN
@@ -1223,14 +1224,39 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         return hidden_states
 
     def _deepstack_process(
-        self, hidden_states: paddle.Tensor, visual_pos_masks: paddle.Tensor, visual_embeds: paddle.Tensor
-    ):
-        visual_pos_masks = visual_pos_masks.to(hidden_states.device)
-        visual_embeds = visual_embeds.to(hidden_states.device, hidden_states.dtype)
-        hidden_states = hidden_states.clone()
-        local_this = hidden_states[visual_pos_masks, :] + visual_embeds
-        hidden_states[visual_pos_masks, :] = local_this  # todo ai 说这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
-        return hidden_states
+            self, hidden_states: paddle.Tensor, visual_pos_masks: paddle.Tensor, visual_embeds: paddle.Tensor
+        ):
+            visual_pos_masks = visual_pos_masks.to(hidden_states.device)
+            visual_embeds = visual_embeds.to(hidden_states.device, hidden_states.dtype)
+            # complicated logic for squential parallelism
+            if visual_pos_masks.ndim > 1:
+                visual_pos_masks = visual_pos_masks.flatten()
+            if visual_pos_masks.shape[0] > hidden_states.shape[0]:
+                try:
+                    hcg = get_hybrid_communicate_group()
+                    mp_rank = hcg.get_model_parallel_rank()
+                    mp_size = hcg.get_model_parallel_world_size()
+                except ImportError:
+                    mp_size = visual_pos_masks.shape[0] // hidden_states.shape[0]
+                    mp_rank = paddle.distributed.get_rank() % mp_size
+                total_len = visual_pos_masks.shape[0]
+                chunk_size = total_len // mp_size
+                start_idx = mp_rank * chunk_size
+                end_idx = start_idx + chunk_size
+                if start_idx > 0:
+                    pre_mask = visual_pos_masks[:start_idx]
+                    visual_offset = paddle.sum(paddle.cast(pre_mask, "int32")).item()
+                else:
+                    visual_offset = 0
+                local_mask = visual_pos_masks[start_idx:end_idx]
+                local_visual_count = paddle.sum(paddle.cast(local_mask, "int32")).item()
+
+                visual_embeds = visual_embeds[visual_offset : visual_offset + local_visual_count]
+                visual_pos_masks = local_mask
+            hidden_states = hidden_states.clone()
+            local_this = hidden_states[visual_pos_masks, :] + visual_embeds
+            hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+            return hidden_states
 
     def forward(
         self,
