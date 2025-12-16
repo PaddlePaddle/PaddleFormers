@@ -58,7 +58,6 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5_VLMoeForConditionalGeneration", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
-        ("QWen", "qwen"),
         ("Qwen2", "qwen2"),
         ("Qwen2_5_VL", "qwen2_5_vl"),
         ("Qwen2Moe", "qwen2_moe"),

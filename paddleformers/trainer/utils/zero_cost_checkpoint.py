@@ -1520,31 +1520,12 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
         gids = group_getter.get_group_ids()
         from paddleformers.trainer.utils.sharding_io import (
             exclude_parameters_in_state_dict,
-            filter_sharded_params,
         )
 
-        # filter_sharded_params = sharded_state_dict_compatibility(filter_sharded_params, return_sharded_state_dict=True)
-        # exclude_parameters_in_state_dict = sharded_state_dict_compatibility(
-        #     exclude_parameters_in_state_dict, return_sharded_state_dict=True
-        # )
-
         state_dict = model_to_save.state_dict()
-        # tmp wa should_save_sharding_stage1_model
-        if self.args.should_save_sharding_stage1_model or self.args.save_checkpoint_format == "flex_checkpoint":
-            state_dict = split_model_state(state_dict, group_getter)
-            for gid in gids:
-                state_dict[gid] = filter_sharded_params(
-                    state_dict.get(gid, {}),
-                    optimizer,
-                    self.sharding_group,
-                    self.args.save_sharding_stage1_model_include_freeze_params,
-                )
-            state_dict = merge_model_state(state_dict)
 
         # tmp wa should_save_sharding_stage1_model
-        if self.args.bf16 and (
-            self.args.should_save_sharding_stage1_model or self.args.save_checkpoint_format == "flex_checkpoint"
-        ):
+        if self.args.bf16:
             param_names_in_master_weights = []
             optimzier_state_dict = optimizer.state_dict()
             optimzier_state_dict = split_opt_state(optimzier_state_dict, group_getter)
