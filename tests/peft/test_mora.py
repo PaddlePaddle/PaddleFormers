@@ -101,7 +101,7 @@ class TestMoraModel(unittest.TestCase):
             head_dim=2,
             use_mora=True,
         )
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
         model.eval()
         original_results_1 = model(input_ids)
@@ -127,7 +127,7 @@ class TestMoraModel(unittest.TestCase):
         )
         # turn off plm dropout for to test train vs test
         model = AutoModelForCausalLM.from_pretrained(
-            "Paddleformers/tiny-random-qwen3",
+            "PaddleFormers/tiny-random-qwen3",
             convert_from_hf=True,
         )
         mora_model = LoRAModel(model, mora_config)
@@ -158,7 +158,7 @@ class TestMoraModel(unittest.TestCase):
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
             mora_config = LoRAConfig(target_modules=[".*q_proj.*", ".*v_proj.*"], r=4, lora_alpha=8, use_mora=True)
-            model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+            model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
             mora_model = LoRAModel(model, mora_config)
             mora_model.eval()
             original_results = mora_model(input_ids)
@@ -176,7 +176,7 @@ class TestMoraModel(unittest.TestCase):
 
     def test_lora_module_raise_exception(self):
         mora_config = LoRAConfig(target_modules=[".*norm.*"], r=4, lora_alpha=8, enable_lora_list=None, use_mora=True)
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         with self.assertRaises(ValueError):
             LoRAModel(model, mora_config)
 

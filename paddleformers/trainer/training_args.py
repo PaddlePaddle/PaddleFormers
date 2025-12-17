@@ -1251,19 +1251,16 @@ class TrainingArguments:
         default=True,
         metadata={"help": "Offload FP8 expert weights."},
     )
-
     use_cache: bool = field(
         default=False,
         metadata={
             "help": "Whether or not to use cache for the model For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`."
         },
     )
-
     load_from_hf: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to load a checkpoint in the HuggingFace format."},
     )
-
     flex_ckpt_comm_method: Optional[str] = field(
         default="broadcast",
         metadata={
@@ -1274,11 +1271,214 @@ class TrainingArguments:
             )
         },
     )
-
+    deterministic_mode: bool = field(
+        default=False,
+        metadata={"help": "Whether to use deterministic mode."},
+    )
+    cp_comm_type: str = field(
+        default=None,
+        metadata={"help": "Communication type."},
+    )
     replicate_saved_into_local: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to save replicas cross files in distributed save load system."},
     )
+    dp_comm_overlap: bool = field(
+        default=True, metadata={"help": "Whether to overlap data parallelism (DP) communication with computation."}
+    )
+    sharding_comm_overlap: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
+        },
+    )
+    tp_async_allreduce: bool = field(
+        default=False, metadata={"help": "Whether to use asynchronous allreduce for tensor parallelism (TP)."}
+    )
+    sp_async_reduce_scatter: bool = field(
+        default=False, metadata={"help": "Whether to use asynchronous reduce-scatter for sharding parallelism (SP)."}
+    )
+    overlap_p2p_comm: bool = field(
+        default=True,
+        metadata={"help": "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True."},
+    )
+    batch_p2p_comm: bool = field(
+        default=True, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
+    )
+    dynamic_shape: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
+        },
+    )
+    mtp_loss_scaling_factor: float = field(
+        default=1.0,
+        metadata={
+            "help": "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."
+        },
+    )
+    dp_allreduce_avg_in_gradinent_scale: bool = field(
+        default=False,
+        metadata={
+            "help": "Replace `allreduce_sum + scale` pattern with `allreduce_avg` when scaling gradient in data_parallel/sequence_parallel, which improves performance. ONLY supported for auto mode now."
+        },
+    )
+    sp_allreduce_avg_in_gradinent_scale: bool = field(
+        default=False,
+        metadata={
+            "help": "Replace `allreduce_sum + scale` pattern with `allreduce_avg` when scaling gradient in data_parallel/sequence_parallel, which improves performance. ONLY supported for auto mode now."
+        },
+    )
+    gradient_sync_after_accumulate: bool = field(
+        default=False,
+        metadata={
+            "help": "Move gradient sync operations from backward into optimizer step when gradient accumulate is enabled, which reduces sync times to improve performance but increases memory usage. ONLY supported for auto mode now."
+        },
+    )
+    mp_async_allreduce: bool = field(
+        default=False,
+        metadata={
+            "help": "Support all_reduce(dx) overlap with matmul(dw) in ColumnParallelLinear backward when set to True, which can accelerate model parallel performance."
+        },
+    )
+    mp_skip_c_identity: bool = field(
+        default=False,
+        metadata={
+            "help": "Support skipping c_identity in ColumnParallelLinear and RowParallelLinear. Only works when mp_async_allreduce is True. Can accelerate model parallel further."
+        },
+    )
+    mp_fused_linear_param_grad_add: bool = field(
+        default=False,
+        metadata={
+            "help": "Support fused_linear_param_grad_add in ColumnParallelLinear (requires cuda >= 11.6). Only works when mp_async_allreduce is True. Can accelerate model parallel further."
+        },
+    )
+    tp_delay_scale_loss: bool = field(
+        default=False,
+        metadata={
+            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
+        },
+    )
+    pp_delay_scale_loss: bool = field(
+        default=False,
+        metadata={
+            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
+        },
+    )
+    pp_sync_param: bool = field(
+        default=False,
+        metadata={
+            "help": "In optimizer step, use broadcast to sync parameters whose attribute 'is_distributed' is False."
+        },
+    )
+    tp_sync_param: bool = field(
+        default=False,
+        metadata={
+            "help": "In optimizer step, use broadcast to sync parameters whose attribute 'is_distributed' is False."
+        },
+    )
+    sync_grad: bool = field(
+        default=False,
+        metadata={
+            "help": "In optimizer step, use broadcast to sync gradients whose attribute 'is_distributed' is False."
+        },
+    )
+    tp_sync_moment: bool = field(
+        default=False,
+        metadata={
+            "help": "In optimizer step, use broadcast to sync momentums whose attribute 'is_distributed' is False."
+        },
+    )
+    pp_sync_moment: bool = field(
+        default=False,
+        metadata={
+            "help": "In optimizer step, use broadcast to sync momentums whose attribute 'is_distributed' is False."
+        },
+    )
+    replace_with_c_embedding: bool = field(
+        default=False,
+        metadata={
+            "help": "Support replacing col-sliced embedding with row-sliced c_embedding when set to True, which is used in PIR auto_parallel."
+        },
+    )
+    replace_with_parallel_cross_entropy: bool = field(
+        default=False,
+        metadata={
+            "help": "Replace 'cross_entropy_with_softmax' OP with 'c_softmax_with_cross_entropy' OP in PIR static graph, which can improve model parallel performance."
+        },
+    )
+    p2p_cache_shape: bool = field(
+        default=False,
+        metadata={"help": "Set this when maximum sequence length is varying (disables p2p cache shape)."},
+    )
+    partial_send_recv: bool = field(
+        default=False, metadata={"help": "Optimize send speed for tensor parallel (disables partial send/recv)."}
+    )
+    release_grads: bool = field(
+        default=False,
+        metadata={
+            "help": "Reduce peak memory usage by releasing gradients after each iteration. The creation of gradients will be postponed until backward propagation of the next iteration."
+        },
+    )
+    clear_every_step_cache: bool = field(
+        default=False, metadata={"help": "Clear every step cache for pipeline parallel."}
+    )
+    non_batch_p2p_comm: bool = field(
+        default=False, metadata={"help": "Disable batched send/recv in pipeline parallel mode."}
+    )
+    auto_parallel_sync_shared_params: bool = field(
+        default=False,
+        metadata={"help": "Optimize parameter sharing between two stages in a pipeline parallel scenario."},
+    )
+    stage1_tensor_fusion: bool = field(
+        default=False,
+        metadata={
+            "help": "Fuse small tensors into big tensor chunks to accelerate communications. May increase memory occupation."
+        },
+    )
+    tensor_fusion: bool = field(
+        default=False,
+        metadata={
+            "help": "Fuse small tensors into big tensor chunks to accelerate communications. May increase memory occupation. Only used for semi auto mode."
+        },
+    )
+    stage1_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Fuse small tensors into big tensor chunks to accelerate communications and overlap communication with backward computation. May harm backward speed."
+        },
+    )
+    overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Fuse small tensors into big tensor chunks to accelerate communications and overlap communication with backward computation. May harm backward speed. Only used for semi auto mode."
+        },
+    )
+    stage2_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Overlap stage2 NCCL communication with computation. Constraints: logging_step should be bigger than 1 for broadcast overlap, and no other sync should be called during training for broadcast overlap."
+        },
+    )
+    stage1_broadcast_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Overlap stage1 V1 broadcast with next step forward computation. Constraints: logging_step should be bigger than 1 for broadcast overlap forward compute, and no other sync should be called during training for broadcast overlap."
+        },
+    )
+    stage1_allgather_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Overlap stage1 V2 allgather with next step forward computation. Constraints: logging_step should be bigger than 1 for allgather overlap forward compute, and no other sync should be called during training for allgather overlap."
+        },
+    )
+    stage1_reduce_avg: bool = field(
+        default=False,
+        metadata={
+            "help": "Replace reduce_avg with original reduce_sum+scale in stage1, which can be used for accuracy verification (disables stage1 reduce_avg)."
+        },
+    )
+    fuse_optimizer_states: bool = field(default=False, metadata={"help": "Fuse optimizer states to a single storage."})
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1293,6 +1493,10 @@ class TrainingArguments:
             os.environ["FLAGS_max_inplace_grad_add"] = "65536"
             os.environ["FLAGS_embedding_deterministic"] = "1"
             os.environ["FLAGS_cudnn_deterministic"] = "1"
+
+        if self.deterministic_mode:
+            os.environ["FLAGS_cudnn_deterministic"] = "1"
+            os.environ["FLAGS_embedding_deterministic"] = "1"
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
         if env_local_rank != -1 and env_local_rank != self.local_rank and paddle.distributed.get_world_size() > 1:
