@@ -115,6 +115,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          bash -x PaddleFleet/ci/integration_test/glm45.sh
           glm45_exit_code=$?
           source /workspace/PaddleFleet/.venv/bin/activate
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -231,6 +232,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          bash -x PaddleFleet/ci/integration_test/glm45_a100.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
