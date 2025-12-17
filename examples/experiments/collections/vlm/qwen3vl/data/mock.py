@@ -16,7 +16,10 @@ import lightning.pytorch as pl
 from lightning.pytorch.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
 import numpy as np
 import torch
+from torch.utils import data
 from torch.utils.data import DataLoader, Dataset
+
+from .multimodal_tokens import IMAGE_TOKEN_INDEX
 
 
 class Qwen3VLMockDataModule(pl.LightningDataModule):
@@ -79,7 +82,7 @@ class Qwen3VLMockDataModule(pl.LightningDataModule):
             self.setup()
         return self._create_dataloader(self._test_ds)
     
-    def _create_dataloader(self, dataset):
+    def _create_dataloader(self, dataset, **kwargs):
         return DataLoader(
             dataset,
             num_workers=self.num_workers,
@@ -132,3 +135,63 @@ class _Qwen3VLMockDataset(Dataset):
         # Processor image input
         image_inputs = prepare_image_inputs(3, self.image_width, self.image_height)
         process_out = self.image_processor(image_inputs, return_tensors="pt")
+        pixel_values = process_out.pixel_values
+        image_grid_thw = process_out.image_grid_thw[0]
+        image_token_amount = image_grid_thw.prod() // (self.spatial_merge_size ** 2)
+        
+        # reseve at least 200 position for text
+        if self.seq_length - image_token_amount < 200:
+            raise ValueError("need to adjust self.seq_length or image_token_amount")
+        
+        # Prepare input token ids.
+        np_gen = np.random.default_rng(seed=self.seed + idx)
+        tokens = torch.from_numpy(np_gen.integers(self.vocab_size, size=[self.seq_length + 1], dtype=np.int64))
+        
+        # Fill IMAGE_TOKEN_INDEX to input token ids.
+        img_start_idx = 30
+        tokens[img_start_idx: img_start_idx + image_token_amount] = IMAGE_TOKEN_INDEX
+        input_ids = tokens[:-1]
+        
+        # Prepare labels.
+        labels = tokens.clone()
+        generation_prompt_size = 5
+        prompt_end_idx = img_start_idx + image_token_amount + generation_prompt_size
+        labels[:prompt_end_idx] = -100
+        labels = labels[1:]
+        
+        return {
+            "input_ids": input_ids,
+            "pixel_values": pixel_values,
+            "image_grid_thw": image_grid_thw,
+            "loss_mask": self.loss_mask,
+            "labels": labels,
+        }
+    
+    def _collate_fn(self, batch):
+        """
+        A default implementation of a collation function.
+        Users should override this method to define custom data loaders.
+        """
+        collated_batch = data.dataloader.default_collate(batch)
+        collated_batch["attention_mask"] = None
+        return collated_batch
+    
+    def collate_fn(self, batch):
+        """Method that user pass as functor to DataLoader.
+
+        The method optionally performs neural type checking and add types to the outputs.
+
+        Please note, subclasses of Dataset should not implement `input_types`.
+
+        # Usage:
+        dataloader = torch.utils.data.DataLoader(
+                ....,
+                collate_fn=dataset.collate_fn,
+                ....
+        )
+
+        Returns
+        -------
+            Collated batch, with or without types.
+        """
+        return self._collate_fn(batch)
