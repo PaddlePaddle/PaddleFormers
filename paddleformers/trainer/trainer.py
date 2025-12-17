@@ -139,7 +139,7 @@ from ..transformers.segment_parallel_utils import (
     auto_split_inputs_sequence_dim,
     split_inputs_sequence_dim,
 )
-from ..utils import empty_device_cache
+from ..utils import empty_device_cache, perf_utils
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     EMA_STATE_DIC,
@@ -1940,8 +1940,16 @@ class Trainer:
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
 
             step = -1
+
             for step, inputs in enumerate(epoch_iterator):
 
+                if self.args.profile:
+                    perf_utils.switch_profile(
+                        self.state.global_step,
+                        self.args.profile_step_start,
+                        self.args.profile_step_end,
+                        enable_layerwise_event=True,
+                    )
                 os.environ["TRAINER_GLOBAL_STEP"] = str(self.state.global_step)
                 self.callback_handler.on_load_data_end(args, self.state, self.control, inputs=inputs)
 
