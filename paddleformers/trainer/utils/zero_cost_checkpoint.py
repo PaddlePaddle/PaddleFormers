@@ -21,6 +21,7 @@ import multiprocessing
 import os
 import random
 import time
+from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from dataclasses import replace
 from enum import Enum
@@ -1151,28 +1152,21 @@ class ZeroCostCheckpointWorker:
         )
 
 
-class EMABuffer:
-    def __init__(self, resume_from_checkpoint, args, sharding_io, offload=True):
-        assert sharding_io is not None, "EMA should be only enabled when save_sharded_model is True"
+class EMABuffer(ABC):
+    def __init__(self, resume_from_checkpoint, args, offload=True):
         self.master_weights = {}
         self.model_params = {}
         self.args = args
-        self.sharding_io = sharding_io
         self.offload = offload
         if resume_from_checkpoint is not None:
             self._load(resume_from_checkpoint)
-
-    def _ema_path(self, base_path):
-        path = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
-        path = path.replace("optimizer", "ema")
-        return os.path.join(base_path, path)
 
     def _load(self, resume_from_checkpoint):
         ema_path = self._ema_path(resume_from_checkpoint)
         if not os.path.exists(ema_path):
             return
 
-        success, err_msg = self.sharding_io.check_same_strategy(resume_from_checkpoint)
+        success, err_msg = self._check_consistent_dist_strategy(resume_from_checkpoint)
         if not success:
             logger.info(f"Cannot load EMA because: {err_msg}")
             return
@@ -1199,14 +1193,11 @@ class EMABuffer:
         if ema_loss_threshold is None or loss < ema_loss_threshold:
             logger.info(f"EMA accumulating for step {global_step} ...")
             self._ema_impl(
-                state_dict=self.sharding_io.optimizer.state_dict()["master_weights"],
+                state_dict=self._get_master_weight(),
                 ema_state_dict=self.master_weights,
             )
             self._ema_impl(
-                state_dict=self.sharding_io.manipulate_state_dict_and_config(
-                    unwrap_model(self.sharding_io.model),
-                    merge_tensor_parallel=False,
-                )[0],
+                state_dict=self._get_model_state(),
                 ema_state_dict=self.model_params,
             )
             logger.info(f"EMA accumulate done for step {global_step}")
@@ -1227,10 +1218,95 @@ class EMABuffer:
                 v = v_pin
             ema_state_dict[k] = v
 
+    @abstractmethod
+    def _get_master_weight(self):
+        pass
+
+    @abstractmethod
+    def _get_model_state(self):
+        pass
+
+    @abstractmethod
+    def _check_consistent_dist_strategy(self, resume_from_checkpoint):
+        pass
+
+
+class EMABufferShardingIOBased(EMABuffer):
+    def __init__(self, resume_from_checkpoint, args, sharding_io, offload=True):
+        assert sharding_io is not None, "EMA should be only enabled when save_sharded_model is True"
+        self.sharding_io = sharding_io
+        super().__init__(resume_from_checkpoint, args, offload)
+
+    def _ema_path(self, base_path):
+        path = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
+        path = path.replace("optimizer", "ema")
+        return os.path.join(base_path, path)
+
+    def _get_model_state(self):
+        return self.sharding_io.manipulate_state_dict_and_config(
+            unwrap_model(self.sharding_io.model),
+            merge_tensor_parallel=False,
+        )[0]
+
+    def _get_master_weight(self):
+        return self.sharding_io.optimizer.state_dict()["master_weights"]
+
+    def _check_consistent_dist_strategy(self, resume_from_checkpoint):
+        return self.sharding_io.check_same_strategy(resume_from_checkpoint)
+
+
+class EMABufferFcBased(EMABuffer):
+    def __init__(self, resume_from_checkpoint, args, offload=True, hcg=None, model=None, optimizer=None):
+        self.hcg = hcg
+        self.model = model
+        self.optimizer = optimizer
+        self.dist_info_collector_and_validator = DistInfoCollectorValidator(args, hcg)
+
+        super().__init__(resume_from_checkpoint, args, offload)
+
+    def _get_model_meta(self):
+        return self.dist_info_collector_and_validator.gather_distributed_model_meta(self.model, self.optimizer)
+
+    def _ema_path(self, base_path):
+        return os.path.join(base_path, "ema_state", f"{dist.get_rank()}_0.distcp")
+
+    def _check_consistent_dist_strategy(self, resume_from_checkpoint):
+        return self.dist_info_collector_and_validator.check_same_strategy(os.path.dirname(resume_from_checkpoint))
+
+    def _get_model_state(self):
+        assert self.model is not None, "expected model is not None"
+        return self.model.state_dict()
+
+    def _get_master_weight(self):
+        assert self.optimizer is not None, "expected optimizer is not None"
+        return self.optimizer.state_dict()["master_weights"]
+
+    def save(self, global_step):
+        model_meta_content = self._get_model_meta()
+        model_meta_path = os.path.join(self.args.output_dir, MODEL_META_NAME)
+        with open(model_meta_path, "w") as f:
+            json.dump(model_meta_content, f)
+
+        super().save(global_step)
+
 
 class NonZCCEMACallback(TrainerCallback):
-    def __init__(self, resume_from_checkpoint, args, sharding_io, offload=True):
-        self.buffer = EMABuffer(resume_from_checkpoint, args, sharding_io, offload)
+    def __init__(self, ema_buffer: EMABuffer):
+        self.buffer = ema_buffer
+
+    @staticmethod
+    def create_nonzcc_callback(
+        args, resume_from_checkpoint, sharding_io=None, model=None, optimizer=None, hcg=None, offload=True
+    ):
+        if args.save_checkpoint_format == "flex_checkpoint":
+            ema_buffer = EMABufferFcBased(
+                resume_from_checkpoint, args, offload=offload, hcg=hcg, model=model, optimizer=optimizer
+            )
+        else:
+            assert sharding_io is not None, "EMA should be only enabled when save_sharded_model is True"
+            ema_buffer = EMABufferShardingIOBased(resume_from_checkpoint, args, sharding_io, offload=offload)
+
+        return NonZCCEMACallback(ema_buffer)
 
     def on_step_end(self, args, state, control, **kwargs):
         if state.global_step % args.zcc_ema_interval == 0:
