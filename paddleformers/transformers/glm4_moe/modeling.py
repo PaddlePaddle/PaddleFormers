@@ -1122,8 +1122,9 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         if is_fleet:
             aoa_config["aoa_statements"] += [
                 f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
-                f"_ -> {model_prefix}lm_head.weight",
             ]
+            if not config.tie_word_embeddings:
+                aoa_config["aoa_statements"] += ["_ -> lm_head.weight"]
         else:
             aoa_config["aoa_statements"] += [
                 f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
@@ -1140,6 +1141,9 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
                 f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
             ]
+
+        if config.tie_word_embeddings:
+            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
 
         # FFN
         if not config.fuse_attention_ffn:
@@ -1188,7 +1192,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         if is_fleet:
             aoa_statements += [
                 "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
-                f"{model_prefix}lm_head.weight -> _",
+                # "lm_head.weight -> _",
             ]
         else:
             aoa_statements += [
