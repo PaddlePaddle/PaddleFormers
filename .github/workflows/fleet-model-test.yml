@@ -115,43 +115,27 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFleet/ci/integration_test/glm45.sh | tee glm45.log
           glm45_exit_code=$?
           source /workspace/PaddleFleet/.venv/bin/activate
           if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "Integration test failed: GLM4.5, try to analyze log."
-            python PaddleFleet/ci/check_log_for_exitcode.py glm45.log integration true
-            find_error_exit_code=$?
-            if [[ "$find_error_exit_code" != "0" ]]; then
-              echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
-            else
-              echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
-            fi
-            exit $find_error_exit_code
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
+            exit 1
           else
             echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
           fi
           '
-
       - name: Integration test (GLM4.5 multi-card FP8)
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFleet/ci/integration_test/glm45_fp8.sh | tee glm45_fp8.log
+          bash -x PaddleFleet/ci/integration_test/glm45_fp8.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "Integration test failed: GLM4.5, try to analyze log."
-            python PaddleFleet/ci/check_log_for_exitcode.py glm45_fp8.log integration true
-            find_error_exit_code=$?
-            if [[ "$find_error_exit_code" != "0" ]]; then
-              echo -e "::error:: \033[31mIntegration test failed: GLM4.5 FP8.\033[0m"
-            else
-              echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
-            fi
-            exit $find_error_exit_code
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
+            exit 1
           else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 FP8.\033[0m"
           fi
           '
 
@@ -247,18 +231,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFleet/ci/integration_test/glm45_a100.sh | tee glm45_a100.log
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "Integration test failed: GLM4.5, try to analyze log."
-            python PaddleFleet/ci/check_log_for_exitcode.py glm45_a100.log integration false
-            find_error_exit_code=$?
-            if [[ "$find_error_exit_code" != "0" ]]; then
-              echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
-            else
-              echo -e "\033[32mLog analysis did not find specific errors.\033[0m"
-            fi
-            exit $find_error_exit_code
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
+            exit 1
           else
             echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
           fi
