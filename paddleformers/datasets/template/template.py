@@ -59,7 +59,9 @@ class Template:
     stop_words: list[str]
     thought_words: tuple[str, str]
     efficient_eos: bool
+    chat_sep: str
     replace_eos: bool
+    auto_add_bos: bool
     enable_thinking: Optional[bool]
     mm_plugin: "BasePlugin"
 
@@ -153,6 +155,9 @@ class Template:
                     elements += self.format_function.apply(
                         content=message["tool_calls"], thought_words=self.thought_words
                     )
+                # Add chat sep to all except the last round
+                if i < len(messages) - 1:
+                    elements += [self.chat_sep]
             elif message["role"] == Role.OBSERVATION:
                 elements += self.format_observation.apply(content=message["content"])
             elif message["role"] == Role.FUNCTION:
@@ -265,6 +270,76 @@ class ReasoningTemplate(Template):
         return [(encoded_messages[i], encoded_messages[i + 1]) for i in range(0, len(encoded_messages), 2)]
 
 
+@dataclass
+class Llama2Template(Template):
+    r"""A template that fuse the system message to first user message."""
+
+    @override
+    def _encode(
+        self,
+        tokenizer: "PreTrainedTokenizer",
+        messages: list[dict[str, str]],
+        system: str,
+        tools: str,
+    ) -> list[list[int]]:
+        system = system or self.default_system
+        encoded_messages = []
+        for i, message in enumerate(messages):
+            elements = []
+
+            system_text = ""
+            if i == 0:
+                elements += self.format_prefix.apply()
+                if system or tools:
+                    tool_text = self.format_tools.apply(content=tools)[0] if tools else ""
+                    system_text = self.format_system.apply(content=(system + tool_text))[0]
+
+            if message["role"] == Role.USER:
+                elements += self.format_user.apply(content=system_text + message["content"])
+            elif message["role"] == Role.ASSISTANT:
+                elements += self.format_assistant.apply(content=message["content"])
+            elif message["role"] == Role.OBSERVATION:
+                elements += self.format_observation.apply(content=message["content"])
+            elif message["role"] == Role.FUNCTION:
+                elements += self.format_function.apply(content=message["content"])
+            else:
+                raise NotImplementedError("Unexpected role: {}".format(message["role"]))
+
+            encoded_messages.append(self._convert_elements_to_ids(tokenizer, elements))
+
+        return encoded_messages
+
+    def _get_jinja_template(self, tokenizer: "PreTrainedTokenizer") -> str:
+        prefix = self._convert_slots_to_jinja(self.format_prefix.apply(), tokenizer)
+        system_message = self._convert_slots_to_jinja(
+            self.format_system.apply(), tokenizer, placeholder="system_message"
+        )
+        user_message = self._convert_slots_to_jinja(self.format_user.apply(), tokenizer)
+        assistant_message = self._convert_slots_to_jinja(self.format_assistant.apply(), tokenizer)
+        jinja_template = ""
+        if prefix:
+            jinja_template += "{{ " + prefix + " }}"
+
+        if self.default_system:
+            jinja_template += "{% set system_message = '" + self._jinja_escape(self.default_system) + "' %}"
+
+        jinja_template += (
+            "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}"
+            "{% set system_message = messages[0]['content'] %}{% else %}{% set loop_messages = messages %}{% endif %}"
+            "{% for message in loop_messages %}"
+            "{% if loop.index0 == 0 and system_message is defined %}"
+            "{% set content = " + system_message + " + message['content'] %}"
+            "{% else %}{% set content = message['content'] %}{% endif %}"
+            "{% if message['role'] == 'user' %}"
+            "{{ " + user_message + " }}"
+            "{% elif message['role'] == 'assistant' %}"
+            "{{ " + assistant_message + " }}"
+            "{% endif %}"
+            "{% endfor %}"
+        )
+        return jinja_template
+
+
 TEMPLATES: dict[str, "Template"] = {}
 
 
@@ -281,7 +356,9 @@ def register_template(
     stop_words: Optional[list[str]] = None,
     thought_words: Optional[tuple[str, str]] = None,
     efficient_eos: bool = False,
+    chat_sep: str = "",
     replace_eos: bool = False,
+    auto_add_bos: bool = False,
     enable_thinking: Optional[bool] = True,
     mm_plugin: "BasePlugin" = get_mm_plugin(name="base"),
     template_class: type["Template"] = Template,
@@ -331,7 +408,9 @@ def register_template(
         stop_words=stop_words or [],
         thought_words=thought_words or ("<think>\n", "\n</think>\n\n"),
         efficient_eos=efficient_eos,
+        chat_sep=chat_sep,
         replace_eos=replace_eos,
+        auto_add_bos=auto_add_bos,
         enable_thinking=enable_thinking,
         mm_plugin=mm_plugin,
     )
@@ -391,7 +470,9 @@ def parse_template(tokenizer: "PreTrainedTokenizer") -> "Template":
         stop_words=[],
         thought_words=("<think>\n", "\n</think>\n\n"),
         efficient_eos=False,
+        chat_sep="",
         replace_eos=False,
+        auto_add_bos=False,
         enable_thinking=True,
         mm_plugin=get_mm_plugin(name="base"),
     )
@@ -442,11 +523,13 @@ register_template(
 register_template(
     name="ernie",
     format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n\n<|im_start|>assistant\n"]),
-    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n\n"]),
-    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n\n"]),
+    format_assistant=StringFormatter(slots=["<response>\n{{content}}\n</response>\n"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n<system_setting>\n{{content}}\n</system_setting>\n\n<global_setting>\nthink_mode=True\n</global_setting><|im_end|>\n\n"]),
     format_observation=StringFormatter(slots=["<|im_start|>tool\n{{content}}<|im_end|>\n\n<|im_start|>assistant\n"]),
     default_system="<global_setting>\nthink_mode=True\n</global_setting>",
+    chat_sep="<|im_end|>\n\n",
     stop_words=["<|im_end|>"],
+    efficient_eos=True,
 )
 
 register_template(
@@ -490,6 +573,23 @@ register_template(
     replace_eos=True,
     template_class=ReasoningTemplate,
 )
+
+
+# copied from qwen template
+register_template(
+    name="qwen3_nothink",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_function=FunctionFormatter(slots=["{{content}}<|im_end|>\n"], tool_format="qwen"),
+    format_observation=StringFormatter(
+        slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n<|im_start|>assistant\n"]
+    ),
+    format_tools=ToolFormatter(tool_format="qwen"),
+    stop_words=["<|im_end|>"],
+    replace_eos=True,
+)
+
 
 # copied from qwen template
 register_template(
@@ -622,4 +722,60 @@ register_template(
     default_system="You are ChatGPT, a large language model trained by OpenAI.",
     efficient_eos=True,
     template_class=Template,
+)
+
+register_template(
+    name="llama3",
+    format_user=StringFormatter(
+        slots=[
+            (
+                "<|start_header_id|>user<|end_header_id|>\n\n{{content}}<|eot_id|>"
+                "<|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}<|eot_id|>"]),
+    format_system=StringFormatter(slots=["<|start_header_id|>system<|end_header_id|>\n\n{{content}}<|eot_id|>"]),
+    format_function=FunctionFormatter(slots=["{{content}}<|eot_id|>"], tool_format="llama3"),
+    format_observation=StringFormatter(
+        slots=[
+            (
+                "<|start_header_id|>ipython<|end_header_id|>\n\n{{content}}<|eot_id|>"
+                "<|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
+        ]
+    ),
+    format_tools=ToolFormatter(tool_format="llama3"),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    stop_words=["<|eot_id|>", "<|eom_id|>"],
+    replace_eos=True,
+)
+
+
+# copied from gemma template
+register_template(
+    name="gemma3",
+    format_user=StringFormatter(slots=["<start_of_turn>user\n{{content}}<end_of_turn>\n<start_of_turn>model\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<end_of_turn>\n"]),
+    format_system=StringFormatter(slots=["{{content}}\n\n"]),
+    format_observation=StringFormatter(
+        slots=["<start_of_turn>tool\n{{content}}<end_of_turn>\n<start_of_turn>model\n"]
+    ),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    stop_words=["<end_of_turn>"],
+    replace_eos=True,
+    mm_plugin=get_mm_plugin("gemma3", image_token="<image_soft_token>"),
+    template_class=Llama2Template,
+)
+
+
+register_template(
+    name="phi4",
+    format_user=StringFormatter(
+        slots=["<|im_start|>user<|im_sep|>{{content}}<|im_end|><|im_start|>assistant<|im_sep|>"]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>"]),
+    format_system=StringFormatter(slots=["<|im_start|>system<|im_sep|>{{content}}<|im_end|>"]),
+    stop_words=["<|im_end|>"],
+    replace_eos=True,
 )

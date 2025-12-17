@@ -388,12 +388,19 @@ class SFTDataSet(IterableDataset):
                     reverse_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
                     tokens_target = tokens_target[:reverse_len]
 
-            if self.use_template and self.efficient_eos and turn_index != 0:
-                labels_src = [self.tokenizer.eos_token_id] + [-100] * (len(tokens_src) - 1)
-            else:
-                labels_src = [-100] * len(tokens_src)
+            labels_src = [-100] * len(tokens_src)
 
-            labels_target = tokens_target
+            # Perform additional processing on chat sep. 
+            # If eos is valid, replace it with eos for learning; 
+            # otherwise, replace it with -100 and do not learn
+            sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
+            if turn_index != (len(encoded_pairs) - 1):
+                if self.use_template and self.efficient_eos:
+                    labels_target = tokens_target[:len(tokens_target) - sep_token_len] + [self.tokenizer.eos_token_id] + [-100] * (sep_token_len - 1)
+                else:
+                    labels_target = tokens_target[:len(tokens_target) - sep_token_len] + [-100] * sep_token_len
+            else:
+                labels_target = tokens_target
             tokens = tokens_src + tokens_target + tokens
             labels = labels_src + labels_target + labels
 
@@ -418,36 +425,23 @@ class SFTDataSet(IterableDataset):
             return None
 
         if self.use_template:
-            if self.begin_token_id is not None and self.end_of_response_id is not None:
-                # Maybe left truncated, so need to add begin_token
+            # Maybe left truncated, so need to add begin_token
+            if self.template.auto_add_bos and self.begin_token_id:
                 if tokens[0] != self.begin_token_id:
                     tokens = [self.begin_token_id] + tokens
                     labels = [-100] + labels
-
+                    if len(tokens) > self.max_seq_len:
+                        raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+            # Add EOS token at the end
+            if self.efficient_eos:
+                tokens = tokens + [self.tokenizer.eos_token_id]
+                labels = labels + [self.tokenizer.eos_token_id]
                 if len(tokens) > self.max_seq_len:
                     raise RuntimeError(f"token_ids is too long: {len(tokens)}")
-
-                # Add EOS token at the end
-                del tokens[-1]
-                del labels[-1]
-                if self.efficient_eos:
-                    tokens = tokens + [self.tokenizer.eos_token_id]
-                    labels = labels + [self.tokenizer.eos_token_id]
-                labels = labels[1:] + [-100]
-
-                # end_of_response is a special token that indicates the end of the turn.
-                # end_token is a special token that indicates the end of the answer.
-                labels = [
-                    label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
-                ]
-            else:
-                if self.efficient_eos:
-                    tokens = tokens + [self.tokenizer.eos_token_id]
-                    labels = labels + [self.tokenizer.eos_token_id]
-                labels = labels[1:] + [-100]
-                if len(tokens) > self.max_seq_len:
-                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+            # label shift
+            labels = labels[1:] + [-100]
         else:
+            # label shift
             labels = tokens[1:] + [-100]
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
