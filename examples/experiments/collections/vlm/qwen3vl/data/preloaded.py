@@ -18,7 +18,9 @@ import json
 import logging
 import os
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import lightning.pytorch as pl
 from lightning.pytorch.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
 from qwen_vl_utils import fetch_image, fetch_video
 import torch
@@ -816,7 +818,7 @@ class Qwen3VLPreloadedDataModule(pl.LightningDataModule):
             **kwargs,
         )
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> dict[str, Any]:
         """Called when saving a checkpoint, implement to generate and save datamodule state.
 
         Returns:
@@ -826,7 +828,7 @@ class Qwen3VLPreloadedDataModule(pl.LightningDataModule):
         consumed_samples = self.data_sampler.compute_consumed_samples(self.trainer.global_step - self.init_global_step)
         return {'consumed_samples': consumed_samples}
 
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Called when loading a checkpoint, implement to reload datamodule state given datamodule stat
 
         Args:
