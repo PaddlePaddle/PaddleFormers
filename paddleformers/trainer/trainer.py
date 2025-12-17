@@ -2574,8 +2574,6 @@ class Trainer:
                     self.model.save_pretrained(
                         ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
                     )
-                if self.tokenizer is not None and self.args.save_tokenizer:
-                    self.tokenizer.save_pretrained(ckpt_path)
                 self.control = self.callback_handler.on_save_hf(self.args, self.state, self.control)
 
     def log_trained_tokens(self):
@@ -3807,11 +3805,6 @@ class Trainer:
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
                             self._save_flex_optimizer_state(output_dir)
-                            if self.args.should_save:
-                                if self.tokenizer is not None and self.args.save_tokenizer:
-                                    self.tokenizer.save_pretrained(output_dir)
-                                # Good practice: save your training arguments together with the trained model
-                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                         else:
                             if self.dp_group.rank > 0:  # this should only work for MoE saving
                                 self._save_ckpt_func(
@@ -3865,11 +3858,6 @@ class Trainer:
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
                             self._save_flex_model_state(output_dir)
                             self._save_flex_optimizer_state(output_dir)
-                            if self.args.should_save:
-                                if self.tokenizer is not None and self.args.save_tokenizer:
-                                    self.tokenizer.save_pretrained(output_dir)
-                                # Good practice: save your training arguments together with the trained model
-                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                         else:
                             if self.args.data_parallel_rank > 0 and self.args.use_expert_parallel:
                                 self._save_ckpt_func(
@@ -4098,8 +4086,6 @@ class Trainer:
                 else:
                     self._save_flex_model_state(output_dir)
 
-                if self.tokenizer is not None and self.args.save_tokenizer:
-                    self.tokenizer.save_pretrained(output_dir)
                 return
             merge_tensor_parallel = merge_tensor_parallel and self.args.use_hybrid_parallel
             # peft model
