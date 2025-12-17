@@ -412,6 +412,7 @@ def run_sft(
                 training_args=training_args,
                 model_args=model_args,
                 max_seq_len=max_seq_len,
+                model=model,
             )
         else:
             data_collator = partial(

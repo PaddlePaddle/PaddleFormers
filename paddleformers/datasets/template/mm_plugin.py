@@ -479,9 +479,6 @@ class ErnieVLPlugin(BasePlugin):
                 processor=processor,
             )
             mm_inputs.update(image_processor(images=None, videos=video_data["videos"], return_tensors="pd"))
-            temporal_patch_size: int = getattr(image_processor, "temporal_patch_size", 2)
-            if "second_per_grid_ts" in processor.model_input_names:
-                mm_inputs["second_per_grid_ts"] = [temporal_patch_size / fps for fps in video_data["fps_per_video"]]
 
         return mm_inputs
 

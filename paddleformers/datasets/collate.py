@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 from typing import List
 
 import numpy as np
+import paddle
 from scipy.linalg import block_diag
 
 from .SFTDataset import Sequence
@@ -219,7 +221,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
 
 
 def mm_collate_fn(
-    batch: List[List[Sequence]], template, processor, tokenizer, training_args, model_args, max_seq_len: int
+    batch: List[List[Sequence]], template, processor, tokenizer, training_args, model_args, max_seq_len: int, model
 ):
     """Convert batch of sequences into training tensors.
 
@@ -277,6 +279,15 @@ def mm_collate_fn(
 
     input_keys.append("pixel_values")
     input_keys.append("image_grid_thw")
+    input_keys.append("position_ids")
+
+    if model is not None and hasattr(model, "get_rope_index"):
+        get_rope_func = model.get_rope_index  # transformers < 4.52.0
+    elif model is not None and hasattr(model, "model") and hasattr(model.model, "get_rope_index"):
+        get_rope_func = model.model.get_rope_index  # transformers >= 4.52.0
+    else:
+        get_rope_func = None
+
     return_list = []
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
@@ -321,6 +332,11 @@ def mm_collate_fn(
             return_list[-1].append(mm_inputs["pixel_values"])
         if "image_grid_thw" in mm_inputs:
             return_list[-1].append(mm_inputs["image_grid_thw"])
+        if get_rope_func is not None:
+            func_params = inspect.signature(get_rope_func).parameters.keys()
+            filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
+            position_ids, rope_deltas = get_rope_func(input_ids=paddle.to_tensor(padded_token_ids), **filtered_args)
+            return_list[-1].append(position_ids)
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
     input_dict = dict(zip(input_keys, return_list))
