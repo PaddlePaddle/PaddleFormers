@@ -1226,17 +1226,26 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
     def _deepstack_process(
             self, hidden_states: paddle.Tensor, visual_pos_masks: paddle.Tensor, visual_embeds: paddle.Tensor
         ):
+            # Store original shape and flatten hidden_states to 2D [B*S, D]
+            original_shape = hidden_states.shape
+            if hidden_states.ndim > 2:
+                hidden_states = hidden_states.flatten(start_axis=0, stop_axis=1)
+
             visual_pos_masks = visual_pos_masks.to(hidden_states.device)
             visual_embeds = visual_embeds.to(hidden_states.device, hidden_states.dtype)
+            
             # complicated logic for squential parallelism
             if visual_pos_masks.ndim > 1:
                 visual_pos_masks = visual_pos_masks.flatten()
+                
+            # This block handles Sequence Parallelism (Row Slicing)
             if visual_pos_masks.shape[0] > hidden_states.shape[0]:
                 try:
+                    from paddle.distributed.fleet import get_hybrid_communicate_group
                     hcg = get_hybrid_communicate_group()
                     mp_rank = hcg.get_model_parallel_rank()
                     mp_size = hcg.get_model_parallel_world_size()
-                except ImportError:
+                except (ImportError, AttributeError):
                     mp_size = visual_pos_masks.shape[0] // hidden_states.shape[0]
                     mp_rank = paddle.distributed.get_rank() % mp_size
                 total_len = visual_pos_masks.shape[0]
@@ -1253,9 +1262,35 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
 
                 visual_embeds = visual_embeds[visual_offset : visual_offset + local_visual_count]
                 visual_pos_masks = local_mask
+
+            # If TP is enabled, hidden_states has shape [..., Hidden_Dim / TP_Size], 
+            # but visual_embeds usually has full [Hidden_Dim]. We need to slice visual_embeds column-wise.
+            if hidden_states.shape[-1] != visual_embeds.shape[-1]:
+                try:
+                    from paddle.distributed.fleet import get_hybrid_communicate_group
+                    hcg = get_hybrid_communicate_group()
+                    tp_rank = hcg.get_model_parallel_rank()
+                    tp_size = hcg.get_model_parallel_world_size()
+                except (ImportError, AttributeError):
+                    # Fallback simple estimation
+                    tp_size = visual_embeds.shape[-1] // hidden_states.shape[-1]
+                    tp_rank = paddle.distributed.get_rank() % tp_size
+                
+                if tp_size > 1:
+                    embed_dim = visual_embeds.shape[-1]
+                    slice_width = embed_dim // tp_size
+                    start_col = tp_rank * slice_width
+                    end_col = start_col + slice_width
+                    visual_embeds = visual_embeds[:, start_col:end_col]
+
             hidden_states = hidden_states.clone()
             local_this = hidden_states[visual_pos_masks, :] + visual_embeds
             hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+            
+            # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
+            if len(original_shape) > 2:
+                hidden_states = hidden_states.reshape(original_shape)
+                
             return hidden_states
 
     def forward(
