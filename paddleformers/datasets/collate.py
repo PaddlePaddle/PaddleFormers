@@ -283,13 +283,10 @@ def mm_collate_fn(
     for batch_sequence in batch:
         original_token_ids = [seq.token_ids for seq in batch_sequence]
         token_ids = [sum(original_token_ids, [])]
-        loss_mask = [sum([seq.loss_mask for seq in batch_sequence], [])]
         labels = [sum([seq.labels for seq in batch_sequence], [])]
         # padding
         padded_token_ids = pad_batch_data(token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
-        padded_labels = pad_batch_data(labels, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
-        padded_loss_mask = pad_batch_data(loss_mask, pad_idx=0, max_seq_len=max_seq_len)
-        padded_labels = np.where(padded_loss_mask == 1, padded_labels, -100)
+        padded_labels = pad_batch_data(labels, pad_idx=-100, max_seq_len=max_seq_len)
         return_list.append(
             [
                 padded_token_ids,

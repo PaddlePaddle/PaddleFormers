@@ -225,7 +225,7 @@ class MMPluginMixin:
         videos,
         audios,
         processor,
-        imglens,
+        imglens=None,
     ):
         mm_inputs = {}
         if len(images) != 0:
@@ -522,7 +522,9 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
                 image_seqlen = (
-                    image_grid_thw[num_image_tokens].prod() // image_merge_length if self.expand_mm_tokens else 1
+                    image_grid_thw[num_image_tokens].prod().item() // image_merge_length
+                    if self.expand_mm_tokens
+                    else 1
                 )
                 content = content.replace(
                     IMAGE_PLACEHOLDER,
@@ -582,7 +584,7 @@ class GLM4VPlugin(Qwen2VLPlugin):
                 image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
                 image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
             )["images"]
-            mm_inputs.update(image_processor(images, return_tensors="pt"))
+            mm_inputs.update(image_processor(images, return_tensors="pd"))
 
         if len(videos) != 0:
             video_data = self._regularize_videos(
@@ -647,7 +649,9 @@ class GLM4VPlugin(Qwen2VLPlugin):
         for message in messages:
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
-                image_seqlen = image_grid_thw[num_image_tokens].prod() // merge_length if self.expand_mm_tokens else 1
+                image_seqlen = (
+                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                )
                 content = content.replace(
                     IMAGE_PLACEHOLDER, f"<|begin_of_image|>{self.image_token * image_seqlen}<|end_of_image|>", 1
                 )
