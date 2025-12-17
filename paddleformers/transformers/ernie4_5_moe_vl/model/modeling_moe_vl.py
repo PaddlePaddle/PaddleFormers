@@ -1094,7 +1094,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         self,
         input_ids: Optional[paddle.Tensor] = None,
         image_grid_thw: Optional[paddle.Tensor] = None,
-        # video_grid_thw: Optional[paddle.Tensor] = None,
+        video_grid_thw: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
     ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """
@@ -1142,41 +1142,54 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             mrope_position_deltas (`np.Array` of shape `(batch_size)`)
         """
         spatial_merge_size = self.config.vision_config.spatial_merge_size
-        im_patch_id = self.config.im_patch_id
         image_start_token_id = self.config.image_start_token_id
         video_start_token_id = self.config.video_start_token_id
         mrope_position_deltas = []
-        if input_ids is not None and (image_grid_thw is not None):
+        if input_ids is not None and (image_grid_thw is not None or video_grid_thw is not None):
             total_input_ids = input_ids
             if attention_mask is None:
                 attention_mask = paddle.ones_like(total_input_ids)
             position_ids = paddle.ones(
                 3, input_ids.shape[0], input_ids.shape[1], dtype=input_ids.dtype, device=input_ids.device
             )
-            image_index = 0
+            image_index, video_index = 0, 0
             for i, input_ids in enumerate(total_input_ids):
                 input_ids = input_ids[attention_mask[i].to(input_ids.device) == 1]
-                image_nums = 0
                 image_start_indices = paddle.nonzero(input_ids == image_start_token_id).squeeze(1)
                 video_start_indices = paddle.nonzero(input_ids == video_start_token_id).squeeze(1)
-                image_nums = len(image_start_indices) + len(video_start_indices)
+                image_nums = len(image_start_indices)
+                video_nums = len(video_start_indices)
                 input_tokens = input_ids.tolist()
                 llm_pos_ids_list: list = []
                 st = 0
-                remain_images = image_nums
-                for _ in range(image_nums):
-                    if im_patch_id in input_tokens and remain_images > 0:
-                        ed_image = input_tokens.index(im_patch_id, st)
+                remain_images, remain_videos = image_nums, video_nums
+                for _ in range(image_nums + video_nums):
+                    if image_start_token_id in input_tokens and remain_images > 0:
+                        ed_image = input_tokens.index(image_start_token_id, st) + 1
                     else:
                         ed_image = len(input_tokens) + 1
-                    t, h, w = (
-                        image_grid_thw[image_index][0],
-                        image_grid_thw[image_index][1],
-                        image_grid_thw[image_index][2],
-                    )
-                    image_index += 1
-                    remain_images -= 1
-                    ed = ed_image
+                    if video_start_token_id in input_tokens and remain_videos > 0:
+                        ed_video = input_tokens.index(video_start_token_id, st) + 1
+                    else:
+                        ed_video = len(input_tokens) + 1
+                    if ed_image < ed_video:
+                        t, h, w = (
+                            image_grid_thw[image_index][0],
+                            image_grid_thw[image_index][1],
+                            image_grid_thw[image_index][2],
+                        )
+                        image_index += 1
+                        remain_images -= 1
+                        ed = ed_image
+                    else:
+                        t, h, w = (
+                            video_grid_thw[video_index][0],
+                            video_grid_thw[video_index][1],
+                            video_grid_thw[video_index][2],
+                        )
+                        video_index += 1
+                        remain_videos -= 1
+                        ed = ed_video
                     llm_grid_t, llm_grid_h, llm_grid_w = (
                         t.item(),
                         h.item() // spatial_merge_size,
@@ -1198,10 +1211,9 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                     text_len = len(input_tokens) - st
                     llm_pos_ids_list.append(paddle.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
-                llm_positions = paddle.concat(llm_pos_ids_list, dim=1).reshape(3, -1)
+                llm_positions = paddle.concat(llm_pos_ids_list, axis=1).reshape(3, -1)
                 position_ids[..., i, attention_mask[i] == 1] = llm_positions.to(position_ids.device)
                 mrope_position_deltas.append(llm_positions.max() + 1 - len(total_input_ids[i]))
-            position_ids = position_ids.transpose([1, 2, 0])
             mrope_position_deltas = paddle.to_tensor(mrope_position_deltas).unsqueeze(1)
             return position_ids, mrope_position_deltas
         else:
@@ -1222,9 +1234,91 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                     device=input_ids.device,
                     dtype=input_ids.dtype,
                 )
-            position_ids = position_ids.transpose([1, 2, 0])
 
             return position_ids, mrope_position_deltas
+
+    def get_token_type_ids(
+        self,
+        input_ids: Optional[paddle.Tensor] = None,
+        pixel_values: Optional[paddle.Tensor] = None,
+        image_grid_thw: Optional[paddle.Tensor] = None,
+        video_pixel_values: Optional[paddle.Tensor] = None,
+        video_grid_thw: Optional[paddle.Tensor] = None,
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+        IDS_TYPE_FLAG = {"text": 0, "image": 1, "video": 2}
+        spatial_merge_size = self.config.vision_config.spatial_merge_size
+        image_start_token_id = self.config.image_start_token_id
+        video_start_token_id = self.config.video_start_token_id
+
+        token_type_ids = []
+        images, grid_thw = [], []
+
+        total_input_ids = input_ids
+        image_index, video_index = 0, 0
+        for i, input_ids in enumerate(total_input_ids):
+            image_start_indices = paddle.nonzero(input_ids == image_start_token_id).squeeze(1)
+            video_start_indices = paddle.nonzero(input_ids == video_start_token_id).squeeze(1)
+            image_nums = len(image_start_indices)
+            video_nums = len(video_start_indices)
+            input_tokens = input_ids.tolist()
+            llm_token_type_ids: list = []
+            st = 0
+            remain_images, remain_videos = image_nums, video_nums
+            for _ in range(image_nums + video_nums):
+                if image_start_token_id in input_tokens and remain_images > 0:
+                    ed_image = input_tokens.index(image_start_token_id, st)
+                else:
+                    ed_image = len(input_tokens) + 1
+                if video_start_token_id in input_tokens and remain_videos > 0:
+                    ed_video = input_tokens.index(video_start_token_id, st)
+                else:
+                    ed_video = len(input_tokens) + 1
+                if ed_image < ed_video:
+                    t, h, w = (
+                        image_grid_thw[image_index][0],
+                        image_grid_thw[image_index][1],
+                        image_grid_thw[image_index][2],
+                    )
+                    images.append(pixel_values[image_index])
+                    grid_thw.append(image_grid_thw[image_index])
+                    image_index += 1
+                    remain_images -= 1
+                    ed = ed_image
+                    vision_type = "image"
+                else:
+                    t, h, w = (
+                        video_grid_thw[video_index][0],
+                        video_grid_thw[video_index][1],
+                        video_grid_thw[video_index][2],
+                    )
+                    images.extend(video_pixel_values[video_index])
+                    grid_thw.append(video_grid_thw[video_index])
+                    video_index += 1
+                    remain_videos -= 1
+                    ed = ed_video
+                    vision_type = "video"
+                llm_grid_t, llm_grid_h, llm_grid_w = (
+                    t.item(),
+                    h.item() // spatial_merge_size,
+                    w.item() // spatial_merge_size,
+                )
+                text_len = ed - st
+
+                llm_token_type_ids.extend([IDS_TYPE_FLAG["text"]] * text_len)
+                llm_token_type_ids.extend([IDS_TYPE_FLAG["image"]])
+                llm_token_type_ids.extend([IDS_TYPE_FLAG[vision_type]] * llm_grid_t * llm_grid_h * llm_grid_w)
+                llm_token_type_ids.extend([IDS_TYPE_FLAG["image"]])
+                st = ed + llm_grid_t * llm_grid_h * llm_grid_w + 1
+
+            if st < len(input_tokens):
+                text_len = len(input_tokens) - st
+                llm_token_type_ids.extend([IDS_TYPE_FLAG["text"]] * text_len)
+
+            token_type_ids.append(llm_token_type_ids)
+
+        images = paddle.concat(images, axis=0)
+
+        return token_type_ids, images, grid_thw
 
     def prepare_inputs_for_generation(
         self,
