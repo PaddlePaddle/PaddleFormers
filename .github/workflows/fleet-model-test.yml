@@ -301,7 +301,7 @@ jobs:
     env:
       PIP_CACHE_DIR: /root/.cache/pip
       CACHE_DIR: /root/.cache
-      TASK: paddlefleet-CI-${{ github.event.pull_request.number }}-integration-test-A100
+      TASK: formers-fleet-CI-${{ github.event.pull_request.number }}-integration-test-A100
     steps:
       - name: Check docker image and run container
         run: |
