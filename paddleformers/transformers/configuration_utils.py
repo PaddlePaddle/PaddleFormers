@@ -665,7 +665,6 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.moe_subbatch_token_num_before_dispatch = kwargs.pop("moe_subbatch_token_num_before_dispatch", 0)
         self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.using_fake_gate = kwargs.pop("using_fake_gate", False)
