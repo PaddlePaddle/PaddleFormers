@@ -17,7 +17,6 @@ from abc import Callable
 from dataclasses import dataclass
 from doctest import REPORT_NDIFF
 import re
-from types import MethodType
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F

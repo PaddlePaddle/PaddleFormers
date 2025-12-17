@@ -89,8 +89,6 @@ class InternVisionConfig(PretrainedConfig):
             attention_dropout=0.0,
             initializer_range=0.02,
             initializer_factor=0.1,
-            recompute=True,
-            recompute_granularity="full",
             **kwargs,
     ):
         super().__init__(**kwargs)
@@ -110,6 +108,8 @@ class InternVisionConfig(PretrainedConfig):
         self.layer_norm_eps = layer_norm_eps
         self.hidden_act = hidden_act
         self.norm_type = norm_type
+        self.qkv_bias = qkv_bias
+        self.qkv_normalization = qk_normalization
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs) -> 'PretrainedConfig':
