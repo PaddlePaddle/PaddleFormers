@@ -1090,27 +1090,27 @@ class Trainer:
                 metadata = paddle.load(metadata_file)
                 state_dict_metadata.update(metadata.state_dict_metadata)
 
-            init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
-
-            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-
-            opt_states = {}
-            master_weights = {}
-            for k, v in optimizer_sharded_state_dict.items():
-                if k.endswith(".w_0"):
-                    master_weights[k] = v
-                else:
-                    opt_states[k] = v
-
-            dist.load_state_dict(
-                opt_states,
-                opt_states_path,
-                aoa_config=self.args.aoa_config,
-                offload=self.args.load_via_cpu,
-                comm_method=self.args.flex_ckpt_comm_method,
-            )
-
             if not self.args.sharded_model_from_ema:
+                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+
+                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+
+                opt_states = {}
+                master_weights = {}
+                for k, v in optimizer_sharded_state_dict.items():
+                    if k.endswith(".w_0"):
+                        master_weights[k] = v
+                    else:
+                        opt_states[k] = v
+
+                dist.load_state_dict(
+                    opt_states,
+                    opt_states_path,
+                    aoa_config=self.args.aoa_config,
+                    offload=self.args.load_via_cpu,
+                    comm_method=self.args.flex_ckpt_comm_method,
+                )
+
                 dist.load_state_dict(
                     master_weights,
                     master_weights_path,
@@ -1127,12 +1127,8 @@ class Trainer:
             ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
             ema_state_dict = paddle.load(ema_states_path)
             ema_master_weights = ema_state_dict.pop("master_weights", None)
-            opt_master_weights = self.optimizer.state_dict()["master_weights"]
-            for k, v in opt_master_weights.items():
-                assert (
-                    k in ema_master_weights
-                ), f"{k} not in ema_master_weights, emas_master_weight keys {ema_master_weights.keys()}"
-                paddle.assign(ema_master_weights[k], opt_master_weights[k])
+            opt_state_dict = {"master_weights": ema_master_weights}
+            self.optimizer.set_state_dict(opt_state_dict)
 
             self.model.set_state_dict(ema_state_dict)
         else:

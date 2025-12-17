@@ -1260,6 +1260,7 @@ class EMABufferFcBased(EMABuffer):
         self.model = model
         self.optimizer = optimizer
         self.dist_info_collector_and_validator = DistInfoCollectorValidator(args, hcg)
+        self.device_id = int(os.getenv("FLAGS_selected_gpus"))
 
         super().__init__(resume_from_checkpoint, args, offload)
 
@@ -1270,7 +1271,7 @@ class EMABufferFcBased(EMABuffer):
         return os.path.join(base_path, "ema_state", f"{dist.get_rank()}_0.distcp")
 
     def _check_consistent_dist_strategy(self, resume_from_checkpoint):
-        return self.dist_info_collector_and_validator.check_same_strategy(os.path.dirname(resume_from_checkpoint))
+        return self.dist_info_collector_and_validator.check_same_strategy(resume_from_checkpoint)
 
     def _get_model_state(self):
         assert self.model is not None, "expected model is not None"
@@ -1282,9 +1283,12 @@ class EMABufferFcBased(EMABuffer):
 
     def save(self, global_step):
         model_meta_content = self._get_model_meta()
-        model_meta_path = os.path.join(self.args.output_dir, MODEL_META_NAME)
-        with open(model_meta_path, "w") as f:
-            json.dump(model_meta_content, f)
+        base_path = os.path.join(self.args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{global_step}")
+        os.makedirs(base_path, exist_ok=True)
+        model_meta_path = os.path.join(base_path, MODEL_META_NAME)
+        if self.device_id == 0:
+            with open(model_meta_path, "w") as f:
+                json.dump(model_meta_content, f)
 
         super().save(global_step)
 
