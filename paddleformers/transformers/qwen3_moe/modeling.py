@@ -510,7 +510,7 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
-        
+
         # Self Attention
         has_gradient = not hidden_states.stop_gradient
         if self.config.recompute and has_gradient and self.config.recompute_granularity == "full_attn":
@@ -1000,7 +1000,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
 
         # decoder layers
         next_cache = () if use_cache else None
-        
+
         moelayer_use_subbatch_recompute = (
             self.config.moe_subbatch_token_num_before_dispatch > 0
             if hasattr(self.config, "moe_subbatch_token_num_before_dispatch")
