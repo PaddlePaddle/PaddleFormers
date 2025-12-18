@@ -60,6 +60,7 @@ class SFTTrainer(Trainer):
         gen_args=None,
         data_args=None,
         formatting_func: Optional[Callable] = None,
+        **kwargs,
     ):
 
         self.do_generation = do_generation
@@ -177,6 +178,7 @@ class SFTTrainer(Trainer):
             callbacks=callbacks,
             optimizers=optimizers,
             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+            **kwargs,
         )
 
     def _prepare_dataset(
