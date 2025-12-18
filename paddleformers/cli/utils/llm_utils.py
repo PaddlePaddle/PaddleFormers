@@ -267,8 +267,10 @@ def get_lora_target_modules(model):
             ".*mlp.up_proj.*",
             ".*mlp.down_proj.*",
         ]
-    elif model.config.model_type == "ernie4_5":
+    elif model.config.model_type in {"ernie4_5", "ernie4_5_moe"}:
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
