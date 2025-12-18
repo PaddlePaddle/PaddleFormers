@@ -127,6 +127,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Enable padding free sequences packing in training."},
     )
+    pre_shift_one: bool = field(
+        default=True,
+        metadata={"help": "Whether to shift one token in data processing."},
+    )
     mix_strategy: str = field(
         default="concat",
         metadata={

@@ -464,6 +464,7 @@ register_template(
     format_system=StringFormatter(slots=["{{content}}\n"]),
     format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
     replace_eos=False,
+    efficient_eos=True,
     mm_plugin=get_mm_plugin(name="paddleocr_vl", image_token="<|IMAGE_PLACEHOLDER|>"),
 )
 
