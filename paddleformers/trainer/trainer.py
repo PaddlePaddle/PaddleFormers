@@ -139,7 +139,7 @@ from ..transformers.segment_parallel_utils import (
     auto_split_inputs_sequence_dim,
     split_inputs_sequence_dim,
 )
-from ..utils import empty_device_cache
+from ..utils import empty_device_cache, perf_utils
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     EMA_STATE_DIC,
@@ -1043,7 +1043,17 @@ class Trainer:
         logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint):
-        self.add_callback(NonZCCEMACallback(resume_from_checkpoint, self.args, self.sharding_io))
+
+        non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
+            args=self.args,
+            resume_from_checkpoint=resume_from_checkpoint,
+            sharding_io=self.sharding_io,
+            model=self.model,
+            optimizer=self.optimizer,
+            hcg=self.hcg,
+        )
+
+        self.add_callback(non_zcc_ema_callback)
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
@@ -1188,27 +1198,27 @@ class Trainer:
                 metadata = paddle.load(metadata_file)
                 state_dict_metadata.update(metadata.state_dict_metadata)
 
-            init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
-
-            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-
-            opt_states = {}
-            master_weights = {}
-            for k, v in optimizer_sharded_state_dict.items():
-                if k.endswith(".w_0"):
-                    master_weights[k] = v
-                else:
-                    opt_states[k] = v
-
-            dist.load_state_dict(
-                opt_states,
-                opt_states_path,
-                aoa_config=self.args.aoa_config,
-                offload=self.args.load_via_cpu,
-                comm_method=self.args.flex_ckpt_comm_method,
-            )
-
             if not self.args.sharded_model_from_ema:
+                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+
+                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+
+                opt_states = {}
+                master_weights = {}
+                for k, v in optimizer_sharded_state_dict.items():
+                    if k.endswith(".w_0"):
+                        master_weights[k] = v
+                    else:
+                        opt_states[k] = v
+
+                dist.load_state_dict(
+                    opt_states,
+                    opt_states_path,
+                    aoa_config=self.args.aoa_config,
+                    offload=self.args.load_via_cpu,
+                    comm_method=self.args.flex_ckpt_comm_method,
+                )
+
                 dist.load_state_dict(
                     master_weights,
                     master_weights_path,
@@ -1225,14 +1235,9 @@ class Trainer:
             ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
             ema_state_dict = paddle.load(ema_states_path)
             ema_master_weights = ema_state_dict.pop("master_weights", None)
-            opt_master_weights = self.optimizer.state_dict()["master_weights"]
-            for k, v in opt_master_weights.items():
-                assert (
-                    k in ema_master_weights
-                ), f"{k} not in ema_master_weights, emas_master_weight keys {ema_master_weights.keys()}"
-                paddle.assign(ema_master_weights[k], opt_master_weights[k])
+            opt_state_dict = {"master_weights": ema_master_weights}
+            self.optimizer.set_state_dict(opt_state_dict)
 
-            ema_state_dict = reshard_util.all_gather_state_dict(ema_state_dict, lambda x: True, self.sharding_group)
             self.model.set_state_dict(ema_state_dict)
         else:
 
@@ -1931,8 +1936,16 @@ class Trainer:
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
 
             step = -1
+
             for step, inputs in enumerate(epoch_iterator):
 
+                if self.args.profile:
+                    perf_utils.switch_profile(
+                        self.state.global_step,
+                        self.args.profile_step_start,
+                        self.args.profile_step_end,
+                        enable_layerwise_event=True,
+                    )
                 os.environ["TRAINER_GLOBAL_STEP"] = str(self.state.global_step)
                 self.callback_handler.on_load_data_end(args, self.state, self.control, inputs=inputs)
 
@@ -2561,8 +2574,6 @@ class Trainer:
                     self.model.save_pretrained(
                         ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
                     )
-                if self.tokenizer is not None and self.args.save_tokenizer:
-                    self.tokenizer.save_pretrained(ckpt_path)
                 self.control = self.callback_handler.on_save_hf(self.args, self.state, self.control)
 
     def log_trained_tokens(self):
@@ -2630,6 +2641,7 @@ class Trainer:
                 batch_size=self.args.per_device_train_batch_size,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                persistent_workers=self.args.dataloader_num_workers > 0,
                 **additional_configs,
             )
         else:
@@ -2642,6 +2654,7 @@ class Trainer:
                 batch_sampler=train_sampler,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                persistent_workers=self.args.dataloader_num_workers > 0,
                 **additional_configs,
             )
 
@@ -2748,6 +2761,7 @@ class Trainer:
                 batch_sampler=eval_sampler,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                persistent_workers=self.args.dataloader_num_workers > 0,
                 **additional_configs,
             )
 
@@ -2794,6 +2808,7 @@ class Trainer:
                 batch_size=self.args.per_device_eval_batch_size * self.world_size,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                persistent_workers=self.args.dataloader_num_workers > 0,
                 **additional_config,
             )
         else:
@@ -2910,7 +2925,7 @@ class Trainer:
 
         checkpoint_rng_state = paddle.load(rng_file, return_numpy=True)
         if checkpoint_rng_state.get("world_size", None) != self.args.world_size:
-            logger.warn("Cannot load rng states when changing world size of training job.")
+            logger.warning("Cannot load rng states when changing world size of training job.")
             return
 
         random.setstate(checkpoint_rng_state["python"])
@@ -3790,11 +3805,6 @@ class Trainer:
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
                             self._save_flex_optimizer_state(output_dir)
-                            if self.args.should_save:
-                                if self.tokenizer is not None and self.args.save_tokenizer:
-                                    self.tokenizer.save_pretrained(output_dir)
-                                # Good practice: save your training arguments together with the trained model
-                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                         else:
                             if self.dp_group.rank > 0:  # this should only work for MoE saving
                                 self._save_ckpt_func(
@@ -3848,11 +3858,6 @@ class Trainer:
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
                             self._save_flex_model_state(output_dir)
                             self._save_flex_optimizer_state(output_dir)
-                            if self.args.should_save:
-                                if self.tokenizer is not None and self.args.save_tokenizer:
-                                    self.tokenizer.save_pretrained(output_dir)
-                                # Good practice: save your training arguments together with the trained model
-                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                         else:
                             if self.args.data_parallel_rank > 0 and self.args.use_expert_parallel:
                                 self._save_ckpt_func(
@@ -4081,8 +4086,6 @@ class Trainer:
                 else:
                     self._save_flex_model_state(output_dir)
 
-                if self.tokenizer is not None and self.args.save_tokenizer:
-                    self.tokenizer.save_pretrained(output_dir)
                 return
             merge_tensor_parallel = merge_tensor_parallel and self.args.use_hybrid_parallel
             # peft model
