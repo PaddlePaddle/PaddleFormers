@@ -20,6 +20,7 @@
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, NamedTuple, Union
 
 from typing_extensions import override
@@ -63,6 +64,13 @@ GLM4_MOE_TOOL_PROMPT = (
     "\n<arg_key>{{arg-key-2}}</arg_key>"
     "\n<arg_value>{{arg-value-2}}</arg_value>"
     "\n...\n</tool_call>\n"
+)
+
+LLAMA3_TOOL_PROMPT = (
+    "Cutting Knowledge Date: December 2023\nToday Date: {date}\n\n"
+    "You have access to the following functions. To call a function, please respond with JSON for a function call. "
+    """Respond in the format {{"name": function name, "parameters": dictionary of argument name and its value}}. """
+    "Do not use variables.\n\n{tool_text}"
 )
 
 
