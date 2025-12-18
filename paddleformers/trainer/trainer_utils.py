@@ -32,6 +32,7 @@ import threading
 import time
 from contextlib import contextmanager
 from enum import Enum
+from functools import wraps
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
@@ -1574,3 +1575,22 @@ class HFFormatFullParamSaver:
         total_size = sum(all_sizes)
         replace_name_and_gen_index(path, total_size)
         return total_saved_size
+
+
+def compatible_kwargs(*compatible_params):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            sig = inspect.signature(func)
+            for param in compatible_params:
+                if param not in sig.parameters and param in kwargs:
+                    kwargs.pop(param)
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+flex_checkpoint_save_func = compatible_kwargs("save_replicas")(dist.save_state_dict)
+flex_checkpoint_load_func = compatible_kwargs("comm_method")(dist.load_state_dict)

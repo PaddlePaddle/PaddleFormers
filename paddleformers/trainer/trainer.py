@@ -180,6 +180,8 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     _insert_sync,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
+    flex_checkpoint_load_func,
+    flex_checkpoint_save_func,
     get_last_checkpoint,
     get_scheduler,
     has_length,
@@ -441,7 +443,7 @@ class Trainer:
 
         def _save_ckpt_func(state_dict, path, signal_path=None):
             if self.args.enable_auto_parallel:
-                dist.save_state_dict(state_dict, path)
+                flex_checkpoint_save_func(state_dict, path)
             else:
                 paddle.save(state_dict, path)
 
@@ -458,7 +460,7 @@ class Trainer:
             self.metrics_dumper = MetricsDumper(metrics_output_file)
 
         self._save_ckpt_func = _save_ckpt_func
-        self._load_ckpt_func = dist.load_state_dict if self.args.enable_auto_parallel else paddle.load
+        self._load_ckpt_func = flex_checkpoint_load_func if self.args.enable_auto_parallel else paddle.load
 
         if ZeroCostCheckpointManager is None and self.args.enable_zero_cost_checkpoint:
             logger.warning(
@@ -951,7 +953,7 @@ class Trainer:
         model_sharded_state_dict = self.model.sharded_state_dict()
         model_state_dict_path = os.path.join(output_dir, MODEL_STATE_DIC)
         os.makedirs(model_state_dict_path, exist_ok=True)
-        dist.save_state_dict(
+        flex_checkpoint_save_func(
             model_sharded_state_dict,
             model_state_dict_path,
             save_replicas=self.args.replicate_saved_into_local,
@@ -969,14 +971,14 @@ class Trainer:
             else:
                 optimizer_states[k] = v
 
-        dist.save_state_dict(
+        flex_checkpoint_save_func(
             optimizer_states,
             optimizer_state_dict_path,
             save_replicas=self.args.replicate_saved_into_local,
         )
 
         master_weights_path = os.path.join(output_dir, MASTER_WEIGHT_DIC)
-        dist.save_state_dict(
+        flex_checkpoint_save_func(
             master_weights,
             master_weights_path,
             save_replicas=self.args.replicate_saved_into_local,
@@ -1013,7 +1015,7 @@ class Trainer:
             if moe_sharding_group is None or moe_sharding_group.nranks <= 1:
                 # when moe_sharding_group is None, we use the default process_group
                 logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
-                dist.load_state_dict(
+                flex_checkpoint_load_func(
                     model_sharded_state_dict,
                     resume_from_checkpoint,
                     aoa_config=hf_aoa_config,
@@ -1055,7 +1057,7 @@ class Trainer:
                 if moe_sharding_rank == 0:
                     logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
                     # Only the first moe_sharding process is allowed to load the model weights.
-                    dist.load_state_dict(
+                    flex_checkpoint_load_func(
                         model_sharded_state_dict,
                         resume_from_checkpoint,
                         aoa_config=hf_aoa_config,
@@ -1103,7 +1105,7 @@ class Trainer:
                     else:
                         opt_states[k] = v
 
-                dist.load_state_dict(
+                flex_checkpoint_load_func(
                     opt_states,
                     opt_states_path,
                     aoa_config=self.args.aoa_config,
@@ -1111,7 +1113,7 @@ class Trainer:
                     comm_method=self.args.flex_ckpt_comm_method,
                 )
 
-                dist.load_state_dict(
+                flex_checkpoint_load_func(
                     master_weights,
                     master_weights_path,
                     aoa_config=self.args.aoa_config,
@@ -1143,7 +1145,7 @@ class Trainer:
 
             fp32_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
 
-            dist.load_state_dict(
+            flex_checkpoint_load_func(
                 fp32_sharded_state_dict,
                 model_states_path,
                 aoa_config=self.args.aoa_config,
