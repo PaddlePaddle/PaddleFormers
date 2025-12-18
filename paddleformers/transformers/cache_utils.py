@@ -241,6 +241,7 @@ class Cache:
         if self.prefetch_stream is not None and hasattr(self.prefetch_stream, 'device'):  
 
             
+            
             is_cpu = isinstance(self.prefetch_stream.device, paddle.CPUPlace)
 
         use_stream = (self.prefetch_stream is not None and not is_cpu)
