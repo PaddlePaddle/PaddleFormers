@@ -60,7 +60,6 @@ class SFTDataSet(IterableDataset):
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
-        self.pre_shift_one = dataset_config.get("pre_shift_one", True)
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
@@ -434,8 +433,7 @@ class SFTDataSet(IterableDataset):
                 if self.efficient_eos:
                     tokens = tokens + [self.tokenizer.eos_token_id]
                     labels = labels + [self.tokenizer.eos_token_id]
-                if self.pre_shift_one:
-                    labels = tokens[1:] + [-100]
+                labels = tokens[1:] + [-100]
 
                 # end_of_response is a special token that indicates the end of the turn.
                 # end_token is a special token that indicates the end of the answer.
@@ -446,13 +444,11 @@ class SFTDataSet(IterableDataset):
                 if self.efficient_eos:
                     tokens = tokens + [self.tokenizer.eos_token_id]
                     labels = labels + [self.tokenizer.eos_token_id]
-                if self.pre_shift_one:
-                    labels = tokens[1:] + [-100]
+                labels = tokens[1:] + [-100]
                 if len(tokens) > self.max_seq_len:
                     raise RuntimeError(f"token_ids is too long: {len(tokens)}")
         else:
-            if self.pre_shift_one:
-                labels = tokens[1:] + [-100]
+            labels = tokens[1:] + [-100]
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
