@@ -147,7 +147,7 @@ class MultimodalProjectorProvider(TransformerConfig):
 
 
 @dataclass
-class Qwen3Provider(GPTModelProvider):
+class Qwen3VLTextProvider(GPTModelProvider):
     """
     Base config for Qwen3 Models.
     """
@@ -165,7 +165,7 @@ class Qwen3Provider(GPTModelProvider):
     rms_norm_eps: float = 1e-6
     rotary_base: float = 1000000.0
     position_embedding_type: str = "rope"
-    specific_text_layer: type = Qwen3VLTextLayer
+    specific_layer: type = Qwen3VLTextLayer
 
 
 def qwen3vl_data_step(dataloader_iter) -> dict[str, paddle.Tensor]:
@@ -247,6 +247,7 @@ class Qwen3VLVisionProvider(TransformerConfig):
     img_w: int = 336
     add_class_token: bool = False
     class_token_len: int = 1
+    deepstack_visual_indexes: list[int] = [8, 16, 24]
 
     
     def provide(self) -> "Qwen3VisionModel":
@@ -266,7 +267,7 @@ class Qwen3VLVisionProvider(TransformerConfig):
 class Qwen3VLProvider(TransformerConfig):
     """Qwen3VL model base configuration."""
     
-    language_transformer_config: Qwen3Provider | None = None
+    language_transformer_config: Qwen3VLTextProvider | None = None
     vision_transformer_config: Qwen3VLVisionProvider | None = None
     vision_projection_config: MultimodalProjectorProvider | None = None
     
@@ -282,7 +283,7 @@ class Qwen3VLProvider(TransformerConfig):
     
     language_model_from_pretrained: str | None = None
     vision_model_from_pretrained: str | None = None
-    vision_projection_from_preatrained: str | None = None
+    # vision_projection_from_preatrained: str | None = None
     
     freeze_langurage_model: bool = False
     freeze_vision_model: bool = False
@@ -391,7 +392,7 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
         
         self.encoder_hidden_state = None
         self.vision_model = None
-        self.vision_projection = None
+        # self.vision_projection = None
         self.language_model = None
         
         self.sequence_parallel_lm = language_transformer_config.sequence_parallel
@@ -412,7 +413,7 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
         
         if add_encoder:
             self.vision_model = vision_transformer_config.provide()
-            self.vision_projection = vision_projection_config.provide()
+            # self.vision_projection = vision_projection_config.provide()
             self._drop_vision_class_token = drop_vision_class_token
         
         self.freeze(
