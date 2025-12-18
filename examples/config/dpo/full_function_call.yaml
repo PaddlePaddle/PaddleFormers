@@ -8,7 +8,9 @@ eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false
 mix_strategy: concat
-split_multi_turn: True
+template_backend: custom
+template: qwen3
+split_multi_turn: False
 
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base

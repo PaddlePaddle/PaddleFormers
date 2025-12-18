@@ -50,7 +50,8 @@ class SFTDataSet(IterableDataset):
         self.template = dataset_config.get("template_instance", None)
         self.template_backend = dataset_config.get("template_backend", "jinja")
         self.use_template = dataset_config.get("use_template", True)
-        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", False)
+        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", True)
+        self.auto_add_bos = True if not self.template else getattr(self.template, "auto_add_bos", False)
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
@@ -60,6 +61,7 @@ class SFTDataSet(IterableDataset):
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
+        self.mask_history_eos = dataset_config.get("mask_history_eos", False)
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
@@ -390,17 +392,24 @@ class SFTDataSet(IterableDataset):
 
             labels_src = [-100] * len(tokens_src)
 
-            # Perform additional processing on chat sep. 
-            # If eos is valid, replace it with eos for learning; 
+            # Perform additional processing on chat sep.
+            # If eos is valid, replace it with eos for learning;
             # otherwise, replace it with -100 and do not learn
-            sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
-            if turn_index != (len(encoded_pairs) - 1):
-                if self.use_template and self.efficient_eos:
-                    labels_target = tokens_target[:len(tokens_target) - sep_token_len] + [self.tokenizer.eos_token_id] + [-100] * (sep_token_len - 1)
-                else:
-                    labels_target = tokens_target[:len(tokens_target) - sep_token_len] + [-100] * sep_token_len
-            else:
+            if not self.use_template or self.template_backend == "jinja":
                 labels_target = tokens_target
+            else:
+                sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
+                if turn_index != (len(encoded_pairs) - 1):
+                    if sep_token_len > 0 and not self.mask_history_eos:
+                        labels_target = (
+                            tokens_target[: len(tokens_target) - sep_token_len]
+                            + [self.tokenizer.eos_token_id]
+                            + [-100] * (sep_token_len - 1)
+                        )
+                    else:
+                        labels_target = tokens_target[: len(tokens_target) - sep_token_len] + [-100] * sep_token_len
+                else:
+                    labels_target = tokens_target
             tokens = tokens_src + tokens_target + tokens
             labels = labels_src + labels_target + labels
 
@@ -426,7 +435,7 @@ class SFTDataSet(IterableDataset):
 
         if self.use_template:
             # Maybe left truncated, so need to add begin_token
-            if self.template.auto_add_bos and self.begin_token_id:
+            if self.auto_add_bos and self.begin_token_id:
                 if tokens[0] != self.begin_token_id:
                     tokens = [self.begin_token_id] + tokens
                     labels = [-100] + labels
