@@ -569,9 +569,10 @@ class LlmMetaConfig:
     @classmethod
     def set_llm_config(cls, config, args):
         for key, value in cls._get_defaults().items():
+            value = getattr(args, key, value)
             if value is None:
                 continue
-            setattr(config, key, getattr(args, key, value))
+            setattr(config, key, value)
 
 
 class PretrainedConfig:
