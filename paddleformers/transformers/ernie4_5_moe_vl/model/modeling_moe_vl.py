@@ -1291,7 +1291,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                         video_grid_thw[video_index][1],
                         video_grid_thw[video_index][2],
                     )
-                    images.extend(video_pixel_values[video_index])
+                    images.append(video_pixel_values[video_index])
                     grid_thw.append(video_grid_thw[video_index])
                     video_index += 1
                     remain_videos -= 1

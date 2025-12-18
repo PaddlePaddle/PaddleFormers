@@ -262,6 +262,8 @@ def mm_collate_fn(
     else:
         input_keys.append("pixel_values")
         input_keys.append("image_grid_thw")
+        input_keys.append("pixel_values_videos")
+        input_keys.append("video_grid_thw")
 
     if training_args.num_nextn_predict_layers > 0:
         input_keys.append("nbatch_pack_offset")
@@ -278,6 +280,8 @@ def mm_collate_fn(
         original_position_ids = []
         pixel_values = []
         image_grid_thw = []
+        pixel_values_videos = []
+        video_grid_thw = []
         for seq in batch_sequence:
             original_token_ids.append(seq.token_ids)
             mm_inputs = template.mm_plugin.get_mm_inputs(
@@ -290,15 +294,20 @@ def mm_collate_fn(
                 seq.token_ids,
                 processor,
             )
-            pixel_values.append(mm_inputs["pixel_values"])
-            image_grid_thw.extend(mm_inputs["image_grid_thw"])
+            if "pixel_values" in mm_inputs:
+                pixel_values.append(mm_inputs["pixel_values"])
+            if "image_grid_thw" in mm_inputs:
+                image_grid_thw.extend(mm_inputs["image_grid_thw"])
+            if "pixel_values_videos" in mm_inputs:
+                pixel_values_videos.append(mm_inputs["pixel_values_videos"])
+            if "video_grid_thw" in mm_inputs:
+                video_grid_thw.extend(mm_inputs["video_grid_thw"])
             if get_rope_func is not None:
                 func_params = inspect.signature(get_rope_func).parameters.keys()
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
                 position_ids, rope_deltas = get_rope_func(input_ids=paddle.to_tensor([seq.token_ids]), **filtered_args)
                 original_position_ids.append(position_ids)
 
-        # original_token_ids = [seq.token_ids for seq in batch_sequence]
         original_position_ids = paddle.concat(original_position_ids, axis=-1)
         token_ids = [sum(original_token_ids, [])]
         labels = [sum([seq.labels for seq in batch_sequence], [])]
@@ -318,7 +327,7 @@ def mm_collate_fn(
         if get_token_type_func is not None:  # ernie45vl
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
             padded_token_type_ids, images, grid_thw = get_token_type_func(
-                paddle.to_tensor(padded_token_ids), pixel_values, image_grid_thw
+                paddle.to_tensor(padded_token_ids), pixel_values, image_grid_thw, pixel_values_videos, video_grid_thw
             )
             return_list[-1].extend(
                 [
@@ -330,11 +339,14 @@ def mm_collate_fn(
             )
         else:
             pixel_values = paddle.concat(pixel_values, axis=0)
+            pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
             return_list[-1].extend(
                 [
                     padded_position_ids,
                     pixel_values,
                     image_grid_thw,
+                    pixel_values_videos,
+                    video_grid_thw,
                 ]
             )
 
@@ -361,7 +373,7 @@ def mm_collate_fn(
                     gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
                 )
 
-    transposed_list = list(zip(*return_list))  # 转置
+    transposed_list = list(zip(*return_list))
     return_list = [paddle.concat([paddle.to_tensor(x) for x in tensors], axis=0) for tensors in transposed_list]
     input_dict = dict(zip(input_keys, return_list))
     return input_dict
