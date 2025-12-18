@@ -458,6 +458,17 @@ register_template(
     stop_words=["<|end_of_sentence|>"],
 )
 
+register_template(
+    name="paddleocr_vl",
+    format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
+    format_assistant=StringFormatter(slots=["{{content}}<|end_of_sentence|>"]),
+    format_system=StringFormatter(slots=["{{content}}\n"]),
+    format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
+    replace_eos=False,
+    efficient_eos=True,
+    mm_plugin=get_mm_plugin(name="paddleocr_vl", image_token="<|IMAGE_PLACEHOLDER|>"),
+)
+
 # copied from chatml template
 register_template(
     name="qwen",

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from typing import List
 
 import numpy as np
@@ -23,7 +24,9 @@ from .SFTDataset import Sequence
 def dpo_collate_fn(
     batch,
     tokenizer,
+    training_args,
     max_seq_len=None,
+    padding_free=False,
     use_sparse_head_and_loss_fn=True,
     use_fused_head_and_loss_fn=True,
     use_response_score_delta=False,
@@ -51,6 +54,12 @@ def dpo_collate_fn(
             - attention_mask (float32, optional): Attention mask matrix [batch_size, 1, max_seq_len, max_seq_len]
             - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
     """
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        cp_size = training_args.sequence_parallel
+        if cp_size > 1:
+            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
 
@@ -152,7 +161,9 @@ def dpo_collate_fn(
     return input_dict
 
 
-def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int):
+def collate_fn(
+    batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int, padding_free: bool
+):
     """Convert batch of sequences into training tensors.
 
     Args:
@@ -160,6 +171,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
         tokenizer: Tokenizer for text conversion
         model_args: Model configuration parameters
         max_seq_len (int): Maximum sequence length for padding
+        padding_free (bool): Whether to flatten the data within a batch to avoid padding
 
     Returns:
         dict: Dictionary containing:
@@ -174,6 +186,12 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
     else:
         input_keys.append("attention_mask")
     return_list = []
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        cp_size = training_args.sequence_parallel
+        if cp_size > 1:
+            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
@@ -219,7 +237,14 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
 
 
 def mm_collate_fn(
-    batch: List[List[Sequence]], template, processor, tokenizer, training_args, model_args, max_seq_len: int
+    batch: List[List[Sequence]],
+    template,
+    processor,
+    tokenizer,
+    training_args,
+    model_args,
+    max_seq_len: int,
+    padding_free: bool,
 ):
     """Convert batch of sequences into training tensors.
 
@@ -228,6 +253,7 @@ def mm_collate_fn(
         tokenizer: Tokenizer for text conversion
         model_args: Model configuration parameters
         max_seq_len (int): Maximum sequence length for padding
+        padding_free (bool): Whether to flatten the data within a batch to avoid padding
 
     Returns:
         dict: Dictionary containing:
@@ -278,6 +304,12 @@ def mm_collate_fn(
     input_keys.append("pixel_values")
     input_keys.append("image_grid_thw")
     return_list = []
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        cp_size = training_args.sequence_parallel
+        if cp_size > 1:
+            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
