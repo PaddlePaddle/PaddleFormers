@@ -140,7 +140,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFleet/ci/integration_test/glm45_single_card.sh
+          bash -x PaddleFleet/ci/integration_test/glm45_pt_single_card.sh
           glm45_single_card_exit_code=$?
           if [[ "$glm45_single_card_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 single-card.\033[0m"
@@ -257,7 +257,7 @@ jobs:
           python -c "import paddle; print(paddle.version.commit)"
           '
       
-      - name: Integration test (GLM4.5 multi-card)
+      - name: GLM4.5 pre-train
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
@@ -269,6 +269,20 @@ jobs:
             exit 1
           else
             echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
+          fi
+          '
+      - name: GLM4.5 sft+lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          bash -x PaddleFleet/ci/integration_test/glm45_sft.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft+lora.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft+lora.\033[0m"
           fi
           '
 
@@ -376,11 +390,11 @@ jobs:
           python -c "import paddle; print(paddle.version.commit)"
           '
 
-      - name: Integration test (GLM4.5)
+      - name: GLM4.5 pre-train
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFleet/ci/integration_test/glm45_a100.sh
+          bash -x PaddleFleet/ci/integration_test/glm45_pt_a100.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
