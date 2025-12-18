@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from typing import List
 
 import numpy as np
@@ -23,7 +24,9 @@ from .SFTDataset import Sequence
 def dpo_collate_fn(
     batch,
     tokenizer,
+    training_args,
     max_seq_len=None,
+    padding_free=False,
     use_sparse_head_and_loss_fn=True,
     use_fused_head_and_loss_fn=True,
     use_response_score_delta=False,
@@ -51,6 +54,12 @@ def dpo_collate_fn(
             - attention_mask (float32, optional): Attention mask matrix [batch_size, 1, max_seq_len, max_seq_len]
             - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
     """
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        cp_size = training_args.sequence_parallel
+        if cp_size > 1:
+            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
 
@@ -180,6 +189,9 @@ def collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        cp_size = training_args.sequence_parallel
+        if cp_size > 1:
+            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
@@ -295,6 +307,9 @@ def mm_collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        cp_size = training_args.sequence_parallel
+        if cp_size > 1:
+            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
