@@ -322,7 +322,7 @@ class PaddleOCRVLPlugin(BasePlugin):
         super().__init__(image_token, video_token, audio_token, **kwargs)
         self.image_augmentation = self.get_ocr_augmentations(
             rotation_degrees=[90, 270],
-            rotation_p=0.0,
+            rotation_p=0.1,
             jpeg_quality_range=(60, 100),
             jpeg_p=0.3,
             scale_range=(0.5, 1.5),
@@ -372,6 +372,21 @@ class PaddleOCRVLPlugin(BasePlugin):
     @override
     def _preprocess_image(self, image, **kwargs):
 
+        width, height = image.size
+        image_max_pixels = kwargs["image_max_pixels"]
+        image_min_pixels = kwargs["image_min_pixels"]
+        image_processor = kwargs["image_processor"]
+
+        # pre-resize before augmentation
+        resized_height, resized_width = image_processor.get_smarted_resize(
+            height,
+            width,
+            min_pixels=image_min_pixels,
+            max_pixels=image_max_pixels,
+        )[0]
+
+        image = image.resize((resized_width, resized_height))
+
         if image and hasattr(self, "image_augmentation"):
             image = self.image_augmentation(image)
 
@@ -392,6 +407,7 @@ class PaddleOCRVLPlugin(BasePlugin):
                 images,
                 image_max_pixels=getattr(processor, "max_pixels", 2822400),
                 image_min_pixels=getattr(processor, "min_pixels", 147384),
+                image_processor=image_processor,
             )["images"]
             mm_inputs.update(image_processor(images, return_tensors="pd"))
 
