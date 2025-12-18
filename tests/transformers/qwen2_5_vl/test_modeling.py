@@ -977,7 +977,7 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
                 )
             )
 
-            # 4.compare the result between paddle_fused and torch
+            # 4.compare the result between paddle and paddle_fused
             self.assertTrue(
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
