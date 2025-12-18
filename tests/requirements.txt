@@ -5,6 +5,7 @@ pydantic
 hyperopt
 h5py
 deploy
+ffmpeg
 ray
 loguru==0.6.0
 data
