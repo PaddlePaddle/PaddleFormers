@@ -238,7 +238,7 @@ class Cache:
             layer_idx = layer_idx if layer_idx < len(self.layers) else 0
         # in case it's already on cpu
         is_cpu = False
-        if self.prefetch_stream is not None and hasattr(self.prefetch_stream, 'device'):
+        if self.prefetch_stream is not None and hasattr(self.prefetch_stream, 'device'): 
             is_cpu = isinstance(self.prefetch_stream.device, paddle.CPUPlace)
 
         use_stream = (self.prefetch_stream is not None and not is_cpu)
