@@ -425,24 +425,36 @@ class SFTDataSet(IterableDataset):
                     tokens = [self.begin_token_id] + tokens
                     labels = [-100] + labels
 
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+
                 # Add EOS token at the end
                 del tokens[-1]
                 del labels[-1]
+                if self.efficient_eos:
+                    tokens = tokens + [self.tokenizer.eos_token_id]
+                    labels = labels + [self.tokenizer.eos_token_id]
+                if self.pre_shift_one:
+                    labels = tokens[1:] + [-100]
 
                 # end_of_response is a special token that indicates the end of the turn.
                 # end_token is a special token that indicates the end of the answer.
                 labels = [
                     label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
                 ]
-            if self.efficient_eos:
-                tokens = tokens + [self.tokenizer.eos_token_id]
-                labels = labels + [self.tokenizer.eos_token_id]
-
-        if self.pre_shift_one:
-            labels = tokens[1:] + [-100]
-
-        if len(tokens) > self.max_seq_len:
-            raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+            else:
+                if self.efficient_eos:
+                    tokens = tokens + [self.tokenizer.eos_token_id]
+                    labels = labels + [self.tokenizer.eos_token_id]
+                if self.pre_shift_one:
+                    labels = tokens[1:] + [-100]
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+        else:
+            if self.pre_shift_one:
+                labels = tokens[1:] + [-100]
+            if len(tokens) > self.max_seq_len:
+                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
         pos_ids = list(range(len(tokens)))
 
