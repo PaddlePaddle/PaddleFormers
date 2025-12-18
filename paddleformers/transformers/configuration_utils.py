@@ -251,6 +251,8 @@ class LlmMetaConfig:
         ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
         # expert_parallel
         ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
+        # context_parallel
+        ("context_parallel_size", int, 1, "context_parallel_size"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         (
@@ -324,7 +326,7 @@ class LlmMetaConfig:
         (
             "moe_subbatch_token_num_before_dispatch",
             int,
-            None,
+            0,
             "The number of tokens in each subbatch for MoE model processing.",
         ),
         ("using_fake_gate", bool, False, "Whether to fake gate."),
