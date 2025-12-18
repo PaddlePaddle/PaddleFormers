@@ -64,7 +64,7 @@ install:
 	    echo "Unknown CUDA version."; \
 	fi; \
 	echo "Using pip source: $$PADDLE_SOURCE"; \
-	pip install -r requirements-dev.txt \
+	pip install -r tests/requirements.txt \
 	pip install -r requirements.txt --extra-index-url "$$PADDLE_SOURCE"; \
 	pre-commit install
 

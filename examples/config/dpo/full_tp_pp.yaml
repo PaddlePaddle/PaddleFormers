@@ -41,8 +41,8 @@ warmup_steps: 20
 learning_rate: 1.0e-6
 
 # performance
-tensor_parallel_degree: 2
-pipeline_parallel_degree: 2
+tensor_model_parallel_size: 2
+pipeline_model_parallel_size: 2
 pipeline_parallel_config: enable_clear_every_step_cache disable_partial_send_recv
 sequence_parallel: true
 sharding: stage1

@@ -27,7 +27,7 @@ import sys
 import warnings
 from dataclasses import field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
@@ -229,14 +229,11 @@ def llmmetaclass(cls):
 class LlmMetaConfig:
     op_fusion_attributes = [
         # name, type, default_value, comment
-        ("use_flash_attention", bool, False, "Whether to use flash attention to accelerate training."),
-        ("use_fused_rms_norm", bool, False, "llama or other model, use_fused_rms_norm"),
-        ("use_fused_rope", bool, False, "Enable rope fusion or not."),
-        ("use_fused_linear", bool, False, "GPT3 model, use fused linear layer"),
-        ("use_fused_dropout_add", bool, False, "GPT3 model, use fused `dropout + residual add` op."),
+        ("use_flash_attention", bool, False, "Only used in `ernie45_vl` and `deepseek_v3_pretrain`."),
+        ("fuse_rms_norm", bool, False, "Whether to fuse RMSNorm for efficiency"),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
         ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
-        ("fuse_rope", bool, False, "Whether to fuse RoPE operation"),
+        ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
         ("fuse_attention_qkv", bool, False, "Whether to fuse Attention QKV operations"),
         ("fuse_attention_ffn", bool, False, "Whether to fuse Attention FFN operations"),
@@ -244,12 +241,12 @@ class LlmMetaConfig:
 
     hybrid_parallel_attributes = [
         # tensor_parallel
-        ("tensor_parallel_degree", int, 1, "tensor_parallel_degree"),
+        ("tensor_model_parallel_size", int, 1, "tensor_model_parallel_size"),
         ("tensor_parallel_rank", int, 0, "tensor_parallel_rank"),
         ("tensor_parallel_output", bool, True, "tensor_parallel_output"),
         # pipeline_parallel
-        ("pipeline_parallel_degree", int, 1, "pipeline_parallel_degree"),
-        ("virtual_pp_degree", int, 1, "Virtual pipeline degree"),
+        ("pipeline_model_parallel_size", int, 1, "pipeline_model_parallel_size"),
+        ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         (
@@ -261,7 +258,7 @@ class LlmMetaConfig:
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
         ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
-        ("context_parallel_degree", int, 1, "context_parallel_degree"),
+        ("context_parallel_size", int, 1, "context_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
     ]
@@ -283,6 +280,22 @@ class LlmMetaConfig:
             "refined_recompute, Choose from 'mlp_row_ln', 'mlp_column_ln', 'attention_row_ln', 'attention_column_ln', 'flash_attn']",
         ),
         ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
+        ("recompute_method", str, None, "Determines which transformer layers will be recomputed."),
+        (
+            "recompute_num_layers",
+            int,
+            None,
+            "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
+        ),
+        ("recompute_modules", str, None, "List of module names to apply recomputation."),
+        (
+            "recompute_mtp_granularity",
+            str,
+            "none",
+            "Recomputation granularity for MTP (Mixture of Token-Parallel) layers.",
+        ),
+        ("recompute_mtp_method", str, "none", "Recomputation method for MTP layers."),
+        ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
     ]
 
     loss_attributes = [
@@ -303,14 +316,202 @@ class LlmMetaConfig:
     ]
 
     moe_attributes = [
-        ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
+        (
+            "moe_subbatch_token_num_before_dispatch",
+            int,
+            0,
+            "The number of tokens in each subbatch for MoE model processing.",
+        ),
         ("using_fake_gate", bool, False, "Whether to fake gate."),
         ("ep_communication_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
+        (
+            "moe_deepep_num_sms",
+            bool,
+            False,
+            "Whether to enable DeepEP (Deep Expert Pruning) with SMS (Sub-Model Selection) for MoE. Defaults to False.",
+        ),
+        (
+            "moe_token_dispatcher_type",
+            str,
+            None,
+            "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
+        ),
+        (
+            "moe_pad_expert_input_to_capacity",
+            bool,
+            False,
+            "Whether to pad MoE expert inputs to match expert capacity. Defaults to False (no padding).",
+        ),
+        (
+            "moe_token_drop_policy",
+            bool,
+            False,
+            "Whether to enable token dropping policy for MoE (discard low-importance tokens). Defaults to False.",
+        ),
+        (
+            "moe_expert_capacity_factor",
+            float,
+            0.0,
+            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (use default capacity).",
+        ),
+        (
+            "router_aux_loss_coef",
+            float,
+            0.0,
+            "Coefficient for MoE router auxiliary loss (encourages balanced expert usage). Defaults to 0.0 (disable auxiliary loss).",
+        ),
+        (
+            "router_z_loss_coef",
+            float,
+            0.0,
+            "Coefficient for MoE router Z-loss (regularizes router logits to avoid extreme values). Defaults to 0.0 (disable Z-loss).",
+        ),
+        (
+            "moe_router_enable_expert_bias",
+            bool,
+            False,
+            "Whether to enable expert-specific bias terms in the MoE router. Fine-tunes router preference for individual experts. Defaults to False (simplifies computation and avoids overfitting).",
+        ),
+        (
+            "moe_router_force_load_balancing",
+            bool,
+            True,
+            "Whether to enforce load balancing across MoE experts. Prevents overutilization of a small subset of experts. Defaults to True (critical optimization for MoE stability and efficiency).",
+        ),
+        ("moe_router_load_balancing_type", str, "seq_aux_loss", "Strategy for MoE expert load balancing."),
+        (
+            "moe_router_bias_update_rate",
+            float,
+            0.01,
+            "Update rate for MoE router biases (only effective if `moe_router_enable_expert_bias=True`). Controls the magnitude of bias adjustments to prevent unstable updates. Defaults to 0.01.",
+        ),
+        (
+            "moe_shared_expert_overlap",
+            bool,
+            False,
+            "Whether to allow shared experts to be reused across layers/modules. Reduces memory footprint but may limit model expressivity. Defaults to False (prioritizes model capacity).",
+        ),
+        (
+            "moe_dequant_input",
+            bool,
+            False,
+            "Whether to dequantize inputs to MoE experts (only applicable if inputs are quantized). Defaults to False (enable only for quantized inference/training pipelines).",
+        ),
+        (
+            "moe_expert_fusion",
+            bool,
+            True,
+            "Whether to enable operator fusion for MoE expert layers (e.g., Linear + Activation fusion). Improves training/inference throughput by reducing kernel launch overhead. Defaults to True.",
+        ),
+        (
+            "moe_router_fusion",
+            bool,
+            True,
+            "Whether to enable operator fusion for the MoE router (e.g., Gating + Softmax fusion). Reduces computation latency for expert selection. Defaults to True.",
+        ),
+        (
+            "moe_subbatch_token_num_after_dispatch",
+            int,
+            4096,
+            "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
+        ),
+        (
+            "moe_grouped_gemm",
+            bool,
+            True,
+            "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
+        ),
     ]
 
     mtp_attributes = [
         ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
+        (
+            "mtp_loss_scaling_factor",
+            float,
+            1.0,
+            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
+        ),
+    ]
+
+    fp8_attributes = [
+        (
+            "fp8",
+            bool,
+            False,
+            "Whether to enable FP8 mixed-precision training/inference. Reduces memory usage and accelerates computation (requires hardware support). Defaults to False (enable only for Ampere+/Hopper GPUs with FP8 support).",
+        ),
+        (
+            "fp8_wgrad",
+            bool,
+            False,
+            "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
+        ),
+    ]
+
+    model_attributes = [
+        (
+            "multi_latent_attention",
+            bool,
+            False,
+            "Whether to enable multi-latent attention mechanism. Defaults to False.",
+        ),
+        (
+            "no_rope_freq",
+            bool,
+            False,
+            "Whether to disable RoPE (Rotary Position Embedding) frequency scaling. Defaults to False (enable frequency scaling).",
+        ),
+        (
+            "position_embedding_type",
+            str,
+            "rope",
+            "Type of position embedding. Defaults to RoPE (Rotary Position Embedding).",
+        ),
+        (
+            "gated_linear_unit",
+            bool,
+            False,
+            "Whether to use Gated Linear Units (GLU) instead of standard Linear layers. Enhances model expressivity (common in SwiGLU). Defaults to False (compatible with basic transformer architectures).",
+        ),
+        ("normalization", str, "RMSNorm", "Type of normalization layer. Defaults to RMSNorm."),
+        (
+            "fp32_residual_connection",
+            bool,
+            True,
+            "Whether to use FP32 precision for residual connections. Mitigates numerical underflow/overflow in deep transformers. Defaults to True (standard practice for stable LLM training).",
+        ),
+        (
+            "softmax_scale",
+            float,
+            None,
+            "Scaling factor for Softmax inputs. If None, uses automatic scaling (e.g., sqrt(d_model) for attention). Defaults to None (adapts to model dimension automatically).",
+        ),
+        (
+            "softmax_type",
+            str,
+            "vanilla",
+            "Applies modified softmax from https://www.evanmiller.org/attention-is-off-by-one.html. Supports both TE FusedAttention and local unfused attention. Supports both a fixed offset and learnable offset.",
+        ),
+        ("init_method", Callable, None, "Method to initialize weights."),
+        (
+            "output_layer_init_method",
+            Callable,
+            None,
+            "Method to initialize weights of the output layer of both attention and MLP blocks.",
+        ),
+        (
+            "embedding_init_method",
+            Callable,
+            None,
+            "Method to initialize weights of the embedding layer. If None, will be set as described in init_method above.",
+        ),
+        (
+            "embedding_init_method_std",
+            float,
+            0.02,
+            "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
+        ),
     ]
 
     @classmethod
@@ -323,6 +524,8 @@ class LlmMetaConfig:
             cls.loss_attributes,
             cls.moe_attributes,
             cls.mtp_attributes,
+            cls.fp8_attributes,
+            cls.model_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -338,6 +541,8 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
+            cls.fp8_attributes,
+            cls.model_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -353,6 +558,8 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
+            cls.fp8_attributes,
+            cls.model_attributes,
         ]:
             for attr in attrs:
                 ret.add(attr[0])
@@ -511,7 +718,7 @@ class PretrainedConfig:
         problem_type (`str`, *optional*):
             Problem type for `XxxForSequenceClassification` models. Can be one of `"regression"`,
             `"single_label_classification"` or `"multi_label_classification"`.
-        moe_subbatch_token_num (`int`, *optional*, defaults to 0):
+        moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
         ep_communication_type (`str`, *optional*, defaults to `deepep`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
@@ -538,6 +745,9 @@ class PretrainedConfig:
         tie_word_embeddings (`bool`, *optional*, defaults to `True`):
             Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
             model has a output word embedding layer.
+
+        use_single_model_implementation (`bool`, *optional*, defaults to `False`):
+            Whether to run the model in single card mode. When enabled, all parallel degree configurations will be disabled.
 
         dtype (`str`, *optional*):
             The `dtype` of the weights. This attribute can be used to initialize the model to a non-default `dtype`
@@ -590,7 +800,7 @@ class PretrainedConfig:
         kwargs.pop("transformers_version", None)
         llm_meta = LlmMetaConfig._get_defaults()
         self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
-        self._unsavable_keys.remove("tensor_parallel_degree")
+        self._unsavable_keys.remove("tensor_model_parallel_size")
         self._unsavable_keys.remove("fuse_attention_qkv")
         self._unsavable_keys.remove("fuse_attention_ffn")
         self._unsavable_keys.add("_attn_implementation")
@@ -598,16 +808,22 @@ class PretrainedConfig:
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
             assert (
-                self.tensor_parallel_degree > 1
-            ), f"senquence-parallel only works in tensor parallel, got tensor parallel degree={self.tensor_parallel_degree}"
+                self.tensor_model_parallel_size > 1
+            ), f"senquence-parallel only works in tensor parallel, got tensor parallel degree={self.tensor_model_parallel_size}"
 
         self.chunk_size_feed_forward = kwargs.pop("chunk_size_feed_forward", 0)
         self.return_dict = kwargs.pop("return_dict", False)
         self.output_hidden_states = kwargs.pop("output_hidden_states", False)
         self.output_attentions = kwargs.pop("output_attentions", False)
         self.dtype = kwargs.pop("dtype", None)
-        self.use_cache = kwargs.pop("use_cache", False)
         self.tie_word_embeddings = kwargs.pop("tie_word_embeddings", True)
+
+        # for run model in single card mode
+        self.use_single_model_implementation = kwargs.pop("use_single_model_implementation", False)
+        if self.use_single_model_implementation:
+            self.tensor_model_parallel_size = 1
+            self.sep_parallel_degree = 1
+            self.context_parallel_size = 1
 
         # for transformers fuse
         self.fuse_linear = kwargs.pop("fuse_linear", False)
@@ -662,7 +878,7 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.moe_subbatch_token_num = kwargs.pop("moe_subbatch_token_num", 0)
+        self.moe_subbatch_token_num_before_dispatch = kwargs.pop("moe_subbatch_token_num_before_dispatch", 0)
         self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.using_fake_gate = kwargs.pop("using_fake_gate", False)

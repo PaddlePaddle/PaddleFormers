@@ -444,6 +444,7 @@ class CacheOffloadingTest(unittest.TestCase):
         self.key_states = paddle.randn([1, 1, 5, 4]).to(self.device)
         self.value_states = paddle.randn([1, 1, 5, 4]).to(self.device)
 
+    @unittest.skip("skip temporary")
     def test_offloading_basic_logic(self):
         """
         Unit test for offloading

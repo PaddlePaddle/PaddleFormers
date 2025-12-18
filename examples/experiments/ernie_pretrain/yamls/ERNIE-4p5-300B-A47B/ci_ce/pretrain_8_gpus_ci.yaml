@@ -95,11 +95,11 @@ trainer_args:
     use_train_part_sharding: 1
     offload_optim: True
 
-    pipeline_parallel_degree: 2
-    tensor_parallel_degree: 1
-    virtual_pp_degree: 1
+    pipeline_model_parallel_size: 2
+    tensor_model_parallel_size: 1
+    virtual_pipeline_model_parallel_size: 1
     data_parallel_degree: 1
-    expert_parallel_degree: 4
+    expert_model_parallel_size: 4
     sharding: "stage1"
     sharding_parallel_degree: 4
     amp_master_grad: 1

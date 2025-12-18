@@ -22,10 +22,12 @@ from functools import partial
 import numpy as np
 import paddle
 
+from paddleformers.utils.tools import paddle_device
+
 is_sm90 = (
     paddle.base.core.is_compiled_with_cuda()
-    and paddle.device.cuda.get_device_capability()[0] == 9
-    and paddle.device.cuda.get_device_capability()[1] == 0
+    and paddle_device.get_device_capability()[0] == 9
+    and paddle_device.get_device_capability()[1] == 0
 )
 if is_sm90:
     os.environ["FLAGS_flash_attn_version"] = "3"
@@ -60,9 +62,9 @@ from paddleformers.transformers import (
     LlamaTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
-from paddleformers.trl import SFTTrainer
-from paddleformers.trl.llm_utils import compute_metrics, get_lora_target_modules
 from paddleformers.utils.log import logger
+
+from .sft_trainer import SFTTrainer
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "False"
@@ -72,6 +74,12 @@ from paddleformers.cli.hparams import (
     FinetuningArguments,
     GeneratingArguments,
     ModelArguments,
+)
+from paddleformers.cli.utils import (
+    compute_metrics,
+    freeze_model_parameters,
+    get_lora_target_modules,
+    get_multimodel_lora_target_modules,
 )
 
 
@@ -231,15 +239,6 @@ def run_sft(
     # (Liuting) Not support acc calculation now due to MTP.
     if "DeepseekV3" in str(model_config.architectures):
         training_args.prediction_loss_only = True
-    # sink_attention v2 not support packing=false Now
-
-    if (
-        "GptOss" in str(model_config.architectures)
-        and data_args.packing is False
-        and model_args.attn_impl == "flashmask"
-    ):
-        if not is_sm90:
-            model_args.attn_impl = "eager"
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
@@ -260,6 +259,13 @@ def run_sft(
     model_config.seq_length = data_args.max_seq_len
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args.attn_impl
+
+    # Sync arguments to MLLM sub_config
+    if getattr(model_config, "text_config", None) is not None:
+        model_config.text_config.max_sequence_length = data_args.max_seq_len
+    if getattr(model_config, "vision_config", None) is not None:
+        model_config.vision_config._attn_implementation = model_args.attn_impl
+
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
@@ -267,10 +273,9 @@ def run_sft(
         model_class = AutoModelForConditionalGeneration
     else:
         model_class = AutoModelForCausalLM
-        if training_args.pipeline_parallel_degree > 1:
+        if training_args.pipeline_model_parallel_size > 1:
             if data_args.eval_with_do_generation and training_args.do_eval:
                 raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
-
             model_class = AutoModelForCausalLMPipe
 
     if model_args.continue_training and not training_args.autotuner_benchmark:
@@ -335,7 +340,6 @@ def run_sft(
         "is_pretraining": True if model_args.stage.lower() == "pt" else False,
         "truncate_packing": data_args.truncate_packing,
         "stage": model_args.stage,
-        "is_valid": False,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
     }
@@ -343,7 +347,6 @@ def run_sft(
     dataset_config.update(
         {
             "template": data_args.template,
-            "train_on_prompt": False,
             "tool_format": None,
             "default_system": None,
             "enable_thinking": True,
@@ -372,19 +375,23 @@ def run_sft(
             sub_dataset_type=data_args.train_dataset_type,
             **dataset_config,
         )
-        dataset_config["is_valid"] = True
         eval_dataset = create_dataset_sft(
             task_group=data_args.eval_dataset_path,
             task_group_prob=data_args.eval_dataset_prob,
             sub_dataset_type=data_args.eval_dataset_type,
+            is_valid=True,
             **dataset_config,
         )
+
+    # Freeze model based on training args (Supports for MLLM Full training)
+    if not model_args.lora and getattr(training_args, "freeze_config", ""):
+        freeze_model_parameters(model, training_args.freeze_config)
 
     model = create_peft_model(model_args, training_args, dtype, model)
 
     # Create trainer
 
-    if training_args.pipeline_parallel_degree > 1:
+    if training_args.pipeline_model_parallel_size > 1:
         metrics = None
     else:
         metrics = compute_metrics
@@ -479,6 +486,7 @@ def run_sft(
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
+        processing_class=processor,
         compute_metrics=metrics,
         data_collator=data_collator,
         do_generation=data_args.eval_with_do_generation,
@@ -514,7 +522,9 @@ def run_sft(
             logger.info("Benchmark done.")
         else:
             if not training_args.autotuner_benchmark:
-                trainer.save_model(merge_tensor_parallel=training_args.tensor_parallel_degree > 1, last_fc_to_hf=True)
+                trainer.save_model(
+                    merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True
+                )
                 trainer.log_metrics("train", train_result.metrics)
                 trainer.save_metrics("train", train_result.metrics)
                 trainer.save_state()
@@ -528,6 +538,11 @@ def create_peft_model(model_args, training_args, dtype, model):
             ), "Currently not support enabling sharding_stage1_overlap in lora mode."
         if model_args.lora_path is None:
             target_modules = get_lora_target_modules(model)
+
+            # Freeze model based on training args (Supports for MLLM LoRA training)
+            if getattr(training_args, "freeze_config", ""):
+                target_modules = get_multimodel_lora_target_modules(model, target_modules, training_args.freeze_config)
+
             lora_config = LoRAConfig(
                 target_modules=target_modules,
                 r=model_args.lora_rank,
@@ -536,7 +551,7 @@ def create_peft_model(model_args, training_args, dtype, model):
                 lora_plus_scale=model_args.lora_plus_scale,
                 pissa=model_args.pissa,
                 merge_weights=False,
-                tensor_parallel_degree=training_args.tensor_parallel_degree,
+                tensor_model_parallel_size=training_args.tensor_model_parallel_size,
                 dtype=dtype,
                 base_model_name_or_path=model_args.model_name_or_path,
                 use_quick_lora=model_args.use_quick_lora,
@@ -546,7 +561,8 @@ def create_peft_model(model_args, training_args, dtype, model):
             model = LoRAModel(model, lora_config)
         else:
             model = LoRAModel.from_pretrained(model=model, lora_path=model_args.lora_path)
-
+        if hasattr(model, "_set_pipeline_name_mapping"):
+            model._set_pipeline_name_mapping()
         model.print_trainable_parameters()
 
     return model

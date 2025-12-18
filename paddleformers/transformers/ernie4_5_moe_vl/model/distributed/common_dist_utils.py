@@ -77,7 +77,7 @@ def _parallel_matmul(
     y,
     bias=None,
     transpose_y=False,
-    tensor_parallel_degree=1,
+    tensor_model_parallel_size=1,
     tensor_parallel_output=True,
     fuse_linear=False,
 ):
@@ -91,7 +91,7 @@ def _parallel_matmul(
             - Distributed parameter in tensor parallel mode
         bias (Optional[paddle.Tensor]): Optional bias tensor
         transpose_y (bool): Whether to transpose the 'y' matrix before multiplication
-        tensor_parallel_degree (int): Degree of tensor model parallelism (default: 1)
+        tensor_model_parallel_size (int): Degree of tensor model parallelism (default: 1)
         tensor_parallel_output (bool): Whether to keep output in tensor parallel format
             or gather across devices (default: True)
         fuse_linear (bool): Whether to use fused linear operation for optimization
@@ -103,7 +103,7 @@ def _parallel_matmul(
         AssertionError: If tensor parallel is enabled but weight is not distributed
         AttributeError: If called without distributed.launch context
     """
-    if tensor_parallel_degree > 1:
+    if tensor_model_parallel_size > 1:
         if isinstance(y, paddle.base.framework.EagerParamBase):
             assert y.is_distributed
         # if not running under distributed.launch, it will raise AttributeError: 'Fleet' object has no attribute '_hcg'

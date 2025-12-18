@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional
@@ -19,7 +20,7 @@ from typing import List, Optional
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets.data_utils import postprocess_fc_sequence
+from paddleformers.datasets.data_utils import postprocess_fc_sequence, print_debug_info
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
@@ -240,9 +241,10 @@ class DPODataSet(IterableDataset):
         response_token_ids_list = []
         response_label_ids_list = []
         response_len_list = []
+        split_index = example["session_start_index"] // 2
         for responses in [
-            chosen_encoded_messages[example["session_start_index"] // 2 :],
-            rejected_encoded_messages[example["session_start_index"] // 2 :],
+            chosen_encoded_messages[split_index:],
+            rejected_encoded_messages[split_index:],
         ]:
             responses_token_ids = []
             responses_label_ids = []
@@ -274,9 +276,9 @@ class DPODataSet(IterableDataset):
         cur_len += sum(map(len, response_token_ids_list))
 
         # create at least one turn
-        turn_index = len(chosen_encoded_messages) - 1
+        turn_index = split_index
         while turn_index >= 0:
-            if turn_index == len(chosen_encoded_messages) - 1:
+            if turn_index == split_index:
                 cur_turn_token = chosen_encoded_messages[turn_index][0]
             else:
                 cur_turn_token = chosen_encoded_messages[turn_index][0] + chosen_encoded_messages[turn_index][1]
@@ -289,7 +291,7 @@ class DPODataSet(IterableDataset):
             turn_index -= 1
 
         # at least one turn
-        if turn_index == len(chosen_encoded_messages) - 1:
+        if turn_index == split_index:
             sub_src = example["chosen"]["messages"][0]["content"].strip()[:5]
             global LOGGER_COUNT
             LOGGER_COUNT += 1
@@ -364,6 +366,30 @@ class DPODataSet(IterableDataset):
                 prompt_len : (prompt_len + chosen_len),
             ] = False
             attn_mask_startend_row_indices = None
+
+        # print
+        enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
+        if enable_dataset_debug:
+            logger.info("\n" + "=" * 50)
+            logger.info("[dataset debug] Debug mode enabled")
+            if hasattr(self, "tokenizer"):
+                print("========================================")
+                print_debug_info(self.tokenizer, input_ids, "input")
+                print("========================================\n")
+
+                filtered_labels = [x for x in chosen_labels if x != 0]  # remove -100
+                print("========================================")
+                print_debug_info(self.tokenizer, filtered_labels, "chosen_labels")
+                print("========================================\n")
+
+                filtered_labels = [x for x in rejected_labels if x != 0]  # remove -100
+                print("========================================")
+                print_debug_info(self.tokenizer, filtered_labels, "rejected_labels")
+                print("========================================\n")
+            else:
+                logger.info("[dataset debug] Tokenizer not available")
+            logger.info("=" * 50 + "\n")
+
         # 2. return sequence
         return Sequence(
             token_ids=input_ids,

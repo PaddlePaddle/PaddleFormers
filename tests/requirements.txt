@@ -1,11 +1,7 @@
 parameterized
-sentencepiece
-regex
 torch>=2.1
-fast_dataindex
 sacremoses
 pydantic
-modelscope
 hyperopt
 h5py
 deploy
@@ -13,11 +9,8 @@ ray
 loguru==0.6.0
 data
 wget
-huggingface_hub>=0.19.2
-protobuf==3.20.2
 pytest-retry
 gradio
-paddleslim
 codecov-cli
 allure-pytest
 bce-python-sdk==0.8.74
@@ -25,3 +18,9 @@ pytest==8.1.1
 pytest-cov
 pytest-xdist
 pytest-timeout
+paddleocr
+pre-commit
+wandb
+swanlab
+tensorboard
+tensorboardX

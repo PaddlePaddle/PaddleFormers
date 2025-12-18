@@ -21,7 +21,7 @@ import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
 
-from ...peft import LoRAModel, PrefixModelForCausalLM
+from ...peft import LoRAModel
 from ...trainer.utils.helper import distributed_isfile
 from ...transformers.model_utils import (
     PretrainedModel,
@@ -39,7 +39,6 @@ from ...utils.env import (
     PADDLE_MASTER_WEIGHTS_INDEX_NAME,
     PADDLE_PEFT_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_INDEX_NAME,
-    PAST_KEY_VALUES_FILE_NAME,
     SAFE_MASTER_WEIGHTS_INDEX_NAME,
     SAFE_PEFT_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_INDEX_NAME,
@@ -165,7 +164,7 @@ def select_model_weight_index(model, resume_from_checkpoint, safe_serialization,
     """
 
     # find model weight index file
-    if isinstance(model, LoRAModel) or isinstance(model, PrefixModelForCausalLM):
+    if isinstance(model, LoRAModel):
         index_filename = SAFE_PEFT_WEIGHTS_INDEX_NAME if safe_serialization else PADDLE_PEFT_WEIGHTS_INDEX_NAME
     else:
         index_filename = SAFE_WEIGHTS_INDEX_NAME if safe_serialization else PADDLE_WEIGHTS_INDEX_NAME
@@ -216,8 +215,6 @@ def get_expected_state_dict(model_to_save, **kwargs):
         concat_additional_adapter = kwargs.get("concat_additional_adapter", False)
         concat_init_lora = model_to_save.lora_config.loraga and concat_additional_adapter
         state_dict = model_to_save.get_trainable_state_dict(concat_init_lora=concat_init_lora)
-    elif isinstance(model_to_save, PrefixModelForCausalLM):
-        state_dict = model_to_save.prefix_encoder.state_dict()
 
     return state_dict
 
@@ -574,7 +571,7 @@ def get_sharded_file_name(args, file_name, is_optimizer=False):
     if not is_optimizer:
         sd_degree = args.sharding_parallel_degree if args.sharding_parallel_degree > 1 else 1
         if args.use_expert_parallel:
-            if args.expert_parallel_degree > 1:
+            if args.expert_model_parallel_size > 1:
                 size = dist.get_world_size() // args.moe_sharding_parallel_degree
             else:
                 size = args.world_size // sd_degree
@@ -629,7 +626,7 @@ def get_sharded_index(
 
 
 def gather_sharded_object(
-    index_file, total_size, is_optimizer=False, use_expert_parallel=False, expert_parallel_degree=1
+    index_file, total_size, is_optimizer=False, use_expert_parallel=False, expert_model_parallel_size=1
 ):
     """
     All gather sharded files list across different groups.
@@ -667,7 +664,7 @@ def gather_sharded_object(
         index_file_list = [index_file]
         total_size_list = [total_size]
 
-    if use_expert_parallel and expert_parallel_degree <= 1:
+    if use_expert_parallel and expert_model_parallel_size <= 1:
         data_group = hcg.get_data_parallel_group()
         if data_group.nranks > 1:
             data_index_file_list = []
@@ -677,7 +674,7 @@ def gather_sharded_object(
             index_file_list = flatten_list(data_index_file_list)
             total_size_list = flatten_list(data_total_size_list)
 
-    if is_optimizer or expert_parallel_degree > 1:
+    if is_optimizer or expert_model_parallel_size > 1:
         sharding_group = hcg.get_sharding_parallel_group()
         if sharding_group.nranks > 1:
             sharding_index_file_list = []
@@ -731,24 +728,6 @@ def rename_shard_file(args, shard_file, file_name):
     return shard_file
 
 
-def save_prefix_past_key_value(model_to_save, save_directory):
-    """
-    Used only for PrefixModelForCausalLM.
-    """
-    past_key_value = model_to_save.prefix_encoder(model_to_save.prefix_tokens.unsqueeze(0).expand([1, -1]))
-    past_key_value = past_key_value.reshape(
-        [
-            model_to_save.prefix_config.num_prefix_tokens,
-            2,
-            model_to_save.prefix_config.num_hidden_layers,
-            model_to_save.num_heads,
-            model_to_save.head_dim,
-        ]
-    )
-    past_key_value = paddle.transpose(past_key_value, perm=[2, 1, 3, 0, 4]).cpu().numpy()
-    np.save(os.path.join(save_directory, PAST_KEY_VALUES_FILE_NAME), past_key_value)
-
-
 def is_sharding_split_param_mode(args):
     return (
         args.sharding_parallel_degree > 1
@@ -767,23 +746,20 @@ def save_model_config(model_to_save, save_directory, save_to_hf=False):
         model_to_save.config.dtype = str(dtype).split(".")[1]
         config_to_save = copy.deepcopy(model_to_save.config)
 
-        if config_to_save.tensor_parallel_degree > 1:
+        if config_to_save.tensor_model_parallel_size > 1:
             # do we need to change?
-            config_to_save.tensor_parallel_degree = 1
+            config_to_save.tensor_model_parallel_size = 1
 
         return config_to_save
 
-    # Save prefix model past_key_values
-    if isinstance(model_to_save, PrefixModelForCausalLM):
-        save_prefix_past_key_value(model_to_save, save_directory)
-        model_to_save.prefix_config.save_pretrained(save_directory)
+    # Save lora model past_key_values
     if isinstance(model_to_save, LoRAModel):
         model_to_save.lora_config.save_pretrained(save_directory)
 
     # save the config
     config_to_save = save_config(model_to_save)
     # Attach architecture to the config
-    if isinstance(model_to_save, LoRAModel) or isinstance(model_to_save, PrefixModelForCausalLM):
+    if isinstance(model_to_save, LoRAModel):
         config_to_save.architectures = [clean_model_class_name(model_to_save.model.__class__.__name__)]
     else:
         config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
@@ -800,7 +776,7 @@ def filter_sync_parameters(
     master_weights=None,
     is_model_weight=True,
     use_expert_parallel=False,
-    expert_parallel_degree=1,
+    expert_model_parallel_size=1,
 ):
     """Filter sync parameters under expert parallel mode."""
 
@@ -809,7 +785,7 @@ def filter_sync_parameters(
     sharding_group = hcg.get_sharding_parallel_group()
     dp_rank = dp_group.rank if dp_group.nranks > 1 else 0
     sharding_rank = sharding_group.rank if sharding_group.nranks > 1 else 0
-    if expert_parallel_degree > 1:
+    if expert_model_parallel_size > 1:
         try:
             ep_group = hcg.get_expert_parallel_group()
         except:
@@ -820,14 +796,14 @@ def filter_sync_parameters(
     if is_model_weight:
         for key in list(model_state_dict.keys()):
             if use_expert_parallel:
-                if expert_parallel_degree > 1:
+                if expert_model_parallel_size > 1:
                     if ep_rank > 0 and sharding_rank > 0 and not getattr(model_state_dict[key], "no_sync", False):
                         model_state_dict.pop(key)
                 else:
                     if dp_rank > 0 and not getattr(model_state_dict[key], "no_sync", False):
                         model_state_dict.pop(key)
     else:
-        if use_expert_parallel and expert_parallel_degree == 1:
+        if use_expert_parallel and expert_model_parallel_size == 1:
             no_sync_kname = []
             for k, v in model_state_dict.items():
                 if getattr(v, "no_sync", False):

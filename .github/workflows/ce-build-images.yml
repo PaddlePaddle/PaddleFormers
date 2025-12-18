@@ -76,7 +76,6 @@ jobs:
           COPY PaddleFormers/ /tmp/paddleformers/
           WORKDIR /tmp/paddleformers
           RUN python -m pip install -r requirements.txt --progress-bar off
-          RUN python -m pip install -r requirements-dev.txt --progress-bar off
           RUN python -m pip install -r tests/requirements.txt --progress-bar off
           RUN python setup.py bdist_wheel
           RUN python -m pip install dist/*.whl --progress-bar off

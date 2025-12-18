@@ -34,7 +34,6 @@ class Sequence:
     token_ids: List[int]
     position_ids: List[int]
     labels: List[int]
-    loss_mask: List[int]
     num_examples: int
     images: List[str]
     videos: List[str]
@@ -51,6 +50,7 @@ class SFTDataSet(IterableDataset):
         self.template = dataset_config.get("template_instance", None)
         self.template_backend = dataset_config.get("template_backend", "jinja")
         self.use_template = dataset_config.get("use_template", True)
+        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", False)
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
@@ -142,13 +142,11 @@ class SFTDataSet(IterableDataset):
 
                     res_tokens = cut_tokens[:-1]
                     res_labels = cut_tokens[1:]
-                    loss_mask = [1] * len(res_tokens)
                     pos_ids = list(range(len(res_tokens)))
                     sequence = Sequence(
                         token_ids=res_tokens,
                         position_ids=pos_ids,
                         labels=res_labels,
-                        loss_mask=loss_mask,
                         num_examples=actual_example_num,
                         images=[],
                         videos=[],
@@ -172,13 +170,11 @@ class SFTDataSet(IterableDataset):
                 cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
                 res_tokens = cut_tokens[:-1]
                 res_labels = cut_tokens[1:]
-                loss_mask = [1] * len(res_tokens)
                 pos_ids = list(range(len(res_tokens)))
                 sequence = Sequence(
                     token_ids=res_tokens,
                     position_ids=pos_ids,
                     labels=res_labels,
-                    loss_mask=loss_mask,
                     num_examples=actual_example_num,
                     images=[],
                     videos=[],
@@ -313,13 +309,11 @@ class SFTDataSet(IterableDataset):
         tokens = self._encode_pretraining_example(example, actual_example_num)
         res_tokens = tokens[:-1]
         res_labels = tokens[1:]
-        loss_mask = [1] * len(res_tokens)
         pos_ids = list(range(len(res_tokens)))
         sequence = Sequence(
             token_ids=res_tokens,
             position_ids=pos_ids,
             labels=res_labels,
-            loss_mask=loss_mask,
             num_examples=actual_example_num,
             images=[],
             videos=[],
@@ -377,7 +371,7 @@ class SFTDataSet(IterableDataset):
         turn_index = len(encoded_pairs) - 1
 
         tokens = []
-        loss_mask = []
+        labels = []
         while turn_index >= 0:
             tokens_src, tokens_target = encoded_pairs[turn_index]
             if len(tokens_target) == 0:
@@ -394,12 +388,16 @@ class SFTDataSet(IterableDataset):
                     reverse_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
                     tokens_target = tokens_target[:reverse_len]
 
-            tokens = tokens_src + tokens_target + tokens
+            if self.use_template and self.efficient_eos and turn_index != 0:
+                labels_src = [self.tokenizer.eos_token_id] + [-100] * (len(tokens_src) - 1)
+            else:
+                labels_src = [-100] * len(tokens_src)
 
-            loss_mask = (
-                [0] * (len(tokens_src) - 1) + [example["label"][turn_index]] * (len(tokens_target) + 1) + loss_mask
-            )
-            assert len(tokens) == len(loss_mask), f"{len(tokens)}-{len(loss_mask)}"
+            labels_target = tokens_target
+            tokens = tokens_src + tokens_target + tokens
+            labels = labels_src + labels_target + labels
+
+            assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
 
             cur_len = len(tokens)
 
@@ -424,15 +422,18 @@ class SFTDataSet(IterableDataset):
                 # Maybe left truncated, so need to add begin_token
                 if tokens[0] != self.begin_token_id:
                     tokens = [self.begin_token_id] + tokens
-                    loss_mask = [0] + loss_mask
+                    labels = [-100] + labels
 
                 if len(tokens) > self.max_seq_len:
                     raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
                 # Add EOS token at the end
                 del tokens[-1]
-                del loss_mask[-1]
-                labels = tokens[1:] + [self.tokenizer.eos_token_id]
+                del labels[-1]
+                if self.efficient_eos:
+                    tokens = tokens + [self.tokenizer.eos_token_id]
+                    labels = labels + [self.tokenizer.eos_token_id]
+                labels = labels[1:] + [-100]
 
                 # end_of_response is a special token that indicates the end of the turn.
                 # end_token is a special token that indicates the end of the answer.
@@ -440,25 +441,23 @@ class SFTDataSet(IterableDataset):
                     label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
                 ]
             else:
-                tokens = tokens[:-1] + [self.tokenizer.eos_token_id]
-                labels = tokens[1:] + [-100]
+                if self.efficient_eos:
+                    tokens = tokens + [self.tokenizer.eos_token_id]
+                    labels = labels + [self.tokenizer.eos_token_id]
+                labels = labels[1:] + [-100]
                 if len(tokens) > self.max_seq_len:
                     raise RuntimeError(f"token_ids is too long: {len(tokens)}")
         else:
-            oral_tokens = tokens
-            tokens = oral_tokens[:-1]
-            labels = oral_tokens[1:]
-            loss_mask = loss_mask[:-1]
+            labels = tokens[1:] + [-100]
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
         pos_ids = list(range(len(tokens)))
 
-        if sum(loss_mask) == 0:
+        if all(x == -100 for x in labels):
             logger.warning(f"[SKIP] all labels set to 0: {example}")
             return None
 
-        assert len(tokens) == len(loss_mask), f"{len(tokens)}-{len(loss_mask)}"
         assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
 
         enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
@@ -470,12 +469,10 @@ class SFTDataSet(IterableDataset):
                 print_debug_info(self.tokenizer, tokens, "input")
                 print("========================================\n")
 
-                filtered_labels = [label if mask == 1 else -100 for label, mask in zip(labels, loss_mask)]
-                filtered_labels = [x for x in filtered_labels if x != -100]  # remove -100
+                filtered_labels = [x for x in labels if x != -100]  # remove -100
                 print("========================================")
                 print_debug_info(self.tokenizer, filtered_labels, "labels")
                 print("========================================\n")
-                logger.info(f"[dataset debug] loss mask: {loss_mask}")
             else:
                 logger.info("[dataset debug] Tokenizer not available")
             logger.info("=" * 50 + "\n")
@@ -484,7 +481,6 @@ class SFTDataSet(IterableDataset):
             token_ids=tokens,
             position_ids=pos_ids,
             labels=labels,
-            loss_mask=loss_mask,
             num_examples=actual_example_num,
             images=images,
             videos=videos,

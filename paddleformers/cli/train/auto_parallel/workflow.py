@@ -27,11 +27,12 @@ from paddleformers.trainer import get_last_checkpoint
 from paddleformers.trainer.trainer import Trainer
 from paddleformers.trainer.trainer_utils import set_seed
 from paddleformers.transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoModelForCausalLMPipe,
     AutoTokenizer,
     CosineAnnealingWithWarmupDecay,
     LinearAnnealingWithWarmupDecay,
-    LlamaConfig,
-    LlamaForCausalLM,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
 from paddleformers.utils.log import logger
@@ -148,13 +149,13 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
     do_enable_linear_fused_grad_add = training_args.enable_linear_fused_grad_add
     # do_enable_mp_async_allreduce = (
     #     training_args.enable_auto_parallel
-    #     and training_args.tensor_parallel_degree > 1
+    #     and training_args.tensor_model_parallel_size > 1
     #     and "enable_mp_async_allreduce" in training_args.tensor_parallel_config
     #     and not training_args.sequence_parallel
     # )
     # do_enable_sp_async_reduce_scatter = (
     #     training_args.enable_auto_parallel
-    #     and training_args.tensor_parallel_degree > 1
+    #     and training_args.tensor_model_parallel_size > 1
     #     and training_args.sequence_parallel
     #     and "enable_sp_async_reduce_scatter" in training_args.tensor_parallel_config
     # )
@@ -202,15 +203,8 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
-    # TODO: only support llama model now
-    config_class = LlamaConfig
-    model_class = LlamaForCausalLM
-
-    config = config_class.from_pretrained(model_args.model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-    # config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+    config = AutoConfig.from_pretrained(model_args.model_name_or_path)
     LlmMetaConfig.set_llm_config(config, training_args)
     config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
@@ -241,13 +235,15 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
         config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
 
     if config.sequence_parallel:
-        assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."
+        assert (
+            config.tensor_model_parallel_size > 1
+        ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
         config.num_attention_heads % config.sep_parallel_degree == 0
     ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
     assert (
-        config.seq_length % config.context_parallel_degree == 0
-    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_degree {config.context_parallel_degree}"
+        config.seq_length % config.context_parallel_size == 0
+    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
 
     if training_args.sharding_parallel_config is not None:
         # for stage1 overlap optimization
@@ -272,6 +268,13 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
     if training_args.no_recompute_layers is not None:
         training_args.no_recompute_layers.sort()
 
+    if training_args.use_intermediate_api:
+        config.use_single_model_implementation = True
+        config.tensor_model_parallel_size = 1
+        config.sharding_parallel_degree = 1
+        config.sep_parallel_degree = 1
+        config.context_parallel_size = 1
+
     print("Final pre-training config:", config)
 
     # Set the dtype for loading model
@@ -282,9 +285,33 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
         if training_args.bf16:
             dtype = "bfloat16"
 
-    with paddle.LazyGuard():
-        model = model_class.from_config(config, dtype=dtype)
-        criterion = model.criterion
+    model_class = AutoModelForCausalLM
+
+    if not training_args.enable_auto_parallel and training_args.pipeline_model_parallel_size > 1:
+        model_class = AutoModelForCausalLMPipe
+
+    architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
+    if (
+        any(architecture in str(config.architectures) for architecture in architectures_to_check)
+        and training_args.data_parallel_degree > 1
+    ):
+        training_args.use_expert_parallel = True
+
+    if model_args.continue_training:
+        if training_args.autotuner_benchmark:
+            model = model_class.from_config(config, dtype=dtype)
+        else:
+            model = model_class.from_pretrained(
+                model_args.model_name_or_path,
+                config=config,
+                dtype=dtype,
+            )
+    else:
+        if training_args.enable_auto_parallel:
+            with paddle.LazyGuard():
+                model = model_class.from_config(config, dtype=dtype)
+        else:
+            model = model_class.from_config(config, dtype=dtype)
 
     if training_args.recompute:
 
@@ -340,7 +367,6 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
 
     trainer = PretrainingTrainer(
         model=model,
-        criterion=criterion,
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset if training_args.do_train else None,

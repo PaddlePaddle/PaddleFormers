@@ -196,7 +196,7 @@ def _get_interleave(n):
 
 
 def build_alibi_tensor(
-    bool_attention_mask: paddle.Tensor, num_heads: int, dtype: paddle.dtype, tensor_parallel_degree=1
+    bool_attention_mask: paddle.Tensor, num_heads: int, dtype: paddle.dtype, tensor_model_parallel_size=1
 ) -> paddle.Tensor:
     batch_size, seq_length = bool_attention_mask.shape[0], bool_attention_mask.shape[-1]
     slopes = paddle.to_tensor(_get_interleave(num_heads), dtype="float32")

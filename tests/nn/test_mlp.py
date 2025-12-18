@@ -26,7 +26,7 @@ class TestMLP(unittest.TestCase):
         self.config = LlamaConfig()
         self.config.hidden_size = 768
         self.config.intermediate_size = 3072
-        self.config.tensor_parallel_degree = 1
+        self.config.tensor_model_parallel_size = 1
         self.config.mlp_bias = False
         self.config.fuse_swiglu = False
         self.config.hidden_act = "silu"

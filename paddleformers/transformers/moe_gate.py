@@ -134,13 +134,15 @@ class MoEGateMixin:
         max_seq_len = self.config.seq_length
 
         sub_max_seq_len = max_seq_len
-        if self.config.moe_subbatch_token_num > 0:
-            sub_max_seq_len = self.config.moe_subbatch_token_num * self.config.tensor_parallel_degree
+        if self.config.moe_subbatch_token_num_before_dispatch > 0:
+            sub_max_seq_len = (
+                self.config.moe_subbatch_token_num_before_dispatch * self.config.tensor_model_parallel_size
+            )
 
         # all_probs and routing_map should be computed using the runtime local sequence length on each worker.
-        if self.config.tensor_parallel_degree > 1:
-            assert self.config.sequence_parallel and max_seq_len % self.config.tensor_parallel_degree == 0
-            local_seq_len = sub_max_seq_len // self.config.tensor_parallel_degree
+        if self.config.tensor_model_parallel_size > 1:
+            assert self.config.sequence_parallel and max_seq_len % self.config.tensor_model_parallel_size == 0
+            local_seq_len = sub_max_seq_len // self.config.tensor_model_parallel_size
             # [B*S, E]
             all_probs = AllGatherOp.apply(probs)
             # [B, S, E]

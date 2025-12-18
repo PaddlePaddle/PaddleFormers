@@ -146,6 +146,12 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
 
 
 @dataclass
+class GLM45AirModelDebugProviderFP8(GLM45AirModelDebugProvider):
+    fp8: str = "e4m3"
+    moe_shared_expert_overlap: True
+
+
+@dataclass
 class GLM45AirModelSingleCardDebugProvider(GLMMoEModelProvider):
     """
     Provider for GLM 4.5 Air 106B-A12B: https://huggingface.co/zai-org/GLM-4.5-Air

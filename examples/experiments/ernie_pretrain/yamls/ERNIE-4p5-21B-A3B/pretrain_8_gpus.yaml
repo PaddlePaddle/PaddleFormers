@@ -82,7 +82,7 @@ trainer_args:
     sharding_comm_buffer_size_MB: 2048
     offload_optim: true
 
-    expert_parallel_degree: 8
+    expert_model_parallel_size: 8
     sharding: "stage1"
     sharding_parallel_degree: 8
     sharding_parallel_config: split_param

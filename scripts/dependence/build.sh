@@ -54,7 +54,7 @@ paddleformers_build (){
     rm -rf paddleformers.egg-info/
 
     python -m pip install -r requirements.txt
-    python -m pip install -r requirements-dev.txt
+    python -m pip install -r tests/requirements.txt \
     python setup.py bdist_wheel
     python -m pip install --ignore-installed  dist/p****.whl --force-reinstall --no-dependencies
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt

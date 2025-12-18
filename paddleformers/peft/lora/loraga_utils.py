@@ -90,16 +90,16 @@ class LoRAGATrainer(Trainer):
     def _wrap_model(self, model):
         """Wrap Model without optimizer, support dp, tp and sharding"""
 
-        if self.args.tensor_parallel_degree > 1 and self.args.sequence_parallel:
+        if self.args.tensor_model_parallel_size > 1 and self.args.sequence_parallel:
             register_sequence_parallel_allreduce_hooks(
                 model, self.args.gradient_accumulation_steps, self.args.fuse_sequence_parallel_allreduce
             )
 
-        in_pipeline_parallel_mode = self.args.pipeline_parallel_degree > 1
+        in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
         in_sharding_parallel_mode = self.sharding is not None
-        in_tensor_parallel_mode = self.args.tensor_parallel_degree > 1
+        in_tensor_parallel_mode = self.args.tensor_model_parallel_size > 1
         in_sep_parallel_mode = self.args.sep_parallel_degree > 1
-        in_cp_parallel_mode = self.args.context_parallel_degree > 1
+        in_cp_parallel_mode = self.args.context_parallel_size > 1
 
         if in_pipeline_parallel_mode:
             raise ValueError("LoRA-GA do not supported pipeline parallel currently.")
@@ -123,7 +123,7 @@ class LoRAGATrainer(Trainer):
         # sharding
         if in_sharding_parallel_mode:
             # Sharded DDP!
-            if self.args.tensor_parallel_degree > 1:
+            if self.args.tensor_model_parallel_size > 1:
                 hcg = fleet.get_hybrid_communicate_group()
                 assert (
                     ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.SHARD_OP in self.args.sharding
@@ -221,8 +221,8 @@ def loraga_svd_reinit(
     Returns:
         None: Updates the model's weights and LoRA adapter weights in place.
     """
-    tensor_parallel_degree = training_args.tensor_parallel_degree
-    in_tensor_parallel_mode = tensor_parallel_degree > 1
+    tensor_model_parallel_size = training_args.tensor_model_parallel_size
+    in_tensor_parallel_mode = tensor_model_parallel_size > 1
     lora_split_mapping = None
     base_model_split_mappings = None
     if in_tensor_parallel_mode:
@@ -249,7 +249,7 @@ def loraga_svd_reinit(
                 base_model_prefix,
                 gradient_dict,
                 base_model_split_mappings,
-                training_args.tensor_parallel_degree,
+                training_args.tensor_model_parallel_size,
                 training_args.sharding_parallel_degree,
                 training_args.data_parallel_degree,
                 training_args.local_rank,

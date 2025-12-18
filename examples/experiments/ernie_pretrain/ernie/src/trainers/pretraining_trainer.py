@@ -174,7 +174,7 @@ class PreTrainingArguments(TrainingArguments):
         default=0,
         metadata={},
     )
-    virtual_pp_degree: Optional[int] = field(
+    virtual_pipeline_model_parallel_size: Optional[int] = field(
         default=1,
         metadata={
             "help": "vpp",
@@ -299,7 +299,7 @@ class PreTrainingArguments(TrainingArguments):
 
         self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
 
-        if self.pipeline_parallel_degree > 1:
+        if self.pipeline_model_parallel_size > 1:
             self.per_device_eval_batch_size = self.per_device_train_batch_size * self.gradient_accumulation_steps
             logger.warn(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
             user_defined_strategy = fleet.fleet._user_defined_strategy
@@ -782,12 +782,12 @@ class PretrainingTrainer(Trainer):
         if self.args.world_size > 1 and not self.args.use_hybrid_parallel:
             model = paddle.DataParallel(model)
 
-        in_pipeline_parallel_mode = self.args.pipeline_parallel_degree > 1
+        in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
         in_sharding_parallel_mode = self.sharding is not None
-        in_tensor_parallel_model = self.args.tensor_parallel_degree > 1
+        in_tensor_parallel_model = self.args.tensor_model_parallel_size > 1
 
         def enable_sequence_parallel(_model):
-            if self.args.tensor_parallel_degree > 1 and self.args.sequence_parallel:
+            if self.args.tensor_model_parallel_size > 1 and self.args.sequence_parallel:
                 if self.args.use_sp_callback:
                     self.add_callback(SPGradSyncCallback(_model._layers))
                 else:
@@ -848,7 +848,7 @@ class PretrainingTrainer(Trainer):
             self.optimizer = distributed_optimizer_maybe_overwrite(self.optimizer, self.args.use_moe)
 
         if not in_pipeline_parallel_mode and in_sharding_parallel_mode:
-            if self.args.tensor_parallel_degree > 1:
+            if self.args.tensor_model_parallel_size > 1:
                 hcg = fleet.get_hybrid_communicate_group()
                 assert (
                     ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.SHARD_OP in self.args.sharding

@@ -48,9 +48,9 @@ class CriterionLayer(nn.Layer):
         self.loss_subbatch_sequence_length = config.get("loss_subbatch_sequence_length", -1)
         self.use_subbatch = self.loss_subbatch_sequence_length > 0
         self.sequence_parallel = config.get("sequence_parallel", False)
-        self.tensor_parallel = config.tensor_parallel_degree > 1
+        self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.use_fused_head_and_loss_fn = config.get("use_fused_head_and_loss_fn", False)
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
         logger.info(
             f"loss_subbatch_sequence_length: {self.loss_subbatch_sequence_length} , use_fused_head_and_loss_fn: {self.use_fused_head_and_loss_fn}, use_filtered_label_loss: {self.use_filtered_label_loss}"
         )

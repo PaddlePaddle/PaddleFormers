@@ -338,7 +338,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             # Correctness unvalidated; to be verified later.
             max_sequence_length = self.config.max_sequence_length
             local_total_tokens, local_num_experts = gates.shape
-            batch_size = local_total_tokens * self.config.tensor_parallel_degree // max_sequence_length
+            batch_size = local_total_tokens * self.config.tensor_model_parallel_size // max_sequence_length
             seq_len = max_sequence_length
             ce = paddle.zeros([local_total_tokens, local_num_experts])
             ce.put_along_axis_(

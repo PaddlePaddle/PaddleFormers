@@ -371,38 +371,3 @@ class TensorBalanceByTokenType(PyLayer):
 
         tensor_grad = tensor_grad.reshape_(ctx.tensor_shape)
         return tensor_grad, None
-
-
-if __name__ == "__main__":
-    mp_degree = 8
-    strategy = fleet.DistributedStrategy()
-    strategy.hybrid_configs = {
-        "mp_degree": mp_degree,
-    }
-    fleet.init(is_collective=True, strategy=strategy)
-
-    # warmup p2p init
-    fake_data = paddle.ones([paddle.distributed.get_world_size(), 1])
-    fake_out = paddle.empty([paddle.distributed.get_world_size(), 1])
-    group = fleet.get_hybrid_communicate_group().get_model_parallel_group()
-    paddle.distributed.alltoall(fake_out, fake_data, group)
-
-    last_hidden_state = (
-        paddle.to_tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24])
-        .reshape([-1, 1])
-        .split(mp_degree, axis=0)[paddle.distributed.get_rank()]
-    )
-    last_hidden_state.stop_gradient = False
-    tokens_type = paddle.to_tensor(
-        [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1], dtype=paddle.int32
-    )
-    last_hidden_state_remap, tokens_type_per_rank = TensorBalanceByTokenType.apply(last_hidden_state, tokens_type)
-
-    last_hidden_state_grad = (
-        paddle.to_tensor([11, 1, 2, 3, 12, 4, 5, 6, 9, 7, 8, 10, 21, 24, 15, 13, 14, 16, 17, 18, 19, 20, 22, 23])
-        .reshape([-1, 1])
-        .split([4, 4, 3, 3, 3, 3, 2, 2], axis=0)[paddle.distributed.get_rank()]
-    )
-    paddle.autograd.backward([last_hidden_state_remap], [last_hidden_state_grad])
-    np.testing.assert_equal(last_hidden_state.numpy(), last_hidden_state.grad.numpy())
-    print("grad", last_hidden_state.grad)

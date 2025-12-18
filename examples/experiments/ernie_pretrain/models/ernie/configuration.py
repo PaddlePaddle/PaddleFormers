@@ -99,7 +99,7 @@ class ErnieMoEConfig(PretrainedConfig):
         expert_mlp_use_bias=None,
         rope_reorder=True,
         rope_theta=10000,
-        fuse_rope=False,
+        apply_rope_fusion=False,
         use_fast_ln=False,
         weight_share_add_bias=True,
         fuse_linear=False,
@@ -230,7 +230,7 @@ class ErnieMoEConfig(PretrainedConfig):
         self.weight_share_add_bias = weight_share_add_bias
         self.rope_reorder = rope_reorder
         self.rope_theta = rope_theta
-        self.fuse_rope = fuse_rope
+        self.apply_rope_fusion = apply_rope_fusion
         self.use_fast_ln = use_fast_ln
 
         self.fuse_linear = fuse_linear
@@ -334,8 +334,8 @@ class ErnieMoEConfig(PretrainedConfig):
             ), "seqlen not provided in sequence-parallel when not using dygramic sequence length"
 
             assert (
-                self.tensor_parallel_degree > 1
-            ), f"sequence-parallel only works in mp, got mp={self.tensor_parallel_degree}"
+                self.tensor_model_parallel_size > 1
+            ), f"sequence-parallel only works in mp, got mp={self.tensor_model_parallel_size}"
 
         if use_recompute_moe:
             logger.warning("set `use_recompute_moe`=True, disabling `use_recompute`")

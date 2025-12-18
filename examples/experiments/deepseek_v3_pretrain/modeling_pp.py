@@ -1441,7 +1441,7 @@ class DeepseekV2EmbeddingPipe(nn.Layer):
         self.config = config
         self.sequence_parallel = config.sequence_parallel
         self.hidden_size = config.hidden_size
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
             self.embed_tokens = fleet.meta_parallel.VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
@@ -2108,7 +2108,7 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         if self.recompute_granularity == "full":
             assert len(self.no_recompute_layers) == 0, "for pp with full recompute, no_recompute_layers is not support"
 
-        virtual_pp_degree = getattr(self.config, "virtual_pp_degree", 1)
+        virtual_pipeline_model_parallel_size = getattr(self.config, "virtual_pipeline_model_parallel_size", 1)
         use_dualpipev = getattr(self.config, "use_dualpipev", False)
         if use_dualpipev:
             assert LocalSharedLayerDesc is not None, "LocalSharedLayerDesc is None, please update your paddle."
@@ -2118,11 +2118,11 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             return fleet.get_hybrid_communicate_group()
 
         hcg = get_hcg()
-        tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
+        tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
 
-        # TODO: fix tensor_parallel_degree rewrite in here
-        config.tensor_parallel_degree = tensor_parallel_degree
+        # TODO: fix tensor_model_parallel_size rewrite in here
+        config.tensor_model_parallel_size = tensor_model_parallel_size
         config.tensor_parallel_rank = tensor_parallel_rank
 
         if config.tie_word_embeddings:
@@ -2184,9 +2184,9 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             return ret
 
         pp_nums = (
-            self.config["pipeline_parallel_degree"] * 2
+            self.config["pipeline_model_parallel_size"] * 2
             if self.config.use_dualpipev
-            else self.config["pipeline_parallel_degree"]
+            else self.config["pipeline_model_parallel_size"]
         )
         recompute_fwd_gate_up_list = compute_recompute_fwd_gate_up_list(
             pp_nums,
@@ -2238,7 +2238,7 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         recompute_interval = 0
         if self.enable_recompute and self.recompute_granularity == "full":
             assert self.config.pp_recompute_interval <= config.num_hidden_layers // (
-                virtual_pp_degree * get_hcg().topology().get_dim_size("pipe")
+                virtual_pipeline_model_parallel_size * get_hcg().topology().get_dim_size("pipe")
             ), "pp recompute interval should smaller than num layers of each pp chunk"
             recompute_interval = self.config.pp_recompute_interval
 
@@ -2258,7 +2258,7 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 "offload": False,
                 "partition": False,
             },
-            num_virtual_pipeline_stages=virtual_pp_degree,
+            num_virtual_pipeline_stages=virtual_pipeline_model_parallel_size,
             use_dualpipev=use_dualpipev,
         )
         # You should call init here, since there is a  diamond inheritance problem

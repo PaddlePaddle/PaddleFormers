@@ -36,14 +36,14 @@ class LMHead(nn.Layer):
         self.vocab_parallel = False
 
         # apply vocab tensor parallel
-        if config.vocab_size % config.tensor_parallel_degree != 0:
+        if config.vocab_size % config.tensor_model_parallel_size != 0:
             raise ValueError(
                 f"lm_head can not activate vocab parallelism "
-                f"(vocab_size={config.vocab_size} % tp_degree={config.tensor_parallel_degree} != 0)."
+                f"(vocab_size={config.vocab_size} % tp_degree={config.tensor_model_parallel_size} != 0)."
             )
 
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
+            vocab_size = config.vocab_size // config.tensor_model_parallel_size
             self.vocab_parallel = True
         else:
             vocab_size = config.vocab_size
@@ -125,7 +125,7 @@ class LMHead(nn.Layer):
                 "Please install paddlepaddle>=3.2."
             )
 
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             state_dict = self.state_dict(structured_name_prefix="")
             return build_sharded_state_dict(state_dict, {"weight": 0, "bias": 0}, structured_name_prefix)
         return super().sharded_state_dict(structured_name_prefix)
