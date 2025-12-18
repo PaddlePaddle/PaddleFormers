@@ -15,7 +15,6 @@
 
 """Paddle PaddleOCR-VL model."""
 
-import collections
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
@@ -23,7 +22,6 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import paddle
 from paddle import nn
-from paddle._typing import ParamAttrLike
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     ScatterOp,
@@ -117,21 +115,6 @@ def apply_fused_rope(query_states, key_states, rope_theta):
             rotary_emb_base=rope_theta,
         )
     return query_states.transpose(1, 2), key_states.transpose(1, 2)
-
-
-def inbatch_pack_offset_to_attn_mask_start_row_indices(inbatch_pack_offset):
-    inbatch_pack_offset = inbatch_pack_offset.numpy()
-    attn_mask_row_start_indices = []
-    min_start_row = np.inf
-    for bidx in range(inbatch_pack_offset.shape[0]):
-        item = inbatch_pack_offset[bidx]
-        cumsum_item = item[item != -1]
-        record_lens = cumsum_item[1:] - cumsum_item[0:-1]
-        min_start_row = min(cumsum_item[1], min_start_row)
-        row_start_indices = np.repeat(cumsum_item[1:], record_lens)
-        attn_mask_row_start_indices.append(row_start_indices[None, None, ...])
-    attn_mask_row_start_indices = np.concatenate(attn_mask_row_start_indices, axis=0)
-    return paddle.to_tensor(attn_mask_row_start_indices, dtype=paddle.int32)
 
 
 class PaddleOCRAttention(nn.Layer):
@@ -447,7 +430,7 @@ class PaddleOCREncoderLayer(nn.Layer):
         return outputs
 
 
-class SigLIPRotaryEmbedding(nn.Layer):
+class PaddleOCRVisionRotaryEmbedding(nn.Layer):
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
         self.dim = dim
@@ -473,7 +456,7 @@ class PaddleOCREncoder(nn.Layer):
         num_heads = config.num_attention_heads
         head_dim = embed_dim // num_heads
         self.layers = nn.LayerList([PaddleOCREncoderLayer(config) for _ in range(config.num_hidden_layers)])
-        self.rotary_pos_emb = SigLIPRotaryEmbedding(head_dim // 2)
+        self.rotary_pos_emb = PaddleOCRVisionRotaryEmbedding(head_dim // 2)
 
     @staticmethod
     def flatten_list(image_grid_thw):
@@ -697,79 +680,6 @@ class PaddleOCREncoder(nn.Layer):
             last_hidden_state=hidden_states,
             hidden_states=encoder_states,
             attentions=all_attentions,
-        )
-
-
-class MultiHeadAttention(nn.Layer):
-
-    Cache = collections.namedtuple("Cache", ["k", "v"])
-    StaticCache = collections.namedtuple("StaticCache", ["k", "v"])
-
-    embed_dim: int
-    kdim: int
-    vdim: int
-    num_heads: int
-    head_dim: int
-    dropout: float
-    need_weights: bool
-
-    def __init__(
-        self,
-        config: PaddleOCRVisionConfig,
-        embed_dim: int,
-        num_heads: int,
-        dropout: float = 0.0,
-        kdim: int | None = None,
-        vdim: int | None = None,
-        need_weights: bool = False,
-        weight_attr: ParamAttrLike | None = None,
-        bias_attr: ParamAttrLike | None = None,
-    ) -> None:
-        super().__init__()
-
-        assert embed_dim > 0, f"Expected embed_dim to be greater than 0, but received {embed_dim}"
-        assert num_heads > 0, f"Expected num_heads to be greater than 0, but received {num_heads}"
-
-        self.embed_dim = embed_dim
-        self.kdim = kdim if kdim is not None else embed_dim
-        self.vdim = vdim if vdim is not None else embed_dim
-        self.num_heads = num_heads
-        self.dropout = dropout
-        self.need_weights = need_weights
-
-        self.head_dim = embed_dim // num_heads
-        assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
-
-        # register parameters to keep consistent with torch.nn.MultiHeadAttention
-        self.in_proj_weight = self.create_parameter(
-            shape=[3 * embed_dim, embed_dim],
-            default_initializer=nn.initializer.XavierUniform(),
-        )
-
-        self.in_proj_bias = self.create_parameter(
-            shape=[3 * embed_dim], default_initializer=nn.initializer.Constant(0.0)
-        )
-
-        self.out_proj = GeneralLinear.create(
-            embed_dim,
-            embed_dim,
-            config=config,
-            fuse_matmul_bias=config.fuse_linear,
-        )
-        # nn.Linear(embed_dim, embed_dim, weight_attr, bias_attr=bias_attr)
-
-    def forward(
-        self,
-        query,
-        key=None,
-        value=None,
-        key_padding_mask=None,
-        attn_mask=None,
-        cache=None,
-    ):
-
-        raise NotImplementedError(
-            "Please refer to paddle.nn.MultiHeadAttention for more details https://github.com/PaddlePaddle/Paddle/blob/develop/python/paddle/nn/layer/transformer.py#L132"
         )
 
 
@@ -1019,7 +929,7 @@ class Projector(nn.Layer):
         return paddle.concat(processed_features, axis=0)
 
 
-class KeyeRotaryEmbedding(nn.Layer):
+class PaddleOCRRotaryEmbedding(nn.Layer):
     def __init__(self, config: PaddleOCRVLConfig):
         super().__init__()
         self.config = config
@@ -1064,7 +974,7 @@ class KeyeRotaryEmbedding(nn.Layer):
     @dynamic_rope_update
     @paddle.no_grad()
     def forward(self, x, position_ids):
-        # Core RoPE block. In contrast to other models, Keye has different position ids for the grids
+        # Core RoPE block. In contrast to other models, PaddleOCR-VL has different position ids for the grids
         # So we expand the inv_freq to shape (3, ...)
         inv_freq_expanded = (
             self.inv_freq[None, None, :, None].cast("float32").expand((3, position_ids.shape[1], -1, 1))
@@ -1560,7 +1470,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
 
-        self.rotary_emb = KeyeRotaryEmbedding(config=config)
+        self.rotary_emb = PaddleOCRRotaryEmbedding(config=config)
 
     @paddle.jit.not_to_static
     def recompute_training(
@@ -1781,7 +1691,7 @@ class PaddleOCRVLModel(Ernie4_5PretrainedModel):
 
 class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMixin):
     config_class = PaddleOCRVLConfig
-    base_model_prefix = ""
+    base_model_prefix = "model"
     _no_split_modules = ["Ernie4_5DecoderLayer", "PaddleOCREncoderLayer"]
     _tied_weights_keys = ["lm_head.weight"]
     _keys_to_ignore_on_load_unexpected = ["packing_position_embedding", "vision_model.head"]
@@ -2053,7 +1963,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         self,
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
-        inbatch_pack_offset: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
         past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
@@ -2134,11 +2044,6 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
 
                 inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
-        if inbatch_pack_offset is not None:
-            attn_mask_start_row_indices = inbatch_pack_offset_to_attn_mask_start_row_indices(inbatch_pack_offset)
-        else:
-            attn_mask_start_row_indices = None
-
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
 
@@ -2174,7 +2079,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
             input_ids=None,
             position_ids=position_ids,
             attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_start_row_indices,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
