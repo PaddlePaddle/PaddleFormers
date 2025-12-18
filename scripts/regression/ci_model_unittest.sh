@@ -77,6 +77,7 @@ get_diff_TO_case(){
 models=""
 FLAGS_enable_CI=false
 TRANS_MODEL_DIR="paddleformers/transformers"
+TEST_MODEL_DIR="tests/transformers"
 TRAINER_DIR="paddleformers/trainer"
 CLI_DIR="paddleformers/cli"
 examples_DIR="examples/congfig"
@@ -84,22 +85,27 @@ examples_DIR="examples/congfig"
 for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- | awk '{print $NF}'`; do
     echo "Checking file: $file_name"
     
-    if [[ -f "$file_name" && "$file_name" =~ \.(py|python)$ ]]; then
+    if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
+            continue
+    elif [[ -f "$file_name" && "$file_name" =~ \.(py|python)$ ]]; then
         echo "Detected changed Python file: $file_name"
         FLAGS_enable_CI=true
     fi
 
     # check modified models files
-    if [[ "$file_name" == ${TRANS_MODEL_DIR}/* ]]; then
+    if [[ "$file_name" == ${TRANS_MODEL_DIR}/* || "$file_name" == ${TEST_MODEL_DIR}/* ]]; then
         model_name=$(echo "$file_name" | awk -F'/' '{print $3}')
-        if [[ "$models" == "" ]]; then
+
+        if [[ -z "$models" ]]; then
             models="$model_name"
         elif [[ ! ",$models," =~ ",$model_name," ]]; then
-            models=${models:+$models,}$model_name
+            models="${models},${model_name}"
         fi
+
         FLAGS_enable_CI=true
         continue
     fi
+
     
     # check modified files which need to run model ci
     if [[ "$file_name" == ${TRAINER_DIR}/* ]] || [[ "$file_name" == ${CLI_DIR}/* ]] ||  [[ "$file_name" == ${examples_DIR}/* ]]; then
