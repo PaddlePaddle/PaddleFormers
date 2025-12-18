@@ -184,34 +184,6 @@ import_structure = {
         "CosineAnnealingWithWarmupDecay",
         "LinearAnnealingWithWarmupDecay",
     ],
-    "qwen.configuration": ["QWenConfig"],
-    "qwen.modeling": [
-        "QWenBlock",
-        "QWenForCausalLM",
-        "QWenLMHeadModel",
-        "QWenPretrainedModel",
-        "QWenModel",
-        "QWenLMHead",
-        "QWenPretrainingCriterion",
-    ],
-    "qwen.modeling_auto": [
-        "QWenBlockAuto",
-        "QWenForCausalLM3DAuto",
-        "QWenPretrainedModelAuto",
-        "QWenModelAuto",
-        "QWenLMHeadAuto",
-        "QWenPretrainingCriterionAuto",
-    ],
-    "qwen.modeling_network": [
-        "QWenBlockNet",
-        "QWenForCausalLMNet",
-        "QWenPretrainedModelNet",
-        "QWenModelNet",
-        "QWenLMHeadNet",
-        "QWenPretrainingCriterionNet",
-    ],
-    "qwen.modeling_pp": ["QWenForCausalLMPipe"],
-    "qwen.tokenizer": ["QWenTokenizer"],
     "qwen2.configuration": ["Qwen2Config"],
     "qwen2.modeling": [
         "Qwen2Model",
@@ -275,7 +247,6 @@ import_structure = {
     "llama": [],
     "qwen2": [],
     "qwen3": [],
-    "qwen": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
@@ -347,7 +318,6 @@ if TYPE_CHECKING:
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
-    from .qwen import *
     from .qwen2 import *
     from .qwen2_5_vl import *
     from .qwen2_moe import *

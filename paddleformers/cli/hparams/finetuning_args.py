@@ -373,7 +373,6 @@ class FinetuningArguments(
         default=None,
         metadata={"help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."},
     )
-
     # fp8
     use_fp8: bool = field(
         default=False,
