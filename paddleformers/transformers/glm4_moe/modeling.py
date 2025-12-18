@@ -1527,6 +1527,13 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None

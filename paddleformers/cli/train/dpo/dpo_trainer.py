@@ -228,11 +228,12 @@ class DPOTrainer(Trainer):
 
     def _wrap_model(self, model, training=True):
         """Wrap model."""
-        model = super()._wrap_model(model, training)
         if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
             model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
+            model = super()._wrap_model(model, training)
             return model
 
+        model = super()._wrap_model(model, training)
         if self.args.pipeline_model_parallel_size > 1:
             model._prepare_pipeline_inputs_func = prepare_pipeline_dpo_inputs_func
         return model
@@ -473,7 +474,7 @@ class DPOTrainer(Trainer):
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
         if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
-            if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+            if HAS_PADDLEFLEET:
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
