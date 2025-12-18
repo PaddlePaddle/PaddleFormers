@@ -342,6 +342,7 @@ def run_sft(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
+        "pre_shift_one": data_args.pre_shift_one,
     }
 
     dataset_config.update(
@@ -412,6 +413,7 @@ def run_sft(
                 training_args=training_args,
                 model_args=model_args,
                 max_seq_len=max_seq_len,
+                padding_free=data_args.padding_free,
                 model=model,
             )
         else:
@@ -421,6 +423,7 @@ def run_sft(
                 training_args=training_args,
                 model_args=model_args,
                 max_seq_len=max_seq_len,
+                padding_free=data_args.padding_free,
             )
 
     if training_args.max_steps == -1:
@@ -487,6 +490,7 @@ def run_sft(
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
+        processing_class=processor,
         compute_metrics=metrics,
         data_collator=data_collator,
         do_generation=data_args.eval_with_do_generation,

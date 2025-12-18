@@ -60,6 +60,7 @@ class SFTDataSet(IterableDataset):
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
+        self.pre_shift_one = dataset_config.get("pre_shift_one", True)
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
@@ -424,33 +425,25 @@ class SFTDataSet(IterableDataset):
                     tokens = [self.begin_token_id] + tokens
                     labels = [-100] + labels
 
-                if len(tokens) > self.max_seq_len:
-                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
-
                 # Add EOS token at the end
                 del tokens[-1]
                 del labels[-1]
-                if self.efficient_eos:
-                    tokens = tokens + [self.tokenizer.eos_token_id]
-                    labels = labels + [self.tokenizer.eos_token_id]
-                labels = labels[1:] + [-100]
 
                 # end_of_response is a special token that indicates the end of the turn.
                 # end_token is a special token that indicates the end of the answer.
                 labels = [
                     label if label != self.end_of_response_id else self.tokenizer.eos_token_id for label in labels
                 ]
-            else:
-                if self.efficient_eos:
-                    tokens = tokens + [self.tokenizer.eos_token_id]
-                    labels = labels + [self.tokenizer.eos_token_id]
-                labels = labels[1:] + [-100]
-                if len(tokens) > self.max_seq_len:
-                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
-        else:
-            labels = tokens[1:] + [-100]
-            if len(tokens) > self.max_seq_len:
-                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+
+            if self.efficient_eos:
+                tokens = tokens + [self.tokenizer.eos_token_id]
+                labels = labels + [self.tokenizer.eos_token_id]
+
+        if self.pre_shift_one:
+            labels = labels[1:] + [-100]
+
+        if len(tokens) > self.max_seq_len:
+            raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
         pos_ids = list(range(len(tokens)))
 

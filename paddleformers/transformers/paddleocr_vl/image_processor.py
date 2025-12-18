@@ -14,14 +14,10 @@
 
 """Image processor class for PaddleOCR-VL."""
 
-import io
 import math
-import random
 from typing import Dict, List, Optional, Union
 
 import numpy as np
-from paddle.vision import transforms
-from PIL import Image, ImageOps
 
 from ...utils.log import logger
 from ..feature_extraction_utils import BatchFeature
@@ -43,141 +39,6 @@ from ..image_utils import (
 __all__ = [
     "PaddleOCRVLImageProcessor",
 ]
-
-
-# --- Transformation Classes ---
-
-
-class RandomApply:
-    def __init__(self, transforms, p=0.5):
-        self.transforms = transforms
-        self.p = p
-
-    def __call__(self, x):
-        if random.random() < self.p:
-            for t in self.transforms:
-                x = t(x)
-        return x
-
-
-class RandomDiscreteRotation:
-    def __init__(self, degrees, interpolation="nearest", expand=True):
-        self.degrees = degrees
-        self.interpolation = interpolation
-        self.expand = expand
-
-    def __call__(self, img):
-        angle = random.choice(self.degrees)
-        return img.rotate(angle, self.interpolation, self.expand)
-
-
-class JpegCompression:
-    def __init__(self, quality_range=(20, 80)):
-        self.quality_range = quality_range
-
-    def __call__(self, img):
-        quality = random.randint(self.quality_range[0], self.quality_range[1])
-        output = io.BytesIO()
-        img.convert("RGB").save(output, "JPEG", quality=quality)
-        output.seek(0)
-        return Image.open(output)
-
-
-class RandomScale:
-    def __init__(self, scale_range=(0.7, 1.3), interpolation="bicubic"):
-        self.scale_range = scale_range
-        self.interpolation = interpolation
-
-    def __call__(self, img):
-        scale = random.uniform(self.scale_range[0], self.scale_range[1])
-
-        original_width, original_height = img.size
-        new_width = int(original_width * scale)
-        new_height = int(original_height * scale)
-        new_size = (new_height, new_width)  # transforms.Resize需要 (h, w)
-
-        return transforms.functional.resize(img, new_size, self.interpolation)
-
-
-class RandomSingleSidePadding:
-    def __init__(self, padding_range=(0, 20), fill="white"):
-        assert (
-            isinstance(padding_range, (tuple, list)) and len(padding_range) == 2
-        ), "padding_range must be the tuple or list like (min, max)"
-        self.min_pad, self.max_pad = padding_range
-        self.fill = fill
-
-    def __call__(self, img):
-
-        pad_amount = random.randint(self.min_pad, self.max_pad)
-        if pad_amount == 0:
-            return img
-
-        chosen_edge = random.choice(["left", "top", "right", "bottom"])
-
-        pad_left, pad_top, pad_right, pad_bottom = 0, 0, 0, 0
-
-        if chosen_edge == "left":
-            pad_left = pad_amount
-        elif chosen_edge == "top":
-            pad_top = pad_amount
-        elif chosen_edge == "right":
-            pad_right = pad_amount
-        else:  # 'bottom'
-            pad_bottom = pad_amount
-
-        padding = (pad_left, pad_top, pad_right, pad_bottom)
-        return ImageOps.expand(img, border=padding, fill=self.fill)
-
-
-def get_ocr_augmentations(
-    scale_range=(0.8, 1.2),
-    scale_p=0.5,
-    padding_range=(0, 15),
-    padding_p=0.5,
-    rotation_degrees=[0],
-    rotation_p=0.5,
-    color_jitter_p=0.5,
-    jpeg_quality_range=(40, 90),
-    jpeg_p=0.5,
-):
-
-    augmentations = []
-
-    if scale_p > 0:
-        scale_transform = RandomScale(scale_range=scale_range)
-        augmentations.append(RandomApply([scale_transform], p=scale_p))
-
-    if padding_p > 0:
-        padding_transform = RandomSingleSidePadding(padding_range=padding_range, fill="white")
-        augmentations.append(RandomApply([padding_transform], p=padding_p))
-
-    if rotation_p > 0 and rotation_degrees:
-        rotation_transform = RandomDiscreteRotation(degrees=rotation_degrees, interpolation="nearest", expand=True)
-        augmentations.append(RandomApply([rotation_transform], p=rotation_p))
-
-    if color_jitter_p > 0:
-        color_jitter = transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.1)
-        augmentations.append(RandomApply([color_jitter], p=color_jitter_p))
-
-    if jpeg_p > 0:
-        jpeg_transform = JpegCompression(quality_range=jpeg_quality_range)
-        augmentations.append(RandomApply([jpeg_transform], p=jpeg_p))
-
-    return transforms.Compose(augmentations)
-
-
-image_augmentation = get_ocr_augmentations(
-    rotation_degrees=[90, 270],
-    rotation_p=0.1,
-    jpeg_quality_range=(60, 100),
-    jpeg_p=0.3,
-    scale_range=(0.5, 1.5),
-    scale_p=0.5,
-    padding_range=(0, 15),
-    padding_p=0.1,
-    color_jitter_p=0.1,
-)
 
 
 def is_scaled_image(image: np.ndarray) -> bool:
