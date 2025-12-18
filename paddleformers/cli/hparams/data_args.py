@@ -123,6 +123,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Enable sequences packing in training."},
     )
+    padding_free: bool = field(
+        default=False,
+        metadata={"help": "Enable padding free sequences packing in training."},
+    )
     mix_strategy: str = field(
         default="concat",
         metadata={

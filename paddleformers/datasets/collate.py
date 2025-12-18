@@ -152,7 +152,9 @@ def dpo_collate_fn(
     return input_dict
 
 
-def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int):
+def collate_fn(
+    batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int, padding_free: bool
+):
     """Convert batch of sequences into training tensors.
 
     Args:
@@ -160,6 +162,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
         tokenizer: Tokenizer for text conversion
         model_args: Model configuration parameters
         max_seq_len (int): Maximum sequence length for padding
+        padding_free (bool): Whether to flatten the data within a batch to avoid padding
 
     Returns:
         dict: Dictionary containing:
@@ -174,6 +177,9 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
     else:
         input_keys.append("attention_mask")
     return_list = []
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
@@ -219,7 +225,14 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
 
 
 def mm_collate_fn(
-    batch: List[List[Sequence]], template, processor, tokenizer, training_args, model_args, max_seq_len: int
+    batch: List[List[Sequence]],
+    template,
+    processor,
+    tokenizer,
+    training_args,
+    model_args,
+    max_seq_len: int,
+    padding_free: bool,
 ):
     """Convert batch of sequences into training tensors.
 
@@ -228,6 +241,7 @@ def mm_collate_fn(
         tokenizer: Tokenizer for text conversion
         model_args: Model configuration parameters
         max_seq_len (int): Maximum sequence length for padding
+        padding_free (bool): Whether to flatten the data within a batch to avoid padding
 
     Returns:
         dict: Dictionary containing:
@@ -278,18 +292,18 @@ def mm_collate_fn(
     input_keys.append("pixel_values")
     input_keys.append("image_grid_thw")
     return_list = []
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
         original_token_ids = [seq.token_ids for seq in batch_sequence]
         token_ids = [sum(original_token_ids, [])]
-        loss_mask = [sum([seq.loss_mask for seq in batch_sequence], [])]
         labels = [sum([seq.labels for seq in batch_sequence], [])]
         # padding
         padded_token_ids = pad_batch_data(token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
         padded_labels = pad_batch_data(labels, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
-        padded_loss_mask = pad_batch_data(loss_mask, pad_idx=0, max_seq_len=max_seq_len)
-        padded_labels = np.where(padded_loss_mask == 1, padded_labels, -100)
         return_list.append(
             [
                 padded_token_ids,
