@@ -359,7 +359,9 @@ def run_dpo(
         data_collator=partial(
             collate_fn,
             tokenizer=tokenizer,
+            training_args=training_args,
             max_seq_len=max_seq_len,
+            padding_free=data_args.padding_free,
             use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
