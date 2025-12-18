@@ -346,6 +346,7 @@ class SFTDataSet(IterableDataset):
         images = example.get("images", [])
         videos = example.get("videos", [])
         audios = example.get("audios", [])
+        objects = example.get("objects", {})
 
         if self.use_template:
             if self.template_backend == "jinja":
@@ -356,9 +357,11 @@ class SFTDataSet(IterableDataset):
                 else:
                     encoded_pairs = self.tokenizer.encode_chat_inputs(example, encode_one_turn=self.encode_one_turn)
             else:
-                messages = self.template.mm_plugin.process_messages(
-                    example["messages"], images, videos, audios, self.processor
+                messages = self.template.grounding_plugin.process_messages(
+                    example["messages"],
+                    objects,
                 )
+                messages = self.template.mm_plugin.process_messages(messages, images, videos, audios, self.processor)
                 encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
         else:
             encoded_pairs = self.tokenizer.encode_chat_inputs_with_no_template(
@@ -382,6 +385,11 @@ class SFTDataSet(IterableDataset):
             if len(tokens_src) + len(tokens_target) > (
                 self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
             ):
+                if len(images) != 0 or len(videos) != 0 or len(audios) != 0:
+                    # If there is multimodal data, do not truncate it; just discard it directly.
+                    sub_src = example["messages"][0]["content"].strip()[:50]
+                    logger.warning(f"[SKIP] This data is too long: {sub_src}...")
+                    return None
                 # If the source (src) exceeds length limit, discard this round of conversation data
                 # If the target (tgt) exceeds length limit, truncate it
                 if len(tokens_src) > self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn:

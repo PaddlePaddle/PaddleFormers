@@ -28,12 +28,14 @@ from typing_extensions import override
 from paddleformers.utils.log import logger
 
 from .formatter import EmptyFormatter, FunctionFormatter, StringFormatter, ToolFormatter
+from .grounding_plugin import get_grounding_plugin
 from .mm_plugin import get_mm_plugin
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer
 
     from .formatter import SLOTS, Formatter
+    from .grounding_plugin import BaseGroundingPlugin
     from .mm_plugin import BasePlugin
 
 
@@ -64,6 +66,7 @@ class Template:
     auto_add_bos: bool
     enable_thinking: Optional[bool]
     mm_plugin: "BasePlugin"
+    grounding_plugin: "BaseGroundingPlugin"
 
     def encode_oneturn(
         self,
@@ -342,6 +345,7 @@ def register_template(
     auto_add_bos: bool = False,
     enable_thinking: Optional[bool] = True,
     mm_plugin: "BasePlugin" = get_mm_plugin(name="base"),
+    grounding_plugin: "BaseGroundingPlugin" = get_grounding_plugin(name="base"),
     template_class: type["Template"] = Template,
 ) -> None:
     r"""Register a chat template.
@@ -394,6 +398,7 @@ def register_template(
         auto_add_bos=auto_add_bos,
         enable_thinking=enable_thinking,
         mm_plugin=mm_plugin,
+        grounding_plugin=grounding_plugin,
     )
 
 
@@ -456,6 +461,7 @@ def parse_template(tokenizer: "PreTrainedTokenizer") -> "Template":
         auto_add_bos=False,
         enable_thinking=True,
         mm_plugin=get_mm_plugin(name="base"),
+        grounding_plugin=get_grounding_plugin(name="base"),
     )
 
 
