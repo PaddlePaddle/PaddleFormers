@@ -27,7 +27,7 @@ TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/dpo"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
+MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe-bf16"
 MAX_STEPS = 6
 SAVE_STEPS = 4
 
