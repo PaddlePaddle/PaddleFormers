@@ -1122,7 +1122,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         if is_fleet:
             aoa_config["aoa_statements"] += [
                 f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
-                f"_ -> {model_prefix}lm_head.weight",
+                f"lm_head.weight -> {model_prefix}lm_head.weight",
             ]
         else:
             aoa_config["aoa_statements"] += [
@@ -1188,7 +1188,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         if is_fleet:
             aoa_statements += [
                 "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
-                f"{model_prefix}lm_head.weight -> _",
+                f"{model_prefix}lm_head.weight -> lm_head.weight",
             ]
         else:
             aoa_statements += [
