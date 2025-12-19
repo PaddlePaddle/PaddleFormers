@@ -18,7 +18,7 @@ from paddlefleet.transformer.transformer_layer import TransformerLayer
 
 class Qwen3VLTextLayer(TransformerLayer):
     """Qwen3VL text model for adapt deepstack process"""
-    def forward(
+    def _forward_impl(
         self,
         dict_args: dict
     ):

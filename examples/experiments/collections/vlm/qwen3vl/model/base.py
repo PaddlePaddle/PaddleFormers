@@ -14,14 +14,13 @@
 
 from collections.abc import Callable
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from doctest import REPORT_NDIFF
 import re
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 from paddlefleet import parallel_state
-from paddlefleet.models.gpt.gpt_model import GPTModel
 from paddlefleet.spec_utils import LayerSpec
 from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
 from paddlefleet.transformer.enums import ModelType
@@ -247,7 +246,9 @@ class Qwen3VLVisionProvider(TransformerConfig):
     img_w: int = 336
     add_class_token: bool = False
     class_token_len: int = 1
-    deepstack_visual_indexes: list[int] = [8, 16, 24]
+    deepstack_visual_indexes: list[int] = field(
+        default_factory=lambda: [8, 16, 24]
+    )
 
     
     def provide(self) -> "Qwen3VisionModel":
@@ -298,22 +299,22 @@ class Qwen3VLProvider(TransformerConfig):
         self.language_transformer_config.sequence_parallel = self.sequence_parallel
         self.language_transformer_config.context_parallel_size = self.context_parallel_size
         self.vision_transformer_config.tensor_model_parallel_size = self.tensor_model_parallel_size
-        self.vision_projection_config.tensor_model_parallel_size = self.tensor_model_parallel_size
+        # self.vision_projection_config.tensor_model_parallel_size = self.tensor_model_parallel_size
         self.language_transformer_config.pipeline_model_parallel_size = self.pipeline_model_parallel_size
         
         if self.encoder_pipeline_model_parallel_size > 0:
             assert self.encoder_pipeline_model_parallel_size == 1, "ViT can only live on 1 pipeline stage."
             self.vision_transformer_config.pipeline_model_parallel_size = self.encoder_pipeline_model_parallel_size
-            self.vision_projection_config.pipeline_model_parallel_size = self.encoder_pipeline_model_parallel_size
+            # self.vision_projection_config.pipeline_model_parallel_size = self.encoder_pipeline_model_parallel_size
             self.language_transformer_config.encoder_pipeline_model_parallel_size = (
                 self.encoder_pipeline_model_parallel_size
             )
             if self.encoder_tensor_model_parallel_size > 0:
                 self.vision_transformer_config.tensor_model_parallel_size = self.encoder_tensor_model_parallel_size
-                self.vision_projection_config.tensor_model_parallel_size = self.encoder_tensor_model_parallel_size
+                # self.vision_projection_config.tensor_model_parallel_size = self.encoder_tensor_model_parallel_size
         
         config_attrs = [
-            "cross_entropy_loss_function",
+            "cross_entropy_loss_fusion",
             "gradient_accumulation_fusion",
             "bias_activation_fusion",
             "bias_dropout_fusion",
@@ -327,21 +328,21 @@ class Qwen3VLProvider(TransformerConfig):
         for config in [
             self.language_transformer_config,
             self.vision_transformer_config,
-            self.vision_projection_config,
+            # self.vision_projection_config,
         ]:
             for attr in config_attrs:
                 setattr(config, attr, getattr(self, attr))
         
         self.language_transformer_config.tp_comm_overlap = self.tp_comm_overlap
         self.vision_transformer_config.tp_comm_overlap = False
-        self.vision_projection_config.tp_comm_overlap = False
+        # self.vision_projection_config.tp_comm_overlap = False
         
         vp_stage = vp_stage or 0
         
         model = MCoreQwen3VLModel(
-            config,
+            config=self,
             tokenizer=tokenizer,
-            pre_process=parallel_state.is_pipline_first_stage(ignore_virtual=False, vp_stage=vp_stage)
+            pre_process=parallel_state.is_pipeline_first_stage(ignore_virtual=False, vp_stage=vp_stage)
             or parallel_state.get_pipeline_model_parallel_rank() == self.encoder_pipeline_model_parallel_size,
             post_process=parallel_state.is_pipeline_last_stage(ignore_virtual=False, vp_stage=vp_stage),
             add_encoder=parallel_state.is_pipeline_first_stage(ignore_virtual=False, vp_stage=vp_stage),
@@ -379,7 +380,7 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
         
         language_transformer_config = config.language_transformer_config
         vision_transformer_config = config.vision_transformer_config
-        vision_projection_config = config.vision_projection_config
+        # vision_projection_config = config.vision_projection_config
         self.model_version = vision_transformer_config.model_version
         assert self.model_version is not None     
 
@@ -720,3 +721,78 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
             self.encoder_hidden_state = input_tensor[0]
         else:
             self.language_model.set_input_tensor(input_tensor[0])
+
+
+class Qwen3VLModel(nn.Module):
+    def __init__(
+        self,
+        config: Qwen3VLProvider,
+        model_version: str,
+        optim=None,
+        tokenizer=None,
+        model_transform: Callable[[nn.Module], nn.Module] = None,
+    ):
+        super().__init__()
+        self.config = config
+        self.tokenizer = tokenizer
+        self.model_transform = model_transform
+        self._training_loss_reduction = None
+        self._validation_loss_reduction = None
+        self.model_version = model_version
+        assert self.model_version == "qwen3-vl", "model_version only supports qwen3-vl."
+    
+    def provide(self, vp_stage: int = None) -> None:
+        # pylint: disable=C0115,C0116
+        if not hasattr(self, "module"):
+            self.module = self.config.provide(self.tokenizer, vp_stage=vp_stage)
+    
+    def forward(
+        self,
+        input_ids: paddle.Tensor,
+        attention_mask: paddle.Tensor = None,
+        position_ids = None,
+        loss_mask: paddle.Tensor = None,
+        labels: paddle.Tensor = None,
+        inference_params = None,
+        pixel_values: paddle.Tensor = None,
+        pixel_values_videos: paddle.FloatTensor = None,
+        image_grid_thw = None,
+        video_grid_thw = None,
+    ) -> paddle.Tensor:
+        # pylint: disable=C0115,C0116
+        output_tensor = self.module(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            loss_mask=loss_mask,
+            labels=labels,
+            inference_params=inference_params,
+            pixel_values=pixel_values,
+            pixel_values_videos=pixel_values_videos,
+            image_grid_thw=image_grid_thw,
+            video_grid_thw=video_grid_thw,
+        )
+
+        return output_tensor
+    def forward_step(self, batch) -> paddle.Tensor:
+        # pylint: disable=C0115,C0116
+        return self.config.forward_step_fn(self, batch)
+
+    def training_step(self, batch, batch_idx=None) -> paddle.Tensor:
+        # pylint: disable=C0115,C0116
+        # In mcore the loss-function is part of the forward-pass (when labels are provided)
+        return self.forward_step(batch)
+
+    def validation_step(self, batch, batch_idx=None) -> paddle.Tensor:
+        # pylint: disable=C0115,C0116
+        # In mcore the loss-function is part of the forward-pass (when labels are provided)
+
+        return self.forward_step(batch)
+
+
+__all__ = [
+    "Qwen3VLModel",
+    "Qwen3VLProvider",
+    "qwen3vl_data_step",
+    "qwen3vl_forward_step",
+]
