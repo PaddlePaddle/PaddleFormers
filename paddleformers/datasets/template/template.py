@@ -790,6 +790,20 @@ register_template(
 )
 
 register_template(
+    name="ernie4_5_moe_vl",
+    format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["{{content}}\n"]),
+    format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
+    chat_sep="<|end_of_sentence|>",
+    stop_words=["<|end_of_sentence|>"],
+    replace_eos=True,
+    mm_plugin=get_mm_plugin(name="ernie_vl", image_token="<|IMAGE_PLACEHOLDER|>", video_token="<|IMAGE_PLACEHOLDER|>"),
+    template_class=ReasoningTemplate,
+    thought_words=("<think>\n", "\n</think>\n\n"),
+)
+
+register_template(
     name="ernie4_5_moe_vl_thinking",
     format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
     format_assistant=StringFormatter(slots=["{{content}}"]),
