@@ -1607,8 +1607,8 @@ class Trainer:
                 trainable_numel_tensor = paddle.to_tensor(per_device_trainable_numel, dtype=all_reduce_dtype)
                 paddle.distributed.all_reduce(trainable_numel_tensor)
                 trainable_numel = int(trainable_numel_tensor.item()) // self.args.dataset_world_size
-                if self.args.sep_parallel_degree > 0:
-                    trainable_numel = trainable_numel // self.args.sep_parallel_degree
+                if self.args.sep_parallel_size > 0:
+                    trainable_numel = trainable_numel // self.args.sep_parallel_size
                 # the numel is roughly, because the tensor parallel still hold own bias or layer_norm weight without splited
                 # so, the trainable numel is a little bigger than real.
                 logger.debug(f"  Number of trainable parameters = {trainable_numel:,} (all devices, roughly)")
@@ -1785,7 +1785,7 @@ class Trainer:
             self.lr_scheduler.step()
 
         enable_release_grads = False
-        if args.sharding_parallel_degree > 1:
+        if args.sharding_parallel_size > 1:
             enable_release_grads = "enable_release_grads" in args.sharding_parallel_config
         if not enable_release_grads and args.pipeline_model_parallel_size > 1:
             enable_release_grads = "enable_release_grads" in args.pipeline_parallel_config
@@ -1807,14 +1807,14 @@ class Trainer:
         if self.args.enable_auto_parallel:
             inputs_list = self._split_batches_for_accumulation(inputs)
             for inputs in inputs_list:
-                if self.args.sep_parallel_degree > 1 and self.args.split_inputs_sequence_dim:
+                if self.args.sep_parallel_size > 1 and self.args.split_inputs_sequence_dim:
                     inputs = auto_split_inputs_sequence_dim(inputs)
                 if self.args.context_parallel_size > 1 and self.args.split_inputs_sequence_dim:
                     inputs = auto_split_sequence_dim_load_balance(inputs)
         else:
             if (
                 self.args.use_hybrid_parallel
-                and self.args.sep_parallel_degree > 1
+                and self.args.sep_parallel_size > 1
                 and self.args.split_inputs_sequence_dim
             ):
                 inputs = split_inputs_sequence_dim(inputs)
@@ -2179,7 +2179,7 @@ class Trainer:
                             )
 
                             enable_release_grads = False
-                            if args.sharding_parallel_degree > 1:
+                            if args.sharding_parallel_size > 1:
                                 enable_release_grads = "enable_release_grads" in args.sharding_parallel_config
                             if not enable_release_grads and args.pipeline_model_parallel_size > 1:
                                 enable_release_grads = "enable_release_grads" in args.pipeline_parallel_config
@@ -2309,7 +2309,7 @@ class Trainer:
                             self.state.best_model_checkpoint,
                             convert_from_hf=self.args.convert_from_hf,
                         )
-                        if self.args.sharding_parallel_degree > 1 or self.args.data_parallel_degree > 1:
+                        if self.args.sharding_parallel_size > 1 or self.args.data_parallel_size > 1:
                             broadcast_dataset_rank0_model(self.model)
                     else:
                         weight_name = PADDLE_WEIGHTS_NAME
@@ -2360,7 +2360,7 @@ class Trainer:
                 self.state.best_model_checkpoint,
                 convert_from_hf=self.args.convert_from_hf,
             )
-            if self.args.sharding_parallel_degree > 1 or self.args.data_parallel_degree > 1:
+            if self.args.sharding_parallel_size > 1 or self.args.data_parallel_size > 1:
                 broadcast_dataset_rank0_model(self.model)
             return
 
@@ -3090,9 +3090,9 @@ class Trainer:
         """
         if (
             self.args.use_expert_parallel
-            and self.args.moe_sharding_parallel_degree >= 1
+            and self.args.moe_sharding_parallel_size >= 1
             and self.args.expert_model_parallel_size > 1
-            and self.args.sharding_parallel_degree > 1
+            and self.args.sharding_parallel_size > 1
         ):
             from ..utils import MoEHybridParallelOptimizer
 
@@ -3175,7 +3175,7 @@ class Trainer:
             in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
         in_sharding_parallel_mode = self.sharding is not None
         in_tensor_parallel_mode = self.args.tensor_model_parallel_size > 1
-        in_sep_parallel_mode = self.args.sep_parallel_degree > 1
+        in_sep_parallel_mode = self.args.sep_parallel_size > 1
         in_cp_parallel_mode = self.args.context_parallel_size > 1
 
         # Multi-gpu training
@@ -3313,7 +3313,7 @@ class Trainer:
 
                 if self.args.amp_master_grad:
                     assert (
-                        self.args.data_parallel_degree == 1
+                        self.args.data_parallel_size == 1
                     ), "Sharding stage 2 / Sharding stage 3 main grad is not compatible with dp for now."
                     mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
                     self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
@@ -3868,7 +3868,7 @@ class Trainer:
                 if (
                     self.args.should_save
                     or self.args.use_expert_parallel
-                    or (self.args.data_parallel_degree > 1 and self.args.save_checkpoint_format == "flex_checkpoint")
+                    or (self.args.data_parallel_size > 1 and self.args.save_checkpoint_format == "flex_checkpoint")
                 ):
                     if not self.args.use_hybrid_parallel:
                         logger.info("Saving optimizer files.")

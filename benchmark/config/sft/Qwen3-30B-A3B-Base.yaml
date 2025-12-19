@@ -49,7 +49,7 @@ warmup_steps: 20
 learning_rate: 1.0e-5
 
 # performance
-sharding_parallel_degree: 32
+sharding_parallel_size: 32
 tensor_parallel_degree: 1
 pipeline_parallel_degree: 1
 expert_parallel_degree: 8

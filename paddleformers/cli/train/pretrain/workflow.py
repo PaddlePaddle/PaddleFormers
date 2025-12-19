@@ -438,8 +438,8 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
             config.tensor_model_parallel_size > 1
         ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
-        config.num_attention_heads % config.sep_parallel_degree == 0
-    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
+        config.num_attention_heads % config.sep_parallel_size == 0
+    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_size {config.sep_parallel_size}"
     assert (
         config.seq_length % config.context_parallel_size == 0
     ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
@@ -488,7 +488,7 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
         any(architecture in str(config.architectures) for architecture in architectures_to_check)
-        and training_args.data_parallel_degree > 1
+        and training_args.data_parallel_size > 1
     ):
         training_args.use_expert_parallel = True
 

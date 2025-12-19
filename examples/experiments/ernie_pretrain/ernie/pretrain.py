@@ -212,15 +212,15 @@ def main():
             trainer_args.get("expert_model_parallel_size", -1) > 1
         ), "When moe_group is 'ep', 'expert_model_parallel_size' must be set to greater than 1."
         assert (
-            trainer_args.get("sharding_parallel_degree", -1) > 1
-        ), "sharding_parallel_degree should > 1 in when moe_group is 'ep'."
+            trainer_args.get("sharding_parallel_size", -1) > 1
+        ), "sharding_parallel_size should > 1 in when moe_group is 'ep'."
         assert trainer_args.get("sharding") == "stage1", "Hybrid expert parallel only supports sharding stage1 now."
         assert (
             "sharding_parallel_config" in trainer_args and "split_param" in trainer_args["sharding_parallel_config"]
         ), "Hybrid expert parallel only supports Sharding stage1 V2 now."
         assert (
-            trainer_args.get("data_parallel_degree", 1) == 1
-        ), "Now, moe_group = 'ep' cannot be used with data_parallel_degree > 1."
+            trainer_args.get("data_parallel_size", 1) == 1
+        ), "Now, moe_group = 'ep' cannot be used with data_parallel_size > 1."
 
     data_processor_args = {k: formatv(v) for k, v in dict(getattr(config, "data_processor_args", {})).items()}
     (args,) = parser.parse_dict(dict(**model_args, **trainer_args, **data_processor_args))

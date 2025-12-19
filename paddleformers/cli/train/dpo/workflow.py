@@ -213,7 +213,7 @@ def run_dpo(
     logger.info("Loading model & tokenizer successfully !")
 
     if model_args.lora:
-        if training_args.sharding_parallel_degree > 1:
+        if training_args.sharding_parallel_size > 1:
             assert (
                 "enable_stage1_overlap" not in training_args.sharding_parallel_config
             ), "Currently not support enabling sharding_stage1_overlap in lora mode."

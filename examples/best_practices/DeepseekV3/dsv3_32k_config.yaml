@@ -50,7 +50,7 @@ continue_training: true
 tensor_model_parallel_size: 8
 sequence_parallel: true
 pipeline_model_parallel_size: 8
-sharding_parallel_degree: 2
+sharding_parallel_size: 2
 use_expert_parallel: true
 expert_model_parallel_size: 16
 tensor_parallel_config: "enable_delay_scale_loss sync_param sync_grad"

@@ -263,7 +263,7 @@ class LlmMetaConfig:
         ),
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
-        ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
+        ("sep_parallel_size", int, 1, "sep_parallel_size"),
         ("context_parallel_size", int, 1, "context_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
@@ -826,7 +826,7 @@ class PretrainedConfig:
         self.use_single_model_implementation = kwargs.pop("use_single_model_implementation", False)
         if self.use_single_model_implementation:
             self.tensor_model_parallel_size = 1
-            self.sep_parallel_degree = 1
+            self.sep_parallel_size = 1
             self.context_parallel_size = 1
 
         # for transformers fuse

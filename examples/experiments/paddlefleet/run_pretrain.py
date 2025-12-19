@@ -505,8 +505,8 @@ def main():
             config.tensor_model_parallel_size > 1
         ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
-        config.num_attention_heads % config.sep_parallel_degree == 0
-    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
+        config.num_attention_heads % config.sep_parallel_size == 0
+    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_size {config.sep_parallel_size}"
     assert (
         config.seq_length % config.context_parallel_size == 0
     ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
