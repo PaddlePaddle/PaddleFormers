@@ -14,7 +14,7 @@
 
 import os
 from dataclasses import dataclass
-from typing import List
+from typing import List, Dict
 
 import numpy as np
 from paddle.io import IterableDataset
@@ -42,6 +42,7 @@ class Sequence:
     images: List[str]
     videos: List[str]
     audios: List[str]
+    mm_inputs: Dict
 
 
 class SFTDataSet(IterableDataset):
@@ -365,7 +366,10 @@ class SFTDataSet(IterableDataset):
                     example["messages"],
                     objects,
                 )
-                messages = self.template.mm_plugin.process_messages(messages, images, videos, audios, self.processor)
+                mm_inputs = self.template.mm_plugin.get_mm_inputs(
+                    images, videos, audios, [len(images)], [len(videos)], [len(audios)], None, self.processor
+                )
+                messages = self.template.mm_plugin.process_messages(messages, images, videos, audios, mm_inputs, self.processor)
                 encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
         else:
             encoded_pairs = self.tokenizer.encode_chat_inputs_with_no_template(
@@ -500,6 +504,7 @@ class SFTDataSet(IterableDataset):
             images=images,
             videos=videos,
             audios=audios,
+            mm_inputs=mm_inputs,
         )
 
     def _generate_greedy_packs(self, examples, actual_example_num_list):
