@@ -320,7 +320,7 @@ def _read_video_paddlecodec(
             f"    1. Conflict with official 'torch' or 'torchcodec' packages.\n"
             f"    2. Missing FFmpeg libraries or System library mismatch (CXXABI).\n"
             f"  - Recommended Fix Steps:\n"
-            f"    1. Install dependencies: `conda install ffmpeg -c conda-forge`\n"
+            f"    1. Install dependencies: `conda install ffmpeg -c conda-forge` or `apt-get update && apt-get install ffmpeg` \n"
             f"    2. Uninstall conflicts: `pip uninstall torchcodec paddlecodec -y`\n"
             f"    3. Reinstall packages: `pip install paddlecodec --force-reinstall`\n"
             f"  - If you encounter 'CXXABI' or 'libstdc++' errors, your system libraries might be outdated.\n"
