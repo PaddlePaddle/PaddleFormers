@@ -127,10 +127,6 @@ class DataArguments:
         default=False,
         metadata={"help": "Enable padding free sequences packing in training."},
     )
-    pre_shift_one: bool = field(
-        default=True,
-        metadata={"help": "Whether to shift one token in data processing."},
-    )
     mix_strategy: str = field(
         default="concat",
         metadata={
@@ -152,6 +148,10 @@ class DataArguments:
     split_multi_turn: bool = field(
         default=False,
         metadata={"help": "Whether to split multi-round dialogues into multiple pieces of data for training"},
+    )
+    mask_history_eos: bool = field(
+        default=False,
+        metadata={"help": "Whether to mask out the EOS token in historical turns"},
     )
     template_backend: str = field(
         default="jinja",

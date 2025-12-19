@@ -102,7 +102,11 @@ class DPODataSet(IterableDataset):
         if not self.packing:
             for _ in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
-                sequence = self._postprocess_sequence(example)
+                try:
+                    sequence = self._postprocess_sequence(example)
+                except Exception as e:
+                    print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                    continue
                 if sequence is None:
                     continue
 
@@ -116,7 +120,11 @@ class DPODataSet(IterableDataset):
                 # base
                 for _ in range(len(self.mix_datasets)):
                     example = next(dataset_iterator)
-                    sequence = self._postprocess_sequence(example)
+                    try:
+                        sequence = self._postprocess_sequence(example)
+                    except Exception as e:
+                        print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                        continue
                     if sequence is None:
                         continue
                     if cur_len + len(sequence.token_ids) <= self.max_seq_len:
@@ -133,7 +141,11 @@ class DPODataSet(IterableDataset):
                 buffer_size = self.buffer_size
                 for _ in range(len(self.mix_datasets)):
                     example = next(dataset_iterator)
-                    sequence = self._postprocess_sequence(example)
+                    try:
+                        sequence = self._postprocess_sequence(example)
+                    except Exception as e:
+                        print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                        continue
                     if sequence is None:
                         continue
                     sequence_buffer.append(sequence)
