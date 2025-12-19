@@ -1792,7 +1792,6 @@ class Trainer:
                                 f"optimizer not run, scale_before: {scale_before_value[0]}, scale_after: {scale_after_value[0]}"
                             )
                     elif isinstance(self.optimizer, HybridParallelOptimizer):
-                        parameters_list = [t if t.is_contiguous() else t.contiguous() for t in parameters_list]
                         self.optimizer._step(parameters_list)
                     else:
                         self.optimizer.step()
