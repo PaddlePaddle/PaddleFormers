@@ -426,6 +426,7 @@ def run_sft(
                 model_args=model_args,
                 max_seq_len=max_seq_len,
                 padding_free=data_args.padding_free,
+                model=model,
             )
         else:
             data_collator = partial(

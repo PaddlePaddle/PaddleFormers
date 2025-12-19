@@ -18,6 +18,7 @@
 
 
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -48,6 +49,8 @@ QWEN_TOOL_PROMPT = (
     """<tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, """
     """"arguments": <args-json-object>}}\n</tool_call>"""
 )
+
+ERNIE_TOOL_PROMPT = "\n<tool_list>\n[{tool_text}]\n</tool_list>\n"
 
 
 GLM4_TOOL_PROMPT = (
@@ -266,8 +269,55 @@ class Llama3ToolUtils(ToolUtils):
             return content
 
 
+class ERNIEToolUtils(ToolUtils):
+    r"""ERNIE 4.5 tool using template."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text_list = []
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text_list.append(json.dumps(wrapped_tool, ensure_ascii=False))
+        tool_text = ", ".join(tool_text_list)
+
+        return ERNIE_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_texts = [
+            json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
+            for name, arguments in functions
+        ]
+        return "\n".join([f"<tool_call>{text}\n</tool_call>" for text in function_texts])
+
+    @override
+    @staticmethod
+    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
+        regex = re.compile(r"<tool_call>(.+?)</tool_call>(?=\s*<tool_call>|\s*$)", re.DOTALL)
+        tool_match: list[str] = re.findall(regex, content)
+        if not tool_match:
+            return content
+
+        results = []
+        for tool in tool_match:
+            try:
+                tool = json.loads(tool.strip())
+            except json.JSONDecodeError:
+                return content
+
+            if "name" not in tool or "arguments" not in tool:
+                return content
+
+            results.append(FunctionCall(tool["name"], json.dumps(tool["arguments"], ensure_ascii=False)))
+
+        return results
+
+
 TOOLS = {
     "default": DefaultToolUtils(),
+    "ernie": ERNIEToolUtils(),
     "qwen": QwenToolUtils(),
     "glm4": GLM4ToolUtils(),
     "glm4_moe": GLM4MOEToolUtils(),

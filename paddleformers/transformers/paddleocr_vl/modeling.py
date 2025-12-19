@@ -2096,8 +2096,9 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
             # Upcast to float if we need to compute the loss to avoid potential precision issues
             logits = logits.astype("float32")
             # Shift so that tokens < n predict n
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:].contiguous()
+            # Labels have beed shifted in dataflow so we don't shift again
+            shift_logits = logits[..., :, :].contiguous()
+            shift_labels = labels[..., :].contiguous()
             # Flatten the tokens
             loss_fct = paddle.nn.CrossEntropyLoss(reduction="none")
             shift_logits = shift_logits.reshape((-1, shift_logits.shape[-1]))
