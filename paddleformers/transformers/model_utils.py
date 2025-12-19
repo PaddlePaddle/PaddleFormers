@@ -3901,9 +3901,7 @@ class HFFormatFullParamSaver:
                 memory_growth_threshold=self.memory_growth_threshold,
             )
         else:
-            param_iter = self.model.full(
-                aoa_config=self.aoa_config, memory_growth_threshold=self.memory_growth_threshold
-            )
+            param_iter = self.model.full(aoa_config=self.aoa_config)
         return param_iter
 
     def determin_saver_based_group(self):
