@@ -210,6 +210,36 @@ class ModelArguments:
         metadata={"help": "num_hidden_layers."},
     )
 
+    num_attention_heads: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_attention_heads."},
+    )
+
+    num_key_value_heads: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_key_value_heads."},
+    )
+
+    num_experts_per_tok: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_experts_per_tok."},
+    )
+
+    hidden_size: Optional[int] = field(
+        default=None,
+        metadata={"help": "hidden_size."},
+    )
+
+    intermediate_size: Optional[int] = field(
+        default=None,
+        metadata={"help": "intermediate_size."},
+    )
+
+    n_routed_experts: Optional[int] = field(
+        default=None,
+        metadata={"help": "n_routed_experts."},
+    )
+
     def __post_init__(self):
         if self.fine_tuning.lower() == "LoRA".lower():
             self.lora = True

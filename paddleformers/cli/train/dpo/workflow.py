@@ -292,7 +292,7 @@ def run_dpo(
                 "Random mixing requires a fixed number of training steps to properly sample data."
             )
         if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
-            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, config=model.config)
+            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, dataset_config)
 
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()

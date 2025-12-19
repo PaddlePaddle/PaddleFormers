@@ -846,12 +846,91 @@ class GLM4VPlugin(Qwen2VLPlugin):
         return mm_inputs
 
 
+def _get_gemma3_token_type_ids(batch_ids, processor):
+    r"""Get gemma3 token type ids for computing loss.
+
+    Returns:
+        batch_token_type_ids: shape (batch_size, seq_length)
+
+    """
+    image_token_id: int = getattr(processor, "image_token_id")
+    batch_token_type_ids = []
+    for token_ids in batch_ids:
+        token_ids = np.array(token_ids)
+        token_type_ids = np.zeros_like(token_ids)
+        token_type_ids[token_ids == image_token_id] = 1
+        batch_token_type_ids.append(token_type_ids.tolist())
+
+    return batch_token_type_ids
+
+
+@dataclass
+class Gemma3Plugin(BasePlugin):
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        num_image_tokens = 0
+        messages = deepcopy(messages)
+        boi_token = getattr(processor, "boi_token")
+        full_image_sequence = getattr(processor, "full_image_sequence")
+        image_str = full_image_sequence if self.expand_mm_tokens else boi_token
+
+        do_pan_and_scan = getattr(processor, "image_do_pan_and_scan", False)
+        if do_pan_and_scan:
+            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                if do_pan_and_scan:
+                    image_placeholder_str = (
+                        "Here is the original image {{image}} and here are some crops to help you see better "
+                        + " ".join(["{{image}}"] * mm_inputs["num_crops"][0][num_image_tokens])
+                    )
+                else:
+                    image_placeholder_str = "{{image}}"
+
+                content = content.replace(IMAGE_PLACEHOLDER, image_placeholder_str, 1)
+                num_image_tokens += 1
+
+            message["content"] = content.replace("{{image}}", image_str)
+
+        return messages
+
+    @override
+    def get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        imglens,
+        vidlens,
+        audlens,
+        batch_ids,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+        mm_inputs.pop("num_crops", None)
+        mm_inputs["token_type_ids"] = _get_gemma3_token_type_ids(batch_ids, processor)
+        return mm_inputs
+
+
 PLUGINS = {
     "base": BasePlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "paddleocr_vl": PaddleOCRVLPlugin,
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
+    "gemma3": Gemma3Plugin,
 }
 
 
