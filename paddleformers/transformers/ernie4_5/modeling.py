@@ -249,7 +249,7 @@ class Ernie4_5Attention(nn.Layer):
         value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim])
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
-        if self.config.fuse_rope:
+        if self.config.apply_rope_fusion:
             query_states, key_states = apply_fused_rope(query_states, key_states, self.config.rope_theta)
         else:
             cos, sin = position_embeddings
@@ -625,7 +625,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         if position_ids is None:
             position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))
 
-        if not self.config.fuse_rope:
+        if not self.config.apply_rope_fusion:
             position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin
         else:
             position_embeddings = None
@@ -732,7 +732,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
 
     def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
         """Avoid using attention_mask with flash_attn on generation."""
-        if self.config.use_flash_attention:
+        if self.config._attn_implementation == "sdpa":
             return None
         return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
 

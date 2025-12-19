@@ -340,15 +340,29 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
                     fake_top_x = paddle.zeros(1, dtype=paddle.int64)
                     fakse_current_state = hidden_states[fake_top_x, None].reshape([-1, hidden_states.shape[-1]])
                     fake_state = expert_layer(fakse_current_state * 0)
-                    final_hidden_states.index_add_(index=fake_top_x, axis=0, value=fake_state.to(hidden_states.dtype))
+                    # use scatter to replace index_add
+                    final_hidden_states_tmp = paddle.zeros_like(final_hidden_states)
+                    final_hidden_states_tmp = paddle.scatter(
+                        final_hidden_states_tmp,
+                        fake_top_x,
+                        fake_state.to(hidden_states.dtype),
+                        overwrite=False,
+                    )
+                    final_hidden_states = final_hidden_states + final_hidden_states_tmp
                 else:
                     continue
             else:
                 current_state = hidden_states[idx, None].reshape([-1, hidden_states.shape[-1]])
                 current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
-                final_hidden_states.index_add_(
-                    index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
+                # use scatter to replace index_add
+                final_hidden_states_tmp = paddle.zeros_like(final_hidden_states)
+                final_hidden_states_tmp = paddle.scatter(
+                    final_hidden_states_tmp,
+                    idx.reshape([-1]),
+                    current_hidden_states.to(hidden_states.dtype),
+                    overwrite=False,
                 )
+                final_hidden_states = final_hidden_states + final_hidden_states_tmp
 
         final_hidden_states = paddle.reshape(final_hidden_states, orig_shape)
 
@@ -411,17 +425,175 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
 
+    def subbatch_recompute_forward(
+        self,
+        hidden_states: paddle.Tensor,
+        position_ids: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        use_cache: Optional[bool] = False,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+    ) -> paddle.Tensor:
+        offload_kwargs = {}
+        offload_kwargs["offload_indices"] = [0]
+
+        has_gradient = not hidden_states.stop_gradient
+        if self.config.recompute and has_gradient and self.config.recompute_granularity != "full_attn":
+            attn_outputs = recompute(
+                self.attn,
+                hidden_states,
+                past_key_value=past_key_value,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_ids=position_ids,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **offload_kwargs,
+            )
+        else:
+            attn_outputs = self.attn(
+                hidden_states,
+                past_key_value=past_key_value,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_ids=position_ids,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+            )
+
+        hidden_states = attn_outputs[0]
+        residual = attn_outputs[1]
+        present_key_value = attn_outputs[2] if use_cache else None
+
+        hidden_size = hidden_states.shape[-1]
+        if self.config.sequence_parallel:
+            # hidden_states shape:[b*s,h]
+            seq_len = self.config.max_sequence_length // self.config.tensor_model_parallel_size
+            batch_size = hidden_states.shape[0] // seq_len
+            assert (
+                batch_size > 0
+            ), f"batch_size must larger than 0, but calulate batch_size:{batch_size}, hidden_states shape:{hidden_states.shape}"
+            hidden_states = hidden_states.reshape([-1, batch_size, hidden_size])
+        sub_seq_len = self.config.moe_subbatch_token_num_before_dispatch
+        seq_axis = 0 if self.config.sequence_parallel else 1
+        seq_len = hidden_states.shape[seq_axis]
+        assert seq_len % sub_seq_len == 0
+        num_chunks = seq_len // sub_seq_len
+        split_list = [sub_seq_len] * num_chunks
+        input_list = paddle.split(hidden_states, split_list, axis=seq_axis)
+        output_list = []
+
+        for chunk in input_list:
+            if self.config.sequence_parallel:
+                chunk = chunk.reshape([-1, hidden_size])
+            has_gradient = not chunk.stop_gradient
+            if self.config.recompute and has_gradient and self.config.recompute_granularity != "full_attn":
+                out = recompute(
+                    self.mlp.forward,
+                    chunk,
+                    **offload_kwargs,
+                )
+            else:
+                out = self.mlp.forward(chunk)
+            if isinstance(out, tuple):
+                out = out[0]
+            output_list.append(out)
+        hidden_states = paddle.concat(output_list, axis=seq_axis)
+        outputs = recompute(
+            self.post_process,
+            hidden_states,
+            residual,
+            use_cache,
+            present_key_value,
+            **offload_kwargs,
+        )
+        return outputs
+
+    def attn(
+        self,
+        hidden_states: paddle.Tensor,
+        position_ids: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        use_cache: Optional[bool] = False,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        **kwargs,
+    ):
+        residual = hidden_states
+
+        hidden_states = self.input_layernorm(hidden_states)
+
+        # Self Attention
+        has_gradient = not hidden_states.stop_gradient
+        if self.config.recompute and has_gradient and self.config.recompute_granularity == "full_attn":
+            outputs = recompute(
+                self.self_attn,
+                hidden_states=hidden_states,
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                past_key_value=past_key_value,
+                use_cache=use_cache,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        else:
+            outputs = self.self_attn(
+                hidden_states=hidden_states,
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                past_key_value=past_key_value,
+                use_cache=use_cache,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        if type(outputs) is tuple:
+            hidden_states = outputs[0]
+        else:
+            hidden_states = outputs
+
+        hidden_states = residual + hidden_states
+
+        # Fully Connected
+        residual = hidden_states
+        hidden_states = self.post_attention_layernorm(hidden_states)
+        attn_outputs = (hidden_states, residual)
+
+        if use_cache:
+            present_key_value = outputs[1]
+            attn_outputs += (present_key_value,)
+
+        return attn_outputs
+
+    def post_process(
+        self,
+        hidden_states,
+        residual,
+        use_cache=False,
+        present_key_value=None,
+    ):
+        hidden_states = residual + hidden_states
+        outputs = (hidden_states,)
+        if use_cache:
+            outputs += (present_key_value,)
+        if type(outputs) is tuple and len(outputs) == 1:
+            outputs = outputs[0]
+        return outputs
+
     def forward(
         self,
         hidden_states: paddle.Tensor,
+        position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         past_key_value: Optional[Tuple[paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-        batch_size: Optional[int] = None,
         **kwargs,
-    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+    ) -> paddle.Tensor:
         """
         Args:
             hidden_states (`paddle.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
@@ -437,40 +609,25 @@ class Qwen3MoeDecoderLayer(nn.Layer):
                 Arbitrary kwargs to be ignored, used for FSDP and other methods that injects code
                 into the model
         """
-        # [bs * seq_len, embed_dim] -> [seq_len * bs / n, embed_dim] (sequence_parallel)
-        residual = hidden_states
-
-        hidden_states = self.input_layernorm(hidden_states)
-
-        # Self Attention
-        hidden_states, present_key_value = self.self_attn(
-            hidden_states=hidden_states,
-            position_embeddings=position_embeddings,
-            attention_mask=attention_mask,
+        attn_outputs = self.attn(
+            hidden_states,
             past_key_value=past_key_value,
-            use_cache=use_cache,
+            attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            batch_size=batch_size,
+            position_ids=position_ids,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
             **kwargs,
         )
+        hidden_states = attn_outputs[0]
+        residual = attn_outputs[1]
+        present_key_value = attn_outputs[2] if use_cache else None
 
-        hidden_states = residual + hidden_states
-
-        # Fully Connected
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         if isinstance(hidden_states, tuple):
-            hidden_states, _ = hidden_states
-        hidden_states = residual + hidden_states
-
-        if use_cache:
-            return (
-                hidden_states,
-                present_key_value,
-            )
-        else:
-            return hidden_states
+            hidden_states = hidden_states[0]
+        outputs = self.post_process(hidden_states, residual, use_cache, present_key_value)
+        return outputs
 
 
 class Qwen3MoeRotaryEmbedding(nn.Layer):
@@ -764,12 +921,12 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         self,
         layer_module: nn.Layer,
         hidden_states: Tensor,
+        position_ids: Optional[Tensor],
         attention_mask: Tensor,
         past_key_value: Tensor,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
-        batch_size: int = None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -780,12 +937,12 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         hidden_states = recompute(
             create_custom_forward(layer_module),
             hidden_states,
+            position_ids,
             attention_mask,
             past_key_value,
             use_cache,
             position_embeddings,
             attn_mask_startend_row_indices,
-            batch_size,
         )
 
         return hidden_states
@@ -858,29 +1015,45 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         # decoder layers
         next_cache = () if use_cache else None
 
+        moelayer_use_subbatch_recompute = (
+            self.config.moe_subbatch_token_num_before_dispatch > 0
+            if hasattr(self.config, "moe_subbatch_token_num_before_dispatch")
+            else False
+        )
+
         for idx, (decoder_layer) in enumerate(self.layers):
             past_key_value = past_key_values[idx] if past_key_values is not None else None
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
-                layer_outputs = self.recompute_training_full(
-                    decoder_layer,
+            if moelayer_use_subbatch_recompute:
+                layer_outputs = decoder_layer.subbatch_recompute_forward(
                     hidden_states,
+                    position_ids,
                     causal_mask,
                     past_key_value,
                     use_cache,
+                    attn_mask_startend_row_indices,
                     position_embeddings,
+                )
+            elif self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+                layer_outputs = self.recompute_training_full(
+                    layer_module=decoder_layer,
+                    hidden_states=hidden_states,
+                    attention_mask=causal_mask,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    batch_size=batch_size,
+                    position_ids=position_ids,
+                    past_key_value=past_key_value,
+                    use_cache=use_cache,
+                    position_embeddings=position_embeddings,
                 )
             else:
                 layer_outputs = decoder_layer(
-                    hidden_states,
-                    causal_mask,
-                    past_key_value,
-                    use_cache,
-                    position_embeddings,
+                    hidden_states=hidden_states,
+                    attention_mask=causal_mask,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    batch_size=batch_size,
+                    position_ids=position_ids,
+                    past_key_value=past_key_value,
+                    use_cache=use_cache,
+                    position_embeddings=position_embeddings,
                 )
 
             if use_cache:

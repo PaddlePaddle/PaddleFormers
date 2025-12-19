@@ -225,7 +225,7 @@ def scaled_dot_product_attention(
     bsz, q_len, num_heads, head_dim = query_states.shape
     _, kv_seq_len, _, _ = value_states.shape
 
-    if config.use_flash_attention and flash_attention:
+    if config._attn_implementation == "sdpa" and flash_attention:
         return fusion_ops.fusion_flash_attention(
             query_states,
             config,
@@ -246,7 +246,7 @@ def scaled_dot_product_attention(
 
     else:
         if config.context_parallel_size > 1:
-            raise ValueError("Context parallel requires `use_flash_attention=True`")
+            raise ValueError("Context parallel requires `_attn_implementation == 'sdpa'`")
 
         #  [ bz, seqlen, nhead, head_dim] -> [bs, nhead, seq_len, head_dim]
         query_states = paddle.transpose(query_states, [0, 2, 1, 3])
@@ -382,7 +382,7 @@ class LlamaRMSNorm(nn.Layer):
             mark_as_sequence_parallel_parameter(self.weight)
 
     def forward(self, hidden_states):
-        if self.config.use_fused_rms_norm:
+        if self.config.fuse_rms_norm:
             return fusion_ops.fusion_rms_norm(hidden_states, self.weight, self.variance_epsilon)
 
         if paddle.in_dynamic_mode():
@@ -735,14 +735,14 @@ class LlamaAttention(nn.Layer):
                     ]
                 )
 
-        self.use_fused_rope = config.use_fused_rope
-        if self.use_fused_rope and get_env_device() not in ["npu", "mlu", "xpu", "gcu", "intel_hpu"]:
+        self.apply_rope_fusion = config.apply_rope_fusion
+        if self.apply_rope_fusion and get_env_device() not in ["npu", "mlu", "xpu", "gcu", "intel_hpu"]:
             if "gpu" not in paddle.device.get_device() or fused_rotary_position_embedding is None:
                 warnings.warn(
                     "Enable fuse rope in the config, but fuse rope is not available. "
                     "Will disable fuse rope. Try using latest gpu version of Paddle."
                 )
-                self.use_fused_rope = False
+                self.apply_rope_fusion = False
 
         if config.sequence_parallel:
             ColumnParallelLinear = linear_utils.ColumnSequenceParallelLinear
@@ -1056,7 +1056,7 @@ class LlamaAttention(nn.Layer):
                     (chunk_num - rank - 1) * chunk_size, (chunk_num - rank) * chunk_size, dtype="int64"
                 )
                 position_ids = paddle.cat([first_chunk_ids, second_chunk_ids]).expand((batch_size, seq_length))
-            if self.use_fused_rope:
+            if self.apply_rope_fusion:
                 query_states, key_states = fusion_ops.fusion_rope(
                     query_states,
                     key_states,
@@ -1102,7 +1102,7 @@ class LlamaAttention(nn.Layer):
         # repeat k/v heads if n_kv_heads < n_heads
         # paddle version > 2.6 or develop support flash-attn with gqa/mqa
         paddle_version = float(paddle.__version__[:3])
-        if not self.config.use_flash_attention or ((paddle_version != 0.0) and (paddle_version <= 2.6)):
+        if not self.config._attn_implementation == "sdpa" or ((paddle_version != 0.0) and (paddle_version <= 2.6)):
             key_states = repeat_kv(key_states, self.num_key_value_groups)
             value_states = repeat_kv(value_states, self.num_key_value_groups)
 
@@ -1753,7 +1753,7 @@ class LlamaModel(LlamaPretrainedModel):
 
         if (
             attn_mask_startend_row_indices is None
-            and self.config.use_flash_attention
+            and self.config._attn_implementation == "sdpa"
             and get_env_device() not in ["gcu", "intel_hpu"]
         ):
             if self.config.use_flash_attention_for_generation or use_casual_mask:

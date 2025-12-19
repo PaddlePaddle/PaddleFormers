@@ -39,7 +39,6 @@ class Ernie4_5Config(PretrainedConfig):
         initializer_range=0.02,
         rms_norm_eps=1e-6,
         use_cache=False,
-        use_flash_attention=False,
         recompute=False,
         recompute_granularity="core_attn",
         recompute_use_reentrant=False,
@@ -49,7 +48,7 @@ class Ernie4_5Config(PretrainedConfig):
         eos_token_id=2,
         use_bias=False,
         rope_theta=10000,
-        fuse_rope=False,
+        apply_rope_fusion=False,
         fuse_softmax_mask=False,
         fuse_linear=False,
         max_sequence_length=None,
@@ -76,7 +75,6 @@ class Ernie4_5Config(PretrainedConfig):
             num_attention_heads (int): Number of attention heads for each attention layer
             rms_norm_eps (float): The epsilon used by the RMS normalization layers
             use_cache (bool): Whether to use caching for faster generation (decoding)
-            use_flash_attention (bool): Whether to use FlashAttention for optimized attention computation
             recompute (bool): Whether to use gradient checkpointing to save memory
             recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
@@ -88,7 +86,7 @@ class Ernie4_5Config(PretrainedConfig):
             eos_token_id (int): Token ID used for end-of-sequence
             use_bias (bool): Whether to use bias terms in linear layers
             rope_theta (float): The base period of the RoPE embeddings
-            fuse_rope (bool): Whether to fuse RoPE operations
+            apply_rope_fusion (bool): Whether to fuse RoPE operations
             fuse_linear (bool): Whether to fuse linear operations
             fuse_up_gate (bool): Whether to fuse up_proj and gate_proj to a single linear layer
             max_sequence_length (int): Maximum sequence length for positional embeddings
@@ -122,7 +120,6 @@ class Ernie4_5Config(PretrainedConfig):
         self.use_cache = use_cache
         self.recompute = recompute
         self.recompute_granularity = recompute_granularity
-        self.use_flash_attention = use_flash_attention
         self.recompute_use_reentrant = recompute_use_reentrant
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
@@ -133,7 +130,7 @@ class Ernie4_5Config(PretrainedConfig):
         self.use_bias = use_bias
         self.rope_theta = rope_theta
         self.tie_word_embeddings = tie_word_embeddings
-        self.fuse_rope = fuse_rope
+        self.apply_rope_fusion = apply_rope_fusion
         self.fuse_softmax_mask = fuse_softmax_mask
         self.fuse_linear = fuse_linear
         self.ignored_index = ignored_index

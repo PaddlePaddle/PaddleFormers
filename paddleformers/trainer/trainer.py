@@ -180,6 +180,8 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     _insert_sync,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
+    flex_checkpoint_load_func,
+    flex_checkpoint_save_func,
     get_last_checkpoint,
     get_scheduler,
     has_length,
@@ -441,7 +443,7 @@ class Trainer:
 
         def _save_ckpt_func(state_dict, path, signal_path=None):
             if self.args.enable_auto_parallel:
-                dist.save_state_dict(state_dict, path)
+                flex_checkpoint_save_func(state_dict, path)
             else:
                 paddle.save(state_dict, path)
 
@@ -458,7 +460,7 @@ class Trainer:
             self.metrics_dumper = MetricsDumper(metrics_output_file)
 
         self._save_ckpt_func = _save_ckpt_func
-        self._load_ckpt_func = dist.load_state_dict if self.args.enable_auto_parallel else paddle.load
+        self._load_ckpt_func = flex_checkpoint_load_func if self.args.enable_auto_parallel else paddle.load
 
         if ZeroCostCheckpointManager is None and self.args.enable_zero_cost_checkpoint:
             logger.warning(
@@ -935,13 +937,23 @@ class Trainer:
         logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint):
-        self.add_callback(NonZCCEMACallback(resume_from_checkpoint, self.args, self.sharding_io))
+
+        non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
+            args=self.args,
+            resume_from_checkpoint=resume_from_checkpoint,
+            sharding_io=self.sharding_io,
+            model=self.model,
+            optimizer=self.optimizer,
+            hcg=self.hcg,
+        )
+
+        self.add_callback(non_zcc_ema_callback)
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
         model_state_dict_path = os.path.join(output_dir, MODEL_STATE_DIC)
         os.makedirs(model_state_dict_path, exist_ok=True)
-        dist.save_state_dict(
+        flex_checkpoint_save_func(
             model_sharded_state_dict,
             model_state_dict_path,
             save_replicas=self.args.replicate_saved_into_local,
@@ -959,14 +971,14 @@ class Trainer:
             else:
                 optimizer_states[k] = v
 
-        dist.save_state_dict(
+        flex_checkpoint_save_func(
             optimizer_states,
             optimizer_state_dict_path,
             save_replicas=self.args.replicate_saved_into_local,
         )
 
         master_weights_path = os.path.join(output_dir, MASTER_WEIGHT_DIC)
-        dist.save_state_dict(
+        flex_checkpoint_save_func(
             master_weights,
             master_weights_path,
             save_replicas=self.args.replicate_saved_into_local,
@@ -1003,7 +1015,7 @@ class Trainer:
             if moe_sharding_group is None or moe_sharding_group.nranks <= 1:
                 # when moe_sharding_group is None, we use the default process_group
                 logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
-                dist.load_state_dict(
+                flex_checkpoint_load_func(
                     model_sharded_state_dict,
                     resume_from_checkpoint,
                     aoa_config=hf_aoa_config,
@@ -1045,7 +1057,7 @@ class Trainer:
                 if moe_sharding_rank == 0:
                     logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
                     # Only the first moe_sharding process is allowed to load the model weights.
-                    dist.load_state_dict(
+                    flex_checkpoint_load_func(
                         model_sharded_state_dict,
                         resume_from_checkpoint,
                         aoa_config=hf_aoa_config,
@@ -1080,28 +1092,28 @@ class Trainer:
                 metadata = paddle.load(metadata_file)
                 state_dict_metadata.update(metadata.state_dict_metadata)
 
-            init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
-
-            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-
-            opt_states = {}
-            master_weights = {}
-            for k, v in optimizer_sharded_state_dict.items():
-                if k.endswith(".w_0"):
-                    master_weights[k] = v
-                else:
-                    opt_states[k] = v
-
-            dist.load_state_dict(
-                opt_states,
-                opt_states_path,
-                aoa_config=self.args.aoa_config,
-                offload=self.args.load_via_cpu,
-                comm_method=self.args.flex_ckpt_comm_method,
-            )
-
             if not self.args.sharded_model_from_ema:
-                dist.load_state_dict(
+                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+
+                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+
+                opt_states = {}
+                master_weights = {}
+                for k, v in optimizer_sharded_state_dict.items():
+                    if k.endswith(".w_0"):
+                        master_weights[k] = v
+                    else:
+                        opt_states[k] = v
+
+                flex_checkpoint_load_func(
+                    opt_states,
+                    opt_states_path,
+                    aoa_config=self.args.aoa_config,
+                    offload=self.args.load_via_cpu,
+                    comm_method=self.args.flex_ckpt_comm_method,
+                )
+
+                flex_checkpoint_load_func(
                     master_weights,
                     master_weights_path,
                     aoa_config=self.args.aoa_config,
@@ -1111,24 +1123,15 @@ class Trainer:
 
             self._load_scheduler(resume_from_checkpoint)
 
-        from .trainer_utils import ShardingOption
-
-        should_load_stage1 = self.args.sharding_parallel_degree > 1 and ShardingOption.SHARD_OP in self.args.sharding
-        logger.debug(f"should_load_stage1 = {should_load_stage1}")
         logger.debug(f"sharded_model_from_ema = {self.args.sharded_model_from_ema}")
 
-        if should_load_stage1 and self.args.sharded_model_from_ema:
+        if self.args.sharded_model_from_ema:
             ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
             ema_state_dict = paddle.load(ema_states_path)
             ema_master_weights = ema_state_dict.pop("master_weights", None)
-            opt_master_weights = self.optimizer.state_dict()["master_weights"]
-            for k, v in opt_master_weights.items():
-                assert (
-                    k in ema_master_weights
-                ), f"{k} not in ema_master_weights, emas_master_weight keys {ema_master_weights.keys()}"
-                paddle.assign(ema_master_weights[k], opt_master_weights[k])
+            opt_state_dict = {"master_weights": ema_master_weights}
+            self.optimizer.set_state_dict(opt_state_dict)
 
-            ema_state_dict = reshard_util.all_gather_state_dict(ema_state_dict, lambda x: True, self.sharding_group)
             self.model.set_state_dict(ema_state_dict)
         else:
 
@@ -1142,7 +1145,7 @@ class Trainer:
 
             fp32_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
 
-            dist.load_state_dict(
+            flex_checkpoint_load_func(
                 fp32_sharded_state_dict,
                 model_states_path,
                 aoa_config=self.args.aoa_config,
@@ -1150,7 +1153,7 @@ class Trainer:
                 comm_method=self.args.flex_ckpt_comm_method,
             )
 
-        if self.args.bf16 and (not self.args.ignore_load_lr_and_optim) and should_load_stage1:
+        if self.args.bf16 and (not self.args.ignore_load_lr_and_optim):
             opt_state_dict = self.optimizer.state_dict()
 
             def recover_params_from_master_weight(opt_state_dict, group):
@@ -2486,7 +2489,7 @@ class Trainer:
 
         checkpoint_rng_state = paddle.load(rng_file, return_numpy=True)
         if checkpoint_rng_state.get("world_size", None) != self.args.world_size:
-            logger.warn("Cannot load rng states when changing world size of training job.")
+            logger.warning("Cannot load rng states when changing world size of training job.")
             return
 
         random.setstate(checkpoint_rng_state["python"])

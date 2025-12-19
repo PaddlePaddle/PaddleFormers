@@ -105,7 +105,7 @@ def scaled_dot_product_attention(
     bsz, q_len, num_heads, head_dim = query_states.shape
     _, kv_seq_len, _, _ = value_states.shape
 
-    if config.use_flash_attention and flash_attention:
+    if config._attn_implementation == "sdpa" and flash_attention:
         # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
         # Torch Flash Attention input [ bz, nhead, seqlen, head_dim]
         version = paddle.version.full_version
@@ -197,7 +197,7 @@ class LlamaRMSNormNet(nn.Layer):
         self.config = config
 
     def forward(self, hidden_states):
-        if self.config.use_fused_rms_norm:
+        if self.config.fuse_rms_norm:
             return paddle.incubate.nn.functional.fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[
                 0
             ].astype(self.weight.dtype)
@@ -267,14 +267,14 @@ class LlamaAttentionNet(nn.Layer):
         self.layerwise_recompute = layerwise_recompute
         self.recompute_granularity = config.recompute_granularity
 
-        self.use_fused_rope = config.use_fused_rope
-        if self.use_fused_rope:
+        self.apply_rope_fusion = config.apply_rope_fusion
+        if self.apply_rope_fusion:
             if "gpu" not in paddle.device.get_device() or fused_rotary_position_embedding is None:
                 warnings.warn(
                     "Enable fuse rope in the config, but fuse rope is not available. "
                     "Will disable fuse rope. Try using latest gpu version of Paddle."
                 )
-                self.use_fused_rope = False
+                self.apply_rope_fusion = False
 
         if self.fuse_attention_qkv and not enable_fuse_ffn_qkv_pass():
             self.qkv_proj = nn.Linear(
@@ -398,7 +398,7 @@ class LlamaAttentionNet(nn.Layer):
             kv_seq_len += past_key_value[0].shape[-3]
 
         if self.config.rope:
-            if self.use_fused_rope:
+            if self.apply_rope_fusion:
                 assert past_key_value is None, "fuse rotary not support cache kv for now"
                 batch_size, seq_length, num_heads, head_dim = query_states.shape
                 _, kv_seq_len, num_key_value_heads, _ = key_states.shape
@@ -455,7 +455,7 @@ class LlamaAttentionNet(nn.Layer):
         # repeat k/v heads if n_kv_heads < n_heads
         # paddle version > 2.6 or develop support flash-attn with gqa/mqa
         paddle_version = float(paddle.__version__[:3])
-        if not self.config.use_flash_attention or (paddle_version != 0.0) and (paddle_version <= 2.6):
+        if not self.config._attn_implementation == "sdpa" or (paddle_version != 0.0) and (paddle_version <= 2.6):
             key_states = repeat_kv(key_states, self.num_key_value_groups)
             value_states = repeat_kv(value_states, self.num_key_value_groups)
 
@@ -675,7 +675,7 @@ class GlobalOutputNet(nn.Layer):
         if position_ids is None and self.config.sep_parallel_degree > 1:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
 
-        if not self.config.use_flash_attention and attention_mask is None:
+        if not self.config._attn_implementation == "sdpa" and attention_mask is None:
             # [bs, seq_len]
             attention_mask = paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
             attention_mask = self.reshard_replicate(attention_mask)
@@ -688,7 +688,7 @@ class GlobalOutputNet(nn.Layer):
             alibi = self.reshard_replicate(alibi)
         else:
             alibi = None
-        if self.config.use_flash_attention and not self.config.alibi:
+        if self.config._attn_implementation == "sdpa" and not self.config.alibi:
             # attention_mask in flash_attn is always None for pretrain
             # atttenton_mask is used in scaled_dot_product_attention with alibi_tensor
             attention_mask = None
@@ -802,7 +802,7 @@ class LlamaModelNet(LlamaPretrainedModelNet):
         if position_ids is None and self.config.sep_parallel_degree > 1:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
         # embed positions
-        if not self.config.use_flash_attention and attention_mask is None:
+        if not self.config._attn_implementation == "sdpa" and attention_mask is None:
             # [bs, seq_len]
             attention_mask = paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
 
@@ -812,7 +812,7 @@ class LlamaModelNet(LlamaPretrainedModelNet):
             alibi = build_alibi_tensor(attention_mask, self.config.num_attention_heads, dtype=inputs_embeds.dtype)
         else:
             alibi = None
-        if self.config.use_flash_attention and not self.config.alibi:
+        if self.config._attn_implementation == "sdpa" and not self.config.alibi:
             # attention_mask in flash_attn is always None for pretrain
             # atttenton_mask is used in scaled_dot_product_attention with alibi_tensor
             attention_mask = None

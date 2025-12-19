@@ -188,13 +188,9 @@ class ModelArguments:
         default=None,
         metadata={"help": "Number of attention heads for each attention layer in the Transformer encoder."},
     )
-    use_flash_attention: bool = field(
+    fuse_rms_norm: bool = field(
         default=False,
-        metadata={"help": "use_flash_attention"},
-    )
-    use_fused_rms_norm: bool = field(
-        default=False,
-        metadata={"help": "llama, use_fused_rms_norm"},
+        metadata={"help": "llama, fuse_rms_norm"},
     )
     recompute_granularity: str = field(
         default="full",
@@ -210,7 +206,7 @@ class ModelArguments:
             "help": "Pre-training from existing paddlenlp model weights. Default False and model will train from scratch. If set True, the model_name_or_path argument must exist in the paddlenlp models."
         },
     )
-    use_fused_rope: Optional[bool] = field(
+    apply_rope_fusion: Optional[bool] = field(
         default=False,
         metadata={"help": "Enable rope fusion or not."},
     )
@@ -497,15 +493,14 @@ def main():
         model_args.num_attention_heads if model_args.num_attention_heads is not None else config.num_attention_heads
     )
 
-    config.use_flash_attention = model_args.use_flash_attention
-    config.use_fused_rms_norm = model_args.use_fused_rms_norm
+    config.fuse_rms_norm = model_args.fuse_rms_norm
     config.recompute_granularity = model_args.recompute_granularity
     config.virtual_pipeline_model_parallel_size = model_args.virtual_pipeline_model_parallel_size
     config.sequence_parallel = training_args.sequence_parallel
 
     config.fuse_sequence_parallel_allreduce = training_args.fuse_sequence_parallel_allreduce
 
-    config.use_fused_rope = model_args.use_fused_rope
+    config.apply_rope_fusion = model_args.apply_rope_fusion
     config.no_recompute_layers = model_args.no_recompute_layers
     config.pp_recompute_interval = model_args.pp_recompute_interval
     config.recompute_use_reentrant = model_args.recompute_use_reentrant

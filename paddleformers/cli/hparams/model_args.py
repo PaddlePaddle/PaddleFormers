@@ -80,7 +80,6 @@ class ModelArguments:
         default=False,
         metadata={"help": "Whether to fuse softmax and add"},
     )
-    fuse_rms_norm: bool = field(default=True, metadata={"help": "Whether to fuse RMSNorm for efficiency"})
     use_fast_layer_norm: bool = field(
         default=False,
         metadata={"help": "GPT3 model, use fast layernorm"},
