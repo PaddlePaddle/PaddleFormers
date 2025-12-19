@@ -1530,6 +1530,7 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         gpt_model = model_provider.provide()
+        gpt_model.is_fleet = True
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
@@ -1689,6 +1690,7 @@ class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalL
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         gpt_model = model_provider.provide()
+        gpt_model.is_fleet = True
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
