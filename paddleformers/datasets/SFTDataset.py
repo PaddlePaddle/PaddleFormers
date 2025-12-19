@@ -19,7 +19,11 @@ from typing import List
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets.data_utils import postprocess_fc_sequence, print_debug_info
+from paddleformers.datasets.data_utils import (
+    fix_start_with_zero,
+    postprocess_fc_sequence,
+    print_debug_info,
+)
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
@@ -62,6 +66,8 @@ class SFTDataSet(IterableDataset):
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.mask_history_eos = dataset_config.get("mask_history_eos", False)
+        if self.is_pretraining and self.packing and self.truncate_packing:
+            logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
         # special token
         self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
@@ -121,8 +127,9 @@ class SFTDataSet(IterableDataset):
         # 1. tokenize all the samples in the sampling pool,
         # 2. combine them into one large sample
         # 3. truncate it into multiple new samples based on the max_seq_len.
-        if self.is_pretraining and self.truncate_packing:
+        if self.is_pretraining and self.packing and self.truncate_packing:
             all_tokenized_tokens = []
+            all_position_ids = []
             for _ in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
                 tokens = self._encode_pretraining_example(example, actual_example_num)
@@ -134,20 +141,19 @@ class SFTDataSet(IterableDataset):
                     self.used_samples += actual_example_num
 
                 all_tokenized_tokens.extend(tokens)
+                all_position_ids.extend(list(range(len(tokens))))
 
                 while len(all_tokenized_tokens) >= self.max_seq_len:
                     cut_tokens = all_tokenized_tokens[: self.max_seq_len]
-                    # Add an EOS token at the position of data truncation
-                    if cut_tokens[-1] != self.tokenizer.eos_token_id:
-                        cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
+                    cut_position_ids = all_position_ids[: self.max_seq_len]
                     all_tokenized_tokens = all_tokenized_tokens[self.max_seq_len :]
+                    all_position_ids = fix_start_with_zero(all_position_ids[self.max_seq_len :])
 
-                    res_tokens = cut_tokens[:-1]
-                    res_labels = cut_tokens[1:]
-                    pos_ids = list(range(len(res_tokens)))
+                    # label shift
+                    res_labels = cut_tokens[1:] + [-100]
                     sequence = Sequence(
-                        token_ids=res_tokens,
-                        position_ids=pos_ids,
+                        token_ids=cut_tokens,
+                        position_ids=cut_position_ids,
                         labels=res_labels,
                         num_examples=actual_example_num,
                         images=[],
@@ -169,12 +175,10 @@ class SFTDataSet(IterableDataset):
             # If the entire dataset has been fully traversed, return the remaining data.
             if len(all_tokenized_tokens) > 0:
                 cut_tokens = all_tokenized_tokens
-                cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
-                res_tokens = cut_tokens[:-1]
-                res_labels = cut_tokens[1:]
-                pos_ids = list(range(len(res_tokens)))
+                res_labels = cut_tokens[1:] + [-100]
+                pos_ids = list(range(len(cut_tokens)))
                 sequence = Sequence(
-                    token_ids=res_tokens,
+                    token_ids=cut_tokens,
                     position_ids=pos_ids,
                     labels=res_labels,
                     num_examples=actual_example_num,

@@ -4,7 +4,7 @@
 
 当前预训练、后训练数据流支持`jsonl`、`json`、`parquet`格式的数据
 
-## 1. 预训练数据流
+## 1. 预训练/后预训练数据流
 
 ### 1.1. 在线数据流
 
@@ -14,12 +14,12 @@
 
 erniekit 格式：每条数据都是一个字典，包含以下字段：
 
-- `text` : `str, List(str)`
+- `text` : `str`
 
 样例数据：
 
 ```json
-{"text": ["一个需要连续输入值的分类问题的示例是房屋价格预测。房屋的价格通常基于诸如平方英尺、位置、卧室和浴室数量以及像后院或车库等功能这样的因素定价。为了准确预测房屋价格，这些标准必须作为连续输入值输入到分类模型中。"]}
+{"text": "一个需要连续输入值的分类问题的示例是房屋价格预测。房屋的价格通常基于诸如平方英尺、位置、卧室和浴室数量以及像后院或车库等功能这样的因素定价。为了准确预测房屋价格，这些标准必须作为连续输入值输入到分类模型中。"}
 ...
 ```
 
@@ -53,7 +53,7 @@ messages 格式：每条数据都是一个字典，包含以下字段：
 
 ```shell
 wget https://paddleformers.bj.bcebos.com/datasets/pretrain_offline_data.tar.gz
-tar -xf pretrain_offline_data.tar.gz -C data/pre-training/
+mkdir -p data/pre-training && tar -xf pretrain_offline_data.tar.gz -C data/pre-training/
 ```
 
 您也可以制作自己的离线数据流，离线数据流制作方法如下：
@@ -88,7 +88,7 @@ python -u examples/tools/create_pretraining_data.py \
 | `--model_name_or_path`     | string     | 模型路径  |
 | `--data_format`    | string     | 支持的文件格式，当前只支持 JSON |
 | `--input_path`     | string     | 输入的 json 文件的路径  |
-| `--append_eos`     | store_true | 是否在 document 的结尾添加 eos token  |
+| `--append_eos`     | store_true | 是否在每条数据的结尾添加 eos token  |
 | `--output_prefix`  | str        | 输出文件的前缀    |
 | `--workers`        | int        | 运行的进程数     |
 | `--log_interval`   | int        | 打印日志间隔   |
@@ -96,7 +96,7 @@ python -u examples/tools/create_pretraining_data.py \
 
 ## 2. SFT 数据流
 
-### erniekit 格式
+### 2.1. erniekit 格式
 
 使用 `erniekit` 格式需要在 `train(/eval)_dataset_type` 处指定为 `erniekit`
 
@@ -136,14 +136,14 @@ mkdir -p data/sft && tar -xf alpaca_demo.gz -C data/sft/ --strip-components=1
 ```
 
 
-### messages 格式
+### 2.2. messages 格式
 
 使用 `messages` 格式需要在 `train(/eval)_dataset_type` 处指定为 `messages`
 
 SFT 数据流中，每条数据都是一个字典，包含以下字段：
 
 - `messages` : `List(Dict)`, 每个字典包含 `role`、`content`、`tool_calls(optional)` 三种 key。
-    - `role` 的值可以选择 `system`, `user`, `assistant` 或 `tool(optional)`。
+    - `role` 的值可以选择 `system`, `user`, `assistant`, `tool/tool_response/observation(optional)` 或 `tool_call/tool_call/function(optional)`。
     - `content`为具体的对话内容。
     - `tool_calls(optional)` 为申请工具调用。
 - `tools(optional)` : `List(Dict)`, 表示工具信息。
@@ -166,8 +166,6 @@ Notes:
 ]
 ```
 
-- 注意：在 `examples/data/sft_think-train.jsonl` 和 `examples/data/sft_think-eval.jsonl` 中提供的 demo 数据集来自由 nvidia 发布的 [OpenCodeReasoning 数据集](https://huggingface.co/datasets/nvidia/OpenCodeReasoning)。该数据集需要遵循 Creative Commons Attribution 4.0 International License (CC BY 4.0) 协议。
-
 用于 function call 训练的 demo 数据：
 
 ```json
@@ -187,16 +185,15 @@ Notes:
 ]
 ```
 
-为了方便测试，我们也提供了 `messages` function call SFT 数据集可以直接使用：
+为了方便测试，我们也提供了 `messages` 格式的 `function call` 数据集可以直接使用：
 ```bash
 wget https://paddleformers.bj.bcebos.com/datasets/sft_function_call_demo.tar.gz
-
 mkdir -p data/sft && tar -zxf sft_function_call_demo.tar.gz -C data/sft/
 ```
 
 ## 3. DPO 数据流
 
-### erniekit 格式
+### 3.1. erniekit 格式
 
 使用 `erniekit` 格式需要在 `train(/eval)_dataset_type` 处指定为 `erniekit`
 
@@ -245,20 +242,15 @@ wget https://bj.bcebos.com/paddlenlp/datasets/examples/ultrafeedback_binarized.t
 mkdir -p data/dpo && tar -zxf ultrafeedback_binarized.tar.gz -C data/dpo/ --strip-components=1
 ```
 
-### messages 格式
+### 3.2. messages 格式
 
 使用 `messages` 格式需要在 `train(/eval)_dataset_type` 处指定为 `messages`
 
 DPO 数据流中，每条数据都是一个字典，包含以下字段：
-- `messages` : `List(dict)`, 对话历史列表。
-  - 普通轮次：包含 `role` (`"user"` 或 `"assistant"`) 和 `content` (`str`) 字段。
-  - 偏好/非偏好轮次（用于偏好学习）：包含以下两个关键字段，用于表示对同一用户查询的不同系统回复的偏好排序。
-    - `preferred_output` : `dict`, 偏好（chosen）的系统回复，包含 `role` (`"assistant"`) 和 `content` (`str`) 等字段，根据是否调用工具可能包含工具调用信息 (`tool_calls`)。
-    - `non_preferred_output` : `dict`, 非偏好（rejected）的系统回复，包含 `role` (`"assistant"`) 和 `content` (`str`) 等字段。
+- `messages` : `List(dict)`, 对话历史列表, 包含 `role` (`"user"` 或 `"assistant"`) 和 `content` (`str`) 字段。
+- `chosen_response` : `List(dict)`, 偏好（chosen）的系统回复, 包含 `role` (`"assistant"`) 和 `content` (`str`) 等字段，根据是否调用工具可能包含工具调用信息 (`tool_calls`)。
+- `rejected_response` : `List(dict)`, 非偏好（rejected）的系统回复, 包含 `role` (`"assistant"`) 和 `content` (`str`) 等字段。
 - `tools` : `List(dict)`, 对话中可能用到的工具（函数）的定义列表。
-- `label` : `List(int)`, 用于区分 `preferred_output` 和 `non_preferred_output` 的排序标签。其中 0 对应 `non_preferred_output` (rejected)， 1 对应 `preferred_output` (chosen)。
-
-详细的数据格式可见[function call 说明](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/examples/best_practices/function_call.md)
 
 样例数据
 ```json
@@ -271,27 +263,25 @@ DPO 数据流中，每条数据都是一个字典，包含以下字段：
         {
             "role": "user",
             "content": "I want to listen to some music. Can you play something for me?"
-        },
-        {
-            "preferred_output": {
-                "role": "assistant",
-                "content": "Of course! Do you have a specific playlist or genre in mind?"
-            },
-            "non_preferred_output": {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "play_music",
-                            "arguments": "{\n\t\"playlist\": \"Top hits\"\n}"
-                        }
-                    }
-                ]
-            }
         }
     ],
+    "chosen_response": [{
+        "role": "assistant",
+        "content": "Of course! Do you have a specific playlist or genre in mind?"
+    }],
+    "rejected_response": [{
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "play_music",
+                    "arguments": "{\n\t\"playlist\": \"Top hits\"\n}"
+                }
+            }
+        ]
+    }],
     "tools": [
         {
             "type": "function",
@@ -315,23 +305,18 @@ DPO 数据流中，每条数据都是一个字典，包含以下字段：
             }
         },
     ],
-    "label": [
-        1,
-        0
-    ]
 }
 ```
 
 为了方便测试，我们也提供了 `messages` function call DPO 数据集可以直接使用：
 ```bash
 wget https://paddleformers.bj.bcebos.com/datasets/dpo_function_call_1k.tar.gz
-
 mkdir -p data/dpo_fc && tar -zxf dpo_function_call_1k.tar.gz -C data/dpo_fc/
 ```
 
 ## 4. 多模 SFT 数据流
 
-### erniekit 格式
+### 4.1. erniekit 格式
 
 使用 `erniekit` 格式需要在 `train(/eval)_dataset_type` 处指定为 `erniekit`
 
@@ -404,7 +389,7 @@ wget https://paddleformers.bj.bcebos.com/datasets/DoclingMatix.tar.gz
 tar -xf DoclingMatix.tar.gz -C tests/fixtures/dummy/sft-vl/
 ```
 
-### messages 格式
+### 4.2. messages 格式
 
 使用 `messages` 格式需要在 `train(/eval)_dataset_type` 处指定为 `messages`
 
