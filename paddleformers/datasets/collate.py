@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
+import math
 from typing import List
 
 import numpy as np
+import paddle
 from scipy.linalg import block_diag
 
 from .SFTDataset import Sequence
@@ -23,7 +26,9 @@ from .SFTDataset import Sequence
 def dpo_collate_fn(
     batch,
     tokenizer,
+    training_args,
     max_seq_len=None,
+    padding_free=False,
     use_sparse_head_and_loss_fn=True,
     use_fused_head_and_loss_fn=True,
     use_response_score_delta=False,
@@ -51,6 +56,12 @@ def dpo_collate_fn(
             - attention_mask (float32, optional): Attention mask matrix [batch_size, 1, max_seq_len, max_seq_len]
             - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
     """
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        cp_size = training_args.sequence_parallel
+        if cp_size > 1:
+            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
 
@@ -152,7 +163,9 @@ def dpo_collate_fn(
     return input_dict
 
 
-def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int):
+def collate_fn(
+    batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int, padding_free: bool
+):
     """Convert batch of sequences into training tensors.
 
     Args:
@@ -160,6 +173,7 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
         tokenizer: Tokenizer for text conversion
         model_args: Model configuration parameters
         max_seq_len (int): Maximum sequence length for padding
+        padding_free (bool): Whether to flatten the data within a batch to avoid padding
 
     Returns:
         dict: Dictionary containing:
@@ -174,6 +188,12 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
     else:
         input_keys.append("attention_mask")
     return_list = []
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        cp_size = training_args.sequence_parallel
+        if cp_size > 1:
+            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
@@ -219,7 +239,15 @@ def collate_fn(batch: List[List[Sequence]], tokenizer, training_args, model_args
 
 
 def mm_collate_fn(
-    batch: List[List[Sequence]], template, processor, tokenizer, training_args, model_args, max_seq_len: int
+    batch: List[List[Sequence]],
+    template,
+    processor,
+    tokenizer,
+    training_args,
+    model_args,
+    max_seq_len: int,
+    padding_free: bool,
+    model,
 ):
     """Convert batch of sequences into training tensors.
 
@@ -228,6 +256,7 @@ def mm_collate_fn(
         tokenizer: Tokenizer for text conversion
         model_args: Model configuration parameters
         max_seq_len (int): Maximum sequence length for padding
+        padding_free (bool): Whether to flatten the data within a batch to avoid padding
 
     Returns:
         dict: Dictionary containing:
@@ -236,38 +265,33 @@ def mm_collate_fn(
             - loss_mask: Mask for computing loss
     """
 
-    batch_images, batch_videos, batch_audios = [], [], []
-    batch_imglens, batch_vidlens, batch_audlens, batch_input_ids = [], [], [], []
-    for batch_sequence in batch:
-        images = []
-        for seq in batch_sequence:
-            images.extend(seq.images)
-        videos = []
-        for seq in batch_sequence:
-            videos.extend(seq.videos)
-        audios = []
-        for seq in batch_sequence:
-            audios.extend(seq.audios)
-        batch_images.extend(images)
-        batch_videos.extend(videos)
-        batch_audios.extend(audios)
-        batch_imglens.append(len(images))
-        batch_vidlens.append(len(videos))
-        batch_audlens.append(len(audios))
-        batch_input_ids.append([seq.token_ids for seq in batch_sequence])
+    if model is not None and hasattr(model, "get_rope_index"):
+        get_rope_func = model.get_rope_index  # transformers < 4.52.0
+    elif model is not None and hasattr(model, "model") and hasattr(model.model, "get_rope_index"):
+        get_rope_func = model.model.get_rope_index  # transformers >= 4.52.0
+    else:
+        get_rope_func = None
 
-    mm_inputs = template.mm_plugin.get_mm_inputs(
-        batch_images,
-        batch_videos,
-        batch_audios,
-        batch_imglens,
-        batch_vidlens,
-        batch_audlens,
-        batch_input_ids,
-        processor,
-    )
+    if model is not None and hasattr(model, "get_token_type_ids"):
+        get_token_type_func = model.get_token_type_ids  # transformers < 4.52.0
+    elif model is not None and hasattr(model, "model") and hasattr(model.model, "get_token_type_ids"):
+        get_token_type_func = model.model.get_token_type_ids  # transformers >= 4.52.0
+    else:
+        get_token_type_func = None
 
     input_keys = ["input_ids", "labels"]
+    if get_rope_func is not None:
+        input_keys.append("position_ids")
+    if get_token_type_func is not None:
+        input_keys.append("token_type_ids")
+        input_keys.append("images")
+        input_keys.append("grid_thw")
+    else:
+        input_keys.append("pixel_values")
+        input_keys.append("image_grid_thw")
+        input_keys.append("pixel_values_videos")
+        input_keys.append("video_grid_thw")
+
     if training_args.num_nextn_predict_layers > 0:
         input_keys.append("nbatch_pack_offset")
     if model_args.use_attn_mask_startend_row_indices:
@@ -275,13 +299,49 @@ def mm_collate_fn(
     else:
         input_keys.append("attention_mask")
 
-    input_keys.append("pixel_values")
-    input_keys.append("image_grid_thw")
     return_list = []
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        cp_size = training_args.sequence_parallel
+        if cp_size > 1:
+            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
-        original_token_ids = [seq.token_ids for seq in batch_sequence]
+        original_token_ids = []
+        original_position_ids = []
+        pixel_values = []
+        image_grid_thw = []
+        pixel_values_videos = []
+        video_grid_thw = []
+        for seq in batch_sequence:
+            original_token_ids.append(seq.token_ids)
+            mm_inputs = template.mm_plugin.get_mm_inputs(
+                seq.images,
+                seq.videos,
+                seq.audios,
+                [len(seq.images)],
+                [len(seq.videos)],
+                [len(seq.audios)],
+                seq.token_ids,
+                processor,
+            )
+            if "pixel_values" in mm_inputs:
+                pixel_values.append(mm_inputs["pixel_values"])
+            if "image_grid_thw" in mm_inputs:
+                image_grid_thw.extend(mm_inputs["image_grid_thw"])
+            if "pixel_values_videos" in mm_inputs:
+                pixel_values_videos.append(mm_inputs["pixel_values_videos"])
+            if "video_grid_thw" in mm_inputs:
+                video_grid_thw.extend(mm_inputs["video_grid_thw"])
+            if get_rope_func is not None:
+                func_params = inspect.signature(get_rope_func).parameters.keys()
+                filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
+                position_ids, rope_deltas = get_rope_func(input_ids=paddle.to_tensor([seq.token_ids]), **filtered_args)
+                original_position_ids.append(position_ids)
+
+        original_position_ids = paddle.concat(original_position_ids, axis=-1)
         token_ids = [sum(original_token_ids, [])]
         labels = [sum([seq.labels for seq in batch_sequence], [])]
         # padding
@@ -293,6 +353,35 @@ def mm_collate_fn(
                 padded_labels,
             ]
         )
+        if original_position_ids is not None:
+            padded_position_ids = paddle.nn.functional.pad(
+                original_position_ids, pad=[0, max_seq_len - original_position_ids.shape[2]]
+            )
+        if get_token_type_func is not None:  # ernie45vl
+            padded_position_ids = padded_position_ids.transpose([1, 2, 0])
+            padded_token_type_ids, images, grid_thw = get_token_type_func(
+                paddle.to_tensor(padded_token_ids), pixel_values, image_grid_thw, pixel_values_videos, video_grid_thw
+            )
+            return_list[-1].extend(
+                [
+                    padded_position_ids,
+                    padded_token_type_ids,
+                    images,
+                    grid_thw,
+                ]
+            )
+        else:
+            pixel_values = paddle.concat(pixel_values, axis=0)
+            pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
+            return_list[-1].extend(
+                [
+                    padded_position_ids,
+                    pixel_values,
+                    image_grid_thw,
+                    pixel_values_videos,
+                    video_grid_thw,
+                ]
+            )
 
         if training_args.num_nextn_predict_layers > 0:
             # each sequence end index
@@ -317,12 +406,8 @@ def mm_collate_fn(
                     gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
                 )
 
-        if "pixel_values" in mm_inputs:
-            return_list[-1].append(mm_inputs["pixel_values"])
-        if "image_grid_thw" in mm_inputs:
-            return_list[-1].append(mm_inputs["image_grid_thw"])
-
-    return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
+    transposed_list = list(zip(*return_list))
+    return_list = [paddle.concat([paddle.to_tensor(x) for x in tensors], axis=0) for tensors in transposed_list]
     input_dict = dict(zip(input_keys, return_list))
     return input_dict
 

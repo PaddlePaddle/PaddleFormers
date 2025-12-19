@@ -31,6 +31,8 @@ import_structure = {
         "_check_video_is_nested_images",
         "MMPluginMixin",
         "BasePlugin",
+        "ErnieVLPlugin",
+        "PaddleOCRVLPlugin",
         "Qwen2VLPlugin",
         "Qwen3VLPlugin",
         "register_mm_plugin",
@@ -51,9 +53,17 @@ import_structure = {
         "QwenToolUtils",
         "get_tool_utils",
     ],
+    "augment_utils": [
+        "RandomApply",
+        "RandomDiscreteRotation",
+        "JpegCompression",
+        "RandomScale",
+        "RandomSingleSidePadding",
+    ],
 }
 
 if TYPE_CHECKING:
+    from .augment_utils import *
     from .formatter import *
     from .mm_plugin import *
     from .template import *
