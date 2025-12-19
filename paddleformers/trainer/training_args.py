@@ -217,18 +217,18 @@ class TrainingArguments:
         fp16_opt_level (`str`, *optional*, defaults to 'O1'):
             For `fp16` training,  AMP optimization level selected in ['O0', 'O1', 'O2']. See details at
             https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/api/paddle/amp/auto_cast_cn.html
-        amp_custom_black_list (`List[str]`, *optional*, defaults to `None`):
+        amp_custom_black_list (`List[str]`, *optional*, defaults to ["reduce_sum", "softmax_with_cross_entropy", "c_softmax_with_cross_entropy", "elementwise_div", "sin", "cos"]):
             The custom black_list. The set of ops that support fp16/bf16 calculation and are considered numerically-dangerous
             and whose effects may also be observed in downstream ops. These ops will not be converted to fp16/bf16.
-        amp_custom_white_list (`List[str]`, *optional*, defaults to `None`):
+        amp_custom_white_list (`List[str]`, *optional*, defaults to ["lookup_table", "lookup_table_v2", "flash_attn", "matmul", "matmul_v2", "fused_gemm_epilogue"]):
             The custom white_list. It’s the set of ops that support fp16/bf16 calculation and are considered numerically-safe and
              performance-critical. These ops will be converted to fp16/bf16.
-        amp_master_grad (`bool`, *optional*, defaults to `False`):
+        amp_master_grad (`bool`, *optional*, defaults to `True`):
             For amp opt level=’O2’, whether to use float32 weight gradients
             for calculations such as gradient clipping, weight decay, and weight updates. If master_grad is enabled,
             the weight gradients will be float32 dtype after the backpropagation. Default is False, there is only float16 weight gradients.
             Note: only support model parallel and pipeline parallel for now !!!
-        sharding (`str`, *optional*, defaults to ``):
+        sharding (`str`, *optional*, defaults to `stage1`):
             Whether or not to use Paddle Sharding Data Parallel training (in distributed training
             only). The base option should be `stage1`, `stage2` or `stage3` and you can add
             CPU-offload to `stage2` or `stage3` like this: `stage2 offload` or `stage3 offload`.
@@ -590,7 +590,7 @@ class TrainingArguments:
         },
     )
     amp_master_grad: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "amp_master_grad (bool, optional) – For amp opt level=’O2’, whether to use float32 weight gradients "
             " for calculations such as gradient clipping, weight decay, and weight updates. If master_grad is enabled,"
@@ -613,20 +613,34 @@ class TrainingArguments:
     )
 
     amp_custom_black_list: Optional[List[str]] = field(
-        default=None,
+        default_factory=lambda: [
+            "reduce_sum",
+            "softmax_with_cross_entropy",
+            "c_softmax_with_cross_entropy",
+            "elementwise_div",
+            "sin",
+            "cos",
+        ],
         metadata={
             "help": "The set of ops that support fp16/bf16 calculation and are considered numerically-dangerous and whose effects may also be observed in downstream ops."
         },
     )
     amp_custom_white_list: Optional[List[str]] = field(
-        default=None,
+        default_factory=lambda: [
+            "lookup_table",
+            "lookup_table_v2",
+            "flash_attn",
+            "matmul",
+            "matmul_v2",
+            "fused_gemm_epilogue",
+        ],
         metadata={
             "help": "The the set of ops that support fp16/bf16 calculation and are considered numerically-safe and performance-critical. These ops will be converted to fp16/bf16."
         },
     )
 
     sharding: str = field(
-        default="",
+        default="stage1",
         metadata={
             "help": (
                 "Whether or not to use Paddle Sharding Data Parallel training (in distributed training"
@@ -834,7 +848,7 @@ class TrainingArguments:
         },
     )
     sharding_parallel_config: str = field(
-        default="",
+        default="split_param",
         metadata={
             "help": (
                 "Some additional config it highly affect the usage of sharding parallel, we provide some option to config it."
