@@ -64,6 +64,7 @@ except:
     core = None
 try:
     import paddlefleet.distributed.model as paddlefleet_dist_model
+    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
     from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
@@ -1805,7 +1806,7 @@ class Trainer:
             if (
                 self.args.use_hybrid_parallel
                 and self.args.context_parallel_size > 1
-                and getattr(self.model, "is_fleet", False)
+                and isinstance(self.model, FleetGPTModel)
             ):
                 inputs = get_batch_on_this_cp_rank(inputs)
 
