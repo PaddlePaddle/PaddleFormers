@@ -341,7 +341,8 @@ def mm_collate_fn(
                 position_ids, rope_deltas = get_rope_func(input_ids=paddle.to_tensor([seq.token_ids]), **filtered_args)
                 original_position_ids.append(position_ids)
 
-        original_position_ids = paddle.concat(original_position_ids, axis=-1)
+        if len(original_position_ids) > 0:
+            original_position_ids = paddle.concat(original_position_ids, axis=-1)
         token_ids = [sum(original_token_ids, [])]
         labels = [sum([seq.labels for seq in batch_sequence], [])]
         # padding
@@ -353,7 +354,7 @@ def mm_collate_fn(
                 padded_labels,
             ]
         )
-        if original_position_ids is not None:
+        if len(original_position_ids) > 0:
             padded_position_ids = paddle.nn.functional.pad(
                 original_position_ids, pad=[0, max_seq_len - original_position_ids.shape[2]]
             )
@@ -371,8 +372,10 @@ def mm_collate_fn(
                 ]
             )
         else:
-            pixel_values = paddle.concat(pixel_values, axis=0)
-            pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
+            if len(pixel_values) > 0:
+                pixel_values = paddle.concat(pixel_values, axis=0)
+            if len(pixel_values_videos) > 0:
+                pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
             return_list[-1].extend(
                 [
                     padded_position_ids,
