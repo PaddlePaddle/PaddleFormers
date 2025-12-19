@@ -260,6 +260,18 @@ def run_sft(
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args.attn_impl
 
+    def set_attr_func(config, key, value):
+        if value is not None:
+            setattr(config, key, value)
+
+    set_attr_func(model_config, "num_hidden_layers", model_args.num_hidden_layers)
+    set_attr_func(model_config, "num_attention_heads", model_args.num_attention_heads)
+    set_attr_func(model_config, "num_key_value_heads", model_args.num_key_value_heads)
+    set_attr_func(model_config, "num_experts_per_tok", model_args.num_experts_per_tok)
+    set_attr_func(model_config, "hidden_size", model_args.hidden_size)
+    set_attr_func(model_config, "intermediate_size", model_args.intermediate_size)
+    set_attr_func(model_config, "n_routed_experts", model_args.n_routed_experts)
+
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
         model_config.text_config.max_sequence_length = data_args.max_seq_len
@@ -342,6 +354,7 @@ def run_sft(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
+        "mask_history_eos": data_args.mask_history_eos,
     }
 
     dataset_config.update(
@@ -412,6 +425,7 @@ def run_sft(
                 training_args=training_args,
                 model_args=model_args,
                 max_seq_len=max_seq_len,
+                padding_free=data_args.padding_free,
             )
         else:
             data_collator = partial(
@@ -420,6 +434,7 @@ def run_sft(
                 training_args=training_args,
                 model_args=model_args,
                 max_seq_len=max_seq_len,
+                padding_free=data_args.padding_free,
             )
 
     if training_args.max_steps == -1:

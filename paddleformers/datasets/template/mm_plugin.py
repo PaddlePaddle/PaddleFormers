@@ -36,6 +36,15 @@ from PIL.Image import Image as ImageObject
 from transformers.image_utils import is_valid_image
 from typing_extensions import override
 
+from .augment_utils import (
+    JpegCompression,
+    RandomApply,
+    RandomDiscreteRotation,
+    RandomScale,
+    RandomSingleSidePadding,
+    transforms,
+)
+
 IMAGE_PLACEHOLDER = os.getenv("IMAGE_PLACEHOLDER", "<image>")
 VIDEO_PLACEHOLDER = os.getenv("VIDEO_PLACEHOLDER", "<video>")
 AUDIO_PLACEHOLDER = os.getenv("AUDIO_PLACEHOLDER", "<audio>")
@@ -302,6 +311,146 @@ class BasePlugin(MMPluginMixin):
         r"""Build batched multimodal inputs for VLMs."""
         self._validate_input(processor, images, videos, audios)
         return self._get_mm_inputs(images, videos, audios, processor)
+
+
+@dataclass
+class PaddleOCRVLPlugin(BasePlugin):
+    image_bos_token: str = "<|IMAGE_START|>"
+    image_eos_token: str = "<|IMAGE_END|>"
+
+    def __init__(self, image_token, video_token, audio_token, **kwargs):
+        super().__init__(image_token, video_token, audio_token, **kwargs)
+        self.image_augmentation = self.get_ocr_augmentations(
+            rotation_degrees=[90, 270],
+            rotation_p=0.1,
+            jpeg_quality_range=(60, 100),
+            jpeg_p=0.3,
+            scale_range=(0.5, 1.5),
+            scale_p=0.5,
+            padding_range=(0, 15),
+            padding_p=0.1,
+            color_jitter_p=0.1,
+        )
+
+    def get_ocr_augmentations(
+        self,
+        scale_range=(0.8, 1.2),
+        scale_p=0.5,
+        padding_range=(0, 15),
+        padding_p=0.5,
+        rotation_degrees=[0],
+        rotation_p=0.5,
+        color_jitter_p=0.5,
+        jpeg_quality_range=(40, 90),
+        jpeg_p=0.5,
+    ):
+
+        augmentations = []
+
+        if scale_p > 0:
+            scale_transform = RandomScale(scale_range=scale_range)
+            augmentations.append(RandomApply([scale_transform], p=scale_p))
+
+        if padding_p > 0:
+            padding_transform = RandomSingleSidePadding(padding_range=padding_range, fill="white")
+            augmentations.append(RandomApply([padding_transform], p=padding_p))
+
+        if rotation_p > 0 and rotation_degrees:
+            rotation_transform = RandomDiscreteRotation(degrees=rotation_degrees, interpolation="nearest", expand=True)
+            augmentations.append(RandomApply([rotation_transform], p=rotation_p))
+
+        if color_jitter_p > 0:
+            color_jitter = transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.1)
+            augmentations.append(RandomApply([color_jitter], p=color_jitter_p))
+
+        if jpeg_p > 0:
+            jpeg_transform = JpegCompression(quality_range=jpeg_quality_range)
+            augmentations.append(RandomApply([jpeg_transform], p=jpeg_p))
+
+        return transforms.Compose(augmentations)
+
+    @override
+    def _preprocess_image(self, image, **kwargs):
+
+        width, height = image.size
+        image_max_pixels = kwargs["image_max_pixels"]
+        image_min_pixels = kwargs["image_min_pixels"]
+        image_processor = kwargs["image_processor"]
+
+        # pre-resize before augmentation
+        resized_height, resized_width = image_processor.get_smarted_resize(
+            height,
+            width,
+            min_pixels=image_min_pixels,
+            max_pixels=image_max_pixels,
+        )[0]
+
+        image = image.resize((resized_width, resized_height))
+
+        if image and hasattr(self, "image_augmentation"):
+            image = self.image_augmentation(image)
+
+        return image
+
+    @override
+    def _get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+    ):
+        image_processor = getattr(processor, "image_processor", None)
+        mm_inputs = {}
+        if len(images) != 0:
+            images = self._regularize_images(
+                images,
+                image_max_pixels=getattr(processor, "max_pixels", 2822400),
+                image_min_pixels=getattr(processor, "min_pixels", 147384),
+                image_processor=image_processor,
+            )["images"]
+            mm_inputs.update(image_processor(images, return_tensors="pd"))
+
+        return mm_inputs
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        num_image_tokens = 0
+        messages = deepcopy(messages)
+        image_processor = getattr(processor, "image_processor")
+
+        merge_length = getattr(image_processor, "merge_size") ** 2
+        if self.expand_mm_tokens:
+            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+        else:
+            image_grid_thw = [None] * len(images)
+
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                image_seqlen = (
+                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                )
+                content = content.replace(
+                    IMAGE_PLACEHOLDER,
+                    f"{self.image_bos_token}{self.image_token * image_seqlen}{self.image_eos_token}",
+                    1,
+                )
+                num_image_tokens += 1
+
+            message["content"] = content
+
+        return messages
 
 
 @dataclass
@@ -697,11 +846,91 @@ class GLM4VPlugin(Qwen2VLPlugin):
         return mm_inputs
 
 
+def _get_gemma3_token_type_ids(batch_ids, processor):
+    r"""Get gemma3 token type ids for computing loss.
+
+    Returns:
+        batch_token_type_ids: shape (batch_size, seq_length)
+
+    """
+    image_token_id: int = getattr(processor, "image_token_id")
+    batch_token_type_ids = []
+    for token_ids in batch_ids:
+        token_ids = np.array(token_ids)
+        token_type_ids = np.zeros_like(token_ids)
+        token_type_ids[token_ids == image_token_id] = 1
+        batch_token_type_ids.append(token_type_ids.tolist())
+
+    return batch_token_type_ids
+
+
+@dataclass
+class Gemma3Plugin(BasePlugin):
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        num_image_tokens = 0
+        messages = deepcopy(messages)
+        boi_token = getattr(processor, "boi_token")
+        full_image_sequence = getattr(processor, "full_image_sequence")
+        image_str = full_image_sequence if self.expand_mm_tokens else boi_token
+
+        do_pan_and_scan = getattr(processor, "image_do_pan_and_scan", False)
+        if do_pan_and_scan:
+            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                if do_pan_and_scan:
+                    image_placeholder_str = (
+                        "Here is the original image {{image}} and here are some crops to help you see better "
+                        + " ".join(["{{image}}"] * mm_inputs["num_crops"][0][num_image_tokens])
+                    )
+                else:
+                    image_placeholder_str = "{{image}}"
+
+                content = content.replace(IMAGE_PLACEHOLDER, image_placeholder_str, 1)
+                num_image_tokens += 1
+
+            message["content"] = content.replace("{{image}}", image_str)
+
+        return messages
+
+    @override
+    def get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        imglens,
+        vidlens,
+        audlens,
+        batch_ids,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+        mm_inputs.pop("num_crops", None)
+        mm_inputs["token_type_ids"] = _get_gemma3_token_type_ids(batch_ids, processor)
+        return mm_inputs
+
+
 PLUGINS = {
     "base": BasePlugin,
     "qwen2_vl": Qwen2VLPlugin,
+    "paddleocr_vl": PaddleOCRVLPlugin,
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
+    "gemma3": Gemma3Plugin,
 }
 
 
