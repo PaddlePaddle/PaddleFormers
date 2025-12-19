@@ -249,6 +249,10 @@ class LlmMetaConfig:
         ("num_empty_layers_add_in_head", int, 0, "num_empty_layers_add_in_head"),
         ("num_empty_layers_add_in_tail", int, 0, "num_empty_layers_add_in_tail"),
         ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
+        # expert_parallel
+        ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
+        # context_parallel
+        ("context_parallel_size", int, 1, "context_parallel_size"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         (
@@ -289,14 +293,15 @@ class LlmMetaConfig:
             None,
             "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
         ),
-        ("recompute_modules", str, None, "List of module names to apply recomputation."),
+        ("recompute_modules", Optional[List[str]], None, "List of module names to apply recomputation."),
         (
             "recompute_mtp_granularity",
             str,
-            "none",
+            None,
             "Recomputation granularity for MTP (Mixture of Token-Parallel) layers.",
         ),
-        ("recompute_mtp_method", str, "none", "Recomputation method for MTP layers."),
+        ("recompute_mtp_granularity", str, None, "Recomputation granularity for MTP layers."),
+        ("recompute_mtp_method", str, None, "Recomputation method for MTP layers."),
         ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
     ]
 
@@ -330,13 +335,13 @@ class LlmMetaConfig:
         (
             "moe_deepep_num_sms",
             bool,
-            False,
+            None,
             "Whether to enable DeepEP (Deep Expert Pruning) with SMS (Sub-Model Selection) for MoE. Defaults to False.",
         ),
         (
             "moe_token_dispatcher_type",
             str,
-            None,
+            "deepep",
             "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
         ),
         (
@@ -360,25 +365,19 @@ class LlmMetaConfig:
         (
             "router_aux_loss_coef",
             float,
-            0.0,
+            None,
             "Coefficient for MoE router auxiliary loss (encourages balanced expert usage). Defaults to 0.0 (disable auxiliary loss).",
         ),
         (
             "router_z_loss_coef",
             float,
-            0.0,
+            None,
             "Coefficient for MoE router Z-loss (regularizes router logits to avoid extreme values). Defaults to 0.0 (disable Z-loss).",
-        ),
-        (
-            "moe_router_enable_expert_bias",
-            bool,
-            False,
-            "Whether to enable expert-specific bias terms in the MoE router. Fine-tunes router preference for individual experts. Defaults to False (simplifies computation and avoids overfitting).",
         ),
         (
             "moe_router_force_load_balancing",
             bool,
-            True,
+            False,
             "Whether to enforce load balancing across MoE experts. Prevents overutilization of a small subset of experts. Defaults to True (critical optimization for MoE stability and efficiency).",
         ),
         ("moe_router_load_balancing_type", str, "seq_aux_loss", "Strategy for MoE expert load balancing."),
@@ -391,7 +390,7 @@ class LlmMetaConfig:
         (
             "moe_shared_expert_overlap",
             bool,
-            False,
+            True,
             "Whether to allow shared experts to be reused across layers/modules. Reduces memory footprint but may limit model expressivity. Defaults to False (prioritizes model capacity).",
         ),
         (
@@ -415,7 +414,7 @@ class LlmMetaConfig:
         (
             "moe_subbatch_token_num_after_dispatch",
             int,
-            4096,
+            None,
             "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
         ),
         (
@@ -439,14 +438,14 @@ class LlmMetaConfig:
     fp8_attributes = [
         (
             "fp8",
-            bool,
-            False,
+            str,
+            None,
             "Whether to enable FP8 mixed-precision training/inference. Reduces memory usage and accelerates computation (requires hardware support). Defaults to False (enable only for Ampere+/Hopper GPUs with FP8 support).",
         ),
         (
             "fp8_wgrad",
             bool,
-            False,
+            True,
             "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
         ),
     ]
@@ -473,7 +472,7 @@ class LlmMetaConfig:
         (
             "gated_linear_unit",
             bool,
-            False,
+            True,
             "Whether to use Gated Linear Units (GLU) instead of standard Linear layers. Enhances model expressivity (common in SwiGLU). Defaults to False (compatible with basic transformer architectures).",
         ),
         ("normalization", str, "RMSNorm", "Type of normalization layer. Defaults to RMSNorm."),
@@ -570,7 +569,10 @@ class LlmMetaConfig:
     @classmethod
     def set_llm_config(cls, config, args):
         for key, value in cls._get_defaults().items():
-            setattr(config, key, getattr(args, key, value))
+            value = getattr(args, key, value)
+            if value is None:
+                continue
+            setattr(config, key, value)
 
 
 class PretrainedConfig:
