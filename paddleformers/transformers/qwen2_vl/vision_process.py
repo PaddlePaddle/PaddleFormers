@@ -271,6 +271,7 @@ def _read_video_decord(
     """
     import decord
 
+    logger.info("Loading video with decord backend.")
     video_path = ele["video"]
     st = time.time()
     vr = decord.VideoReader(video_path)
@@ -330,11 +331,12 @@ def _read_video_paddlecodec(
         )
         return _read_video_decord(ele)
 
-    TORCHCODEC_NUM_THREADS = int(os.environ.get("TORCHCODEC_NUM_THREADS", 8))
-    logger.info(f"set TORCHCODEC_NUM_THREADS: {TORCHCODEC_NUM_THREADS}")
+    logger.info("Loading video with torchcodec backend.")
+    PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 8))
+    logger.info(f"set PADDLECODEC_NUM_THREADS: {PADDLECODEC_NUM_THREADS}")
     video_path = ele["video"]
     st = time.time()
-    decoder = VideoDecoder(video_path, num_ffmpeg_threads=TORCHCODEC_NUM_THREADS)
+    decoder = VideoDecoder(video_path, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS)
     video_fps = decoder.metadata.average_fps
     total_frames = decoder.metadata.num_frames
     start_frame, end_frame, total_frames = calculate_video_frame_range(
@@ -345,7 +347,7 @@ def _read_video_paddlecodec(
     nframes = smart_nframes(ele, total_frames=total_frames, video_fps=video_fps)
     idx = paddle.linspace(start_frame, end_frame, nframes).round().long().tolist()
     sample_fps = nframes / max(total_frames, 1e-6) * video_fps
-    video = decoder.get_frames_at(indices=idx).data
+    video = decoder.get_frames_at(indices=idx).data.contiguous().to("cuda")
     logger.info(f"paddlecodec:  {video_path=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
 
     video_metadata = dict(
@@ -368,13 +370,13 @@ def fetch_video(
     image_patch_size: int = 14,
     return_video_sample_fps: bool = False,
     return_video_metadata: bool = False,
-    video_reader_backend: str = "decord",
+    backend: str = "decord",
 ) -> Union[paddle.Tensor, List[Image.Image]]:
     image_factor = image_patch_size * SPATIAL_MERGE_SIZE
     VIDEO_FRAME_MIN_PIXELS = VIDEO_MIN_TOKEN_NUM * image_factor * image_factor
     VIDEO_FRAME_MAX_PIXELS = VIDEO_MAX_TOKEN_NUM * image_factor * image_factor
     if isinstance(ele["video"], str):
-        video, video_metadata, sample_fps = VIDEO_READER_BACKENDS[video_reader_backend](ele)
+        video, video_metadata, sample_fps = VIDEO_READER_BACKENDS[backend](ele)
     else:
         # The input is a list of frames
         assert isinstance(ele["video"], (list, tuple))
@@ -473,7 +475,7 @@ def process_vision_info(
     return_video_kwargs: bool = False,
     return_video_metadata: bool = False,
     image_patch_size: int = 14,
-    video_reader_backend: str = "decord",
+    backend: str = "decord",
 ) -> Tuple[
     Optional[List[Image.Image]], Optional[List[Union[paddle.Tensor, List[Image.Image]]]], Optional[Dict[str, Any]]
 ]:
@@ -492,7 +494,7 @@ def process_vision_info(
                 return_video_sample_fps=True,
                 image_patch_size=image_patch_size,
                 return_video_metadata=return_video_metadata,
-                video_reader_backend=video_reader_backend,
+                backend=backend,
             )
             video_sample_fps_list.append(video_sample_fps)
             video_inputs.append(video_input)

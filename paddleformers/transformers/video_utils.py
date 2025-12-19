@@ -308,6 +308,7 @@ def read_video_decord(
     # Lazy import from decord
     from decord import VideoReader, cpu
 
+    logger.info("Loading video with decord backend.")
     vr = VideoReader(uri=video_path, ctx=cpu(0))  # decord has problems with gpu
     video_fps = vr.get_avg_fps()
     total_num_frames = len(vr)
@@ -376,13 +377,16 @@ def read_video_paddlecodec(
         )
         return read_video_decord(video_path, sample_indices_fn, **kwargs)
 
+    logger.info("Loading video with torchcodec backend.")
+    PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 8))
+    logger.info(f"set PADDLECODEC_NUM_THREADS: {PADDLECODEC_NUM_THREADS}")
     # VideoDecoder expects a string for device, default to "cpu" if None
     decoder = VideoDecoder(
         video_path,
         # Interestingly `exact` mode takes less than approximate when we load the whole video
         seek_mode="exact",
         # Allow FFmpeg decide on the number of threads for efficiency
-        num_ffmpeg_threads=0,
+        num_ffmpeg_threads=PADDLECODEC_NUM_THREADS,
         device=kwargs.get("device", "cpu"),
     )
     total_num_frames = decoder.metadata.num_frames
@@ -397,7 +401,7 @@ def read_video_paddlecodec(
     )
 
     indices = sample_indices_fn(metadata=metadata, **kwargs)
-    video = decoder.get_frames_at(indices=indices).data.contiguous()
+    video = decoder.get_frames_at(indices=indices).data.contiguous().to("cuda")
     metadata.frames_indices = indices
     return video, metadata
 

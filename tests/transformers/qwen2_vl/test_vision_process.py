@@ -251,7 +251,7 @@ class TestQwenVisionProcessing(unittest.TestCase):
     def test_fetch_video_with_paddlecodec(self):
         """Test fetch_video(default with frame list) function using paddlecodec backend."""
         ele = {"video": self.test_video_url}
-        result = vision_process.fetch_video(ele, video_reader_backend="paddlecodec")
+        result = vision_process.fetch_video(ele, backend="paddlecodec")
 
         import torchcodec
 
