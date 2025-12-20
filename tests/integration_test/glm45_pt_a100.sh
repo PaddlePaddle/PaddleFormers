@@ -37,6 +37,11 @@ yq eval '.expert_model_parallel_size = 1
   $config_yaml > ${config_yaml}.tmp
 mv ${config_yaml}.tmp $config_yaml
 
+sed -i "s/Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel)/Glm4MoeForCausalLM(Glm4MoePreTrainedModel)/g" $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
+sed -i "s/Glm4MoeForCausalLM(Glm4MoePreTrainedModel)/Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel)/g" $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
+sed -i "s/Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel/Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel/g" $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
+sed -i "s/Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe)/Glm4MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe)/g" $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
+
 rm -rf checkpoints/
 rm -rf vdl_log/
 master=$(hostname -i)
