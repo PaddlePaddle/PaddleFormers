@@ -74,13 +74,13 @@ class DPODataSet(IterableDataset):
 
         # data loader + multisource dataset mix
         if self.is_valid:
-            dataset_config["random_shuffle"] = False
-            dataset_config["greedy_intokens"] = False
             multi_source_dataset = MultiSourceDataset(**dataset_config)
             self.mix_datasets = create_dataset_instance(
                 "concat",
                 multi_source_dataset,
                 **dataset_config,
+                random_shuffle=False,
+                greedy_intokens=False,
             )
         else:
             multi_source_dataset = MultiSourceDataset(**dataset_config)
