@@ -18,11 +18,10 @@
 
 
 import json
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, NamedTuple, Union
+from typing import Any, NamedTuple
 
 from typing_extensions import override
 
@@ -184,20 +183,6 @@ class GLM4ToolUtils(ToolUtils):
 
         return f"{functions[0].name}\n{functions[0].arguments}"
 
-    @override
-    @staticmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        if "\n" not in content:
-            return content
-
-        tool_name, tool_input = content.split("\n", maxsplit=1)
-        try:
-            arguments = json.loads(tool_input.strip())
-        except json.JSONDecodeError:
-            return content
-
-        return [FunctionCall(tool_name, json.dumps(arguments, ensure_ascii=False))]
-
 
 class GLM4MOEToolUtils(QwenToolUtils):
     r"""GLM-4-MOE tool using template."""
@@ -254,20 +239,6 @@ class Llama3ToolUtils(ToolUtils):
         function_objects = [{"name": name, "parameters": json.loads(arguments)} for name, arguments in functions]
         return json.dumps(function_objects[0] if len(function_objects) == 1 else function_objects, ensure_ascii=False)
 
-    @override
-    @staticmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        try:
-            tools = json.loads(content.strip())
-        except json.JSONDecodeError:
-            return content
-
-        tools = [tools] if not isinstance(tools, list) else tools
-        try:
-            return [FunctionCall(tool["name"], json.dumps(tool["parameters"], ensure_ascii=False)) for tool in tools]
-        except KeyError:
-            return content
-
 
 class ERNIEToolUtils(ToolUtils):
     r"""ERNIE 4.5 tool using template."""
@@ -291,28 +262,6 @@ class ERNIEToolUtils(ToolUtils):
             for name, arguments in functions
         ]
         return "\n".join([f"<tool_call>{text}\n</tool_call>" for text in function_texts])
-
-    @override
-    @staticmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        regex = re.compile(r"<tool_call>(.+?)</tool_call>(?=\s*<tool_call>|\s*$)", re.DOTALL)
-        tool_match: list[str] = re.findall(regex, content)
-        if not tool_match:
-            return content
-
-        results = []
-        for tool in tool_match:
-            try:
-                tool = json.loads(tool.strip())
-            except json.JSONDecodeError:
-                return content
-
-            if "name" not in tool or "arguments" not in tool:
-                return content
-
-            results.append(FunctionCall(tool["name"], json.dumps(tool["arguments"], ensure_ascii=False)))
-
-        return results
 
 
 TOOLS = {

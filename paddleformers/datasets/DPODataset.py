@@ -75,12 +75,12 @@ class DPODataSet(IterableDataset):
         # data loader + multisource dataset mix
         if self.is_valid:
             multi_source_dataset = MultiSourceDataset(**dataset_config)
+            dataset_config["random_shuffle"] = False
+            dataset_config["greedy_intokens"] = False
             self.mix_datasets = create_dataset_instance(
                 "concat",
                 multi_source_dataset,
                 **dataset_config,
-                random_shuffle=False,
-                greedy_intokens=False,
             )
         else:
             multi_source_dataset = MultiSourceDataset(**dataset_config)
@@ -235,11 +235,14 @@ class DPODataSet(IterableDataset):
                 chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example["chosen"])
                 rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example["rejected"])
         else:
+            mm_inputs = self.template.mm_plugin.get_mm_inputs(
+                images, videos, audios, [len(images)], [len(videos)], [len(audios)], None, self.processor
+            )
             chosen_messages = self.template.mm_plugin.process_messages(
-                example["chosen"]["messages"], images, videos, audios, self.processor
+                example["chosen"]["messages"], images, videos, audios, mm_inputs, self.processor
             )
             rejected_messages = self.template.mm_plugin.process_messages(
-                example["rejected"]["messages"], images, videos, audios, self.processor
+                example["rejected"]["messages"], images, videos, audios, mm_inputs, self.processor
             )
             prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
             _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)

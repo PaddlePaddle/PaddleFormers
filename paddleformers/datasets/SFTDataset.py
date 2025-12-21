@@ -42,7 +42,7 @@ class Sequence:
     images: List[str]
     videos: List[str]
     audios: List[str]
-    mm_inputs: Dict
+    mm_inputs: Dict = None
 
 
 class SFTDataSet(IterableDataset):
@@ -66,7 +66,6 @@ class SFTDataSet(IterableDataset):
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
-        self.mask_history_eos = dataset_config.get("mask_history_eos", False)
         if self.is_pretraining and self.packing and self.truncate_packing:
             logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
@@ -84,12 +83,12 @@ class SFTDataSet(IterableDataset):
         # data loader + multisource dataset mix
         if self.is_valid:
             multi_source_dataset = MultiSourceDataset(**dataset_config)
+            dataset_config["random_shuffle"] = False
+            dataset_config["greedy_intokens"] = False
             self.mix_datasets = create_dataset_instance(
                 "concat",
                 multi_source_dataset,
                 **dataset_config,
-                random_shuffle=False,
-                greedy_intokens=False,
             )
         else:
             multi_source_dataset = MultiSourceDataset(**dataset_config)
