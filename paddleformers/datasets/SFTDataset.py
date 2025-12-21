@@ -82,9 +82,9 @@ class SFTDataSet(IterableDataset):
 
         # data loader + multisource dataset mix
         if self.is_valid:
-            multi_source_dataset = MultiSourceDataset(**dataset_config)
             dataset_config["random_shuffle"] = False
             dataset_config["greedy_intokens"] = False
+            multi_source_dataset = MultiSourceDataset(**dataset_config)
             self.mix_datasets = create_dataset_instance(
                 "concat",
                 multi_source_dataset,
