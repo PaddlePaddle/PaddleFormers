@@ -435,7 +435,7 @@ class Qwen3VLPretrainedModel(PretrainedModel):
             ]
 
         # Qwen3_VLModel without lm_head
-        if cls.base_model_prefix:
+        if cls._tied_weights_keys:
             aoa_config["aoa_statements"] += [
                 f"{'model.language_model.embed_tokens.weight' if config.tie_word_embeddings else 'lm_head.weight'} -> lm_head.weight",
             ]
@@ -537,7 +537,7 @@ class Qwen3VLPretrainedModel(PretrainedModel):
             ]
 
         # Qwen3VLModel without lm_head
-        if cls.base_model_prefix:
+        if cls._tied_weights_keys:
             aoa_config["aoa_statements"] += [
                 f"lm_head.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
             ]
@@ -1461,8 +1461,8 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
 
 
 class Qwen3VLModel(Qwen3VLPretrainedModel):
-    base_model_prefix = ""
-    _checkpoint_conversion_mapping = {"^model": "language_model"}
+    base_model_prefix = "model"
+    _checkpoint_conversion_mapping = {}
     config: Qwen3VLConfig
     _no_split_modules = ["Qwen3VLDecoderLayer", "Qwen3VLVisionBlock"]
 

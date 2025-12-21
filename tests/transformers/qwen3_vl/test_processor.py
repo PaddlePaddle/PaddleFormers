@@ -34,7 +34,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp()
         processor = Qwen3VLProcessor.from_pretrained(
-            "/root/paddlejob/workspace/env_run/wangyuhao/PaddleFormers/qwen3vl_tiny_safetensors",
+            "PaddleFormers/tiny_random_qwen3vl",
             patch_size=4,
             max_pixels=56 * 56,
             min_pixels=28 * 28,
@@ -321,7 +321,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             return_dict=True,
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
-        self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 160)
+        self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 71280)
 
         # When the inputs are frame URLs/paths we expect that those are already
         # sampled and will raise an error is asked to sample again.

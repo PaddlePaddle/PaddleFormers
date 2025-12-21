@@ -548,12 +548,10 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 class Qwen3VLIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-            "/root/paddlejob/workspace/env_run/wangyuhao/PaddleFormers/qwen3vl_tiny_safetensors", convert_from_hf=True
+            "PaddleFormers/tiny_random_qwen3vl", convert_from_hf=True
         )
 
-        self.processor = AutoProcessor.from_pretrained(
-            "/root/paddlejob/workspace/env_run/wangyuhao/PaddleFormers/qwen3vl_tiny_safetensors"
-        )
+        self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny_random_qwen3vl")
         self.messages = [
             {
                 "role": "user",
@@ -572,7 +570,6 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
 
         inputs = self.processor(text=[text], images=self.image, return_tensors="pd")
-        print(f"inputxx: \n{inputs.input_ids[0][:17]}")
 
         EXPECTED_INPUT_IDS = paddle.to_tensor(
             [
@@ -607,7 +604,6 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
                 [0.16862750, 0.16862750, 0.16862750],
             ],
         )
-        print(f"pixel_values slice:\n{inputs.pixel_values[3000:3006, 650:653]}")
         self.assertTrue(
             paddle.allclose(EXPECTED_PIXEL_SLICE, inputs.pixel_values[3000:3006, 650:653], atol=5e-4, rtol=1e-5)
         )
@@ -615,36 +611,36 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE = paddle.to_tensor(
             [
-                0.00190364,
-                0.03592115,
-                -0.04341580,
-                0.01197994,
-                -0.00921174,
-                0.03796646,
-                -0.02577838,
-                -0.00522765,
-                -0.04814868,
-                -0.00298906,
-                -0.01993857,
-                0.00585408,
-                -0.07494697,
-                0.03194539,
-                0.00491890,
-                -0.02527998,
-                -0.05927889,
-                0.00743866,
-                0.05651516,
-                -0.02403277,
-                -0.03493933,
-                -0.00822193,
-                0.02282976,
-                -0.00512971,
-                -0.05163056,
-                -0.05414432,
-                -0.03009898,
-                -0.06347255,
-                -0.04479685,
-                0.0384893,
+                0.06287927,
+                -0.07886235,
+                0.04489285,
+                0.05893322,
+                0.01931595,
+                -0.01385389,
+                0.08200872,
+                -0.03711491,
+                -0.01657203,
+                -0.02351522,
+                0.07860593,
+                0.04915768,
+                0.01571728,
+                -0.03793694,
+                -0.01400310,
+                0.01007790,
+                -0.00566701,
+                0.00890818,
+                0.07228708,
+                -0.00890865,
+                0.00333119,
+                -0.01285517,
+                -0.05833242,
+                0.03265308,
+                -0.03928559,
+                -0.02193596,
+                -0.00813984,
+                0.00105143,
+                0.04259191,
+                -0.02120323,
             ]
         )
         logger.info(f"Output logits slice1:\n{output[0, 0, :30]}")
@@ -658,41 +654,39 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE = paddle.to_tensor(
             [
-                0.00561555,
-                0.04627045,
-                -0.00408184,
-                -0.05636609,
-                0.04940142,
-                0.04705818,
-                -0.03634051,
-                0.03292203,
-                -0.00288095,
-                -0.06276743,
-                0.01857974,
-                0.03919025,
-                0.01425984,
-                -0.00256351,
-                0.03789723,
-                0.00775180,
-                -0.02878014,
-                -0.02579268,
-                0.01016125,
-                -0.00230980,
-                -0.03038404,
-                -0.05489822,
-                0.01839996,
-                -0.03595438,
-                -0.05305838,
-                -0.04410376,
-                -0.06763442,
-                -0.05904848,
-                -0.04356888,
-                0.01392755,
+                0.06287927,
+                -0.07886235,
+                0.04489284,
+                0.05893321,
+                0.01931595,
+                -0.01385389,
+                0.08200871,
+                -0.03711491,
+                -0.01657202,
+                -0.02351523,
+                0.07860593,
+                0.04915767,
+                0.01571729,
+                -0.03793694,
+                -0.01400308,
+                0.01007790,
+                -0.00566702,
+                0.00890818,
+                0.07228709,
+                -0.00890865,
+                0.00333118,
+                -0.01285518,
+                -0.05833241,
+                0.03265308,
+                -0.03928559,
+                -0.02193597,
+                -0.00813984,
+                0.00105143,
+                0.04259191,
+                -0.02120323,
             ]
         )
         logger.info(f"Output logits slice2:\n{output[0, 0, :30]}")
-        print(f"ouput1{output[0, 0, :30]}")
-        print(f"ouput2{output[1, 0, :30]}")
 
         self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
         self.assertTrue(paddle.allclose(output[1, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
@@ -709,70 +703,70 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE_1 = paddle.to_tensor(
             [
-                -0.00971607,
-                0.05542037,
-                0.04857498,
-                -0.02091954,
-                0.06864400,
-                -0.03543113,
-                0.01865600,
-                0.00045855,
-                -0.03756892,
-                -0.04998226,
-                -0.03923185,
-                0.03839054,
-                -0.01160016,
-                0.06611865,
-                -0.01678847,
-                0.02508730,
-                0.02074671,
-                0.03335522,
-                -0.01111538,
-                -0.01246256,
-                0.04928322,
-                0.04211595,
-                0.06305327,
-                -0.05337471,
-                -0.03865834,
-                0.01014945,
-                0.05330236,
-                -0.01990593,
-                0.11149905,
-                -0.01333437,
+                0.06151218,
+                0.00532189,
+                -0.05761895,
+                0.07479347,
+                0.06888264,
+                0.02232255,
+                -0.06411978,
+                -0.01477717,
+                0.04112658,
+                -0.05835423,
+                0.02469395,
+                -0.00162770,
+                0.04324941,
+                -0.01549096,
+                0.00544463,
+                0.06252432,
+                0.02844745,
+                -0.02490177,
+                0.03157872,
+                0.06601687,
+                -0.05104667,
+                0.02189707,
+                0.01236542,
+                0.00669959,
+                -0.00893665,
+                0.01544655,
+                0.02715737,
+                0.04560648,
+                0.03158531,
+                0.08054685,
             ]
         )
         EXPECTED_SLICE_2 = paddle.to_tensor(
             [
-                0.02815475,
-                -0.01576233,
-                0.00450739,
-                -0.02225647,
-                0.00621553,
-                0.03126645,
-                0.07959020,
-                0.06999812,
-                0.04361036,
-                -0.02026659,
-                0.02590707,
-                0.00297066,
-                0.04389704,
-                -0.00458416,
-                0.06226203,
-                0.04485300,
-                -0.01334734,
-                0.01592915,
-                -0.00583891,
-                0.05962470,
-                -0.03245433,
-                0.01494119,
-                -0.00826432,
-                -0.00449095,
-                0.06402205,
-                -0.00996663,
-                0.01484825,
-                -0.02389973,
-                -0.00386393,
-                0.05480766,
+                -0.02678839,
+                -0.06032243,
+                0.09271197,
+                -0.03679991,
+                -0.07756358,
+                0.03194709,
+                -0.01896855,
+                -0.03938061,
+                -0.04942168,
+                0.00092257,
+                0.04337022,
+                -0.01150735,
+                0.01435745,
+                -0.01442396,
+                -0.07720464,
+                0.02855911,
+                0.00578095,
+                0.01799584,
+                0.02166999,
+                0.02798031,
+                0.04452861,
+                -0.02033626,
+                -0.02675069,
+                -0.02170403,
+                -0.10043185,
+                -0.01969300,
+                -0.07768991,
+                0.06378867,
+                -0.01454932,
+                0.01830968,
             ]
         )
         logger.info(f"Output logits slice3:\n{output[0, 500, 10000:10030]}")
@@ -803,39 +797,38 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE = paddle.to_tensor(
             [
-                0.05576728,
-                0.00699110,
-                0.03664520,
-                -0.14303952,
-                -0.06983890,
-                0.02597428,
-                0.01422320,
-                0.02450995,
-                0.01248259,
-                0.00021280,
-                0.01293628,
-                0.05187089,
-                -0.00884190,
-                0.04944951,
-                0.04245058,
-                -0.02822906,
-                0.04350242,
-                0.08410766,
-                0.07071211,
-                -0.05546347,
-                -0.05989237,
-                0.05396497,
-                -0.06608985,
-                -0.04588456,
-                -0.03420249,
-                -0.01475310,
-                0.00401661,
-                0.03064382,
-                -0.03705307,
-                -0.03158345,
+                -0.03721245,
+                -0.07606582,
+                0.04400614,
+                0.04798088,
+                0.07534992,
+                0.02146024,
+                0.02693188,
+                -0.02269503,
+                -0.03349131,
+                -0.04995804,
+                -0.02135526,
+                -0.03850295,
+                0.01139079,
+                0.00507776,
+                -0.04289744,
+                -0.05062777,
+                0.02194278,
+                -0.00616232,
+                -0.06000755,
+                0.08388141,
+                -0.06752295,
+                0.04287533,
+                0.04381520,
+                -0.03015678,
+                -0.03246700,
+                -0.00936657,
+                0.05531393,
+                -0.03338180,
+                0.00269932,
+                0.00767884,
             ]
         )
-        print(f"outputlogits{output[0, 150, 10000:10030]}")
         logger.info(f"Output logits slice5:\n{output[0, 150, 10000:10030]}")
         self.assertTrue(paddle.allclose(output[0, 150, 10000:10030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
@@ -849,18 +842,45 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
         tiny_vision_config = {
-            "depth": 4,
-            "intermediate_size": 95,
-            "hidden_size": 64,
+            "deepstack_visual_indexes": [0],
+            "depth": 1,
+            "hidden_act": "gelu_pytorch_tanh",
+            "hidden_size": 128,
+            "in_channels": 3,
+            "initializer_range": 0.02,
+            "intermediate_size": 256,
+            "model_type": "qwen3_vl",
+            "num_heads": 4,
+            "num_position_embeddings": 2304,
             "out_hidden_size": 128,
-            "fullatt_block_indexes": [1, 3],
+            "patch_size": 16,
+            "spatial_merge_size": 2,
+            "temporal_patch_size": 2,
         }
-        tiny_rope_scaling = {"type": "mrope", "mrope_section": [1]}
+        tiny_rope_scaling = {"type": "mrope", "mrope_section": [4, 6, 6]}
         tiny_text_config = {
+            "attention_bias": False,
+            "attention_dropout": 0.0,
+            "bos_token_id": 151643,
+            "dtype": "float32",
+            "eos_token_id": 151645,
+            "head_dim": 32,
+            "hidden_act": "silu",
+            "hidden_size": 128,
+            "initializer_range": 0.02,
+            "intermediate_size": 256,
+            "layer_types": ["full_attention"],
+            "max_position_embeddings": 262144,
+            "model_type": "qwen3_vl_text",
+            "num_attention_heads": 4,
+            "num_hidden_layers": 1,
+            "num_key_value_heads": 1,
+            "rms_norm_eps": 1e-06,
+            "vocab_size": 151936,
             "rope_scaling": tiny_rope_scaling,
         }
         config = Qwen3VLConfig(
-            hidden_size=64,
+            hidden_size=128,
             intermediate_size=344,
             num_hidden_layers=2,
             text_config=tiny_text_config,
@@ -871,43 +891,44 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
         )
 
         input_ids = np.random.randint(0, 200, [1, 20]).astype("int64")
-        visual_token_ids = (
-            [config.vision_start_token_id] + [config.image_token_id] * 2 + [config.vision_start_token_id]
-        )
+        visual_token_ids = [config.vision_start_token_id] + [config.image_token_id] * 4 + [config.vision_end_token_id]
         input_ids[:, 10 : 10 + len(visual_token_ids)] = visual_token_ids
 
         attention_mask = np.ones([1, 20], dtype="int64")
-        pixel_values = np.random.randn(2 * 2, 1176).astype("float32")
-        image_grid_thw = np.array([[1, 2, 2]], dtype="int64")
+        pixel_values = np.random.randn(16, 1536).astype("float32")
+        image_grid_thw = np.array([[1, 4, 4]], dtype="int64")
         cls.inputs = {
             "input_ids": input_ids,
             "pixel_values": pixel_values,
             "image_grid_thw": image_grid_thw,
             "attention_mask": attention_mask,
         }
-        print(f"config is {config}")
+        logger.info(f"config is {config}")
         model = Qwen3VLForConditionalGeneration(config)
+        logger.info(f"here, model is {model}")
         model.save_pretrained(cls.torch_model_path)
 
     @require_package("transformers", "torch")
     def test_Qwen3VL_converter(self):
 
         # 1. forward the paddle model
-        from paddleformers.transformers import Qwen3VLModel
+        from paddleformers.transformers import Qwen3VLForConditionalGeneration
 
         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-        paddle_model = Qwen3VLModel.from_pretrained(
+        paddle_model = Qwen3VLForConditionalGeneration.from_pretrained(
             self.torch_model_path, convert_from_hf=True, dtype="float32"
         ).eval()
-        paddle_logit = paddle_model(**paddle_inputs)[0]
+        paddle_logit = paddle_model(**paddle_inputs)["logits"]
 
         # 2. forward the torch  model
         import torch
-        from transformers import Qwen3VLModel
+        from transformers import Qwen3VLForConditionalGeneration
 
         torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
-        torch_model = Qwen3VLModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32).eval()
-        torch_logit = torch_model(**torch_inputs)[0]
+        torch_model = Qwen3VLForConditionalGeneration.from_pretrained(
+            self.torch_model_path, torch_dtype=torch.float32
+        ).eval()
+        torch_logit = torch_model(**torch_inputs)["logits"]
 
         # 3. compare the result between paddle and torch
         self.assertTrue(
@@ -925,21 +946,25 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
             # 1. forward the torch  model
             import torch
-            from transformers import Qwen3VLModel
+            from transformers import Qwen3VLForConditionalGeneration
 
             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
-            torch_model = Qwen3VLModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Qwen3VLForConditionalGeneration.from_pretrained(
+                self.torch_model_path, torch_dtype=torch.float32
+            )
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(**torch_inputs)[0]
+            torch_logit = torch_model(**torch_inputs)["logits"]
 
             # 2. forward the paddle model
-            from paddleformers.transformers import Qwen3VLModel
+            from paddleformers.transformers import Qwen3VLForConditionalGeneration
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-            paddle_model = Qwen3VLModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Qwen3VLForConditionalGeneration.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32"
+            )
             paddle_model.eval()
-            paddle_logit = paddle_model(**paddle_inputs)[0]
+            paddle_logit = paddle_model(**paddle_inputs)["logits"]
 
             # 3. compare the result between paddle and torch
             self.assertTrue(
@@ -951,7 +976,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                 )
             )
 
-    @parameterized.expand([("Qwen3VLModel",), ("Qwen3VLForConditionalGeneration",)])
+    @parameterized.expand([("Qwen3VLForConditionalGeneration",)])
     @require_package("transformers", "torch")
     def test_Qwen3VL_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
         pytorch_class_name = pytorch_class_name or class_name
