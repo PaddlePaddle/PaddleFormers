@@ -14,7 +14,7 @@
 
 import os
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import Dict, List
 
 import numpy as np
 from paddle.io import IterableDataset
@@ -368,7 +368,9 @@ class SFTDataSet(IterableDataset):
                 mm_inputs = self.template.mm_plugin.get_mm_inputs(
                     images, videos, audios, [len(images)], [len(videos)], [len(audios)], None, self.processor
                 )
-                messages = self.template.mm_plugin.process_messages(messages, images, videos, audios, mm_inputs, self.processor)
+                messages = self.template.mm_plugin.process_messages(
+                    messages, images, videos, audios, mm_inputs, self.processor
+                )
                 encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
         else:
             encoded_pairs = self.tokenizer.encode_chat_inputs_with_no_template(
@@ -415,14 +417,7 @@ class SFTDataSet(IterableDataset):
             else:
                 sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
                 if turn_index != (len(encoded_pairs) - 1):
-                    if sep_token_len > 0 and not self.mask_history_eos:
-                        labels_target = (
-                            tokens_target[: len(tokens_target) - sep_token_len]
-                            + [self.tokenizer.eos_token_id]
-                            + [-100] * (sep_token_len - 1)
-                        )
-                    else:
-                        labels_target = tokens_target[: len(tokens_target) - sep_token_len] + [-100] * sep_token_len
+                    labels_target = tokens_target[: len(tokens_target) - sep_token_len] + [-100] * sep_token_len
                 else:
                     labels_target = tokens_target
             tokens = tokens_src + tokens_target + tokens
@@ -449,6 +444,8 @@ class SFTDataSet(IterableDataset):
             return None
 
         if self.use_template:
+            # add dynamic eos
+            self._add_dynamic_eos(tokens, labels, [self.tokenizer.eos_token_id])
             # Maybe left truncated, so need to add begin_token
             if self.auto_add_bos and self.begin_token_id:
                 if tokens[0] != self.begin_token_id:
@@ -554,3 +551,20 @@ class SFTDataSet(IterableDataset):
         if int(current_percent) // 5 > self.last_printed_percent // 5:
             print(f"[Estimate Max Steps Progress]: {current_percent:.0f}%")
             self.last_printed_percent = current_percent
+
+    @staticmethod
+    def _add_dynamic_eos(input_ids, labels, suffix_tokens_id):
+        # Adapted from:
+        # https://github.com/modelscope/ms-swift
+        # Original author: modelscope
+        # License: Apache-2.0
+        suffix_len = 1
+        start = 0
+        for i in range(1, len(labels) + 1):
+            if labels[i - 1] >= 0 and i < len(labels) and labels[i] == -100:
+                start = i
+            elif start > 0 and labels[i - 1] == -100 and (i == len(labels) or labels[i] >= 0):
+                # [0, 1, 2, -100(start), -100, 3(i), 4]
+                length = i - start
+                if length >= suffix_len and input_ids[start : start + suffix_len] == suffix_tokens_id:
+                    labels[start : start + suffix_len] = suffix_tokens_id
