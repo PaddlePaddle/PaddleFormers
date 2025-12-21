@@ -13,9 +13,9 @@
 # limitations under the License.
 
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import paddle
 import paddle.distributed as dist
@@ -84,16 +84,6 @@ class GLMMoEModelProvider(GPTModelProvider):
     bias_dropout_fusion: bool = True
     router_aux_loss_coef: float = 0.001
     moe_grouped_gemm: bool = True
-
-    # For debug
-    moe_layer_freq: Union[int, List[int]] = field(
-        default_factory=lambda: [0] * 1 + [1] * 9
-    )  # first one layer is dense
-    seq_length: int = 8192  # default value is 131072
-
-    moe_router_force_load_balancing: bool = True
-    apply_rope_fusion: bool = True
-    moe_router_fusion: bool = True
 
 
 def eager_attention_forward(
@@ -1537,20 +1527,13 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
-        # For Debug
-        config.num_hidden_layers = 10
-        config.num_nextn_predict_layers = 0
-
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
-
         gpt_model = model_provider.provide()
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         gpt_model.config_to_save = config
-
-        print(f"For debug: gpt_model config: {gpt_model.config}")
         return gpt_model
 
 
