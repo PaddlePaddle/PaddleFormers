@@ -78,6 +78,7 @@ from ..utils.env import (
     ASYMMETRY_QUANT_SCALE_MAX,
     ASYMMETRY_QUANT_SCALE_MIN,
     CONFIG_NAME,
+    FLEX_CKPT_AUTO_GENERATED_METADATA,
     PADDLE_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_NAME,
     PYTORCH_WEIGHTS_INDEX_NAME,
@@ -1005,7 +1006,7 @@ def _load_state_dict_into_model(model_to_load, state_dict, start_prefix, model_t
     if len(start_prefix) > 0:
         for key in list(state_dict.keys()):
             if key.startswith(start_prefix):
-                state_dict[key.replace(start_prefix, "")] = state_dict.pop(key)
+                state_dict[key.replace(start_prefix, "", 1)] = state_dict.pop(key)
 
     _convert_state_dict_dtype_and_shape(state_dict, model_to_load_state_dict)
 
@@ -2819,6 +2820,18 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         if dtype is None:
             if config.dtype is not None:
                 dtype = config.dtype
+            elif config.sub_configs and (
+                sub_config := next(
+                    (
+                        v
+                        for k in config.sub_configs
+                        for v in [getattr(config, k, None)]
+                        if v and hasattr(v, "dtype") and v.dtype
+                    ),
+                    None,
+                )
+            ):
+                dtype = sub_config.dtype
             else:
                 dtype = paddle.get_default_dtype()
                 for key in config.sub_configs:
@@ -2871,9 +2884,24 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         with ContextManagers(init_contexts):
             model = cls(config, *init_args, **model_kwargs)
 
-        if hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
+        if load_checkpoint_format == "flex_checkpoint":
+            if not hasattr(cls, "_gen_aoa_config"):
+                raise RuntimeError(
+                    "When using flex_checkpoint to load Hugging Face open-source weights, "
+                    "the model must implement the _gen_aoa_config function to provide checkpoint conversion rules."
+                )
             aoa_config = cls._gen_aoa_config(config)
             sharded_state_dict = model.sharded_state_dict()
+            metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
+
+            # delete the existing metadata file if it exists
+            try:
+                os.remove(metadata_path)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.error(f"Failed to delete {metadata_path}: {e}")
+
             dist.load_state_dict(
                 sharded_state_dict,
                 path=ckpt_path,
@@ -2881,6 +2909,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 safetensors=True,
                 offload=load_via_cpu,
             )
+
             for v in sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
                     del v.local_tensor.target_tensor
@@ -3047,7 +3076,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         is_main_process: bool = True,
         state_dict: Optional[dict] = None,
         save_function: Callable = paddle.save,
-        max_shard_size: Union[int, str] = "1GB",
+        max_shard_size: Union[int, str] = "10GB",
         safe_serialization: bool = False,
         variant: Optional[str] = None,
         *args,
@@ -3109,11 +3138,18 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
-        if (
-            hasattr(self.__class__, "_gen_inv_aoa_config") or hasattr(self, "_gen_inv_aoa_config")
-        ) and save_checkpoint_format == "flex_checkpoint":
-            if hasattr(self.__class__, "_gen_inv_aoa_config"):
-                aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+        if save_checkpoint_format == "flex_checkpoint":
+            if not hasattr(self, "_gen_inv_aoa_config"):
+                if hasattr(self, "_gen_aoa_config"):
+                    aoa_config = self._gen_aoa_config(model_to_save.config)
+                    aoa_config["aoa_config_reverse"] = True
+                    logger.warning("There is no _gen_inv_aoa_config, so we auto-derived it from _gen_aoa_config.")
+                else:
+                    raise RuntimeError(
+                        "When using flex_checkpoint to save Hugging Face weights, "
+                        "the model must implement either the _gen_inv_aoa_config function "
+                        "or the _gen_aoa_config function (which will be automatically used to derive _gen_inv_aoa_config)."
+                    )
             else:
                 aoa_config = self._gen_inv_aoa_config(model_to_save.config)
 
@@ -3795,8 +3831,8 @@ def save_full_param(
         if i % num_saver_ranks == rank:
             if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
                 _save_current_shard()
-
-            current_shard_state_dict[param_key] = param
+            # Move tensor to CPU since we only need to save it, not compute with it
+            current_shard_state_dict[param_key] = param.cpu()
             current_shard_size_bytes += param_size_bytes
 
             if current_shard_size_bytes >= max_shard_size_bytes:
@@ -3851,6 +3887,10 @@ def replace_name_and_gen_index(path, total_size):
     index_mapping = {}
     for mapping in index_mapping_list:
         index_mapping.update(mapping)
+
+    saved_signal_path = os.path.join(path, f"saved_signal_{dist.get_rank()}")
+    with open(saved_signal_path, mode="w+") as f:
+        f.write("1")
 
     if env_local_rank == 0:
         index_file_name = "model.safetensors.index.json"

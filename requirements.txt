@@ -1,4 +1,3 @@
-blobfile
 colorlog
 decord
 scikit-learn

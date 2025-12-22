@@ -507,11 +507,13 @@ class GPTDataset(paddle.io.Dataset):
                 }
 
         if self.self_constraint_cpt:
-            res.update = {
-                "logits": kl_logits,
-                "ids": kl_ids,
-                "CPT": self.CPT,
-            }
+            res.update.update(
+                {
+                    "logits": kl_logits,
+                    "ids": kl_ids,
+                    "CPT": self.CPT,
+                }
+            )
 
         res.update({"position_ids": all_position_ids})
 

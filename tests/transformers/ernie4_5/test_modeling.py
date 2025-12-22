@@ -284,7 +284,7 @@ class Ernie4_5ModelTester:
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
         model = Ernie4_5ForCausalLM(config)
         config.num_key_value_heads = 8  # gqa
-        config.use_fused_rope = True
+        config.apply_rope_fusion = True
         model.eval()
 
         result = model(
@@ -513,6 +513,52 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
                     rtol=1e2,
+                )
+            )
+
+            # 3. forward with fc
+            from paddleformers.transformers import Ernie4_5Config, Ernie4_5ForCausalLM
+
+            uc_load_model = Ernie4_5ForCausalLM.from_pretrained(
+                self.torch_model_path,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="unified_checkpoint",
+            )
+            fc_load_model = Ernie4_5ForCausalLM.from_pretrained(
+                self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
+            uc_load_model.eval()
+            fc_load_model.eval()
+            uc_logit = uc_load_model(paddle.to_tensor(input_ids))[0]
+            fc_logit = fc_load_model(paddle.to_tensor(input_ids))[0]
+            self.assertTrue(
+                np.allclose(
+                    uc_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    fc_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    atol=1e-5,
+                    rtol=1e-5,
+                )
+            )
+
+            model_config = Ernie4_5Config.from_pretrained(self.torch_model_path)
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
+            fc_fused_load_model = Ernie4_5ForCausalLM.from_pretrained(
+                self.torch_model_path,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+            fc_fused_load_model.eval()
+            fc_fused_logit = fc_fused_load_model(paddle.to_tensor(input_ids))[0]
+            self.assertTrue(
+                np.allclose(
+                    fc_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    fc_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    atol=1e-5,
+                    rtol=1e-5,
                 )
             )
 

@@ -1,0 +1,79 @@
+## data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./data/pt/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./data/pt/eval.jsonl
+eval_dataset_prob: "1.0"
+
+# dataset_type: "pretrain"
+# input_dir: "1.0 xuxinyi/PaddleFormers/data/pre-training/llama_openwebtext_100k"
+# split: "998,1,1"
+
+eval_iters: 10
+
+max_seq_len: 4096
+num_samples_each_epoch: 6000000
+packing: true
+mix_strategy: concat
+
+### model
+model_name_or_path: Qwen/Qwen3-30B-A3B-Base
+attn_impl: flashmask
+
+### finetuning
+# base
+stage: PT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 5
+max_steps: 50
+eval_steps: 100
+evaluation_strategy: steps
+save_steps: 10000
+save_total_limit: 1
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 64
+logging_dir: ./log_32cards
+output_dir: ./checkpoints/qwen3_hf_30b_pretrain_ckpts_parallel
+disable_tqdm: true
+eval_accumulation_steps: 16
+
+# train
+warmup_steps: 20
+learning_rate: 1.0e-5
+
+# performance
+sharding_parallel_degree: 32
+tensor_parallel_degree: 1
+pipeline_parallel_degree: 1
+expert_parallel_degree: 8
+sequence_parallel: false
+sharding: stage1
+#3 offload
+# offload: true,
+offload_optim: false
+use_fused_head_and_loss_fn: true
+# use_filtered_label_loss: true
+optim: adamw_custom
+tensorwise_offload_optimizer: false
+recompute: true
+# recompute_use_reentrant: true
+# unified_checkpoint_config: ignore_merge_optimizer
+use_expert_parallel: true
+bf16: true
+fp16_opt_level: O2
+
+sharding_parallel_config: "split_param"
+amp_master_grad: true
+
+unified_checkpoint: false
+save_checkpoint_format: "flex_checkpoint"
+load_checkpoint_format: "flex_checkpoint"
+
+benchmark: true

@@ -63,7 +63,7 @@ class Qwen3MoEModelProvider(GPTModelProvider):
     router_aux_loss_coef: float = 1e-3
     num_experts_per_tok: int = 8
     moe_router_pre_softmax: bool = False
-    moe_grouped_gemm: bool = True
+    moe_grouped_gemm: bool = False
     moe_token_dispatcher_type: str = "alltoall"
 
     # optimization

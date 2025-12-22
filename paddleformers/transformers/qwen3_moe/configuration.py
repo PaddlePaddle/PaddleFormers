@@ -128,6 +128,8 @@ class Qwen3MoeConfig(PretrainedConfig):
             Indicate which layers use Qwen3MoeMLP rather than Qwen3MoeSparseMoeBlock
             The list contains layer index, from 0 to num_layers-1 if we have num_layers layers
             If `mlp_only_layers` is empty, `decoder_sparse_step` is used to determine the sparsity.
+        moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
+            The number of tokens in a subbatch for MoE.
 
     ```python
     >>> from paddleformers.transformers import Qwen3MoeModel, Qwen3MoeConfig
@@ -173,6 +175,7 @@ class Qwen3MoeConfig(PretrainedConfig):
         output_router_logits=False,
         router_aux_loss_coef=0.001,
         mlp_only_layers=None,
+        moe_subbatch_token_num_before_dispatch=0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -210,6 +213,7 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.output_router_logits = output_router_logits
         self.router_aux_loss_coef = router_aux_loss_coef
         self.mlp_only_layers = [] if mlp_only_layers is None else mlp_only_layers
+        self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
 
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,

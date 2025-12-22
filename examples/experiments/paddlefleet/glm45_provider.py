@@ -64,7 +64,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     moe_router_load_balancing_type: str = "seq_aux_loss"
     router_aux_loss_coef: float = 1e-3
     moe_router_pre_softmax: bool = False
-    moe_grouped_gemm: bool = True
+    moe_grouped_gemm: bool = False
     scoring_func: str = "sigmoid"
     moe_permute_fusion: bool = True
     moe_router_dtype: str = "fp32"
@@ -143,6 +143,12 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     tensor_model_parallel_size: int = 4
     moe_router_force_load_balancing: bool = True
     apply_rope_fusion: bool = True
+
+
+@dataclass
+class GLM45AirModelDebugProviderFP8(GLM45AirModelDebugProvider):
+    fp8: str = "e4m3"
+    moe_shared_expert_overlap: True
 
 
 @dataclass

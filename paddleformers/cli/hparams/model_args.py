@@ -80,7 +80,6 @@ class ModelArguments:
         default=False,
         metadata={"help": "Whether to fuse softmax and add"},
     )
-    fuse_rms_norm: bool = field(default=True, metadata={"help": "Whether to fuse RMSNorm for efficiency"})
     use_fast_layer_norm: bool = field(
         default=False,
         metadata={"help": "GPT3 model, use fast layernorm"},
@@ -209,6 +208,36 @@ class ModelArguments:
     num_hidden_layers: Optional[int] = field(
         default=None,
         metadata={"help": "num_hidden_layers."},
+    )
+
+    num_attention_heads: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_attention_heads."},
+    )
+
+    num_key_value_heads: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_key_value_heads."},
+    )
+
+    num_experts_per_tok: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_experts_per_tok."},
+    )
+
+    hidden_size: Optional[int] = field(
+        default=None,
+        metadata={"help": "hidden_size."},
+    )
+
+    intermediate_size: Optional[int] = field(
+        default=None,
+        metadata={"help": "intermediate_size."},
+    )
+
+    n_routed_experts: Optional[int] = field(
+        default=None,
+        metadata={"help": "n_routed_experts."},
     )
 
     def __post_init__(self):

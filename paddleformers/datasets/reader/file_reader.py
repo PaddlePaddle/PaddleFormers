@@ -32,11 +32,12 @@ DATASET_DOWNLOAD_ROOT = os.path.join(DATASET_WORKROOT, "download")
 class BaseReader(IterableDataset):
     """Basic data reader implement."""
 
-    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False):
+    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False, template_backend="jinja"):
         self._file_path = file_path
         self._file_type = file_type  # erniekit, alpaca, ...
         self._shuffle_file = shuffle_file
         self._split_multi_turn = split_multi_turn
+        self._template_backend = template_backend
         self.loader_map = {
             ".json": load_json,
             ".jsonl": load_json,
@@ -51,9 +52,13 @@ class BaseReader(IterableDataset):
 
 
 class FileReader(BaseReader):
-    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False):
+    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False, template_backend="jinja"):
         super().__init__(
-            file_path=file_path, file_type=file_type, shuffle_file=shuffle_file, split_multi_turn=split_multi_turn
+            file_path=file_path,
+            file_type=file_type,
+            shuffle_file=shuffle_file,
+            split_multi_turn=split_multi_turn,
+            template_backend=template_backend,
         )
 
     def __iter__(self):
@@ -103,9 +108,38 @@ class FileReader(BaseReader):
         if len(data["messages"]) == 0:
             raise ValueError("Ignore example with empty messages.")
 
+        if self._template_backend != "jinja":
+            ROLE_MAPPING = {
+                "tool": "observation",
+                "tool_response": "observation",
+                "tool_call": "function",
+                "tool_calls": "function",
+            }
+
+            key_list = ["messages", "chosen_response", "rejected_response"]
+
+            for key in key_list:
+                if key not in data:
+                    continue
+
+                for item in data[key]:
+                    # Update role names using the mapping
+                    if item["role"] in ROLE_MAPPING:
+                        item["role"] = ROLE_MAPPING[item["role"]]
+
+                    # Convert content to string if needed
+                    if item["role"] in ("observation", "function") and not isinstance(item["content"], str):
+                        item["content"] = json.dumps(item["content"])
+
+                    # Convert tool_calls to string if present and not already a string
+                    if "tool_calls" in item and not isinstance(item["tool_calls"], str):
+                        item["tool_calls"] = json.dumps(item["tool_calls"])
+
+        # Convert the content of tool list into a string
         if "tools" in data and not isinstance(data["tools"], str):
             data["tools"] = json.dumps(data["tools"], ensure_ascii=False)
 
+        # If no label is input, it means each response needs to be learned.
         if "label" not in data:
             data["label"] = [
                 1 for turn in data["messages"] if ("assistant" in turn["role"] or "function" in turn["role"])
@@ -116,6 +150,7 @@ class FileReader(BaseReader):
             system = data["messages"][0]["content"]
             if not isinstance(system, str):
                 raise ValueError("System field must be a string.")
+            data["messages"] = data["messages"][1:]
         data["system"] = system
 
         # Convert the relative paths of multimode data into absolute paths
@@ -142,17 +177,23 @@ class FileReader(BaseReader):
 
 
 class FileListReader(BaseReader):
-    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False):
+    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False, template_backend="jinja"):
         if not os.path.isdir(file_path):
             raise ValueError(f"Directory not found: {file_path}")
         super().__init__(
-            file_path=file_path, file_type=file_type, shuffle_file=shuffle_file, split_multi_turn=split_multi_turn
+            file_path=file_path,
+            file_type=file_type,
+            shuffle_file=shuffle_file,
+            split_multi_turn=split_multi_turn,
+            template_backend=template_backend,
         )
 
     def __iter__(self):
         for file_path in self._get_files():
             # all files under the path must be of the same data type
-            reader = FileReader(file_path, self._file_type, self._shuffle_file, self._split_multi_turn)
+            reader = FileReader(
+                file_path, self._file_type, self._shuffle_file, self._split_multi_turn, self._template_backend
+            )
             yield from reader
 
     def _get_files(self):
@@ -172,7 +213,9 @@ def get_hf_dataset_config(file_path):
 
 
 class HuggingFaceReader(BaseReader):
-    def __init__(self, file_path, file_type="alpaca", shuffle_file=True, split_multi_turn=False):
+    def __init__(
+        self, file_path, file_type="alpaca", shuffle_file=True, split_multi_turn=False, template_backend="jinja"
+    ):
         # download
         config_map = get_hf_dataset_config(file_path)
         if config_map is not None:
@@ -185,10 +228,16 @@ class HuggingFaceReader(BaseReader):
             download_file_type = config_map.get("formatting", file_type)
             if os.path.isdir(download_file_path):
                 self.file_reader = FileListReader(
-                    download_file_path, download_file_type, shuffle_file, split_multi_turn
+                    download_file_path,
+                    download_file_type,
+                    shuffle_file,
+                    split_multi_turn,
+                    template_backend,
                 )
             else:
-                self.file_reader = FileReader(download_file_path, download_file_type, shuffle_file, split_multi_turn)
+                self.file_reader = FileReader(
+                    download_file_path, download_file_type, shuffle_file, split_multi_turn, template_backend
+                )
         else:
             raise ValueError(f"Unsupported huggingface dataset {file_path}")
 

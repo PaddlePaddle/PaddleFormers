@@ -37,6 +37,8 @@ def dpo_preprocess_inputs(self, logits, labels):
         if isinstance(obj, tuple):
             if len(obj) == 1:
                 return unpack_logits(obj[0])
+            if len(obj) == 2:
+                return unpack_logits(obj[0])
             elif len(obj) == 4:
                 return None, *obj  # unpack logits when using fused head loss
         return obj, None, None, None, None
@@ -61,12 +63,14 @@ def dpo_logps(
     hidden_states=None,
     lm_head_weight=None,
     lm_head_bias=None,
+    transpose_y=None,
     **kwargs,
 ):
     """DPO logprobs"""
     weight = lm_head_weight
     bias = lm_head_bias
-    transpose_y = self.tie_word_embeddings
+    if transpose_y is None:
+        transpose_y = self.tie_word_embeddings
     labels = chosen_labels + rejected_labels
     ignore_index = kwargs.pop("ignore_index", 0)  # default is 0
 
@@ -364,6 +368,7 @@ def dpo_loss_forward(
             hidden_states,
             lm_head_weight,
             lm_head_bias,
+            transpose_y,
             **kwargs,
         )
         if self.use_infohub:
@@ -384,6 +389,7 @@ def dpo_loss_forward(
         hidden_states,
         lm_head_weight,
         lm_head_bias,
+        transpose_y,
         **kwargs,
     )
     dpo_loss = cal_dpo_loss(

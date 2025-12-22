@@ -21,6 +21,7 @@ import json
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, NamedTuple, Union
 
 from typing_extensions import override
@@ -49,6 +50,32 @@ QWEN_TOOL_PROMPT = (
     """"arguments": <args-json-object>}}\n</tool_call>"""
 )
 
+ERNIE_TOOL_PROMPT = "\n<tool_list>\n[{tool_text}]\n</tool_list>\n"
+
+
+GLM4_TOOL_PROMPT = (
+    "你是一个名为 ChatGLM 的人工智能助手。你是基于智谱 AI 公司训练的语言模型 GLM-4 模型开发的，" "你的任务是针对用户的问题和要求提供适当的答复和支持。\n\n# 可用工具{tool_text}"
+)
+
+GLM4_MOE_TOOL_PROMPT = (
+    "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\n"
+    "You are provided with function signatures within <tools></tools> XML tags:\n<tools>{tool_text}"
+    "\n</tools>\n\nFor each function call, output the function name and arguments within the following XML format:"
+    "\n<tool_call>{{function-name}}"
+    "\n<arg_key>{{arg-key-1}}</arg_key>"
+    "\n<arg_value>{{arg-value-1}}</arg_value>"
+    "\n<arg_key>{{arg-key-2}}</arg_key>"
+    "\n<arg_value>{{arg-value-2}}</arg_value>"
+    "\n...\n</tool_call>\n"
+)
+
+LLAMA3_TOOL_PROMPT = (
+    "Cutting Knowledge Date: December 2023\nToday Date: {date}\n\n"
+    "You have access to the following functions. To call a function, please respond with JSON for a function call. "
+    """Respond in the format {{"name": function name, "parameters": dictionary of argument name and its value}}. """
+    "Do not use variables.\n\n{tool_text}"
+)
+
 
 @dataclass
 class ToolUtils(ABC):
@@ -64,15 +91,6 @@ class ToolUtils(ABC):
     @abstractmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
         r"""Generate the assistant message including all the tool calls."""
-        ...
-
-    @staticmethod
-    @abstractmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        r"""Extract all the function calls from the assistant message.
-
-        It should be an inverse function of `function_formatter`.
-        """
         ...
 
 
@@ -119,26 +137,6 @@ class DefaultToolUtils(ToolUtils):
     def function_formatter(functions: list["FunctionCall"]) -> str:
         return "\n".join([f"Action: {name}\nAction Input: {arguments}" for name, arguments in functions])
 
-    @override
-    @staticmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        regex = re.compile(r"Action:\s*([a-zA-Z0-9_]+)\s*Action Input:\s*(.+?)(?=\s*Action:|\s*$)", re.DOTALL)
-        action_match: list[tuple[str, str]] = re.findall(regex, content)
-        if not action_match:
-            return content
-
-        results = []
-        for match in action_match:
-            tool_name = match[0].strip()
-            tool_input = match[1].strip().strip('"').strip("```")
-            try:
-                arguments = json.loads(tool_input)
-                results.append(FunctionCall(tool_name, json.dumps(arguments, ensure_ascii=False)))
-            except json.JSONDecodeError:
-                return content
-
-        return results
-
 
 class QwenToolUtils(ToolUtils):
     r"""Qwen 2.5 tool using template."""
@@ -161,6 +159,138 @@ class QwenToolUtils(ToolUtils):
             for name, arguments in functions
         ]
         return "\n".join([f"<tool_call>\n{text}\n</tool_call>" for text in function_texts])
+
+
+class GLM4ToolUtils(ToolUtils):
+    r"""GLM-4 tool using template."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text = ""
+        for tool in tools:
+            tool = tool.get("function", "") if tool.get("type") == "function" else tool
+            tool_text += "\n\n## {name}\n\n{body}\n在调用上述函数时，请使用 Json 格式表示调用的参数。".format(
+                name=tool["name"], body=json.dumps(tool, indent=4, ensure_ascii=False)
+            )
+
+        return GLM4_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        if len(functions) > 1:
+            raise ValueError("GLM-4 does not support parallel functions.")
+
+        return f"{functions[0].name}\n{functions[0].arguments}"
+
+    @override
+    @staticmethod
+    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
+        if "\n" not in content:
+            return content
+
+        tool_name, tool_input = content.split("\n", maxsplit=1)
+        try:
+            arguments = json.loads(tool_input.strip())
+        except json.JSONDecodeError:
+            return content
+
+        return [FunctionCall(tool_name, json.dumps(arguments, ensure_ascii=False))]
+
+
+class GLM4MOEToolUtils(QwenToolUtils):
+    r"""GLM-4-MOE tool using template."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text = ""
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text += "\n" + json.dumps(wrapped_tool, ensure_ascii=False)
+
+        return GLM4_MOE_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_json = [
+            {"func_name": name, "func_key_values": json.loads(arguments)} for name, arguments in functions
+        ]
+        function_texts = []
+        for func in function_json:
+            prompt = "\n<tool_call>" + func["func_name"]
+            for key, value in func["func_key_values"].items():
+                prompt += "\n<arg_key>" + key + "</arg_key>"
+                if not isinstance(value, str):
+                    value = json.dumps(value, ensure_ascii=False)
+                prompt += "\n<arg_value>" + value + "</arg_value>"
+            function_texts.append(prompt)
+
+        return "\n".join(function_texts)
+
+
+class Llama3ToolUtils(ToolUtils):
+    r"""Llama 3.x tool using template with `tools_in_user_message=False`.
+
+    Reference: https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_1/#json-based-tool-calling
+    """
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        date = datetime.now().strftime("%d %b %Y")
+        tool_text = ""
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text += json.dumps(wrapped_tool, indent=4, ensure_ascii=False) + "\n\n"
+
+        return LLAMA3_TOOL_PROMPT.format(date=date, tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_objects = [{"name": name, "parameters": json.loads(arguments)} for name, arguments in functions]
+        return json.dumps(function_objects[0] if len(function_objects) == 1 else function_objects, ensure_ascii=False)
+
+    @override
+    @staticmethod
+    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
+        try:
+            tools = json.loads(content.strip())
+        except json.JSONDecodeError:
+            return content
+
+        tools = [tools] if not isinstance(tools, list) else tools
+        try:
+            return [FunctionCall(tool["name"], json.dumps(tool["parameters"], ensure_ascii=False)) for tool in tools]
+        except KeyError:
+            return content
+
+
+class ERNIEToolUtils(ToolUtils):
+    r"""ERNIE 4.5 tool using template."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text_list = []
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text_list.append(json.dumps(wrapped_tool, ensure_ascii=False))
+        tool_text = ", ".join(tool_text_list)
+
+        return ERNIE_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_texts = [
+            json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
+            for name, arguments in functions
+        ]
+        return "\n".join([f"<tool_call>{text}\n</tool_call>" for text in function_texts])
 
     @override
     @staticmethod
@@ -187,7 +317,11 @@ class QwenToolUtils(ToolUtils):
 
 TOOLS = {
     "default": DefaultToolUtils(),
+    "ernie": ERNIEToolUtils(),
     "qwen": QwenToolUtils(),
+    "glm4": GLM4ToolUtils(),
+    "glm4_moe": GLM4MOEToolUtils(),
+    "llama3": Llama3ToolUtils(),
 }
 
 

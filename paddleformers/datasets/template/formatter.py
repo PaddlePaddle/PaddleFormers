@@ -103,7 +103,7 @@ class FunctionFormatter(StringFormatter):
     def apply(self, **kwargs) -> SLOTS:
         content: str = kwargs.pop("content")
         thought_words, thought = kwargs.pop("thought_words", None), None
-        if thought_words and len(thought_words) == 2:
+        if thought_words and len(thought_words) == 2 and len(content) > 0:
             regex = re.compile(rf"{re.escape(thought_words[0])}(.*?){re.escape(thought_words[1])}", re.DOTALL)
             thought = re.search(regex, content)
 
@@ -117,6 +117,8 @@ class FunctionFormatter(StringFormatter):
                 tool_calls = [tool_calls]
 
             for tool_call in tool_calls:
+                if "type" in tool_call and tool_call["type"] == "function":
+                    tool_call = tool_call["function"]
                 arguments = tool_call["arguments"]
                 if not isinstance(arguments, str):
                     arguments = json.dumps(arguments, ensure_ascii=False)
