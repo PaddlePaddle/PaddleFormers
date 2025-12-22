@@ -731,11 +731,7 @@ def rename_shard_file(args, shard_file, file_name):
 
 
 def is_sharding_split_param_mode(args):
-    return (
-        args.sharding_parallel_size > 1
-        and ShardingOption.SHARD_OP in args.sharding
-        and "split_param" in args.sharding_parallel_config
-    )
+    return args.sharding_parallel_size > 1 and ShardingOption.SHARD_OP in args.sharding and args.split_param
 
 
 def save_model_config(model_to_save, save_directory, save_to_hf=False):

@@ -150,14 +150,14 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
     # do_enable_mp_async_allreduce = (
     #     training_args.enable_auto_parallel
     #     and training_args.tensor_model_parallel_size > 1
-    #     and "enable_mp_async_allreduce" in training_args.tensor_parallel_config
+    #     and training_args.mp_async_allreduce
     #     and not training_args.sequence_parallel
     # )
     # do_enable_sp_async_reduce_scatter = (
     #     training_args.enable_auto_parallel
     #     and training_args.tensor_model_parallel_size > 1
     #     and training_args.sequence_parallel
-    #     and "enable_sp_async_reduce_scatter" in training_args.tensor_parallel_config
+    #     and training_args.sp_async_reduce_scatter
     # )
     if (
         do_enable_linear_fused_grad_add
@@ -228,7 +228,7 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
         # models are separate. Therefore, first we need to set the flag in the model config
         # to perform V-shape segmentation. Second, we need to set the flag in the training_args
         # to configure strategy.hybrid_configs to choose the DualPipeV schedule.
-        config.use_dualpipev = "use_dualpipev" in training_args.pipeline_parallel_config
+        config.use_dualpipev = training_args.use_dualpipev
     if hasattr(config, "hidden_dropout_prob"):
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
@@ -245,15 +245,11 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
         config.seq_length % config.context_parallel_size == 0
     ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
 
-    if training_args.sharding_parallel_config is not None:
-        # for stage1 overlap optimization
-        if (
-            "enable_stage1_allgather_overlap" in training_args.sharding_parallel_config
-            or "enable_stage1_broadcast_overlap" in training_args.sharding_parallel_config
-        ):
-            from paddle.io.reader import use_pinned_memory
+    # for stage1 overlap optimization
+    if training_args.stage1_allgather_overlap or training_args.stage1_broadcast_overlap:
+        from paddle.io.reader import use_pinned_memory
 
-            use_pinned_memory(False)
+        use_pinned_memory(False)
 
     if get_env_device() == "xpu" and training_args.gradient_accumulation_steps > 1:
         try:

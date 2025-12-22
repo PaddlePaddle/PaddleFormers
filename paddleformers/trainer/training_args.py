@@ -256,20 +256,20 @@ class TrainingArguments:
             pipeline_model_parallel_size means split all transformer layers to how many stages.
             default -1 for not use pipeline parallel.
             Note. this need model support in source code, see llama modeling_pp.py file
-        sep_parallel_size (`int`, *optional*, defaults to `-1`)(
+        sep_parallel_size (`int`, *optional*, defaults to `-1`):
             The paddle sequence parallel strategy. It can reduce the GPU memory of activation to 1/sep, and it is orthogonal to
             data parallel, sharding stage1, tensor parallel and pipeline parallel strategy.
         )
-        context_parallel_size (`int`, *optional*, defaults to `-1`)(
+        context_parallel_size (`int`, *optional*, defaults to `-1`):
             Context parallelism is a parallel method that segments training data in the sequence dimension.
             This method uses Ring FlashAttention to ensure the correctness of the Attention result after segmentation. The complete attention score is obtained through ring communication and iterative updates.
         )
-        data_parallel_config (`str`, *optional*)(
+        data_parallel_config (`str`, *optional*) **[Deprecated]** :
             Some additional configs which affect data parallel performance, we provide some option to config it.
             following config is support:
               enable_allreduce_avg_in_gradinent_scale, it replace `allreduce_sum + scale` pattern with `allreduce_avg` when scale gradient in data_parallel, which improve the performance. ONLY supported for auto mode now.
               gradient_sync_after_accumulate, move gradient sync operations from backward into optimizer step when gradient accumulate enabling, which reduce the sync times to improve performance, but will increase the memory usage. ONLY supported for auto mode now.
-        tensor_parallel_config (`str`, *optional*)(
+        tensor_parallel_config (`str`, *optional*) **[Deprecated]** :
             Some additional configs which affect model parallel performance, we provide some option to config it.
             following config is support:
               enable_mp_async_allreduce, it supports all_reduce(dx) overlap with matmul(dw) in ColumnParallelLinear backward when it set True, which can accelerate model parallel performance.
@@ -282,7 +282,7 @@ class TrainingArguments:
               sync_moment, in optimizer step, use broadcast to sync momentums those attr 'is_distributed' is False.
               replace_with_c_embedding, it supports replacing col-sliced embedding with row-sliced c_embedding when it set True, which is used in PIR auto_parallel.
               replace_with_parallel_cross_entropy, it replaces 'cross_entropy_with_softmax' OP with 'c_softmax_with_cross_entropy' OP in PIR static graph, which can improve model parallel performance.
-        pipeline_parallel_config (`str`, *optional*)(
+        pipeline_parallel_config (`str`, *optional*) **[Deprecated]** :
             Some additional config it highly affect the usage of pipeline parallel, we provide some option to config it.
             following config is support:
               disable_p2p_cache_shape, if you max sequence length is varying, please set disable_p2p_cache_shape.
@@ -295,7 +295,7 @@ class TrainingArguments:
               enable_clear_every_step_cache, clear every step cache for pipeline parallel.
               disable_non_batch_p2p_comm, disable batched send/recv in pipeline parallel mode.
               auto_parallel_sync_shared_params, optimize the parameter sharing between two stages in a pipeline parallel scenario.
-        sharding_parallel_config (`str`, *optional*)(
+        sharding_parallel_config (`str`, *optional*) **[Deprecated]** :
             Some additional config it highly affect the usage of sharding parallel, we provide some option to config it.
             following config is support:
               enable_stage1_tensor_fusion, fuse small tensors into big tensor chunks to accelerate communications, may increase memory occupation
@@ -767,10 +767,12 @@ class TrainingArguments:
         default=-1,
         metadata={"help": ("The paddle expert tensor parallel strategy. Currently is not supported. DO NOT SET.")},
     )
+    # Deprecated
     data_parallel_config: str = field(
         default="",
         metadata={
             "help": (
+                "@deprecated Please promote the secondary switchs to primary switchs."
                 "Some additional configs which affect data parallel performance, we provide some option to config it."
                 "following config is support:\n"
                 "enable_allreduce_avg_in_gradinent_scale, it replace `allreduce_sum + scale` pattern with `allreduce_avg` when scale gradient in data_parallel, which improve the performance. ONLY supported for auto mode now. \n"
@@ -785,20 +787,24 @@ class TrainingArguments:
     fuse_sequence_parallel_allreduce: bool = field(
         default=False, metadata={"help": "Whether to use fuse sequence parallel allreduce."}
     )
+    # Deprecated
     sequence_parallel_config: str = field(
         default="",
         metadata={
             "help": (
+                "@deprecated Please promote the secondary switchs to primary switchs."
                 "Some additional configs which affect sequence parallel performance, we provide some option to config it."
                 "following config is support:\n"
                 "enable_allreduce_avg_in_gradinent_scale, it replace `allreduce_sum + scale` pattern with `allreduce_avg` when scale gradient in sequence_parallel, which improve the performance. ONLY supported for auto mode now. \n"
             )
         },
     )
+    # Deprecated
     tensor_parallel_config: str = field(
         default="",
         metadata={
             "help": (
+                "@deprecated Please promote the secondary switchs to primary switchs."
                 "Some additional configs which affect model parallel performance, we provide some option to config it."
                 "following config is support:\n"
                 "enable_mp_async_allreduce, it supports all_reduce(dx) overlap with matmul(dw) in ColumnParallelLinear backward when it set True, which can accelerate model parallel performance. \n"
@@ -814,10 +820,12 @@ class TrainingArguments:
             )
         },
     )
+    # Deprecated
     pipeline_parallel_config: str = field(
         default="",
         metadata={
             "help": (
+                "@deprecated Please promote the secondary switchs to primary switchs."
                 "Some additional config it highly affect the usage of pipeline parallel, we provide some option to config it."
                 "following config is support:\n"
                 "disable_p2p_cache_shape, if you max sequence length is varying, please set disable_p2p_cache_shape. \n"
@@ -833,10 +841,12 @@ class TrainingArguments:
             )
         },
     )
+    # Deprecated
     sharding_parallel_config: str = field(
         default="",
         metadata={
             "help": (
+                "@deprecated Please promote the secondary switchs to primary switchs."
                 "Some additional config it highly affect the usage of sharding parallel, we provide some option to config it."
                 "following config is support: \n"
                 "enable_stage1_tensor_fusion, fuse small tensors into big tensor chunks to accelerate communications, may increase memory occupation\n"
@@ -1290,9 +1300,9 @@ class TrainingArguments:
         metadata={"help": "Whether to save replicas cross files in distributed save load system."},
     )
     dp_comm_overlap: bool = field(
-        default=True, metadata={"help": "Whether to overlap data parallelism (DP) communication with computation."}
+        default=False, metadata={"help": "Whether to overlap data parallelism (DP) communication with computation."}
     )
-    sharding_comm_overlap: bool = field(
+    pp_sharding_comm_overlap: bool = field(
         default=True,
         metadata={
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
@@ -1305,14 +1315,14 @@ class TrainingArguments:
         default=False, metadata={"help": "Whether to use asynchronous reduce-scatter for sharding parallelism (SP)."}
     )
     overlap_p2p_comm: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True."},
     )
     batch_p2p_comm: bool = field(
         default=True, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
     )
     dynamic_shape: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
         },
@@ -1414,13 +1424,13 @@ class TrainingArguments:
         },
     )
     p2p_cache_shape: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "Set this when maximum sequence length is varying (disables p2p cache shape)."},
     )
     partial_send_recv: bool = field(
-        default=False, metadata={"help": "Optimize send speed for tensor parallel (disables partial send/recv)."}
+        default=True, metadata={"help": "Optimize send speed for tensor parallel (disables partial send/recv)."}
     )
-    release_grads: bool = field(
+    pp_release_grads: bool = field(
         default=False,
         metadata={
             "help": "Reduce peak memory usage by releasing gradients after each iteration. The creation of gradients will be postponed until backward propagation of the next iteration."
@@ -1435,6 +1445,48 @@ class TrainingArguments:
     auto_parallel_sync_shared_params: bool = field(
         default=False,
         metadata={"help": "Optimize parameter sharing between two stages in a pipeline parallel scenario."},
+    )
+    best_unbalanced_scheduler: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable dynamic parameter sharding scheduler to optimize load balancing across GPUs during uneven computation patterns."
+        },
+    )
+    offload_queue: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable asynchronous offload queue to overlap CPU-GPU memory transfers with computation, reducing GPU memory pressure."
+        },
+    )
+    use_dualpipev: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable dual-pipeline virtual stages to overlap forward/backward computation and reduce pipeline bubbles in hybrid parallelism."
+        },
+    )
+    forward_backward_overlap_scheduler: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable dynamic scheduler to overlap forward/backward computation with gradient communication, reducing training latency in distributed setups."
+        },
+    )
+    send_recv_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable asynchronous overlap of gradient send/recv with GPU computation to minimize communication overhead in distributed training."
+        },
+    )
+    split_backward: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable splitting backward pass into stages to balance computation and reduce peak memory usage in model parallelism."
+        },
+    )
+    timer: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable timing for pipeline parallel stages to profile and optimize communication/computation overlap."
+        },
     )
     stage1_tensor_fusion: bool = field(
         default=False,
@@ -1479,12 +1531,36 @@ class TrainingArguments:
         },
     )
     stage1_reduce_avg: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Replace reduce_avg with original reduce_sum+scale in stage1, which can be used for accuracy verification (disables stage1 reduce_avg)."
         },
     )
     fuse_optimizer_states: bool = field(default=False, metadata={"help": "Fuse optimizer states to a single storage."})
+    sd_release_grads: bool = field(
+        default=False,
+        metadata={
+            "help": "Reduce peak memory usage by releasing gradients after each iteration. The creation of gradients will be postponed until backward propagation of the next iteration."
+        },
+    )
+    split_param: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable parameter sharding to distribute model parameters across devices, reducing memory footprint per GPU (ZeRO-style optimization)."
+        },
+    )
+    sd_sharding_comm_overlap: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
+        },
+    )
+    sd_shardingv1_comm_overlap: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
+        },
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1648,7 +1724,6 @@ class TrainingArguments:
                                 "enable_sharding_comm_overlap",
                                 "enable_timer",
                                 "enable_release_grads",
-                                "enable_dp_comm_overlap",
                                 "enable_clear_every_step_cache",
                                 "enable_overlap_p2p_comm",
                                 "disable_batch_p2p_comm",
@@ -1663,8 +1738,12 @@ class TrainingArguments:
                                 raise ValueError(
                                     f"Found unknown pipeline mode config {x}, accept config is disable_p2p_cache_shape, disable_partial_send_recv."
                                 )
+                            warnings.warn(
+                                f"The field pipeline_parallel_config is deprecated. "
+                                f"Please promote this secondary switch {x} to a primary switch."
+                            )
 
-                    enable_partial_send_recv = "disable_partial_send_recv" not in pipeline_parallel_config
+                    enable_partial_send_recv = self.partial_send_recv
                     if self.sequence_parallel and enable_partial_send_recv:
                         logger.warning(
                             "When use pipeline parallel and sequence parallel simultaneously, we should turn off partial send recv."
@@ -1675,15 +1754,12 @@ class TrainingArguments:
                         "accumulate_steps": self.gradient_accumulation_steps,
                         "micro_batch_size": self.per_device_train_batch_size,
                         "enable_partial_send_recv": enable_partial_send_recv,
-                        "p2p_cache_shape": False if "disable_p2p_cache_shape" in pipeline_parallel_config else True,
+                        "p2p_cache_shape": self.p2p_cache_shape,
                         # "delay_scale_loss": True, Fix ME
                     }
                     logger.info(f"PP configs:{strategy.pipeline_configs}, use master_grad: {self.amp_master_grad}")
 
-                    using_comm_overlap = (
-                        "enable_sharding_comm_overlap" in pipeline_parallel_config
-                        or "enable_dp_comm_overlap" in pipeline_parallel_config
-                    )
+                    using_comm_overlap = self.pp_sharding_comm_overlap or self.dp_comm_overlap
                     enable_dp_comm_overlap = using_comm_overlap and self.data_parallel_size > 1
                     self.enable_sharding_comm_overlap = using_comm_overlap and self.sharding_parallel_size > 1
                     assert not (
@@ -1692,28 +1768,27 @@ class TrainingArguments:
 
                     if self.enable_sharding_comm_overlap and not self.amp_master_grad:
                         raise ValueError(
-                            "If `enable_sharding_comm_overlap` in pipeline_parallel_configs, `amp_master_grad` must be True."
+                            "If `sharding_comm_overlap` in training_args, `amp_master_grad` must be True."
                         )
 
                     dygraph_pp_configs = {
-                        "delay_scale_loss": True if "enable_delay_scale_loss" in pipeline_parallel_config else False,
+                        "delay_scale_loss": self.pp_delay_scale_loss,
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
-                        "enable_timer": "enable_timer" in pipeline_parallel_config,
-                        "release_gradients": "enable_release_grads" in pipeline_parallel_config or self.release_grads,
-                        "overlap_p2p_comm": "enable_overlap_p2p_comm" in pipeline_parallel_config,
-                        "clear_every_step_cache": "enable_clear_every_step_cache" in pipeline_parallel_config,
-                        "use_batch_p2p_comm": "disable_batch_p2p_comm" not in pipeline_parallel_config,
-                        "best_unbalanced_scheduler": "best_unbalanced_scheduler" in pipeline_parallel_config,
-                        "enable_offload_queue": "enable_offload_queue" in pipeline_parallel_config,
-                        "use_dualpipev": "use_dualpipev" in pipeline_parallel_config,
-                        "forward_backward_overlap_scheduler": "forward_backward_overlap_scheduler"
-                        in pipeline_parallel_config,
-                        "enable_dynamic_shape": "enable_dynamic_shape" in pipeline_parallel_config,
+                        "enable_timer": self.timer,
+                        "release_gradients": self.pp_release_grads or self.release_grads,
+                        "overlap_p2p_comm": self.overlap_p2p_comm,
+                        "clear_every_step_cache": self.clear_every_step_cache,
+                        "use_batch_p2p_comm": self.batch_p2p_comm,
+                        "best_unbalanced_scheduler": self.best_unbalanced_scheduler,
+                        "enable_offload_queue": self.offload_queue,
+                        "use_dualpipev": self.use_dualpipev,
+                        "forward_backward_overlap_scheduler": self.forward_backward_overlap_scheduler,
+                        "enable_dynamic_shape": self.dynamic_shape,
                     }
 
-                    pp_sync_param = "sync_param" in pipeline_parallel_config
-                    pp_sync_moment = "sync_moment" in pipeline_parallel_config
+                    pp_sync_param = self.pp_sync_param
+                    pp_sync_moment = self.pp_sync_moment
 
                     if pp_sync_param:
                         logger.info("setting pp sync_param")
@@ -1761,28 +1836,32 @@ class TrainingArguments:
                                     f"Found unknown tensor parallel config {x}, "
                                     f"accept config is enable_mp_async_allreduce, enable_mp_skip_c_identity, enable_mp_fused_linear_param_grad_add, enable_sp_async_reduce_scatter, enable_delay_scale_loss, sync_param, sync_grad and sync_moment."
                                 )
+                            warnings.warn(
+                                f"The field tensor_parallel_config is deprecated. "
+                                f"Please promote this secondary switch {x} to a primary switch."
+                            )
                     try:
-                        if "enable_mp_async_allreduce" in mp_config:
+                        if self.mp_async_allreduce:
                             strategy.hybrid_configs["mp_configs"].mp_async_allreduce = True
-                            if "enable_mp_skip_c_identity" in mp_config:
+                            if self.mp_skip_c_identity:
                                 strategy.hybrid_configs["mp_configs"].mp_skip_c_identity = True
-                            if "enable_mp_fused_linear_param_grad_add" in mp_config:
+                            if self.mp_fused_linear_param_grad_add:
                                 strategy.hybrid_configs["mp_configs"].mp_fused_linear_param_grad_add = True
                         else:
-                            if "enable_mp_skip_c_identity" in mp_config:
+                            if self.mp_skip_c_identity:
                                 warnings.warn(
-                                    "enable_mp_skip_c_identity only works with enable_mp_async_allreduce. It will not work."
+                                    "mp_skip_c_identity only works with mp_async_allreduce. It will not work."
                                 )
-                            if "enable_mp_fused_linear_param_grad_add" in mp_config:
+                            if self.mp_fused_linear_param_grad_add:
                                 warnings.warn(
-                                    "enable_mp_fused_linear_param_grad_add only works with enable_mp_async_allreduce. It will not work."
+                                    "mp_fused_linear_param_grad_add only works with mp_async_allreduce. It will not work."
                                 )
-                        if "enable_sp_async_reduce_scatter" in mp_config:
+                        if self.sp_async_reduce_scatter:
                             strategy.hybrid_configs["mp_configs"].sp_async_reduce_scatter = True
 
-                        sync_param = "sync_param" in mp_config
-                        sync_grad = "sync_grad" in mp_config
-                        sync_moment = "sync_moment" in mp_config
+                        sync_param = self.tp_sync_param
+                        sync_grad = self.sync_grad
+                        sync_moment = self.tp_sync_moment
 
                         # sync_param_name = [""] matches any parameter name.
                         # If sync_param, sync_grad and sync_moment are not set, the default value in Paddle is :
@@ -1931,7 +2010,11 @@ class TrainingArguments:
                                     f"Found unknown sharding mode config {x}, "
                                     f"accept config is enable_stage1_tensor_fusion, enable_stage1_overlap, enable_stage2_overlap, split_param, disable_stage1_reduce_avg, enable_stage1_broadcast_overlap, enable_stage1_allgather_overlap, enable_release_grads, enable_fuse_optimizer_states."
                                 )
-                    if "disable_stage1_reduce_avg" in sharding_parallel_config:
+                            warnings.warn(
+                                f"The field sharding_parallel_config is deprecated. "
+                                f"Please promote this secondary switch {x} to a primary switch."
+                            )
+                    if not self.stage1_reduce_avg:
                         assert self.sharding == [
                             ShardingOption.SHARD_OP
                         ], "Only sharding stage1 supports to disable reduce_avg strategy."
@@ -1953,21 +2036,19 @@ class TrainingArguments:
                                 self.sharding_offload_opt_buffersize_GB
                             )
 
-                        if "split_param" in sharding_parallel_config:
+                        if self.split_param:
                             strategy.hybrid_configs["sharding_configs"].split_param = True
                             assert self.amp_master_grad, "Currently sharding stage1 v2 only support amp_master_grad"
 
-                        if "enable_release_grads" in sharding_parallel_config:
+                        if self.sd_release_grads:
                             strategy.hybrid_configs["sharding_configs"].release_gradients = True
 
-                        if "enable_fuse_optimizer_states" in sharding_parallel_config:
+                        if self.fuse_optimizer_states:
                             strategy.hybrid_configs["sharding_configs"].enable_fuse_optimizer_states = True
 
                         if self.pipeline_model_parallel_size == 1:
-                            strategy.hybrid_configs["sharding_configs"].tensor_fusion = (
-                                True if "enable_stage1_tensor_fusion" in sharding_parallel_config else False
-                            )
-                            if "enable_stage1_overlap" in sharding_parallel_config:
+                            strategy.hybrid_configs["sharding_configs"].tensor_fusion = self.stage1_tensor_fusion
+                            if self.stage1_overlap:
                                 strategy.hybrid_configs["sharding_configs"].comm_overlap = True
                                 strategy.hybrid_configs[
                                     "sharding_configs"
@@ -1976,7 +2057,7 @@ class TrainingArguments:
                         else:
                             warnings.warn(
                                 "For pipeline parallel with sharding, the sharding overlap and tensor fusion "
-                                "should be configured in pipeline_parallel_config."
+                                "should be configured in training_args."
                                 '"enable_stage1_tensor_fusion" and "enable_stage1_overlap" in sharding_parallel_config will be ignored.'
                             )
                     except (KeyError, AttributeError):
@@ -1984,38 +2065,34 @@ class TrainingArguments:
                             "The enable_stage1_tensor_fusion or enable_stage1_overlap is not supported "
                             "by current version of Paddle. Please try latest develop Paddle."
                         )
-                    if "enable_stage2_overlap" in sharding_parallel_config:
+                    if self.stage2_overlap:
                         assert (
                             ShardingOption.SHARD_GRAD_OP in self.sharding
-                        ), f"enable_stage2_overlap expects sharding=stage2, but got {self.sharding}."
+                        ), f"stage2_overlap expects sharding=stage2, but got {self.sharding}."
                         assert self.logging_steps > 1, (
                             "The logging_steps should be greater than 1 for stage2 overlap, "
                             f"but got logging_steps={self.logging_steps}."
                         )
-                    if "enable_stage1_broadcast_overlap" in sharding_parallel_config:
+                    if self.stage1_broadcast_overlap:
                         assert (
                             ShardingOption.SHARD_OP in self.sharding
-                        ), f"enable_stage1_broadcast_overlap expects sharding=stage1, but got {self.sharding}."
+                        ), f"stage1_broadcast_overlap expects sharding=stage1, but got {self.sharding}."
 
                         assert (
-                            "split_param" not in sharding_parallel_config
-                        ), "split_param should not be set when enable_stage1_broadcast_overlap."
+                            not self.split_param
+                        ), "split_param should not be set when stage1_broadcast_overlap is True."
 
-                    if "enable_stage1_allgather_overlap" in sharding_parallel_config:
+                    if self.stage1_allgather_overlap:
                         assert (
                             ShardingOption.SHARD_OP in self.sharding
-                        ), f"enable_stage1_allgather_overlap expects sharding=stage1, but got {self.sharding}."
+                        ), f"stage1_allgather_overlap expects sharding=stage1, but got {self.sharding}."
 
-                        assert (
-                            "split_param" in sharding_parallel_config
-                        ), "split_param should be set when enable_stage1_allgather_overlap."
+                        assert self.split_param, "split_param should be set when stage1_allgather_overlap is True."
 
-                    if "split_param" in sharding_parallel_config:
+                    if self.split_param:
                         if ShardingOption.SHARD_OP not in self.sharding:
                             logger.warning("Only sharding stage1 support split_param.")
-                        assert (
-                            self.amp_master_grad
-                        ), "If `split_param` in sharding_parallel_config, `amp_master_grad` must be True."
+                        assert self.amp_master_grad, "If `split_param` is True, `amp_master_grad` must be True."
 
                 if self.nccl_comm_group_config is not None:
                     strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
@@ -2081,9 +2158,13 @@ class TrainingArguments:
                             raise ValueError(
                                 f"Found unknown data parallel config {x}, accept config is enable_allreduce_avg_in_gradinent_scale."
                             )
-                if "enable_allreduce_avg_in_gradinent_scale" in data_parallel_config:
+                        warnings.warn(
+                            f"The field data_parallel_config is deprecated. "
+                            f"Please promote this secondary switch {x} to a primary switch."
+                        )
+                if self.dp_allreduce_avg_in_gradinent_scale:
                     strategy.gradient_scale_using_allreduce_avg = True
-                if "gradient_sync_after_accumulate" in data_parallel_config:
+                if self.gradient_sync_after_accumulate:
                     strategy.dp_optimization.gradient_sync_after_accumulate = True
             sequence_parallel_config = set(self.sequence_parallel_config.split(" "))
             for x in sequence_parallel_config:
@@ -2092,7 +2173,11 @@ class TrainingArguments:
                         raise ValueError(
                             f"Found unknown sequence parallel config {x}, accept config is enable_allreduce_avg_in_gradinent_scale."
                         )
-            if "enable_allreduce_avg_in_gradinent_scale" in sequence_parallel_config:
+                    warnings.warn(
+                        f"The field sequence_parallel_config is deprecated. "
+                        f"Please promote this secondary switch {x} to a primary switch."
+                    )
+            if self.sp_allreduce_avg_in_gradinent_scale:
                 strategy.gradient_scale_using_allreduce_avg = True
 
             # navie-pp: pipeline_model_parallel_size > 1 and gradient_accumulation_steps == 1
@@ -2115,11 +2200,15 @@ class TrainingArguments:
                             raise ValueError(
                                 f"Found unknown pipeline mode config {x}, accept config is enable_send_recv_overlap."
                             )
+                        warnings.warn(
+                            f"The field pipeline_parallel_config is deprecated. "
+                            f"Please promote this secondary switch {x} to a primary switch."
+                        )
 
                 pipeline = strategy.pipeline
                 pipeline.enable = True
-                pipeline.enable_send_recv_overlap = "enable_send_recv_overlap" in pipeline_parallel_config
-                pipeline.split_backward = "enable_split_backward" in pipeline_parallel_config
+                pipeline.enable_send_recv_overlap = self.send_recv_overlap
+                pipeline.split_backward = self.split_backward
                 pipeline.accumulate_steps = self.gradient_accumulation_steps
                 pipeline.micro_batch_size = self.per_device_train_batch_size
                 pipeline.schedule_mode = self.pipeline_schedule_mode
@@ -2164,10 +2253,14 @@ class TrainingArguments:
                                 f"Found unknown tensor parallel config {x}, "
                                 f"accept config is enable_mp_async_allreduce, replace_with_c_embedding, and enable_mp_fused_linear_param_grad_add"
                             )
+                        warnings.warn(
+                            f"The field tensor_parallel_config is deprecated. "
+                            f"Please promote this secondary switch {x} to a primary switch."
+                        )
                 try:
-                    if "enable_mp_async_allreduce" in mp_config:
+                    if self.mp_async_allreduce:
                         mp_optimization.allreduce_matmul_grad_overlapping = True
-                    if "replace_with_c_embedding" in mp_config:
+                    if self.replace_with_c_embedding:
                         mp_optimization.replace_with_c_embedding = True
                 except:
                     warnings.warn(
@@ -2199,27 +2292,31 @@ class TrainingArguments:
                             if x in ["enable_stage1_overlap", "enable_stage2_overlap"]:
                                 raise ValueError(
                                     "enable_stage1_overlap and enable_stage2_overlap are not supported in "
-                                    "auto_parallel mode. Please use enable_overlap instead."
+                                    "auto_parallel mode. Please use training_args.overlap instead."
                                 )
                             elif x == "enable_stage1_tensor_fusion":
                                 raise ValueError(
                                     "enable_stage1_tensor_fusion is not supported in auto_parallel mode. "
-                                    "Please use enable_tensor_fusion instead."
+                                    "Please use training_args.tensor_fusion instead."
                                 )
                             raise ValueError(
                                 f"Found unknown sharding mode config {x}, "
-                                f"accept config is enable_tensor_fusion, "
-                                "enable_overlap, enable_release_grads."
+                                f"accept config is training_args.tensor_fusion, "
+                                "training_args.overlap, training_args.sd_release_grads."
                             )
+                        warnings.warn(
+                            f"The field sharding_parallel_config is deprecated. "
+                            f"Please promote this secondary switch {x} to a primary switch."
+                        )
 
-                    if "enable_overlap" in sharding_parallel_config:
+                    if self.overlap:
                         sharding.enable_overlap = True
 
-                    if "enable_tensor_fusion" in sharding_parallel_config:
+                    if self.tensor_fusion:
                         sharding.grad_bucket_size_numel = 210355872
                         sharding.enable_tensor_fusion = True
 
-                    if "enable_release_grads" in sharding_parallel_config:
+                    if self.sd_release_grads:
                         sharding.release_gradients = True
 
             if self.bf16 or self.fp16:
@@ -2417,8 +2514,8 @@ class TrainingArguments:
 
         if self.enable_zero_cost_checkpoint:
             assert (
-                "enable_fuse_optimizer_states" in sharding_parallel_config
-            ), "zero cost checkpoint must be used when enable_fuse_optimizer_states is enabled in sharding parallel config"
+                self.fuse_optimizer_states
+            ), "zero cost checkpoint must be used when fuse_optimizer_states is enabled in sharding parallel config"
 
         assert (
             self.flash_device_save_steps % self.zcc_ema_interval == 0
@@ -3119,5 +3216,5 @@ class TrainingArguments:
             and self.to_static
             and ShardingOption.SHARD_OP in self.sharding
             and self.sharding_parallel_size > 1
-            and "enable_tensor_fusion" in self.sharding_parallel_config
+            and self.tensor_fusion
         )

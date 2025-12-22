@@ -551,7 +551,7 @@ def create_peft_model(model_args, training_args, dtype, model):
     if model_args.lora:
         if training_args.sharding_parallel_size > 1:
             assert (
-                "enable_stage1_overlap" not in training_args.sharding_parallel_config
+                not training_args.stage1_overlap
             ), "Currently not support enabling sharding_stage1_overlap in lora mode."
         if model_args.lora_path is None:
             target_modules = get_lora_target_modules(model)

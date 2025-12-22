@@ -482,14 +482,8 @@ class FinetuningArguments(
             logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size}")
 
         if self.sharding_parallel_size > 1:
-            sharding_parallel_config = (
-                set(self.sharding_parallel_config.split(" ")) if self.sharding_parallel_config else set()
-            )
             sharding_comm_overlap_non_pp = (
-                True
-                if "shardingv1_comm_overlap" in sharding_parallel_config
-                or "sharding_comm_overlap" in sharding_parallel_config
-                else False
+                True if self.sd_shardingv1_comm_overlap or self.sd_sharding_comm_overlap else False
             )
             if sharding_comm_overlap_non_pp:
                 assert hasattr(fleet.fleet, "_user_defined_strategy")
