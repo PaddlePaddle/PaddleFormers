@@ -33,6 +33,13 @@ from paddle.distributed.fleet.meta_parallel import (
     PipelineLayer,
     RowParallelLinear,
 )
+from paddlefleet.parallel_state import (
+    get_tensor_model_parallel_group,
+    get_tensor_model_parallel_world_size,
+)
+from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
+
+# paddlefleet
 from paddlefleet.tensor_parallel import (
     ColumnParallelLinear as FleetColumnParallelLinear,
 )
@@ -180,9 +187,14 @@ class LoRAModel(nn.Layer):
         with dtype_guard(self.lora_config.dtype):
             self.model = self.get_lora_model(model, lora_config)
         self.is_pipelinemodel = False
-        if issubclass(type(self.model), PipelineLayer):
+        if issubclass(type(self.model), (PipelineLayer, PaddleFleetPipelineLayer)):
             self.is_pipelinemodel = True
             self.model._single_to_pp_mapping = None
+
+        self.use_paddlefleet = False
+        if isinstance(self.model, PaddleFleetPipelineLayer):
+            self.use_paddlefleet = True
+
         if (self.lora_config.tensor_model_parallel_size > 1 or self.is_pipelinemodel) and (
             self.lora_config.lora_use_mixer or self.lora_config.use_mora
         ):
@@ -226,7 +238,7 @@ class LoRAModel(nn.Layer):
         )
 
         rename_lora_split_mapping = {}
-        if issubclass(type(self.model), PipelineLayer):
+        if issubclass(type(self.model), (PipelineLayer, PaddleFleetPipelineLayer)):
             # rename lora_split_mapping
             prefixes = self.model.get_sequential_name_prefixes()
             keys = self.lora_split_mapping.keys()
@@ -270,7 +282,9 @@ class LoRAModel(nn.Layer):
                 rename_lora_split_mapping[".".join(single_name)] = self.lora_split_mapping[k]
 
         lora_split_mapping = (
-            rename_lora_split_mapping if issubclass(type(self.model), PipelineLayer) else self.lora_split_mapping
+            rename_lora_split_mapping
+            if issubclass(type(self.model), (PipelineLayer, PaddleFleetPipelineLayer))
+            else self.lora_split_mapping
         )
 
         def get_tensor_parallel_split_mappings():
@@ -418,10 +432,13 @@ class LoRAModel(nn.Layer):
         trainable_name_action_mappings = self._get_tensor_parallel_convert_actions(
             trainable_state_dict.keys(), is_split=False
         )
-
-        hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
-        mp_group = hcg.get_model_parallel_group()
-        is_dst = paddle.distributed.get_rank(mp_group) == 0
+        if self.use_paddlefleet:
+            mp_group = get_tensor_model_parallel_group()
+            is_dst = get_tensor_model_parallel_world_size() > 1
+        else:
+            hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
+            mp_group = hcg.get_model_parallel_group()
+            is_dst = paddle.distributed.get_rank(mp_group) == 0
 
         for key in trainable_state_dict:
             tensor = trainable_state_dict[key]

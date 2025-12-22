@@ -28,7 +28,7 @@ class TestMergeModel(unittest.TestCase):
     def test_merge_model_np(self, merge_method):
         with TemporaryDirectory() as tempdir:
             model = AutoModelForCausalLM.from_pretrained(
-                "Paddleformers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
             )
             pd_path = os.path.join(tempdir, "pd_model")
             model.save_pretrained(pd_path)
@@ -74,7 +74,7 @@ class TestMergeModel(unittest.TestCase):
     def test_merge_model_pd(self, merge_method):
         with TemporaryDirectory() as tempdir:
             model = AutoModelForCausalLM.from_pretrained(
-                "Paddleformers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
             )
             pd_path = os.path.join(tempdir, "pd_model")
             model.save_pretrained(pd_path)
@@ -152,8 +152,8 @@ class TestMergeModel(unittest.TestCase):
             )
 
             # create lora model
+            from paddleformers.cli.utils import get_lora_target_modules
             from paddleformers.peft import LoRAConfig, LoRAModel
-            from paddleformers.trl.llm_utils import get_lora_target_modules
 
             target_modules = get_lora_target_modules(fused_base_model)
             lora_config = LoRAConfig(

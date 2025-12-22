@@ -90,7 +90,7 @@ class ConfigurationUtilsTest(unittest.TestCase):
         # 1. single config
         config = FakeSimplePretrainedModelConfig(a=10, b=11, c=12)
         config.fuse_attention_qkv = True
-        config.use_fused_rms_norm = True
+        config.fuse_rms_norm = True
         config.tensor_model_parallel_size = 8
         config.tensor_parallel_output = True
 
@@ -108,7 +108,7 @@ class ConfigurationUtilsTest(unittest.TestCase):
 
             loaded_config = json.load(open(os.path.join(tp, "config.json"), "r"))
             assert "fuse_attention_qkv" in loaded_config, "fuse qkv is need to save"
-            assert "use_fused_rms_norm" not in loaded_config, "use_fused_rms_norm don't need to save"
+            assert "fuse_rms_norm" not in loaded_config, "fuse_rms_norm don't need to save"
             assert "tensor_model_parallel_size" in loaded_config, "tensor_model_parallel_size need to save"
             assert "paddleformers_version" in loaded_config, "always save paddleformers_version"
             assert (
@@ -136,18 +136,18 @@ class StandardConfigMappingTest(unittest.TestCase):
         class FakeQwen3Config(Qwen3Config):
             pass
 
-        config = FakeQwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3")
+        config = FakeQwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3")
         hidden_size = config.hidden_size
 
         FakeQwen3Config.attribute_map = {"fake_field": "hidden_size"}
 
-        loaded_config = FakeQwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3")
+        loaded_config = FakeQwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3")
         fake_field = loaded_config.fake_field
         self.assertEqual(fake_field, hidden_size)
 
     @slow
     def test_from_pretrained_cache_dir(self):
-        model_id = "Paddleformers/tiny-random-qwen3"
+        model_id = "PaddleFormers/tiny-random-qwen3"
         with tempfile.TemporaryDirectory() as tempdir:
             Qwen3Config.from_pretrained(model_id, cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))
@@ -156,8 +156,8 @@ class StandardConfigMappingTest(unittest.TestCase):
 
     def test_load_from_hf(self):
         """test load config from hf"""
-        config = Qwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3", download_hub="huggingface")
-        self.assertEqual(config.hidden_size, 4096)
+        config = Qwen3Config.from_pretrained("Qwen/Qwen3-0.6B", download_hub="huggingface")
+        self.assertEqual(config.hidden_size, 1024)
 
         with tempfile.TemporaryDirectory() as tempdir:
             config.save_pretrained(tempdir)
@@ -165,7 +165,7 @@ class StandardConfigMappingTest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(tempdir, CONFIG_NAME)))
 
             loaded_config = Qwen3Config.from_pretrained(tempdir)
-            self.assertEqual(loaded_config.hidden_size, 4096)
+            self.assertEqual(loaded_config.hidden_size, 1024)
 
     def test_config_mapping(self):
         # create new fake-qwen3 class to prevent static-attributed modified by this test

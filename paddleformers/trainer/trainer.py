@@ -139,7 +139,7 @@ from ..transformers.segment_parallel_utils import (
     auto_split_inputs_sequence_dim,
     split_inputs_sequence_dim,
 )
-from ..utils import empty_device_cache
+from ..utils import empty_device_cache, perf_utils
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     EMA_STATE_DIC,
@@ -167,7 +167,7 @@ from ..utils.fault_tolerance import LOSS_INF_ERROR, LOSS_NAN_ERROR
 from ..utils.import_utils import is_datasets_available, is_paddle_cuda_available
 from ..utils.log import MetricsDumper, logger
 from ..utils.pdc_sdk import FLASH_DEVICE
-from ..utils.tools import get_env_device
+from ..utils.tools import get_env_device, paddle_device
 from .argparser import strtobool
 from .integrations import get_reporting_integration_callbacks
 from .plugins.timer import RuntimeTimer, get_timers, set_timers
@@ -1043,7 +1043,17 @@ class Trainer:
         logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint):
-        self.add_callback(NonZCCEMACallback(resume_from_checkpoint, self.args, self.sharding_io))
+
+        non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
+            args=self.args,
+            resume_from_checkpoint=resume_from_checkpoint,
+            sharding_io=self.sharding_io,
+            model=self.model,
+            optimizer=self.optimizer,
+            hcg=self.hcg,
+        )
+
+        self.add_callback(non_zcc_ema_callback)
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
@@ -1052,6 +1062,7 @@ class Trainer:
         dist.save_state_dict(
             model_sharded_state_dict,
             model_state_dict_path,
+            save_replicas=self.args.replicate_saved_into_local,
         )
 
     def _save_flex_optimizer_state(self, output_dir):
@@ -1069,13 +1080,19 @@ class Trainer:
         dist.save_state_dict(
             optimizer_states,
             optimizer_state_dict_path,
+            save_replicas=self.args.replicate_saved_into_local,
         )
 
         master_weights_path = os.path.join(output_dir, MASTER_WEIGHT_DIC)
         dist.save_state_dict(
             master_weights,
             master_weights_path,
+            save_replicas=self.args.replicate_saved_into_local,
         )
+
+        saved_signal_path = os.path.join(output_dir, f"saved_signal_{dist.get_rank()}")
+        with open(saved_signal_path, mode="w+") as f:
+            f.write("1")
 
     def _load_flex_checkpoint(self, resume_from_checkpoint):
         def get_metadata_file_name(path):
@@ -1089,6 +1106,84 @@ class Trainer:
         master_weights_path = os.path.join(resume_from_checkpoint, MASTER_WEIGHT_DIC)
         opt_states_path = os.path.join(resume_from_checkpoint, OPTIMIZER_STATE_DIC)
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
+
+        if self.args.load_from_hf:
+            hf_aoa_config = self.model._gen_aoa_config(self.model.config)
+            hcg = dist.fleet.get_hybrid_communicate_group()
+            assert (
+                self.args.ignore_load_lr_and_optim
+            ), "Loading from HuggingFace format is only allowed when learning rate and optimizer state are ignored."
+            try:
+                moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+            except Exception:
+                moe_sharding_group = None
+
+            if moe_sharding_group is None or moe_sharding_group.nranks <= 1:
+                # when moe_sharding_group is None, we use the default process_group
+                logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
+                dist.load_state_dict(
+                    model_sharded_state_dict,
+                    resume_from_checkpoint,
+                    aoa_config=hf_aoa_config,
+                    offload=self.args.load_via_cpu,
+                    safetensors=True,
+                    process_group=None,
+                    comm_method=self.args.flex_ckpt_comm_method,
+                )
+            else:
+                try:
+                    pp_group = hcg.get_pipe_parallel_group()
+                    if pp_group is None or pp_group.nranks < 1:
+                        raise NotImplementedError("Only support when pp_group is not None.")
+                except Exception:
+                    raise RuntimeError("Only support when pp_group is not None.")
+
+                try:
+                    moe_group = hcg.get_expert_parallel_group()
+                    if moe_group is None or moe_group.nranks < 1:
+                        raise NotImplementedError("Only support when moe_group is not None.")
+                except Exception:
+                    raise RuntimeError("Only support when moe_group is not None.")
+                moe_sharding_rank = moe_sharding_group.rank
+                cur_rank = dist.get_rank()
+                if moe_sharding_rank == 0:
+                    moe_group_ranks = []
+                    dist.all_gather_object(moe_group_ranks, cur_rank, group=moe_group)
+                    pp_group_ranks = []
+                    dist.all_gather_object(pp_group_ranks, moe_group_ranks, group=pp_group)
+                    process_group_ranks = [rank for ranks in pp_group_ranks for rank in ranks]
+                else:
+                    process_group_ranks = [0] * (pp_group.nranks * moe_group.nranks)
+                src_rank = hcg.get_moe_sharding_parallel_group_src_rank()
+                dist.broadcast_object_list(process_group_ranks, src=src_rank, group=moe_sharding_group)
+                assert any(process_group_ranks), "process_group_ranks should not be all 0"
+                logger.info(f"Creating a temporary process group with ranks: {process_group_ranks}")
+                process_group = dist.new_group(process_group_ranks)
+
+                if moe_sharding_rank == 0:
+                    logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
+                    # Only the first moe_sharding process is allowed to load the model weights.
+                    dist.load_state_dict(
+                        model_sharded_state_dict,
+                        resume_from_checkpoint,
+                        aoa_config=hf_aoa_config,
+                        offload=self.args.load_via_cpu,
+                        safetensors=True,
+                        process_group=process_group,
+                        comm_method=self.args.flex_ckpt_comm_method,
+                    )
+
+                dist.barrier()
+                logger.info("Destroying the temporary process group.")
+                dist.destroy_process_group(process_group)
+                # The first moe_sharding group loads the model weights and then broadcasts them to all other moe_sharding groups.
+                logger.info(
+                    "First shard (moe_sharding_group) has loaded safetensors weights, starting broadcast on moe_sharding_groups."
+                )
+                for param_name, param in self.model.state_dict().items():
+                    dist.broadcast(param, src=src_rank, group=moe_sharding_group)
+            return
+
         if not self.args.ignore_load_lr_and_optim:
             state_dict_metadata = {}
             metadata_paths = [
@@ -1103,62 +1198,68 @@ class Trainer:
                 metadata = paddle.load(metadata_file)
                 state_dict_metadata.update(metadata.state_dict_metadata)
 
-            init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
-
-            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-
-            opt_states = {}
-            master_weights = {}
-            for k, v in optimizer_sharded_state_dict.items():
-                if k.endswith(".w_0"):
-                    master_weights[k] = v
-                else:
-                    opt_states[k] = v
-
-            dist.load_state_dict(
-                opt_states,
-                opt_states_path,
-                aoa_config=self.args.aoa_config,
-                offload=self.args.load_via_cpu,
-            )
-
             if not self.args.sharded_model_from_ema:
+                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+
+                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+
+                opt_states = {}
+                master_weights = {}
+                for k, v in optimizer_sharded_state_dict.items():
+                    if k.endswith(".w_0"):
+                        master_weights[k] = v
+                    else:
+                        opt_states[k] = v
+
+                dist.load_state_dict(
+                    opt_states,
+                    opt_states_path,
+                    aoa_config=self.args.aoa_config,
+                    offload=self.args.load_via_cpu,
+                    comm_method=self.args.flex_ckpt_comm_method,
+                )
+
                 dist.load_state_dict(
                     master_weights,
                     master_weights_path,
                     aoa_config=self.args.aoa_config,
                     offload=self.args.load_via_cpu,
+                    comm_method=self.args.flex_ckpt_comm_method,
                 )
-
-            for v in optimizer_sharded_state_dict.values():
-                if hasattr(v.local_tensor, "target_tensor"):
-                    del v.local_tensor.target_tensor
 
             self._load_scheduler(resume_from_checkpoint)
 
-        should_load_stage1 = self.args.should_load_sharding_stage1_model
-        if should_load_stage1 and self.args.sharded_model_from_ema:
+        logger.debug(f"sharded_model_from_ema = {self.args.sharded_model_from_ema}")
+
+        if self.args.sharded_model_from_ema:
             ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
             ema_state_dict = paddle.load(ema_states_path)
             ema_master_weights = ema_state_dict.pop("master_weights", None)
-            opt_master_weights = self.optimizer.state_dict()["master_weights"]
-            for k, v in opt_master_weights.items():
-                assert (
-                    k in ema_master_weights
-                ), f"{k} not in ema_master_weights, emas_master_weight keys {ema_master_weights.keys()}"
-                paddle.assign(ema_master_weights[k], opt_master_weights[k])
+            opt_state_dict = {"master_weights": ema_master_weights}
+            self.optimizer.set_state_dict(opt_state_dict)
 
-            ema_state_dict = reshard_util.all_gather_state_dict(ema_state_dict, lambda x: True, self.sharding_group)
             self.model.set_state_dict(ema_state_dict)
         else:
+
+            def bf16_filtered_sharded_state_dict(sharded_state_dict):
+                new_state_dict = {}
+                for k, v in sharded_state_dict.items():
+                    if v.local_tensor.dtype == paddle.bfloat16:
+                        continue
+                    new_state_dict[k] = v
+                return new_state_dict
+
+            fp32_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
+
             dist.load_state_dict(
-                model_sharded_state_dict,
+                fp32_sharded_state_dict,
                 model_states_path,
                 aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
+                comm_method=self.args.flex_ckpt_comm_method,
             )
 
-        if self.args.bf16 and (not self.args.ignore_load_lr_and_optim) and should_load_stage1:
+        if self.args.bf16 and (not self.args.ignore_load_lr_and_optim):
             opt_state_dict = self.optimizer.state_dict()
 
             def recover_params_from_master_weight(opt_state_dict, group):
@@ -1193,7 +1294,7 @@ class Trainer:
 
                 model_state_dict = self.model.state_dict()
                 for key, param in model_state_dict.items():
-                    if param.name in master_weights:
+                    if param.name in master_weights and param.dtype == paddle.bfloat16:
                         logger.debug(
                             f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
                         )
@@ -1203,17 +1304,30 @@ class Trainer:
                         master_weight = paddle.reshape(master_weights[param.name], param.shape)
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
 
-            group_getter = GroupGetter(self.model)
-            opt_state_dict = split_opt_state(opt_state_dict, group_getter)
-            for gid in group_getter.get_group_ids():
-                sub_opt_state_dict = opt_state_dict[gid]
-                group = group_getter.get_group_by_id(gid)
-                if self.args.bf16:
-                    recover_params_from_master_weight(sub_opt_state_dict, group)
-
-        for v in model_sharded_state_dict.values():
-            if hasattr(v.local_tensor, "target_tensor"):
-                del v.local_tensor.target_tensor
+            with paddle.no_grad():
+                if paddle.distributed.is_initialized():
+                    group_getter = GroupGetter(self.model)
+                    opt_state_dict = split_opt_state(opt_state_dict, group_getter)
+                    for gid in group_getter.get_group_ids():
+                        sub_opt_state_dict = opt_state_dict[gid]
+                        group = group_getter.get_group_by_id(gid)
+                        if self.args.bf16:
+                            recover_params_from_master_weight(sub_opt_state_dict, group)
+                else:
+                    master_weights = opt_state_dict["master_weights"]
+                    model_state_dict = self.model.state_dict()
+                    for key, param in model_state_dict.items():
+                        if param.name in master_weights and param.dtype == paddle.bfloat16:
+                            logger.debug(
+                                f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
+                            )
+                            assert (
+                                param.shape == master_weights[param.name].shape
+                            ), f"got {param.shape} vs {master_weights[param.name].shape}"
+                            master_weight = paddle.reshape(master_weights[param.name], param.shape)
+                            paddle.assign(
+                                paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key]
+                            )
 
     def prepare_resume_from_checkpoint(self, args, resume_from_checkpoint):
         logger.info(f"Starting training from resume_from_checkpoint : {resume_from_checkpoint}")
@@ -1660,7 +1774,6 @@ class Trainer:
                     f"optimizer not run, scale_before: {scale_before_value[0]}, scale_after: {scale_after_value[0]}"
                 )
         elif isinstance(self.optimizer, HybridParallelOptimizer):
-            parameters_list = [t if t.is_contiguous() else t.contiguous() for t in parameters_list]
             self.optimizer._step(parameters_list)
         else:
             self.optimizer.step()
@@ -1839,8 +1952,16 @@ class Trainer:
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
 
             step = -1
+
             for step, inputs in enumerate(epoch_iterator):
 
+                if self.args.profile:
+                    perf_utils.switch_profile(
+                        self.state.global_step,
+                        self.args.profile_step_start,
+                        self.args.profile_step_end,
+                        enable_layerwise_event=True,
+                    )
                 os.environ["TRAINER_GLOBAL_STEP"] = str(self.state.global_step)
                 self.callback_handler.on_load_data_end(args, self.state, self.control, inputs=inputs)
 
@@ -2421,8 +2542,8 @@ class Trainer:
                 if is_paddle_cuda_available():
                     logs.update(
                         {
-                            "gpu_max_memory_allocated": paddle.device.cuda.max_memory_allocated() >> 20,
-                            "gpu_max_memory_reserved": paddle.device.cuda.max_memory_reserved() >> 20,
+                            "gpu_max_memory_allocated": paddle_device.max_memory_allocated() >> 20,
+                            "gpu_max_memory_reserved": paddle_device.max_memory_reserved() >> 20,
                         }
                     )
 
@@ -2469,8 +2590,6 @@ class Trainer:
                     self.model.save_pretrained(
                         ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
                     )
-                if self.tokenizer is not None and self.args.save_tokenizer:
-                    self.tokenizer.save_pretrained(ckpt_path)
                 self.control = self.callback_handler.on_save_hf(self.args, self.state, self.control)
 
     def log_trained_tokens(self):
@@ -2538,6 +2657,9 @@ class Trainer:
                 batch_size=self.args.per_device_train_batch_size,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_configs,
             )
         else:
@@ -2550,6 +2672,9 @@ class Trainer:
                 batch_sampler=train_sampler,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_configs,
             )
 
@@ -2656,6 +2781,9 @@ class Trainer:
                 batch_sampler=eval_sampler,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_configs,
             )
 
@@ -2702,6 +2830,9 @@ class Trainer:
                 batch_size=self.args.per_device_eval_batch_size * self.world_size,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_config,
             )
         else:
@@ -2818,7 +2949,7 @@ class Trainer:
 
         checkpoint_rng_state = paddle.load(rng_file, return_numpy=True)
         if checkpoint_rng_state.get("world_size", None) != self.args.world_size:
-            logger.warn("Cannot load rng states when changing world size of training job.")
+            logger.warning("Cannot load rng states when changing world size of training job.")
             return
 
         random.setstate(checkpoint_rng_state["python"])
@@ -2989,48 +3120,6 @@ class Trainer:
                     param.initialize()
 
             return model
-        if HAS_PADDLEFLEET and isinstance(model, LoRAModel):
-            model = model.model
-        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
-            prepare_pipeline_inputs_func = (
-                model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
-            )
-            model = paddlefleet_dist_model.distributed_model(model)
-            if prepare_pipeline_inputs_func is not None:
-                model._prepare_pipeline_inputs_func = prepare_pipeline_inputs_func
-            else:
-
-                def _prepare_pipeline_inputs_func(inputs):
-                    first_stage_keys = ["input_ids", "attention_mask", "position_ids"]
-                    last_stage_keys = ["labels"]
-
-                    def get_expected_keys(inputs, keys):
-                        ret = tuple([inputs.pop(k) for k in keys if k in inputs])
-                        if len(ret) == 1:
-                            ret = ret[0]
-                        return ret
-
-                    if type(inputs) is dict or type(inputs) is OrderedDict:
-                        return [
-                            get_expected_keys(inputs, first_stage_keys),
-                            get_expected_keys(inputs, last_stage_keys),
-                        ]
-
-                    keys = list(inputs[0].keys())
-                    inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
-                    first_stage_inputs_batch = inputs_batch
-                    last_stage_inputs = first_stage_inputs_batch.pop("labels")
-                    outputs = (
-                        first_stage_inputs_batch,
-                        last_stage_inputs,
-                    )
-                    return outputs
-
-                logger.warning(
-                    "Using default prepare pipeline inputs func, only support input_ids and labels as inputs."
-                )
-                model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
-            return model
 
         # train/eval could be run multiple-times - if already wrapped, don't re-wrap it again
         if unwrap_model(model) is not model:
@@ -3080,7 +3169,7 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
-        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
+        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
             in_pipeline_parallel_mode = True
         else:
             in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
@@ -3123,7 +3212,10 @@ class Trainer:
             )
             if isinstance(model, LoRAModel):
                 model = model.model
-            model = fleet.distributed_model(model)
+            if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+                model = paddlefleet_dist_model.distributed_model(model)
+            else:
+                model = fleet.distributed_model(model)
             if prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = prepare_pipeline_inputs_func
             else:
@@ -3146,6 +3238,14 @@ class Trainer:
 
                     keys = list(inputs[0].keys())
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
+                    if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
+                        first_stage_inputs_batch = inputs_batch
+                        last_stage_inputs = first_stage_inputs_batch.pop("labels")
+                        outputs = (
+                            first_stage_inputs_batch,
+                            last_stage_inputs,
+                        )
+                        return outputs
                     return [
                         get_expected_keys(inputs_batch, first_stage_keys),
                         get_expected_keys(inputs_batch, last_stage_keys),
@@ -3729,11 +3829,6 @@ class Trainer:
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
                             self._save_flex_optimizer_state(output_dir)
-                            if self.args.should_save:
-                                if self.tokenizer is not None and self.args.save_tokenizer:
-                                    self.tokenizer.save_pretrained(output_dir)
-                                # Good practice: save your training arguments together with the trained model
-                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                         else:
                             if self.dp_group.rank > 0:  # this should only work for MoE saving
                                 self._save_ckpt_func(
@@ -3787,11 +3882,6 @@ class Trainer:
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
                             self._save_flex_model_state(output_dir)
                             self._save_flex_optimizer_state(output_dir)
-                            if self.args.should_save:
-                                if self.tokenizer is not None and self.args.save_tokenizer:
-                                    self.tokenizer.save_pretrained(output_dir)
-                                # Good practice: save your training arguments together with the trained model
-                                paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
                         else:
                             if self.args.data_parallel_rank > 0 and self.args.use_expert_parallel:
                                 self._save_ckpt_func(
@@ -4020,8 +4110,6 @@ class Trainer:
                 else:
                     self._save_flex_model_state(output_dir)
 
-                if self.tokenizer is not None and self.args.save_tokenizer:
-                    self.tokenizer.save_pretrained(output_dir)
                 return
             merge_tensor_parallel = merge_tensor_parallel and self.args.use_hybrid_parallel
             # peft model

@@ -109,7 +109,7 @@ class AutoConfigTest(unittest.TestCase):
 
     @slow
     def test_from_pretrained_cache_dir(self):
-        model_id = "Paddleformers/tiny-random-qwen3"
+        model_id = "PaddleFormers/tiny-random-qwen3"
         with tempfile.TemporaryDirectory() as tempdir:
             AutoConfig.from_pretrained(model_id, download_hub="aistudio", cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))
@@ -152,9 +152,8 @@ class AutoConfigTest(unittest.TestCase):
             "tensor_parallel_output": True,
             "tie_word_embeddings": False,
             "transformers_version": "4.28.1",
-            "use_flash_attention": False,
-            "use_fused_rms_norm": False,
-            "use_fused_rope": False,
+            "fuse_rms_norm": False,
+            "apply_rope_fusion": False,
             "use_recompute": False,
             "virtual_pipeline_model_parallel_size": 1,
             "vocab_size": 32001,

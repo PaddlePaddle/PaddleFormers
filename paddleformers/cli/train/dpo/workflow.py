@@ -47,8 +47,6 @@ from paddleformers.transformers import (
     AutoTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
-from paddleformers.trl import DPOTrainer
-from paddleformers.trl.llm_utils import get_lora_target_modules
 from paddleformers.utils.log import logger
 
 from ...hparams import (
@@ -57,8 +55,10 @@ from ...hparams import (
     GeneratingArguments,
     ModelArguments,
 )
+from ...utils.llm_utils import get_lora_target_modules
 from .dpo_argument import DPOConfig
 from .dpo_estimate_training import dpo_estimate_training
+from .dpo_trainer import DPOTrainer
 
 
 def run_dpo(
@@ -174,6 +174,7 @@ def run_dpo(
     if not training_args.reference_free and not model_args.lora:
         ref_model_config.dpo_config = dpo_config
     model_config.dpo_config = dpo_config
+
     if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
@@ -263,14 +264,12 @@ def run_dpo(
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
         "stage": model_args.stage,
-        "is_valid": False,
         "template_backend": data_args.template_backend,
     }
 
     dataset_config.update(
         {
             "template": data_args.template,
-            "train_on_prompt": False,
             "tool_format": None,
             "default_system": None,
             "enable_thinking": True,
@@ -293,7 +292,7 @@ def run_dpo(
                 "Random mixing requires a fixed number of training steps to properly sample data."
             )
         if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
-            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, config=model.config)
+            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, dataset_config)
 
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()
@@ -325,11 +324,11 @@ def run_dpo(
         train_dataset = None
 
     if training_args.do_eval and training_args.should_load_dataset:
-        dataset_config["is_valid"] = True
         eval_dataset = create_dataset(
             task_group=data_args.eval_dataset_path,
             task_group_prob=data_args.eval_dataset_prob,
             sub_dataset_type=data_args.eval_dataset_type,
+            is_valid=True,
             **dataset_config,
         )
     else:
@@ -360,7 +359,9 @@ def run_dpo(
         data_collator=partial(
             collate_fn,
             tokenizer=tokenizer,
+            training_args=training_args,
             max_seq_len=max_seq_len,
+            padding_free=data_args.padding_free,
             use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),

@@ -90,7 +90,7 @@ class DataArguments:
         metadata={"help": "Number of candidate responses."},
     )
     mask_out_eos_token: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Mask out eos token"},
     )
     random_shuffle: bool = field(
@@ -123,6 +123,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Enable sequences packing in training."},
     )
+    padding_free: bool = field(
+        default=False,
+        metadata={"help": "Enable padding free sequences packing in training."},
+    )
     mix_strategy: str = field(
         default="concat",
         metadata={
@@ -144,6 +148,10 @@ class DataArguments:
     split_multi_turn: bool = field(
         default=False,
         metadata={"help": "Whether to split multi-round dialogues into multiple pieces of data for training"},
+    )
+    mask_history_eos: bool = field(
+        default=False,
+        metadata={"help": "Whether to mask out the EOS token in historical turns"},
     )
     template_backend: str = field(
         default="jinja",

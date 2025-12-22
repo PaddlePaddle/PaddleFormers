@@ -46,7 +46,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         initializer_range=0.02,
         rms_norm_eps=1e-6,
         use_cache=False,
-        use_flash_attention=True,
         use_rmsnorm=True,
         pad_token_id=0,
         bos_token_id=1,
@@ -110,7 +109,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             hidden_act (str): Name of the activation function used in the feed-forward network
             rms_norm_eps (float): The epsilon used by the RMS normalization layers
             use_cache (bool): Whether to use caching for faster generation (decoding)
-            use_flash_attention (bool): Whether to use FlashAttention for optimized attention computation
             recompute (bool): Whether to use gradient checkpointing to save memory
             recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
@@ -187,7 +185,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-        self.use_flash_attention = use_flash_attention
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id

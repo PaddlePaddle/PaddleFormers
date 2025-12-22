@@ -68,5 +68,5 @@ use_attn_mask_startend_row_indices: true
 using_fake_gate: false
 pre_alloc_memory: 60
 tensorwise_offload_optimizer: true
-use_fused_rms_norm: true
+fuse_rms_norm: true
 moe_subbatch_token_num_before_dispatch: 0

@@ -91,7 +91,7 @@ class Ernie4_5_Config(PretrainedConfig):
         fuse_swiglu=False,
         use_bias=False,
         rope_theta=10000,
-        fuse_rope=False,
+        apply_rope_fusion=False,
         fuse_softmax_mask=False,
         weight_share_add_bias=True,
         fuse_linear=False,
@@ -142,7 +142,7 @@ class Ernie4_5_Config(PretrainedConfig):
             fuse_swiglu (bool): Whether to fuse SwiGLU operations
             use_bias (bool): Whether to use bias terms in linear layers
             rope_theta (float): The base period of the RoPE embeddings
-            fuse_rope (bool): Whether to fuse RoPE operations
+            apply_rope_fusion (bool): Whether to fuse RoPE operations
             weight_share_add_bias (bool): Whether to share bias weights in certain layers
             fuse_linear (bool): Whether to fuse linear operations
             max_sequence_length (int): Maximum sequence length for positional embeddings
@@ -204,7 +204,7 @@ class Ernie4_5_Config(PretrainedConfig):
         self.use_bias = use_bias
         self.weight_share_add_bias = weight_share_add_bias
         self.rope_theta = rope_theta
-        self.fuse_rope = fuse_rope
+        self.apply_rope_fusion = apply_rope_fusion
         self.fuse_softmax_mask = fuse_softmax_mask
 
         self.fuse_linear = fuse_linear

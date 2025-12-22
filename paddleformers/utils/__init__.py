@@ -90,7 +90,9 @@ import_structure = {
         "get_use_casual_mask",
         "get_triangle_upper_mask",
     ],
-    "tools": ["device_guard"],
+    "tools": [
+        "device_guard",
+    ],
     "downloader": ["get_weights_path_from_url"],
     "type_validators": [
         "positive_any_number",

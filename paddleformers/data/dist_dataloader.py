@@ -61,6 +61,7 @@ class DistDataLoader(paddle.io.DataLoader):
         timeout=0,
         worker_init_fn=None,
         persistent_workers=False,
+        reader_buffer_size=2,
         **kwargs,
     ):
 
@@ -117,6 +118,7 @@ class DistDataLoader(paddle.io.DataLoader):
                 timeout=timeout,
                 worker_init_fn=worker_init_fn,
                 persistent_workers=persistent_workers,
+                reader_buffer_size=reader_buffer_size,
             )
 
             self._lazy_dataloader_iter = None

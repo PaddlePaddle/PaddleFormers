@@ -30,15 +30,15 @@ from sklearn.metrics import accuracy_score
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..generation import GenerationConfig
-from ..transformers import (  # ChatGLMv2Tokenizer,
+from paddleformers.generation import GenerationConfig
+from paddleformers.transformers import (  # ChatGLMv2Tokenizer,
     AutoTokenizer,
     DeepseekV3ForCausalLMPipe,
     Glm4MoeForCausalLMPipe,
     LlamaForCausalLMPipe,
     PretrainedConfig,
 )
-from ..utils.log import logger
+from paddleformers.utils.log import logger
 
 
 def compute_metrics(eval_preds):
@@ -289,8 +289,10 @@ def get_lora_target_modules(model):
             ".*mlp.up_proj.*",
             ".*mlp.down_proj.*",
         ]
-    elif model.config.model_type == "ernie4_5":
+    elif model.config.model_type in {"ernie4_5", "ernie4_5_moe"}:
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",

@@ -1034,7 +1034,6 @@ class PretrainedTokenizer(ChatTemplateMixin, PretrainedTokenizerBase):
         logger.warning_once(
             "PretrainedTokenizer will be deprecated and removed in the next major release. "
             "Please migrate to Hugging Face's transformers.PreTrainedTokenizer. "
-            "Checkout paddleformers/transformers/qwen/tokenizer.py for an example: "
             "use class QWenTokenizer(PaddleTokenizerMixin, hf.PreTrainedTokenizer) to support "
             "multisource download and Paddle tokenizer operations."
         )
