@@ -1266,7 +1266,6 @@ class Ernie4_5PretrainedModel(PretrainedModel):
         "k_proj",
         "v_proj",
         "o_proj",
-        "in_proj",
         "out_proj",
         "gate_proj",
         "up_proj",
