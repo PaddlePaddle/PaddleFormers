@@ -908,6 +908,12 @@ class TrainingArguments:
             "help": "Number of subprocesses to use for data loading. 0 means that the data will be loaded in the main process."
         },
     )
+    prefetch_factor: int = field(
+        default=2,
+        metadata={
+            "help": "Number of batch data the DataLoader would prefetch if use_buffer_reader=True. " "Default 2."
+        },
+    )
 
     past_index: int = field(
         default=-1,
