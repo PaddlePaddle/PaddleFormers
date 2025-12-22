@@ -105,7 +105,7 @@ class ErnieMoEConfig(PretrainedConfig):
         fuse_linear=False,
         seqlen=False,
         ignored_index=-100,
-        remove_tail_layer=False,
+        num_empty_layers_add_in_tail=0,
         use_recompute_lm_head=False,
         use_recompute_loss_fn=False,
         use_recompute_mtp=False,
@@ -235,7 +235,7 @@ class ErnieMoEConfig(PretrainedConfig):
 
         self.fuse_linear = fuse_linear
         self.ignored_index = ignored_index
-        self.remove_tail_layer = remove_tail_layer
+        self.num_empty_layers_add_in_tail = num_empty_layers_add_in_tail
         self.use_recompute_lm_head = use_recompute_lm_head
         self.use_recompute_loss_fn = use_recompute_loss_fn
         self.use_recompute_mtp = use_recompute_mtp
