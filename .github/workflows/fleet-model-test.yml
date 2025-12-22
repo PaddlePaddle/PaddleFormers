@@ -229,7 +229,6 @@ jobs:
           echo "Install uv"
           pip install uv
           echo "uv sync"
-          git checkout ebaddb4ba69855cede66b14ce1dea03cd0a60c90
           git submodule update --init --recursive
           git log -1
           uv sync --group ci -v > /dev/null
