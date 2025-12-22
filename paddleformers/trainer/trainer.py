@@ -64,6 +64,7 @@ except:
     core = None
 try:
     import paddlefleet.distributed.model as paddlefleet_dist_model
+    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
     from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
@@ -1821,7 +1822,7 @@ class Trainer:
             if (
                 self.args.use_hybrid_parallel
                 and self.args.context_parallel_size > 1
-                and getattr(self.model, "is_fleet", False)
+                and isinstance(self.model, FleetGPTModel)
             ):
                 inputs = get_batch_on_this_cp_rank(inputs)
 
@@ -2919,11 +2920,15 @@ class Trainer:
                 for key, value in target_attr.items():
                     if get_env_device() == "gpu":
                         target_attr[key] = getattr(value, action)()
+                    elif get_env_device() == "xpu":
+                        target_attr[key] = getattr(value, action)()
                     else:
                         target_attr[key] = getattr(value, "to")(action)
 
     def _offload_optimizer(self):
         if get_env_device() == "gpu":
+            self._apply_to_optimizer("pin_memory")
+        elif get_env_device() == "xpu":
             self._apply_to_optimizer("pin_memory")
         else:
             self._apply_to_optimizer("cpu")
@@ -3386,6 +3391,8 @@ class Trainer:
             # update data type for pure fp16
             if data.place.is_cuda_pinned_place():
                 return data.cuda()
+            elif data.place.is_xpu_pinned_place():
+                return data.to(paddle.device.get_device())
             return data
             # return data.to(**kwargs)
         return data

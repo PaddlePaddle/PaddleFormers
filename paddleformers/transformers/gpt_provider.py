@@ -85,7 +85,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     # Model configuration
     fp16_lm_cross_entropy: bool = False
     parallel_output: bool = True
-    share_embeddings_and_output_weights: bool = True
+    tie_word_embeddings: bool = True
     make_vocab_size_divisible_by: int = 128
     position_embedding_type: Literal["learned_absolute", "rope"] = "rope"
     rotary_base: int = 10000
