@@ -20,13 +20,46 @@ from paddlefleet.jit import jit_fuser
 from paddlefleet.models.common.vision_layer.vision_layer import VisionLayer
 from paddlefleet.packed_seq_params import PackedSeqParams
 from paddlefleet.process_groups_config import ProcessGroupCollection
-from paddlefleet.spec_utils import LayerSpec
+from paddlefleet.spec_utils import LayerSpec, build_layer
 from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
 from paddlefleet.transformer.enums import ModelType
 from paddlefleet.transformer.mlp import MLP, MLPSublayersSpec
 from paddlefleet.transformer.transformer_block import TransformerBlock, TransformerBlockSublayersSpec
 from paddlefleet.transformer.transformer_config import TransformerConfig
 from paddlefleet.utils import WrappedTensor, deprecate_inference_params
+
+
+class Qwen3VLPatchMerger(nn.Module):
+    def __init__(
+        self,
+        config: TransformerConfig,
+        dim: int = None,
+        context_dim: int = None,
+        spatial_merge_size: int = None,
+        use_postshuffle_norm: bool = False,
+    ):
+        super().__init__()
+        context_dim = context_dim if context_dim is not None else config.hidden_size
+        dim = dim if dim is not None else config.hidden_size
+        spatial_merge_size = spatial_merge_size if spatial_merge_size is not None else config.spatial_merge_size
+        
+        self.hidden_size = context_dim * (spatial_merge_size ** 2)
+        self.use_postshuffle_norm = use_postshuffle_norm
+        norm_dim = self.hidden_size if use_postshuffle_norm else context_dim
+        self.norm = nn.LayerNorm(norm_dim, epsilon=1e-6)
+        self.linear_fc1 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.act_fn = nn.GELU()
+        self.linear_fc2 = nn.Linear(self.hidden_size, dim)
+    
+    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
+        if self.use_postshuffle_norm:
+            x = self.norm(x.reshape([-1, self.hidden_size]))
+            x = x.reshape([-1, self.hidden_size])
+        else:
+            x = self.norm(x)
+            x = x.reshape([-1, self.hidden_size])
+        x = self.linear_fc2(self.act_fn(self.linear_fc1(x)))
+        return x
 
 
 class Qwen3VLVisionTransformerBlock(TransformerBlock):
@@ -41,38 +74,27 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         post_layer_norm: bool = True,
         pre_process: bool = True,
         post_process: bool = True,
-        pg_collection: ProcessGroupCollection | None = None,
-        vp_stage: int | None = None,
+        pg_collection: ProcessGroupCollection = None,
+        vp_stage: int = None,
     ):
         super().__init__(
             config=config,
             spec=spec,
-            post_layer_norm=post_layer_norm,
+            post_layer_norm=False,
             pre_process=pre_process,
             post_process=post_process,
             pg_collection=pg_collection,
             vp_stage=vp_stage,
         )
-        self.deepstack_visual_indexes = config.deepstack_visual_indexes
-        self.merger = MLP(
-            sublayers_spec=MLPSublayersSpec(
-                up_gate_proj=ColumnParallelLinear,
-                down_proj=RowParallelLinear,
-                hidden_act=F.gelu,
-            ),
-            intermediate_size=config.hidden_size
-        )
         
+        self.deepstack_visual_indexes = config.deepstack_visual_indexes
         self.deepstack_merger_list = nn.ModuleList([
-            MLP(
-                sublayers_spec=MLPSublayersSpec(
-                    up_gate_proj=ColumnParallelLinear,
-                    down_proj=RowParallelLinear,
-                    hidden_act=F.gelu,
-                ),
-                intermediate_size=config.hidden_size
-            ) for _ in range(config.deepstack_visual_indexes)
+            Qwen3VLPatchMerger(config, use_postshuffle_norm=True)
+            for _ in range(len(self.deepstack_visual_indexes))
         ])
+        self.merger = Qwen3VLPatchMerger(
+            config, dim=config.out_hidden_size, context_dim=config.hidden_size, spatial_merge_size=config.spatial_merge_size
+        )
     
     def forward(
         self,
@@ -330,7 +352,7 @@ class Qwen3VisionModel(VisionLayer):
         config: TransformerConfig,
         transformer_layer_spec: LayerSpec,
     ):
-        super.__init__(config)
+        super().__init__(config=config)
         self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = self.spatial_merge_size * self.spatial_merge_size
         self.patch_size = config.patch_size
@@ -340,6 +362,7 @@ class Qwen3VisionModel(VisionLayer):
         self.merge_hidden_size = self.embed_dim * (config.spatial_merge_size ** 2)
         
         kernel_size = [self.temporal_patch_size, self.patch_size, self.patch_size]
+        
         self.conv1 = nn.Conv3d(
             self.in_channels, self.embed_dim, kernel_size=kernel_size, stride=kernel_size, bias=True
         )

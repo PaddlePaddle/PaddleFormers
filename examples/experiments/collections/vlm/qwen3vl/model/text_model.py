@@ -13,20 +13,23 @@
 # limitations under the License.
 
 import paddle
-from paddlefleet.transformer.transformer_layer import TransformerLayer
+from paddlefleet.process_groups_config import ProcessGroupCollection
+from paddlefleet.transformer.transformer_config import TransformerConfig
+from paddlefleet.transformer.transformer_layer import TransformerLayer, TransformerLayerSublayersSpec
 
 
-class Qwen3VLTextLayer(TransformerLayer):
+class Qwen3VLTextTransformerLayer(TransformerLayer):
     """Qwen3VL text model for adapt deepstack process"""
+    
     def _forward_impl(
         self,
-        dict_args: dict
+        **kwargs
     ):
-        deepstack_visual_emb = dict_args.pop("deepstack_visual_emb", None)
-        visual_pos_masks = dict_args.pop("visual_pos_masks", None)
-        hidden_states, context = self._forward_attention(**dict_args)
+        deepstack_visual_emb = kwargs.pop("deepstack_visual_emb", None)
+        visual_pos_masks = kwargs.pop("visual_pos_masks", None)
+        hidden_states, context = self._forward_attention(**kwargs)
         hidden_states = self._forward_mlp(hidden_states)
-        if self.layer_number in range(len(deepstack_visual_emb)):
+        if (self.layer_number - 1) in range(len(deepstack_visual_emb)):
             hidden_states = self._deepstack_process(
                 hidden_states=hidden_states,
                 visual_embeds=deepstack_visual_emb[self.layer_number],
@@ -35,7 +38,7 @@ class Qwen3VLTextLayer(TransformerLayer):
         rst = {"hidden_states": hidden_states}
         if context is not None:
             rst["context"] = context
-        rst = {**dict_args, **rst}
+        rst = {**kwargs, **rst}
         return rst
     
     def _deepstack_process(

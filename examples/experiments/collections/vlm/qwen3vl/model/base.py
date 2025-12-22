@@ -31,7 +31,7 @@ from paddlefleet.models.vision.multimodal_projector import MultimodalProjector a
 from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 from .layer_spec import get_layer_spec
-from .text_model import Qwen3VLTextLayer
+from .text_model import Qwen3VLTextTransformerLayer
 from .vision import Qwen3VisionModel
 from ..data.multimodal_tokens import IMAGE_TOKEN_INDEX, VIDEO_TOKEN_INDEX
 
@@ -164,7 +164,8 @@ class Qwen3VLTextProvider(GPTModelProvider):
     rms_norm_eps: float = 1e-6
     rotary_base: float = 1000000.0
     position_embedding_type: str = "rope"
-    specific_layer: type = Qwen3VLTextLayer
+    use_qk_norm: bool = True
+    specific_layer: type = Qwen3VLTextTransformerLayer
 
 
 def qwen3vl_data_step(dataloader_iter) -> dict[str, paddle.Tensor]:
@@ -212,16 +213,16 @@ def set_input_tensor(self, tensor):
 @dataclass
 class Qwen3VLVisionProvider(TransformerConfig):
     """Qwen3VL Vidion Model Configuration."""
-    patch_size: int = 16,
+    patch_size: int = 16
     num_hidden_layers: int = 27
     num_attention_heads: int = 16
     use_bias: bool = True
     add_qkv_bias: bool = True
-    num_position_embeddings: int = 2304,
+    num_position_embeddings: int = 2304
     embed_dim: int = 1152,
-    hidden_size: int = 1152,
-    out_hidden_size: int = 4096,
-    in_channels: int = 3,
+    hidden_size: int = 1152
+    out_hidden_size: int = 4096
+    in_channels: int = 3
     spatial_merge_size: int = 2
     spatial_patch_size: int = 16
     temporal_patch_size: int = 2
@@ -234,6 +235,7 @@ class Qwen3VLVisionProvider(TransformerConfig):
     num_key_value_heads: int = 16
     layernorm_zero_centered_gamma: bool = False
     apply_query_key_layer_scaling: bool = False
+    persist_layer_norm: bool = True
     bias_activation_fusion: bool = False
     bias_dropout_fusion: bool = False
     attention_softmax_in_fp32: bool = True
@@ -255,9 +257,8 @@ class Qwen3VLVisionProvider(TransformerConfig):
         transformer_layer_spec = self.transformer_layer_spec
         if not isinstance(transformer_layer_spec, LayerSpec):
             transformer_layer_spec = get_layer_spec(is_vit=True, normalization=self.normalization)
-        
         model = Qwen3VisionModel(
-            transformer_config=self,
+            config=self,
             transformer_layer_spec=transformer_layer_spec,
         )
         

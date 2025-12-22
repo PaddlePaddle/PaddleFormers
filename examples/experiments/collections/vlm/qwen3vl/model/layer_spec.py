@@ -15,7 +15,7 @@
 from paddlefleet import LayerSpec
 from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
 from paddlefleet.fusions.fused_layer_norm import FusedLayerNorm
-from paddlefleet.fusions.fused_rms_norm import FusedRmsNorm
+from paddlefleet.transformer.paddle_norm import FusedRMSNorm
 from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
 from paddlefleet.transformer.attention import SelfAttention, SelfAttentionSublayersSpec
 from paddlefleet.transformer.dot_product_attention import DotProductAttention
@@ -30,7 +30,7 @@ def get_layer_spec(is_vit, normalization) -> LayerSpec:
     if normalization == "LayerNorm":
         norm = FusedLayerNorm
     elif normalization == "RMSNorm":
-        norm = FusedRmsNorm
+        norm = FusedRMSNorm
     else:
         raise RuntimeError(f"Unknown normalization: {normalization}")
     
