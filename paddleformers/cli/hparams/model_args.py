@@ -110,10 +110,7 @@ class ModelArguments:
         default="v2-alltoall-unpad",
         metadata={"help": "moe dispatch use unpad allgather strategy."},
     )
-    use_recompute_moe: Optional[bool] = field(
-        default=False,
-        metadata={"help": "Whether to apply recompute to MoE layers."},
-    )
+
     moe_group_experts: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to apply group-wise processing to expert gate logits."},
@@ -197,7 +194,6 @@ class ModelArguments:
     eos_token_id: int = field(default=1, metadata={"help": "End of sentence token ID"})
     max_position_embeddings: int = field(default=4096, metadata={"help": "Maximum position embeddings"})
     moe_gate: str = field(default="top2_fused", metadata={"help": "MoE gate type"})
-    use_recompute_loss_fn: bool = field(default=True, metadata={"help": "Whether to recompute loss function"})
     loss_subbatch_seqlen: int = field(default=32768, metadata={"help": "Sub batch size for loss calculation"})
 
     num_hidden_layers: Optional[int] = field(

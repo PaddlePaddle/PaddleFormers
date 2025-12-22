@@ -309,7 +309,7 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
         else:
             model = model_class.from_config(config, dtype=dtype)
 
-    if training_args.recompute:
+    if training_args.recompute_granularity is not None:
 
         def fn(layer):
             if hasattr(layer, "enable_recompute") and (layer.enable_recompute is False or layer.enable_recompute == 0):

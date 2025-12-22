@@ -40,8 +40,6 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         spatial_merge_size=2,
         temporal_patch_size=2,
         tokens_per_second=2,
-        recompute=False,
-        recompute_granularity="core_attn",
         use_sparse_flash_attn=False,
         _attn_implementation="eager",
         **kwargs,
@@ -61,8 +59,6 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         self.spatial_merge_size = spatial_merge_size
         self.temporal_patch_size = temporal_patch_size
         self.tokens_per_second = tokens_per_second
-        self.recompute = recompute
-        self.recompute_granularity = recompute_granularity
         self.use_sparse_flash_attn = use_sparse_flash_attn
         self._attn_implementation = _attn_implementation
 
@@ -99,8 +95,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         use_cache=False,
         use_sparse_flash_attn=False,
         _attn_implementation="eager",
-        recompute=False,
-        recompute_granularity="core_attn",
         fuse_rms_norm=False,
         pad_token_id=0,
         bos_token_id=1,
@@ -119,6 +113,13 @@ class PaddleOCRVLConfig(PretrainedConfig):
         max_sequence_length=None,
         tie_word_embeddings=False,
         vision_config=None,
+        recompute_granularity=None,
+        recompute_method=None,
+        recompute_modules=None,
+        recompute_num_layers=None,
+        recompute_mtp_granularity=None,
+        recompute_mtp_method=None,
+        recompute_mtp_modules=None,
         **kwargs,
     ):
         super().__init__(
@@ -141,8 +142,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.use_sparse_flash_attn = use_sparse_flash_attn
         self._attn_implementation = _attn_implementation
-        self.recompute = recompute
-        self.recompute_granularity = recompute_granularity
         self.fuse_rms_norm = fuse_rms_norm
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
@@ -177,7 +176,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.use_var_len_flash_attn = False
         self.scale_qk_coeff = 1.0
         self.fuse_softmax_mask = False
-        self.use_recompute_loss_fn = False
         self.use_fused_head_and_loss_fn = False
         self.fuse_linear = False
         self.token_balance_seqlen = False
@@ -186,12 +184,16 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.apply_rope_fusion = False
         self.fuse_swiglu = False
         self.freq_allocation = 20
-
+        self.recompute_granularity = None
+        self.recompute_granularity = None
+        self.recompute_method = None
+        self.recompute_modules = None
+        self.recompute_num_layers = None
+        self.recompute_mtp_granularity = None
+        self.recompute_mtp_method = None
+        self.recompute_mtp_modules = None
         self.register_unsavable_keys(
             [
-                "recompute",
-                "recompute_granularity",
-                "use_recompute_loss_fn",
                 "use_sparse_flash_attn",
                 "use_var_len_flash_attn",
                 "use_sparse_head_and_loss_fn",
@@ -199,6 +201,13 @@ class PaddleOCRVLConfig(PretrainedConfig):
                 "cachekv_quant",
                 "use_fused_head_and_loss_fn",
                 "max_sequence_length",
+                "recompute_granularity",
+                "recompute_method",
+                "recompute_modules",
+                "recompute_num_layers",
+                "recompute_mtp_granularity",
+                "recompute_mtp_method",
+                "recompute_mtp_modules",
             ]
         )
 
