@@ -52,7 +52,8 @@ amp_master_grad: true
 sharding: stage1
 recompute_granularity: full
 recompute_method: uniform
-recompute_num_layers: 1bf16: true
+recompute_num_layers: true
+bf16: true
 fp16_opt_level: O2
 # unified_checkpoint: true
 load_via_cpu: true
