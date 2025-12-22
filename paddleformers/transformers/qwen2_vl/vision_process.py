@@ -32,8 +32,7 @@ from PIL import Image
 
 from ...utils import is_decord_available
 from ...utils.log import logger
-from ..image_transforms import resize
-from ..image_utils import PILImageResampling
+from ..paddle_vision_utils import resize as paddle_resize
 
 MAX_RATIO = 200
 SPATIAL_MERGE_SIZE = 2
@@ -435,20 +434,12 @@ def fetch_video(
             min_pixels=min_pixels,
             max_pixels=max_pixels,
         )
-    dtype = video.dtype
-    if dtype != paddle.uint8:
-        video = video.astype(paddle.uint8)
-    videos_reshaped = video.reshape([-1, channel, height, width])
-    output_frames = []
-    for i in range(videos_reshaped.shape[0]):
-        frame = videos_reshaped[i]
-        resized_frame = resize(
-            frame,
-            size=[resized_height, resized_width],
-            resample=PILImageResampling.BICUBIC,
-        )
-        output_frames.append(resized_frame)
-    video = paddle.to_tensor(np.stack(output_frames, axis=0)).float().contiguous()
+    video = paddle_resize(
+        video,
+        [resized_height, resized_width],
+        interpolation="bicubic",
+        antialias=True,
+    ).float()
 
     final_video = (video, video_metadata) if return_video_metadata else video
     if return_video_sample_fps:

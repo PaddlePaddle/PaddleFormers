@@ -281,13 +281,13 @@ def crop(image: paddle.Tensor, top: int, left: int, height: int, width: int) -> 
 
     if left < 0 or top < 0 or right > w or bottom > h:
         image = image[..., max(top, 0) : bottom, max(left, 0) : right]
-        torch_padding = [
+        paddle_padding = [
             max(min(right, 0) - left, 0),
             max(right - max(w, left), 0),
             max(min(bottom, 0) - top, 0),
             max(bottom - max(h, top), 0),
         ]
-        return _pad_with_scalar_fill(image, torch_padding, fill=0, padding_mode="constant")
+        return _pad_with_scalar_fill(image, paddle_padding, fill=0, padding_mode="constant")
     return image[..., top:bottom, left:right]
 
 
