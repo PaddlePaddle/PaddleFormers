@@ -14,7 +14,10 @@ use_dualpipev: true
 overlap_p2p_comm: true
 
 sharding_parallel_size: 32
-sharding_parallel_config: "split_param"
+
+# sharding_parallel_config
+split_param: true
+
 sharding_comm_buffer_size_MB: 2048
 expert_model_parallel_size: 32
 sharding: "stage1"

@@ -64,7 +64,9 @@ pp_delay_scale_loss: true
 partial_send_recv: false
 batch_p2p_comm: false
 
-sharding_parallel_config: "split_param"
+# sharding_parallel_config
+split_param: true
+
 recompute: true
 recompute_use_reentrant: true
 recompute_granularity: "full"

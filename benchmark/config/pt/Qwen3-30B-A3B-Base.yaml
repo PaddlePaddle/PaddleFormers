@@ -69,7 +69,9 @@ use_expert_parallel: true
 bf16: true
 fp16_opt_level: O2
 
-sharding_parallel_config: "split_param"
+# sharding_parallel_config
+split_param: true
+
 amp_master_grad: true
 
 unified_checkpoint: false
