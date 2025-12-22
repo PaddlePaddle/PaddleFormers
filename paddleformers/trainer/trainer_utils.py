@@ -1594,3 +1594,280 @@ def compatible_kwargs(*compatible_params):
 
 flex_checkpoint_save_func = compatible_kwargs("save_replicas")(dist.save_state_dict)
 flex_checkpoint_load_func = compatible_kwargs("comm_method")(dist.load_state_dict)
+import re
+from collections import OrderedDict
+
+from paddle.distributed.flex_checkpoint.sharded_weight import (
+    create_sharded_weight_with_new_local,
+)
+
+from paddleformers.trainer.trainer_callback import TrainerCallback
+
+from ..transformers.model_utils import EMAStateHFFormatFullParamSaver, _add_variant
+from ..utils.env import PADDLE_OPTIMIZER_NAME, PREFIX_EMA_HF_CHECKPOINT_DIR
+from .utils import reshard as reshard_util
+from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
+from .utils.sharding_io import GroupGetter, to_device
+
+
+def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
+    master_weights = ema_state_dict["master_weights"]
+    tmp = OrderedDict()
+    (master_weights, tmp) = (tmp, master_weights)
+    # cast to before
+    for (k, v) in tmp.items():
+        name = v.name
+        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+        master_weights[k].name = name
+
+    structure_name_map = {k: v.name for (k, v) in model.state_dict().items()}
+    node_model_state = reshard_util.NodeModelState(group=group)
+    node_model_state_tmp = reshard_util.NodeModelState(group=group)
+    node_model_state_tmp.add_master_weights(master_weights)
+    node_model_state_tmp.pack_keys(structure_name_map)
+    node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
+    del node_model_state_tmp
+    sharding_strategy = reshard_util.get_sharding_strategy(optimizer)
+    logger.debug(f"sharding_strategy: {sharding_strategy}")
+    restore_func = (
+        reshard_util.sharding_v1.restore
+        if sharding_strategy == SHARDING_STRATEGY_V1
+        else reshard_util.sharding_v2.restore
+    )
+    node_model_state = restore_func(node_model_state, model, optimizer)
+    node_model_state.unpack_keys()
+    master_weights = node_model_state.master_weights
+
+    master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
+
+    model_state_dict = model.state_dict()
+    ema_param_state_dict = OrderedDict()
+    for key, param in model_state_dict.items():
+        if param.name in master_weights and param.dtype == paddle.bfloat16:
+            logger.debug(
+                f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
+            )
+            assert (
+                param.shape == master_weights[param.name].shape
+            ), f"got {param.shape} vs {master_weights[param.name].shape}"
+            master_weight = paddle.reshape(master_weights[param.name], param.shape)
+            master_weight.clear()
+            ema_param_state_dict[k] = paddle.cast(to_device(master_weight), paddle.bfloat16)
+
+    return ema_param_state_dict
+
+
+class EMAStateAssembler:
+    def __init__(
+        self,
+        output_dir,
+        save_checkpoint_format,
+        save_hf_steps,
+        save_steps,
+        optimizer_name_suffix,
+        model,
+        optimizer,
+    ):
+        self.output_dir = Path(output_dir)
+        self.save_checkpoint_format = save_checkpoint_format
+        self.save_hf_steps = save_hf_steps
+        if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
+            raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
+
+        self.rank = dist.get_rank()
+        self.world_size = dist.get_world_size()
+
+        self.optimizer_name_suffix = optimizer_name_suffix
+        self.model = model
+        self.optimizer = optimizer
+        self.model_sharded_state_dict = self.model.sharded_state_dict()
+
+        hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
+        try:
+            pp_group = hcg.get_pipe_parallel_group()
+            if pp_group is None or pp_group.nranks < 1:
+                raise NotImplementedError("[EMAStateAssembler] Only support when pp_group is not None.")
+        except Exception:
+            raise RuntimeError("[EMAStateAssembler] Only support when pp_group is not None.")
+
+        try:
+            moe_group = hcg.get_expert_parallel_group()
+            if moe_group is None or moe_group.nranks < 1:
+                raise NotImplementedError("[EMAStateAssembler] Only support when moe_group is not None.")
+        except Exception:
+            raise RuntimeError("[EMAStateAssembler] Only support when moe_group is not None.")
+
+        try:
+            moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+            if moe_sharding_group is None:
+                raise NotImplementedError("[EMAStateAssembler] Only support when moe_sharding_group is not None.")
+        except Exception:
+            raise RuntimeError("[EMAStateAssembler] Only support when moe_sharding_group is not None.")
+
+        moe_sharding_rank = hcg.get_moe_sharding_parallel_rank()
+
+        self.h_group = moe_group
+        self.v_group = pp_group
+        self.num_splits = moe_sharding_group.nranks
+        self.shard_idx = moe_sharding_rank
+
+    def run(self):
+        latest_step, latest_ckpt_dir = self._find_latest_checkpoint()
+
+        if self.save_hf_steps < 0:
+            logger.info("[EMAStateAssembler] save_hf_steps is negative. Skipping.")
+            return
+
+        if latest_ckpt_dir is None:
+            logger.info(f"[EMAStateAssembler] No checkpoint found in {self.output_dir}. Skipping.")
+            return
+
+        if self._is_already_handled(latest_ckpt_dir):
+            logger.info(
+                f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {latest_step} has "
+                "already been handled. Skipping."
+            )
+            return
+
+        is_hf_save_step = latest_step % self.save_hf_steps == 0
+
+        if is_hf_save_step:
+            self._handle_checkpoint_with_ema(latest_step, latest_ckpt_dir)
+        else:
+            self._handle_naive_checkpoint(latest_ckpt_dir)
+
+    def _find_latest_checkpoint(self) -> Tuple[Optional[int], Optional[Path]]:
+        pattern = re.compile(_re_checkpoint)
+        latest_step = -1
+        latest_ckpt_path = None
+
+        if not self.output_dir.is_dir():
+            return None, None
+
+        for item in self.output_dir.iterdir():
+            if item.is_dir():
+                match = pattern.match(item.name)
+                if match:
+                    step = int(match.group(1))
+                    if step > latest_step:
+                        latest_step = step
+                        latest_ckpt_path = item
+
+        return latest_step, latest_ckpt_path
+
+    def _is_already_handled(self, checkpoint_dir: Path) -> bool:
+        final_signal_file = checkpoint_dir / f"saved_signal_{self.rank}"
+        return final_signal_file.exists()
+
+    def _check_all_ranks_saved(self, checkpoint_dir: Path) -> bool:
+        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+
+        local_rank_is_saved = temp_signal_file.exists()
+
+        flag_tensor = paddle.to_tensor([1 if local_rank_is_saved else 0], dtype="int32")
+        dist.all_reduce(flag_tensor, op=dist.ReduceOp.SUM)
+
+        all_ranks_saved = flag_tensor.item() == self.world_size
+        return all_ranks_saved
+
+    def _mark_as_handled(self, checkpoint_dir: Path):
+        final_signal_file = checkpoint_dir / f"saved_signal_{self.rank}"
+        with open(final_signal_file, "w") as f:
+            f.write("1")
+
+        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+        if temp_signal_file.exists():
+            try:
+                temp_signal_file.unlink()
+            except OSError as e:
+                logger.warning(f"[EMAStateAssembler] Failed to remove temp signal file {temp_signal_file}: {e}")
+
+    def _handle_checkpoint_with_ema(self, step: int, checkpoint_dir: Path):
+        if self._check_all_ranks_saved(checkpoint_dir):
+            logger.info(
+                f"[EMAStateAssembler] [Rank {self.rank}] All ranks ready. Proceeding with EMA state assembly for step {step}."
+            )
+            try:
+                ema_sharded_state_dict = self._build_ema_sharded_state_dict(checkpoint_dir)
+                self._save_full_ema_states(step, ema_sharded_state_dict)
+                self._mark_as_handled(checkpoint_dir)
+                logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Finished merging EMA states and updated signal.")
+            except Exception as e:
+                logger.error(
+                    f"[EMAStateAssembler] [Rank {self.rank}] Error during EMA assembly for step {step}: {e}",
+                    exc_info=True,
+                )
+        else:
+            logger.info(
+                f"[EMAStateAssembler] [Rank {self.rank}] Waiting for other ranks to finish saving checkpoint at step {step}."
+            )
+
+    def _handle_naive_checkpoint(self, checkpoint_dir: Path):
+        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Processing a no need merge EMA checkpoint.")
+        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+
+        if not temp_signal_file.exists():
+            logger.warning(
+                f"[EMAStateAssembler] [Rank {self.rank}] Temporary signal file not found at {temp_signal_file}. "
+            )
+            return
+
+        self._mark_as_handled(checkpoint_dir)
+        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Marked naive checkpoint as handled and updated signal.")
+
+    def _get_ema_state_path(self, checkpoint_dir: Path) -> Path:
+        if self.save_checkpoint_format == "flex_checkpoint":
+            return checkpoint_dir / "ema_state" / f"{self.rank}_0.distcp"
+        else:
+            optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.optimizer_name_suffix)
+            ema_file_name = optimizer_name.replace("optimizer", "ema")
+            return checkpoint_dir / ema_file_name
+
+    def _build_ema_sharded_state_dict(self, checkpoint_dir: Path):
+        ema_state_path = self._get_ema_state_path(checkpoint_dir)
+        if not ema_state_path.exists():
+            raise FileNotFoundError(f"[EMAStateAssembler] EMA state file not found at {ema_state_path}.")
+
+        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Loading EMA state from {ema_state_path}.")
+        ema_state_dict = paddle.load(str(ema_state_path))
+
+        group_getter = GroupGetter(self.model)
+        ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
+
+        ema_params_recovered = {}
+        for gid in group_getter.get_group_ids():
+            sub_ema_state_dict = ema_state_dict_grouped[gid]
+            group = group_getter.get_group_by_id(gid)
+            recovered = recover_params_from_master_weight(sub_ema_state_dict, self.model, self.optimizer, group)
+            ema_params_recovered.update(recovered)
+
+        ema_sharded_state_dict = {}
+        for k, v in self.model_sharded_state_dict.items():
+            ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, ema_params_recovered[k])
+
+        return ema_sharded_state_dict
+
+    def _save_full_ema_states(self, step, ema_sharded_state_dict):
+        hf_checkpoint_folder = f"{PREFIX_EMA_HF_CHECKPOINT_DIR}-{step}"
+        save_path = self.output_dir / hf_checkpoint_folder
+        config = self.model.config
+        aoa_config = self.model._gen_inv_aoa_config(config)
+
+        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Saving full EMA states to {save_path}.")
+        saver = EMAStateHFFormatFullParamSaver(
+            ema_sharded_state_dict=ema_sharded_state_dict,
+            aoa_config=aoa_config,
+            h_group=self.h_group,
+            v_group=self.v_group,
+            num_splits=self.num_splits,
+            shard_idx=self.shard_idx,
+        )
+        saver.save_checkpoint(str(save_path))
+
+
+class EMAStateAssemblerCallback(TrainerCallback):
+    def __init__(self, ema_state_assembler):
+        self.ema_state_assembler = ema_state_assembler
+
+    def on_step_end(self):
+        self.ema_state_assembler.run()
