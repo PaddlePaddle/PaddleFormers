@@ -1790,8 +1790,6 @@ class Qwen3VLModel(Qwen3VLPretrainedModel):
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
         if pixel_values_videos is not None:
-            print("video_grid_thw", video_grid_thw)
-            print("pixel_values_videos", pixel_values_videos)
             video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
             video_embeds = paddle.cat(video_embeds, axis=0).astype(inputs_embeds.dtype)
             _, video_mask = self.get_placeholder_mask(
