@@ -47,7 +47,7 @@ learning_rate: 1.0e-4
 tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 1
 sequence_parallel: true
-sharding: stage2
+sharding: stage1
 recompute: true
 bf16: true
 fp16_opt_level: O2
