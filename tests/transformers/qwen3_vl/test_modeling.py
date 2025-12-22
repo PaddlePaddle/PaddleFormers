@@ -548,10 +548,12 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 class Qwen3VLIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-            "PaddleFormers/tiny_random_qwen3vl", convert_from_hf=True
+            "/root/paddlejob/workspace/env_run/wangyuhao/PaddleFormers/tiny_random_qwen3vl", convert_from_hf=True
         )
 
-        self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny_random_qwen3vl")
+        self.processor = AutoProcessor.from_pretrained(
+            "/root/paddlejob/workspace/env_run/wangyuhao/PaddleFormers/tiny_random_qwen3vl"
+        )
         self.messages = [
             {
                 "role": "user",
@@ -903,9 +905,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             "image_grid_thw": image_grid_thw,
             "attention_mask": attention_mask,
         }
-        logger.info(f"config is {config}")
         model = Qwen3VLForConditionalGeneration(config)
-        logger.info(f"here, model is {model}")
         model.save_pretrained(cls.torch_model_path)
 
     @require_package("transformers", "torch")
@@ -976,7 +976,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                 )
             )
 
-    @parameterized.expand([("Qwen3VLForConditionalGeneration",)])
+    @parameterized.expand([("Qwen3VLForConditionalGeneration")])
     @require_package("transformers", "torch")
     def test_Qwen3VL_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
         pytorch_class_name = pytorch_class_name or class_name
@@ -999,17 +999,35 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32").eval()
+            paddle_model_fused = paddle_model_class.from_pretrained(
+                tempdir,
+                dtype="float32",
+                fuse_attention_qkv=True,
+                fuse_attention_ffn=True,
+                load_checkpoint_format="flex_checkpoint",
+            ).eval()
 
             if class_name == "Qwen3VLModel":
                 paddle_logit = paddle_model(**paddle_inputs)[0]
+                paddle_fused_logit = paddle_model_fused(**paddle_inputs)[0]
             else:
                 paddle_logit = paddle_model(**paddle_inputs)["logits"]
+                paddle_fused_logit = paddle_model_fused(**paddle_inputs)["logits"]
 
             # 3. compare the result between paddle and torch
             self.assertTrue(
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    atol=1e-2,
+                    rtol=1e-2,
+                )
+            )
+            # 4.compare the result between paddle and paddle_fused
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )
