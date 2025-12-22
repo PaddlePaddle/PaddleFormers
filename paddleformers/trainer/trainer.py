@@ -182,6 +182,8 @@ from .trainer_callback import (
     TrainerState,
 )
 from .trainer_utils import (  # set_hyrbid_parallel_seed,
+    EMAStateAssembler,
+    EMAStateAssemblerCallback,
     EvalLoopOutput,
     EvalPrediction,
     IntervalStrategy,
@@ -954,6 +956,7 @@ class Trainer:
             use_expert_parallel=self.args.use_expert_parallel,
             ema_coef=self.args.zcc_save_ema_coef,
             zcc_worker_class=zcc_worker_class,
+            save_hf_steps=self.args.save_hf_steps,
         )
 
     def _register_pipeline_hooks(self, unwrapped_model):
@@ -1422,6 +1425,19 @@ class Trainer:
             new_step = decorator(orig_step)
             self.optimizer.__dict__["step"] = types.MethodType(new_step, self.optimizer)
 
+    def create_ema_state_assembler(self):
+        ema_state_assembler = EMAStateAssembler(
+            output_dir=self.args.output_dir,
+            save_checkpoint_format=self.args.save_checkpoint_format,
+            save_hf_steps=self.args.save_hf_steps,
+            save_steps=self.args.save_steps,
+            optimizer_name_suffix=self.args.optimizer_name_suffix,
+            model=self.model,
+            optimizer=self.optimizer,
+        )
+        callback = EMAStateAssemblerCallback(ema_state_assembler)
+        self.add_callback(callback)
+
     def train(
         self,
         resume_from_checkpoint: Optional[Union[str, bool]] = None,
@@ -1550,6 +1566,8 @@ class Trainer:
 
         if self.args.enable_zero_cost_checkpoint:
             self.create_zcc_manager(model, resume_from_checkpoint)
+            if self.args.save_hf_steps > 0:
+                self.create_ema_state_assembler(model, resume_from_checkpoint)
         elif self.args.zcc_save_ema_coef is not None:
             self.add_non_zcc_ema_callback(resume_from_checkpoint)
 
