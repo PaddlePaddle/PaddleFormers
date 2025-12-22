@@ -16,6 +16,9 @@ set -exo pipefail
 export root_dir=$(pwd)
 
 source PaddleFleet/.venv/bin/activate
+cd PaddleFleet
+git pull origin pull/3200/head
+cd -
 
 wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/glm45/glm45_fleet.12-18.tar --no-check-certificate
 tar -xf glm45_fleet.12-18.tar # glm45_fleet
@@ -36,11 +39,6 @@ yq eval '.expert_model_parallel_size = 1
     | .output_dir = strenv(cur_dir) + "/checkpoints"' \
   $config_yaml > ${config_yaml}.tmp
 mv ${config_yaml}.tmp $config_yaml
-
-sed -i "s/Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel)/Glm4MoeForCausalLM(Glm4MoePreTrainedModel)/g" $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
-sed -i "s/Glm4MoeForCausalLM(Glm4MoePreTrainedModel)/Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel)/g" $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
-sed -i "s/Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel/Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel/g" $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
-sed -i "s/Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe)/Glm4MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe)/g" $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
 
 rm -rf checkpoints/
 rm -rf vdl_log/

@@ -59,7 +59,7 @@ echo "
 20 10.30010414
 " > ./glm45_multi_cards_fp8_gt_loss.txt
 
-python $root_dir/Paddleformers/tests/integration_test/check_loss.py \
+python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 20 \
    --log_file ./glm45_fp8.log \
    --gt_file ./glm45_multi_cards_fp8_gt_loss.txt

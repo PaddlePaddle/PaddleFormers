@@ -58,6 +58,6 @@ echo "
 
 
 
-python $root_dir/Paddleformers/tests/integration_test/check_loss.py \
+python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --log_file ./qwen3_single_card.log \
    --gt_file ./qwen3_single_card_gt_loss.txt
