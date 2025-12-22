@@ -855,8 +855,8 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             else:
                 self.add_sequential_layer(LayerDesc(self.ErnieEmbeddingPipeClass, config=config), "ernie")
 
-        num_empty_layers = config.remove_tail_layer if isinstance(config.remove_tail_layer, int) else 1
-        for i in range(config.num_hidden_layers - num_empty_layers):
+        num_empty_layers = config.num_empty_layers_add_in_tail if isinstance(config.num_empty_layers_add_in_tail, int) else 1
+        for i in range(config.num_hidden_layers):
             self.add_sequential_layer(
                 LayerDesc(
                     self.ErnieDecoderLayerPipeClass,
@@ -888,24 +888,13 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self.add_sequential_layer(LayerDesc(self.MTPLayerClass, config=config), "ernie")
             num_empty_layers = num_empty_layers - config.multi_token_pred_depth
 
-        if config.remove_tail_layer:
+        if config.num_empty_layers_add_in_tail:
             for n in range(num_empty_layers):
                 self.add_sequential_layer(
                     LayerDesc(
                         EmptyLayer,
                     ),
                     f"empty.layers.{n}",
-                )
-        else:
-            for n in range(num_empty_layers):
-                self.add_sequential_layer(
-                    LayerDesc(
-                        self.ErnieDecoderLayerPipeClass,
-                        config=config,
-                        layer_idx=i,
-                        use_full_recompute=_need_full_recompute(i),
-                    ),
-                    f"ernie.layers.{n + config.num_hidden_layers - num_empty_layers}",
                 )
 
         i = config.num_hidden_layers

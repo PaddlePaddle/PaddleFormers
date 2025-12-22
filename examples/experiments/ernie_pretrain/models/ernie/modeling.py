@@ -1271,9 +1271,7 @@ class ErniePretrainedModel(PretrainedModel):
             ["embed_tokens.weight"],
             ["norm.weight"],
         ]
-        for layer_index in range(
-            config.num_hidden_layers if not config.remove_tail_layer else config.num_hidden_layers - 1
-        ):
+        for layer_index in range(config.num_hidden_layers):
             if config.fuse_attn_ffn:
                 layer_mappings = [
                     [
@@ -1420,7 +1418,7 @@ class ErniePretrainedModel(PretrainedModel):
             return final_actions
 
         mappings = get_tensor_parallel_split_mappings(
-            config.num_hidden_layers if not config.remove_tail_layer else config.num_hidden_layers - 1
+            config.num_hidden_layers
         )
 
         return mappings
@@ -1495,7 +1493,7 @@ class ErnieModel(ErniePretrainedModel):
         layers_list = [
             ErnieDecoderLayer(config, layer_idx)
             for layer_idx in range(
-                config.num_hidden_layers - 1 if config.remove_tail_layer else config.num_hidden_layers
+                config.num_hidden_layers
             )
         ]
 
