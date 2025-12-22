@@ -305,7 +305,11 @@ def read_video_decord(
             - Numpy array of frames in RGB (shape: [num_frames, height, width, 3]).
             - `VideoMetadata` object.
     """
-    # Lazy import from decord
+    if not is_decord_available():
+        raise ImportError(
+            "Backend=decord for loading the video but the required library is not found in your environment."
+            "Make sure to install 'decord' before loading the video."
+        )
     from decord import VideoReader, cpu
 
     logger.info("Loading video with decord backend.")
@@ -416,7 +420,7 @@ def load_video(
     video: VideoInput,
     num_frames: Optional[int] = None,
     fps: Optional[Union[int, float]] = None,
-    backend: str = "decord",
+    backend: str = "paddlecodec",
     sample_indices_fn: Optional[Callable] = None,
     **kwargs,
 ) -> np.ndarray:
@@ -431,8 +435,8 @@ def load_video(
         fps (`int` or `float`, *optional*):
             Number of frames to sample per second. Should be passed only when `num_frames=None`.
             If not specified and `num_frames==None`, all frames are sampled.
-        backend (`str`, *optional*, defaults to `"decord"`):
-            The backend to use when loading the video. Can be any of ["decord"]. Defaults to "decord".
+        backend (`str`, *optional*, defaults to `"paddlecodec"`):
+            The backend to use when loading the video. Can be any of ["paddlecodec", "decord"]. Defaults to "paddlecodec".
         sample_indices_fn (`Callable`, *optional*):
             A callable function that will return indices at which the video should be sampled. If the video has to be loaded using
             by a different sampling technique than provided by `num_frames` or `fps` arguments, one should provide their own `sample_indices_fn`.

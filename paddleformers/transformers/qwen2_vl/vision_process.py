@@ -30,6 +30,7 @@ import paddle
 import requests
 from PIL import Image
 
+from ...utils import is_decord_available
 from ...utils.log import logger
 from ..image_transforms import resize
 from ..image_utils import PILImageResampling
@@ -269,6 +270,11 @@ def _read_video_decord(
     Returns:
         paddle.Tensor: the video tensor with shape (T, C, H, W).
     """
+    if not is_decord_available():
+        raise ImportError(
+            "Backend=decord for loading the video but the required library is not found in your environment "
+            "Make sure to install 'decord' before loading the video."
+        )
     import decord
 
     logger.info("Loading video with decord backend.")
@@ -370,7 +376,7 @@ def fetch_video(
     image_patch_size: int = 14,
     return_video_sample_fps: bool = False,
     return_video_metadata: bool = False,
-    backend: str = "decord",
+    backend: str = "paddlecodec",
 ) -> Union[paddle.Tensor, List[Image.Image]]:
     image_factor = image_patch_size * SPATIAL_MERGE_SIZE
     VIDEO_FRAME_MIN_PIXELS = VIDEO_MIN_TOKEN_NUM * image_factor * image_factor
@@ -475,7 +481,7 @@ def process_vision_info(
     return_video_kwargs: bool = False,
     return_video_metadata: bool = False,
     image_patch_size: int = 14,
-    backend: str = "decord",
+    backend: str = "paddlecodec",
 ) -> Tuple[
     Optional[List[Image.Image]], Optional[List[Union[paddle.Tensor, List[Image.Image]]]], Optional[Dict[str, Any]]
 ]:

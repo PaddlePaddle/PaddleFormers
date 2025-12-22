@@ -4,6 +4,7 @@ sacremoses
 pydantic
 hyperopt
 h5py
+decord
 deploy
 ray
 loguru==0.6.0

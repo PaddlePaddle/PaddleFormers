@@ -187,7 +187,7 @@ class BaseVideoProcessor(BaseImageProcessor):
     valid_kwargs = VideosKwargs
     model_input_names = ["pixel_values_videos"]
     unused_kwargs = None
-    backend = "decord"
+    backend = "paddlecodec"
 
     def __init__(self, **kwargs: Unpack[VideosKwargs]):
         super().__init__()
@@ -913,7 +913,7 @@ class BaseVideoProcessor(BaseImageProcessor):
         If a single url is passed, the return value will be a single object. If a list is passed a list of objects is
         returned.
         """
-        backend = kwargs.get("backend", "decord")
+        backend = kwargs.get("backend", "paddlecodec")
 
         if isinstance(video_url_or_urls, list):
             return list(

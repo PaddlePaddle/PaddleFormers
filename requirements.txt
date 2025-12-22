@@ -1,5 +1,4 @@
 colorlog
-decord
 scikit-learn
 multiprocess
 datasets >= 3.0.0

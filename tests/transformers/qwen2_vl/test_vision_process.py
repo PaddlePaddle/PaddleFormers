@@ -244,7 +244,7 @@ class TestQwenVisionProcessing(unittest.TestCase):
     def test_fetch_video_with_decord(self):
         """Test fetch_video(default with frame list) function using decord backend."""
         ele = {"video": self.test_video_url}
-        result = vision_process.fetch_video(ele)
+        result = vision_process.fetch_video(ele, backend="decord")
 
         self.assertIsInstance(result, paddle.Tensor)
 
