@@ -1123,7 +1123,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
 
         num_hidden_layers = config.num_hidden_layers
         num_head_empty_layers = (
-            1  # config.remove_head_layer if hasattr(config, 'remove_head_layer') and config.remove_head_layer else 0
+            config.remove_head_layers if hasattr(config, "remove_head_layers") and config.remove_head_layers else 0
         )
         print("num_head_empty_layers ", num_head_empty_layers)
         # layer 0
@@ -1192,15 +1192,6 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             print(item)
         return aoa_config
 
-    # def remove_head_layers(config):
-    #     if config.num_layers_in_first_pipeline_stage is None or config.pipeline_model_parallel_size == 1:
-    #         return 0
-    #     avg_num_layers = self.get_avg_num_layers()
-    #     assert (
-    #         avg_num_layers >= config.num_layers_in_first_pipeline_stage
-    #     ), f"Incorrect configuration with {avg_num_layers=}, {config.num_layers_in_first_pipeline_stage=}"
-    #     return avg_num_layers - config.num_layers_in_first_pipeline_stage
-
     # NOTE: These aoa_config items will be removed later. The subsequent AOA parsing module will automatically generate the reverse AOA based on the forward (from_pretrained) AOA.
     @classmethod
     def _gen_inv_aoa_config(cls, config: Glm4MoeConfig):
@@ -1221,7 +1212,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             ]
         num_hidden_layers = config.num_hidden_layers
         num_head_empty_layers = (
-            1  # config.remove_head_layer if hasattr(config, 'remove_head_layer') and config.remove_head_layer else 0
+            config.remove_head_layers if hasattr(config, "remove_head_layers") and config.remove_head_layers else 0
         )
 
         # layer 0
@@ -1580,8 +1571,7 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         gpt_model = model_provider.provide()
-        config.remove_head_layer = model_provider_class.remove_head_layer
-        print("========remove_head_layer: ", config.remove_head_layer)
+        config.remove_head_layers = model_provider.remove_head_layers
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
@@ -1734,13 +1724,14 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         return ret
 
 
-class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         gpt_model = model_provider.provide()
+        config.remove_head_layers = model_provider.remove_head_layers
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
@@ -1748,7 +1739,7 @@ class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe
         return gpt_model
 
 
-class Glm4MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
     _decoder_layer_pipe_cls = Glm4MoeDecoderLayerPipe
