@@ -2658,6 +2658,8 @@ class Trainer:
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_configs,
             )
         else:
@@ -2671,6 +2673,8 @@ class Trainer:
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_configs,
             )
 
@@ -2778,6 +2782,8 @@ class Trainer:
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_configs,
             )
 
@@ -2825,6 +2831,8 @@ class Trainer:
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_config,
             )
         else:
