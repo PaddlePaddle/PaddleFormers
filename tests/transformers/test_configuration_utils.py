@@ -156,8 +156,8 @@ class StandardConfigMappingTest(unittest.TestCase):
 
     def test_load_from_hf(self):
         """test load config from hf"""
-        config = Qwen3Config.from_pretrained("Paddleformers/tiny-random-qwen3", download_hub="huggingface")
-        self.assertEqual(config.hidden_size, 4096)
+        config = Qwen3Config.from_pretrained("Qwen/Qwen3-0.6B", download_hub="huggingface")
+        self.assertEqual(config.hidden_size, 1024)
 
         with tempfile.TemporaryDirectory() as tempdir:
             config.save_pretrained(tempdir)
@@ -165,7 +165,7 @@ class StandardConfigMappingTest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(tempdir, CONFIG_NAME)))
 
             loaded_config = Qwen3Config.from_pretrained(tempdir)
-            self.assertEqual(loaded_config.hidden_size, 4096)
+            self.assertEqual(loaded_config.hidden_size, 1024)
 
     def test_config_mapping(self):
         # create new fake-qwen3 class to prevent static-attributed modified by this test
