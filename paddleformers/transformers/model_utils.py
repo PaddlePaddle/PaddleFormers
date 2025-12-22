@@ -1006,7 +1006,7 @@ def _load_state_dict_into_model(model_to_load, state_dict, start_prefix, model_t
     if len(start_prefix) > 0:
         for key in list(state_dict.keys()):
             if key.startswith(start_prefix):
-                state_dict[key.replace(start_prefix, "")] = state_dict.pop(key)
+                state_dict[key.replace(start_prefix, "", 1)] = state_dict.pop(key)
 
     _convert_state_dict_dtype_and_shape(state_dict, model_to_load_state_dict)
 
@@ -2820,6 +2820,18 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         if dtype is None:
             if config.dtype is not None:
                 dtype = config.dtype
+            elif config.sub_configs and (
+                sub_config := next(
+                    (
+                        v
+                        for k in config.sub_configs
+                        for v in [getattr(config, k, None)]
+                        if v and hasattr(v, "dtype") and v.dtype
+                    ),
+                    None,
+                )
+            ):
+                dtype = sub_config.dtype
             else:
                 dtype = paddle.get_default_dtype()
                 for key in config.sub_configs:
