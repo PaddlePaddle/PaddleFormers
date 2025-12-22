@@ -17,7 +17,7 @@ export root_dir=$(pwd)
 
 source PaddleFleet/.venv/bin/activate
 cd PaddleFormers
-git pull origin pull/3200/head
+git pull origin --no-edit pull/3200/head
 cd -
 
 wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/glm45/glm45_fleet.12-18.tar --no-check-certificate
