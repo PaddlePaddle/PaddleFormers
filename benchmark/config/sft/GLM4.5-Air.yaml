@@ -65,3 +65,4 @@ save_to_hf: true
 benchmark: true
 num_layers_in_first_pipeline_stage: 11
 num_layers_in_last_pipeline_stage: 11
+continue_training: false
