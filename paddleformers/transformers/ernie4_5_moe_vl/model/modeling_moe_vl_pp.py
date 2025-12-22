@@ -708,7 +708,7 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         )
         self.config = config
         self.scatter_output = sequence_parallel  # outer `ScatterOp`
-        self.use_mem_eff_attn = config.use_mem_eff_attn
+        # self.use_mem_eff_attn = config.use_mem_eff_attn
 
     def forward(self, args):
         """forward lm embedding + mm embedding + resampler"""
@@ -748,7 +748,7 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         # inbatch_pack_offset, image_features, image_type_ids, grid_thw, position_ids, audio_ids = get_args(
         inbatch_pack_offset, image_features, image_type_ids, grid_thw, position_ids = get_args(
             args,
-            self.use_mem_eff_attn,  # inbatch, False
+            True,  # self.use_mem_eff_attn,  # inbatch, False
             self.config.vision_config is not None,  # image-type-ids
             getattr(self.config.vision_config, "variable_resolution", False),  # varres
             self.config.rope_3d,  # position-ids
@@ -881,7 +881,7 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
         super().__init__(config, layer_idx)
         self.layer_idx = layer_idx
         self.use_full_recompute = use_full_recompute
-        self.use_meme_eff_attn = config.use_mem_eff_attn  # fix by liaojincheng
+        # self.use_meme_eff_attn = config.use_mem_eff_attn  # fix by liaojincheng
         self.sequence_parallel = config.sequence_parallel
         self.rope_3d = config.rope_3d
 
@@ -1192,6 +1192,8 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
     transpose_weight_keys = Ernie4_5_VLMoeForConditionalGeneration.transpose_weight_keys
     _gen_aoa_config = Ernie4_5_VLMoeForConditionalGeneration._gen_aoa_config
     _gen_inv_aoa_config = Ernie4_5_VLMoeForConditionalGeneration._gen_inv_aoa_config
+    get_rope_index = Ernie4_5_VLMoeForConditionalGeneration.get_rope_index
+    get_token_type_ids = Ernie4_5_VLMoeForConditionalGeneration.get_token_type_ids
     pipe_model_type = "torch"
 
     def _prepare_pipeline_inputs_func(self, data: Union[List, Dict]):

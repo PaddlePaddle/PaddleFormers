@@ -647,6 +647,7 @@ class ErnieVLPlugin(BasePlugin):
         image_processor = getattr(processor, "image_processor")
 
         merge_length = getattr(image_processor, "merge_size") ** 2
+        temporal_conv_size = getattr(image_processor, "temporal_conv_size")
         if self.expand_mm_tokens:
             mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
@@ -670,7 +671,9 @@ class ErnieVLPlugin(BasePlugin):
 
             while VIDEO_PLACEHOLDER in content:
                 video_seqlen = (
-                    video_grid_thw[num_video_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                    video_grid_thw[num_video_tokens].prod().item() // merge_length // temporal_conv_size
+                    if self.expand_mm_tokens
+                    else 1
                 )
                 content = content.replace(
                     VIDEO_PLACEHOLDER,
