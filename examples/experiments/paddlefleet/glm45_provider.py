@@ -40,7 +40,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     init_method_std: int = 0.02
     hidden_dropout_prob: float = 0.0
     vocab_size: int = 151552
-    share_embeddings_and_output_weights: Optional[bool] = False
+    tie_word_embeddings: Optional[bool] = False
     rms_norm_eps: float = 1e-5
     autocast_dtype: paddle.dtype = paddle.bfloat16
     params_dtype: paddle.dtype = paddle.bfloat16
