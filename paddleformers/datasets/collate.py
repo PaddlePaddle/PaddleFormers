@@ -410,8 +410,14 @@ def mm_collate_fn(
                 )
 
     transposed_list = list(zip(*return_list))
-    return_list = [paddle.concat([paddle.to_tensor(x) for x in tensors], axis=0) for tensors in transposed_list]
-    input_dict = dict(zip(input_keys, return_list))
+    return_list = []
+    for tensors in transposed_list:
+        filtered_tensors = [paddle.to_tensor(x) for x in tensors if x is not None and len(x) > 0]
+        if filtered_tensors:
+            return_list.append(paddle.concat(filtered_tensors, axis=0))
+        else:
+            return_list.append(paddle.to_tensor([]))
+    input_dict = {key: value for key, value in zip(input_keys, return_list) if (value is not None and len(value) > 0)}
     return input_dict
 
 
