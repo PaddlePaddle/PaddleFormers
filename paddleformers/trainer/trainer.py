@@ -64,6 +64,7 @@ except:
     core = None
 try:
     import paddlefleet.distributed.model as paddlefleet_dist_model
+    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
     from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
@@ -1304,13 +1305,30 @@ class Trainer:
                         master_weight = paddle.reshape(master_weights[param.name], param.shape)
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
 
-            group_getter = GroupGetter(self.model)
-            opt_state_dict = split_opt_state(opt_state_dict, group_getter)
-            for gid in group_getter.get_group_ids():
-                sub_opt_state_dict = opt_state_dict[gid]
-                group = group_getter.get_group_by_id(gid)
-                if self.args.bf16:
-                    recover_params_from_master_weight(sub_opt_state_dict, group)
+            with paddle.no_grad():
+                if paddle.distributed.is_initialized():
+                    group_getter = GroupGetter(self.model)
+                    opt_state_dict = split_opt_state(opt_state_dict, group_getter)
+                    for gid in group_getter.get_group_ids():
+                        sub_opt_state_dict = opt_state_dict[gid]
+                        group = group_getter.get_group_by_id(gid)
+                        if self.args.bf16:
+                            recover_params_from_master_weight(sub_opt_state_dict, group)
+                else:
+                    master_weights = opt_state_dict["master_weights"]
+                    model_state_dict = self.model.state_dict()
+                    for key, param in model_state_dict.items():
+                        if param.name in master_weights and param.dtype == paddle.bfloat16:
+                            logger.debug(
+                                f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
+                            )
+                            assert (
+                                param.shape == master_weights[param.name].shape
+                            ), f"got {param.shape} vs {master_weights[param.name].shape}"
+                            master_weight = paddle.reshape(master_weights[param.name], param.shape)
+                            paddle.assign(
+                                paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key]
+                            )
 
     def prepare_resume_from_checkpoint(self, args, resume_from_checkpoint):
         logger.info(f"Starting training from resume_from_checkpoint : {resume_from_checkpoint}")
@@ -1757,7 +1775,6 @@ class Trainer:
                     f"optimizer not run, scale_before: {scale_before_value[0]}, scale_after: {scale_after_value[0]}"
                 )
         elif isinstance(self.optimizer, HybridParallelOptimizer):
-            parameters_list = [t if t.is_contiguous() else t.contiguous() for t in parameters_list]
             self.optimizer._step(parameters_list)
         else:
             self.optimizer.step()
@@ -1805,7 +1822,7 @@ class Trainer:
             if (
                 self.args.use_hybrid_parallel
                 and self.args.context_parallel_size > 1
-                and getattr(self.model, "is_fleet", False)
+                and isinstance(self.model, FleetGPTModel)
             ):
                 inputs = get_batch_on_this_cp_rank(inputs)
 
@@ -2642,6 +2659,8 @@ class Trainer:
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_configs,
             )
         else:
@@ -2655,6 +2674,8 @@ class Trainer:
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_configs,
             )
 
@@ -2762,6 +2783,8 @@ class Trainer:
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_configs,
             )
 
@@ -2809,6 +2832,8 @@ class Trainer:
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
+                prefetch_factor=self.args.prefetch_factor,
+                reader_buffer_size=self.args.gradient_accumulation_steps,
                 **additional_config,
             )
         else:
@@ -2895,11 +2920,15 @@ class Trainer:
                 for key, value in target_attr.items():
                     if get_env_device() == "gpu":
                         target_attr[key] = getattr(value, action)()
+                    elif get_env_device() == "xpu":
+                        target_attr[key] = getattr(value, action)()
                     else:
                         target_attr[key] = getattr(value, "to")(action)
 
     def _offload_optimizer(self):
         if get_env_device() == "gpu":
+            self._apply_to_optimizer("pin_memory")
+        elif get_env_device() == "xpu":
             self._apply_to_optimizer("pin_memory")
         else:
             self._apply_to_optimizer("cpu")
@@ -3362,6 +3391,8 @@ class Trainer:
             # update data type for pure fp16
             if data.place.is_cuda_pinned_place():
                 return data.cuda()
+            elif data.place.is_xpu_pinned_place():
+                return data.to(paddle.device.get_device())
             return data
             # return data.to(**kwargs)
         return data
