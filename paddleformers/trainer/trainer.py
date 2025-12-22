@@ -1550,14 +1550,13 @@ class Trainer:
                 if delay_optimizer_creation:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
                 self._load_optimizer_and_scheduler(resume_from_checkpoint)
-            elif self.args.load_checkpoint_format == "flex_checkpoint":
+            elif self.args.load_checkpoint_format == "flex_checkpoint" and resume_from_checkpoint is not None:
                 if delay_optimizer_creation:
                     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
                 if ShardingOption.FULL_SHARD in self.args.sharding:
                     model.init_slice_param()
                     model.init_optimizer_for_slice_param()
-                if resume_from_checkpoint is not None:
-                    self._load_flex_checkpoint(resume_from_checkpoint)
+                self._load_flex_checkpoint(resume_from_checkpoint)
                 if ShardingOption.FULL_SHARD in self.args.sharding:
                     model.align_param_to_buffer_and_clear_slice_param()
 
