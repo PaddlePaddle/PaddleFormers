@@ -1125,7 +1125,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         num_head_empty_layers = (
             config.remove_head_layers if hasattr(config, "remove_head_layers") and config.remove_head_layers else 0
         )
-        print("num_head_empty_layers ", num_head_empty_layers)
+
         # layer 0
         aoa_config["aoa_statements"] += [
             f"model.layers.0.mlp.down_proj.weight^T -> {model_prefix}layers.{num_head_empty_layers}.mlp.down_proj.weight"
@@ -1141,7 +1141,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             ]
 
         # layer0 - layer_num_hidden_layers
-        for layer_idx in range(0, num_hidden_layers):
+        for layer_idx in reversed(range(0, num_hidden_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
@@ -1162,7 +1162,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
         # layer1 - layer_num_hidden_layers
-        for layer_idx in range(1, num_hidden_layers):
+        for layer_idx in reversed(range(1, num_hidden_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
@@ -1187,9 +1187,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix}.mlp.shared_experts.gate_proj.weight^T, {prefix}.mlp.shared_experts.up_proj.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
                     f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
                 ]
-        print("aoa_config --- ")
-        for item in aoa_config["aoa_statements"]:
-            print(item)
+
         return aoa_config
 
     # NOTE: These aoa_config items will be removed later. The subsequent AOA parsing module will automatically generate the reverse AOA based on the forward (from_pretrained) AOA.
@@ -1564,7 +1562,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         )
 
 
-class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1579,7 +1577,7 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         return gpt_model
 
 
-class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
     _pp_plan = {"lm_head": (["hidden_states"], ["logits"])}
