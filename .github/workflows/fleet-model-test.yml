@@ -364,6 +364,7 @@ jobs:
           echo "Install uv"
           pip install uv
           echo "uv sync"
+          git checkout ebaddb4ba69855cede66b14ce1dea03cd0a60c90
           git submodule update --init --recursive
           git log -1
           uv sync --group ci > /dev/null
@@ -403,7 +404,7 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
           fi
           '
-          
+
 
       - name: Terminate and delete the container
         if: ${{ always() }}
