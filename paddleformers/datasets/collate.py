@@ -358,6 +358,8 @@ def mm_collate_fn(
             padded_position_ids = paddle.nn.functional.pad(
                 original_position_ids, pad=[0, max_seq_len - original_position_ids.shape[2]]
             )
+        else:
+            padded_position_ids = []
         if get_token_type_func is not None:  # ernie45vl
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
             padded_token_type_ids, images, grid_thw = get_token_type_func(
