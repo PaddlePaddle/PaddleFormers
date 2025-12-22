@@ -680,7 +680,7 @@ class Qwen3VisionTransformerPretrainedModel(Qwen3VLPretrainedModel):
 
     def fast_pos_embed_interpolate(self, grid_thw):
         grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
-        device = paddle.get_device()
+        device = self.pos_embed.weight.device
 
         idx_list = [[] for _ in range(4)]
         weight_list = [[] for _ in range(4)]
@@ -1394,11 +1394,9 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        if self.gradient_checkpointing and self.training:
+        if self.config.recompute and self.training:
             if use_cache:
-                logger.warning_once(
-                    "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
-                )
+                logger.warning_once("`use_cache=True` is incompatible with recompute. Setting `use_cache=False`...")
                 use_cache = False
 
         if use_cache and past_key_values is None:
