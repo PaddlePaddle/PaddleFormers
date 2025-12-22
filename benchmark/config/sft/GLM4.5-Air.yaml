@@ -50,8 +50,9 @@ sharding_parallel_config: "split_param"
 amp_master_grad: true
 #sharding_parallel_degree: 8
 sharding: stage1
-recompute: true
-bf16: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1bf16: true
 fp16_opt_level: O2
 # unified_checkpoint: true
 load_via_cpu: true
@@ -61,3 +62,5 @@ load_checkpoint_format : "flex_checkpoint"
 save_to_hf: true
 
 benchmark: true
+num_layers_in_first_pipeline_stage: 11
+num_layers_in_last_pipeline_stage: 11
