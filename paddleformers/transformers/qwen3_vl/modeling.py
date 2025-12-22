@@ -449,8 +449,7 @@ class Qwen3VLPretrainedModel(PretrainedModel):
             ]
         else:
             aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}",
-                f"model.language_model.layers.$LAYER_ID.self_attn.q_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.k_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.v_proj.bias -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}, axis=0",
+                f"model.language_model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}"
             ]
 
         # FFN
@@ -552,15 +551,9 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         else:
             aoa_config["aoa_statements"] += [
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight  -> model.language_model.layers.$LAYER_ID.self_attn.q_proj.weight, model.language_model.layers.$LAYER_ID.self_attn.k_proj.weight, model.language_model.layers.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}",
-                f"{llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.language_model.layers.$LAYER_ID.self_attn.q_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.k_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}, axis=0",
             ]
             aoa_config["aoa_statements"] += [
                 f"{llm_prefix}layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.{x}_proj.weight"
-                for layer_id in range(config.text_config.num_hidden_layers)
-                for x in ("q", "k", "v")
-            ]
-            aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.{layer_id}.self_attn.{x}_proj.bias -> model.language_model.layers.{layer_id}.self_attn.{x}_proj.bias"
                 for layer_id in range(config.text_config.num_hidden_layers)
                 for x in ("q", "k", "v")
             ]
@@ -1797,6 +1790,8 @@ class Qwen3VLModel(Qwen3VLPretrainedModel):
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
         if pixel_values_videos is not None:
+            print("video_grid_thw", video_grid_thw)
+            print("pixel_values_videos", pixel_values_videos)
             video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
             video_embeds = paddle.cat(video_embeds, axis=0).astype(inputs_embeds.dtype)
             _, video_mask = self.get_placeholder_mask(
