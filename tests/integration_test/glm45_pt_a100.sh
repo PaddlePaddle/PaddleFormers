@@ -16,7 +16,7 @@ set -exo pipefail
 export root_dir=$(pwd)
 
 source PaddleFleet/.venv/bin/activate
-cd PaddleFleet
+cd PaddleFormers
 git pull origin pull/3200/head
 cd -
 
