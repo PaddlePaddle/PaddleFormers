@@ -1303,7 +1303,7 @@ class TrainingArguments:
         default=False, metadata={"help": "Whether to overlap data parallelism (DP) communication with computation."}
     )
     pp_sharding_comm_overlap: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
@@ -1550,13 +1550,13 @@ class TrainingArguments:
         },
     )
     sd_sharding_comm_overlap: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
     )
     sd_shardingv1_comm_overlap: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
