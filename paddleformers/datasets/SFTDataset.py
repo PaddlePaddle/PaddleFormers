@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List
 
 import numpy as np
@@ -39,10 +39,10 @@ class Sequence:
     position_ids: List[int]
     labels: List[int]
     num_examples: int
-    images: List[str]
-    videos: List[str]
-    audios: List[str]
-    mm_inputs: Dict = None
+    images: List[str] = field(default_factory=list)
+    videos: List[str] = field(default_factory=list)
+    audios: List[str] = field(default_factory=list)
+    mm_inputs: Dict = field(default_factory=dict)
 
 
 class SFTDataSet(IterableDataset):
@@ -155,9 +155,6 @@ class SFTDataSet(IterableDataset):
                         position_ids=cut_position_ids,
                         labels=res_labels,
                         num_examples=actual_example_num,
-                        images=[],
-                        videos=[],
-                        audios=[],
                     )
                     batch_sequence = [sequence]
                     yield batch_sequence
@@ -181,9 +178,6 @@ class SFTDataSet(IterableDataset):
                     position_ids=pos_ids,
                     labels=res_labels,
                     num_examples=actual_example_num,
-                    images=[],
-                    videos=[],
-                    audios=[],
                 )
                 batch_sequence = [sequence]
                 yield batch_sequence
@@ -320,9 +314,6 @@ class SFTDataSet(IterableDataset):
             position_ids=pos_ids,
             labels=res_labels,
             num_examples=actual_example_num,
-            images=[],
-            videos=[],
-            audios=[],
         )
         return sequence
 
@@ -350,6 +341,7 @@ class SFTDataSet(IterableDataset):
         videos = example.get("videos", [])
         audios = example.get("audios", [])
         objects = example.get("objects", {})
+        mm_inputs = None
 
         if self.use_template:
             if self.template_backend == "jinja":
