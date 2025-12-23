@@ -94,6 +94,7 @@ jobs:
           echo "uv sync"
           git submodule update --init --recursive
           git log -1
+          export export UV_LOCK_TIMEOUT=600
           uv sync --group ci -v > /dev/null
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           uv pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
@@ -149,7 +150,7 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5 single-card.\033[0m"
           fi
           '
-          
+
 
       - name: Integration test (Qwen3-30B-A3B single-card)
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
