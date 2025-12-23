@@ -20,7 +20,8 @@
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, NamedTuple, Union
+from datetime import datetime
+from typing import Any, NamedTuple
 
 from typing_extensions import override
 
@@ -48,6 +49,8 @@ QWEN_TOOL_PROMPT = (
     """"arguments": <args-json-object>}}\n</tool_call>"""
 )
 
+ERNIE_TOOL_PROMPT = "\n<tool_list>\n[{tool_text}]\n</tool_list>\n"
+
 
 GLM4_TOOL_PROMPT = (
     "你是一个名为 ChatGLM 的人工智能助手。你是基于智谱 AI 公司训练的语言模型 GLM-4 模型开发的，" "你的任务是针对用户的问题和要求提供适当的答复和支持。\n\n# 可用工具{tool_text}"
@@ -63,6 +66,13 @@ GLM4_MOE_TOOL_PROMPT = (
     "\n<arg_key>{{arg-key-2}}</arg_key>"
     "\n<arg_value>{{arg-value-2}}</arg_value>"
     "\n...\n</tool_call>\n"
+)
+
+LLAMA3_TOOL_PROMPT = (
+    "Cutting Knowledge Date: December 2023\nToday Date: {date}\n\n"
+    "You have access to the following functions. To call a function, please respond with JSON for a function call. "
+    """Respond in the format {{"name": function name, "parameters": dictionary of argument name and its value}}. """
+    "Do not use variables.\n\n{tool_text}"
 )
 
 
@@ -173,20 +183,6 @@ class GLM4ToolUtils(ToolUtils):
 
         return f"{functions[0].name}\n{functions[0].arguments}"
 
-    @override
-    @staticmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        if "\n" not in content:
-            return content
-
-        tool_name, tool_input = content.split("\n", maxsplit=1)
-        try:
-            arguments = json.loads(tool_input.strip())
-        except json.JSONDecodeError:
-            return content
-
-        return [FunctionCall(tool_name, json.dumps(arguments, ensure_ascii=False))]
-
 
 class GLM4MOEToolUtils(QwenToolUtils):
     r"""GLM-4-MOE tool using template."""
@@ -220,11 +216,61 @@ class GLM4MOEToolUtils(QwenToolUtils):
         return "\n".join(function_texts)
 
 
+class Llama3ToolUtils(ToolUtils):
+    r"""Llama 3.x tool using template with `tools_in_user_message=False`.
+
+    Reference: https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_1/#json-based-tool-calling
+    """
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        date = datetime.now().strftime("%d %b %Y")
+        tool_text = ""
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text += json.dumps(wrapped_tool, indent=4, ensure_ascii=False) + "\n\n"
+
+        return LLAMA3_TOOL_PROMPT.format(date=date, tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_objects = [{"name": name, "parameters": json.loads(arguments)} for name, arguments in functions]
+        return json.dumps(function_objects[0] if len(function_objects) == 1 else function_objects, ensure_ascii=False)
+
+
+class ERNIEToolUtils(ToolUtils):
+    r"""ERNIE 4.5 tool using template."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text_list = []
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text_list.append(json.dumps(wrapped_tool, ensure_ascii=False))
+        tool_text = ", ".join(tool_text_list)
+
+        return ERNIE_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_texts = [
+            json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
+            for name, arguments in functions
+        ]
+        return "\n".join([f"<tool_call>{text}\n</tool_call>" for text in function_texts])
+
+
 TOOLS = {
     "default": DefaultToolUtils(),
+    "ernie": ERNIEToolUtils(),
     "qwen": QwenToolUtils(),
     "glm4": GLM4ToolUtils(),
     "glm4_moe": GLM4MOEToolUtils(),
+    "llama3": Llama3ToolUtils(),
 }
 
 

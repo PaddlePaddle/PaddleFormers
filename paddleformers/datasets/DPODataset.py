@@ -102,7 +102,11 @@ class DPODataSet(IterableDataset):
         if not self.packing:
             for _ in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
-                sequence = self._postprocess_sequence(example)
+                try:
+                    sequence = self._postprocess_sequence(example)
+                except Exception as e:
+                    print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                    continue
                 if sequence is None:
                     continue
 
@@ -116,7 +120,11 @@ class DPODataSet(IterableDataset):
                 # base
                 for _ in range(len(self.mix_datasets)):
                     example = next(dataset_iterator)
-                    sequence = self._postprocess_sequence(example)
+                    try:
+                        sequence = self._postprocess_sequence(example)
+                    except Exception as e:
+                        print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                        continue
                     if sequence is None:
                         continue
                     if cur_len + len(sequence.token_ids) <= self.max_seq_len:
@@ -133,7 +141,11 @@ class DPODataSet(IterableDataset):
                 buffer_size = self.buffer_size
                 for _ in range(len(self.mix_datasets)):
                     example = next(dataset_iterator)
-                    sequence = self._postprocess_sequence(example)
+                    try:
+                        sequence = self._postprocess_sequence(example)
+                    except Exception as e:
+                        print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                        continue
                     if sequence is None:
                         continue
                     sequence_buffer.append(sequence)
@@ -223,11 +235,14 @@ class DPODataSet(IterableDataset):
                 chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example["chosen"])
                 rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example["rejected"])
         else:
+            mm_inputs = self.template.mm_plugin.get_mm_inputs(
+                images, videos, audios, [len(images)], [len(videos)], [len(audios)], None, self.processor
+            )
             chosen_messages = self.template.mm_plugin.process_messages(
-                example["chosen"]["messages"], images, videos, audios, self.processor
+                example["chosen"]["messages"], images, videos, audios, mm_inputs, self.processor
             )
             rejected_messages = self.template.mm_plugin.process_messages(
-                example["rejected"]["messages"], images, videos, audios, self.processor
+                example["rejected"]["messages"], images, videos, audios, mm_inputs, self.processor
             )
             prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
             _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)

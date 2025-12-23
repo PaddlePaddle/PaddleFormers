@@ -174,6 +174,7 @@ def run_dpo(
     if not training_args.reference_free and not model_args.lora:
         ref_model_config.dpo_config = dpo_config
     model_config.dpo_config = dpo_config
+
     if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
@@ -291,7 +292,7 @@ def run_dpo(
                 "Random mixing requires a fixed number of training steps to properly sample data."
             )
         if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
-            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, config=model.config)
+            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, dataset_config)
 
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()
@@ -358,7 +359,9 @@ def run_dpo(
         data_collator=partial(
             collate_fn,
             tokenizer=tokenizer,
+            training_args=training_args,
             max_seq_len=max_seq_len,
+            padding_free=data_args.padding_free,
             use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
