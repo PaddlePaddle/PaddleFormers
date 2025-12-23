@@ -76,27 +76,6 @@ class Qwen3VLMoeTextExperts(nn.Layer):
         )
 
     def forward(self, hidden_states, routing_weights, router_indices):
-        """
-        实现混合专家(MoE)模型的前向传播逻辑，根据训练/推理模式采用不同计算策略。
-
-        Args:
-            hidden_states (Tensor): 输入张量
-            routing_weights (Tensor): 路由权重
-            router_indices (Tensor): 路由索引
-
-        Returns:
-            Tensor: 处理后的输出张量，形状与 hidden_states 相同
-
-        实现细节:
-            训练模式:
-                - 采用循环遍历专家的方式优化显存使用
-                - 使用one-hot编码确定token到专家的分配
-                - 通过gather/scatter操作实现稀疏计算
-            推理模式:
-                - 预留并行计算逻辑(待实现)
-                - 可通过重复输入并批量矩阵乘法优化
-        """
-
         batch_size = hidden_states.shape[0]
         hidden_states = hidden_states.reshape(-1, self.hidden_size)  # (num_tokens, hidden_size)
 
@@ -177,7 +156,7 @@ class Qwen3VisionPatchEmbed(nn.Layer):
         return hidden_states
 
 
-class Qwen3VisionRotaryEmbedding(nn.Layer):
+class Qwen3VLMoeVisionRotaryEmbedding(nn.Layer):
     inv_freq: paddle.Tensor
 
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
@@ -345,7 +324,7 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
     config_class = Qwen3VLMoeConfig
     base_model_prefix = "model"
     input_modalities = ["image", "video", "text"]
-    _no_split_modules = ["Qwen3VLMoeDecoderLayer", "Qwen3VLMoeVisionBlock"]
+    _no_split_modules = ["Qwen3VLMoeTextDecoderLayer", "Qwen3VLMoeVisionBlock"]
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
     transpose_weight_keys = [
         "q_proj",
@@ -359,6 +338,22 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
         "proj",
         "linear_fc\d+",
     ]
+
+    @paddle.no_grad()
+    def _init_weights(self, module):
+        """Initialize the weights."""
+        super()._init_weights(module)
+        if hasattr(self.config, "initializer_range"):
+            std = self.config.initializer_range
+        else:
+            std = getattr(self.config.get_text_config(), "initializer_range", 0.02)
+        if isinstance(module, Qwen3VLMoeTextExperts):
+            normal_init = nn.initializer.Normal(mean=0.0, std=std)
+            normal_init(module.gate_up_proj)
+            normal_init(module.down_proj)
+        elif isinstance(module, Qwen3VLMoeVisionRotaryEmbedding):
+            inv_freq = 1.0 / (module.theta ** (paddle.arange(0, module.dim, 2, dtype=paddle.float) / module.dim))
+            module.inv_freq.set_value(inv_freq)
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: Qwen3VLMoeConfig, is_split=True):
@@ -698,7 +693,7 @@ class Qwen3VisionTransformerPretrainedModel(Qwen3VLMoePretrainedModel):
         )
         self.num_grid_per_side = int(config.num_position_embeddings**0.5)
         head_dim = config.hidden_size // config.num_heads
-        self.rotary_pos_emb = Qwen3VisionRotaryEmbedding(head_dim // 2)
+        self.rotary_pos_emb = Qwen3VLMoeVisionRotaryEmbedding(head_dim // 2)
 
         self.blocks = nn.LayerList([Qwen3VLMoeVisionBlock(config) for _ in range(config.depth)])
         self.merger = Qwen3VLMoePatchMerger(
@@ -1023,11 +1018,11 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
-        q (`torch.Tensor`): The query tensor.
-        k (`torch.Tensor`): The key tensor.
-        cos (`torch.Tensor`): The cosine part of the rotary embedding.
-        sin (`torch.Tensor`): The sine part of the rotary embedding.
-        position_ids (`torch.Tensor`, *optional*):
+        q (`paddle.Tensor`): The query tensor.
+        k (`paddle.Tensor`): The key tensor.
+        cos (`paddle.Tensor`): The cosine part of the rotary embedding.
+        sin (`paddle.Tensor`): The sine part of the rotary embedding.
+        position_ids (`paddle.Tensor`, *optional*):
             Deprecated and unused.
         unsqueeze_dim (`int`, *optional*, defaults to 1):
             The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
@@ -1046,7 +1041,7 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
     return q_embed, k_embed
 
 
-class Qwen3VLMoeAttention(nn.Layer):
+class Qwen3VLMoeTextAttention(nn.Layer):
     """
     Multi-headed attention from 'Attention Is All You Need' paper. Modified to use sliding window attention: Longformer
     and "Generating Long Sequences with Sparse Transformers".
@@ -1244,13 +1239,17 @@ class Qwen3VLMoeTextMLP(MLP):
         super().__init__(config, has_bias=False)
 
 
-class Qwen3VLMoeDecoderLayer(nn.Layer):
+class Qwen3VLMoeTextDecoderLayer(nn.Layer):
     def __init__(self, config: Qwen3VLMoeTextConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
-        self.self_attn = Qwen3VLMoeAttention(config, layer_idx)
-
-        self.mlp = Qwen3VLMoeTextMLP(config, fuse_up_gate=config.fuse_attention_ffn)
+        self.self_attn = Qwen3VLMoeTextAttention(config, layer_idx)
+        if (layer_idx not in config.mlp_only_layers) and (
+            config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
+        ):
+            self.mlp = Qwen3VLMoeTextSparseMoeBlock(config)
+        else:
+            self.mlp = Qwen3VLMoeTextMLP(config, fuse_up_gate=config.fuse_attention_ffn)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -1336,6 +1335,27 @@ class Qwen3VLMoeDecoderLayer(nn.Layer):
         return outputs
 
 
+class Qwen3VLMoeTextTopKRouter(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.top_k = config.num_experts_per_tok
+        self.num_experts = config.num_experts
+        self.norm_topk_prob = config.norm_topk_prob
+        self.hidden_dim = config.hidden_size
+        self.weight = nn.Parameter(paddle.zeros(self.num_experts, self.hidden_dim))
+
+    def forward(self, hidden_states):
+        hidden_states = hidden_states.reshape(-1, self.hidden_dim)
+        router_logits = F.linear(hidden_states, self.weight)  # (seq_len, num_experts)
+        router_logits = nn.functional.softmax(router_logits, dtype=paddle.float, dim=-1)
+        router_top_value, router_indices = paddle.topk(router_logits, self.top_k, dim=-1)  # (seq_len, top_k)
+        if self.norm_topk_prob:
+            router_top_value /= router_top_value.sum(dim=-1, keepdim=True)
+        router_top_value = router_top_value.to(router_logits.dtype)
+        router_scores = router_top_value
+        return router_logits, router_scores, router_indices
+
+
 class Qwen3VLMoeTextModel(Qwen3VLMoePretrainedModel):
     config: Qwen3VLMoeTextConfig
     input_modalities = "text"
@@ -1352,7 +1372,7 @@ class Qwen3VLMoeTextModel(Qwen3VLMoePretrainedModel):
             padding_idx=self.padding_idx,
         )
         self.layers = nn.LayerList(
-            [Qwen3VLMoeDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [Qwen3VLMoeTextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         self._attn_implementation = config._attn_implementation
         self.norm = GeneralNorm.create(
@@ -1644,7 +1664,7 @@ class Qwen3VLMoeModel(Qwen3VLMoePretrainedModel):
     base_model_prefix = "model"
     _checkpoint_conversion_mapping = {}
     config: Qwen3VLMoeConfig
-    _no_split_modules = ["Qwen3VLMoeDecoderLayer", "Qwen3VLMoeVisionBlock"]
+    _no_split_modules = ["Qwen3VLMoeTextDecoderLayer", "Qwen3VLMoeVisionBlock"]
 
     def __init__(self, config):
         super().__init__(config)
@@ -1982,6 +2002,88 @@ class Qwen3VLMoeModel(Qwen3VLMoePretrainedModel):
         return output if return_dict else output.to_tuple()
 
 
+def load_balancing_loss_func(
+    gate_logits: Union[paddle.Tensor, tuple[paddle.Tensor], None],
+    num_experts: Optional[int] = None,
+    top_k=2,
+    attention_mask: Optional[paddle.Tensor] = None,
+) -> Union[paddle.Tensor, int]:
+    r"""
+    Computes auxiliary load balancing loss as in Switch Transformer - implemented in Paddle.
+
+    See Switch Transformer (https://huggingface.co/papers/2101.03961) for more details. This function implements the loss
+    function presented in equations (4) - (6) of the paper. It aims at penalizing cases where the routing between
+    experts is too unbalanced.
+
+    Args:
+        gate_logits:
+            Logits from the `gate`, should be a tuple of model.config.num_hidden_layers tensors of
+            shape [batch_size X sequence_length, num_experts].
+        num_experts:
+            Number of experts
+        top_k:
+            The number of experts to route per-token, can be also interpreted as the `top-k` routing
+            parameter.
+        attention_mask (`paddle.Tensor`, *optional*):
+            The attention_mask used in forward function
+            shape [batch_size X sequence_length] if not None.
+
+    Returns:
+        The auxiliary loss.
+    """
+    if gate_logits is None or not isinstance(gate_logits, tuple):
+        return 0
+
+    if isinstance(gate_logits, tuple):
+        compute_device = gate_logits[0].device
+        concatenated_gate_logits = paddle.cat([layer_gate.to(compute_device) for layer_gate in gate_logits], dim=0)
+
+    routing_weights = nn.functional.softmax(concatenated_gate_logits, dim=-1)
+
+    _, selected_experts = paddle.topk(routing_weights, top_k, dim=-1)
+
+    expert_mask = nn.functional.one_hot(selected_experts, num_experts)
+
+    if attention_mask is None:
+        # Compute the percentage of tokens routed to each experts
+        tokens_per_expert = paddle.mean(expert_mask.float(), dim=0)
+
+        # Compute the average probability of routing to these experts
+        router_prob_per_expert = paddle.mean(routing_weights, dim=0)
+    else:
+        batch_size, sequence_length = attention_mask.shape
+        num_hidden_layers = concatenated_gate_logits.shape[0] // (batch_size * sequence_length)
+
+        # Compute the mask that masks all padding tokens as 0 with the same shape of expert_mask
+        expert_attention_mask = (
+            attention_mask[None, :, :, None, None]
+            .expand((num_hidden_layers, batch_size, sequence_length, top_k, num_experts))
+            .reshape(-1, top_k, num_experts)
+            .to(compute_device)
+        )
+
+        # Compute the percentage of tokens routed to each experts
+        tokens_per_expert = paddle.sum(expert_mask.float() * expert_attention_mask, dim=0) / paddle.sum(
+            expert_attention_mask, dim=0
+        )
+
+        # Compute the mask that masks all padding tokens as 0 with the same shape of tokens_per_expert
+        router_per_expert_attention_mask = (
+            attention_mask[None, :, :, None]
+            .expand((num_hidden_layers, batch_size, sequence_length, num_experts))
+            .reshape(-1, num_experts)
+            .to(compute_device)
+        )
+
+        # Compute the average probability of routing to these experts
+        router_prob_per_expert = paddle.sum(routing_weights * router_per_expert_attention_mask, dim=0) / paddle.sum(
+            router_per_expert_attention_mask, dim=0
+        )
+
+    overall_loss = paddle.sum(tokens_per_expert * router_prob_per_expert.unsqueeze(0))
+    return overall_loss * num_experts
+
+
 @dataclass
 class Qwen3VLMoeCausalLMOutputWithPast(ModelOutput):
     r"""
@@ -2002,6 +2104,7 @@ class Qwen3VLMoeCausalLMOutputWithPast(ModelOutput):
     hidden_states: Optional[tuple[paddle.Tensor]] = None
     attentions: Optional[tuple[paddle.Tensor]] = None
     rope_deltas: Optional[paddle.Tensor] = None
+    aux_loss: Optional[paddle.Tensor] = None
 
 
 class Qwen3VLMoeForConditionalGeneration(Qwen3VLMoePretrainedModel):
@@ -2148,9 +2251,20 @@ class Qwen3VLMoeForConditionalGeneration(Qwen3VLMoePretrainedModel):
         loss = None
         if labels is not None:
             loss, _ = self.criterion(logits, labels)
+        aux_loss = None
+        if kwargs.get("output_router_logits", False):
+            aux_loss = load_balancing_loss_func(
+                outputs.router_logits,
+                self.config.text_config.num_experts,
+                self.config.text_config.num_experts_per_tok,
+                attention_mask,
+            )
+            if labels is not None:
+                loss += self.config.text_config.router_aux_loss_coef * aux_loss.to(loss.device)
 
         return Qwen3VLMoeCausalLMOutputWithPast(
             loss=loss,
+            aux_loss=aux_loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
