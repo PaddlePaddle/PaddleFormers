@@ -225,7 +225,6 @@ class Ernie4_5Attention(nn.Layer):
                 q_hidden_size,
                 has_bias=config.use_bias,
                 config=config,
-                fuse_matmul_bias=config.fuse_linear,
                 tp_plan="colwise",
             )
             self.k_proj = GeneralLinear.create(
@@ -233,7 +232,6 @@ class Ernie4_5Attention(nn.Layer):
                 kv_hidden_size,
                 has_bias=config.use_bias,
                 config=config,
-                fuse_matmul_bias=config.fuse_linear,
                 tp_plan="colwise",
             )
             self.v_proj = GeneralLinear.create(
@@ -241,7 +239,6 @@ class Ernie4_5Attention(nn.Layer):
                 kv_hidden_size,
                 has_bias=config.use_bias,
                 config=config,
-                fuse_matmul_bias=config.fuse_linear,
                 tp_plan="colwise",
             )
         else:
@@ -250,7 +247,6 @@ class Ernie4_5Attention(nn.Layer):
                 q_hidden_size + 2 * kv_hidden_size,
                 has_bias=config.use_bias,
                 config=config,
-                fuse_matmul_bias=config.fuse_linear,
                 tp_plan="colwise",
             )
 
@@ -259,7 +255,6 @@ class Ernie4_5Attention(nn.Layer):
             self.hidden_size,
             has_bias=config.use_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="rowwise",
         )
 

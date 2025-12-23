@@ -119,7 +119,6 @@ class LLamaAttention(nn.Layer):
             q_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="colwise",
         )
         self.k_proj = GeneralLinear.create(
@@ -127,7 +126,6 @@ class LLamaAttention(nn.Layer):
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="colwise",
         )
         self.v_proj = GeneralLinear.create(
@@ -135,7 +133,6 @@ class LLamaAttention(nn.Layer):
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="colwise",
         )
 
@@ -144,7 +141,6 @@ class LLamaAttention(nn.Layer):
             config.hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="rowwise",
         )
 
