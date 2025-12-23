@@ -946,12 +946,12 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         self,
         layer_module: nn.Layer,
         hidden_states: Tensor,
+        position_ids: Tensor,
         attention_mask: Tensor,
         past_key_values: Tensor,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
-        batch_size: int = None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -962,12 +962,12 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         hidden_states = recompute(
             create_custom_forward(layer_module),
             hidden_states,
+            position_ids,
             attention_mask,
             past_key_values,
             use_cache,
             position_embeddings,
             attn_mask_startend_row_indices,
-            batch_size,
         )
 
         return hidden_states
