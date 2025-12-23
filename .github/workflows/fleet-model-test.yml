@@ -253,7 +253,7 @@ jobs:
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout 79cc96729fd344f2fc597a641834ea6d7fdd4b68
+          git checkout d68d6001480e697d02a37cad83830df7e9d767ac
           git pull --no-edit origin pull/${PR_ID}/head
           source ../PaddleFleet/.venv/bin/activate
           pip install -e .
@@ -387,7 +387,7 @@ jobs:
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout 79cc96729fd344f2fc597a641834ea6d7fdd4b68
+          git checkout d68d6001480e697d02a37cad83830df7e9d767ac
           git pull --no-edit origin pull/${PR_ID}/head
           source ../PaddleFleet/.venv/bin/activate
           pip install -e .
