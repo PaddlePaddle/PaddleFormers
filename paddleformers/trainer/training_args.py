@@ -1321,7 +1321,7 @@ class TrainingArguments:
     batch_p2p_comm: bool = field(
         default=True, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
     )
-    dynamic_shape: bool = field(
+    variable_seq_lengths: bool = field(
         default=False,
         metadata={
             "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
@@ -1784,7 +1784,7 @@ class TrainingArguments:
                         "enable_offload_queue": self.offload_queue,
                         "use_dualpipev": self.use_dualpipev,
                         "forward_backward_overlap_scheduler": self.forward_backward_overlap_scheduler,
-                        "enable_dynamic_shape": self.dynamic_shape,
+                        "enable_dynamic_shape": self.variable_seq_lengths,
                     }
 
                     pp_sync_param = self.pp_sync_param
