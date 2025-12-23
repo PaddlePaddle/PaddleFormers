@@ -156,8 +156,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
             self, "account_for_loss_in_pipeline_split", False
         )
         is_pipeline_asymmetric |= (
-            getattr(self, "num_layers_in_first_pipeline_stage", None)
-            or getattr(self, "num_layers_in_last_pipeline_stage", None)
+            getattr(self, "num_empty_layers_add_in_head", None) or getattr(self, "num_empty_layers_add_in_tail", None)
         ) is not None
 
         # Initialize model as meta data instead of allocating data on a device
