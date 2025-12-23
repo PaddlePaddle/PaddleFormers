@@ -331,10 +331,8 @@ def _read_video_paddlecodec(
             f"    3. Reinstall packages: `pip install paddlecodec --force-reinstall`\n"
             f"  - If you encounter 'CXXABI' or 'libstdc++' errors, your system libraries might be outdated.\n"
             f"    Try prioritizing Conda libraries by running: `LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH python your_script.py`\n"
-            f"  - Action: Falling back to 'decord' for video processing automatically.\n"
             f"  - Original Error: {e}"
         )
-        return _read_video_decord(ele)
 
     logger.info("Loading video with torchcodec backend.")
     PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 8))
