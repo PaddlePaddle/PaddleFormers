@@ -317,16 +317,7 @@ def mm_collate_fn(
         video_grid_thw = []
         for seq in batch_sequence:
             original_token_ids.append(seq.token_ids)
-            mm_inputs = template.mm_plugin.get_mm_inputs(
-                seq.images,
-                seq.videos,
-                seq.audios,
-                [len(seq.images)],
-                [len(seq.videos)],
-                [len(seq.audios)],
-                seq.token_ids,
-                processor,
-            )
+            mm_inputs = seq.mm_inputs
             if "pixel_values" in mm_inputs:
                 pixel_values.append(mm_inputs["pixel_values"])
             if "image_grid_thw" in mm_inputs:

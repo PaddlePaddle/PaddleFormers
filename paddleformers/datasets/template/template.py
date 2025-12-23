@@ -656,7 +656,7 @@ register_template(
     name="glm4_moe",
     format_user=StringFormatter(slots=["<|user|>\n{{content}}<|assistant|>\n"]),
     format_assistant=StringFormatter(slots=["\n{{content}}"]),
-    format_system=StringFormatter(slots=["<|system|>\n{{content}}"]),
+    format_system=StringFormatter(slots=["[gMASK]<sop><|system|>\n{{content}}"]),
     format_function=FunctionFormatter(slots=["{{content}}"], tool_format="glm4_moe"),
     format_observation=StringFormatter(slots=["<|observation|>\n{{content}}<|assistant|>"]),
     format_tools=ToolFormatter(tool_format="glm4_moe"),
