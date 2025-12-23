@@ -28,9 +28,10 @@ import json
 import math
 import os
 import random
+import re
 import threading
 import time
-from collections import namedtuple
+from collections import OrderedDict, namedtuple
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
@@ -48,20 +49,38 @@ from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
     GroupShardedOptimizerStage2,
 )
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    create_sharded_weight_with_new_local,
+)
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
 from transformers.tokenization_utils_base import BatchEncoding
 
+from paddleformers.trainer.trainer_callback import TrainerCallback
+
 # from ..ops import Topology
 from ..trainer.argparser import strtobool
-from ..transformers.model_utils import replace_name_and_gen_index, save_full_param
-from ..utils.env import PREFIX_CHECKPOINT_DIR, _re_checkpoint  # noqa for compatibility
+from ..transformers.model_utils import (
+    EMAStateHFFormatFullParamSaver,
+    _add_variant,
+    replace_name_and_gen_index,
+    save_full_param,
+)
+from ..utils.env import (  # noqa for compatibility
+    PADDLE_OPTIMIZER_NAME,
+    PREFIX_CHECKPOINT_DIR,
+    PREFIX_EMA_HF_CHECKPOINT_DIR,
+    _re_checkpoint,
+)
 from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
 from ..utils.import_utils import is_paddle_cuda_available, is_psutil_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import PDCErrorCode, PDCErrorMessageMap, pdc_tool
 from ..utils.tools import get_env_device, paddle_device
+from .utils import reshard as reshard_util
 from .utils.helper import distributed_file
+from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
+from .utils.sharding_io import GroupGetter, to_device
 
 __all__ = [
     "TrainOutput",
@@ -1707,22 +1726,6 @@ class HFFormatFullParamSaver:
         return total_saved_size
 
 
-import re
-from collections import OrderedDict
-
-from paddle.distributed.flex_checkpoint.sharded_weight import (
-    create_sharded_weight_with_new_local,
-)
-
-from paddleformers.trainer.trainer_callback import TrainerCallback
-
-from ..transformers.model_utils import EMAStateHFFormatFullParamSaver, _add_variant
-from ..utils.env import PADDLE_OPTIMIZER_NAME, PREFIX_EMA_HF_CHECKPOINT_DIR
-from .utils import reshard as reshard_util
-from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
-from .utils.sharding_io import GroupGetter, to_device
-
-
 def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
     master_weights = ema_state_dict["master_weights"]
     tmp = OrderedDict()
@@ -1764,9 +1767,12 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
                 param.shape == master_weights[param.name].shape
             ), f"got {param.shape} vs {master_weights[param.name].shape}"
             master_weight = paddle.reshape(master_weights[param.name], param.shape)
-            master_weight.clear()
-            ema_param_state_dict[k] = paddle.cast(to_device(master_weight), paddle.bfloat16)
+            ema_param_state_dict[key] = paddle.cast(to_device(master_weight), paddle.bfloat16)
 
+    for k, v in master_weights.items():
+        v._clear()
+
+    del master_weights
     return ema_param_state_dict
 
 
@@ -1819,10 +1825,18 @@ class EMAStateAssembler:
 
         moe_sharding_rank = hcg.get_moe_sharding_parallel_rank()
 
+        self.moe_sharding_group = moe_sharding_group
+
+        n_routed_experts = self.model.config.n_routed_experts
+        assert (
+            n_routed_experts % moe_group.nranks == 0
+        ), "[EMAStateAssembler] n_routed_experts must be divisible by moe_group size."
+
         self.h_group = moe_group
         self.v_group = pp_group
         self.num_splits = moe_sharding_group.nranks
         self.shard_idx = moe_sharding_rank
+        self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
 
     def run(self):
         latest_step, latest_ckpt_dir = self._find_latest_checkpoint()
@@ -1900,16 +1914,18 @@ class EMAStateAssembler:
             logger.info(
                 f"[EMAStateAssembler] [Rank {self.rank}] All ranks ready. Proceeding with EMA state assembly for step {step}."
             )
-            try:
-                ema_sharded_state_dict = self._build_ema_sharded_state_dict(checkpoint_dir)
-                self._save_full_ema_states(step, ema_sharded_state_dict)
+            ema_state_path = self._get_ema_state_path(checkpoint_dir)
+            if not ema_state_path.exists():
                 self._mark_as_handled(checkpoint_dir)
-                logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Finished merging EMA states and updated signal.")
-            except Exception as e:
-                logger.error(
-                    f"[EMAStateAssembler] [Rank {self.rank}] Error during EMA assembly for step {step}: {e}",
-                    exc_info=True,
+                logger.warning(
+                    f"[EMAStateAssembler] [Rank {self.rank}] EMA state file not found at {ema_state_path}, skipping and updating signal. "
                 )
+                return
+            ema_sharded_state_dict = self._build_ema_sharded_state_dict(ema_state_path)
+            self._mark_as_handled(checkpoint_dir)
+            self._save_full_ema_states(step, ema_sharded_state_dict)
+            del ema_sharded_state_dict
+            logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Finished merging EMA states and updated signal.")
         else:
             logger.info(
                 f"[EMAStateAssembler] [Rank {self.rank}] Waiting for other ranks to finish saving checkpoint at step {step}."
@@ -1936,8 +1952,7 @@ class EMAStateAssembler:
             ema_file_name = optimizer_name.replace("optimizer", "ema")
             return checkpoint_dir / ema_file_name
 
-    def _build_ema_sharded_state_dict(self, checkpoint_dir: Path):
-        ema_state_path = self._get_ema_state_path(checkpoint_dir)
+    def _build_ema_sharded_state_dict(self, ema_state_path: Path):
         if not ema_state_path.exists():
             raise FileNotFoundError(f"[EMAStateAssembler] EMA state file not found at {ema_state_path}.")
 
@@ -1946,7 +1961,6 @@ class EMAStateAssembler:
 
         group_getter = GroupGetter(self.model)
         ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
-
         ema_params_recovered = {}
         for gid in group_getter.get_group_ids():
             sub_ema_state_dict = ema_state_dict_grouped[gid]
@@ -1955,9 +1969,59 @@ class EMAStateAssembler:
             ema_params_recovered.update(recovered)
 
         ema_sharded_state_dict = {}
-        for k, v in self.model_sharded_state_dict.items():
-            ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, ema_params_recovered[k])
 
+        def _remove_layer_suffix(s):
+            return re.sub(r"_layer_\d+$", "", s)
+
+        def _update_expert_number(s, increment, add_mode=True):
+            def replace(match):
+                original_number = int(match.group(0))
+                if add_mode:
+                    new_number = original_number + increment
+                else:
+                    new_number = original_number - increment
+                return str(new_number)
+
+            return re.sub(r"(?<=experts\.)\d+", replace, s)
+
+        def _rename(key, add_mode=True):
+            if ".experts." in key:
+                key = _update_expert_number(key, self.expert_id_offset, add_mode)
+            elif "_layer_" in key:
+                key = _remove_layer_suffix(key)
+            return key
+
+        for k, v in self.model_sharded_state_dict.items():
+            if v.local_tensor.dtype == paddle.bfloat16:
+                ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(
+                    k, ema_params_recovered[_rename(k, False)], v
+                )
+
+        ema_state_dict.pop("master_weights")
+        del ema_params_recovered
+        if self.moe_sharding_group.nranks > 1:
+            extra_params = {}
+            extra_params_meta_info = {}
+            for k, v in ema_state_dict.items():
+                extra_params_meta_info[k] = {"shape": tuple(v.shape), "dtype": v.dtype, "src": self.rank}
+
+            extra_params_meta_infos = []
+            dist.all_gather_object(extra_params_meta_infos, extra_params_meta_info, group=self.moe_sharding_group)
+            extra_params_meta_info = {k: info for infos in extra_params_meta_infos for k, info in infos.items()}
+
+            for k, v in extra_params_meta_info.items():
+                if v["src"] == self.rank:
+                    buffer = ema_state_dict[k]
+                else:
+                    buffer = paddle.zeros(v["shape"], dtype=v["dtype"])
+                dist.broadcast(buffer, src=v["src"], group=self.moe_sharding_group)
+                extra_params[k] = buffer
+        else:
+            extra_params = ema_state_dict
+
+        for k, v in extra_params.items():
+            assert k in self.model_sharded_state_dict, f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
+            ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, self.model_sharded_state_dict[k])
         return ema_sharded_state_dict
 
     def _save_full_ema_states(self, step, ema_sharded_state_dict):
@@ -1982,5 +2046,5 @@ class EMAStateAssemblerCallback(TrainerCallback):
     def __init__(self, ema_state_assembler):
         self.ema_state_assembler = ema_state_assembler
 
-    def on_step_end(self):
+    def on_step_end(self, args, state, control, **kwargs):
         self.ema_state_assembler.run()

@@ -1444,7 +1444,7 @@ class Trainer:
             self.optimizer.__dict__["step"] = types.MethodType(new_step, self.optimizer)
 
     def create_ema_state_assembler(self):
-        ema_state_assembler = EMAStateAssembler(
+        self.ema_state_assembler = EMAStateAssembler(
             output_dir=self.args.output_dir,
             save_checkpoint_format=self.args.save_checkpoint_format,
             save_hf_steps=self.args.save_hf_steps,
@@ -1453,7 +1453,7 @@ class Trainer:
             model=self.model,
             optimizer=self.optimizer,
         )
-        callback = EMAStateAssemblerCallback(ema_state_assembler)
+        callback = EMAStateAssemblerCallback(self.ema_state_assembler)
         self.add_callback(callback)
 
     def train(
