@@ -39,6 +39,7 @@ install_requirements() {
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     sed -i '/^paddlefleet/d' requirements.txt
+    python -m pip  install paddlefleet==0.0.1.dev20251219 -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/
     python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     python setup.py bdist_wheel > /dev/null
     uv pip install dist/p****.whl --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
