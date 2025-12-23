@@ -290,10 +290,10 @@ def fusion_flash_attention(
         )
         # attn_output shape: [bs, seqlen/sep, num_head, head_dim]
         assert (
-            config.sep_parallel_degree > 1 and q_len % config.sep_parallel_degree == 0
-        ), f"q_len:{q_len}, config.sep_parallel_degree:{config.sep_parallel_degree}"
-        q_len = q_len // config.sep_parallel_degree
-        num_heads = num_heads * config.sep_parallel_degree
+            config.sep_parallel_size > 1 and q_len % config.sep_parallel_size == 0
+        ), f"q_len:{q_len}, config.sep_parallel_size:{config.sep_parallel_size}"
+        q_len = q_len // config.sep_parallel_size
+        num_heads = num_heads * config.sep_parallel_size
 
     if sequence_parallel:
         attn_output = attn_output.reshape([bsz * q_len, head_dim * num_heads])

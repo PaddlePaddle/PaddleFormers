@@ -237,9 +237,9 @@ class TrainingArguments:
                 stage2 : optimizer state + gradient segmentation
                 stage3 : parameter + gradient + optimizer state segmentation
                 offload : offload parameters to cpu
-        sharding_parallel_degree (`int`, *optional*, defaults to `-1`)
+        sharding_parallel_size (`int`, *optional*, defaults to `-1`)
             Sharding parameter in certain cards group. For example, aussume we use 2 machines each with 8 cards,
-            then set sharding_parallel_degree=8, sharding will only communication inside machine.
+            then set sharding_parallel_size=8, sharding will only communication inside machine.
             default -1 means sharding parameters between all workers.
         sharding_parallel_mesh_dimension (`str`, *optional*, defaults to `dp`)
             Specifies the name of the dimension in a multi-dimensional parallelism mesh that is responsible for sharding.
@@ -256,20 +256,20 @@ class TrainingArguments:
             pipeline_model_parallel_size means split all transformer layers to how many stages.
             default -1 for not use pipeline parallel.
             Note. this need model support in source code, see llama modeling_pp.py file
-        sep_parallel_degree (`int`, *optional*, defaults to `-1`)(
+        sep_parallel_size (`int`, *optional*, defaults to `-1`):
             The paddle sequence parallel strategy. It can reduce the GPU memory of activation to 1/sep, and it is orthogonal to
             data parallel, sharding stage1, tensor parallel and pipeline parallel strategy.
         )
-        context_parallel_size (`int`, *optional*, defaults to `-1`)(
+        context_parallel_size (`int`, *optional*, defaults to `-1`):
             Context parallelism is a parallel method that segments training data in the sequence dimension.
             This method uses Ring FlashAttention to ensure the correctness of the Attention result after segmentation. The complete attention score is obtained through ring communication and iterative updates.
         )
-        data_parallel_config (`str`, *optional*)(
+        data_parallel_config (`str`, *optional*) **[Deprecated]** :
             Some additional configs which affect data parallel performance, we provide some option to config it.
             following config is support:
               enable_allreduce_avg_in_gradinent_scale, it replace `allreduce_sum + scale` pattern with `allreduce_avg` when scale gradient in data_parallel, which improve the performance. ONLY supported for auto mode now.
               gradient_sync_after_accumulate, move gradient sync operations from backward into optimizer step when gradient accumulate enabling, which reduce the sync times to improve performance, but will increase the memory usage. ONLY supported for auto mode now.
-        tensor_parallel_config (`str`, *optional*)(
+        tensor_parallel_config (`str`, *optional*) **[Deprecated]** :
             Some additional configs which affect model parallel performance, we provide some option to config it.
             following config is support:
               enable_mp_async_allreduce, it supports all_reduce(dx) overlap with matmul(dw) in ColumnParallelLinear backward when it set True, which can accelerate model parallel performance.
@@ -282,7 +282,7 @@ class TrainingArguments:
               sync_moment, in optimizer step, use broadcast to sync momentums those attr 'is_distributed' is False.
               replace_with_c_embedding, it supports replacing col-sliced embedding with row-sliced c_embedding when it set True, which is used in PIR auto_parallel.
               replace_with_parallel_cross_entropy, it replaces 'cross_entropy_with_softmax' OP with 'c_softmax_with_cross_entropy' OP in PIR static graph, which can improve model parallel performance.
-        pipeline_parallel_config (`str`, *optional*)(
+        pipeline_parallel_config (`str`, *optional*) **[Deprecated]** :
             Some additional config it highly affect the usage of pipeline parallel, we provide some option to config it.
             following config is support:
               disable_p2p_cache_shape, if you max sequence length is varying, please set disable_p2p_cache_shape.
@@ -295,7 +295,7 @@ class TrainingArguments:
               enable_clear_every_step_cache, clear every step cache for pipeline parallel.
               disable_non_batch_p2p_comm, disable batched send/recv in pipeline parallel mode.
               auto_parallel_sync_shared_params, optimize the parameter sharing between two stages in a pipeline parallel scenario.
-        sharding_parallel_config (`str`, *optional*)(
+        sharding_parallel_config (`str`, *optional*) **[Deprecated]** :
             Some additional config it highly affect the usage of sharding parallel, we provide some option to config it.
             following config is support:
               enable_stage1_tensor_fusion, fuse small tensors into big tensor chunks to accelerate communications, may increase memory occupation
@@ -636,11 +636,11 @@ class TrainingArguments:
             )
         },
     )
-    sharding_degree: int = field(  # Alias for sharding_parallel_degree
+    sharding_degree: int = field(  # Alias for sharding_parallel_size
         default=-1,
-        metadata={"help": ("@deprecated Please use sharding_parallel_degree. ")},
+        metadata={"help": ("@deprecated Please use sharding_parallel_size. ")},
     )
-    sharding_parallel_degree: int = field(
+    sharding_parallel_size: int = field(
         default=-1,
         metadata={
             "help": (
@@ -733,7 +733,7 @@ class TrainingArguments:
             )
         },
     )
-    sep_parallel_degree: int = field(
+    sep_parallel_size: int = field(
         default=-1,
         metadata={
             "help": (
@@ -767,10 +767,12 @@ class TrainingArguments:
         default=-1,
         metadata={"help": ("The paddle expert tensor parallel strategy. Currently is not supported. DO NOT SET.")},
     )
+    # Deprecated
     data_parallel_config: str = field(
         default="",
         metadata={
             "help": (
+                "@deprecated Please promote the secondary switchs to primary switchs."
                 "Some additional configs which affect data parallel performance, we provide some option to config it."
                 "following config is support:\n"
                 "enable_allreduce_avg_in_gradinent_scale, it replace `allreduce_sum + scale` pattern with `allreduce_avg` when scale gradient in data_parallel, which improve the performance. ONLY supported for auto mode now. \n"
@@ -785,20 +787,24 @@ class TrainingArguments:
     fuse_sequence_parallel_allreduce: bool = field(
         default=False, metadata={"help": "Whether to use fuse sequence parallel allreduce."}
     )
+    # Deprecated
     sequence_parallel_config: str = field(
         default="",
         metadata={
             "help": (
+                "@deprecated Please promote the secondary switchs to primary switchs."
                 "Some additional configs which affect sequence parallel performance, we provide some option to config it."
                 "following config is support:\n"
                 "enable_allreduce_avg_in_gradinent_scale, it replace `allreduce_sum + scale` pattern with `allreduce_avg` when scale gradient in sequence_parallel, which improve the performance. ONLY supported for auto mode now. \n"
             )
         },
     )
+    # Deprecated
     tensor_parallel_config: str = field(
         default="",
         metadata={
             "help": (
+                "@deprecated Please promote the secondary switchs to primary switchs."
                 "Some additional configs which affect model parallel performance, we provide some option to config it."
                 "following config is support:\n"
                 "enable_mp_async_allreduce, it supports all_reduce(dx) overlap with matmul(dw) in ColumnParallelLinear backward when it set True, which can accelerate model parallel performance. \n"
@@ -814,10 +820,12 @@ class TrainingArguments:
             )
         },
     )
+    # Deprecated
     pipeline_parallel_config: str = field(
         default="",
         metadata={
             "help": (
+                "@deprecated Please promote the secondary switchs to primary switchs."
                 "Some additional config it highly affect the usage of pipeline parallel, we provide some option to config it."
                 "following config is support:\n"
                 "disable_p2p_cache_shape, if you max sequence length is varying, please set disable_p2p_cache_shape. \n"
@@ -833,10 +841,12 @@ class TrainingArguments:
             )
         },
     )
+    # Deprecated
     sharding_parallel_config: str = field(
         default="",
         metadata={
             "help": (
+                "@deprecated Please promote the secondary switchs to primary switchs."
                 "Some additional config it highly affect the usage of sharding parallel, we provide some option to config it."
                 "following config is support: \n"
                 "enable_stage1_tensor_fusion, fuse small tensors into big tensor chunks to accelerate communications, may increase memory occupation\n"
@@ -1290,10 +1300,10 @@ class TrainingArguments:
         metadata={"help": "Whether to save replicas cross files in distributed save load system."},
     )
     dp_comm_overlap: bool = field(
-        default=True, metadata={"help": "Whether to overlap data parallelism (DP) communication with computation."}
+        default=False, metadata={"help": "Whether to overlap data parallelism (DP) communication with computation."}
     )
-    sharding_comm_overlap: bool = field(
-        default=True,
+    pp_sharding_comm_overlap: bool = field(
+        default=False,
         metadata={
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
@@ -1305,14 +1315,14 @@ class TrainingArguments:
         default=False, metadata={"help": "Whether to use asynchronous reduce-scatter for sharding parallelism (SP)."}
     )
     overlap_p2p_comm: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True."},
     )
     batch_p2p_comm: bool = field(
         default=True, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
     )
-    dynamic_shape: bool = field(
-        default=True,
+    variable_seq_lengths: bool = field(
+        default=False,
         metadata={
             "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
         },
@@ -1414,13 +1424,13 @@ class TrainingArguments:
         },
     )
     p2p_cache_shape: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "Set this when maximum sequence length is varying (disables p2p cache shape)."},
     )
     partial_send_recv: bool = field(
-        default=False, metadata={"help": "Optimize send speed for tensor parallel (disables partial send/recv)."}
+        default=True, metadata={"help": "Optimize send speed for tensor parallel (disables partial send/recv)."}
     )
-    release_grads: bool = field(
+    pp_release_grads: bool = field(
         default=False,
         metadata={
             "help": "Reduce peak memory usage by releasing gradients after each iteration. The creation of gradients will be postponed until backward propagation of the next iteration."
@@ -1435,6 +1445,48 @@ class TrainingArguments:
     auto_parallel_sync_shared_params: bool = field(
         default=False,
         metadata={"help": "Optimize parameter sharing between two stages in a pipeline parallel scenario."},
+    )
+    best_unbalanced_scheduler: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable dynamic parameter sharding scheduler to optimize load balancing across GPUs during uneven computation patterns."
+        },
+    )
+    offload_queue: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable asynchronous offload queue to overlap CPU-GPU memory transfers with computation, reducing GPU memory pressure."
+        },
+    )
+    use_dualpipev: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable dual-pipeline virtual stages to overlap forward/backward computation and reduce pipeline bubbles in hybrid parallelism."
+        },
+    )
+    forward_backward_overlap_scheduler: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable dynamic scheduler to overlap forward/backward computation with gradient communication, reducing training latency in distributed setups."
+        },
+    )
+    send_recv_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable asynchronous overlap of gradient send/recv with GPU computation to minimize communication overhead in distributed training."
+        },
+    )
+    split_backward: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable splitting backward pass into stages to balance computation and reduce peak memory usage in model parallelism."
+        },
+    )
+    timer: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable timing for pipeline parallel stages to profile and optimize communication/computation overlap."
+        },
     )
     stage1_tensor_fusion: bool = field(
         default=False,
@@ -1479,12 +1531,36 @@ class TrainingArguments:
         },
     )
     stage1_reduce_avg: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Replace reduce_avg with original reduce_sum+scale in stage1, which can be used for accuracy verification (disables stage1 reduce_avg)."
         },
     )
     fuse_optimizer_states: bool = field(default=False, metadata={"help": "Fuse optimizer states to a single storage."})
+    sd_release_grads: bool = field(
+        default=False,
+        metadata={
+            "help": "Reduce peak memory usage by releasing gradients after each iteration. The creation of gradients will be postponed until backward propagation of the next iteration."
+        },
+    )
+    split_param: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable parameter sharding to distribute model parameters across devices, reducing memory footprint per GPU (ZeRO-style optimization)."
+        },
+    )
+    sd_sharding_comm_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
+        },
+    )
+    sd_shardingv1_comm_overlap: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
+        },
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1512,7 +1588,7 @@ class TrainingArguments:
         if paddle.distributed.get_world_size() <= 1:
             self.sharding = ""
             self.sharding_degree = -1
-            self.sharding_parallel_degree = -1
+            self.sharding_parallel_size = -1
             self.tensor_model_parallel_size = -1
             self.pipeline_model_parallel_size = -1
 
@@ -1598,9 +1674,9 @@ class TrainingArguments:
 
         self._post_init_save_checkpoint_format()
         self._post_init_load_checkpoint_format()
-        if self.tensorwise_offload_optimizer and self.data_parallel_degree > 1:
+        if self.tensorwise_offload_optimizer and self.data_parallel_size > 1:
             raise NotImplementedError(
-                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_degree {self.sharding_parallel_degree*self.data_parallel_degree}."
+                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size*self.data_parallel_size}."
             )
 
         if self.to_static:
@@ -1648,7 +1724,6 @@ class TrainingArguments:
                                 "enable_sharding_comm_overlap",
                                 "enable_timer",
                                 "enable_release_grads",
-                                "enable_dp_comm_overlap",
                                 "enable_clear_every_step_cache",
                                 "enable_overlap_p2p_comm",
                                 "disable_batch_p2p_comm",
@@ -1663,8 +1738,12 @@ class TrainingArguments:
                                 raise ValueError(
                                     f"Found unknown pipeline mode config {x}, accept config is disable_p2p_cache_shape, disable_partial_send_recv."
                                 )
+                            warnings.warn(
+                                f"The field pipeline_parallel_config is deprecated. "
+                                f"Please promote this secondary switch {x} to a primary switch."
+                            )
 
-                    enable_partial_send_recv = "disable_partial_send_recv" not in pipeline_parallel_config
+                    enable_partial_send_recv = self.partial_send_recv
                     if self.sequence_parallel and enable_partial_send_recv:
                         logger.warning(
                             "When use pipeline parallel and sequence parallel simultaneously, we should turn off partial send recv."
@@ -1675,45 +1754,41 @@ class TrainingArguments:
                         "accumulate_steps": self.gradient_accumulation_steps,
                         "micro_batch_size": self.per_device_train_batch_size,
                         "enable_partial_send_recv": enable_partial_send_recv,
-                        "p2p_cache_shape": False if "disable_p2p_cache_shape" in pipeline_parallel_config else True,
+                        "p2p_cache_shape": self.p2p_cache_shape,
                         # "delay_scale_loss": True, Fix ME
                     }
                     logger.info(f"PP configs:{strategy.pipeline_configs}, use master_grad: {self.amp_master_grad}")
 
-                    using_comm_overlap = (
-                        "enable_sharding_comm_overlap" in pipeline_parallel_config
-                        or "enable_dp_comm_overlap" in pipeline_parallel_config
-                    )
-                    enable_dp_comm_overlap = using_comm_overlap and self.data_parallel_degree > 1
-                    self.enable_sharding_comm_overlap = using_comm_overlap and self.sharding_parallel_degree > 1
+                    using_comm_overlap = self.pp_sharding_comm_overlap or self.dp_comm_overlap
+                    enable_dp_comm_overlap = using_comm_overlap and self.data_parallel_size > 1
+                    self.enable_sharding_comm_overlap = using_comm_overlap and self.sharding_parallel_size > 1
                     assert not (
                         enable_dp_comm_overlap and self.enable_sharding_comm_overlap
                     ), "dp_comm_overlap and sharding_comm_overlap cannot be enabled at the same time"
 
                     if self.enable_sharding_comm_overlap and not self.amp_master_grad:
                         raise ValueError(
-                            "If `enable_sharding_comm_overlap` in pipeline_parallel_configs, `amp_master_grad` must be True."
+                            "If `sharding_comm_overlap` in training_args, `amp_master_grad` must be True."
                         )
 
                     dygraph_pp_configs = {
-                        "delay_scale_loss": True if "enable_delay_scale_loss" in pipeline_parallel_config else False,
+                        "delay_scale_loss": self.pp_delay_scale_loss,
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
-                        "enable_timer": "enable_timer" in pipeline_parallel_config,
-                        "release_gradients": "enable_release_grads" in pipeline_parallel_config or self.release_grads,
-                        "overlap_p2p_comm": "enable_overlap_p2p_comm" in pipeline_parallel_config,
-                        "clear_every_step_cache": "enable_clear_every_step_cache" in pipeline_parallel_config,
-                        "use_batch_p2p_comm": "disable_batch_p2p_comm" not in pipeline_parallel_config,
-                        "best_unbalanced_scheduler": "best_unbalanced_scheduler" in pipeline_parallel_config,
-                        "enable_offload_queue": "enable_offload_queue" in pipeline_parallel_config,
-                        "use_dualpipev": "use_dualpipev" in pipeline_parallel_config,
-                        "forward_backward_overlap_scheduler": "forward_backward_overlap_scheduler"
-                        in pipeline_parallel_config,
-                        "enable_dynamic_shape": "enable_dynamic_shape" in pipeline_parallel_config,
+                        "enable_timer": self.timer,
+                        "release_gradients": self.pp_release_grads or self.release_grads,
+                        "overlap_p2p_comm": self.overlap_p2p_comm,
+                        "clear_every_step_cache": self.clear_every_step_cache,
+                        "use_batch_p2p_comm": self.batch_p2p_comm,
+                        "best_unbalanced_scheduler": self.best_unbalanced_scheduler,
+                        "enable_offload_queue": self.offload_queue,
+                        "use_dualpipev": self.use_dualpipev,
+                        "forward_backward_overlap_scheduler": self.forward_backward_overlap_scheduler,
+                        "enable_dynamic_shape": self.variable_seq_lengths,
                     }
 
-                    pp_sync_param = "sync_param" in pipeline_parallel_config
-                    pp_sync_moment = "sync_moment" in pipeline_parallel_config
+                    pp_sync_param = self.pp_sync_param
+                    pp_sync_moment = self.pp_sync_moment
 
                     if pp_sync_param:
                         logger.info("setting pp sync_param")
@@ -1761,28 +1836,32 @@ class TrainingArguments:
                                     f"Found unknown tensor parallel config {x}, "
                                     f"accept config is enable_mp_async_allreduce, enable_mp_skip_c_identity, enable_mp_fused_linear_param_grad_add, enable_sp_async_reduce_scatter, enable_delay_scale_loss, sync_param, sync_grad and sync_moment."
                                 )
+                            warnings.warn(
+                                f"The field tensor_parallel_config is deprecated. "
+                                f"Please promote this secondary switch {x} to a primary switch."
+                            )
                     try:
-                        if "enable_mp_async_allreduce" in mp_config:
+                        if self.mp_async_allreduce:
                             strategy.hybrid_configs["mp_configs"].mp_async_allreduce = True
-                            if "enable_mp_skip_c_identity" in mp_config:
+                            if self.mp_skip_c_identity:
                                 strategy.hybrid_configs["mp_configs"].mp_skip_c_identity = True
-                            if "enable_mp_fused_linear_param_grad_add" in mp_config:
+                            if self.mp_fused_linear_param_grad_add:
                                 strategy.hybrid_configs["mp_configs"].mp_fused_linear_param_grad_add = True
                         else:
-                            if "enable_mp_skip_c_identity" in mp_config:
+                            if self.mp_skip_c_identity:
                                 warnings.warn(
-                                    "enable_mp_skip_c_identity only works with enable_mp_async_allreduce. It will not work."
+                                    "mp_skip_c_identity only works with mp_async_allreduce. It will not work."
                                 )
-                            if "enable_mp_fused_linear_param_grad_add" in mp_config:
+                            if self.mp_fused_linear_param_grad_add:
                                 warnings.warn(
-                                    "enable_mp_fused_linear_param_grad_add only works with enable_mp_async_allreduce. It will not work."
+                                    "mp_fused_linear_param_grad_add only works with mp_async_allreduce. It will not work."
                                 )
-                        if "enable_sp_async_reduce_scatter" in mp_config:
+                        if self.sp_async_reduce_scatter:
                             strategy.hybrid_configs["mp_configs"].sp_async_reduce_scatter = True
 
-                        sync_param = "sync_param" in mp_config
-                        sync_grad = "sync_grad" in mp_config
-                        sync_moment = "sync_moment" in mp_config
+                        sync_param = self.tp_sync_param
+                        sync_grad = self.sync_grad
+                        sync_moment = self.tp_sync_moment
 
                         # sync_param_name = [""] matches any parameter name.
                         # If sync_param, sync_grad and sync_moment are not set, the default value in Paddle is :
@@ -1842,7 +1921,7 @@ class TrainingArguments:
                         order = ["dp", "sharding", "pp", "mp"]
                 if self.use_expert_parallel:
                     if not self.reorder_pipeline_priority:
-                        if self.moe_sharding_parallel_degree >= 1 and self.expert_model_parallel_size > 1:
+                        if self.moe_sharding_parallel_size >= 1 and self.expert_model_parallel_size > 1:
                             order.insert(-1, "ep")
                             sd_idx = order.index("sharding")
                             # if pp_first, the order = ["dp", "pp", "moe_sharding", "sharding", "sep", "ep", "mp"]
@@ -1852,7 +1931,7 @@ class TrainingArguments:
                                 sd_idx = order.index("sharding")
                                 order.insert(sd_idx, "cp")
                     else:
-                        if self.moe_sharding_parallel_degree >= 1 and self.expert_model_parallel_size > 1:
+                        if self.moe_sharding_parallel_size >= 1 and self.expert_model_parallel_size > 1:
                             if is_context_parallel_supported():
                                 order = ["sharding", "moe_sharding", "pp", "sep", "cp", "dp", "ep", "mp"]
                             else:
@@ -1862,38 +1941,38 @@ class TrainingArguments:
 
                 if is_context_parallel_supported():
                     hybrid_configs = {
-                        "dp_degree": self.data_parallel_degree,
+                        "dp_degree": self.data_parallel_size,
                         "mp_degree": self.tensor_model_parallel_size,
                         "pp_degree": self.pipeline_model_parallel_size,
-                        "sharding_degree": self.sharding_parallel_degree,
-                        "sep_degree": self.sep_parallel_degree,
+                        "sharding_degree": self.sharding_parallel_size,
+                        "sep_degree": self.sep_parallel_size,
                         "cp_degree": self.context_parallel_size,
                         "order": order,
                     }
                 elif is_segment_parallel_supported():
                     hybrid_configs = {
-                        "dp_degree": self.data_parallel_degree,
+                        "dp_degree": self.data_parallel_size,
                         "mp_degree": self.tensor_model_parallel_size,
                         "pp_degree": self.pipeline_model_parallel_size,
-                        "sharding_degree": self.sharding_parallel_degree,
-                        "sep_degree": self.sep_parallel_degree,
+                        "sharding_degree": self.sharding_parallel_size,
+                        "sep_degree": self.sep_parallel_size,
                         "order": order,
                     }
                 else:
                     hybrid_configs = {
-                        "dp_degree": self.data_parallel_degree,
+                        "dp_degree": self.data_parallel_size,
                         "mp_degree": self.tensor_model_parallel_size,
                         "pp_degree": self.pipeline_model_parallel_size,
-                        "sharding_degree": self.sharding_parallel_degree,
+                        "sharding_degree": self.sharding_parallel_size,
                         "order": order,
                     }
 
                 if self.expert_model_parallel_size > 1:
                     assert (
-                        self.use_expert_parallel is True and self.moe_sharding_parallel_degree >= 0
+                        self.use_expert_parallel is True and self.moe_sharding_parallel_size >= 0
                     ), f"invalid expert_model_parallel_size {self.expert_model_parallel_size} and use_expert_paralle:{self.use_expert_parallel}."
                     hybrid_configs["ep_degree"] = self.expert_model_parallel_size
-                    hybrid_configs["moe_sharding_degree"] = self.moe_sharding_parallel_degree
+                    hybrid_configs["moe_sharding_degree"] = self.moe_sharding_parallel_size
 
                 try:
                     if self.split_norm_comm:
@@ -1911,7 +1990,7 @@ class TrainingArguments:
                 # setter once https://github.com/PaddlePaddle/Paddle/blob/b7295120b0e78b293cd7ae29706e21769d06a3cc/python/paddle/distributed/fleet/base/distributed_strategy.py#L1692
                 strategy.hybrid_configs = hybrid_configs
 
-                if self.sharding_parallel_degree > 1:
+                if self.sharding_parallel_size > 1:
                     sharding_parallel_config = split_parallel_config(self.sharding_parallel_config)
 
                     for x in sharding_parallel_config:
@@ -1931,7 +2010,11 @@ class TrainingArguments:
                                     f"Found unknown sharding mode config {x}, "
                                     f"accept config is enable_stage1_tensor_fusion, enable_stage1_overlap, enable_stage2_overlap, split_param, disable_stage1_reduce_avg, enable_stage1_broadcast_overlap, enable_stage1_allgather_overlap, enable_release_grads, enable_fuse_optimizer_states."
                                 )
-                    if "disable_stage1_reduce_avg" in sharding_parallel_config:
+                            warnings.warn(
+                                f"The field sharding_parallel_config is deprecated. "
+                                f"Please promote this secondary switch {x} to a primary switch."
+                            )
+                    if not self.stage1_reduce_avg:
                         assert self.sharding == [
                             ShardingOption.SHARD_OP
                         ], "Only sharding stage1 supports to disable reduce_avg strategy."
@@ -1953,21 +2036,19 @@ class TrainingArguments:
                                 self.sharding_offload_opt_buffersize_GB
                             )
 
-                        if "split_param" in sharding_parallel_config:
+                        if self.split_param:
                             strategy.hybrid_configs["sharding_configs"].split_param = True
                             assert self.amp_master_grad, "Currently sharding stage1 v2 only support amp_master_grad"
 
-                        if "enable_release_grads" in sharding_parallel_config:
+                        if self.sd_release_grads:
                             strategy.hybrid_configs["sharding_configs"].release_gradients = True
 
-                        if "enable_fuse_optimizer_states" in sharding_parallel_config:
+                        if self.fuse_optimizer_states:
                             strategy.hybrid_configs["sharding_configs"].enable_fuse_optimizer_states = True
 
                         if self.pipeline_model_parallel_size == 1:
-                            strategy.hybrid_configs["sharding_configs"].tensor_fusion = (
-                                True if "enable_stage1_tensor_fusion" in sharding_parallel_config else False
-                            )
-                            if "enable_stage1_overlap" in sharding_parallel_config:
+                            strategy.hybrid_configs["sharding_configs"].tensor_fusion = self.stage1_tensor_fusion
+                            if self.stage1_overlap:
                                 strategy.hybrid_configs["sharding_configs"].comm_overlap = True
                                 strategy.hybrid_configs[
                                     "sharding_configs"
@@ -1976,7 +2057,7 @@ class TrainingArguments:
                         else:
                             warnings.warn(
                                 "For pipeline parallel with sharding, the sharding overlap and tensor fusion "
-                                "should be configured in pipeline_parallel_config."
+                                "should be configured in training_args."
                                 '"enable_stage1_tensor_fusion" and "enable_stage1_overlap" in sharding_parallel_config will be ignored.'
                             )
                     except (KeyError, AttributeError):
@@ -1984,38 +2065,34 @@ class TrainingArguments:
                             "The enable_stage1_tensor_fusion or enable_stage1_overlap is not supported "
                             "by current version of Paddle. Please try latest develop Paddle."
                         )
-                    if "enable_stage2_overlap" in sharding_parallel_config:
+                    if self.stage2_overlap:
                         assert (
                             ShardingOption.SHARD_GRAD_OP in self.sharding
-                        ), f"enable_stage2_overlap expects sharding=stage2, but got {self.sharding}."
+                        ), f"stage2_overlap expects sharding=stage2, but got {self.sharding}."
                         assert self.logging_steps > 1, (
                             "The logging_steps should be greater than 1 for stage2 overlap, "
                             f"but got logging_steps={self.logging_steps}."
                         )
-                    if "enable_stage1_broadcast_overlap" in sharding_parallel_config:
+                    if self.stage1_broadcast_overlap:
                         assert (
                             ShardingOption.SHARD_OP in self.sharding
-                        ), f"enable_stage1_broadcast_overlap expects sharding=stage1, but got {self.sharding}."
+                        ), f"stage1_broadcast_overlap expects sharding=stage1, but got {self.sharding}."
 
                         assert (
-                            "split_param" not in sharding_parallel_config
-                        ), "split_param should not be set when enable_stage1_broadcast_overlap."
+                            not self.split_param
+                        ), "split_param should not be set when stage1_broadcast_overlap is True."
 
-                    if "enable_stage1_allgather_overlap" in sharding_parallel_config:
+                    if self.stage1_allgather_overlap:
                         assert (
                             ShardingOption.SHARD_OP in self.sharding
-                        ), f"enable_stage1_allgather_overlap expects sharding=stage1, but got {self.sharding}."
+                        ), f"stage1_allgather_overlap expects sharding=stage1, but got {self.sharding}."
 
-                        assert (
-                            "split_param" in sharding_parallel_config
-                        ), "split_param should be set when enable_stage1_allgather_overlap."
+                        assert self.split_param, "split_param should be set when stage1_allgather_overlap is True."
 
-                    if "split_param" in sharding_parallel_config:
+                    if self.split_param:
                         if ShardingOption.SHARD_OP not in self.sharding:
                             logger.warning("Only sharding stage1 support split_param.")
-                        assert (
-                            self.amp_master_grad
-                        ), "If `split_param` in sharding_parallel_config, `amp_master_grad` must be True."
+                        assert self.amp_master_grad, "If `split_param` is True, `amp_master_grad` must be True."
 
                 if self.nccl_comm_group_config is not None:
                     strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
@@ -2040,7 +2117,7 @@ class TrainingArguments:
             ), "Auto parallel only support dyanmic parallel now. Static parallel will be supported later."
 
             self.tensor_model_parallel_size = max(self.tensor_model_parallel_size, 1)
-            self.sep_parallel_degree = max(self.sep_parallel_degree, 1)
+            self.sep_parallel_size = max(self.sep_parallel_size, 1)
             self.context_parallel_size = max(self.context_parallel_size, 1)
             self.pipeline_model_parallel_size = max(self.pipeline_model_parallel_size, 1)
 
@@ -2051,21 +2128,21 @@ class TrainingArguments:
                 world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0
             ), f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
 
-            if self.sharding_parallel_degree == -1:
+            if self.sharding_parallel_size == -1:
                 if len(self.sharding) > 0:
-                    self.sharding_parallel_degree = world_size // (
-                        self.tensor_model_parallel_size * self.sep_parallel_degree * self.pipeline_model_parallel_size
+                    self.sharding_parallel_size = world_size // (
+                        self.tensor_model_parallel_size * self.sep_parallel_size * self.pipeline_model_parallel_size
                     )
 
-            self.sharding_parallel_degree = max(self.sharding_parallel_degree, 1)
-            if self.sharding_parallel_degree == 1 and len(self.sharding) > 0:
-                logger.warning("sharding_parallel_degree=1 means no sharding, please set sharding to empty!")
+            self.sharding_parallel_size = max(self.sharding_parallel_size, 1)
+            if self.sharding_parallel_size == 1 and len(self.sharding) > 0:
+                logger.warning("sharding_parallel_size=1 means no sharding, please set sharding to empty!")
                 self.sharding = []
 
-            self.data_parallel_degree = world_size // (
-                self.sharding_parallel_degree
+            self.data_parallel_size = world_size // (
+                self.sharding_parallel_size
                 * self.tensor_model_parallel_size
-                * self.sep_parallel_degree
+                * self.sep_parallel_size
                 * self.pipeline_model_parallel_size
             )
 
@@ -2081,9 +2158,13 @@ class TrainingArguments:
                             raise ValueError(
                                 f"Found unknown data parallel config {x}, accept config is enable_allreduce_avg_in_gradinent_scale."
                             )
-                if "enable_allreduce_avg_in_gradinent_scale" in data_parallel_config:
+                        warnings.warn(
+                            f"The field data_parallel_config is deprecated. "
+                            f"Please promote this secondary switch {x} to a primary switch."
+                        )
+                if self.dp_allreduce_avg_in_gradinent_scale:
                     strategy.gradient_scale_using_allreduce_avg = True
-                if "gradient_sync_after_accumulate" in data_parallel_config:
+                if self.gradient_sync_after_accumulate:
                     strategy.dp_optimization.gradient_sync_after_accumulate = True
             sequence_parallel_config = set(self.sequence_parallel_config.split(" "))
             for x in sequence_parallel_config:
@@ -2092,7 +2173,11 @@ class TrainingArguments:
                         raise ValueError(
                             f"Found unknown sequence parallel config {x}, accept config is enable_allreduce_avg_in_gradinent_scale."
                         )
-            if "enable_allreduce_avg_in_gradinent_scale" in sequence_parallel_config:
+                    warnings.warn(
+                        f"The field sequence_parallel_config is deprecated. "
+                        f"Please promote this secondary switch {x} to a primary switch."
+                    )
+            if self.sp_allreduce_avg_in_gradinent_scale:
                 strategy.gradient_scale_using_allreduce_avg = True
 
             # navie-pp: pipeline_model_parallel_size > 1 and gradient_accumulation_steps == 1
@@ -2115,11 +2200,15 @@ class TrainingArguments:
                             raise ValueError(
                                 f"Found unknown pipeline mode config {x}, accept config is enable_send_recv_overlap."
                             )
+                        warnings.warn(
+                            f"The field pipeline_parallel_config is deprecated. "
+                            f"Please promote this secondary switch {x} to a primary switch."
+                        )
 
                 pipeline = strategy.pipeline
                 pipeline.enable = True
-                pipeline.enable_send_recv_overlap = "enable_send_recv_overlap" in pipeline_parallel_config
-                pipeline.split_backward = "enable_split_backward" in pipeline_parallel_config
+                pipeline.enable_send_recv_overlap = self.send_recv_overlap
+                pipeline.split_backward = self.split_backward
                 pipeline.accumulate_steps = self.gradient_accumulation_steps
                 pipeline.micro_batch_size = self.per_device_train_batch_size
                 pipeline.schedule_mode = self.pipeline_schedule_mode
@@ -2164,10 +2253,14 @@ class TrainingArguments:
                                 f"Found unknown tensor parallel config {x}, "
                                 f"accept config is enable_mp_async_allreduce, replace_with_c_embedding, and enable_mp_fused_linear_param_grad_add"
                             )
+                        warnings.warn(
+                            f"The field tensor_parallel_config is deprecated. "
+                            f"Please promote this secondary switch {x} to a primary switch."
+                        )
                 try:
-                    if "enable_mp_async_allreduce" in mp_config:
+                    if self.mp_async_allreduce:
                         mp_optimization.allreduce_matmul_grad_overlapping = True
-                    if "replace_with_c_embedding" in mp_config:
+                    if self.replace_with_c_embedding:
                         mp_optimization.replace_with_c_embedding = True
                 except:
                     warnings.warn(
@@ -2175,10 +2268,10 @@ class TrainingArguments:
                         "by current version of Paddle. Please try latest develop Paddle."
                     )
 
-            if self.sharding_parallel_degree > 1:
+            if self.sharding_parallel_size > 1:
                 sharding = strategy.sharding
                 sharding.enable = True
-                sharding.degree = self.sharding_parallel_degree
+                sharding.degree = self.sharding_parallel_size
                 if ShardingOption.SHARD_OP in self.sharding:
                     sharding.stage = 1
                 elif ShardingOption.SHARD_GRAD_OP in self.sharding:
@@ -2199,27 +2292,31 @@ class TrainingArguments:
                             if x in ["enable_stage1_overlap", "enable_stage2_overlap"]:
                                 raise ValueError(
                                     "enable_stage1_overlap and enable_stage2_overlap are not supported in "
-                                    "auto_parallel mode. Please use enable_overlap instead."
+                                    "auto_parallel mode. Please use training_args.overlap instead."
                                 )
                             elif x == "enable_stage1_tensor_fusion":
                                 raise ValueError(
                                     "enable_stage1_tensor_fusion is not supported in auto_parallel mode. "
-                                    "Please use enable_tensor_fusion instead."
+                                    "Please use training_args.tensor_fusion instead."
                                 )
                             raise ValueError(
                                 f"Found unknown sharding mode config {x}, "
-                                f"accept config is enable_tensor_fusion, "
-                                "enable_overlap, enable_release_grads."
+                                f"accept config is training_args.tensor_fusion, "
+                                "training_args.overlap, training_args.sd_release_grads."
                             )
+                        warnings.warn(
+                            f"The field sharding_parallel_config is deprecated. "
+                            f"Please promote this secondary switch {x} to a primary switch."
+                        )
 
-                    if "enable_overlap" in sharding_parallel_config:
+                    if self.overlap:
                         sharding.enable_overlap = True
 
-                    if "enable_tensor_fusion" in sharding_parallel_config:
+                    if self.tensor_fusion:
                         sharding.grad_bucket_size_numel = 210355872
                         sharding.enable_tensor_fusion = True
 
-                    if "enable_release_grads" in sharding_parallel_config:
+                    if self.sd_release_grads:
                         sharding.release_gradients = True
 
             if self.bf16 or self.fp16:
@@ -2417,8 +2514,8 @@ class TrainingArguments:
 
         if self.enable_zero_cost_checkpoint:
             assert (
-                "enable_fuse_optimizer_states" in sharding_parallel_config
-            ), "zero cost checkpoint must be used when enable_fuse_optimizer_states is enabled in sharding parallel config"
+                self.fuse_optimizer_states
+            ), "zero cost checkpoint must be used when fuse_optimizer_states is enabled in sharding parallel config"
 
         assert (
             self.flash_device_save_steps % self.zcc_ema_interval == 0
@@ -2458,23 +2555,23 @@ class TrainingArguments:
             raise ValueError("`--sharding` received too many arguments.")
 
         if self.sharding_degree > 0:
-            warnings.warn("`sharding_degree` is deprecated, please use `sharding_parallel_degree`")
-            self.sharding_parallel_degree = max(self.sharding_degree, self.sharding_parallel_degree)
-        self.data_parallel_degree = 1
+            warnings.warn("`sharding_degree` is deprecated, please use `sharding_parallel_size`")
+            self.sharding_parallel_size = max(self.sharding_degree, self.sharding_parallel_size)
+        self.data_parallel_size = 1
 
         try:
             delattr(self, "sharding_degree")
         except AttributeError:
             pass
 
-        if len(self.sharding) == 0 and self.sharding_parallel_degree > 0:
-            warnings.warn("`--sharding_parallel_degree` is useful only when `--sharding` is specified.")
+        if len(self.sharding) == 0 and self.sharding_parallel_size > 0:
+            warnings.warn("`--sharding_parallel_size` is useful only when `--sharding` is specified.")
 
         world_size = paddle.distributed.get_world_size()
 
         if world_size > 1:
             tensor_model_parallel_size = max(self.tensor_model_parallel_size, 1)
-            sep_parallel_degree = max(self.sep_parallel_degree, 1)
+            sep_parallel_size = max(self.sep_parallel_size, 1)
             context_parallel_size = max(self.context_parallel_size, 1)
             pipeline_model_parallel_size = max(self.pipeline_model_parallel_size, 1)
             expert_model_parallel_size = max(self.expert_model_parallel_size, 1)
@@ -2490,76 +2587,71 @@ class TrainingArguments:
             ), f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
 
             assert not (
-                sep_parallel_degree > 1 and context_parallel_size > 1
-            ), f"sep parallel and context parallel cannot be used together, sep_parallel_degree:{sep_parallel_degree}, context_parallel_size:{context_parallel_size}."
+                sep_parallel_size > 1 and context_parallel_size > 1
+            ), f"sep parallel and context parallel cannot be used together, sep_parallel_size:{sep_parallel_size}, context_parallel_size:{context_parallel_size}."
 
-            if self.sharding_parallel_degree == -1:
+            if self.sharding_parallel_size == -1:
                 if len(self.sharding) > 0:
-                    self.sharding_parallel_degree = world_size // (
-                        tensor_model_parallel_size * sep_parallel_degree * pipeline_model_parallel_size
+                    self.sharding_parallel_size = world_size // (
+                        tensor_model_parallel_size * sep_parallel_size * pipeline_model_parallel_size
                     )
 
-            sharding_parallel_degree = max(self.sharding_parallel_degree, 1)
-            if sharding_parallel_degree == 1 and len(self.sharding) > 0:
-                logger.warning("sharding_parallel_degree=1 means no sharding, please set sharding to empty!")
+            sharding_parallel_size = max(self.sharding_parallel_size, 1)
+            if sharding_parallel_size == 1 and len(self.sharding) > 0:
+                logger.warning("sharding_parallel_size=1 means no sharding, please set sharding to empty!")
                 self.sharding = []
 
-            self.data_parallel_degree = world_size // (
-                sharding_parallel_degree
-                * tensor_model_parallel_size
-                * sep_parallel_degree
-                * pipeline_model_parallel_size
+            self.data_parallel_size = world_size // (
+                sharding_parallel_size * tensor_model_parallel_size * sep_parallel_size * pipeline_model_parallel_size
             )
 
             if expert_model_parallel_size > 1:
-                moe_sharding_parallel_degree = world_size // (
-                    pipeline_model_parallel_size * expert_model_parallel_size
-                )
+                moe_sharding_parallel_size = world_size // (pipeline_model_parallel_size * expert_model_parallel_size)
                 assert (
                     self.expert_tensor_model_parallel_size <= 1
                 ), "expert_tensor_model_parallel_size > 1 is not supported when expert_model_parallel_size > 1"
             else:
-                moe_sharding_parallel_degree = 1
-            moe_sharding_parallel_degree = max(moe_sharding_parallel_degree, 1)
-            if moe_sharding_parallel_degree > 1 and self.data_parallel_degree > 1:
+                moe_sharding_parallel_size = 1
+            moe_sharding_parallel_size = max(moe_sharding_parallel_size, 1)
+            if moe_sharding_parallel_size > 1 and self.data_parallel_size > 1:
                 raise NotImplementedError(
-                    f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. But got data_parallel_degree: {self.data_parallel_degree}, expert_model_parallel_size: {expert_model_parallel_size}, moe_sharding_parallel_degree: {moe_sharding_parallel_degree}."
+                    f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. But got data_parallel_size: {self.data_parallel_size}, expert_model_parallel_size: {expert_model_parallel_size}, moe_sharding_parallel_size: {moe_sharding_parallel_size}."
                 )
 
-            if sharding_parallel_degree > 1 and moe_sharding_parallel_degree > 1:
+            if sharding_parallel_size > 1 and moe_sharding_parallel_size > 1:
                 assert (
-                    sharding_parallel_degree % moe_sharding_parallel_degree == 0
-                ), f"sharding_parallel_degree should be divided by moe_sharding_parallel_degree, current sharding_parallel_degree: {sharding_parallel_degree}, moe_sharding_parallel_degree: {moe_sharding_parallel_degree}."
+                    sharding_parallel_size % moe_sharding_parallel_size == 0
+                ), f"sharding_parallel_size should be divided by moe_sharding_parallel_size, current sharding_parallel_size: {sharding_parallel_size}, moe_sharding_parallel_size: {moe_sharding_parallel_size}."
 
             assert not (
-                self.data_parallel_degree > 1 and expert_model_parallel_size > 1
-            ), f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. Currently data_parallel_degree is {self.data_parallel_degree}."
+                self.data_parallel_size > 1 and expert_model_parallel_size > 1
+            ), f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. Currently data_parallel_size is {self.data_parallel_size}."
 
             if (
-                sharding_parallel_degree > 1
+                sharding_parallel_size > 1
                 or tensor_model_parallel_size > 1
                 or pipeline_model_parallel_size > 1
-                or self.sep_parallel_degree > 1
+                or self.sep_parallel_size > 1
                 or self.context_parallel_size > 1
                 or expert_model_parallel_size > 1
                 or expert_tensor_model_parallel_size > 1
             ):
                 self.use_hybrid_parallel = True
-                self.sharding_parallel_degree = sharding_parallel_degree
+                self.sharding_parallel_size = sharding_parallel_size
                 self.tensor_model_parallel_size = tensor_model_parallel_size
                 self.pipeline_model_parallel_size = pipeline_model_parallel_size
-                self.sep_parallel_degree = sep_parallel_degree
+                self.sep_parallel_size = sep_parallel_size
                 self.context_parallel_size = context_parallel_size
                 self.expert_model_parallel_size = expert_model_parallel_size
                 self.expert_tensor_model_parallel_size = expert_tensor_model_parallel_size
-                self.moe_sharding_parallel_degree = moe_sharding_parallel_degree
+                self.moe_sharding_parallel_size = moe_sharding_parallel_size
 
             if not self.use_hybrid_parallel:
                 self.sharding = []
-                self.sharding_parallel_degree = -1
+                self.sharding_parallel_size = -1
                 self.tensor_model_parallel_size = -1
                 self.pipeline_model_parallel_size = -1
-                self.sep_parallel_degree = -1
+                self.sep_parallel_size = -1
                 self.context_parallel_size = -1
                 self.expert_model_parallel_size = -1
                 self.expert_tensor_model_parallel_size = -1
@@ -2662,8 +2754,8 @@ class TrainingArguments:
     @property
     def cp_sharding_degree(self):
         """cp_sharding_degree"""
-        assert self.sharding_parallel_degree % self.context_parallel_size == 0, (
-            f"sharding parallel degree {self.sharding_parallel_degree} "
+        assert self.sharding_parallel_size % self.context_parallel_size == 0, (
+            f"sharding parallel degree {self.sharding_parallel_size} "
             f"is not divisible by context parallel degree {self.context_parallel_size}"
         )
         hcg = None
@@ -2696,13 +2788,13 @@ class TrainingArguments:
     @property
     def dataset_rank(self):
         if self.use_hybrid_parallel:
-            sharding_parallel_degree = (
-                self.cp_sharding_degree if self.context_parallel_size > 1 else self.sharding_parallel_degree
+            sharding_parallel_size = (
+                self.cp_sharding_degree if self.context_parallel_size > 1 else self.sharding_parallel_size
             )
             sharding_parallel_rank = (
                 self.cp_sharding_rank if self.context_parallel_size > 1 else self.sharding_parallel_rank
             )
-            return max(sharding_parallel_degree, 1) * self.data_parallel_rank + sharding_parallel_rank
+            return max(sharding_parallel_size, 1) * self.data_parallel_rank + sharding_parallel_rank
         elif self.enable_auto_parallel:
             return self.data_parallel_rank
         else:
@@ -2714,14 +2806,14 @@ class TrainingArguments:
             if self.context_parallel_size > 1:
                 assert self.use_hybrid_parallel, "context parallel only support with use_hybrid_parallel"
                 assert (
-                    self.data_parallel_degree == 1
-                ), f"context parallel can not coexist with data parallel, but got self.data_parallel_degree == {self.data_parallel_degree}"
-                sharding_parallel_degree = self.cp_sharding_degree
+                    self.data_parallel_size == 1
+                ), f"context parallel can not coexist with data parallel, but got self.data_parallel_size == {self.data_parallel_size}"
+                sharding_parallel_size = self.cp_sharding_degree
             else:
-                sharding_parallel_degree = self.sharding_parallel_degree
-            return max(sharding_parallel_degree, 1) * max(self.data_parallel_degree, 1)
+                sharding_parallel_size = self.sharding_parallel_size
+            return max(sharding_parallel_size, 1) * max(self.data_parallel_size, 1)
         elif self.enable_auto_parallel:
-            return max(self.sharding_parallel_degree, 1) * max(self.data_parallel_degree, 1)
+            return max(self.sharding_parallel_size, 1) * max(self.data_parallel_size, 1)
         else:
             return paddle.distributed.get_world_size()
 
@@ -2803,14 +2895,14 @@ class TrainingArguments:
                 name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_model_parallel_size))
             if self.pipeline_model_parallel_size > 1:
                 name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_model_parallel_size))
-            if self.sharding_parallel_degree > 1:
-                name.append(self._format_name("shard", self.sharding_parallel_rank, self.sharding_parallel_degree))
+            if self.sharding_parallel_size > 1:
+                name.append(self._format_name("shard", self.sharding_parallel_rank, self.sharding_parallel_size))
             if self.use_expert_parallel and self.expert_model_parallel_size <= 1:
-                name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree))
+                name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_size))
             return "_".join(name)
         else:
             if self.use_expert_parallel:
-                return self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree)
+                return self._format_name("moe", self.data_parallel_rank, self.data_parallel_size)
             return None
 
     @property
@@ -2822,7 +2914,7 @@ class TrainingArguments:
             if self.pipeline_model_parallel_size > 1:
                 name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_model_parallel_size))
             if self.use_expert_parallel and self.expert_model_parallel_size <= 1:
-                name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree))
+                name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_size))
             if self.use_expert_parallel and self.expert_model_parallel_size > 1:
                 name.append(
                     self._format_name("moe_sharding", self.expert_parallel_rank, self.expert_model_parallel_size)
@@ -2831,12 +2923,12 @@ class TrainingArguments:
 
         else:
             if self.use_expert_parallel:
-                return self._format_name("moe", self.data_parallel_rank, self.data_parallel_degree)
+                return self._format_name("moe", self.data_parallel_rank, self.data_parallel_size)
             return None
 
-    def sharded_name_suffix(self, shard_id=None, pp_id=None, moe_id=None, sharding_parallel_degree=None):
-        if sharding_parallel_degree is None:
-            sharding_parallel_degree = self.sharding_parallel_degree
+    def sharded_name_suffix(self, shard_id=None, pp_id=None, moe_id=None, sharding_parallel_size=None):
+        if sharding_parallel_size is None:
+            sharding_parallel_size = self.sharding_parallel_size
         if self.use_hybrid_parallel:
             name = []
             if self.tensor_model_parallel_size > 1:
@@ -2846,22 +2938,22 @@ class TrainingArguments:
                     pp_id = self.pipeline_parallel_rank
                 assert isinstance(pp_id, int)
                 name.append(self._format_name("pp", pp_id, self.pipeline_model_parallel_size))
-            if sharding_parallel_degree > 1:
+            if sharding_parallel_size > 1:
                 if shard_id is None:
                     shard_id = self.sharding_parallel_rank
                 assert isinstance(shard_id, int)
-                name.append(self._format_name("shard", shard_id, sharding_parallel_degree))
+                name.append(self._format_name("shard", shard_id, sharding_parallel_size))
             if self.use_expert_parallel and self.expert_model_parallel_size <= 1:
                 if moe_id is None:
                     moe_id = self.data_parallel_rank
                 assert isinstance(moe_id, int)
-                name.append(self._format_name("moe", moe_id, self.data_parallel_degree))
+                name.append(self._format_name("moe", moe_id, self.data_parallel_size))
             return "_".join(name)
         else:
             if self.use_expert_parallel:
                 if moe_id is None:
                     moe_id = self.data_parallel_rank
-                return self._format_name("moe", moe_id, self.data_parallel_degree)
+                return self._format_name("moe", moe_id, self.data_parallel_size)
             return None
 
     @property
@@ -2879,7 +2971,7 @@ class TrainingArguments:
         The index of the current process used.
         """
         if self.local_rank != -1:
-            sd_size = max(self.sharding_parallel_degree, 1)
+            sd_size = max(self.sharding_parallel_size, 1)
             pp_size = max(self.pipeline_model_parallel_size, 1)
             tp_size = max(self.tensor_model_parallel_size, 1)
 
@@ -2975,7 +3067,7 @@ class TrainingArguments:
             return False
         return (
             ShardingOption.SHARD_OP in self.sharding
-            and self.sharding_parallel_degree > 1
+            and self.sharding_parallel_size > 1
             and (self.save_checkpoint_format == "sharding_io" or self.save_checkpoint_format == "flex_checkpoint")
         )
 
@@ -3123,6 +3215,6 @@ class TrainingArguments:
             self.enable_auto_parallel
             and self.to_static
             and ShardingOption.SHARD_OP in self.sharding
-            and self.sharding_parallel_degree > 1
-            and "enable_tensor_fusion" in self.sharding_parallel_config
+            and self.sharding_parallel_size > 1
+            and self.tensor_fusion
         )

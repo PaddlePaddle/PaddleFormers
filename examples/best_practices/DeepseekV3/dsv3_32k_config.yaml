@@ -50,12 +50,23 @@ continue_training: true
 tensor_model_parallel_size: 8
 sequence_parallel: true
 pipeline_model_parallel_size: 8
-sharding_parallel_degree: 2
+sharding_parallel_size: 2
 use_expert_parallel: true
 expert_model_parallel_size: 16
-tensor_parallel_config: "enable_delay_scale_loss sync_param sync_grad"
-pipeline_parallel_config: "enable_delay_scale_loss disable_partial_send_recv disable_batch_p2p_comm"
-sharding_parallel_config: "split_param"
+
+# tensor_parallel_config
+tp_delay_scale_loss: true
+tp_sync_param: true
+sync_grad: true
+
+# pipeline_parallel_config
+pp_delay_scale_loss: true
+partial_send_recv: false
+batch_p2p_comm: false
+
+# sharding_parallel_config
+split_param: true
+
 recompute: true
 recompute_use_reentrant: true
 recompute_granularity: "full"
