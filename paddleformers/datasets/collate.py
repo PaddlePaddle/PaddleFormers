@@ -197,7 +197,7 @@ def collate_fn(
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
-        if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids, List):
+        if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
             original_position_ids = batch_sequence[0].position_ids
         else:
             original_position_ids = [seq.position_ids for seq in batch_sequence]
