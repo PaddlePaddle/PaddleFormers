@@ -369,11 +369,11 @@ def init_seed(seed: int = 1234, args=None):
                 order = ["dp", "sharding", "pp", "mp", "sep"]
             if args.context_parallel_size is not None and args.context_parallel_size > 1:
                 sep_degree = args.context_parallel_size
-            elif args.sep_parallel_degree is not None and args.sep_parallel_degree > 1:
-                sep_degree = args.sep_parallel_degree
+            elif args.sep_parallel_size is not None and args.sep_parallel_size > 1:
+                sep_degree = args.sep_parallel_size
             else:
                 sep_degree = 1
-            sep_degree = args.sep_parallel_degree if args.sep_parallel_degree > 1 else args.context_parallel_size
+            sep_degree = args.sep_parallel_size if args.sep_parallel_size > 1 else args.context_parallel_size
             topo = Topology(
                 dist.get_rank(),
                 dist.get_world_size(),
@@ -508,9 +508,9 @@ def main():
     config.use_recompute = training_args.recompute
     config.tensor_model_parallel_size = training_args.tensor_model_parallel_size
     config.tensor_parallel_rank = training_args.tensor_parallel_rank
-    config.sharding_parallel_degree = training_args.sharding_parallel_degree
+    config.sharding_parallel_size = training_args.sharding_parallel_size
     config.to_static = training_args.to_static
-    config.sep_parallel_degree = training_args.sep_parallel_degree
+    config.sep_parallel_size = training_args.sep_parallel_size
     config.context_parallel_size = training_args.context_parallel_size
 
     if training_args.strategy.pipeline.enable and config.virtual_pipeline_model_parallel_size > 1:

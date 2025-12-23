@@ -425,7 +425,7 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         # models are separate. Therefore, first we need to set the flag in the model config
         # to perform V-shape segmentation. Second, we need to set the flag in the training_args
         # to configure strategy.hybrid_configs to choose the DualPipeV schedule.
-        config.use_dualpipev = "use_dualpipev" in training_args.pipeline_parallel_config
+        config.use_dualpipev = training_args.use_dualpipev
     if hasattr(config, "hidden_dropout_prob"):
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
@@ -436,21 +436,17 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
             config.tensor_model_parallel_size > 1
         ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
-        config.num_attention_heads % config.sep_parallel_degree == 0
-    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
+        config.num_attention_heads % config.sep_parallel_size == 0
+    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_size {config.sep_parallel_size}"
     assert (
         config.seq_length % config.context_parallel_size == 0
     ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
 
-    if training_args.sharding_parallel_config is not None:
-        # for stage1 overlap optimization
-        if (
-            "enable_stage1_allgather_overlap" in training_args.sharding_parallel_config
-            or "enable_stage1_broadcast_overlap" in training_args.sharding_parallel_config
-        ):
-            from paddle.io.reader import use_pinned_memory
+    # for stage1 overlap optimization
+    if training_args.stage1_allgather_overlap or training_args.stage1_broadcast_overlap:
+        from paddle.io.reader import use_pinned_memory
 
-            use_pinned_memory(False)
+        use_pinned_memory(False)
 
     if get_env_device() == "xpu" and training_args.gradient_accumulation_steps > 1:
         try:
@@ -486,7 +482,7 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
         any(architecture in str(config.architectures) for architecture in architectures_to_check)
-        and training_args.data_parallel_degree > 1
+        and training_args.data_parallel_size > 1
     ):
         training_args.use_expert_parallel = True
 

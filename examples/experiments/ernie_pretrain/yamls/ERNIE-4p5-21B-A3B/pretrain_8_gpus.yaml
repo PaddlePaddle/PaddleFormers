@@ -84,8 +84,11 @@ trainer_args:
 
     expert_model_parallel_size: 8
     sharding: "stage1"
-    sharding_parallel_degree: 8
-    sharding_parallel_config: split_param
+    sharding_parallel_size: 8
+    
+    # sharding_parallel_config
+    split_param: true
+
     amp_master_grad: 1
 
     ignore_data_skip: 0

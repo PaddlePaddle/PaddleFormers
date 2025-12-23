@@ -195,7 +195,7 @@ class PreTrainingArguments(TrainingArguments):
             return None
         reeao_pp_rank = ranks.index(self.pipeline_parallel_rank)
         return (
-            max(self.sharding_parallel_degree, 1) * max(self.pp_need_data_degree, 1) * self.data_parallel_rank
+            max(self.sharding_parallel_size, 1) * max(self.pp_need_data_degree, 1) * self.data_parallel_rank
             + max(self.pp_need_data_degree, 1) * self.sharding_parallel_rank
             + reeao_pp_rank
         )
@@ -207,11 +207,7 @@ class PreTrainingArguments(TrainingArguments):
         """
         if not self.pp_need_data_degree:
             return super().dataset_world_size
-        return (
-            max(self.sharding_parallel_degree, 1)
-            * max(self.pp_need_data_degree, 1)
-            * max(self.data_parallel_degree, 1)
-        )
+        return max(self.sharding_parallel_size, 1) * max(self.pp_need_data_degree, 1) * max(self.data_parallel_size, 1)
 
 
 @dataclass
@@ -488,15 +484,9 @@ class FinetuningArguments(
             self.per_device_eval_batch_size = self.per_device_train_batch_size
             logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size}")
 
-        if self.sharding_parallel_degree > 1:
-            sharding_parallel_config = (
-                set(self.sharding_parallel_config.split(" ")) if self.sharding_parallel_config else set()
-            )
+        if self.sharding_parallel_size > 1:
             sharding_comm_overlap_non_pp = (
-                True
-                if "shardingv1_comm_overlap" in sharding_parallel_config
-                or "sharding_comm_overlap" in sharding_parallel_config
-                else False
+                True if self.sd_shardingv1_comm_overlap or self.sd_sharding_comm_overlap else False
             )
             if sharding_comm_overlap_non_pp:
                 assert hasattr(fleet.fleet, "_user_defined_strategy")
