@@ -182,6 +182,7 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     Model tester for `Qwen3VLForConditionalGeneration`.
     """
 
+    base_model_class = Qwen3VLModel
     all_model_classes = (Qwen3VLModel, Qwen3VLForConditionalGeneration)
     all_generative_model_classes = {Qwen3VLForConditionalGeneration: {Qwen3VLModel, "qwen3_vl"}}
     max_new_tokens = 3
@@ -548,12 +549,10 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 class Qwen3VLIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-            "/root/paddlejob/workspace/env_run/wangyuhao/PaddleFormers/tiny_random_qwen3vl", convert_from_hf=True
+            "PaddleFormers/tiny-random-qwen3vl", convert_from_hf=True
         )
 
-        self.processor = AutoProcessor.from_pretrained(
-            "/root/paddlejob/workspace/env_run/wangyuhao/PaddleFormers/tiny_random_qwen3vl"
-        )
+        self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen3vl")
         self.messages = [
             {
                 "role": "user",
