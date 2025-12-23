@@ -1224,9 +1224,9 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             ]
         else:
             aoa_statements += [
-                f"{model_prefix}layers.{num_head_empty_layers}.mlp.up_gate_proj.weight -> model.layers.0.mlp.gate_proj.weight, model.layers.0.mlp.up_proj.weight, fused_ffn",
-                "model.layers.0.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
-                "model.layers.0.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
+                f"{model_prefix}layers.{num_head_empty_layers}.mlp.up_gate_proj.weight -> model.layers.{num_head_empty_layers}.mlp.gate_proj.weight, model.layers.{num_head_empty_layers}.mlp.up_proj.weight, fused_ffn",
+                f"model.layers.{num_head_empty_layers}.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
+                f"model.layers.{num_head_empty_layers}.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
             ]
 
         # layer 0 -> layer num_hidden_layers-1
@@ -1251,7 +1251,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
                 ]
                 aoa_statements += [
-                    f"{prefix_offset}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight"
+                    f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight"
                     for x in ("q", "k", "v")
                 ]
 
@@ -1280,18 +1280,25 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 ]
             else:
                 aoa_statements += [
-                    f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix}.mlp.shared_experts.gate_proj.weight, {prefix_offset}.mlp.shared_experts.up_proj.weight, fused_ffn",
-                    f"{prefix}.mlp.shared_experts.gate_proj.weight^T -> {prefix}.mlp.shared_experts.gate_proj.weight"
-                    f"{prefix}.mlp.shared_experts.up_proj.weight^T -> {prefix}.mlp.shared_experts.up_proj.weight",
+                    f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix_offset}.mlp.shared_experts.gate_proj.weight, {prefix_offset}.mlp.shared_experts.up_proj.weight, fused_ffn",
+                    f"{prefix_offset}.mlp.shared_experts.gate_proj.weight^T -> {prefix}.mlp.shared_experts.gate_proj.weight",
+                    f"{prefix_offset}.mlp.shared_experts.up_proj.weight^T -> {prefix}.mlp.shared_experts.up_proj.weight",
                 ]
 
-                aoa_statements += [
-                    f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
-                    for expert_id in range(config.n_routed_experts)
-                ] + [
-                    f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
-                    for expert_id in range(config.n_routed_experts)
-                ]
+                aoa_statements += (
+                    [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                )
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
@@ -1573,6 +1580,7 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        config.architecture = [cls.__name__.replace("Pipe", "")]
         gpt_model.config_to_save = config
         return gpt_model
 
@@ -1722,7 +1730,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         return ret
 
 
-class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1733,11 +1741,12 @@ class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalL
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        config.architecture = [cls.__name__]
         gpt_model.config_to_save = config
         return gpt_model
 
 
-class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
     _decoder_layer_pipe_cls = Glm4MoeDecoderLayerPipe
