@@ -149,10 +149,6 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether to split multi-round dialogues into multiple pieces of data for training"},
     )
-    mask_history_eos: bool = field(
-        default=False,
-        metadata={"help": "Whether to mask out the EOS token in historical turns"},
-    )
     template_backend: str = field(
         default="jinja",
         metadata={"help": "jinja means using apply_chat_template, custom means using a custom template"},

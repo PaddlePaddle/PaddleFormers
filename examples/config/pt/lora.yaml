@@ -6,6 +6,7 @@ train_dataset_prob: "1.0"
 eval_dataset_path: ./tests/fixtures/dummy/pt/eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
+packing: true
 mix_strategy: concat
 
 ### model

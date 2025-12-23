@@ -29,6 +29,24 @@ def round_up_to_multiple_of_8(n):
     return (n + 7) & ~7
 
 
+def fix_start_with_zero(lst):
+    if not lst:
+        return lst
+
+    try:
+        first_zero = lst.index(0)
+    except ValueError:
+        # zero is not existing in lst
+        return list(range(len(lst)))
+
+    if lst[0] == 0:
+        return lst
+
+    first_segment_len = first_zero
+    new_first_segment = list(range(first_segment_len))
+    return new_first_segment + lst[first_zero:]
+
+
 def print_debug_info(tokenizer, data, label):
     """Helper function to print tokenized data debug info"""
     try:
