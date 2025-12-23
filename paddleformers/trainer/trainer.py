@@ -2660,7 +2660,7 @@ class Trainer:
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
                 prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=self.args.gradient_accumulation_steps,
+                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
                 **additional_configs,
             )
         else:
@@ -2675,7 +2675,7 @@ class Trainer:
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
                 prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=self.args.gradient_accumulation_steps,
+                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
                 **additional_configs,
             )
 
@@ -2784,7 +2784,7 @@ class Trainer:
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
                 prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=self.args.gradient_accumulation_steps,
+                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
                 **additional_configs,
             )
 
@@ -2833,7 +2833,7 @@ class Trainer:
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
                 prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=self.args.gradient_accumulation_steps,
+                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
                 **additional_config,
             )
         else:
