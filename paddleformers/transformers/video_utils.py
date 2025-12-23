@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import os
+import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, fields
 from io import BytesIO
@@ -384,6 +385,7 @@ def read_video_paddlecodec(
     logger.info("Loading video with torchcodec backend.")
     PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 8))
     logger.info(f"set PADDLECODEC_NUM_THREADS: {PADDLECODEC_NUM_THREADS}")
+    st = time.time()
     # VideoDecoder expects a string for device, default to "cpu" if None
     decoder = VideoDecoder(
         video_path,
@@ -406,6 +408,7 @@ def read_video_paddlecodec(
 
     indices = sample_indices_fn(metadata=metadata, **kwargs)
     video = decoder.get_frames_at(indices=indices).data.contiguous().to("cuda")
+    logger.info(f"paddlecodec:  {video_path=}, {total_num_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
     metadata.frames_indices = indices
     return video, metadata
 
