@@ -20,6 +20,7 @@ from paddle.distributed import fleet
 from paddleformers.nn.criterion import CriterionLayer
 from paddleformers.peft.lora.lora_model import AVAILABLE_LAYERS
 from paddleformers.trainer import Trainer
+from paddleformers.transformers.gpt_provider import GPTModel
 from paddleformers.transformers.model_utils import unwrap_model
 from paddleformers.utils import infohub
 
@@ -240,12 +241,17 @@ class DPOTrainer(Trainer):
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         """evaluate"""
+        self.ref_model_wrapped = self._wrap_ref_model(self.ref_model_wrapped)
         self.model_wrapped = self._wrap_ref_model(self.model_wrapped)
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
 
         """prediction_step"""
+        if HAS_PADDLEFLEET and isinstance(model, GPTModel):
+            inputs = self._prepare_inputs(inputs)
+            return self.fleet_prediction_pipeline_step(self.ref_model_wrapped, self.model_wrapped, inputs)
+
         if self.args.pipeline_model_parallel_size > 1:
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
@@ -287,6 +293,113 @@ class DPOTrainer(Trainer):
         if self.state.epoch is not None and train_eval == "train":
             self.state.epoch *= self.args.num_train_epochs
         return super().log(logs, **kwargs)
+
+    def fleet_prediction_pipeline_step(
+        self,
+        ref_model,
+        model,
+        batch,
+    ):
+        """
+        prediction_step function for pipeline parallel mode.
+        """
+        if len(batch["input_ids"]) != self.args.gradient_accumulation_steps:
+            return (paddle.zeros([]), None, None)
+
+        if hasattr(model, "_p2p_helper"):
+            model._p2p_helper.clear_meta_cache()
+
+        concatenated_inputs = {}
+        # consider no drop last
+        per_device_train_batch_size = self.args.per_device_train_batch_size
+        gradient_accumulation_steps = self.args.gradient_accumulation_steps
+        # preprocess inputs: tuple(List[Tensor])
+        for key in batch.keys():
+            if key not in "response_indexs":
+                concatenated_inputs[key] = [
+                    batch[key][i * per_device_train_batch_size : (i + 1) * per_device_train_batch_size]
+                    for i in range(gradient_accumulation_steps)
+                ]
+            else:
+                concatenated_inputs["response_indexs"] = [[] for _ in range(gradient_accumulation_steps)]
+                for i in range(gradient_accumulation_steps):
+                    for response_index in batch[key]:
+                        if response_index[0] in list(
+                            range(i * per_device_train_batch_size, (i + 1) * per_device_train_batch_size)
+                        ):
+                            response_index[0] -= i * per_device_train_batch_size
+                            concatenated_inputs["response_indexs"][i].append(response_index)
+                    concatenated_inputs["response_indexs"][i] = paddle.stack(concatenated_inputs["response_indexs"][i])
+                    use_sparse_head_and_loss_fn = (
+                        model._layers.config.use_sparse_head_and_loss_fn
+                        if hasattr(model, "_layers")
+                        else model.config.use_sparse_head_and_loss_fn
+                    )
+                    if use_sparse_head_and_loss_fn:
+                        last_batch_response_length = concatenated_inputs["response_indexs"][i][0, 1]
+                        concatenated_inputs["response_indexs"][i][:, 1:] -= last_batch_response_length
+
+        concatenated_inputs["reference_chosen_logps"] = None
+        concatenated_inputs["reference_rejected_logps"] = None
+
+        self._pp_data_buffer = []
+        inputs, labels = model._prepare_pipeline_inputs_func(concatenated_inputs)
+        if not self.dpo_config.reference_free:
+            if self.dpo_config.lora:
+                self.disable_lora(model)
+                model.eval()
+                with paddle.no_grad():
+                    with self.autocast_smart_context_manager():
+                        model.eval_batch(data=[inputs, labels], compute_loss=True)
+                self.enable_lora(model)
+                model._p2p_helper.clear_meta_cache()
+                model.train()
+            else:
+                ref_model = self.ref_model_wrapped
+                ref_model_config_backup = ref_model.micro_batch_size, ref_model.accumulate_steps
+                ref_model.micro_batch_size = self.args.per_device_train_batch_size
+                ref_model.accumulate_steps = self.args.gradient_accumulation_steps
+                with paddle.no_grad():
+                    with self.autocast_smart_context_manager():
+                        ref_model.eval_batch(data=[inputs, labels], compute_loss=True)
+                ref_model.micro_batch_size, ref_model.accumulate_steps = ref_model_config_backup
+            reference_chosen_logps = infohub.reference_chosen_logps
+            reference_rejected_logps = infohub.reference_rejected_logps
+        else:
+            reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
+            reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
+        if ref_model.is_pipeline_last_stage(ignore_virtual=ref_model._layers._num_virtual_pipeline_stages > 1):
+            if HAS_PADDLEFLEET and isinstance(ref_model._layers, GPTModel):
+                labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
+            else:
+                labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
+        model_config_backup = model.micro_batch_size, model.accumulate_steps
+        model.micro_batch_size = self.args.per_device_train_batch_size
+        model.accumulate_steps = self.args.gradient_accumulation_steps
+        with paddle.no_grad():
+            with self.autocast_smart_context_manager():
+                loss = model.eval_batch(data=[inputs, labels], compute_loss=True)
+        model.micro_batch_size, model.accumulate_steps = model_config_backup
+
+        # broadcast DPO_INFO_KEYS
+        if self.args.pipeline_model_parallel_size > 1:
+            self.broadcast_last_stage_infohub_tensor()
+
+        # metrics
+        metric_inputs = dict(
+            reference_chosen_logps=infohub.reference_chosen_logps,
+            reference_rejected_logps=infohub.reference_rejected_logps,
+            policy_chosen_logps=infohub.policy_chosen_logps,
+            policy_rejected_logps=infohub.policy_rejected_logps,
+            dpo_loss=infohub.dpo_loss,
+            sft_loss=infohub.sft_loss,
+            train_eval="eval",
+        )
+        self.log_metric(**metric_inputs)
+        self.reset_dpo_infohub()
+        if hasattr(model, "_p2p_helper"):
+            model._p2p_helper.clear_meta_cache()
+        return (loss, None, None)
 
     def prediction_pipeline_step(
         self,
@@ -474,7 +587,7 @@ class DPOTrainer(Trainer):
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
         if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
-            if HAS_PADDLEFLEET:
+            if HAS_PADDLEFLEET and isinstance(model._layers, GPTModel):
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)

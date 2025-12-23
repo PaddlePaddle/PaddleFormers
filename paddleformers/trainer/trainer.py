@@ -2680,7 +2680,9 @@ class Trainer:
                 drop_last=False,
             )
         else:
-            if self.args.pipeline_model_parallel_size > 1:
+            if (
+                HAS_PADDLEFLEET and isinstance(self.model, PaddleFleetPipelineLayer)
+            ) or self.args.pipeline_model_parallel_size > 1:
                 # In pipeline parallelism, batch size will be strictly checked
                 # Use LastBatchPaddingSampler to pad the last batch with the first batch
                 from .trainer_utils import LastBatchPaddingSampler

@@ -1481,6 +1481,7 @@ class TrainingArguments:
     fuse_optimizer_states: bool = field(default=False, metadata={"help": "Fuse optimizer states to a single storage."})
 
     def __post_init__(self):
+        self.HAS_PADDLEFLEET = HAS_PADDLEFLEET
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
             # self.max_grad_norm = 0.0

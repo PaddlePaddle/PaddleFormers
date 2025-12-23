@@ -462,7 +462,7 @@ class FinetuningArguments(
 
         self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
 
-        if self.pipeline_model_parallel_size > 1:
+        if self.HAS_PADDLEFLEET or self.pipeline_model_parallel_size > 1:
             self.per_device_eval_batch_size = self.per_device_train_batch_size * self.gradient_accumulation_steps
             logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
             user_defined_strategy = fleet.fleet._user_defined_strategy
