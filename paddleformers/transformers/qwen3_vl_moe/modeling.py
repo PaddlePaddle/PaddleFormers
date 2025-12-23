@@ -130,7 +130,7 @@ class Qwen3VLMoeVisionMLP(nn.Layer):
         return self.linear_fc2(self.act_fn(self.linear_fc1(hidden_state)))
 
 
-class Qwen3VisionPatchEmbed(nn.Layer):
+class Qwen3VLMoeVisionPatchEmbed(nn.Layer):
     def __init__(
         self,
         patch_size: int = 14,
@@ -161,8 +161,10 @@ class Qwen3VLMoeVisionRotaryEmbedding(nn.Layer):
 
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
+        self.dim = dim
         inv_freq = 1.0 / (theta ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim))
         self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.theta = theta
 
     def forward(self, seqlen: int) -> paddle.Tensor:
         seq = paddle.arange(seqlen, dtype=self.inv_freq.dtype)
@@ -170,7 +172,7 @@ class Qwen3VLMoeVisionRotaryEmbedding(nn.Layer):
         return freqs
 
 
-class Qwen3VLMoePatchMerger(nn.Layer):
+class Qwen3VLMoeVisionPatchMerger(nn.Layer):
     def __init__(
         self,
         config: Qwen3VLMoeConfig,
@@ -466,7 +468,9 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
                 f"model.language_model.layers.$LAYER_ID.input_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
-                f"model.language_model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+                f"model.language_model.layers.$LAYER_ID.mlp.gate.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.gate.weight",
+                f"model.language_model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+                f"model.language_model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_up_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_up_proj.weight",
                 f"model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
                 f"model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
@@ -533,18 +537,7 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
                 f"model.language_model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}"
             ]
 
-        # FFN
-        if not config.text_config.fuse_attention_ffn:
-            aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
-                for p in ("gate", "up")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.language_model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
-            ]
-
-        # Qwen3_VLModel without lm_head
+        # Qwen3_VLMoeModel without lm_head
         if cls._tied_weights_keys:
             aoa_config["aoa_statements"] += [
                 f"{'model.language_model.embed_tokens.weight' if config.tie_word_embeddings else 'lm_head.weight'} -> lm_head.weight",
@@ -664,7 +657,7 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
         return aoa_config
 
 
-class Qwen3VisionTransformerPretrainedModel(Qwen3VLMoePretrainedModel):
+class Qwen3VLMoeVisionModel(Qwen3VLMoePretrainedModel):
     config_class = Qwen3VLMoeVisionConfig
     _no_split_modules = ["Qwen3VLMoeVisionBlock"]
 
@@ -677,7 +670,7 @@ class Qwen3VisionTransformerPretrainedModel(Qwen3VLMoePretrainedModel):
         self.deepstack_visual_indexes = config.deepstack_visual_indexes
         self.deepstack_merger_list = nn.LayerList(
             [
-                Qwen3VLMoePatchMerger(
+                Qwen3VLMoeVisionPatchMerger(
                     config=config,
                     use_postshuffle_norm=True,
                 )
@@ -685,7 +678,7 @@ class Qwen3VisionTransformerPretrainedModel(Qwen3VLMoePretrainedModel):
             ]
         )
 
-        self.patch_embed = Qwen3VisionPatchEmbed(
+        self.patch_embed = Qwen3VLMoeVisionPatchEmbed(
             patch_size=config.patch_size,
             temporal_patch_size=config.temporal_patch_size,
             in_channels=config.in_channels,
@@ -696,7 +689,7 @@ class Qwen3VisionTransformerPretrainedModel(Qwen3VLMoePretrainedModel):
         self.rotary_pos_emb = Qwen3VLMoeVisionRotaryEmbedding(head_dim // 2)
 
         self.blocks = nn.LayerList([Qwen3VLMoeVisionBlock(config) for _ in range(config.depth)])
-        self.merger = Qwen3VLMoePatchMerger(
+        self.merger = Qwen3VLMoeVisionPatchMerger(
             config=config,
             dim=config.out_hidden_size,
             context_dim=config.hidden_size,
@@ -902,7 +895,7 @@ class Qwen3VLMoeModelOutputWithPast(ModelOutput):
     rope_deltas: Optional[paddle.Tensor] = None
 
 
-class Qwen3VLMoeRotaryEmbedding(nn.Layer):
+class Qwen3VLMoeTextRotaryEmbedding(nn.Layer):
     inv_freq: paddle.Tensor
 
     def __init__(self, config: Qwen3VLMoeTextConfig):
@@ -994,7 +987,7 @@ class Qwen3VLMoeTextSparseMoeBlock(nn.Module):
         self.hidden_size = config.hidden_size
         self.num_experts = config.num_experts
         self.top_k = config.num_experts_per_tok
-        self.gate = nn.Linear(config.hidden_size, config.num_experts, bias=False)
+        self.gate = nn.Linear(config.hidden_size, config.num_experts, bias_attr=False)
         self.experts = Qwen3VLMoeTextExperts(config)
 
         # since all the models use norm_topk_prob, we don't need to have a extra check for it
@@ -1383,7 +1376,7 @@ class Qwen3VLMoeTextModel(Qwen3VLMoePretrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.has_sliding_layers = "sliding_attention" in self.config.layer_types
-        self.rotary_emb = Qwen3VLMoeRotaryEmbedding(config=config)
+        self.rotary_emb = Qwen3VLMoeTextRotaryEmbedding(config=config)
 
         self.gradient_checkpointing = False
         self.has_sliding_layers = getattr(
@@ -1668,7 +1661,7 @@ class Qwen3VLMoeModel(Qwen3VLMoePretrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.visual = Qwen3VisionTransformerPretrainedModel._from_config(config.vision_config)
+        self.visual = Qwen3VLMoeVisionModel._from_config(config.vision_config)
         self.language_model = Qwen3VLMoeTextModel._from_config(config.text_config)
         self.rope_deltas = None  # cache rope_deltas here
 
