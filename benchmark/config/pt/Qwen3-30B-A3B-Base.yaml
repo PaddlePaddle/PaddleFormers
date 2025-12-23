@@ -49,10 +49,10 @@ warmup_steps: 20
 learning_rate: 1.0e-5
 
 # performance
-sharding_parallel_degree: 32
-tensor_parallel_degree: 1
-pipeline_parallel_degree: 1
-expert_parallel_degree: 8
+sharding_parallel_size: 32
+tensor_model_parallel_size: 1
+pipeline_model_parallel_size: 1
+expert_model_parallel_size: 8
 sequence_parallel: false
 sharding: stage1
 #3 offload
@@ -69,7 +69,9 @@ use_expert_parallel: true
 bf16: true
 fp16_opt_level: O2
 
-sharding_parallel_config: "split_param"
+# sharding_parallel_config
+split_param: true
+
 amp_master_grad: true
 
 unified_checkpoint: false

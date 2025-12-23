@@ -46,9 +46,12 @@ pipeline_model_parallel_size: 4
 use_expert_parallel: true
 expert_model_parallel_size: 8
 sequence_parallel: true
-sharding_parallel_config: "split_param"
+
+# sharding_parallel_config
+split_param: true
+
 amp_master_grad: true
-#sharding_parallel_degree: 8
+#sharding_parallel_size: 8
 sharding: stage1
 recompute: true
 bf16: true
