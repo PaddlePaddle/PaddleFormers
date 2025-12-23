@@ -246,8 +246,8 @@ class LlmMetaConfig:
         ("tensor_parallel_output", bool, True, "tensor_parallel_output"),
         # pipeline_parallel
         ("pipeline_model_parallel_size", int, 1, "pipeline_model_parallel_size"),
-        ("num_empty_layers_add_in_head", int, None, "num_empty_layers_add_in_head"),
-        ("num_empty_layers_add_in_tail", int, None, "num_empty_layers_add_in_tail"),
+        ("num_empty_layers_add_in_head", int, 0, "num_empty_layers_add_in_head"),
+        ("num_empty_layers_add_in_tail", int, 0, "num_empty_layers_add_in_tail"),
         ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
