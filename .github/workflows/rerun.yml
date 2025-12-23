@@ -32,6 +32,7 @@ jobs:
           REPO: ${{ github.event.repository.name }}
           JOB_NAME: 'Unittest GPU CI / unittest-gpu-ci'
 
+          
       - name: Rerun Unittest CPU
         if: ${{ contains(github.event.comment.body, 'Unittest CPU') }}
         uses: ./.github/actions/rerun-workflow
