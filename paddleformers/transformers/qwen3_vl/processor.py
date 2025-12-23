@@ -192,7 +192,6 @@ class Qwen3VLProcessor(ProcessorMixin):
         return BatchFeature(data={**text_inputs, **image_inputs, **videos_inputs}, tensor_type=return_tensors)
 
     def _calculate_timestamps(self, indices: Union[list[int], np.ndarray], video_fps: float, merge_size: int = 2):
-        """Qwen3Helper: 计算视频帧的时间戳"""
         if not isinstance(indices, list):
             indices = indices.tolist()
         if len(indices) % merge_size != 0:

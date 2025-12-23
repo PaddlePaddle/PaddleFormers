@@ -51,9 +51,21 @@ bf16: true
 fp16_opt_level: O2
 use_expert_parallel: true
 expert_model_parallel_size: 4
-sharding_parallel_config: "split_param"
+
+# sharding_parallel_config
+split_param: true
+
 amp_master_grad: true
-pipeline_parallel_config: enable_clear_every_step_cache disable_partial_send_recv disable_batch_p2p_comm
-tensor_parallel_config: enable_delay_scale_loss sync_param sync_grad
+
+# pipeline_parallel_config
+clear_every_step_cache: true
+partial_send_recv: false
+batch_p2p_comm: false
+
+# tensor_parallel_config
+tp_delay_scale_loss: true
+tp_sync_param: true
+sync_grad: true
+
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint

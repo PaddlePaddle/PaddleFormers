@@ -45,7 +45,7 @@ from ..masking_utils import (
     create_sliding_window_causal_mask_and_row_indices,
 )
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
-from ..model_utils import PretrainedModel
+from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from ..utils import logger
 from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
@@ -65,7 +65,7 @@ class Qwen3VLVisionMLP(nn.Layer):
         return self.linear_fc2(self.act_fn(self.linear_fc1(hidden_state)))
 
 
-class Qwen3VisionPatchEmbed(nn.Layer):
+class Qwen3VLVisionPatchEmbed(nn.Layer):
     def __init__(
         self,
         patch_size: int = 14,
@@ -91,7 +91,7 @@ class Qwen3VisionPatchEmbed(nn.Layer):
         return hidden_states
 
 
-class Qwen3VisionRotaryEmbedding(nn.Layer):
+class Qwen3VLVisionRotaryEmbedding(nn.Layer):
     inv_freq: paddle.Tensor
 
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
@@ -105,7 +105,7 @@ class Qwen3VisionRotaryEmbedding(nn.Layer):
         return freqs
 
 
-class Qwen3VLPatchMerger(nn.Layer):
+class Qwen3VLVisionPatchMerger(nn.Layer):
     def __init__(
         self,
         config: Qwen3VLConfig,
@@ -259,7 +259,7 @@ class Qwen3VLPretrainedModel(PretrainedModel):
     config_class = Qwen3VLConfig
     base_model_prefix = "model"
     input_modalities = ["image", "video", "text"]
-    _no_split_modules = ["Qwen3VLDecoderLayer", "Qwen3VLVisionBlock"]
+    _no_split_modules = ["Qwen3VLTextDecoderLayer", "Qwen3VLVisionBlock"]
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
     transpose_weight_keys = [
         "q_proj",
@@ -583,7 +583,7 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         return aoa_config
 
 
-class Qwen3VisionTransformerPretrainedModel(Qwen3VLPretrainedModel):
+class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
     config_class = Qwen3VLVisionConfig
     _no_split_modules = ["Qwen3VLVisionBlock"]
 
@@ -596,7 +596,7 @@ class Qwen3VisionTransformerPretrainedModel(Qwen3VLPretrainedModel):
         self.deepstack_visual_indexes = config.deepstack_visual_indexes
         self.deepstack_merger_list = nn.LayerList(
             [
-                Qwen3VLPatchMerger(
+                Qwen3VLVisionPatchMerger(
                     config=config,
                     use_postshuffle_norm=True,
                 )
@@ -604,7 +604,7 @@ class Qwen3VisionTransformerPretrainedModel(Qwen3VLPretrainedModel):
             ]
         )
 
-        self.patch_embed = Qwen3VisionPatchEmbed(
+        self.patch_embed = Qwen3VLVisionPatchEmbed(
             patch_size=config.patch_size,
             temporal_patch_size=config.temporal_patch_size,
             in_channels=config.in_channels,
@@ -612,10 +612,10 @@ class Qwen3VisionTransformerPretrainedModel(Qwen3VLPretrainedModel):
         )
         self.num_grid_per_side = int(config.num_position_embeddings**0.5)
         head_dim = config.hidden_size // config.num_heads
-        self.rotary_pos_emb = Qwen3VisionRotaryEmbedding(head_dim // 2)
+        self.rotary_pos_emb = Qwen3VLVisionRotaryEmbedding(head_dim // 2)
 
         self.blocks = nn.LayerList([Qwen3VLVisionBlock(config) for _ in range(config.depth)])
-        self.merger = Qwen3VLPatchMerger(
+        self.merger = Qwen3VLVisionPatchMerger(
             config=config,
             dim=config.out_hidden_size,
             context_dim=config.hidden_size,
@@ -821,7 +821,7 @@ class Qwen3VLModelOutputWithPast(ModelOutput):
     rope_deltas: Optional[paddle.Tensor] = None
 
 
-class Qwen3VLRotaryEmbedding(nn.Layer):
+class Qwen3VLTextRotaryEmbedding(nn.Layer):
     inv_freq: paddle.Tensor
 
     def __init__(self, config: Qwen3VLTextConfig):
@@ -907,7 +907,7 @@ class Qwen3VLRotaryEmbedding(nn.Layer):
         return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
 
 
-class Qwen2MLP(MLP):
+class Qwen3VLTextMLP(MLP):
     pass
 
 
@@ -938,7 +938,7 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
     return q_embed, k_embed
 
 
-class Qwen3VLAttention(nn.Layer):
+class Qwen3VLTextAttention(nn.Layer):
     """
     Multi-headed attention from 'Attention Is All You Need' paper. Modified to use sliding window attention: Longformer
     and "Generating Long Sequences with Sparse Transformers".
@@ -1131,13 +1131,13 @@ class Qwen3VLAttention(nn.Layer):
         return attn_output, attn_weights
 
 
-class Qwen3VLDecoderLayer(nn.Layer):
+class Qwen3VLTextDecoderLayer(nn.Layer):
     def __init__(self, config: Qwen3VLTextConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
-        self.self_attn = Qwen3VLAttention(config, layer_idx)
+        self.self_attn = Qwen3VLTextAttention(config, layer_idx)
 
-        self.mlp = Qwen2MLP(config, fuse_up_gate=config.fuse_attention_ffn)
+        self.mlp = Qwen3VLTextMLP(config, fuse_up_gate=config.fuse_attention_ffn)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -1239,7 +1239,7 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
             padding_idx=self.padding_idx,
         )
         self.layers = nn.LayerList(
-            [Qwen3VLDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [Qwen3VLTextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         self._attn_implementation = config._attn_implementation
         self.norm = GeneralNorm.create(
@@ -1250,7 +1250,7 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.has_sliding_layers = "sliding_attention" in self.config.layer_types
-        self.rotary_emb = Qwen3VLRotaryEmbedding(config=config)
+        self.rotary_emb = Qwen3VLTextRotaryEmbedding(config=config)
 
         self.gradient_checkpointing = False
         self.has_sliding_layers = getattr(
@@ -1352,7 +1352,7 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
 
         hidden_states = hidden_states.clone()
         local_this = hidden_states[visual_pos_masks, :] + visual_embeds
-        hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+        hidden_states[visual_pos_masks, :] = local_this
 
         # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
         if len(original_shape) > 2:
@@ -1394,11 +1394,9 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        if self.gradient_checkpointing and self.training:
+        if self.config.recompute and self.training:
             if use_cache:
-                logger.warning_once(
-                    "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
-                )
+                logger.warning_once("`use_cache=True` is incompatible with recompute. Setting `use_cache=False`...")
                 use_cache = False
 
         if use_cache and past_key_values is None:
@@ -1527,15 +1525,16 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         )
 
 
+@register_base_model
 class Qwen3VLModel(Qwen3VLPretrainedModel):
     base_model_prefix = "model"
     _checkpoint_conversion_mapping = {}
     config: Qwen3VLConfig
-    _no_split_modules = ["Qwen3VLDecoderLayer", "Qwen3VLVisionBlock"]
+    _no_split_modules = ["Qwen3VLTextDecoderLayer", "Qwen3VLVisionBlock"]
 
     def __init__(self, config):
         super().__init__(config)
-        self.visual = Qwen3VisionTransformerPretrainedModel._from_config(config.vision_config)
+        self.visual = Qwen3VLVisionModel._from_config(config.vision_config)
         self.language_model = Qwen3VLTextModel._from_config(config.text_config)
         self.rope_deltas = None  # cache rope_deltas here
 
@@ -1892,10 +1891,7 @@ class Qwen3VLCausalLMOutputWithPast(ModelOutput):
 
 
 class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
-    _checkpoint_conversion_mapping = {
-        "^visual": "model.visual",
-        r"^model(?!\.(language_model|visual))": "model.language_model",
-    }
+    _checkpoint_conversion_mapping = {}
     _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
     config_class = Qwen3VLConfig
 

@@ -85,7 +85,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     # Model configuration
     fp16_lm_cross_entropy: bool = False
     parallel_output: bool = True
-    share_embeddings_and_output_weights: bool = True
+    tie_word_embeddings: bool = True
     make_vocab_size_divisible_by: int = 128
     position_embedding_type: Literal["learned_absolute", "rope"] = "rope"
     rotary_base: int = 10000
@@ -156,8 +156,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
             self, "account_for_loss_in_pipeline_split", False
         )
         is_pipeline_asymmetric |= (
-            getattr(self, "num_layers_in_first_pipeline_stage", None)
-            or getattr(self, "num_layers_in_last_pipeline_stage", None)
+            getattr(self, "num_empty_layers_add_in_head", None) or getattr(self, "num_empty_layers_add_in_tail", None)
         ) is not None
 
         # Initialize model as meta data instead of allocating data on a device

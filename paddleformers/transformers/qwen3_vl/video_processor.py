@@ -162,7 +162,7 @@ class Qwen3VLVideoProcessor(BaseVideoProcessor):
                     max_pixels=size["longest_edge"],
                 )
                 stacked_videos = self.resize(
-                    stacked_videos.to("cuda"),
+                    stacked_videos,
                     size=SizeDict(height=resized_height, width=resized_width),
                     interpolation=interpolation,
                 )
