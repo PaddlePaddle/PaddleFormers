@@ -462,7 +462,6 @@ class DeepseekV3MoEFlexToken(MoEFlexTokenLayer):
             topk_group=config.topk_group,
             norm_topk_prob=config.norm_topk_prob,
             routed_scaling_factor=config.routed_scaling_factor,
-            drop_tokens=False,
         )
 
         hcg = fleet.get_hybrid_communicate_group()

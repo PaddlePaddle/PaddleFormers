@@ -76,8 +76,6 @@ class MoEGateMixin:
         self,
         gates: paddle.Tensor,
         capacity_factor: float,
-        max_capacity: int,
-        min_capacity: int,
     ) -> paddle.Tensor:
         """Calculate the capacity for each expert based on the gates and capacity factor.
 
@@ -85,7 +83,6 @@ class MoEGateMixin:
             gates (paddle.Tensor): A tensor of shape [num_tokens, num_experts] representing the probability distribution
                 over experts for each token.
             capacity_factor (float): A scalar float value representing the capacity factor for each expert.
-            min_capacity (int): A scalar integer value representing the minimum capacity for each expert.
 
         Returns:
             int: A tensor value representing the calculated capacity for each expert.
@@ -95,10 +92,6 @@ class MoEGateMixin:
         num_tokens = gates.shape[0]
         num_experts = gates.shape[1]
         capacity = int((num_tokens // num_experts) * capacity_factor)
-        if capacity < min_capacity:
-            capacity = min_capacity
-        if capacity > max_capacity:
-            capacity = max_capacity
         assert capacity > 0, f"requires capacity > 0, capacity_factor: {capacity_factor}, input_shape: {gates.shape}"
 
         return capacity
@@ -408,15 +401,13 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         self.transpose_gate_weight = transpose_gate_weight
 
         self.scoring_func = moe_config.get("gate_activation", "softmax")
-        self.capacity_factor = moe_config.get("capacity_factor", 1.0)
+        self.moe_expert_capacity_factor = moe_config.get("moe_expert_capacity_factor", 0.0)
         self.eval_capacity_factor = moe_config.get("eval_capacity_factor", 1.0)
-        self.min_capacity = moe_config.get("min_capacity", 1)
-        self.max_capacity = moe_config.get("max_capacity", pow(2, 32))
         self.group = moe_config.get("group", None)
         self.global_aux_loss = moe_config.get("global_aux_loss", False)
         self.use_rts = moe_config.get("use_rts", True)
         self.top2_2nd_expert_sampling = moe_config.get("top2_2nd_expert_sampling", True)
-        self.drop_policy = moe_config.get("drop_policy", "probs")
+        self.moe_token_drop_policy = moe_config.get("moe_token_drop_policy", "probs")
         self.seq_aux = moe_config.get("seq_aux", True)
 
         if self.global_aux_loss:
@@ -516,20 +507,18 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
             # Calculate configured capacity and remove locations outside capacity from mask
             capacity = self._capacity(
                 gates,
-                self.capacity_factor * self.num_experts_per_tok,
-                self.max_capacity,
-                self.min_capacity,
+                self.moe_expert_capacity_factor * self.num_experts_per_tok,
             )
 
             # update mask and locations by capacity
-            if self.drop_policy == "probs":
+            if self.moe_token_drop_policy == "probs":
                 topk_masked_gates = paddle.zeros_like(gates).put_along_axis(top_idx, top_gate, axis=1)
                 token_priority = self._probs_drop_policy(topk_masked_gates, capacity)
 
-            elif self.drop_policy == "position":
+            elif self.moe_token_drop_policy == "position":
                 token_priority = self._priority(top_idx, capacity)
             else:
-                raise ValueError(f"Invalid drop_policy: {self.drop_policy}")
+                raise ValueError(f"Invalid moe_token_drop_policy: {self.moe_token_drop_policy}")
         else:
             # Do not drop tokens - set capacity according to current expert assignments
             local_capacity = paddle.max(exp_counts)

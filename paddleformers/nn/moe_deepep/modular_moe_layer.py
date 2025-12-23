@@ -90,7 +90,8 @@ class ModularMoELayer(nn.Layer):
             if self.training
             else moe_config.get("inference_topk_method", "greedy")
         )
-        self.drop_tokens = moe_config.get("drop_tokens", False)
+        self.moe_expert_capacity_factor = moe_config.get("moe_expert_capacity_factor", 0.0)
+        self.drop_tokens = self.moe_expert_capacity_factor is not None and self.moe_expert_capacity_factor != 0.0
         self.use_flexible_loss = moe_config.get(
             "use_flexible_loss", False
         )  # TODO: use customized loss system, not implemented yet
