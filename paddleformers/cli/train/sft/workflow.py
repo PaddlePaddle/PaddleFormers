@@ -271,6 +271,7 @@ def run_sft(
     set_attr_func(model_config, "hidden_size", model_args.hidden_size)
     set_attr_func(model_config, "intermediate_size", model_args.intermediate_size)
     set_attr_func(model_config, "n_routed_experts", model_args.n_routed_experts)
+    set_attr_func(model_config, "tie_word_embeddings", model_args.tie_word_embeddings)
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
@@ -354,7 +355,6 @@ def run_sft(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
-        "mask_history_eos": data_args.mask_history_eos,
     }
 
     dataset_config.update(
@@ -426,6 +426,7 @@ def run_sft(
                 model_args=model_args,
                 max_seq_len=max_seq_len,
                 padding_free=data_args.padding_free,
+                model=model,
             )
         else:
             data_collator = partial(

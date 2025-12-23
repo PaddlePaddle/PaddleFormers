@@ -14,6 +14,7 @@
 
 from typing import Optional
 
+import numpy as np
 import paddle
 from paddle.autograd.py_layer import PyLayer
 
@@ -348,17 +349,22 @@ class FlashMaskSinkPyLayer(PyLayer):
         # Apply sink mechanism
         origin_dtype = raw_output.dtype
         scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
+        batch_size, seq_len, num_heads, _ = query.shape
+
+        # For compatibility with old LSE shape (seqlen_q_rounded)
+        # https://github.com/PaddlePaddle/Paddle/pull/76886/files#diff-ee0d08bc31cf15fbd774537e4130ea4e7a40d00eeb557f7b5e4e6d8bde10b0f4L730
+        if lse_original.shape[-1] != seq_len:
+            new_shape = (lse_original.shape[0], lse_original.shape[1], seq_len)
+            num = np.prod(lse_original.shape[:2]) * seq_len
+            lse_original = lse_original.flatten()[:num].reshape(new_shape)
 
         # Reshape tensors for sink computation
         lse_transposed = lse_original.transpose(perm=[0, 2, 1]).unsqueeze(-1)
         sink_reshaped = sink.reshape(shape=[1, 1, -1, 1])
 
-        batch_size, seq_len, num_heads, _ = query.shape
         sink_expanded = sink_reshaped.expand([batch_size, seq_len, num_heads, 1])
 
         # Compute sink multiplier: 1 / (exp(sink - lse) + 1)
-        if lse_transposed.shape != sink_expanded.shape:
-            lse_transposed = lse_transposed[:, : sink_expanded.shape[1], :, :]
         multiplier = 1 / (paddle.exp(sink_expanded - lse_transposed) + 1)
         final_out = (raw_output * multiplier).to(origin_dtype)
 

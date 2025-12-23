@@ -83,7 +83,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     rope_scaling: float = 1.0
     bias_dropout_fusion: bool = True
     router_aux_loss_coef: float = 0.001
-    moe_grouped_gemm: bool = True
+    moe_grouped_gemm: bool = False
 
 
 def eager_attention_forward(
@@ -1114,8 +1114,11 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         if is_fleet:
             aoa_config["aoa_statements"] += [
                 f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
-                f"lm_head.weight -> {model_prefix}lm_head.weight",
             ]
+            if config.tie_word_embeddings:
+                aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
+            else:
+                aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
         else:
             aoa_config["aoa_statements"] += [
                 f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
@@ -1202,8 +1205,11 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         if is_fleet:
             aoa_statements += [
                 "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
-                f"{model_prefix}lm_head.weight -> lm_head.weight",
             ]
+            if config.tie_word_embeddings:
+                aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
+            else:
+                aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
         else:
             aoa_statements += [
                 f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",

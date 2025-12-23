@@ -15,7 +15,7 @@ env:
 jobs:
   Lint:
     name: Lint
-    runs-on: [self-hosted, ernie-cpu]
+    runs-on: [self-hosted, ernie-cpu-01]
     steps:
       - name: Run Container
         env:

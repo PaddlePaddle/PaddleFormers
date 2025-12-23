@@ -129,6 +129,8 @@ def unpermute(
 def offload(tensor):
     if paddle.is_compiled_with_cuda():
         place = paddle.CUDAPinnedPlace()
+    elif paddle.is_compiled_with_xpu():
+        place = paddle.XPUPinnedPlace()
     else:
         place = paddle.CPUPlace()
 
