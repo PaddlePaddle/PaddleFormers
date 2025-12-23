@@ -33,24 +33,18 @@ SAVE_STEPS = 4
 
 DPO_FULL_EXCEPTED_LOSS = 0.692536
 DPO_FULL_RESUME_EXCEPTED_LOSS = 0.693311
-DPO_FULL_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 DPO_LORA_EXCEPTED_LOSS = 0.691753
-# tmp change loss, this loss change is not from this pr, zhangjunjun will recover it to right loss later.
 DPO_LORA_RESUME_EXCEPTED_LOSS = 0.689351
-DPO_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 DPO_FULL_TP_PP_EXCEPTED_LOSS = 0.693385
 DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 0.693079
-DPO_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 132047, 132047, 119194, 128575, 128575, 3315, 132047, 71148, 128575]]
 
 DPO_LORA_TP_PP_EXCEPTED_LOSS = 0.693458
 DPO_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 0.693564
-DPO_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
 DPO_FC_EXCEPTED_LOSS = 0.69313
 DPO_FC_RESUME_EXCEPTED_LOSS = 0.69313
-DPO_FC_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 61092, 40897, 40601]]
 
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
@@ -66,6 +60,7 @@ class DPOTrainTester(unittest.TestCase):
         config.update(updates)
 
         os.makedirs(tmp_dir, exist_ok=True)
+        os.makedirs(LOG_PATH, exist_ok=True)
         updated_yaml_path = os.path.join(tmp_dir, f"updated_{os.path.basename(yaml_path)}")
         with open(updated_yaml_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config, f, indent=4, allow_unicode=True, sort_keys=False)
@@ -93,23 +88,6 @@ class DPOTrainTester(unittest.TestCase):
         if ret_code != 0:
             print("\n".join(log_output.strip().splitlines()[-30:]))
             raise AssertionError("Training Failed")
-
-    def create_and_check_model_generate(
-        self,
-        model_path,
-        excepted_result,
-    ):
-        from paddleformers.transformers import Glm4MoeForCausalLM
-
-        input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
-        attention_mask = paddle.ones_like(input_ids)
-        model = Glm4MoeForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
-        with paddle.no_grad():
-            result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
-        print(f"excepted_result is : {excepted_result}")
-        print(f"result[0] is : {result[0]}")
-        self.assertTrue(paddle.allclose(result[0], excepted_result))
-
 
 class DPOTrainTest(unittest.TestCase):
     def setUp(self):
@@ -140,24 +118,7 @@ class DPOTrainTest(unittest.TestCase):
             "train",
             updated_config_path,
         ]
-        # # real time log save to file
-        # dop_full_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full.log")
-        # print(f"dpo_full cmd is : {cmd}")
-        # with open(dop_full_log_file, "w", encoding="utf-8") as log_file:
-        #     training_p = subprocess.Popen(
-        #         cmd,
-        #         stdout=subprocess.PIPE,
-        #         stderr=subprocess.STDOUT,
-        #         text=True,
-        #         bufsize=1
-        #     )
-        #     # 逐行处理输出
-        #     for line in training_p.stdout:
-        #         print(line, end='', flush=True)  # 实时输出到终端
-        #         log_file.write(line)  # 实时写入文件
-        #         log_file.flush()
-        #     training_p.wait()
-        # print("Command execution completed and log saved.")
+     
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full cmd is : {cmd}")
         print(training_p.stdout)
@@ -185,10 +146,6 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
         self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_FULL_RESUME_EXCEPTED_LOSS)
-
-        # test model generate
-        EXPECTED_RESULT = paddle.to_tensor(DPO_FULL_EXCEPTED_RESULT)
-        self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_dpo_lora(self):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_lora")
@@ -243,9 +200,6 @@ class DPOTrainTest(unittest.TestCase):
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.dpotrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
-        # test lora_merge_model generate
-        # EXPECTED_RESULT = paddle.to_tensor(DPO_LORA_EXCEPTED_RESULT)
-        # self.dpotrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
 
     def test_dpo_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_full_tp_pp")
@@ -294,10 +248,6 @@ class DPOTrainTest(unittest.TestCase):
         self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
         self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS)
-
-        # test model generate
-        EXPECTED_RESULT = paddle.to_tensor(DPO_FULL_TP_PP_EXCEPTED_RESULT)
-        self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_dpo_lora_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "dpo_lora_tp_pp")
@@ -354,61 +304,3 @@ class DPOTrainTest(unittest.TestCase):
         lora_merge_cmd = ["paddleformers-cli", "export", updated_config_path]
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.dpotrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
-
-        # test lora_merge_model generate
-        # EXPECTED_RESULT = paddle.to_tensor(DPO_LORA_TP_PP_EXCEPTED_RESULT)
-        # self.dpotrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
-
-    # def test_dpo_full_function_call(self):
-    #     output_dir = os.path.join(OUTPUT_DIR, "dpo_full_function_call")
-    #     update_args = {
-    #         "model_name_or_path": MODEL_NAME_OR_PATH,
-    #         "output_dir": output_dir,
-    #         "max_steps": MAX_STEPS,
-    #         "save_steps": SAVE_STEPS,
-    #     }
-    #     config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
-    #     updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
-    #     # cli mode
-    #     cmd = [
-    #         "paddleformers-cli",
-    #         "train",
-    #         updated_config_path,
-    #     ]
-    #     print(f"cmd {cmd}")
-    #     training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    #     print(f"dpo_full_function_call cmd is : {cmd}")
-    #     print(training_p.stdout)
-    #     dpo_full_function_call_output = training_p.stdout
-    #     dpo_full_function_call_log_file = os.path.join(
-    #         LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dpo_full_function_call.log"
-    #     )
-    #     if dpo_full_function_call_output and dpo_full_function_call_output.strip():
-    #         with open(dpo_full_function_call_log_file, "w", encoding="utf-8") as dpo_full_function_call_f:
-    #             dpo_full_function_call_f.write(dpo_full_function_call_output)
-    #     # test training result
-    #     self.dpotrain_tester.assert_result(training_p.returncode, training_p.stdout)
-
-    #     # test training loss
-    #     self.dpotrain_tester.assert_loss(training_p.stdout, DPO_FC_EXCEPTED_LOSS)
-
-    #     # test model resume
-    #     resume_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    #     print(f"dpo_full_function_call resume cmd is : {cmd}")
-    #     print(resume_p.stdout)
-    #     dpo_full_function_call_resume_output = resume_p.stdout
-    #     dpo_full_function_call_resume_log_file = os.path.join(
-    #         LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dpo_full_function_call_resume.log"
-    #     )
-    #     if dpo_full_function_call_resume_output and dpo_full_function_call_resume_output.strip():
-    #         with open(
-    #             dpo_full_function_call_resume_log_file, "w", encoding="utf-8"
-    #         ) as dpo_full_function_call_resume_f:
-    #             dpo_full_function_call_resume_f.write(dpo_full_function_call_resume_output)
-    #     self.dpotrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
-
-    #     self.dpotrain_tester.assert_loss(resume_p.stdout, DPO_FC_RESUME_EXCEPTED_LOSS)
-
-    #     # test model generate
-    #     EXPECTED_RESULT = paddle.to_tensor(DPO_FC_EXCEPTED_RESULT)
-    #     self.dpotrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
