@@ -434,7 +434,6 @@ class DeepseekV2MoE(MoELayer):
             topk_group=config.topk_group,
             norm_topk_prob=config.norm_topk_prob,
             routed_scaling_factor=config.routed_scaling_factor,
-            drop_tokens=False,
             using_post_norm_recompute=self.using_post_norm_recompute,
             norm_weight=norm_weight,
             norm_eps=norm_eps,
