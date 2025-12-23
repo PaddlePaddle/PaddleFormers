@@ -1586,7 +1586,7 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
-        if not config.hasattr(config, "architecture"):
+        if not hasattr(config, "architecture"):
             config.architecture = [cls.__name__]
         gpt_model.config_to_save = config
         return gpt_model
@@ -1737,7 +1737,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         return ret
 
 
-class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1748,13 +1748,13 @@ class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalL
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
-        if not config.hasattr(config, "architecture"):
+        if not hasattr(config, "architecture"):
             config.architecture = [cls.__name__.replace("Pipe", "")]
         gpt_model.config_to_save = config
         return gpt_model
 
 
-class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
     _decoder_layer_pipe_cls = Glm4MoeDecoderLayerPipe
