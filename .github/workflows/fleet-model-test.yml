@@ -149,6 +149,7 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5 single-card.\033[0m"
           fi
           '
+          
 
       - name: Integration test (Qwen3-30B-A3B single-card)
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
