@@ -1,6 +1,6 @@
-# 指定数据集路径、格式类型、配比
+# 1. 指定数据集路径、格式类型、配比
 
-## 预训练离线数据集
+## 1.1. 预训练离线数据集
 
 - **CLI**：修改 YAML 配置文件中的以下字段：
   - `input_dir` 指定数据集的前缀，例如：数据集 `data-1-part0.bin` 需要设置为 `input_dir: "1.0 ./data-1-part0"`，`1.0` 为数据配比；
@@ -14,7 +14,7 @@ input_dir: "1.0 ./data/pre-training/demo_data/data-1-part0"
 split: "998,2"
 ```
 
-## 预训练在线数据集 + 其他
+## 1.2. 预训练在线数据集 + 其他
 
 - **CLI**：修改 YAML 配置文件中的以下字段：
   - `train_dataset_path` / `eval_dataset_path` 指定本地数据集文件的绝对或相对路径
@@ -34,7 +34,20 @@ train_dataset_path: "./examples/data/sft-train1.jsonl,./examples/data/sft-train2
 train_dataset_prob: "0.8,0.2"
 ```
 
-# 数据 packing 策略
+# 2. 多源数据集拼接策略
+
+目前支持四种数多源数据集拼接策略：`random`, `concat`, `interleave_under`, `interleave_over`
+
+|多源数据集拼接策略|适用场景 |限制 |描述 |
+|------------------|-----------------|------------------|------------------|
+| `random`|数据集极大，需要严格的数据配比 |最大步数 > 0 |在`random`模式，基于输入的数据配比，构建一个固定大小（`num_samples_each_epoch`）的样本池，`data loader` 从该样本池中随机获取数据。 |
+| `concat`|需要训练数据集中的所有数据 |无 |在`concat`模式下，不使用输入的数据配比，而是多个数据集直接合并。数据集的大小等于输入多源数据集的总大小。当 max_steps = -1 时，设置`num_train_epochs`允许完整遍历输入数据集`num_train_epochs`回合。 |
+| `interleave_under`|当小数据集很重要但样本有限时 |无 |`interleave`表示根据数据比例对多个数据集进行交叉拼接。`interleave_under`表示欠采样，这意味着一旦其中一个数据集耗尽，采样就会停止。 |
+| `interleave_over`|当小数据集很重要但样本有限时 |无 |`interleave`表示根据数据比例对多个数据集进行交叉拼接。`interleave_over`表示过采样，意味着只有在所有数据集耗尽后才停止采样。 |
+
+- 注意：`num_samples_each_epoch`只适用于`random`数据采样策略。
+
+# 3. 数据 packing 策略
 
 `packing` 是一种优化批处理的技术，将多个短输入序列输入大语言模型（LLM）之前，先将它们合并成一个更长的序列，这能减少填充开销，并提高硬件利用率（例如，提升GPU/TPU的效率）。
 
@@ -52,20 +65,13 @@ train_dataset_prob: "0.8,0.2"
 <img src="https://github.com/user-attachments/assets/f7ec5b76-aee7-4f64-8331-ca00cac5339a">
 </div>
 
-# 数据采样策略
+# 4. Padding Free
 
-目前支持四种数据采样策略：`random`, `concat`, `interleave_under`, `interleave_over`
+`padding_free` 将一个batch中的数据进行展平而避免数据padding，从而降低显存占用并加快训练（同一batch的不同序列之间依旧是不可见的）。默认为False。
 
-|数据采样策略|适用场景 |限制 |描述 |
-|------------------|-----------------|------------------|------------------|
-| `random`|数据集极大，需要严格的数据配比 |最大步数 > 0 |在`random`模式，基于输入的数据配比，构建一个固定大小（`num_samples_each_epoch`）的样本池，`data loader` 从该样本池中随机获取数据。 |
-| `concat`|需要训练数据集中的所有数据 |无 |在`concat`模式下，不使用输入的数据配比，而是多个数据集直接合并。数据集的大小等于输入多源数据集的总大小。当 max_steps = -1 时，设置`num_train_epochs`允许完整遍历输入数据集`num_train_epochs`回合。 |
-| `interleave_under`|当小数据集很重要但样本有限时 |无 |`interleave`表示根据数据比例对多个数据集进行交叉拼接。`interleave_under`表示欠采样，这意味着一旦其中一个数据集耗尽，采样就会停止。 |
-| `interleave_over`|当小数据集很重要但样本有限时 |无 |`interleave`表示根据数据比例对多个数据集进行交叉拼接。`interleave_over`表示过采样，意味着只有在所有数据集耗尽后才停止采样。 |
+相较于`packing`，`padding_free`不需要额外的预处理时间，但`packing`的训练速度更快且显存占用更稳定。
 
-- 注意：`num_samples_each_epoch`只适用于`random`数据采样策略。
-
-# Attention Mask
+# 5. Attention Mask
 
 数据流默认会传入一个因果的Attention Mask，在packing情况下，当`use_global_causal_attn`为true的时候，对应下图所示的`Causal Attention`，一个`Sequence`内的不同sample是可见的，当`use_global_causal_attn`为false的时候，对应下图所示的`Causal Document Attention`，一个`Sequence`内的不同sample是不可见的
 
