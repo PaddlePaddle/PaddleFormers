@@ -241,7 +241,8 @@ class DPOTrainer(Trainer):
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         """evaluate"""
-        self.ref_model_wrapped = self._wrap_ref_model(self.ref_model_wrapped)
+        if HAS_PADDLEFLEET and isinstance(self.ref_model_wrapped, PaddleFleetPipelineLayer):
+            self.ref_model_wrapped = self._wrap_ref_model(self.ref_model_wrapped)
         self.model_wrapped = self._wrap_ref_model(self.model_wrapped)
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
