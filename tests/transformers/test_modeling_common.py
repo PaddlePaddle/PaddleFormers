@@ -695,7 +695,10 @@ class ModelTesterMixin:
             for key in config.__dict__.keys():
                 if key == "paddleformers_version" and config.paddleformers_version is None:
                     continue
-                self.assertEqual(getattr(config, key), getattr(loaded_config, key))
+                elif isinstance(getattr(config, key), PretrainedConfig):
+                    self.assertEqual(getattr(config, key).to_dict(), getattr(loaded_config, key).to_dict())
+                else:
+                    self.assertEqual(getattr(config, key), getattr(loaded_config, key))
 
     def random_choice_pretrained_config_field(self) -> Optional[str]:
         if self.base_model_class is None or not self.base_model_class.constructed_from_pretrained_config():

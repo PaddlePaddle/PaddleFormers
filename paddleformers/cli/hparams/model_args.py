@@ -245,6 +245,11 @@ class ModelArguments:
         metadata={"help": "use_qk_norm."},
     )
 
+    tie_word_embeddings: Optional[bool] = field(
+        default=None,
+        metadata={"help": "tie_word_embeddings."},
+    )
+
     def __post_init__(self):
         if self.fine_tuning.lower() == "LoRA".lower():
             self.lora = True
