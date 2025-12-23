@@ -412,14 +412,14 @@ def main():
     do_enable_mp_async_allreduce = (
         training_args.enable_auto_parallel
         and training_args.tensor_model_parallel_size > 1
-        and "enable_mp_async_allreduce" in training_args.tensor_parallel_config
+        and training_args.mp_async_allreduce
         and not training_args.sequence_parallel
     )
     do_enable_sp_async_reduce_scatter = (
         training_args.enable_auto_parallel
         and training_args.tensor_model_parallel_size > 1
         and training_args.sequence_parallel
-        and "enable_sp_async_reduce_scatter" in training_args.tensor_parallel_config
+        and training_args.sp_async_reduce_scatter
     )
     if (
         do_enable_linear_fused_grad_add or do_enable_mp_async_allreduce or do_enable_sp_async_reduce_scatter
@@ -530,7 +530,7 @@ def main():
     print("Final pre-training config:", config)
 
     if (
-        "replace_with_parallel_cross_entropy" in training_args.tensor_parallel_config
+        training_args.replace_with_parallel_cross_entropy
         and config.tensor_model_parallel_size > 1
         and config.to_static is False
     ):

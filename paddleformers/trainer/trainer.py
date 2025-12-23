@@ -1559,7 +1559,7 @@ class Trainer:
             for step, inputs in enumerate(epoch_iterator):
                 if (
                     self.args.use_hybrid_parallel
-                    and self.args.sep_parallel_degree > 1
+                    and self.args.sep_parallel_size > 1
                     and self.args.split_inputs_sequence_dim
                 ):
                     inputs = split_inputs_sequence_dim(inputs)
