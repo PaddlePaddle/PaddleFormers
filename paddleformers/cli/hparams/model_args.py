@@ -240,6 +240,11 @@ class ModelArguments:
         metadata={"help": "n_routed_experts."},
     )
 
+    use_qk_norm: Optional[bool] = field(
+        default=None,
+        metadata={"help": "use_qk_norm."},
+    )
+
     def __post_init__(self):
         if self.fine_tuning.lower() == "LoRA".lower():
             self.lora = True
