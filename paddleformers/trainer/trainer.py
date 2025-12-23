@@ -167,8 +167,6 @@ from .trainer_callback import (
     TrainerState,
 )
 from .trainer_utils import (  # set_hyrbid_parallel_seed,
-    EMAStateAssembler,
-    EMAStateAssemblerCallback,
     EvalLoopOutput,
     EvalPrediction,
     IntervalStrategy,
@@ -1228,19 +1226,6 @@ class Trainer:
         for v in model_sharded_state_dict.values():
             if hasattr(v.local_tensor, "target_tensor"):
                 del v.local_tensor.target_tensor
-
-    def create_ema_state_assembler(self):
-        self.ema_state_assembler = EMAStateAssembler(
-            output_dir=self.args.output_dir,
-            save_checkpoint_format=self.args.save_checkpoint_format,
-            save_hf_steps=self.args.save_hf_steps,
-            save_steps=self.args.save_steps,
-            optimizer_name_suffix=self.args.optimizer_name_suffix,
-            model=self.model,
-            optimizer=self.optimizer,
-        )
-        callback = EMAStateAssemblerCallback(self.ema_state_assembler)
-        self.add_callback(callback)
 
     def train(
         self,
