@@ -21,7 +21,7 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, NamedTuple, Union
+from typing import Any, NamedTuple
 
 from typing_extensions import override
 
@@ -48,6 +48,8 @@ QWEN_TOOL_PROMPT = (
     """<tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, """
     """"arguments": <args-json-object>}}\n</tool_call>"""
 )
+
+ERNIE_TOOL_PROMPT = "\n<tool_list>\n[{tool_text}]\n</tool_list>\n"
 
 
 GLM4_TOOL_PROMPT = (
@@ -181,20 +183,6 @@ class GLM4ToolUtils(ToolUtils):
 
         return f"{functions[0].name}\n{functions[0].arguments}"
 
-    @override
-    @staticmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        if "\n" not in content:
-            return content
-
-        tool_name, tool_input = content.split("\n", maxsplit=1)
-        try:
-            arguments = json.loads(tool_input.strip())
-        except json.JSONDecodeError:
-            return content
-
-        return [FunctionCall(tool_name, json.dumps(arguments, ensure_ascii=False))]
-
 
 class GLM4MOEToolUtils(QwenToolUtils):
     r"""GLM-4-MOE tool using template."""
@@ -251,23 +239,34 @@ class Llama3ToolUtils(ToolUtils):
         function_objects = [{"name": name, "parameters": json.loads(arguments)} for name, arguments in functions]
         return json.dumps(function_objects[0] if len(function_objects) == 1 else function_objects, ensure_ascii=False)
 
+
+class ERNIEToolUtils(ToolUtils):
+    r"""ERNIE 4.5 tool using template."""
+
     @override
     @staticmethod
-    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
-        try:
-            tools = json.loads(content.strip())
-        except json.JSONDecodeError:
-            return content
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text_list = []
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text_list.append(json.dumps(wrapped_tool, ensure_ascii=False))
+        tool_text = ", ".join(tool_text_list)
 
-        tools = [tools] if not isinstance(tools, list) else tools
-        try:
-            return [FunctionCall(tool["name"], json.dumps(tool["parameters"], ensure_ascii=False)) for tool in tools]
-        except KeyError:
-            return content
+        return ERNIE_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_texts = [
+            json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
+            for name, arguments in functions
+        ]
+        return "\n".join([f"<tool_call>{text}\n</tool_call>" for text in function_texts])
 
 
 TOOLS = {
     "default": DefaultToolUtils(),
+    "ernie": ERNIEToolUtils(),
     "qwen": QwenToolUtils(),
     "glm4": GLM4ToolUtils(),
     "glm4_moe": GLM4MOEToolUtils(),
