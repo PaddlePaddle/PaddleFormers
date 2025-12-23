@@ -56,8 +56,6 @@ from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
 from transformers.tokenization_utils_base import BatchEncoding
 
-from paddleformers.trainer.trainer_callback import TrainerCallback
-
 # from ..ops import Topology
 from ..trainer.argparser import strtobool
 from ..transformers.model_utils import (
@@ -2040,11 +2038,3 @@ class EMAStateAssembler:
             shard_idx=self.shard_idx,
         )
         saver.save_checkpoint(str(save_path))
-
-
-class EMAStateAssemblerCallback(TrainerCallback):
-    def __init__(self, ema_state_assembler):
-        self.ema_state_assembler = ema_state_assembler
-
-    def on_step_end(self, args, state, control, **kwargs):
-        self.ema_state_assembler.run()
