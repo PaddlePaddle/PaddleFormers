@@ -79,7 +79,7 @@ class ModularMoELayer(nn.Layer):
             "moe_subbatch_token_num_before_dispatch", -1
         )
         self.moe_expert_capacity_factor = pretrained_config.get("moe_expert_capacity_factor", 0.0)
-        self.moe_token_drop_policy = moe_config.get("moe_token_drop_policy", "probs")
+        self.moe_token_drop_policy = pretrained_config.get("moe_token_drop_policy", "probs")
 
         try:
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
