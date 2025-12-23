@@ -309,6 +309,7 @@ class BasePlugin(MMPluginMixin):
         images,
         videos,
         audios,
+        mm_inputs,
         processor,
     ):
         r"""Pre-process input messages before tokenization for VLMs."""
@@ -438,6 +439,7 @@ class PaddleOCRVLPlugin(BasePlugin):
         images,
         videos,
         audios,
+        mm_inputs,
         processor,
     ):
         self._validate_input(processor, images, videos, audios)
@@ -448,7 +450,6 @@ class PaddleOCRVLPlugin(BasePlugin):
 
         merge_length = getattr(image_processor, "merge_size") ** 2
         if self.expand_mm_tokens:
-            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
         else:
             image_grid_thw = [None] * len(images)
@@ -638,6 +639,7 @@ class ErnieVLPlugin(BasePlugin):
         images,
         videos,
         audios,
+        mm_inputs,
         processor,
     ):
         self._validate_input(processor, images, videos, audios)
@@ -648,7 +650,6 @@ class ErnieVLPlugin(BasePlugin):
 
         merge_length = getattr(image_processor, "merge_size") ** 2
         if self.expand_mm_tokens:
-            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
         else:
@@ -783,6 +784,7 @@ class Qwen2VLPlugin(BasePlugin):
         images,
         videos,
         audios,
+        mm_inputs,
         processor,
     ):
         self._validate_input(processor, images, videos, audios)
@@ -793,7 +795,6 @@ class Qwen2VLPlugin(BasePlugin):
 
         merge_length = getattr(image_processor, "merge_size") ** 2
         if self.expand_mm_tokens:
-            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
         else:
@@ -878,6 +879,7 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         images,
         videos,
         audios,
+        mm_inputs,
         processor,
     ):
         self._validate_input(processor, images, videos, audios)
@@ -890,7 +892,6 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         image_merge_length = getattr(image_processor, "merge_size") ** 2
         video_merge_length = getattr(video_processor, "merge_size") ** 2
         if self.expand_mm_tokens:
-            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
             num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0  # hard code for now
@@ -993,6 +994,7 @@ class GLM4VPlugin(Qwen2VLPlugin):
         images,
         videos,
         audios,
+        mm_inputs,
         processor,
     ):
         self._validate_input(processor, images, videos, audios)
@@ -1003,7 +1005,6 @@ class GLM4VPlugin(Qwen2VLPlugin):
 
         merge_length = getattr(image_processor, "merge_size") ** 2
         if self.expand_mm_tokens:
-            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
             num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0  # hard code for now
@@ -1110,6 +1111,7 @@ class Gemma3Plugin(BasePlugin):
         images,
         videos,
         audios,
+        mm_inputs,
         processor,
     ):
         self._validate_input(processor, images, videos, audios)
@@ -1121,8 +1123,6 @@ class Gemma3Plugin(BasePlugin):
         image_str = full_image_sequence if self.expand_mm_tokens else boi_token
 
         do_pan_and_scan = getattr(processor, "image_do_pan_and_scan", False)
-        if do_pan_and_scan:
-            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
 
         for message in messages:
             content = message["content"]

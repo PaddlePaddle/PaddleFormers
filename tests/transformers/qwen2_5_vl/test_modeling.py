@@ -170,6 +170,7 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
     Model tester for `Qwen2_5_VLForConditionalGeneration`.
     """
 
+    base_model_class = Qwen2_5_VLModel
     all_model_classes = (Qwen2_5_VLModel, Qwen2_5_VLForConditionalGeneration)
     all_generative_model_classes = {Qwen2_5_VLForConditionalGeneration: {Qwen2_5_VLModel, "qwen2_5_vl"}}
     max_new_tokens = 3
