@@ -40,6 +40,9 @@ install_requirements() {
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     python -m pip install -U --no-cache-dir transformers
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
+    sed -i '/^paddlefleet/d' requirements.txt
+    python -m pip  install paddlefleet==0.0.1.dev20251219 --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     python setup.py bdist_wheel > /dev/null
     uv pip install dist/p****.whl --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt

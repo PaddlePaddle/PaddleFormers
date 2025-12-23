@@ -147,7 +147,3 @@ class ToolFormatter(Formatter):
             return [self.tool_utils.tool_formatter(tools) if len(tools) != 0 else ""]
         except json.JSONDecodeError:
             raise RuntimeError(f"Invalid JSON format in tool description: {str([content])}.")  # flat string
-
-    @override
-    def extract(self, content: str) -> Union[str, list["FunctionCall"]]:
-        return self.tool_utils.tool_extractor(content)

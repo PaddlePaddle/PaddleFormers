@@ -43,7 +43,7 @@ from ..masking_utils import (
     create_sliding_window_causal_mask_and_row_indices,
 )
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
-from ..model_utils import PretrainedModel
+from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from ..utils import logger
 from .configuration import (
@@ -1362,6 +1362,7 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
         )
 
 
+@register_base_model
 class Qwen2_5_VLModel(Qwen2_5_VLPretrainedModel):
     base_model_prefix = ""
     _checkpoint_conversion_mapping = {"^model": "language_model"}

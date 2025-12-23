@@ -246,8 +246,8 @@ class LlmMetaConfig:
         ("tensor_parallel_output", bool, True, "tensor_parallel_output"),
         # pipeline_parallel
         ("pipeline_model_parallel_size", int, 1, "pipeline_model_parallel_size"),
-        ("num_layers_in_first_pipeline_stage", int, None, "num_layers_in_first_pipeline_stage"),
-        ("num_layers_in_last_pipeline_stage", int, None, "num_layers_in_last_pipeline_stage"),
+        ("num_empty_layers_add_in_head", int, None, "num_empty_layers_add_in_head"),
+        ("num_empty_layers_add_in_tail", int, None, "num_empty_layers_add_in_tail"),
         ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
         # expert_parallel
         ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
@@ -263,7 +263,7 @@ class LlmMetaConfig:
         ),
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
-        ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
+        ("sep_parallel_size", int, 1, "sep_parallel_size"),
         ("context_parallel_size", int, 1, "context_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
@@ -420,7 +420,7 @@ class LlmMetaConfig:
         (
             "moe_grouped_gemm",
             bool,
-            True,
+            False,
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
         ),
     ]
@@ -826,7 +826,7 @@ class PretrainedConfig:
         self.use_single_model_implementation = kwargs.pop("use_single_model_implementation", False)
         if self.use_single_model_implementation:
             self.tensor_model_parallel_size = 1
-            self.sep_parallel_degree = 1
+            self.sep_parallel_size = 1
             self.context_parallel_size = 1
 
         # for transformers fuse
