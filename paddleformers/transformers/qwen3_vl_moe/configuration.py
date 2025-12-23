@@ -170,7 +170,7 @@ class Qwen3VLMoeTextConfig(PretrainedConfig):
         hidden_size=2048,
         intermediate_size=5632,
         num_hidden_layers=24,
-        num_attention_heads=16,
+        num_attention_heads=32,
         num_key_value_heads=16,
         hidden_act="silu",
         max_position_embeddings=128000,
