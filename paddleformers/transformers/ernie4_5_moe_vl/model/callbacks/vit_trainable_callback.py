@@ -158,11 +158,10 @@ class VitTrainableCallback(TrainerCallback):
         Returns:
             _type_: _description_
         """
-        key = "enable_delay_scale_loss"
         if args.pipeline_model_parallel_size > 1:
-            return key in args.pipeline_parallel_config.split(" ")
+            return args.pp_delay_scale_loss
         elif args.tensor_model_parallel_size > 1:
-            return key in args.tensor_parallel_config.split(" ")
+            return args.tp_delay_scale_loss
         else:
             return False
 

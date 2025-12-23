@@ -284,7 +284,7 @@ class OptimizerCallback(TrainerCallback):
         if not args.amp_master_grad or not args.bf16:
             return
 
-        if args.sharding_parallel_degree > 1:
+        if args.sharding_parallel_size > 1:
             stat = gather_sharding_optimizer_state_stat(args, self.optimizer, kwargs["scaler"])
         else:
             stat = gather_optimizer_state_stat(args, self.optimizer, kwargs["scaler"])
@@ -298,7 +298,7 @@ class OptimizerCallback(TrainerCallback):
             self.skip_step = True
             badcase_ratio = stat["intermediate_num_badcases"] / stat["gnumel"]
             scale_ratio = min(1e-4 / (badcase_ratio + 1e-8), 1.0)
-            if args.sharding_parallel_degree > 1:
+            if args.sharding_parallel_size > 1:
                 if isinstance(self.optimizer._inner_opt._learning_rate, float):
                     self.optimizer._inner_opt._learning_rate = scale_ratio * self.optimizer._inner_opt._learning_rate
                 else:
@@ -318,7 +318,7 @@ class OptimizerCallback(TrainerCallback):
         """
         # Set `base_lr` back to default value.
         if self.skip_step:
-            if args.sharding_parallel_degree > 1:
+            if args.sharding_parallel_size > 1:
                 if isinstance(self.optimizer._inner_opt._learning_rate, float):
                     self.optimizer._inner_opt._learning_rate = self.base_lr
                 else:

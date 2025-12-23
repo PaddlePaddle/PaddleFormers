@@ -214,15 +214,9 @@ class AutoTrainer(Trainer):
                 )
             else:
                 self.optimizer = dist.shard_optimizer(self.optimizer, None, self.args.gradient_accumulation_steps)
-        if (
-            hasattr(self.optimizer, "_enable_tensor_fusion")
-            and "enable_tensor_fusion" in self.args.sharding_parallel_config
-        ):
+        if hasattr(self.optimizer, "_enable_tensor_fusion") and self.args.tensor_fusion:
             self.optimizer._enable_tensor_fusion()
-        if (
-            hasattr(self.optimizer, "_enable_sharding_overlap")
-            and "enable_overlap" in self.args.sharding_parallel_config
-        ):
+        if hasattr(self.optimizer, "_enable_sharding_overlap") and self.args.overlap:
             self.optimizer._enable_sharding_overlap(model)
 
         if self.args.to_static:

@@ -282,8 +282,8 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
         global_batch_size = (
             training_args.per_device_train_batch_size
             * training_args.gradient_accumulation_steps
-            * max(training_args.data_parallel_degree, 1)
-            * max(training_args.sharding_parallel_degree, 1)
+            * max(training_args.data_parallel_size, 1)
+            * max(training_args.sharding_parallel_size, 1)
         )
         max_steps = train_batches / global_batch_size
 
@@ -305,7 +305,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
             "tensor_model_parallel_size": int(training_args.tensor_model_parallel_size),
             "pipeline_model_parallel_size": int(training_args.pipeline_model_parallel_size),
-            "sharding_parallel_degree": int(training_args.sharding_parallel_degree),
+            "sharding_parallel_size": int(training_args.sharding_parallel_size),
             "seed": training_args.seed,
             "num_samples_each_epoch": data_args.num_samples_each_epoch,
             "max_seq_len": int(training_args.max_seq_len),
@@ -336,7 +336,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
             "tensor_model_parallel_size": int(training_args.tensor_model_parallel_size),
             "pipeline_model_parallel_size": int(training_args.pipeline_model_parallel_size),
-            "sharding_parallel_degree": int(training_args.sharding_parallel_degree),
+            "sharding_parallel_size": int(training_args.sharding_parallel_size),
             "num_samples_each_epoch": data_args.num_samples_each_epoch,
             "max_seq_len": int(data_args.max_seq_len),
             "seed": data_args.seed,
