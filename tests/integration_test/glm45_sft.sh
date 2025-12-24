@@ -15,10 +15,6 @@
 set -exo pipefail
 export root_dir=$(pwd)
 
-cd $root_dir/PaddleFormers
-git reset --hard HEAD
-cd -
-
 source PaddleFleet/.venv/bin/activate
 
 cd $root_dir/glm45_fleet
