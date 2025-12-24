@@ -61,7 +61,7 @@ jobs:
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
           echo "Workspace path: ${{ github.workspace }}"
-           DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
+          DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
           if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
             GPU_OPTION="--runtime=nvidia"
           else
