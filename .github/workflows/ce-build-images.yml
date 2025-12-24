@@ -40,7 +40,7 @@ jobs:
             -v /home/.cache/pip:/home/.cache/pip \
             -e work_dir \
             -e no_proxy \
-            -w /workspace --runtime=nvidia --privileged ${docker_image}
+            -w /workspace --privileged ${docker_image}
 
       - name: Download Code
         env:
