@@ -270,6 +270,7 @@ class Qwen2_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             tokenize=True,
             return_dict=True,
             num_frames=num_frames,
+            backend="decord",
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 360)
@@ -282,6 +283,7 @@ class Qwen2_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             tokenize=True,
             return_dict=True,
             fps=fps,
+            backend="decord",
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 720)
@@ -295,6 +297,7 @@ class Qwen2_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
                 return_dict=True,
                 fps=fps,
                 num_frames=num_frames,
+                backend="decord",
             )
 
         # Load without any arg should load the whole video
@@ -303,6 +306,7 @@ class Qwen2_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
+            backend="decord",
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 23760)
@@ -320,6 +324,7 @@ class Qwen2_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
+            backend="decord",
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 160)
@@ -335,6 +340,7 @@ class Qwen2_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
                 tokenize=True,
                 return_dict=True,
                 do_sample_frames=True,
+                backend="decord",
             )
 
     def test_kwargs_overrides_custom_image_processor_kwargs(self):
