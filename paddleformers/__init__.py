@@ -67,6 +67,7 @@ modules = [
     "version",
     "transformers",
 ]
+
 import_structure = {module: [] for module in modules}
 import_structure["transformers.tokenizer_utils"] = ["PreTrainedTokenizer"]
 
