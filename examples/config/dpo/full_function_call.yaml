@@ -48,7 +48,9 @@ learning_rate: 1.0e-6
 tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 1
 sharding: stage2
-recompute: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: true
