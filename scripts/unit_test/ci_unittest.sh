@@ -93,12 +93,10 @@ else
     for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
         ext="${file_name##*.}"
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
-        if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
-            continue
-        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
-            continue
-        else
+        [[ -f "$file_name" ]] || continue
+        if [[ "$ext" == "py" ]]; then
             FLAGS_enable_CI=true
+            break
         fi
     done
 fi
