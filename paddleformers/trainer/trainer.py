@@ -585,7 +585,7 @@ class Trainer:
                 # set do_grad_scaling, enable_autocast_context_manager
                 self._wrap_amp_model(args, model)
 
-        if args.recompute:
+        if args.recompute_granularity is not None:
 
             def fn(layer):
                 if hasattr(layer, "enable_recompute") and (
@@ -2062,7 +2062,7 @@ class Trainer:
                                 ((step_control + 1) % args.gradient_accumulation_steps != 0)
                                 and args._no_sync_in_gradient_accumulation
                             )
-                            or args.recompute
+                            or args.recompute_granularity is not None
                             or args.use_expert_parallel
                         ) and available_no_sync
                         # sharding
@@ -2160,7 +2160,9 @@ class Trainer:
 
                             # Case 1: Use recompute and dp / sharding stage1,
                             # manually collect gradient for dp.
-                            if (args.recompute or args.use_expert_parallel) and available_no_sync:
+                            if (
+                                args.recompute_granularity is not None or args.use_expert_parallel
+                            ) and available_no_sync:
                                 fused_allreduce_gradients_no_sync(list(model.parameters()), None)
 
                             # Case 2: hack dp with master_grad
