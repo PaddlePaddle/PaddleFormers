@@ -246,8 +246,8 @@ class LlmMetaConfig:
         ("tensor_parallel_output", bool, True, "tensor_parallel_output"),
         # pipeline_parallel
         ("pipeline_model_parallel_size", int, 1, "pipeline_model_parallel_size"),
-        ("num_empty_layers_add_in_head", int, None, "num_empty_layers_add_in_head"),
-        ("num_empty_layers_add_in_tail", int, None, "num_empty_layers_add_in_tail"),
+        ("num_empty_layers_add_in_head", int, 0, "num_empty_layers_add_in_head"),
+        ("num_empty_layers_add_in_tail", int, 0, "num_empty_layers_add_in_tail"),
         ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
         # expert_parallel
         ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
@@ -263,29 +263,19 @@ class LlmMetaConfig:
         ),
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
-        ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
+        ("sep_parallel_size", int, 1, "sep_parallel_size"),
         ("context_parallel_size", int, 1, "context_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
     ]
 
     recompute_attributes = [
-        ("recompute", bool, False, "recompute"),
         (
             "recompute_granularity",
             str,
-            "full",
+            None,
             "Recompute granularity, Choose among ['full', 'core_attn', 'full_attn']",
         ),
-        ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
-        # refined_recompute attributes
-        (
-            "refined_recompute",
-            str,
-            "",
-            "refined_recompute, Choose from 'mlp_row_ln', 'mlp_column_ln', 'attention_row_ln', 'attention_column_ln', 'flash_attn']",
-        ),
-        ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
         ("recompute_method", str, None, "Determines which transformer layers will be recomputed."),
         (
             "recompute_num_layers",
@@ -294,15 +284,11 @@ class LlmMetaConfig:
             "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
         ),
         ("recompute_modules", Optional[List[str]], None, "List of module names to apply recomputation."),
-        (
-            "recompute_mtp_granularity",
-            str,
-            None,
-            "Recomputation granularity for MTP (Mixture of Token-Parallel) layers.",
-        ),
         ("recompute_mtp_granularity", str, None, "Recomputation granularity for MTP layers."),
         ("recompute_mtp_method", str, None, "Recomputation method for MTP layers."),
         ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
+        ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
+        ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
     ]
 
     loss_attributes = [
@@ -826,7 +812,7 @@ class PretrainedConfig:
         self.use_single_model_implementation = kwargs.pop("use_single_model_implementation", False)
         if self.use_single_model_implementation:
             self.tensor_model_parallel_size = 1
-            self.sep_parallel_degree = 1
+            self.sep_parallel_size = 1
             self.context_parallel_size = 1
 
         # for transformers fuse

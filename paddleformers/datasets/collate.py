@@ -197,10 +197,13 @@ def collate_fn(
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
-        original_token_ids = [seq.token_ids for seq in batch_sequence]
-        token_ids = [sum(original_token_ids, [])]
+        if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
+            original_position_ids = batch_sequence[0].position_ids
+        else:
+            original_position_ids = [seq.position_ids for seq in batch_sequence]
+        token_ids = [sum([seq.token_ids for seq in batch_sequence], [])]
         labels = [sum([seq.labels for seq in batch_sequence], [])]
-        position_ids = [sum([seq.position_ids for seq in batch_sequence], [])]
+        position_ids = [sum(original_position_ids, [])]
         # padding
         padded_token_ids = pad_batch_data(token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
         padded_labels = pad_batch_data(labels, pad_idx=-100, max_seq_len=max_seq_len)
@@ -215,7 +218,7 @@ def collate_fn(
 
         if training_args.num_nextn_predict_layers > 0:
             # each sequence end index
-            batch_sequence_len = [len(sequence) for sequence in original_token_ids]
+            batch_sequence_len = [len(sequence) for sequence in original_position_ids]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)
             prefix_sum = 0
             for sequence_len in batch_sequence_len[:-1]:
@@ -226,11 +229,13 @@ def collate_fn(
 
         if model_args.use_attn_mask_startend_row_indices:
             return_list[-1].append(
-                gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+                gen_attn_mask_startend_row_indices(
+                    original_position_ids, max_seq_len, model_args.use_global_causal_attn
+                )
             )
         else:
             return_list[-1].append(
-                gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+                gen_self_attn_mask(original_position_ids, max_seq_len, model_args.use_global_causal_attn)
             )
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]

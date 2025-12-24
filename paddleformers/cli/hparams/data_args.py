@@ -29,7 +29,6 @@ class DataArguments:
             )
         },
     )
-    dataset_name: str = field(default="KnowledgeBasedSFTReader", metadata={"help": "."})
     input_dir: str = field(
         default=None,
         metadata={"help": "data path (only valid in offline pretrain dataset)"},
@@ -68,15 +67,6 @@ class DataArguments:
         default="1.0",
         metadata={"help": "probabilities of eval datasets."},
     )
-    offline_dataset_path: str = field(
-        default=None,
-        metadata={
-            "help": (
-                "If 'dataset_type' is set to 'map', this field is required to "
-                "specify the path to the offline dataset."
-            )
-        },
-    )
     max_seq_len: int = field(
         default=4096,
         metadata={"help": "Maximum sequence length."},
@@ -84,10 +74,6 @@ class DataArguments:
     max_prompt_len: int = field(
         default=2048,
         metadata={"help": "Maximum prompt length."},
-    )
-    num_comparisons: int = field(
-        default=6,
-        metadata={"help": "Number of candidate responses."},
     )
     mask_out_eos_token: bool = field(
         default=False,
@@ -110,14 +96,6 @@ class DataArguments:
     buffer_size: int = field(
         default=500,
         metadata={"help": "Buffer size for greedy_intokens strategy."},
-    )
-    in_tokens_batching: bool = field(
-        default=True,
-        metadata={"help": "Whether to using in tokens batching strategy."},
-    )
-    use_cls: bool = field(
-        default=True,
-        metadata={"help": "Whether to use cls to predict RM score."},
     )
     packing: bool = field(
         default=False,

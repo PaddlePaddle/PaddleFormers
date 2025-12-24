@@ -87,15 +87,13 @@ def run_dpo(
         )
     if training_args.pipeline_model_parallel_size > 1:
         assert (
-            hasattr(training_args, "pipeline_parallel_config")
-            and "enable_clear_every_step_cache" in training_args.pipeline_parallel_config
-        ), "Should set '--pipeline_parallel_config enable_clear_every_step_cache' in bash script for pp."
+            hasattr(training_args, "clear_every_step_cache") and training_args.clear_every_step_cache
+        ), "Should set '--clear_every_step_cache True' in bash script for pp."
     if training_args.sequence_parallel:
         if training_args.pipeline_model_parallel_size > 1:
             assert (
-                hasattr(training_args, "pipeline_parallel_config")
-                and "disable_partial_send_recv" in training_args.pipeline_parallel_config
-            ), "Should set '--pipeline_parallel_config disable_partial_send_recv' in bash script for pp with sp."
+                hasattr(training_args, "partial_send_recv") and not training_args.partial_send_recv
+            ), "Should set '--partial_send_recv False' in bash script for pp with sp."
         if training_args.tensor_model_parallel_size <= 1:
             training_args.sequence_parallel = False
             logger.info("tensor_model_parallel_size = 1. Set sequence_parallel to False.")
@@ -206,16 +204,14 @@ def run_dpo(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = None
-    if model_args.stage == "VL-DPO":
-        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
 
     logger.info("Loading model & tokenizer successfully !")
 
     if model_args.lora:
-        if training_args.sharding_parallel_degree > 1:
+        if training_args.sharding_parallel_size > 1:
             assert (
-                "enable_stage1_overlap" not in training_args.sharding_parallel_config
+                not training_args.stage1_overlap
             ), "Currently not support enabling sharding_stage1_overlap in lora mode."
         if model_args.lora_path is None:
             target_modules = get_lora_target_modules(model)
