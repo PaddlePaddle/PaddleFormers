@@ -324,17 +324,23 @@ def set_random_seed(
 ):
     """Set random seed for reproducability."""
     if seed_ is not None and seed_ > 0:
-        import paddlefleet
+        from ..utils.import_utils import is_paddlefleet_available
 
-        # Ensure that different pipeline MP stages get different seeds.
-        seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
-        # Ensure different data parallel ranks get different seeds
-        if data_parallel_random_init:
-            seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
+        seed = seed_
+        if is_paddlefleet_available():
+            import paddlefleet
+
+            # Ensure that different pipeline MP stages get different seeds.
+            seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
+            # Ensure different data parallel ranks get different seeds
+            if data_parallel_random_init:
+                seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
         random.seed(seed)
         np.random.seed(seed)
         paddle.manual_seed(seed)
-        if paddle.cuda.device_count() > 0:
+        if paddle.cuda.device_count() > 0 and is_paddlefleet_available():
+            import paddlefleet
+
             paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
                 seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
             )

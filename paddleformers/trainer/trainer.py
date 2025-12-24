@@ -62,14 +62,21 @@ try:
     from paddle.base import core
 except:
     core = None
-try:
+from ..utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
     import paddlefleet.distributed.model as paddlefleet_dist_model
     from paddlefleet.models.gpt import GPTModel as FleetGPTModel
     from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
     HAS_PADDLEFLEET = True
-except:
+else:
+    paddlefleet_dist_model = None
+    FleetGPTModel = None
+    PaddleFleetParallelBase = None
+    PaddleFleetPipelineLayer = None
     HAS_PADDLEFLEET = False
 
 from paddle.distributed import fleet
@@ -1818,7 +1825,8 @@ class Trainer:
                 and self.args.context_parallel_size > 1
                 and isinstance(self.model, FleetGPTModel)
             ):
-                inputs = get_batch_on_this_cp_rank(inputs)
+                if get_batch_on_this_cp_rank is not None:
+                    inputs = get_batch_on_this_cp_rank(inputs)
 
             if self.args.ignore_data_skip:
                 self.timers and self.timers("read-data").stop()
@@ -3212,7 +3220,7 @@ class Trainer:
             )
             if isinstance(model, LoRAModel):
                 model = model.model
-            if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+            if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer) and paddlefleet_dist_model is not None:
                 model = paddlefleet_dist_model.distributed_model(model)
             else:
                 model = fleet.distributed_model(model)
@@ -3238,7 +3246,11 @@ class Trainer:
 
                     keys = list(inputs[0].keys())
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
-                    if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
+                    if (
+                        HAS_PADDLEFLEET
+                        and PaddleFleetParallelBase is not None
+                        and isinstance(model, PaddleFleetParallelBase)
+                    ):
                         first_stage_inputs_batch = inputs_batch
                         last_stage_inputs = first_stage_inputs_batch.pop("labels")
                         outputs = (
@@ -3513,7 +3525,7 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
+        if HAS_PADDLEFLEET and PaddleFleetParallelBase is not None and isinstance(model, PaddleFleetParallelBase):
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_model_parallel_size > 1:

@@ -54,13 +54,17 @@ except Exception:
         return False
 
 
-if paddle.device.is_compiled_with_cuda():
+from ..utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
     from paddlefleet.parallel_state import get_tensor_model_parallel_group
     from paddlefleet.training import initialize_fleet
-
-    HAS_PADDLEFLEET = True
 else:
-    HAS_PADDLEFLEET = False
+    get_tensor_model_parallel_group = None
+    initialize_fleet = None
+
+HAS_PADDLEFLEET = is_paddlefleet_available()
 
 
 __all__ = [
@@ -2107,8 +2111,13 @@ class TrainingArguments:
                 fleet.init(is_collective=True, strategy=strategy)
 
                 # In PaddleFleet, we should use the following code to initialize.
-                if HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
-                    initialize_fleet(strategy)
+                if (
+                    HAS_PADDLEFLEET
+                    and get_tensor_model_parallel_group is not None
+                    and get_tensor_model_parallel_group(False) is None
+                ):
+                    if initialize_fleet is not None:
+                        initialize_fleet(strategy)
                 logger.info(strategy)
 
                 if self.reorder_pipeline_priority:
@@ -2377,7 +2386,12 @@ class TrainingArguments:
                         fleet.init(is_collective=True, strategy=strategy)
                     else:
                         paddle.distributed.init_parallel_env()
-            if world_size == 1 and HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
+            if (
+                world_size == 1
+                and HAS_PADDLEFLEET
+                and get_tensor_model_parallel_group is not None
+                and get_tensor_model_parallel_group(False) is None
+            ):
                 single_card_strategy = fleet.DistributedStrategy()
                 single_card_strategy.hybrid_configs = {
                     "dp_degree": 1,
@@ -2389,7 +2403,8 @@ class TrainingArguments:
                     "ep_degree": 1,
                     "moe_sharding_degree": 1,
                 }
-                initialize_fleet(single_card_strategy)
+                if initialize_fleet is not None:
+                    initialize_fleet(single_card_strategy)
 
         if (
             self.unified_checkpoint

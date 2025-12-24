@@ -23,34 +23,50 @@ from functools import partial
 from typing import Any, Callable, Literal, Optional, Union
 
 import paddle
-from paddlefleet import LayerSpec
-from paddlefleet.models.gpt import GPTModel as FleetGPTModel
-from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
-
-try:
-    from paddlefleet.models.gpt.gpt_config import GPTConfig
-except ImportError:
-    from paddlefleet.transformer.transformer_config import (
-        TransformerConfig as GPTConfig,
-    )
-
-
-try:
-    from paddlefleet.gpt_builders import gpt_builder
-
-    HAS_PADDLEFLEET = True
-except ImportError:
-    HAS_PADDLEFLEET = False
 
 from paddleformers.transformers.model_utils import PretrainedModel
 
+from ...utils.import_utils import is_paddlefleet_available
 from .model_provider import ModelProviderMixin
 
 logger = logging.getLogger(__name__)
 
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
+    from paddlefleet import LayerSpec
+    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
+    from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
 
-class GPTModel(FleetGPTModel, PretrainedModel):
-    pass
+    try:
+        from paddlefleet.models.gpt.gpt_config import GPTConfig
+    except ImportError:
+        from paddlefleet.transformer.transformer_config import (
+            TransformerConfig as GPTConfig,
+        )
+
+    try:
+        from paddlefleet.gpt_builders import gpt_builder
+    except ImportError:
+        gpt_builder = None
+else:
+    LayerSpec = None
+    FleetGPTModel = None
+    get_gpt_layer_local_spec = None
+    GPTConfig = None
+    gpt_builder = None
+
+
+class GPTModel(PretrainedModel):
+    """GPTModel that inherits from PretrainedModel.
+
+    When paddlefleet is available, this will be a subclass of FleetGPTModel.
+    When paddlefleet is not available, this is just a placeholder class.
+    """
+
+    if is_paddlefleet_available() and FleetGPTModel is not None:
+        __bases__ = (FleetGPTModel, PretrainedModel)
+    else:
+        __bases__ = (PretrainedModel,)
 
 
 # GPTModel = FleetGPTModel
@@ -65,7 +81,8 @@ def local_layer_spec(config: "GPTModelProvider") -> LayerSpec:
     Returns:
         LayerSpec: Module specification for local implementation layers
     """
-    assert HAS_PADDLEFLEET
+    if not is_paddlefleet_available():
+        raise ImportError("paddlefleet is required for local_layer_spec. Please install paddlefleet.")
     return get_gpt_layer_local_spec(
         num_experts=config.num_moe_experts,
         moe_grouped_gemm=config.moe_grouped_gemm,
@@ -149,7 +166,8 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         Returns:
             GPTModel: Configured PaddleFleet GPT model instance
         """
-        assert HAS_PADDLEFLEET
+        if not is_paddlefleet_available():
+            raise ImportError("paddlefleet is required for GPTModelProvider.provide(). Please install paddlefleet.")
         pp_size = self.pipeline_model_parallel_size
 
         is_pipeline_asymmetric = getattr(self, "account_for_embedding_in_pipeline_split", False) or getattr(
@@ -200,7 +218,8 @@ def mtp_block_spec(config: "GPTModelProvider", vp_stage: Optional[int] = None) -
     Returns:
         LayerSpec: The MTP module specification
     """
-    assert HAS_PADDLEFLEET
+    if not is_paddlefleet_available():
+        raise ImportError("paddlefleet is required for mtp_block_spec. Please install paddlefleet.")
     if getattr(config, "mtp_num_layers", None):
         from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_mtp_block_spec
 

@@ -31,21 +31,33 @@ except ImportError:
 
 import paddle
 import paddle.distributed as dist
-from paddlefleet import parallel_state, tensor_parallel
-from paddlefleet.transformer.enums import ModelType
+
+from ...utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
+    from paddlefleet import parallel_state, tensor_parallel
+    from paddlefleet.transformer.enums import ModelType
+    from paddlefleet.transformer.layer import FleetLayer
+    from paddlefleet.utils import get_model_config
+
+    try:
+        from paddlefleet.fp8_utils import correct_amax_history_if_needed
+    except ImportError:
+        correct_amax_history_if_needed = None
+else:
+    # Create dummy classes/types when paddlefleet is not available
+    parallel_state = None
+    tensor_parallel = None
+    ModelType = None
+    FleetLayer = None
+    get_model_config = None
+    correct_amax_history_if_needed = None
 
 # TODO(pkuzyc): Support model_parallel_cuda_manual_seed for PaddleFleet
 # from paddlefleet.tensor_parallel.random import model_parallel_cuda_manual_seed
-from paddlefleet.transformer.layer import FleetLayer
-from paddlefleet.utils import get_model_config
 
-try:
-    from paddlefleet.fp8_utils import correct_amax_history_if_needed
-except ImportError:
-    correct_amax_history_if_needed = None
-
-
-ModelT = TypeVar("ModelT", bound=FleetLayer)
+ModelT = TypeVar("ModelT", bound=object if FleetLayer is None else FleetLayer)
 
 
 # TODO: Support DistributedDataParallelConfig
@@ -151,6 +163,9 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
             paddle.cuda.set_device(dist.get_rank())
             paddle.distributed.init_process_group("nccl")
 
+        if not is_paddlefleet_available():
+            raise ImportError("paddlefleet is required for ModelProviderMixin. Please install paddlefleet.")
+
         if not parallel_state.is_initialized():
             print("Model parallel not initialized, initializing...")
             self.initialize_model_parallel(seed=0)
@@ -204,6 +219,9 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
             seed_kwargs: Additional arguments for `model_parallel_cuda_manual_seed`.
             **model_parallel_kwargs: Additional arguments for `parallel_state.initialize_model_parallel`.
         """
+        # if not is_paddlefleet_available():
+        #     raise ImportError("paddlefleet is required for initialize_model_parallel. Please install paddlefleet.")
+
         if not paddle.distributed.is_initialized():
             paddle.cuda.set_device(dist.get_rank())
             paddle.distributed.init_process_group("nccl")
@@ -326,7 +344,7 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
 def get_model(
     model_provider: ModelProviderMixin,
     ddp_config: DistributedDataParallelConfig,
-    model_type=ModelType.encoder_or_decoder,
+    model_type=None,
     overlap_param_gather_with_optimizer_step: bool = False,
     fp16: bool | None = None,
     bf16: bool | None = None,
@@ -376,6 +394,12 @@ def get_model(
         list[FleetLayer]: List of model modules. Contains multiple modules
             when using virtual pipeline parallelism, otherwise a single module
     """
+    # if not is_paddlefleet_available():
+    #     raise ImportError("paddlefleet is required for get_model. Please install paddlefleet.")
+
+    if model_type is None:
+        model_type = ModelType.encoder_or_decoder
+
     if fp16:
         model_provider.fp16 = fp16
     if bf16:
@@ -450,8 +474,8 @@ def get_model(
 
 def _create_model(
     model_provider: ModelProviderMixin,
-    model_type: ModelType,
-) -> list[FleetLayer]:
+    model_type,
+) -> list:
     """Create model instances with appropriate pipeline parallel configuration.
 
     Handles virtual pipeline parallelism (VPP) by creating multiple model
@@ -516,7 +540,7 @@ def _create_model(
     return model
 
 
-def _print_num_params(model: list[FleetLayer]) -> None:
+def _print_num_params(model: list) -> None:
     """Print the number of parameters in the model on rank 0.
 
     Only prints on data parallel rank 0 to avoid duplicate output.
@@ -525,6 +549,9 @@ def _print_num_params(model: list[FleetLayer]) -> None:
     Args:
         model: List of model modules to count parameters from
     """
+    # if not is_paddlefleet_available():
+    #     return
+
     if parallel_state.get_data_parallel_rank() == 0 and parallel_state.get_context_parallel_rank() == 0:
         print(
             " > number of parameters on (tensor, pipeline) model parallel rank ({}, {}): {}".format(
