@@ -409,6 +409,7 @@ def read_video_paddlecodec(
     indices = sample_indices_fn(metadata=metadata, **kwargs)
     video = decoder.get_frames_at(indices=indices).data.contiguous().to("cuda")
     logger.info(f"paddlecodec:  {video_path=}, {total_num_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
+    paddle.compat.disable_torch_proxy()
     metadata.frames_indices = indices
     return video, metadata
 
