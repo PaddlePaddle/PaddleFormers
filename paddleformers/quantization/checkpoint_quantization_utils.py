@@ -302,6 +302,8 @@ def cal_abs_max_channel(inputs, quant_axis=1):
     return abs_max_values
 
 
+
+
 def qdq_weight(x, quant_bit=8, quant_axis=-1, scales=None, dequant=False, tp_rank=-1, tp_degree=1, use_pd=False):
     """
     channel-wise symmetry quantization
