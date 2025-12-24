@@ -616,6 +616,7 @@ class ZeroCostCheckpointManager:
         use_expert_parallel,
         ema_coef=None,
         zcc_worker_class=None,
+        save_hf_steps=-1,
     ):
         assert worker_num > 0, "worker_num must be greater than 0"
         assert capacity_usage <= 1.0, "capacity_usage must be less than or equal to 1.0"
@@ -657,6 +658,7 @@ class ZeroCostCheckpointManager:
                 fleet.get_hybrid_communicate_group()._get_pipe_parallel_id(),
                 fleet.get_hybrid_communicate_group().get_sharding_parallel_rank(),
                 ema_coef,
+                save_hf_steps,
             )
             p = ctx.Process(target=worker_loop, args=(worker,))
             p.start()
@@ -803,6 +805,7 @@ class ZeroCostCheckpointWorker:
         pp_rank,
         sd_rank,
         ema_coef=None,
+        save_hf_steps=-1,
     ):
         super().__init__()
         self.worker_id = worker_id
@@ -819,6 +822,7 @@ class ZeroCostCheckpointWorker:
         self.mp_rank = mp_rank
         self.pp_rank = pp_rank
         self.sd_rank = sd_rank
+        self.save_hf_steps = save_hf_steps
 
         # for dynamic objects saving
         self.optimizer_fusion_storage_helper = None
@@ -1056,8 +1060,13 @@ class ZeroCostCheckpointWorker:
 
         self._dump_args_and_state(output_dir)
 
+        if self.save_hf_steps > 0 and self.ema_coef is not None:
+            saved_signal_prefix = "saved_signal_TMP"
+        else:
+            saved_signal_prefix = "saved_signal"
+
         # Step3: dump save signals
-        saved_signal_path = os.path.join(output_dir, f"saved_signal_{self.global_rank}")
+        saved_signal_path = os.path.join(output_dir, f"{saved_signal_prefix}_{self.global_rank}")
         with open(saved_signal_path, mode="w+") as f:
             f.write("1")
         logger.info("[ZCC worker] dump save signal done.")

@@ -19,11 +19,7 @@ from typing import Dict, List
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets.data_utils import (
-    fix_start_with_zero,
-    postprocess_fc_sequence,
-    print_debug_info,
-)
+from paddleformers.datasets.data_utils import postprocess_fc_sequence, print_debug_info
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
@@ -70,14 +66,10 @@ class SFTDataSet(IterableDataset):
             logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
         # special token
-        self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
         self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
-        self.newline_token = self.tokenizer.tokenize("\n")
         if isinstance(self.tokenizer, PretrainedTokenizer):
-            self.end_of_response_id = self.tokenizer._convert_token_to_id([self.end_of_response])[0]
             self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
         else:
-            self.end_of_response_id = self.tokenizer.convert_tokens_to_ids([self.end_of_response])[0]
             self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
 
         # data loader + multisource dataset mix
@@ -127,8 +119,8 @@ class SFTDataSet(IterableDataset):
         # 2. combine them into one large sample
         # 3. truncate it into multiple new samples based on the max_seq_len.
         if self.is_pretraining and self.packing and self.truncate_packing:
-            all_tokenized_tokens = []
-            all_position_ids = []
+            take_lengths = []
+            buffer = []
             for _ in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
                 tokens = self._encode_pretraining_example(example, actual_example_num)
@@ -139,55 +131,69 @@ class SFTDataSet(IterableDataset):
                 if self.estimate:
                     self.used_samples += actual_example_num
 
-                all_tokenized_tokens.extend(tokens)
-                all_position_ids.extend(list(range(len(tokens))))
+                idx = 0
+                tokens_len = len(tokens)
 
-                while len(all_tokenized_tokens) >= self.max_seq_len:
-                    cut_tokens = all_tokenized_tokens[: self.max_seq_len]
-                    cut_position_ids = all_position_ids[: self.max_seq_len]
-                    all_tokenized_tokens = all_tokenized_tokens[self.max_seq_len :]
-                    all_position_ids = fix_start_with_zero(all_position_ids[self.max_seq_len :])
+                while idx < tokens_len:
+                    remaining = self.max_seq_len + 1 - len(buffer)
+                    take = min(remaining, tokens_len - idx)
+                    take_lengths.append(take)
+                    buffer.extend(tokens[idx : idx + take])
+                    idx += take
+                    if len(buffer) == self.max_seq_len + 1:
+                        # label shift
+                        res_tokens = buffer[:-1]
+                        res_labels = buffer[1:]
+                        take_lengths[-1] -= 1
+                        position_ids = [list(range(item)) for item in take_lengths]
+                        sequence = Sequence(
+                            token_ids=res_tokens,
+                            position_ids=position_ids,
+                            labels=res_labels,
+                            num_examples=actual_example_num,
+                        )
+                        batch_sequence = [sequence]
+                        yield batch_sequence
+                        buffer = []
+                        take_lengths = []
 
-                    # label shift
-                    res_labels = cut_tokens[1:] + [-100]
-                    sequence = Sequence(
-                        token_ids=cut_tokens,
-                        position_ids=cut_position_ids,
-                        labels=res_labels,
-                        num_examples=actual_example_num,
-                    )
-                    batch_sequence = [sequence]
-                    yield batch_sequence
+                if self.estimate:
+                    self.used_estimate_samples += actual_example_num
+                    self.print_max_steps_estimate_progress()
+                    if self.used_estimate_samples >= self.max_estimate_samples:
+                        if buffer:
+                            # label shift
+                            res_tokens = buffer[:-1]
+                            res_labels = buffer[1:]
+                            take_lengths[-1] -= 1
+                            position_ids = [list(range(item)) for item in take_lengths]
+                            sequence = Sequence(
+                                token_ids=res_tokens,
+                                position_ids=position_ids,
+                                labels=res_labels,
+                                num_examples=actual_example_num,
+                            )
+                            batch_sequence = [sequence]
+                            yield batch_sequence
+                        self.used_estimate_samples = 0
+                        # Set flag to False and yield empty list to signal the end of estimation
+                        self.estimate = False
+                        yield []
 
-                    if self.estimate:
-                        self.used_estimate_samples += actual_example_num
-                        self.print_max_steps_estimate_progress()
-                        if self.used_estimate_samples >= self.max_estimate_samples:
-                            self.used_estimate_samples = 0
-                            # Set flag to False and yield empty list to signal the end of estimation
-                            self.estimate = False
-                            yield []
-
-            # If the entire dataset has been fully traversed, return the remaining data.
-            if len(all_tokenized_tokens) > 0:
-                cut_tokens = all_tokenized_tokens
-                res_labels = cut_tokens[1:] + [-100]
-                pos_ids = list(range(len(cut_tokens)))
+            if buffer:
+                # label shift
+                res_tokens = buffer[:-1]
+                res_labels = buffer[1:]
+                take_lengths[-1] -= 1
+                position_ids = [list(range(item)) for item in take_lengths]
                 sequence = Sequence(
-                    token_ids=cut_tokens,
-                    position_ids=pos_ids,
+                    token_ids=res_tokens,
+                    position_ids=position_ids,
                     labels=res_labels,
                     num_examples=actual_example_num,
                 )
                 batch_sequence = [sequence]
                 yield batch_sequence
-                if self.estimate:
-                    self.used_estimate_samples += actual_example_num
-                    if self.used_estimate_samples >= self.max_estimate_samples:
-                        self.used_estimate_samples = 0
-                        # Set flag to False and yield empty list to signal the end of estimation
-                        self.estimate = False
-                        yield []
         else:
             if not self.packing:
                 for _ in range(len(self.mix_datasets)):
@@ -347,6 +353,7 @@ class SFTDataSet(IterableDataset):
             if self.template_backend == "jinja":
                 if not self.tokenizer.chat_template:
                     self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
+                example["messages"].insert(0, {"role": "system", "content": system})
                 if self.split_multi_turn:
                     encoded_pairs = postprocess_fc_sequence(self.tokenizer, example)
                 else:
