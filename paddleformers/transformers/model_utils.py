@@ -3985,3 +3985,55 @@ class HFFormatFullParamSaver:
         total_size = sum(all_sizes)
         replace_name_and_gen_index(path, total_size)
         return total_saved_size
+
+
+class EMAStateHFFormatFullParamSaver(HFFormatFullParamSaver):
+    def __init__(
+        self,
+        ema_sharded_state_dict,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        super().__init__(
+            None,
+            aoa_config,
+            h_group,
+            v_group,
+            num_splits=num_splits,
+            shard_idx=shard_idx,
+            saved_in_one_node=saved_in_one_node,
+            memory_growth_threshold=memory_growth_threshold,
+        )
+        self.ema_sharded_state_dict = ema_sharded_state_dict
+
+    def get_full_param_iter(self):
+        from paddle.distributed.flex_checkpoint.dcp.full_param import full_param
+
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
+
+            param_iter = full_param(
+                self.ema_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = full_param(
+                self.ema_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        return param_iter

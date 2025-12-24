@@ -520,6 +520,7 @@ register_template(
     default_system="<global_setting>\nthink_mode=True\n</global_setting>",
     chat_sep="<|im_end|>\n\n",
     stop_words=["<|im_end|>"],
+    replace_eos=True,
 )
 
 register_template(
@@ -761,7 +762,7 @@ register_template(
 
 # copied from gemma template
 register_template(
-    name="gemma3",
+    name="gemma",
     format_user=StringFormatter(slots=["<start_of_turn>user\n{{content}}<end_of_turn>\n<start_of_turn>model\n"]),
     format_assistant=StringFormatter(slots=["{{content}}"]),
     format_system=StringFormatter(slots=["{{content}}\n\n"]),
@@ -772,7 +773,6 @@ register_template(
     chat_sep="<end_of_turn>\n",
     stop_words=["<end_of_turn>"],
     replace_eos=True,
-    mm_plugin=get_mm_plugin("gemma3", image_token="<image_soft_token>"),
     template_class=Llama2Template,
 )
 

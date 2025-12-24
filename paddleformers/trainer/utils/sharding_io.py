@@ -328,7 +328,7 @@ class ShardingIO:
         assert (
             self.args.tensor_model_parallel_size == mp_degree
         ), f"mp_degree of the script {self.args.tensor_model_parallel_size} and mp of the model {mp_degree} are not matched"
-        cur_sharding_degree = self.args.sharding_parallel_degree
+        cur_sharding_degree = self.args.sharding_parallel_size
         cur_pp_degree = self.args.pipeline_model_parallel_size
         if pp_degree > 1:
             assert cur_pp_degree > 1, "can not reshard from pp to non pp"
@@ -354,7 +354,7 @@ class ShardingIO:
                     tmp = self._load_one_state_dict_from_checkpoint(
                         checkpoint,
                         base_weight_name,
-                        self.args.sharded_name_suffix(i, j, sharding_parallel_degree=sharding_degree),
+                        self.args.sharded_name_suffix(i, j, sharding_parallel_size=sharding_degree),
                     )
                     tmp = split_model_state(tmp, group_getter)
                     for gid in gids:
@@ -454,14 +454,14 @@ class ShardingIO:
         sharding_strategy = SHARDING_STRATEGY_V1
         if "sharding_strategy" in sharding_meta:
             sharding_strategy = sharding_meta["sharding_strategy"]
-        cur_sharding_degree = self.args.sharding_parallel_degree
+        cur_sharding_degree = self.args.sharding_parallel_size
         cur_sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
         if sharding_degree != cur_sharding_degree or sharding_strategy != cur_sharding_strategy:
             return True
         if sharding_strategy == SHARDING_STRATEGY_V1:
             param2rank = sharding_meta["param2rank"]
             optimizer = unwrap_optimizer(self.optimizer, DygraphShardingOptimizer)
-            if self.args.sharding_parallel_degree > 1:
+            if self.args.sharding_parallel_size > 1:
                 assert optimizer is not None
             else:
                 assert optimizer is None
@@ -513,7 +513,7 @@ class ShardingIO:
         if pp_degree <= 1:
             assert cur_pp_degree <= 1, "can not reshard from non pp to pp"
 
-        cur_sharding_degree = self.args.sharding_parallel_degree
+        cur_sharding_degree = self.args.sharding_parallel_size
         cur_sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
 
         group_getter = GroupGetter(self.model)
@@ -522,7 +522,7 @@ class ShardingIO:
             one_shard_opt_state_dict = self._load_optimizer_state_of_one_shard(
                 checkpoint,
                 base_opt_name,
-                self.args.sharded_name_suffix(sharding_parallel_degree=sharding_degree),
+                self.args.sharded_name_suffix(sharding_parallel_size=sharding_degree),
                 group_getter=group_getter,
             )
 
@@ -555,7 +555,7 @@ class ShardingIO:
                 structure_name_map = cur_sharding_meta["structure_name_mapping"]
                 structure_name_map = split_structure_name_mapping(structure_name_map, group_getter)
                 for i in range(self.args.sharding_parallel_rank, sharding_degree, cur_sharding_degree):
-                    sharded_name_suffix = self.args.sharded_name_suffix(i, j, sharding_parallel_degree=sharding_degree)
+                    sharded_name_suffix = self.args.sharded_name_suffix(i, j, sharding_parallel_size=sharding_degree)
                     if one_shard_opt_state_dict is None:
                         tmp = self._load_optimizer_state_of_one_shard(checkpoint, base_opt_name, sharded_name_suffix)
                     else:
