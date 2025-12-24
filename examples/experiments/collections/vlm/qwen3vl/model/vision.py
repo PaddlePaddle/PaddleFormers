@@ -103,7 +103,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         context: paddle.Tensor | None = None,
         context_mask: paddle.Tensor | None = None,
         rotary_pos_emb: paddle.Tensor | None = None,
-        rotaty_pos_cos: paddle.Tensor | None = None,
+        rotary_pos_cos: paddle.Tensor | None = None,
         rotary_pos_sin: paddle.Tensor | None = None,
         attention_bias: paddle.Tensor | None = None,
         inference_context = None,
@@ -203,7 +203,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                         context=context,
                         context_mask=context_mask,
                         rotary_pos_emb=rotary_pos_emb,
-                        rotaty_pos_cos=rotaty_pos_cos,
+                        rotary_pos_cos=rotary_pos_cos,
                         rotary_pos_sin=rotary_pos_sin,
                         attention_bias=attention_bias,
                         packed_seq_params=packed_seq_params_now,
@@ -405,8 +405,8 @@ class Qwen3VisionModel(VisionLayer):
             row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
             col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
 
-            row_idx = row_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
-            col_idx = col_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
+            row_idx = row_idx.expand([merged_h, merged_w, merge_size, merge_size]).reshape(-1)
+            col_idx = col_idx.expand([merged_h, merged_w, merge_size, merge_size]).reshape(-1)
 
             coords = paddle.stack((row_idx, col_idx), dim=-1)
 
@@ -423,6 +423,7 @@ class Qwen3VisionModel(VisionLayer):
     
     def fast_pos_embed_interpolate(self, grid_thw):
         grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
+        device = paddle.get_device()
 
         idx_list = [[] for _ in range(4)]
         weight_list = [[] for _ in range(4)]
@@ -436,8 +437,8 @@ class Qwen3VisionModel(VisionLayer):
             h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
             w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
 
-            dh = h_idxs - h_idxs_floor
-            dw = w_idxs - w_idxs_floor
+            dh = h_idxs - h_idxs_floor.astype("float32")
+            dw = w_idxs - w_idxs_floor.astype("float32")
 
             base_h = h_idxs_floor * self.num_grid_per_side
             base_h_ceil = h_idxs_ceil * self.num_grid_per_side
@@ -460,7 +461,7 @@ class Qwen3VisionModel(VisionLayer):
                 idx_list[i].extend(indices[i].tolist())
                 weight_list[i].extend(weights[i].tolist())
 
-        idx_tensor = paddle.tensor(idx_list, dtype="long")
+        idx_tensor = paddle.tensor(idx_list, dtype=paddle.long, device=device)
         weight_tensor = paddle.tensor(weight_list, dtype=self.pos_embed.weight.dtype)
         pos_embeds = self.pos_embed(idx_tensor) * weight_tensor[:, :, None]
         patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
@@ -470,9 +471,9 @@ class Qwen3VisionModel(VisionLayer):
         patch_pos_embeds_permute = []
         merge_size = self.spatial_merge_size
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
-            pos_embed = pos_embed.repeat(t, 1)
+            pos_embed = pos_embed.repeat([t, 1])
             pos_embed = (
-                pos_embed.view(t, h // merge_size, merge_size, w // merge_size, merge_size, -1)
+                pos_embed.view([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
                 .permute(0, 1, 3, 2, 4, 5)
                 .flatten(0, 4)
             )
@@ -505,7 +506,7 @@ class Qwen3VisionModel(VisionLayer):
         hidden_states = hidden_states.view(
             -1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size
         )
-        hidden_states = self.conv1(hidden_states.to(dtype=target_dtype).view(-1, self.embed_dim))
+        hidden_states = self.conv1(hidden_states.to(dtype=target_dtype)).view(-1, self.embed_dim)
         
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
         hidden_states = hidden_states + pos_embeds

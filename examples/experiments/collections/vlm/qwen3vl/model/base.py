@@ -552,7 +552,7 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
         self, pixel_values: paddle.FloatTensor, image_grid_thw: paddle.LongTensor | None = None
     ):
         pixel_values = pixel_values.to(self.vision_model._dtype)
-        image_embeds, deepstack_image_embeds = self.vision_model(pixel_values, image_grid_thw=image_grid_thw)
+        image_embeds, deepstack_image_embeds = self.vision_model(pixel_values, grid_thw=image_grid_thw)
         split_sizes = (image_grid_thw.prod(-1) // self.vision_model.spatial_merge_size ** 2).tolist()
         image_embeds = paddle.split(image_embeds, split_sizes)
         return image_embeds, deepstack_image_embeds
