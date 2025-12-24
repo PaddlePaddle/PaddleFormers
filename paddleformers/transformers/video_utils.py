@@ -380,9 +380,11 @@ def read_video_paddlecodec(
             f"  - Original Error: {e}"
         )
 
-    logger.info("Loading video with torchcodec backend.")
-    PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 8))
-    logger.info(f"set PADDLECODEC_NUM_THREADS: {PADDLECODEC_NUM_THREADS}")
+    logger.info("Loading video with paddlecodec backend.")
+    PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 0))
+    logger.info(
+        f"set PADDLECODEC_NUM_THREADS: {PADDLECODEC_NUM_THREADS if PADDLECODEC_NUM_THREADS != 0 else '0 (Auto)'}"
+    )
     st = time.time()
     # VideoDecoder expects a string for device, default to "cpu" if None
     decoder = VideoDecoder(
