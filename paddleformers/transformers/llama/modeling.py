@@ -163,8 +163,8 @@ class LLamaAttention(nn.Layer):
         else:
             batch_size, seq_len = hidden_states.shape[:2]
 
-        q_shape = (batch_size, seq_len, self.num_heads, self.head_dim)
-        kv_shape = (batch_size, seq_len, self.num_key_value_heads, self.head_dim)
+        q_shape = (batch_size, seq_len, -1, self.head_dim)
+        kv_shape = (batch_size, seq_len, -1, self.head_dim)
 
         query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
         key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
