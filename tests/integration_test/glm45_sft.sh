@@ -55,6 +55,9 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 unset http_proxy https_proxy
 
+export FLAGS_embedding_deterministic=1
+export FLAGS_cudnn_deterministic=1
+
 set +e
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_sft_yaml 2>&1 | tee ./glm45_sft.log
 
@@ -89,3 +92,14 @@ if [ $lora_exit_code -ne 0 ]; then
 else
     echo "LORA Test passed."
 fi
+
+set -e
+echo "
+100 6.82938290
+" > ./glm45_pt_multi_card_gt_loss.txt
+
+python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
+   --compare_step 10 \
+   --log_file ./glm45_pt_a100.log \
+   --gt_file ./glm45_pt_multi_card_gt_loss.txt
+
