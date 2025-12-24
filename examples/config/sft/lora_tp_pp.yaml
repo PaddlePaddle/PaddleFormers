@@ -10,7 +10,7 @@ packing: true
 mix_strategy: concat
 
 ### model
-model_name_or_path: Qwen/Qwen3-0.6B-Base
+model_name_or_path: /root/paddlejob/workspace/output/wangyanbo05/tiny-random-glm4moe-bf16
 attn_impl: flashmask
 lora: true
 lora_rank: 8
