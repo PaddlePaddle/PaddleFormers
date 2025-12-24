@@ -1755,6 +1755,7 @@ class EMAStateAssembler:
             return
 
         if self._is_already_handled(next_ckpt_dir):
+            self.latest_processed_checkpoint_step = next_step
             logger.info(
                 f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
                 "already been handled. Skipping."
