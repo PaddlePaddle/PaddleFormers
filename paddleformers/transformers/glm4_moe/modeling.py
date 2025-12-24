@@ -1538,7 +1538,6 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         gpt_model.config_to_save = config
-        print("Using Fleet API, using Glm4MoeModel, config: ", config)
         return gpt_model
 
 
