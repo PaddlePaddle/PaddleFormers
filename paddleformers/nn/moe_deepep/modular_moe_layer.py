@@ -313,15 +313,9 @@ class ModularMoELayer(nn.Layer):
             current_state = hidden_states[idx, None].reshape([-1, d_model])
             current_hidden_states = expert_layer(current_state) * topk_weights[idx, top_x].unsqueeze(-1)
 
-            # use scatter to replace index_add
-            final_hidden_states_tmp = paddle.zeros_like(final_hidden_states)
-            final_hidden_states_tmp = paddle.scatter(
-                final_hidden_states_tmp,
-                idx.reshape([-1]),
-                current_hidden_states.to(hidden_states.dtype),
-                overwrite=False,
+            final_hidden_states.index_add_(
+                index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
             )
-            final_hidden_states = final_hidden_states + final_hidden_states_tmp
 
         return final_hidden_states.cast(hidden_states.dtype)
 
