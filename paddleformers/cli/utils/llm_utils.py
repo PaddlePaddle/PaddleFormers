@@ -283,6 +283,27 @@ def get_lora_target_modules(model):
             ".*temporal_linear.0.*",
             ".*temporal_linear.2.*",
         ]
+    elif model.config.model_type == "paddleocr_vl":
+        target_modules = [
+            # Language Model
+            ".*model.*q_proj.*",
+            ".*model.*k_proj.*",
+            ".*model.*v_proj.*",
+            ".*model.*o_proj.*",
+            ".*model.*gate_proj.*",
+            ".*model.*up_proj.*",
+            ".*model.*down_proj.*",
+            # Vision Encoder
+            ".*visual.*q_proj.*",
+            ".*visual.*k_proj.*",
+            ".*visual.*v_proj.*",
+            ".*visual.*out_proj.*",
+            ".*visual.*fc1.*",
+            ".*visual.*fc2.*",
+            # Projector
+            ".*mlp_AR.*linear_1.*",
+            ".*mlp_AR.*linear_2.*",
+        ]
     elif model.config.model_type == "phi3":
         target_modules = [
             ".*qkv_proj.*",
