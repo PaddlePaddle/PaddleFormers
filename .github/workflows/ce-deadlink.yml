@@ -39,7 +39,15 @@ jobs:
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
-          docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
+          if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
+            GPU_OPTION="--runtime=nvidia"
+          else
+            GPU_OPTION="--gpus all"
+          fi
+          echo "DOCKER_VER=${DOCKER_VER}"
+          echo "GPU_OPTION=${GPU_OPTION}"
+          docker run -d -t ${GPU_OPTION} --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
@@ -52,7 +60,7 @@ jobs:
             -e paddle_whl \
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
-            -w /workspace --runtime=nvidia --privileged $IMAGE_NAME
+            -w /workspace --privileged $IMAGE_NAME
             
       - name: Download Code
         run: |

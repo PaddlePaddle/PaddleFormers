@@ -54,13 +54,22 @@ except Exception:
         return False
 
 
-if paddle.device.is_compiled_with_cuda():
+from ..utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if paddle.device.is_compiled_with_cuda() and is_paddlefleet_available():
     from paddlefleet.parallel_state import get_tensor_model_parallel_group
     from paddlefleet.training import initialize_fleet
-
-    HAS_PADDLEFLEET = True
 else:
-    HAS_PADDLEFLEET = False
+
+    def get_tensor_model_parallel_group(*args, **kwargs):
+        return None
+
+    def initialize_fleet(*args, **kwargs):
+        pass
+
+
+HAS_PADDLEFLEET = is_paddlefleet_available()
 
 
 __all__ = [
@@ -2099,7 +2108,11 @@ class TrainingArguments:
                 fleet.init(is_collective=True, strategy=strategy)
 
                 # In PaddleFleet, we should use the following code to initialize.
-                if HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
+                if (
+                    HAS_PADDLEFLEET
+                    and get_tensor_model_parallel_group is not None
+                    and get_tensor_model_parallel_group(False) is None
+                ):
                     initialize_fleet(strategy)
                 logger.info(strategy)
 
@@ -2369,7 +2382,12 @@ class TrainingArguments:
                         fleet.init(is_collective=True, strategy=strategy)
                     else:
                         paddle.distributed.init_parallel_env()
-            if world_size == 1 and HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
+            if (
+                world_size == 1
+                and HAS_PADDLEFLEET
+                and get_tensor_model_parallel_group is not None
+                and get_tensor_model_parallel_group(False) is None
+            ):
                 single_card_strategy = fleet.DistributedStrategy()
                 single_card_strategy.hybrid_configs = {
                     "dp_degree": 1,
