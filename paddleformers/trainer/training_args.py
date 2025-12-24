@@ -1561,6 +1561,9 @@ class TrainingArguments:
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
     )
+    fa_version: int = field(
+        default=2, metadata={"help": "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."}
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1579,6 +1582,11 @@ class TrainingArguments:
         if self.deterministic_mode:
             os.environ["FLAGS_cudnn_deterministic"] = "1"
             os.environ["FLAGS_embedding_deterministic"] = "1"
+
+        if self.fa_version == 2 or self.fa_version == 3:
+            os.environ["FLAGS_flash_attn_version"] = self.fa_version
+        else:
+            raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
         if env_local_rank != -1 and env_local_rank != self.local_rank and paddle.distributed.get_world_size() > 1:
