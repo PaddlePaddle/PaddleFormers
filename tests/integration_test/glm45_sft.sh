@@ -110,7 +110,7 @@ echo "
 " > ./glm45_lora_multi_card_gt_loss.txt
 
 python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
-   --compare_step 10 \
+   --compare_step 100 \
    --log_file ./glm45_lora.log \
    --gt_file ./glm45_lora_multi_card_gt_loss.txt
 
