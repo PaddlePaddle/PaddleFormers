@@ -339,6 +339,7 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
         "down_proj",
         "proj",
         "linear_fc\d+",
+        "gate",
     ]
 
     @paddle.no_grad()
@@ -844,7 +845,12 @@ class Qwen3VLMoeVisionModel(Qwen3VLMoePretrainedModel):
             cu_seqlens_now = cu_seqlens
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 hidden_states = self.recompute_training_full(
                     blk,
                     hidden_states,
@@ -1053,7 +1059,10 @@ class Qwen3VLMoeTextAttention(nn.Layer):
 
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = self.hidden_size // self.num_heads
+        if hasattr(config, "head_dim") and config.head_dim is not None:
+            self.head_dim = config.head_dim
+        else:
+            self.head_dim = self.hidden_size // self.num_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.is_causal = True
@@ -1073,12 +1082,6 @@ class Qwen3VLMoeTextAttention(nn.Layer):
             norm_eps=config.rms_norm_eps,
             has_bias=False,
         )
-
-        if (self.head_dim * self.num_heads) != self.hidden_size:
-            raise ValueError(
-                f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
-                f" and `num_heads`: {self.num_heads})."
-            )
 
         self.sequence_parallel = config.sequence_parallel
         self.fuse_attention_qkv = config.fuse_attention_qkv
@@ -1520,7 +1523,7 @@ class Qwen3VLMoeTextModel(Qwen3VLMoePretrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        if self.gradient_checkpointing and self.training:
+        if self.config.recompute_granularity == "full" and self.training:
             if use_cache:
                 logger.warning_once(
                     "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
@@ -1594,7 +1597,12 @@ class Qwen3VLMoeTextModel(Qwen3VLMoePretrainedModel):
                 all_hidden_states += (hidden_states,)
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
