@@ -389,7 +389,7 @@ class LlmMetaConfig:
             "moe_expert_fusion",
             bool,
             True,
-            "Whether to enable operator fusion for MoE expert layers (e.g., Linear + Activation fusion). Improves training/inference throughput by reducing kernel launch overhead. Defaults to True.",
+            "Whether to fuse experts. Default to True.",
         ),
         (
             "moe_router_fusion",
