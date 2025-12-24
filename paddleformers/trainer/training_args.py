@@ -1584,7 +1584,7 @@ class TrainingArguments:
             os.environ["FLAGS_embedding_deterministic"] = "1"
 
         if self.fa_version == 2 or self.fa_version == 3:
-            os.environ["FLAGS_flash_attn_version"] = self.fa_version
+            os.environ["FLAGS_flash_attn_version"] = str(self.fa_version)
         else:
             raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
 
