@@ -770,7 +770,12 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
             cu_seqlens_now = cu_seqlens
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 hidden_states = self.recompute_training_full(
                     blk,
                     hidden_states,
@@ -1394,7 +1399,7 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
-        if self.config.recompute and self.training:
+        if self.config.recompute_granularity == "full" and self.training:
             if use_cache:
                 logger.warning_once("`use_cache=True` is incompatible with recompute. Setting `use_cache=False`...")
                 use_cache = False
@@ -1466,7 +1471,12 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
                 all_hidden_states += (hidden_states,)
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
