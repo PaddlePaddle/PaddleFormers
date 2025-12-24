@@ -518,7 +518,7 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         # config.token_drop_steps = 0
         model = model_class.from_config(config, dtype=dtype)
 
-    if training_args.recompute:
+    if training_args.recompute_granularity is not None:
         model.recompute_enable()
 
     # Create the learning_rate sheduler and optimizer

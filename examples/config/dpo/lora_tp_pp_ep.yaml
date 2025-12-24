@@ -49,7 +49,9 @@ use_expert_parallel: true
 sequence_parallel: true
 pipeline_parallel_config: enable_clear_every_step_cache disable_partial_send_recv
 sharding: stage1
-recompute: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 amp_master_grad: true

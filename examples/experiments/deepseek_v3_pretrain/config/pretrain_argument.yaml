@@ -37,7 +37,6 @@ do_train: true
 do_eval: true
 do_predict: false
 disable_tqdm: true
-recompute: false
 distributed_dataloader: 1
 unified_checkpoint: true
 save_total_limit: 2

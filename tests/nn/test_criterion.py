@@ -49,7 +49,7 @@ class TestCriterionLayer(unittest.TestCase):
 
     def test_forward_with_recompute(self):
         config = copy.deepcopy(self.config)
-        config.recompute = True
+        config.recompute_modules = ["loss_fn"]
         config.use_fused_head_and_loss_fn = False
         layer = CriterionLayer(config=config)
         loss_mask = paddle.randint(0, 2, shape=[self.batch_size, self.seq_len])

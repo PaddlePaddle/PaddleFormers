@@ -438,7 +438,12 @@ class Qwen3MoeDecoderLayer(nn.Layer):
         offload_kwargs["offload_indices"] = [0]
 
         has_gradient = not hidden_states.stop_gradient
-        if self.config.recompute and has_gradient and self.config.recompute_granularity != "full_attn":
+        if (
+            self.config.recompute_granularity is not None
+            and self.config.recompute_modules is not None
+            and "full_attn" not in self.config.recompute_modules
+            and has_gradient
+        ):
             attn_outputs = recompute(
                 self.attn,
                 hidden_states,
@@ -487,7 +492,12 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             if self.config.sequence_parallel:
                 chunk = chunk.reshape([-1, hidden_size])
             has_gradient = not chunk.stop_gradient
-            if self.config.recompute and has_gradient and self.config.recompute_granularity != "full_attn":
+            if (
+                self.config.recompute_granularity is not None
+                and self.config.recompute_modules is not None
+                and "full_attn" not in self.config.recompute_modules
+                and has_gradient
+            ):
                 out = recompute(
                     self.mlp.forward,
                     chunk,
@@ -526,7 +536,12 @@ class Qwen3MoeDecoderLayer(nn.Layer):
 
         # Self Attention
         has_gradient = not hidden_states.stop_gradient
-        if self.config.recompute and has_gradient and self.config.recompute_granularity == "full_attn":
+        if (
+            self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "full_attn" in self.config.recompute_modules
+            and has_gradient
+        ):
             outputs = recompute(
                 self.self_attn,
                 hidden_states=hidden_states,
@@ -1033,8 +1048,13 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
                     attn_mask_startend_row_indices,
                     position_embeddings,
                 )
-            elif self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
-                layer_outputs = self.recompute_training_full(
+            elif (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
+                hidden_states = self.recompute_training_full(
                     layer_module=decoder_layer,
                     hidden_states=hidden_states,
                     attention_mask=causal_mask,

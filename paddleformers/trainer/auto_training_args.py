@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
+
 from dataclasses import dataclass, field
 
 from .trainer_utils import ShardingOption, split_parallel_config
@@ -124,17 +124,6 @@ class AutoTrainingArguments(TrainingArguments):
         pp_configs = split_parallel_config(self.pipeline_parallel_config)
         if "auto_parallel_sync_shared_params" in pp_configs:
             self.strategy.pipeline.auto_parallel_sync_shared_params = True
-
-        if self.recompute:
-            recompute = self.strategy.recompute
-            recompute.enable = True
-            recompute.refined_ops_patterns = []
-            if type(self.refined_ops_patterns) == str:
-                recompute.refined_ops_patterns = json.loads(self.refined_ops_patterns)
-            else:
-                recompute.refined_ops_patterns = (
-                    self.refined_ops_patterns if self.refined_ops_patterns is not None else []
-                )
 
     @property
     def should_load_model_with_tensor_fusion(self):

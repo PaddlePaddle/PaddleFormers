@@ -165,7 +165,7 @@ def run_dpo(
         ref_model_config.dpo_config = dpo_config
     model_config.dpo_config = dpo_config
 
-    if model_args.continue_training and not training_args.autotuner_benchmark:
+    if not training_args.autotuner_benchmark or training_args.weight_quantize_algo is not None:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
             config=model_config,
