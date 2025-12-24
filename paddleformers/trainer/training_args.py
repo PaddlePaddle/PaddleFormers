@@ -1087,14 +1087,6 @@ class TrainingArguments:
         default=0.0001,
         metadata={"help": "MoE (Mixture of Experts) Auxiliary loss weight coefficient"},
     )
-    expert_max_capacity: Optional[int] = field(
-        default=pow(2, 32),
-        metadata={"help": "Enable MoE (Mixture of Experts) expert max token capacity"},
-    )
-    expert_min_capacity: Optional[int] = field(
-        default=1,
-        metadata={"help": "Enable MoE (Mixture of Experts) expert min token capacity"},
-    )
     release_grads: Optional[bool] = field(
         default=False, metadata={"help": "Whether to release gradients during training. Default is `False`."}
     )

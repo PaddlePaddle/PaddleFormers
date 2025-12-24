@@ -338,15 +338,15 @@ class LlmMetaConfig:
         ),
         (
             "moe_token_drop_policy",
-            bool,
-            False,
-            "Whether to enable token dropping policy for MoE (discard low-importance tokens). Defaults to False.",
+            str,
+            "probs",
+            "Defines the policy for token dropping. It can be set to either 'probs' or 'position'. If set to 'probs', tokens with the lowest probabilities will be dropped. If set to 'position', tokens from the end of each batch will be dropped. Defaults to 'probs'.",
         ),
         (
             "moe_expert_capacity_factor",
             float,
             0.0,
-            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (use default capacity).",
+            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (no dropping tokens).",
         ),
         (
             "router_aux_loss_coef",

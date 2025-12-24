@@ -423,7 +423,6 @@ class Qwen3MoeDecoderLayer(nn.Layer):
                     expert_activation="silu",
                     train_topk_method="greedy",
                     inference_topk_method="greedy",
-                    drop_tokens=False,
                     transpose_gate_weight=False,
                 )
                 if expert_model_parallel_size > 1
