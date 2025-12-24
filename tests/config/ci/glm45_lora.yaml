@@ -65,3 +65,4 @@ save_checkpoint_format: flex_checkpoint
 
 moe_router_force_load_balancing: true
 num_hidden_layers: 4
+deterministic_mode: true
