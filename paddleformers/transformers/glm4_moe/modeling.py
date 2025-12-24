@@ -1126,7 +1126,9 @@ class Glm4MoePreTrainedModel(PretrainedModel):
 
         num_hidden_layers = config.num_hidden_layers
         num_head_empty_layers = (
-            config.remove_head_layers if hasattr(config, "remove_head_layers") and config.remove_head_layers else 0
+            config.num_empty_layers_add_in_head
+            if hasattr(config, "num_empty_layers_add_in_head") and config.num_empty_layers_add_in_head
+            else 0
         )
 
         # layer 0
@@ -1216,7 +1218,9 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             ]
         num_hidden_layers = config.num_hidden_layers
         num_head_empty_layers = (
-            config.remove_head_layers if hasattr(config, "remove_head_layers") and config.remove_head_layers else 0
+            config.num_empty_layers_add_in_head
+            if hasattr(config, "num_empty_layers_add_in_head") and config.num_empty_layers_add_in_head
+            else 0
         )
 
         # layer 0
@@ -1582,7 +1586,6 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         gpt_model = model_provider.provide()
-        config.remove_head_layers = model_provider.remove_head_layers
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
@@ -1744,7 +1747,6 @@ class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalL
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         gpt_model = model_provider.provide()
-        config.remove_head_layers = model_provider.remove_head_layers
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
