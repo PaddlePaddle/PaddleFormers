@@ -62,7 +62,14 @@ jobs:
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
           echo "Workspace path: ${{ github.workspace }}"
           DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
-          docker run -d -t --gpus all --runtime=nvidia --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
+            GPU_OPTION="--runtime=nvidia"
+          else
+            GPU_OPTION="--gpus all"
+          fi
+          echo "DOCKER_VER=${DOCKER_VER}"
+          echo "GPU_OPTION=${GPU_OPTION}"
+          docker run -d -t ${GPU_OPTION} --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/:/root/.cache/ \
