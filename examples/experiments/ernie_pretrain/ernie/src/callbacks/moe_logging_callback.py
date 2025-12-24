@@ -88,7 +88,7 @@ class MoeLoggingCallback(TrainerCallback):
         ]
 
         check_error = False
-        if args.use_hybrid_parallel and args.sharding_parallel_size > 1:
+        if args.use_hybrid_parallel and args.sharding_parallel_degree > 1:
             sd_md5_lst = []
             dist.all_gather_object(sd_md5_lst, p_md5_info, sharding_group)
             for idx, (name, pmd5, no_sync) in enumerate(p_md5_info):
@@ -96,7 +96,7 @@ class MoeLoggingCallback(TrainerCallback):
                     logger.error(f"param: {name} md5 is not equal between sharding-group")
                     check_error = True
 
-        if not args.use_hybrid_parallel or args.data_parallel_size > 1:
+        if not args.use_hybrid_parallel or args.data_parallel_degree > 1:
             dp_md5_lst = []
             dist.all_gather_object(dp_md5_lst, p_md5_info, dp_group)
             for idx, (name, pmd5, no_sync) in enumerate(p_md5_info):

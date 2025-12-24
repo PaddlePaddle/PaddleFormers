@@ -166,7 +166,7 @@ def main():
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
         any(architecture in str(model_config.architectures) for architecture in architectures_to_check)
-        and training_args.data_parallel_size > 1
+        and training_args.data_parallel_degree > 1
         and not training_args.use_expert_parallel
     ):
         raise ValueError("Please set use_expert_parallel to true in expert parallel mode.")
@@ -411,9 +411,9 @@ def main():
 
 def create_peft_model(model_args, training_args, dtype, model):
     if model_args.lora:
-        if training_args.sharding_parallel_size > 1:
+        if training_args.sharding_parallel_degree > 1:
             assert (
-                not training_args.stage1_overlap
+                "enable_stage1_overlap" not in training_args.sharding_parallel_config
             ), "Currently not support enabling sharding_stage1_overlap in lora mode."
         if model_args.lora_path is None:
             target_modules = get_lora_target_modules(model)

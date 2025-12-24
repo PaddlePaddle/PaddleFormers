@@ -47,11 +47,7 @@ pipeline_model_parallel_size: 2
 expert_model_parallel_size: 4
 use_expert_parallel: true
 sequence_parallel: true
-
-# pipeline_parallel_config
-clear_every_step_cache: true
-partial_send_recv: false
-
+pipeline_parallel_config: enable_clear_every_step_cache disable_partial_send_recv
 sharding: stage1
 recompute: true
 bf16: true

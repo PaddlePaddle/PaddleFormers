@@ -98,7 +98,7 @@ class LoRAGATrainer(Trainer):
         in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
         in_sharding_parallel_mode = self.sharding is not None
         in_tensor_parallel_mode = self.args.tensor_model_parallel_size > 1
-        in_sep_parallel_mode = self.args.sep_parallel_size > 1
+        in_sep_parallel_mode = self.args.sep_parallel_degree > 1
         in_cp_parallel_mode = self.args.context_parallel_size > 1
 
         if in_pipeline_parallel_mode:
@@ -250,8 +250,8 @@ def loraga_svd_reinit(
                 gradient_dict,
                 base_model_split_mappings,
                 training_args.tensor_model_parallel_size,
-                training_args.sharding_parallel_size,
-                training_args.data_parallel_size,
+                training_args.sharding_parallel_degree,
+                training_args.data_parallel_degree,
                 training_args.local_rank,
             )
             # perform SVD to reinit base model weight and lora adapter weight

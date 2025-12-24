@@ -190,6 +190,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     set_seed,
     should_skip_data,
     speed_metrics,
+    split_parallel_config,
 )
 from .training_args import TrainingArguments
 from .unified_checkpoint import UnifiedCheckpointHandler
@@ -1416,8 +1417,8 @@ class Trainer:
                 trainable_numel_tensor = paddle.to_tensor(per_device_trainable_numel, dtype=all_reduce_dtype)
                 paddle.distributed.all_reduce(trainable_numel_tensor)
                 trainable_numel = int(trainable_numel_tensor.item()) // self.args.dataset_world_size
-                if self.args.sep_parallel_size > 0:
-                    trainable_numel = trainable_numel // self.args.sep_parallel_size
+                if self.args.sep_parallel_degree > 0:
+                    trainable_numel = trainable_numel // self.args.sep_parallel_degree
                 if self.args.context_parallel_size > 0:
                     trainable_numel = trainable_numel // self.args.context_parallel_size
                 # the numel is roughly, because the tensor parallel still hold own bias or layer_norm weight without splited
@@ -1560,7 +1561,7 @@ class Trainer:
             for step, inputs in enumerate(epoch_iterator):
                 if (
                     self.args.use_hybrid_parallel
-                    and self.args.sep_parallel_size > 1
+                    and self.args.sep_parallel_degree > 1
                     and self.args.split_inputs_sequence_dim
                 ):
                     inputs = split_inputs_sequence_dim(inputs)
@@ -1729,13 +1730,16 @@ class Trainer:
                         fused_allreduce_gradients_no_sync(list(model.parameters()), None)
 
                     # Pipeline parallel mode,  handle gradient reduce here to overlap
-                    enable_dp_comm_overlap = self.args.pipeline_model_parallel_size > 1 and args.dp_comm_overlap
+                    enable_dp_comm_overlap = (
+                        self.args.pipeline_model_parallel_size > 1
+                        and "enable_dp_comm_overlap" in args.pipeline_parallel_config
+                    )
 
                     enable_release_grads = False
-                    if args.sharding_parallel_size > 1:
-                        enable_release_grads = args.sd_release_grads
+                    if args.sharding_parallel_degree > 1:
+                        enable_release_grads = "enable_release_grads" in args.sharding_parallel_config
                     if not enable_release_grads and args.pipeline_model_parallel_size > 1:
-                        enable_release_grads = args.pp_release_grads
+                        enable_release_grads = "enable_release_grads" in args.pipeline_parallel_config
 
                     # Case 3: Pipeline parallel mode, overlap with dp
                     if isinstance(self.optimizer, HybridParallelOptimizer) and not self.do_grad_scaling:
@@ -1891,7 +1895,7 @@ class Trainer:
                         self.state.best_model_checkpoint,
                         convert_from_hf=self.args.convert_from_hf,
                     )
-                    if self.args.sharding_parallel_size > 1 or self.args.data_parallel_size > 1:
+                    if self.args.sharding_parallel_degree > 1 or self.args.data_parallel_degree > 1:
                         broadcast_dataset_rank0_model(self.model)
                 else:
                     weight_name = PADDLE_WEIGHTS_NAME
@@ -1942,7 +1946,7 @@ class Trainer:
                 self.state.best_model_checkpoint,
                 convert_from_hf=self.args.convert_from_hf,
             )
-            if self.args.sharding_parallel_size > 1 or self.args.data_parallel_size > 1:
+            if self.args.sharding_parallel_degree > 1 or self.args.data_parallel_degree > 1:
                 broadcast_dataset_rank0_model(self.model)
             return
 
@@ -2643,9 +2647,9 @@ class Trainer:
         """
         if (
             self.args.use_expert_parallel
-            and self.args.moe_sharding_parallel_size >= 1
+            and self.args.moe_sharding_parallel_degree >= 1
             and self.args.expert_model_parallel_size > 1
-            and self.args.sharding_parallel_size > 1
+            and self.args.sharding_parallel_degree > 1
         ):
             from ..utils import MoEHybridParallelOptimizer
 
@@ -2715,7 +2719,7 @@ class Trainer:
         in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
         in_sharding_parallel_mode = self.sharding is not None
         in_tensor_parallel_mode = self.args.tensor_model_parallel_size > 1
-        in_sep_parallel_mode = self.args.sep_parallel_size > 1
+        in_sep_parallel_mode = self.args.sep_parallel_degree > 1
         in_cp_parallel_mode = self.args.context_parallel_size > 1
 
         # Multi-gpu training
@@ -2797,7 +2801,7 @@ class Trainer:
                     self.args.save_checkpoint_format == "unified_checkpoint"
                     or self.args.load_checkpoint_format == "unified_checkpoint"
                 )
-                and self.args.split_param
+                and "split_param" in split_parallel_config(self.args.sharding_parallel_config)
             ):
                 model.register_sharding_comm_overlap_hook(self.optimizer)
 
@@ -2842,7 +2846,7 @@ class Trainer:
 
                 if self.args.amp_master_grad:
                     assert (
-                        self.args.data_parallel_size == 1
+                        self.args.data_parallel_degree == 1
                     ), "Sharding stage 2 / Sharding stage 3 main grad is not compatible with dp for now."
                     mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
                     self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
@@ -2862,7 +2866,7 @@ class Trainer:
                         "please upgrade your paddle (using nightly version)."
                     )
 
-                if level == "os_g" and self.args.stage2_overlap:
+                if level == "os_g" and "enable_stage2_overlap" in self.args.sharding_parallel_config:
                     model._set_reduce_overlap(True)
                     optimizer._set_broadcast_overlap(True, model)
 
@@ -2884,11 +2888,17 @@ class Trainer:
 
         # stage1 has v1 and v2 version
         if in_sharding_parallel_mode and ShardingOption.SHARD_OP in self.args.sharding:
-            if self.args.split_param:
-                if hasattr(self.optimizer, "_set_all_gather_overlap_forward") and self.args.stage1_allgather_overlap:
+            if "split_param" in self.args.sharding_parallel_config:
+                if (
+                    hasattr(self.optimizer, "_set_all_gather_overlap_forward")
+                    and "enable_stage1_allgather_overlap" in self.args.sharding_parallel_config
+                ):
                     self.optimizer._set_all_gather_overlap_forward(True, model)
             else:
-                if hasattr(self.optimizer, "_set_broadcast_overlap") and self.args.stage1_broadcast_overlap:
+                if (
+                    hasattr(self.optimizer, "_set_broadcast_overlap")
+                    and "enable_stage1_broadcast_overlap" in self.args.sharding_parallel_config
+                ):
                     self.optimizer._set_broadcast_overlap(True, model)
 
         # To solve DPO pin-memory problem, temporarily modify the _insert_sync method.
@@ -3000,10 +3010,11 @@ class Trainer:
         if in_auto_parallel_align_mode():
             return True
 
+        key = "enable_delay_scale_loss"
         if self.args.pipeline_model_parallel_size > 1:
-            return self.args.pp_delay_scale_loss
+            return key in self.args.pipeline_parallel_config
         elif self.args.tensor_model_parallel_size > 1:
-            return self.args.tp_delay_scale_loss
+            return key in self.args.tensor_parallel_config
         else:
             return False
 
@@ -3090,7 +3101,7 @@ class Trainer:
                 inputs, self.optimizer, self.lr_scheduler
             )  # None, None => [optimizer, lr_scheduler]
 
-        if PipelineDatasetPreprocessor is None or self.args.use_dualpipev:
+        if PipelineDatasetPreprocessor is None or "use_dualpipev" in self.args.pipeline_parallel_config:
             inputs = _dataset_process_function()
         else:
             inputs = PipelineDatasetPreprocessor(_dataset_process_function)
@@ -3317,7 +3328,7 @@ class Trainer:
             if (
                 self.args.should_save
                 or self.args.use_expert_parallel
-                or (self.args.data_parallel_size > 1 and self.args.save_checkpoint_format == "flex_checkpoint")
+                or (self.args.data_parallel_degree > 1 and self.args.save_checkpoint_format == "flex_checkpoint")
             ):
                 if not self.args.use_hybrid_parallel:
                     logger.info("Saving optimizer files.")
@@ -3697,7 +3708,7 @@ class Trainer:
                 if (
                     hasattr(self.args, "enable_sharding_comm_overlap")
                     and self.args.enable_sharding_comm_overlap
-                    and self.args.split_param
+                    and "split_param" in split_parallel_config(self.args.sharding_parallel_config)
                 ):
                     model = self.model_wrapped
                 opt_state_dict = self.unified_checkpoint_handler.load_unified_optimizer(

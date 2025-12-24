@@ -94,27 +94,15 @@ trainer_args:
     pipeline_model_parallel_size: 12
     tensor_model_parallel_size: 1
     virtual_pipeline_model_parallel_size: 1
-    data_parallel_size: 1
+    data_parallel_degree: 1
     expert_model_parallel_size: 8
     sharding: "stage1"
-    sharding_parallel_size: 8
+    sharding_parallel_degree: 8
     amp_master_grad: 1
-
-    # pipeline_parallel_config
-    pp_delay_scale_loss: true
-    overlap_p2p_comm: true
-    best_unbalanced_scheduler: true
- 
-    # sharding_parallel_config
-    split_param: true
-    
+    pipeline_parallel_config: enable_delay_scale_loss enable_overlap_p2p_comm best_unbalanced_scheduler
+    sharding_parallel_config: split_param
     sharding_comm_buffer_size_MB: 2048
-
-    # tensor_parallel_config
-    tp_sync_param: true
-    sync_grad: true
-    tp_sync_moment: true
-
+    tensor_parallel_config: sync_param sync_grad sync_moment
     hybrid_parallel_topo_order: sharding_first
 
     skip_profile_timer: True

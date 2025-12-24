@@ -8,16 +8,9 @@ gradient_accumulation_steps: 60
 per_device_eval_batch_size: 1
 tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 8
-
-# pipeline_parallel_config
-use_dualpipev: true
-overlap_p2p_comm: true
-
-sharding_parallel_size: 32
-
-# sharding_parallel_config
-split_param: true
-
+pipeline_parallel_config: "use_dualpipev enable_overlap_p2p_comm"
+sharding_parallel_degree: 32
+sharding_parallel_config: "split_param"
 sharding_comm_buffer_size_MB: 2048
 expert_model_parallel_size: 32
 sharding: "stage1"

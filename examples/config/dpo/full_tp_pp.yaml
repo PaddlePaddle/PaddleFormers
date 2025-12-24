@@ -43,11 +43,7 @@ learning_rate: 1.0e-6
 # performance
 tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 2
-
-# pipeline_parallel_config
-clear_every_step_cache: true
-partial_send_recv: false
-
+pipeline_parallel_config: enable_clear_every_step_cache disable_partial_send_recv
 sequence_parallel: true
 sharding: stage1
 recompute: true
