@@ -59,6 +59,7 @@ __all__ = [
     "MoeExpertsGradScaleCallback",
     "MoEGateSpGradSyncCallBack",
     "SPGradSyncCallback",
+    "EMAStateAssemblerCallback",
 ]
 
 
@@ -868,3 +869,14 @@ class SPGradSyncCallback(TrainerCallback):
             fused_allreduce_gradients_with_group(self._sp_params, group=mp_group, scale=1.0)  # sum not mean
             another_time = time.time()
             logger.info(f"sync gradients takes {another_time - now} time")
+
+
+class EMAStateAssemblerCallback(TrainerCallback):
+    def __init__(self, ema_state_assembler):
+        self.ema_state_assembler = ema_state_assembler
+
+    def on_step_end(self, args, state, control, **kwargs):
+        start = time.time()
+        self.ema_state_assembler.run()
+        duration = time.time() - start
+        logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")

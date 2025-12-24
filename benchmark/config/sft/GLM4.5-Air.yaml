@@ -53,7 +53,9 @@ split_param: true
 amp_master_grad: true
 #sharding_parallel_size: 8
 sharding: stage1
-recompute: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 # unified_checkpoint: true
