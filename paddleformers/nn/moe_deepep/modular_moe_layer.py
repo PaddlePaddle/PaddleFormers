@@ -77,7 +77,8 @@ class ModularMoELayer(nn.Layer):
         self.moe_subbatch_token_num_before_dispatch = pretrained_config.get(
             "moe_subbatch_token_num_before_dispatch", -1
         )
-        self.moe_expert_capacity_factor = moe_config.get("moe_expert_capacity_factor", 0.0)
+        self.moe_expert_capacity_factor = pretrained_config.get("moe_expert_capacity_factor", 0.0)
+        self.moe_token_drop_policy = pretrained_config.get("moe_token_drop_policy", "probs")
         try:
             moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
         except Exception:
@@ -114,6 +115,8 @@ class ModularMoELayer(nn.Layer):
             moe_subbatch_token_num_before_dispatch=self.moe_subbatch_token_num_before_dispatch,
             tensor_model_parallel_size=self.tensor_model_parallel_size,
             sequence_parallel=self.sequence_parallel,
+            moe_expert_capacity_factor=self.moe_expert_capacity_factor,
+            moe_token_drop_policy=self.moe_token_drop_policy,
             transpose_gate_weight=self.transpose_gate_weight,
         )
 

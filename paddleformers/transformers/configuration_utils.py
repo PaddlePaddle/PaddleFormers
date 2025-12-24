@@ -311,6 +311,18 @@ class LlmMetaConfig:
         ("using_fake_gate", bool, False, "Whether to fake gate."),
         ("ep_communication_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
+        (
+            "moe_token_drop_policy",
+            str,
+            "probs",
+            "Defines the policy for token dropping. It can be set to either 'probs' or 'position'. If set to 'probs', tokens with the lowest probabilities will be dropped. If set to 'position', tokens from the end of each batch will be dropped. Defaults to 'probs'.",
+        ),
+        (
+            "moe_expert_capacity_factor",
+            float,
+            0.0,
+            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (no dropping tokens).",
+        ),
     ]
 
     mtp_attributes = [

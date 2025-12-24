@@ -379,6 +379,8 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         moe_subbatch_token_num_before_dispatch: int,
         tensor_model_parallel_size: int,
         sequence_parallel: bool,
+        moe_expert_capacity_factor: float,
+        moe_token_drop_policy: str,
         transpose_gate_weight: bool,
     ):
         super(StandardMoEGate, self).__init__()
@@ -398,16 +400,16 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
         self.tensor_model_parallel_size = tensor_model_parallel_size
         self.sequence_parallel = sequence_parallel
+        self.moe_expert_capacity_factor = moe_expert_capacity_factor
+        self.moe_token_drop_policy = moe_token_drop_policy
         self.transpose_gate_weight = transpose_gate_weight
 
         self.scoring_func = moe_config.get("gate_activation", "softmax")
         self.moe_expert_capacity_factor = moe_config.get("moe_expert_capacity_factor", 0.0)
-        self.eval_capacity_factor = moe_config.get("eval_capacity_factor", 1.0)
         self.group = moe_config.get("group", None)
         self.global_aux_loss = moe_config.get("global_aux_loss", False)
         self.use_rts = moe_config.get("use_rts", True)
         self.top2_2nd_expert_sampling = moe_config.get("top2_2nd_expert_sampling", True)
-        self.moe_token_drop_policy = moe_config.get("moe_token_drop_policy", "probs")
         self.seq_aux = moe_config.get("seq_aux", True)
 
         if self.global_aux_loss:
