@@ -44,7 +44,9 @@ tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 2
 sequence_parallel: true
 sharding: stage1
-recompute: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: true

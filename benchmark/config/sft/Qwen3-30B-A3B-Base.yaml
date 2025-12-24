@@ -62,7 +62,9 @@ use_fused_head_and_loss_fn: true
 # use_filtered_label_loss: true
 optim: adamw_custom
 tensorwise_offload_optimizer: false
-recompute: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
 # recompute_use_reentrant: true
 # unified_checkpoint_config: ignore_merge_optimizer
 use_expert_parallel: true

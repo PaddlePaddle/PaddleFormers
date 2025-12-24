@@ -1561,7 +1561,12 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
         elif attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.dtype == paddle.int64:
             attn_mask_startend_row_indices, position_ids = None, attn_mask_startend_row_indices
 
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             if attention_mask is not None or attn_mask_startend_row_indices is not None:
                 hidden_states = recompute(
                     super().forward,
@@ -1611,7 +1616,12 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
             return (hidden_states, residual, l_aux, intermediate_hidden_states, token_indices, token_probs)
 
         has_gradient = not hidden_states.stop_gradient
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             # for pretrain
             outputs = recompute(
                 attn_compute_func,
@@ -1686,7 +1696,12 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
                 dispatched_probs,
             ) = inputs
         has_gradient = not intermediate_hidden_states.stop_gradient
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             expert_output = recompute(
                 self.expert_forward_compute,
                 intermediate_hidden_states,
@@ -1713,7 +1728,12 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
         else:
             (hidden_states, residual, l_aux, combine_output) = inputs
         has_gradient = not hidden_states.stop_gradient
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             hidden_states = recompute(
                 self.post_combine_compute,
                 residual,
@@ -1887,7 +1907,12 @@ class DeepseekV2MTPLayerPipe(DeepseekV2MTPLayer):
         hidden_states = hidden_states_main_model
         for depth in range(self.config.num_nextn_predict_layers):
             inputs_embeds_cur_depth = inputs_embeds_cur_depth_list[depth]
-            if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 if attention_mask is not None or attn_mask_startend_row_indices is not None:
                     hidden_states = recompute(
                         super().forward,
@@ -2236,7 +2261,11 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self.add_sequential_layer(LayerDesc(DeepseekV2LMHeadPipe, config=config), "lm_head")
 
         recompute_interval = 0
-        if self.enable_recompute and self.recompute_granularity == "full":
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+        ):
             assert self.config.pp_recompute_interval <= config.num_hidden_layers // (
                 virtual_pipeline_model_parallel_size * get_hcg().topology().get_dim_size("pipe")
             ), "pp recompute interval should smaller than num layers of each pp chunk"

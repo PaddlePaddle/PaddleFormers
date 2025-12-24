@@ -876,7 +876,12 @@ class Qwen2MoeModel(Qwen2MoePretrainedModel):
 
         for idx, (decoder_layer) in enumerate(self.layers):
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 hidden_states = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,

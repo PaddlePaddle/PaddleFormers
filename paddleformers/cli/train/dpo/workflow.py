@@ -204,9 +204,7 @@ def run_dpo(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = None
-    if model_args.stage == "VL-DPO":
-        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
 
     logger.info("Loading model & tokenizer successfully !")
 

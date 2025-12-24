@@ -1901,7 +1901,10 @@ class Qwen3VLCausalLMOutputWithPast(ModelOutput):
 
 
 class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
-    _checkpoint_conversion_mapping = {}
+    _checkpoint_conversion_mapping = {
+        "^visual": "model.visual",
+        r"^model(?!\.(language_model|visual))": "model.language_model",
+    }
     _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
     config_class = Qwen3VLConfig
 

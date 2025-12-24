@@ -23,7 +23,6 @@ from paddle.io import IterableDataset
 from paddleformers.datasets.data_utils import postprocess_fc_sequence, print_debug_info
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
-from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 from paddleformers.utils.log import logger
 
@@ -60,17 +59,6 @@ class DPODataSet(IterableDataset):
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.buffer_size = dataset_config.get("buffer_size", 500)
-
-        # special token
-        self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
-        self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
-        self.newline_token = self.tokenizer.tokenize("\n")
-        if isinstance(self.tokenizer, PretrainedTokenizer):
-            self.end_of_response_id = self.tokenizer._convert_token_to_id([self.end_of_response])[0]
-            self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
-        else:
-            self.end_of_response_id = self.tokenizer.convert_tokens_to_ids([self.end_of_response])[0]
-            self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
 
         # data loader + multisource dataset mix
         if self.is_valid:

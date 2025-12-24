@@ -585,7 +585,7 @@ class Trainer:
                 # set do_grad_scaling, enable_autocast_context_manager
                 self._wrap_amp_model(args, model)
 
-        if args.recompute:
+        if args.recompute_granularity is not None:
 
             def fn(layer):
                 if hasattr(layer, "enable_recompute") and (
@@ -954,6 +954,7 @@ class Trainer:
             use_expert_parallel=self.args.use_expert_parallel,
             ema_coef=self.args.zcc_save_ema_coef,
             zcc_worker_class=zcc_worker_class,
+            save_hf_steps=self.args.save_hf_steps,
         )
 
     def _register_pipeline_hooks(self, unwrapped_model):
@@ -1560,6 +1561,7 @@ class Trainer:
 
         if self.args.enable_zero_cost_checkpoint:
             self.create_zcc_manager(model, resume_from_checkpoint)
+
         elif self.args.zcc_save_ema_coef is not None:
             self.add_non_zcc_ema_callback(resume_from_checkpoint)
 
@@ -2060,7 +2062,7 @@ class Trainer:
                                 ((step_control + 1) % args.gradient_accumulation_steps != 0)
                                 and args._no_sync_in_gradient_accumulation
                             )
-                            or args.recompute
+                            or args.recompute_granularity is not None
                             or args.use_expert_parallel
                         ) and available_no_sync
                         # sharding
@@ -2158,7 +2160,9 @@ class Trainer:
 
                             # Case 1: Use recompute and dp / sharding stage1,
                             # manually collect gradient for dp.
-                            if (args.recompute or args.use_expert_parallel) and available_no_sync:
+                            if (
+                                args.recompute_granularity is not None or args.use_expert_parallel
+                            ) and available_no_sync:
                                 fused_allreduce_gradients_no_sync(list(model.parameters()), None)
 
                             # Case 2: hack dp with master_grad
@@ -2651,7 +2655,7 @@ class Trainer:
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
                 prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=self.args.gradient_accumulation_steps,
+                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
                 **additional_configs,
             )
         else:
@@ -2666,7 +2670,7 @@ class Trainer:
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
                 prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=self.args.gradient_accumulation_steps,
+                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
                 **additional_configs,
             )
 
@@ -2775,7 +2779,7 @@ class Trainer:
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
                 prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=self.args.gradient_accumulation_steps,
+                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
                 **additional_configs,
             )
 
@@ -2824,7 +2828,7 @@ class Trainer:
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
                 prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=self.args.gradient_accumulation_steps,
+                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
                 **additional_config,
             )
         else:
