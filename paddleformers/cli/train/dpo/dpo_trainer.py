@@ -26,6 +26,7 @@ from paddleformers.utils import infohub
 
 try:
     import paddlefleet.distributed.model as paddlefleet_dist_model
+    from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
     HAS_PADDLEFLEET = True
@@ -241,7 +242,7 @@ class DPOTrainer(Trainer):
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         """evaluate"""
-        if HAS_PADDLEFLEET and isinstance(self.ref_model_wrapped, PaddleFleetPipelineLayer):
+        if HAS_PADDLEFLEET and isinstance(self.ref_model_wrapped, PaddleFleetParallelBase):
             self.ref_model_wrapped = self._wrap_ref_model(self.ref_model_wrapped)
         self.model_wrapped = self._wrap_ref_model(self.model_wrapped)
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
@@ -249,7 +250,7 @@ class DPOTrainer(Trainer):
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
 
         """prediction_step"""
-        if HAS_PADDLEFLEET and isinstance(model, GPTModel):
+        if HAS_PADDLEFLEET and isinstance(model._layers, GPTModel):
             inputs = self._prepare_inputs(inputs)
             return self.fleet_prediction_pipeline_step(self.ref_model_wrapped, self.model_wrapped, inputs)
 

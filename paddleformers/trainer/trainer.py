@@ -48,6 +48,8 @@ from paddle import framework
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 
+from paddleformers.transformers.gpt_provider import GPTModel
+
 try:
     from paddle.distributed.flex_checkpoint.dcp.sharded_weight import ShardedWeight
 except:
@@ -4424,6 +4426,8 @@ class Trainer:
             model = self.model_wrapped
             if _prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
+        elif HAS_PADDLEFLEET and isinstance(self.model, GPTModel):
+            model = self.model_wrapped
         else:
             model = self.model
 
