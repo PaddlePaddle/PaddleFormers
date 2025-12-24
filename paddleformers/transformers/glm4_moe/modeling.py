@@ -1589,8 +1589,8 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
-        if not hasattr(config, "architecture"):
-            config.architecture = [cls.__name__.replace("Fleet", "")]
+        if not hasattr(config, "architectures"):
+            config.architectures = [cls.__name__.replace("Fleet", "")]
         gpt_model.config_to_save = config
         return gpt_model
 
@@ -1750,8 +1750,8 @@ class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalL
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
-        if not hasattr(config, "architecture"):
-            config.architecture = [cls.__name__.replace("PipeFleet", "")]
+        if not hasattr(config, "architectures"):
+            config.architectures = [cls.__name__.replace("PipeFleet", "")]
         gpt_model.config_to_save = config
         return gpt_model
 
