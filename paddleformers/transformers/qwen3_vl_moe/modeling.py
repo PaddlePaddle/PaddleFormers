@@ -328,8 +328,8 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
         "v_proj",
         "o_proj",
         "qkv",
-        "attn\.proj",
-        "down_proj",  # 仅仅非expert的mlp需要transpose
+        "proj",
+        "down_proj",
         "linear_fc\d+",
         "gate",
     ]
