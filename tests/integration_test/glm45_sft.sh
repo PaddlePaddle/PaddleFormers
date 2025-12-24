@@ -74,8 +74,19 @@ if [ $sft_exit_code -ne 0 ]; then
    fi
 fi
 
+set -e
+echo "
+10 9.01230431
+" > ./glm45_sft_multi_card_gt_loss.txt
+
+python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
+   --compare_step 10 \
+   --log_file ./glm45_sft.log \
+   --gt_file ./glm45_sft_multi_card_gt_loss.txt
+
 echo -e "\033[34msft is over, lora is about to start\033[0m"
 
+set +e
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_lora_yaml 2>&1 | tee ./glm45_lora.log
 
 lora_exit_code=$?
@@ -95,11 +106,11 @@ fi
 
 set -e
 echo "
-100 6.82938290
-" > ./glm45_pt_multi_card_gt_loss.txt
+100 6.82817125
+" > ./glm45_lora_multi_card_gt_loss.txt
 
 python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
    --compare_step 10 \
-   --log_file ./glm45_pt_a100.log \
-   --gt_file ./glm45_pt_multi_card_gt_loss.txt
+   --log_file ./glm45_lora.log \
+   --gt_file ./glm45_lora_multi_card_gt_loss.txt
 
