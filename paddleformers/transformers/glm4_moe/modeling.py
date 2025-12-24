@@ -527,7 +527,6 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
             topk_group=config.topk_group,
             norm_topk_prob=config.norm_topk_prob,
             routed_scaling_factor=config.routed_scaling_factor,
-            drop_tokens=False,
         )
 
         hcg = fleet.get_hybrid_communicate_group()
@@ -607,7 +606,6 @@ class Glm4MoeDecoderLayer(nn.Layer):
                         expert_activation="silu",
                         train_topk_method="noaux_tc",
                         inference_topk_method="noaux_tc",
-                        drop_tokens=False,
                         transpose_gate_weight=True,
                     )
                     if config.use_unified_moe

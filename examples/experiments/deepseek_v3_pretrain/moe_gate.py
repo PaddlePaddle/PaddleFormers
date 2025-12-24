@@ -38,10 +38,8 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         # force keep in float32 when using amp
         self._cast_to_low_precision = False
 
-        self.capacity_factor = kwargs.pop("capacity_factor", 1.0)
+        self.moe_expert_capacity_factor = kwargs.pop("moe_expert_capacity_factor", 0.0)
         self.eval_capacity_factor = kwargs.pop("eval_capacity_factor", 1.0)
-        self.min_capacity = kwargs.pop("min_capacity", 1.0)
-        self.max_capacity = kwargs.pop("max_capacity", pow(2, 32))
 
         self.group = kwargs.pop("group", None)
         self.global_aux_loss = kwargs.pop("global_aux_loss", False)
@@ -51,7 +49,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
 
         self.expert_drop = kwargs.pop("expert_drop", False)
         self.noisy_gate_policy = kwargs.pop("noisy_gate_policy", None)
-        self.drop_tokens = kwargs.pop("drop_tokens", True)
+        self.drop_tokens = self.moe_expert_capacity_factor is not None and self.moe_expert_capacity_factor != 0.0
         self.use_rts = kwargs.pop("use_rts", True)
         self.top2_2nd_expert_sampling = kwargs.pop("top2_2nd_expert_sampling", True)
 
@@ -184,7 +182,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             logits += self.gumbel_rsample(logits.shape)
 
         gates = self.gate_score_func(logits=logits)
-        capacity = self._capacity(gates, self.capacity_factor, self.max_capacity, self.min_capacity)
+        capacity = self._capacity(gates, self.moe_expert_capacity_factor)
 
         # Create a mask for 1st's expert per token
         # noisy gating
@@ -221,10 +219,6 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             mask1_rand = mask1 * self.uniform_sample(mask1)
         else:
             mask1_rand = mask1
-
-        assert (
-            logits.shape[0] >= self.min_capacity
-        ), "No. of tokens (batch-size) should be greater than min_capacity. Either set min_capacity to 0 or increase your batch size."
 
         _, top_idx = paddle.topk(mask1_rand, k=capacity, axis=0)  # Select top_capacity tokens
 
@@ -285,7 +279,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         exp_counts = paddle.sum(mask1 + mask2, axis=0)
         if self.drop_tokens:
             # Calculate configured capacity and remove locations outside capacity from mask
-            capacity = self._capacity(gates, self.capacity_factor, self.max_capacity, self.min_capacity)
+            capacity = self._capacity(gates, self.moe_expert_capacity_factor)
             # Remove locations outside capacity from mask.
             mask1 *= (locations1 < capacity).cast(paddle.int64)
             mask2 *= (locations2 < capacity).cast(paddle.int64)
@@ -402,9 +396,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             # Calculate configured capacity and remove locations outside capacity from mask
             capacity = self._capacity(
                 gates,
-                self.capacity_factor * self.top_k,
-                self.max_capacity,
-                self.min_capacity,
+                self.moe_expert_capacity_factor * self.top_k,
             )
 
             # update mask and locations by capacity

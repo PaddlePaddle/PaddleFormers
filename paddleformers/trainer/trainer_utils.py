@@ -324,20 +324,28 @@ def set_random_seed(
 ):
     """Set random seed for reproducability."""
     if seed_ is not None and seed_ > 0:
-        import paddlefleet
+        from ..utils.import_utils import is_paddlefleet_available
 
-        # Ensure that different pipeline MP stages get different seeds.
-        seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
-        # Ensure different data parallel ranks get different seeds
-        if data_parallel_random_init:
-            seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
-        random.seed(seed)
-        np.random.seed(seed)
-        paddle.manual_seed(seed)
-        if paddle.cuda.device_count() > 0:
-            paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
-                seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
-            )
+        if is_paddlefleet_available():
+            import paddlefleet
+
+            # Ensure that different pipeline MP stages get different seeds.
+            seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
+            # Ensure different data parallel ranks get different seeds
+            if data_parallel_random_init:
+                seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
+            random.seed(seed)
+            np.random.seed(seed)
+            paddle.manual_seed(seed)
+            if paddle.cuda.device_count() > 0:
+                paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
+                    seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
+                )
+        else:
+            # Fallback for when paddlefleet is not available
+            random.seed(seed_)
+            np.random.seed(seed_)
+            paddle.manual_seed(seed_)
     else:
         raise ValueError("Seed ({}) should be a positive integer.".format(seed_))
 
