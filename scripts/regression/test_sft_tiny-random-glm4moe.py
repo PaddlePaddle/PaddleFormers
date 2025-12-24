@@ -64,6 +64,7 @@ class SFTTrainTester(unittest.TestCase):
         config.update(updates)
 
         os.makedirs(tmp_dir, exist_ok=True)
+        os.makedirs(LOG_PATH, exist_ok=True)
         updated_yaml_path = os.path.join(tmp_dir, f"updated_{os.path.basename(yaml_path)}")
         with open(updated_yaml_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config, f, indent=4, allow_unicode=True, sort_keys=False)

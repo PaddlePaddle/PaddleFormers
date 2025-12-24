@@ -696,7 +696,12 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPretrainedModel):
                 cu_seqlens_now = cu_window_seqlens
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 hidden_states = self.recompute_training_full(
                     blk,
                     hidden_states,
@@ -1309,7 +1314,12 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
                 all_hidden_states += (hidden_states,)
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
