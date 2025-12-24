@@ -100,21 +100,21 @@ def convert_txt_data(item):
 
     # data check
     if len(item["src"]) == 0 or len(item["tgt"]) == 0:
-        # raise ValueError("Ignore example with empty src or empty tgt.")
+        raise ValueError("Ignore example with empty src or empty tgt.")
         return None
 
     for item_str in item["src"] + item["tgt"]:
         if len(item_str.strip()) == 0:
-            # raise ValueError("Ignore example with empty string in str / tgt field.")
+            raise ValueError("Ignore example with empty string in str / tgt field.")
             return None
 
     if "label" not in item:
         item["label"] = [1] * len(item["src"])
 
     if not (len(item["src"]) == len(item["tgt"]) == len(item["label"])):
-        # raise ValueError(
-        #     f"The length of src & tgt & label must be equal, but get len(item['src']) : {len(item['src'])}, ' len(item['tgt']) : {len(item['tgt'])}, ' len(item['label']) : {len(item['label'])}"
-        # )
+        raise ValueError(
+            f"The length of src & tgt & label must be equal, but get len(item['src']) : {len(item['src'])}, ' len(item['tgt']) : {len(item['tgt'])}, ' len(item['label']) : {len(item['label'])}"
+        )
         return None
 
     if "is_system" not in item:
