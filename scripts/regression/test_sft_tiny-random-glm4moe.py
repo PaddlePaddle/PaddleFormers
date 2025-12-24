@@ -33,18 +33,23 @@ SAVE_STEPS = 4
 
 SFT_FULL_EXCEPTED_LOSS = 13.01864
 SFT_FULL_RESUME_EXCEPTED_LOSS = 13.013767
+SFT_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 SFT_LORA_EXCEPTED_LOSS = 13.01785
 SFT_LORA_RESUME_EXCEPTED_LOSS = 13.011566
+SFT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 SFT_FULL_TP_PP_EXCEPTED_LOSS = 12.968407
 SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.966558
+SFT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 132047, 132047, 119194, 128575, 128575, 3315, 132047, 71148, 128575]]
 
 SFT_LORA_TP_PP_EXCEPTED_LOSS = 12.967684
 SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.964336
+SFT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 SFT_FC_EXCEPTED_LOSS = 12.932849
 SFT_FC_RESUME_EXCEPTED_LOSS = 12.919542
+SFT_FC_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
@@ -88,6 +93,22 @@ class SFTTrainTester(unittest.TestCase):
         if ret_code != 0:
             print("\n".join(log_output.strip().splitlines()[-30:]))
             raise AssertionError("Training Failed")
+
+    def create_and_check_model_generate(
+        self,
+        model_path,
+        excepted_result,
+    ):
+        from paddleformers.transformers import Glm4MoeForCausalLM
+
+        input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
+        attention_mask = paddle.ones_like(input_ids)
+        model = Glm4MoeForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
+        with paddle.no_grad():
+            result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
+        print(f"excepted_result is : {excepted_result}")
+        print(f"result[0] is : {result[0]}")
+        self.assertTrue(paddle.allclose(result[0], excepted_result))
 
 
 class SFTTrainTest(unittest.TestCase):
@@ -147,6 +168,10 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
         self.sfttrain_tester.assert_loss(resume_p.stdout, SFT_FULL_RESUME_EXCEPTED_LOSS)
 
+        # test model generate
+        EXPECTED_RESULT = paddle.to_tensor(SFT_FULL_EXCEPTED_RESULT)
+        self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
+
     def test_sft_lora(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_lora")
         update_args = {
@@ -203,6 +228,10 @@ class SFTTrainTest(unittest.TestCase):
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.sfttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
+        # test lora_merge_model generate
+        # EXPECTED_RESULT = paddle.to_tensor(SFT_LORA_EXCEPTED_RESULT)
+        # self.sfttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+
     def test_sft_full_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_tp_pp")
         update_args = {
@@ -250,6 +279,9 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
         self.sfttrain_tester.assert_loss(resume_p.stdout, SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS)
+        # test model generate
+        EXPECTED_RESULT = paddle.to_tensor(SFT_FULL_TP_PP_EXCEPTED_RESULT)
+        self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
 
     def test_sft_lora_tp_pp(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_lora_tp_pp")
@@ -307,6 +339,10 @@ class SFTTrainTest(unittest.TestCase):
         lora_merge_p = subprocess.run(lora_merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.sfttrain_tester.assert_result(lora_merge_p.returncode, lora_merge_p.stdout)
 
+        # test lora_merge_model generate
+        # EXPECTED_RESULT = paddle.to_tensor(SFT_LORA_TP_PP_EXCEPTED_RESULT)
+        # self.sfttrain_tester.create_and_check_model_generate(lora_merge_output_dir, EXPECTED_RESULT)
+
     def test_sft_full_function_call(self):
         output_dir = os.path.join(OUTPUT_DIR, "sft_full_function_call")
         update_args = {
@@ -359,3 +395,7 @@ class SFTTrainTest(unittest.TestCase):
         self.sfttrain_tester.assert_result(resume_p.returncode, resume_p.stdout)
 
         self.sfttrain_tester.assert_loss(resume_p.stdout, SFT_FC_RESUME_EXCEPTED_LOSS)
+
+        # test model generate
+        EXPECTED_RESULT = paddle.to_tensor(SFT_FC_EXCEPTED_RESULT)
+        self.sfttrain_tester.create_and_check_model_generate(output_dir, EXPECTED_RESULT)
