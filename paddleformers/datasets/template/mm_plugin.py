@@ -894,7 +894,7 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         if self.expand_mm_tokens:
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
-            num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0  # hard code for now
+            num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0
             video_metadata = mm_inputs.get("video_metadata", {})
 
         else:
@@ -906,6 +906,9 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         for idx, message in enumerate(messages):
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
+                if num_image_tokens >= len(image_grid_thw):
+                    raise ValueError(f"Found more {IMAGE_PLACEHOLDER} tags than actual images provided.")
+
                 image_seqlen = (
                     image_grid_thw[num_image_tokens].prod().item() // image_merge_length
                     if self.expand_mm_tokens
@@ -919,6 +922,9 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
                 num_image_tokens += 1
 
             while VIDEO_PLACEHOLDER in content:
+                if num_video_tokens >= len(video_grid_thw):
+                    raise ValueError(f"Found more {VIDEO_PLACEHOLDER} tags than actual videos provided.")
+
                 metadata = video_metadata[idx]
                 timestamps = processor._calculate_timestamps(
                     metadata.frames_indices,
@@ -1084,24 +1090,6 @@ class GLM4VPlugin(Qwen2VLPlugin):
         return mm_inputs
 
 
-def _get_gemma3_token_type_ids(batch_ids, processor):
-    r"""Get gemma3 token type ids for computing loss.
-
-    Returns:
-        batch_token_type_ids: shape (batch_size, seq_length)
-
-    """
-    image_token_id: int = getattr(processor, "image_token_id")
-    batch_token_type_ids = []
-    for token_ids in batch_ids:
-        token_ids = np.array(token_ids)
-        token_type_ids = np.zeros_like(token_ids)
-        token_type_ids[token_ids == image_token_id] = 1
-        batch_token_type_ids.append(token_type_ids.tolist())
-
-    return batch_token_type_ids
-
-
 @dataclass
 class Gemma3Plugin(BasePlugin):
     @override
@@ -1157,7 +1145,6 @@ class Gemma3Plugin(BasePlugin):
         self._validate_input(processor, images, videos, audios)
         mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
         mm_inputs.pop("num_crops", None)
-        mm_inputs["token_type_ids"] = _get_gemma3_token_type_ids(batch_ids, processor)
         return mm_inputs
 
 

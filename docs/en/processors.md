@@ -34,7 +34,7 @@ image = Image.open(requests.get(url, stream=True).raw).convert("RGB")
 inputs = processor(text=text, images=image, return_tensors="pd")   # return Paddle Tensor
 ```
 
-- Case 2: Handling conversational inputs (chat-formatted messages):
+- Case 2: Handling conversational inputs (chat-formatted messages[image]):
 
 ```python
 
@@ -60,6 +60,41 @@ text = processor.apply_chat_template(
     messages, tokenize=False, add_generation_prompt=True
 )
 image_inputs, video_inputs = process_vision_info(messages)
+inputs = processor(
+    text=[text],
+    images=image_inputs,
+    videos=video_inputs,
+    padding=True,
+    return_tensors="pd",
+)
+```
+
+- Case 3: Handling conversational inputs (chat-formatted messages[video]):
+
+```python
+
+from paddleformers.transformers import AutoProcessor
+from paddleformers.transformers import process_vision_info  # Processing functions for QwenVL models
+
+processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "video",
+                "video": "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4",
+            },
+            {"type": "text", "text": "Describe this video."},
+        ],
+    }
+]
+
+text = processor.apply_chat_template(
+    messages, tokenize=False, add_generation_prompt=True
+)
+image_inputs, video_inputs = process_vision_info(messages, backend="paddlecodec")    # load_video backend support: ["paddlecodec", "decord"], default: "paddlecodec"
 inputs = processor(
     text=[text],
     images=image_inputs,

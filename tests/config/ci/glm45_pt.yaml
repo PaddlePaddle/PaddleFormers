@@ -1,0 +1,68 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./data/pre-training/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./data/pre-training/eval.jsonl
+eval_dataset_prob: "1.0"
+max_seq_len: 8192
+mix_strategy: concat
+
+
+### model
+model_name_or_path: ./GLM-4.5-Air
+attn_impl: flashmask
+
+### finetuning
+# base
+stage: PT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: true
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 4
+num_train_epochs: 1
+max_steps: 10
+eval_iters: 10
+eval_steps: 100
+evaluation_strategy: steps
+save_steps: 100
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 1
+logging_dir: ./vdl_log
+output_dir: ./checkpoints
+disable_tqdm: true
+eval_accumulation_steps: 16
+
+# train
+warmup_steps: 20
+learning_rate: 1.0e-5
+
+# performance
+tensor_model_parallel_size: 4
+pipeline_model_parallel_size: 1
+expert_model_parallel_size: 8
+sequence_parallel: true
+use_expert_parallel: true
+sharding: stage1
+split_param: true
+recompute_granularity: ""
+amp_master_grad: true
+bf16: true
+fp16_opt_level: O2
+
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+continue_training: false
+dataloader_shuffle: false
+
+benchmark: true
+moe_router_force_load_balancing: true
+moe_token_dispatcher_type: "deepep"
+gated_linear_unit: true
+num_hidden_layers: 3
+apply_rope_fusion: true
+moe_router_fusion: true
+router_aux_loss_coef: 0.001
