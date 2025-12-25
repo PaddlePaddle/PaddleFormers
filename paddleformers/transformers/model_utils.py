@@ -2884,7 +2884,12 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         with ContextManagers(init_contexts):
             model = cls(config, *init_args, **model_kwargs)
 
-        if hasattr(cls, "_gen_aoa_config") and load_checkpoint_format == "flex_checkpoint":
+        if load_checkpoint_format == "flex_checkpoint":
+            if not hasattr(cls, "_gen_aoa_config"):
+                raise RuntimeError(
+                    "When using flex_checkpoint to load Hugging Face open-source weights, "
+                    "the model must implement the _gen_aoa_config function to provide checkpoint conversion rules."
+                )
             aoa_config = cls._gen_aoa_config(config)
             sharded_state_dict = model.sharded_state_dict()
             metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
@@ -3071,7 +3076,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         is_main_process: bool = True,
         state_dict: Optional[dict] = None,
         save_function: Callable = paddle.save,
-        max_shard_size: Union[int, str] = "1GB",
+        max_shard_size: Union[int, str] = "10GB",
         safe_serialization: bool = False,
         variant: Optional[str] = None,
         *args,
@@ -3133,11 +3138,18 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
-        if (
-            hasattr(self.__class__, "_gen_inv_aoa_config") or hasattr(self, "_gen_inv_aoa_config")
-        ) and save_checkpoint_format == "flex_checkpoint":
-            if hasattr(self.__class__, "_gen_inv_aoa_config"):
-                aoa_config = self.__class__._gen_inv_aoa_config(model_to_save.config)
+        if save_checkpoint_format == "flex_checkpoint":
+            if not hasattr(self, "_gen_inv_aoa_config"):
+                if hasattr(self, "_gen_aoa_config"):
+                    aoa_config = self._gen_aoa_config(model_to_save.config)
+                    aoa_config["aoa_config_reverse"] = True
+                    logger.warning("There is no _gen_inv_aoa_config, so we auto-derived it from _gen_aoa_config.")
+                else:
+                    raise RuntimeError(
+                        "When using flex_checkpoint to save Hugging Face weights, "
+                        "the model must implement either the _gen_inv_aoa_config function "
+                        "or the _gen_aoa_config function (which will be automatically used to derive _gen_inv_aoa_config)."
+                    )
             else:
                 aoa_config = self._gen_inv_aoa_config(model_to_save.config)
 
@@ -3153,9 +3165,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     config_to_save = copy.deepcopy(model_to_save.config_to_save)
                 else:
                     config_to_save = copy.deepcopy(model_to_save.config)
+                    # Attach architecture to the config
+                    config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
 
-            # Attach architecture to the config
-            config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
             # Save the config
             if is_main_process:
                 config_to_save.save_pretrained(save_directory)
@@ -3819,8 +3831,8 @@ def save_full_param(
         if i % num_saver_ranks == rank:
             if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
                 _save_current_shard()
-
-            current_shard_state_dict[param_key] = param
+            # Move tensor to CPU since we only need to save it, not compute with it
+            current_shard_state_dict[param_key] = param.cpu()
             current_shard_size_bytes += param_size_bytes
 
             if current_shard_size_bytes >= max_shard_size_bytes:
@@ -3973,3 +3985,55 @@ class HFFormatFullParamSaver:
         total_size = sum(all_sizes)
         replace_name_and_gen_index(path, total_size)
         return total_saved_size
+
+
+class EMAStateHFFormatFullParamSaver(HFFormatFullParamSaver):
+    def __init__(
+        self,
+        ema_sharded_state_dict,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        super().__init__(
+            None,
+            aoa_config,
+            h_group,
+            v_group,
+            num_splits=num_splits,
+            shard_idx=shard_idx,
+            saved_in_one_node=saved_in_one_node,
+            memory_growth_threshold=memory_growth_threshold,
+        )
+        self.ema_sharded_state_dict = ema_sharded_state_dict
+
+    def get_full_param_iter(self):
+        from paddle.distributed.flex_checkpoint.dcp.full_param import full_param
+
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
+
+            param_iter = full_param(
+                self.ema_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = full_param(
+                self.ema_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        return param_iter

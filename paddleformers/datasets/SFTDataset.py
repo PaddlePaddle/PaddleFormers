@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import os
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, field
+from typing import Dict, List
 
 import numpy as np
 from paddle.io import IterableDataset
@@ -35,9 +35,10 @@ class Sequence:
     position_ids: List[int]
     labels: List[int]
     num_examples: int
-    images: List[str]
-    videos: List[str]
-    audios: List[str]
+    images: List[str] = field(default_factory=list)
+    videos: List[str] = field(default_factory=list)
+    audios: List[str] = field(default_factory=list)
+    mm_inputs: Dict = field(default_factory=dict)
 
 
 class SFTDataSet(IterableDataset):
@@ -61,24 +62,20 @@ class SFTDataSet(IterableDataset):
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
-        self.mask_history_eos = dataset_config.get("mask_history_eos", False)
+        if self.is_pretraining and self.packing and self.truncate_packing:
+            logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
         # special token
-        self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
         self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
-        self.newline_token = self.tokenizer.tokenize("\n")
         if isinstance(self.tokenizer, PretrainedTokenizer):
-            self.end_of_response_id = self.tokenizer._convert_token_to_id([self.end_of_response])[0]
             self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
         else:
-            self.end_of_response_id = self.tokenizer.convert_tokens_to_ids([self.end_of_response])[0]
             self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
 
         # data loader + multisource dataset mix
         if self.is_valid:
             dataset_config["random_shuffle"] = False
             dataset_config["greedy_intokens"] = False
-            dataset_config["reverse"] = False
             multi_source_dataset = MultiSourceDataset(**dataset_config)
             self.mix_datasets = create_dataset_instance(
                 "concat",
@@ -87,11 +84,11 @@ class SFTDataSet(IterableDataset):
             )
         else:
             multi_source_dataset = MultiSourceDataset(**dataset_config)
-            dataset_config["reverse"] = True
             self.mix_datasets = create_dataset_instance(
                 dataset_config["mix_strategy"],
                 multi_source_dataset,
                 **dataset_config,
+                reverse=True,
             )
 
         self.estimate = False
@@ -121,8 +118,9 @@ class SFTDataSet(IterableDataset):
         # 1. tokenize all the samples in the sampling pool,
         # 2. combine them into one large sample
         # 3. truncate it into multiple new samples based on the max_seq_len.
-        if self.is_pretraining and self.truncate_packing:
-            all_tokenized_tokens = []
+        if self.is_pretraining and self.packing and self.truncate_packing:
+            take_lengths = []
+            buffer = []
             for _ in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
                 tokens = self._encode_pretraining_example(example, actual_example_num)
@@ -133,64 +131,69 @@ class SFTDataSet(IterableDataset):
                 if self.estimate:
                     self.used_samples += actual_example_num
 
-                all_tokenized_tokens.extend(tokens)
+                idx = 0
+                tokens_len = len(tokens)
 
-                while len(all_tokenized_tokens) >= self.max_seq_len:
-                    cut_tokens = all_tokenized_tokens[: self.max_seq_len]
-                    # Add an EOS token at the position of data truncation
-                    if cut_tokens[-1] != self.tokenizer.eos_token_id:
-                        cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
-                    all_tokenized_tokens = all_tokenized_tokens[self.max_seq_len :]
+                while idx < tokens_len:
+                    remaining = self.max_seq_len + 1 - len(buffer)
+                    take = min(remaining, tokens_len - idx)
+                    take_lengths.append(take)
+                    buffer.extend(tokens[idx : idx + take])
+                    idx += take
+                    if len(buffer) == self.max_seq_len + 1:
+                        # label shift
+                        res_tokens = buffer[:-1]
+                        res_labels = buffer[1:]
+                        take_lengths[-1] -= 1
+                        position_ids = [list(range(item)) for item in take_lengths]
+                        sequence = Sequence(
+                            token_ids=res_tokens,
+                            position_ids=position_ids,
+                            labels=res_labels,
+                            num_examples=actual_example_num,
+                        )
+                        batch_sequence = [sequence]
+                        yield batch_sequence
+                        buffer = []
+                        take_lengths = []
 
-                    res_tokens = cut_tokens[:-1]
-                    res_labels = cut_tokens[1:]
-                    pos_ids = list(range(len(res_tokens)))
-                    sequence = Sequence(
-                        token_ids=res_tokens,
-                        position_ids=pos_ids,
-                        labels=res_labels,
-                        num_examples=actual_example_num,
-                        images=[],
-                        videos=[],
-                        audios=[],
-                    )
-                    batch_sequence = [sequence]
-                    yield batch_sequence
-
-                    if self.estimate:
-                        self.used_estimate_samples += actual_example_num
-                        self.print_max_steps_estimate_progress()
-                        if self.used_estimate_samples >= self.max_estimate_samples:
-                            self.used_estimate_samples = 0
-                            # Set flag to False and yield empty list to signal the end of estimation
-                            self.estimate = False
-                            yield []
-
-            # If the entire dataset has been fully traversed, return the remaining data.
-            if len(all_tokenized_tokens) > 0:
-                cut_tokens = all_tokenized_tokens
-                cut_tokens = cut_tokens + [self.tokenizer.eos_token_id]
-                res_tokens = cut_tokens[:-1]
-                res_labels = cut_tokens[1:]
-                pos_ids = list(range(len(res_tokens)))
-                sequence = Sequence(
-                    token_ids=res_tokens,
-                    position_ids=pos_ids,
-                    labels=res_labels,
-                    num_examples=actual_example_num,
-                    images=[],
-                    videos=[],
-                    audios=[],
-                )
-                batch_sequence = [sequence]
-                yield batch_sequence
                 if self.estimate:
                     self.used_estimate_samples += actual_example_num
+                    self.print_max_steps_estimate_progress()
                     if self.used_estimate_samples >= self.max_estimate_samples:
+                        if buffer:
+                            # label shift
+                            res_tokens = buffer[:-1]
+                            res_labels = buffer[1:]
+                            take_lengths[-1] -= 1
+                            position_ids = [list(range(item)) for item in take_lengths]
+                            sequence = Sequence(
+                                token_ids=res_tokens,
+                                position_ids=position_ids,
+                                labels=res_labels,
+                                num_examples=actual_example_num,
+                            )
+                            batch_sequence = [sequence]
+                            yield batch_sequence
                         self.used_estimate_samples = 0
                         # Set flag to False and yield empty list to signal the end of estimation
                         self.estimate = False
                         yield []
+
+            if buffer:
+                # label shift
+                res_tokens = buffer[:-1]
+                res_labels = buffer[1:]
+                take_lengths[-1] -= 1
+                position_ids = [list(range(item)) for item in take_lengths]
+                sequence = Sequence(
+                    token_ids=res_tokens,
+                    position_ids=position_ids,
+                    labels=res_labels,
+                    num_examples=actual_example_num,
+                )
+                batch_sequence = [sequence]
+                yield batch_sequence
         else:
             if not self.packing:
                 for _ in range(len(self.mix_datasets)):
@@ -317,9 +320,6 @@ class SFTDataSet(IterableDataset):
             position_ids=pos_ids,
             labels=res_labels,
             num_examples=actual_example_num,
-            images=[],
-            videos=[],
-            audios=[],
         )
         return sequence
 
@@ -347,11 +347,14 @@ class SFTDataSet(IterableDataset):
         videos = example.get("videos", [])
         audios = example.get("audios", [])
         objects = example.get("objects", {})
+        mm_inputs = None
 
         if self.use_template:
             if self.template_backend == "jinja":
                 if not self.tokenizer.chat_template:
                     self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
+                if system:
+                    example["messages"].insert(0, {"role": "system", "content": system})
                 if self.split_multi_turn:
                     encoded_pairs = postprocess_fc_sequence(self.tokenizer, example)
                 else:
@@ -361,7 +364,12 @@ class SFTDataSet(IterableDataset):
                     example["messages"],
                     objects,
                 )
-                messages = self.template.mm_plugin.process_messages(messages, images, videos, audios, self.processor)
+                mm_inputs = self.template.mm_plugin.get_mm_inputs(
+                    images, videos, audios, [len(images)], [len(videos)], [len(audios)], None, self.processor
+                )
+                messages = self.template.mm_plugin.process_messages(
+                    messages, images, videos, audios, mm_inputs, self.processor
+                )
                 encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
         else:
             encoded_pairs = self.tokenizer.encode_chat_inputs_with_no_template(
@@ -408,14 +416,7 @@ class SFTDataSet(IterableDataset):
             else:
                 sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
                 if turn_index != (len(encoded_pairs) - 1):
-                    if sep_token_len > 0 and not self.mask_history_eos:
-                        labels_target = (
-                            tokens_target[: len(tokens_target) - sep_token_len]
-                            + [self.tokenizer.eos_token_id]
-                            + [-100] * (sep_token_len - 1)
-                        )
-                    else:
-                        labels_target = tokens_target[: len(tokens_target) - sep_token_len] + [-100] * sep_token_len
+                    labels_target = tokens_target[: len(tokens_target) - sep_token_len] + [-100] * sep_token_len
                 else:
                     labels_target = tokens_target
             tokens = tokens_src + tokens_target + tokens
@@ -442,6 +443,8 @@ class SFTDataSet(IterableDataset):
             return None
 
         if self.use_template:
+            # add dynamic eos
+            self._add_dynamic_eos(tokens, labels, [self.tokenizer.eos_token_id])
             # Maybe left truncated, so need to add begin_token
             if self.auto_add_bos and self.begin_token_id:
                 if tokens[0] != self.begin_token_id:
@@ -496,6 +499,7 @@ class SFTDataSet(IterableDataset):
             images=images,
             videos=videos,
             audios=audios,
+            mm_inputs=mm_inputs,
         )
 
     def _generate_greedy_packs(self, examples, actual_example_num_list):
@@ -546,3 +550,20 @@ class SFTDataSet(IterableDataset):
         if int(current_percent) // 5 > self.last_printed_percent // 5:
             print(f"[Estimate Max Steps Progress]: {current_percent:.0f}%")
             self.last_printed_percent = current_percent
+
+    @staticmethod
+    def _add_dynamic_eos(input_ids, labels, suffix_tokens_id):
+        # Adapted from:
+        # https://github.com/modelscope/ms-swift
+        # Original author: modelscope
+        # License: Apache-2.0
+        suffix_len = 1
+        start = 0
+        for i in range(1, len(labels) + 1):
+            if labels[i - 1] >= 0 and i < len(labels) and labels[i] == -100:
+                start = i
+            elif start > 0 and labels[i - 1] == -100 and (i == len(labels) or labels[i] >= 0):
+                # [0, 1, 2, -100(start), -100, 3(i), 4]
+                length = i - start
+                if length >= suffix_len and input_ids[start : start + suffix_len] == suffix_tokens_id:
+                    labels[start : start + suffix_len] = suffix_tokens_id

@@ -41,19 +41,20 @@ from .image_transforms import (
     get_size_with_aspect_ratio,
     group_images_by_shape,
     reorder_images,
-    resize,
 )
 from .image_utils import (
     ChannelDimension,
     PILImageResampling,
     SizeDict,
     get_image_size_for_max_height_width,
+    pil_paddle_interpolation_mapping,
     validate_kwargs,
 )
 from .paddle_vision_utils import crop as paddle_crop
 from .paddle_vision_utils import grayscale_to_rgb
 from .paddle_vision_utils import normalize as paddle_normalize
 from .paddle_vision_utils import pad as paddle_pad
+from .paddle_vision_utils import resize as paddle_resize
 from .processing_utils import Unpack, VideosKwargs
 from .video_utils import (
     VideoInput,
@@ -186,6 +187,7 @@ class BaseVideoProcessor(BaseImageProcessor):
     valid_kwargs = VideosKwargs
     model_input_names = ["pixel_values_videos"]
     unused_kwargs = None
+    backend = "paddlecodec"
 
     def __init__(self, **kwargs: Unpack[VideosKwargs]):
         super().__init__()
@@ -339,6 +341,7 @@ class BaseVideoProcessor(BaseImageProcessor):
         video_metadata: Union[VideoMetadata, dict],
         do_sample_frames: Optional[bool] = None,
         sample_indices_fn: Optional[Callable] = None,
+        **kwargs,
     ) -> list["paddle.Tensor"]:
         """
         Decode input videos and sample frames if needed.
@@ -369,7 +372,7 @@ class BaseVideoProcessor(BaseImageProcessor):
                         "Sampling frames from a list of images is not supported! Set `do_sample_frames=False`."
                     )
             else:
-                videos, video_metadata = self.fetch_videos(videos, sample_indices_fn=sample_indices_fn)
+                videos, video_metadata = self.fetch_videos(videos, sample_indices_fn=sample_indices_fn, **kwargs)
 
         return videos, video_metadata
 
@@ -426,6 +429,7 @@ class BaseVideoProcessor(BaseImageProcessor):
             video_metadata=video_metadata,
             do_sample_frames=do_sample_frames,
             sample_indices_fn=sample_indices_fn,
+            **kwargs,
         )
         videos = self._prepare_input_videos(videos=videos, input_data_format=input_data_format)
 
@@ -709,7 +713,9 @@ class BaseVideoProcessor(BaseImageProcessor):
         kwargs["data_format"] = data_format
 
         resample = kwargs.pop("resample")
-        kwargs["interpolation"] = resample
+        kwargs["interpolation"] = (
+            pil_paddle_interpolation_mapping[resample] if isinstance(resample, (PILImageResampling, int)) else resample
+        )
 
         return kwargs
 
@@ -870,7 +876,7 @@ class BaseVideoProcessor(BaseImageProcessor):
         **kwargs,
     ):
 
-        interpolation = interpolation if interpolation is not None else PILImageResampling.BILINEAR
+        interpolation = interpolation if interpolation is not None else "bilinear"
         if size.shortest_edge and size.longest_edge:
             # Resize the image so that the shortest edge or the longest edge is of the given size
             # while maintaining the aspect ratio of the original image.
@@ -896,46 +902,22 @@ class BaseVideoProcessor(BaseImageProcessor):
                 f" {size}."
             )
 
-        # TODO(@Ace-To-HYB): Replace this with a native Paddle batch resize implementation.
-        # Here implements a workaround by first "flattening" the Batch (B) and Time (T)
-        # dimensions into a single dimension (N = B*T), applying the 4D interpolation,
-        # and then "unflattening" the result back into the 5D shape.
-        logger.warning(
-            "The current `resize` operation relies on the PIL library, which may cause minor "
-            "numerical differences. A native Paddle-based `resize` implementation is planned for a future release "
-            "to ensure precision alignment."
-        )
-        B, T, C, H, W = image.shape
-        dtype = image.dtype
-        if dtype != paddle.uint8:
-            image = image.astype(paddle.uint8)
-        images_reshaped = image.reshape([-1, C, H, W])
-        output_frames = []
-        for i in range(images_reshaped.shape[0]):
-            frame = images_reshaped[i]
-            resized_frame = resize(
-                frame,
-                size=new_size,
-                resample=interpolation,
-                **kwargs,
-            )
-            output_frames.append(resized_frame)
-        output_resized = paddle.to_tensor(np.stack(output_frames, axis=0)).contiguous()
-        if dtype != paddle.uint8:
-            output_resized = output_resized.astype(dtype)
-        output = output_resized.reshape([B, T, C, new_size[0], new_size[1]])
-        return output
+        return paddle_resize(image, new_size, interpolation=interpolation, antialias=antialias)
 
-    def fetch_videos(self, video_url_or_urls: Union[str, list[str], list[list[str]]], sample_indices_fn=None):
+    def fetch_videos(
+        self, video_url_or_urls: Union[str, list[str], list[list[str]]], sample_indices_fn=None, **kwargs
+    ):
         """
         Convert a single or a list of urls into the corresponding `np.array` objects.
 
         If a single url is passed, the return value will be a single object. If a list is passed a list of objects is
         returned.
         """
-        backend = "decord"
+        backend = kwargs.get("backend", "paddlecodec")
 
         if isinstance(video_url_or_urls, list):
-            return list(zip(*[self.fetch_videos(x, sample_indices_fn=sample_indices_fn) for x in video_url_or_urls]))
+            return list(
+                zip(*[self.fetch_videos(x, sample_indices_fn=sample_indices_fn, **kwargs) for x in video_url_or_urls])
+            )
         else:
             return load_video(video_url_or_urls, backend=backend, sample_indices_fn=sample_indices_fn)

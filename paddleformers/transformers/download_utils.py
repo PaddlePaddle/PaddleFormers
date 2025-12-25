@@ -122,6 +122,77 @@ register_model_group(
     }
 )
 
+# qwen3_vl
+register_model_group(
+    models={
+        "Qwen3-VL-2B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-2B-Instruct",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-2B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-2B-Instruct",
+        },
+        "Qwen3-VL-4B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-4B-Instruct",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-4B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-4B-Instruct",
+        },
+        "Qwen3-VL-8B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-8B-Instruct",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-8B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-8B-Instruct",
+        },
+        "Qwen3-VL-32B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-32B-Instruct",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-32B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-32B-Instruct",
+        },
+        "Qwen3-VL-2B-Thinking": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-2B-Thinking",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-2B-Thinking",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-2B-Thinking",
+        },
+        "Qwen3-VL-4B-Thinking": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-4B-Thinking",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-4B-Thinking",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-4B-Thinking",
+        },
+        "Qwen3-VL-8B-Thinking": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-8B-Thinking",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-8B-Thinking",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-8B-Thinking",
+        },
+        "Qwen3-VL-32B-Thinking": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-32B-Thinking",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-32B-Thinking",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-32B-Thinking",
+        },
+    }
+)
+# qwen3_vl_moe
+register_model_group(
+    models={
+        "Qwen3-VL-30B-A3B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-30B-A3B-Instruct",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-30B-A3B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-30B-A3B-Instruct",
+        },
+        "Qwen3-VL-235B-A22B-Instruct": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-235B-A22B-Instruct",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-235B-A22B-Instruct",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-235B-A22B-Instruct",
+        },
+        "Qwen3-VL-235B-A22B-Thinking": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-235B-A22B-Thinking",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-235B-A22B-Thinking",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-235B-A22B-Thinking",
+        },
+        "Qwen3-VL-30B-A3B-Thinking": {
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-VL-30B-A3B-Thinking",
+            # DownloadSource.AISTUDIO: "ModelHub/Qwen3-VL-30B-A3B-Thinking",
+            DownloadSource.HUGGINGFACE: "Qwen/Qwen3-VL-30B-A3B-Thinking",
+        },
+    }
+)
+
 
 # qwen2_moe
 register_model_group(

@@ -434,7 +434,6 @@ class DeepseekV2MoE(MoELayer):
             topk_group=config.topk_group,
             norm_topk_prob=config.norm_topk_prob,
             routed_scaling_factor=config.routed_scaling_factor,
-            drop_tokens=False,
             using_post_norm_recompute=self.using_post_norm_recompute,
             norm_weight=norm_weight,
             norm_eps=norm_eps,
@@ -875,7 +874,9 @@ class DeepseekV2Attention(nn.Layer):
                 self.enable_recompute
                 and self.layerwise_recompute
                 and has_gradient
-                and self.recompute_granularity == "core_attn"
+                and self.config.recompute_granularity == "selective"
+                and self.config.recompute_modules is not None
+                and "core_attn" in self.config.recompute_modules
             ):
                 outputs = recompute(
                     self.attn_func,
@@ -1021,7 +1022,9 @@ class DeepseekV2DecoderLayer(nn.Layer):
             self.enable_recompute
             and self.layerwise_recompute
             and has_gradient
-            and self.recompute_granularity == "full_attn"
+            and self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "full_attn" in self.config.recompute_modules
         ):
             outputs = recompute(
                 self.self_attn,
@@ -1089,7 +1092,9 @@ class DeepseekV2DecoderLayer(nn.Layer):
             self.enable_recompute
             and self.layerwise_recompute
             and has_gradient
-            and self.recompute_granularity == "full_attn"
+            and self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "full_attn" in self.config.recompute_modules
         ):
             outputs = recompute(
                 self.self_attn,
@@ -1690,7 +1695,9 @@ class DeepseekV2ModelFast(DeepseekV2PretrainedModelFast):
                 self.enable_recompute
                 and idx not in self.no_recompute_layers
                 and has_gradient
-                and self.recompute_granularity == "full"
+                and self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
             ):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,

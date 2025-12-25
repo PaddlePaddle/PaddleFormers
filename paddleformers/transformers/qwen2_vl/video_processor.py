@@ -23,6 +23,7 @@
 import math
 from typing import Optional, Union
 
+import numpy as np
 import paddle
 from transformers.image_utils import (
     OPENAI_CLIP_MEAN,
@@ -151,9 +152,9 @@ class Qwen2VLVideoProcessor(BaseVideoProcessor):
             )
 
         if num_frames is not None:
-            indices = paddle.arange(0, total_num_frames, total_num_frames / num_frames).int()
+            indices = np.arange(0, total_num_frames, total_num_frames / num_frames, dtype=int)
         else:
-            indices = paddle.arange(0, total_num_frames).int()
+            indices = np.arange(0, total_num_frames, dtype=int)
 
         return indices
 

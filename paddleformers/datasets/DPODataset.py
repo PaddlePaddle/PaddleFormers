@@ -23,7 +23,6 @@ from paddle.io import IterableDataset
 from paddleformers.datasets.data_utils import postprocess_fc_sequence, print_debug_info
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
-from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 from paddleformers.utils.log import logger
 
@@ -60,17 +59,6 @@ class DPODataSet(IterableDataset):
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.buffer_size = dataset_config.get("buffer_size", 500)
-
-        # special token
-        self.end_of_response = getattr(self.tokenizer.special_tokens_map, "sep_token", "<|end_of_sentence|>")
-        self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
-        self.newline_token = self.tokenizer.tokenize("\n")
-        if isinstance(self.tokenizer, PretrainedTokenizer):
-            self.end_of_response_id = self.tokenizer._convert_token_to_id([self.end_of_response])[0]
-            self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
-        else:
-            self.end_of_response_id = self.tokenizer.convert_tokens_to_ids([self.end_of_response])[0]
-            self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
 
         # data loader + multisource dataset mix
         if self.is_valid:
@@ -200,9 +188,16 @@ class DPODataSet(IterableDataset):
     def _preprocess_dpo_example(self, example):
 
         chosen_m, rejected_m = deepcopy(example["messages"]), deepcopy(example["messages"])
-        session_start_index = (
-            len(example["messages"]) if example["messages"][0]["role"] != "system" else len(example["messages"]) - 1
-        )
+        if self.template_backend == "jinja":
+            # The Jinja backend will concatenate the "system" separately and place it at the beginning.
+            session_start_index = (
+                len(example["messages"])
+                if example["messages"][0]["role"] != "system"
+                else len(example["messages"]) - 1
+            )
+        else:
+            # Custom backends will concatenate the "system" message and the first "user" message together.
+            session_start_index = len(example["messages"])
         chosen_m.extend(example["chosen_response"])
         rejected_m.extend(example["rejected_response"])
 
@@ -235,19 +230,19 @@ class DPODataSet(IterableDataset):
                 chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example["chosen"])
                 rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example["rejected"])
         else:
+            mm_inputs = self.template.mm_plugin.get_mm_inputs(
+                images, videos, audios, [len(images)], [len(videos)], [len(audios)], None, self.processor
+            )
             chosen_messages = self.template.mm_plugin.process_messages(
-                example["chosen"]["messages"], images, videos, audios, self.processor
+                example["chosen"]["messages"], images, videos, audios, mm_inputs, self.processor
             )
             rejected_messages = self.template.mm_plugin.process_messages(
-                example["rejected"]["messages"], images, videos, audios, self.processor
+                example["rejected"]["messages"], images, videos, audios, mm_inputs, self.processor
             )
-            prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
-            _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)
-
-            chosen_encoded_messages = []
-            rejected_encoded_messages = []
-            chosen_encoded_messages.append([prompt_ids, chosen_ids])
-            rejected_encoded_messages.append([prompt_ids, rejected_ids])
+            chosen_encoded_messages = self.template.encode_multiturn(self.tokenizer, chosen_messages, system, tools)
+            rejected_encoded_messages = self.template.encode_multiturn(
+                self.tokenizer, rejected_messages, system, tools
+            )
 
         # chosen/rejected response
         response_token_ids_list = []
@@ -327,6 +322,8 @@ class DPODataSet(IterableDataset):
         )
 
     def _postprocess_sequence(self, example):
+        if self.template_backend == "jinja" and example.get("system", None):
+            example["messages"].insert(0, {"role": "system", "content": example["system"]})
         example = self._preprocess_dpo_example(example)
         # sequence: system + knowledge_tokens + prompt + chosen + reject
         (

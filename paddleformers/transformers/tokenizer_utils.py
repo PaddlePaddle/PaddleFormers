@@ -233,6 +233,11 @@ class PaddleTokenizerMixin:
                 **kwargs,
             )
 
+    # No Mistral-specific regex checks are required.
+    @classmethod
+    def _patch_mistral_regex(cls, tokenizer, *args, **kwargs):
+        return tokenizer
+
     # Rewrite hf's tokenizer function from_pretrained
     @classmethod
     def from_pretrained(

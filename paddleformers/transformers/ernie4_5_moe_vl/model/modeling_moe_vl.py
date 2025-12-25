@@ -518,7 +518,11 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             loss: text-only CE loss
             loss_sum. text-only CE loss_sum
         """
-        if self.config.use_recompute_loss_fn and self.config.use_fused_head_and_loss_fn:
+        if (
+            self.config.recompute_modules is not None
+            and "loss_fn" in self.config.recompute_modules
+            and self.config.use_fused_head_and_loss_fn
+        ):
             with paddle.no_grad():
                 if token_type_ids_shifted.unique().shape[0] > 1:
                     labels, token_type_ids_shifted = TensorBalanceByTokenType.apply(
@@ -530,7 +534,11 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
                     labels = ScatterOp.apply(labels, axis=-1)
 
         if self.use_one_head:
-            if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+            if (
+                self.config.recompute_modules is not None
+                and "loss_fn" in self.config.recompute_modules
+                or self.config.use_sparse_head_and_loss_fn
+            ):
                 loss, loss_sum = super().forward((scores_text.unsqueeze(0), lm_weight, lm_bias), labels.unsqueeze(0))
             else:
                 loss, loss_sum = super().forward(scores_text.unsqueeze(0), labels.unsqueeze(0))
@@ -545,7 +553,11 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
         if scores_text is not None:
             labels_text = labels[text_pos_shifted]
             assert labels_text.size > 0, labels
-            if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+            if (
+                self.config.recompute_modules is not None
+                and "loss_fn" in self.config.recompute_modules
+                or self.config.use_sparse_head_and_loss_fn
+            ):
                 assert lm_weight is not None and mm_weight is not None
                 loss, loss_sum = super().forward(
                     (scores_text.unsqueeze(0), lm_weight, lm_bias),
@@ -565,7 +577,11 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             labels_image = paddle.where(
                 labels_image >= 0, labels_image - self.max_text_id, labels_image
             )  # do not move ignored-index
-            if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+            if (
+                self.config.recompute_modules is not None
+                and "loss_fn" in self.config.recompute_modules
+                or self.config.use_sparse_head_and_loss_fn
+            ):
                 assert mm_weight is not None and mm_bias is not None
                 loss_image, _ = super().forward(
                     (scores_image.unsqueeze(0), mm_weight, mm_bias),
@@ -622,7 +638,11 @@ def calc_multimodal_logits(
     # TODO: Pass token-type-ids from reader
     # token_type_ids_shifted = paddle.concat([token_type_ids[:, 1:], token_type_ids[:, -1:]], 1)  #
 
-    if config.use_recompute_loss_fn and config.use_fused_head_and_loss_fn:
+    if (
+        config.recompute_modules is not None
+        and "loss_fn" in config.recompute_modules
+        and config.use_fused_head_and_loss_fn
+    ):
         if config.sequence_parallel:
             if token_type_ids_shifted.unique().shape[0] > 1:  # Multimodal data
                 last_hidden_state, token_type_ids_shifted = TensorBalanceByTokenType.apply(
@@ -652,7 +672,11 @@ def calc_multimodal_logits(
     )
 
     if mm_head_weight is None:
-        if config.use_recompute_loss_fn or config.use_sparse_head_and_loss_fn:
+        if (
+            config.recompute_modules is not None
+            and "loss_fn" in config.recompute_modules
+            or config.use_sparse_head_and_loss_fn
+        ):
             return last_hidden_state, None, None
         score_text = parallel_matmul_tp(
             last_hidden_state,
@@ -666,7 +690,11 @@ def calc_multimodal_logits(
     text_pos_shifted = token_type_ids_shifted == TokenType.text
 
     if text_pos_shifted.any().item() > 0:
-        if config.use_recompute_loss_fn or config.use_sparse_head_and_loss_fn:
+        if (
+            config.recompute_modules is not None
+            and "loss_fn" in config.recompute_modules
+            or config.use_sparse_head_and_loss_fn
+        ):
             score_text = last_hidden_state[text_pos_shifted]
         else:
             score_text = parallel_matmul_tp(last_hidden_state[text_pos_shifted], lm_head_weight, lm_head_bias)
@@ -674,7 +702,11 @@ def calc_multimodal_logits(
         score_text = None
 
     if mm_head_weight is not None and image_mask_shifted.any().item() > 0:
-        if config.use_recompute_loss_fn or config.use_sparse_head_and_loss_fn:
+        if (
+            config.recompute_modules is not None
+            and "loss_fn" in config.recompute_modules
+            or config.use_sparse_head_and_loss_fn
+        ):
             score_image = last_hidden_state[image_mask_shifted]
         else:
             score_image = parallel_matmul_tp(last_hidden_state[image_mask_shifted], mm_head_weight, mm_head_bias)
