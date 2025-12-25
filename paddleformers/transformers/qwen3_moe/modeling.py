@@ -45,7 +45,7 @@ from ..masking_utils import (
     create_sliding_window_causal_mask_and_row_indices,
 )
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
-from ..model_utils import PretrainedModel, register_base_model
+from ..model_utils import PretrainedModel, dtype_guard, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen3MoeConfig
@@ -332,7 +332,10 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
             config.sequence_parallel = False
 
         # gating
-        self.gate = GeneralLinear.create(config.hidden_size, config.num_experts, has_bias=False, linear_type="default")
+        with dtype_guard("float32"):
+            self.gate = GeneralLinear.create(
+                config.hidden_size, config.num_experts, has_bias=False, linear_type="default"
+            )
         self.experts = nn.LayerList(
             [
                 Qwen3MoeMLP(
