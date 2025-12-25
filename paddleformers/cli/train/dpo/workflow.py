@@ -19,13 +19,6 @@ from functools import partial
 
 import paddle
 
-is_sm90 = (
-    paddle.base.core.is_compiled_with_cuda()
-    and paddle.device.cuda.get_device_capability()[0] == 9
-    and paddle.device.cuda.get_device_capability()[1] == 0
-)
-if is_sm90:
-    os.environ["FLAGS_flash_attn_version"] = "3"
 from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
 from paddleformers.datasets.loader import create_dataset
 from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
