@@ -14,11 +14,10 @@
 
 set -exo pipefail
 
-source ../PaddleFleet/.venv/bin/activate
+source PaddleFleet/.venv/bin/activate
 
-export root_dir=/workspace
+export root_dir=$(pwd)
 
-export CACHE_DIR=/root/.cache
 config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_pt.yaml
 
 yq eval '
