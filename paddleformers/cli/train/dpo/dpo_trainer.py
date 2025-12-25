@@ -30,8 +30,6 @@ if is_paddlefleet_available():
     from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
-    from paddleformers.transformers.gpt_provider import GPTModel
-
 DPO_INFO_KEYS = [
     "reference_chosen_logps",
     "reference_rejected_logps",
@@ -249,7 +247,7 @@ class DPOTrainer(Trainer):
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
 
         """prediction_step"""
-        if is_paddlefleet_available() and isinstance(model._layers, GPTModel):
+        if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
             inputs = self._prepare_inputs(inputs)
             return self.fleet_prediction_pipeline_step(self.ref_model_wrapped, self.model_wrapped, inputs)
 
@@ -370,7 +368,7 @@ class DPOTrainer(Trainer):
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
         if ref_model.is_pipeline_last_stage(ignore_virtual=ref_model._layers._num_virtual_pipeline_stages > 1):
-            if is_paddlefleet_available() and isinstance(ref_model._layers, GPTModel):
+            if is_paddlefleet_available() and isinstance(ref_model, PaddleFleetParallelBase):
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
@@ -588,7 +586,7 @@ class DPOTrainer(Trainer):
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
         if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
-            if is_paddlefleet_available() and isinstance(model._layers, GPTModel):
+            if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
