@@ -253,8 +253,8 @@ jobs:
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout 616685655b4eef156dc950c43568c846a29bb96d
-          git switch -c 616685655b4eef156dc950c43568c846a29bb96d
+          git checkout 99019397aea0ebd8005587ea1bb654651a9c6458
+          git switch -c 99019397aea0ebd8005587ea1bb654651a9c6458
           git pull --no-edit origin pull/${PR_ID}/head
           source ../PaddleFleet/.venv/bin/activate
           pip install -e .
