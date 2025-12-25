@@ -672,7 +672,7 @@ class GlobalOutputNet(nn.Layer):
     def forward(
         self, position_ids, attention_mask, seq_length, batch_size, seq_length_with_past, cache_length, emb_dtype
     ):
-        if position_ids is None and self.config.sep_parallel_size > 1:
+        if position_ids is None and self.config.sep_parallel_degree > 1:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
 
         if not self.config._attn_implementation == "sdpa" and attention_mask is None:
@@ -799,7 +799,7 @@ class LlamaModelNet(LlamaPretrainedModelNet):
                 inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         """
-        if position_ids is None and self.config.sep_parallel_size > 1:
+        if position_ids is None and self.config.sep_parallel_degree > 1:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
         # embed positions
         if not self.config._attn_implementation == "sdpa" and attention_mask is None:

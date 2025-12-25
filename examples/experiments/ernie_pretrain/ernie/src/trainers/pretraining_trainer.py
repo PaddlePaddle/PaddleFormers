@@ -310,9 +310,15 @@ class PreTrainingArguments(TrainingArguments):
             self.per_device_eval_batch_size = self.per_device_train_batch_size
             logger.warn(f"eval_batch_size set to {self.per_device_eval_batch_size}")
 
-        if self.sharding_parallel_size > 1:
+        if self.sharding_parallel_degree > 1:
+            sharding_parallel_config = (
+                set(self.sharding_parallel_config.split(" ")) if self.sharding_parallel_config else set()
+            )
             sharding_comm_overlap_non_pp = (
-                True if self.sd_shardingv1_comm_overlap or self.sd_sharding_comm_overlap else False
+                True
+                if "shardingv1_comm_overlap" in sharding_parallel_config
+                or "sharding_comm_overlap" in sharding_parallel_config
+                else False
             )
             if sharding_comm_overlap_non_pp:
                 assert hasattr(fleet.fleet, "_user_defined_strategy")
@@ -863,7 +869,7 @@ class PretrainingTrainer(Trainer):
                 self.optimizer = distributed_optimizer_maybe_overwrite(self.optimizer, self.args.use_moe)
 
             else:
-                if (self.args.use_moe) and self.args.data_parallel_size > 1:
+                if (self.args.use_moe) and self.args.data_parallel_degree > 1:
                     try:
                         from paddle.fluid.dygraph.parallel import sync_params_buffers
                     except ImportError:
@@ -1018,18 +1024,18 @@ class PretrainingTrainer(Trainer):
                 train_bin = paddle.load(train_bin_file)
                 old_data_filelist = train_bin.data_filelist
                 old_data_weights = train_bin.data_weights
-                old_sharding_degree = train_bin.sharding_parallel_size
-                old_data_parallel_size = train_bin.data_parallel_size
+                old_sharding_degree = train_bin.sharding_parallel_degree
+                old_data_parallel_degree = train_bin.data_parallel_degree
                 old_reeao_data_world_size = getattr(train_bin, "reeao_data_world_size", None)
                 new_data_filelist = self.args.data_filelist
                 new_data_weights = self.args.data_weights
-                new_sharding_degree = self.args.sharding_parallel_size
-                new_data_parallel_size = self.args.data_parallel_size
+                new_sharding_degree = self.args.sharding_parallel_degree
+                new_data_parallel_degree = self.args.data_parallel_degree
                 self.args.same_data = (
                     (old_data_filelist == new_data_filelist)
                     and (old_data_weights == new_data_weights)
                     and (old_sharding_degree == new_sharding_degree)
-                    and (old_data_parallel_size == new_data_parallel_size)
+                    and (old_data_parallel_degree == new_data_parallel_degree)
                     and (not self.args.multimodal)
                     and (
                         old_reeao_data_world_size is None

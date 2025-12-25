@@ -170,20 +170,23 @@ def main():
         config.trainer_args.pipeline_parallel_config = ""
 
     if getattr(config.model_args, "sequence_parallel", 0):
-        logger.warning("disabling `partial_send_recv` when using sequence parallel")
-        config.trainer_args.partial_send_recv = False
+        logger.warning("disabling `disable_partial_send_recv` when using sequence parallel")
+        config.trainer_args.pipeline_parallel_config += " disable_partial_send_recv"
 
-    if getattr(config.trainer_args, "bf16", False) and not config.trainer_args.pp_delay_scale_loss:
+    if (
+        getattr(config.trainer_args, "bf16", False)
+        and "enable_delay_scale_loss" not in config.trainer_args.pipeline_parallel_config
+    ):
         logger.warning(
-            "It is recommended to enable pp_delay_scale_loss for better performance "
+            "It is recommended to enable delay_scale_loss for better performance "
             "of precision when using bf16 in training"
         )
-        config.trainer_args.pp_delay_scale_loss = True
+        config.trainer_args.pipeline_parallel_config += " enable_delay_scale_loss"
 
-    if config.trainer_args.dp_comm_overlap:
+    if "enable_dp_comm_overlap" in config.trainer_args.pipeline_parallel_config:
         logger.warning("Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at " "the same time.")
 
-    if config.trainer_args.timer:
+    if "enable_timer" in config.trainer_args.pipeline_parallel_config:
         from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
             PipelineParallel,
         )
@@ -204,13 +207,15 @@ def main():
             trainer_args.get("expert_model_parallel_size", -1) > 1
         ), "When moe_group is 'ep', 'expert_model_parallel_size' must be set to greater than 1."
         assert (
-            trainer_args.get("sharding_parallel_size", -1) > 1
-        ), "sharding_parallel_size should > 1 in when moe_group is 'ep'."
+            trainer_args.get("sharding_parallel_degree", -1) > 1
+        ), "sharding_parallel_degree should > 1 in when moe_group is 'ep'."
         assert trainer_args.get("sharding") == "stage1", "Hybrid expert parallel only supports sharding stage1 now."
-        assert trainer_args.get("split_param", False), "Hybrid expert parallel only supports Sharding stage1 V2 now."
         assert (
-            trainer_args.get("data_parallel_size", 1) == 1
-        ), "Now, moe_group = 'ep' cannot be used with data_parallel_size > 1."
+            "sharding_parallel_config" in trainer_args and "split_param" in trainer_args["sharding_parallel_config"]
+        ), "Hybrid expert parallel only supports Sharding stage1 V2 now."
+        assert (
+            trainer_args.get("data_parallel_degree", 1) == 1
+        ), "Now, moe_group = 'ep' cannot be used with data_parallel_degree > 1."
 
     data_processor_args = {k: formatv(v) for k, v in dict(getattr(config, "data_processor_args", {})).items()}
     (args,) = parser.parse_dict(dict(**model_args, **trainer_args, **data_processor_args))
@@ -222,7 +227,7 @@ def main():
     args.eval_iters = 10
     args.test_iters = args.eval_iters * 10
 
-    args.enable_delay_scale_loss = config.trainer_args.pp_delay_scale_loss
+    args.enable_delay_scale_loss = "enable_delay_scale_loss" in config.trainer_args.pipeline_parallel_config
 
     model_config = dict(getattr(config.model_args, "model_config", {}))
     model_config = {k: formatv(v) for k, v in model_config.items()}

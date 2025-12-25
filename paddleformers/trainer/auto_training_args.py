@@ -14,7 +14,7 @@
 import json
 from dataclasses import dataclass, field
 
-from .trainer_utils import ShardingOption
+from .trainer_utils import ShardingOption, split_parallel_config
 from .training_args import TrainingArguments
 from .utils import add_start_docstrings
 
@@ -117,10 +117,12 @@ class AutoTrainingArguments(TrainingArguments):
             fused_passes.enable = True
             fused_passes.fused_passes_list.append("fused_gemm_epilogue_pass")
 
-        if self.replace_with_parallel_cross_entropy:
+        mp_configs = split_parallel_config(self.tensor_parallel_config)
+        if "replace_with_parallel_cross_entropy" in mp_configs:
             self.strategy.mp_optimization.replace_with_parallel_cross_entropy = True
 
-        if self.auto_parallel_sync_shared_params:
+        pp_configs = split_parallel_config(self.pipeline_parallel_config)
+        if "auto_parallel_sync_shared_params" in pp_configs:
             self.strategy.pipeline.auto_parallel_sync_shared_params = True
 
         if self.recompute:
@@ -140,6 +142,6 @@ class AutoTrainingArguments(TrainingArguments):
             self.enable_auto_parallel
             and self.to_static
             and ShardingOption.SHARD_OP in self.sharding
-            and self.sharding_parallel_size > 1
-            and self.tensor_fusion
+            and self.sharding_parallel_degree > 1
+            and "enable_tensor_fusion" in self.sharding_parallel_config
         )

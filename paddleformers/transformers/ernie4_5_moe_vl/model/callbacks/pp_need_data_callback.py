@@ -59,10 +59,11 @@ class PPNeedDataCallback(TrainerCallback):
             return
 
         def _enable_delay_scale_loss():
+            key = "enable_delay_scale_loss"
             if args.pipeline_model_parallel_size > 1:
-                return args.pp_delay_scale_loss
+                return key in args.pipeline_parallel_config.split(" ")
             elif args.tensor_model_parallel_size > 1:
-                return args.tp_delay_scale_loss
+                return key in args.tensor_parallel_config.split(" ")
             else:
                 return False
 
