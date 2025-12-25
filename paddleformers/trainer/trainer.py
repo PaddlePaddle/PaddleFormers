@@ -1124,7 +1124,11 @@ class Trainer:
 
             self._load_scheduler(resume_from_checkpoint)
 
-        logger.debug(f"sharded_model_from_ema = {self.args.sharded_model_from_ema}")
+        enable_bf16_opt = (
+            not isinstance(self.model, LoRAModel) and self.args.enable_zero_cost_checkpoint and self.args.bf16
+        )
+        logger.debug(f"sharded_model_from_ema: {self.args.sharded_model_from_ema}")
+        logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
         if self.args.sharded_model_from_ema:
             ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
@@ -1144,17 +1148,18 @@ class Trainer:
                     new_state_dict[k] = v
                 return new_state_dict
 
-            fp32_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
+            if enable_bf16_opt:
+                model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
 
             flex_checkpoint_load_func(
-                fp32_sharded_state_dict,
+                model_sharded_state_dict,
                 model_states_path,
                 aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
                 comm_method=self.args.flex_ckpt_comm_method,
             )
 
-        if self.args.bf16 and (not self.args.ignore_load_lr_and_optim):
+        if enable_bf16_opt and (not self.args.ignore_load_lr_and_optim):
             opt_state_dict = self.optimizer.state_dict()
 
             def recover_params_from_master_weight(opt_state_dict, group):
