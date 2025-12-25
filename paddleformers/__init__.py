@@ -18,6 +18,7 @@ from contextlib import suppress
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from .utils.import_utils import TorchBlocker
 from .utils.lazy_import import _LazyModule
 
 PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
@@ -40,6 +41,12 @@ else:
 
 # the next line will be replaced by setup.py for release version.
 # [VERSION_INFO]
+
+# Block the activation of Torch in Paddleformers
+blocker = TorchBlocker()
+sys.meta_path.insert(0, blocker)
+sys.meta_path.append(blocker.restorer)
+
 
 if "datasets" in sys.modules.keys():
     from paddleformers.utils.log import logger

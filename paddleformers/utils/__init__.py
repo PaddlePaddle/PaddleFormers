@@ -54,6 +54,7 @@ import_structure = {
         "dynamic_graph_pybind_context",
         "custom_import",
         "direct_paddleformers_import",
+        "TorchBlocker",
     ],
     "initializer": ["to"],
     "infohub": ["infohub", "InfoHub"],

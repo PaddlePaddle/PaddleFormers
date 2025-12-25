@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import builtins
 import functools
+import importlib.abc
 import importlib.util
 import os
 import shutil
@@ -419,3 +420,33 @@ def direct_paddleformers_import(path: str, file="__init__.py") -> ModuleType:
     spec.loader.exec_module(module)
     module = sys.modules[name]
     return module
+
+
+class Restorer(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if hasattr(self, "path_save"):
+            sys.path = self.path_save
+            del self.path_save
+            sys.path_importer_cache.clear()
+        return None
+
+
+class TorchBlocker(importlib.abc.MetaPathFinder):
+    def __init__(self):
+        self.restorer = Restorer()
+
+    def find_spec(self, fullname, path, target=None):
+        if fullname != "torch" and not fullname.startswith("torch."):
+            return None
+        frame = sys._getframe(1)
+        for _ in range(10):
+            if frame is None:
+                break
+            filename = frame.f_code.co_filename
+            if "paddleformers" in filename:
+                self.restorer.path_save = sys.path[:]
+                sys.path = []
+                sys.path_importer_cache.clear()
+                return None
+            frame = frame.f_back
+        return None
