@@ -69,9 +69,6 @@ else:
         pass
 
 
-HAS_PADDLEFLEET = is_paddlefleet_available()
-
-
 __all__ = [
     "default_logdir",
     "TrainingArguments",
@@ -1564,7 +1561,6 @@ class TrainingArguments:
     )
 
     def __post_init__(self):
-        self.HAS_PADDLEFLEET = HAS_PADDLEFLEET
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
             # self.max_grad_norm = 0.0
@@ -1721,7 +1717,7 @@ class TrainingArguments:
             if not paddle.distributed.parallel.parallel_helper._is_parallel_ctx_initialized():
                 strategy = fleet.DistributedStrategy()
                 assert self.data_parallel_config == "", "data_parallle_config is not supported in hybrid parallel"
-                if self.pipeline_model_parallel_size > 1 or HAS_PADDLEFLEET:
+                if self.pipeline_model_parallel_size > 1 or is_paddlefleet_available():
                     pipeline_parallel_config = split_parallel_config(self.pipeline_parallel_config)
                     for x in pipeline_parallel_config:
                         if len(x) > 0:
@@ -2110,7 +2106,7 @@ class TrainingArguments:
 
                 # In PaddleFleet, we should use the following code to initialize.
                 if (
-                    HAS_PADDLEFLEET
+                    is_paddlefleet_available()
                     and get_tensor_model_parallel_group is not None
                     and get_tensor_model_parallel_group(False) is None
                 ):
@@ -2385,7 +2381,7 @@ class TrainingArguments:
                         paddle.distributed.init_parallel_env()
             if (
                 world_size == 1
-                and HAS_PADDLEFLEET
+                and is_paddlefleet_available()
                 and get_tensor_model_parallel_group is not None
                 and get_tensor_model_parallel_group(False) is None
             ):

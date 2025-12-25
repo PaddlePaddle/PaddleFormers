@@ -23,15 +23,13 @@ from paddleformers.trainer import Trainer
 from paddleformers.transformers.gpt_provider import GPTModel
 from paddleformers.transformers.model_utils import unwrap_model
 from paddleformers.utils import infohub
+from paddleformers.utils.import_utils import is_paddlefleet_available
 
-try:
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
     import paddlefleet.distributed.model as paddlefleet_dist_model
     from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
-
-    HAS_PADDLEFLEET = True
-except:
-    HAS_PADDLEFLEET = False
 
 DPO_INFO_KEYS = [
     "reference_chosen_logps",
@@ -217,7 +215,7 @@ class DPOTrainer(Trainer):
             level=self.args.fp16_opt_level,
             dtype=self.amp_dtype,
         )
-        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+        if is_paddlefleet_available() and isinstance(model, PaddleFleetPipelineLayer):
             model = paddlefleet_dist_model.distributed_model(model)
             model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
             return model
@@ -230,7 +228,7 @@ class DPOTrainer(Trainer):
 
     def _wrap_model(self, model, training=True):
         """Wrap model."""
-        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+        if is_paddlefleet_available() and isinstance(model, PaddleFleetPipelineLayer):
             model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
             model = super()._wrap_model(model, training)
             return model
@@ -242,7 +240,7 @@ class DPOTrainer(Trainer):
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         """evaluate"""
-        if HAS_PADDLEFLEET and isinstance(self.ref_model_wrapped, PaddleFleetParallelBase):
+        if is_paddlefleet_available() and isinstance(self.ref_model_wrapped, PaddleFleetParallelBase):
             self.ref_model_wrapped = self._wrap_ref_model(self.ref_model_wrapped)
         self.model_wrapped = self._wrap_ref_model(self.model_wrapped)
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
@@ -250,7 +248,7 @@ class DPOTrainer(Trainer):
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
 
         """prediction_step"""
-        if HAS_PADDLEFLEET and isinstance(model._layers, GPTModel):
+        if is_paddlefleet_available() and isinstance(model._layers, GPTModel):
             inputs = self._prepare_inputs(inputs)
             return self.fleet_prediction_pipeline_step(self.ref_model_wrapped, self.model_wrapped, inputs)
 
@@ -371,7 +369,7 @@ class DPOTrainer(Trainer):
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
         if ref_model.is_pipeline_last_stage(ignore_virtual=ref_model._layers._num_virtual_pipeline_stages > 1):
-            if HAS_PADDLEFLEET and isinstance(ref_model._layers, GPTModel):
+            if is_paddlefleet_available() and isinstance(ref_model._layers, GPTModel):
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
@@ -589,7 +587,7 @@ class DPOTrainer(Trainer):
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
         if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
-            if HAS_PADDLEFLEET and isinstance(model._layers, GPTModel):
+            if is_paddlefleet_available() and isinstance(model._layers, GPTModel):
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
