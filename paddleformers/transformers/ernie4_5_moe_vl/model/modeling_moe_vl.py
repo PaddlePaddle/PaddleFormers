@@ -1289,6 +1289,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
 
         total_input_ids = input_ids
         image_index, video_index = 0, 0
+        last_image_pixel_index = 0
+        last_video_pixel_index = 0
         for i, input_ids in enumerate(total_input_ids):
             image_start_indices = paddle.nonzero(input_ids == image_start_token_id).squeeze(1)
             video_start_indices = paddle.nonzero(input_ids == video_start_token_id).squeeze(1)
@@ -1313,11 +1315,14 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                         image_grid_thw[image_index][1],
                         image_grid_thw[image_index][2],
                     )
-                    images.append(pixel_values[image_index])
-                    grid_thw.append(image_grid_thw[image_index])
+                    ed_grid_thw = image_grid_thw[image_index]
+                    pixel_lenth = ed_grid_thw.prod().item()
+                    images.append(pixel_values[last_image_pixel_index : last_image_pixel_index + pixel_lenth])
+                    grid_thw.append(ed_grid_thw)
                     image_index += 1
                     remain_images -= 1
                     ed = ed_image
+                    last_image_pixel_index += pixel_lenth
                     vision_type = "image"
                 else:
                     t, h, w = (
@@ -1325,11 +1330,14 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                         video_grid_thw[video_index][1],
                         video_grid_thw[video_index][2],
                     )
-                    images.append(video_pixel_values[video_index])
-                    grid_thw.append(video_grid_thw[video_index])
+                    ed_grid_thw = video_grid_thw[video_index]
+                    pixel_lenth = ed_grid_thw.prod().item()
+                    images.append(video_pixel_values[last_video_pixel_index : last_video_pixel_index + pixel_lenth])
+                    grid_thw.append(video_grid_thw[ed_grid_thw])
                     video_index += 1
                     remain_videos -= 1
                     ed = ed_video
+                    last_video_pixel_index += pixel_lenth
                     vision_type = "video"
                 llm_grid_t, llm_grid_h, llm_grid_w = (
                     t.item() if t.item() == 1 else t.item() // temporal_conv_size,
@@ -1342,11 +1350,13 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                 llm_token_type_ids.extend([IDS_TYPE_FLAG["image"]])
                 llm_token_type_ids.extend([IDS_TYPE_FLAG[vision_type]] * llm_grid_t * llm_grid_h * llm_grid_w)
                 llm_token_type_ids.extend([IDS_TYPE_FLAG["image"]])
-                st = ed + llm_grid_t * llm_grid_h * llm_grid_w + 1
+                st = ed + llm_grid_t * llm_grid_h * llm_grid_w + 2
 
             if st < len(input_tokens):
                 text_len = len(input_tokens) - st
                 llm_token_type_ids.extend([IDS_TYPE_FLAG["text"]] * text_len)
+            # add 1 eos token for token_type_ids_label
+            llm_token_type_ids.extend([IDS_TYPE_FLAG["text"]])
 
             token_type_ids.append(llm_token_type_ids)
 
