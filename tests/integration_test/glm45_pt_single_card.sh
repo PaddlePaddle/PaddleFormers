@@ -40,7 +40,7 @@ export FLAGS_use_stride_compute_kernel=False
 unset http_proxy https_proxy
 
 set +e
-coverage run run_pretrain.py $config_json 2>&1 | tee ./glm45_single_card.log
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $root_dir/PaddleFormers/tests/config/ci/glm45_single_pt.yaml 2>&1 | tee ./glm45_single_card.log
 
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
