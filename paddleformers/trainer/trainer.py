@@ -1962,8 +1962,6 @@ class Trainer:
             step = -1
 
             for step, inputs in enumerate(epoch_iterator):
-                # print("inputs: ", inputs)
-                # exit()
 
                 if self.args.profile:
                     perf_utils.switch_profile(

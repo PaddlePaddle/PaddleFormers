@@ -720,7 +720,6 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         )
         self.config = config
         self.scatter_output = sequence_parallel  # outer `ScatterOp`
-        # self.use_mem_eff_attn = config.use_mem_eff_attn
 
     def forward(self, args):
         """forward lm embedding + mm embedding + resampler"""
@@ -760,7 +759,7 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         # inbatch_pack_offset, image_features, image_type_ids, grid_thw, position_ids, audio_ids = get_args(
         inbatch_pack_offset, image_features, image_type_ids, grid_thw, position_ids = get_args(
             args,
-            True,  # self.use_mem_eff_attn,  # inbatch, False
+            True,
             self.config.vision_config is not None,  # image-type-ids
             getattr(self.config.vision_config, "variable_resolution", False),  # varres
             self.config.rope_3d,  # position-ids
@@ -893,7 +892,6 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
         super().__init__(config, layer_idx)
         self.layer_idx = layer_idx
         self.use_full_recompute = use_full_recompute
-        # self.use_meme_eff_attn = config.use_mem_eff_attn  # fix by liaojincheng
         self.sequence_parallel = config.sequence_parallel
         self.rope_3d = config.rope_3d
 

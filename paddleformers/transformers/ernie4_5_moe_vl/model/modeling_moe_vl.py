@@ -215,55 +215,6 @@ class ModalityDetach(PyLayer):
         return input_embeds_grad
 
 
-# @paddle.no_grad()
-# def construct_types_for_video(image_mask, token_type_ids, image_type_ids):
-#     """
-#     construct_types_for_video,
-#     Args:
-#         image_mask: [B], 1 if is `im_patch_id` else 0
-#         token_type_ids: [B], see `IDTYPES_2_ID`
-#         image_type_ids: [B], see `IMAGETYPES_2_ID`
-#     Returns:
-#         image_is_video: shape as[image_B,], image_B is batch size of image_features.
-#                         Value is 0/1, 1 is video, 0 is image.
-#         compressed_image_indices: shape as [image_seq,],
-#                         image_seq the num of image_placeholder in input_ids.
-#                         Value is 0/1, 1 is video, 0 is image.
-#         video_images_with_placeholder: shape as [padded_video_b,],
-#                         padded_video_b is padding num of video, as batch size before temporal_linear.
-#                         Value is 0/1, 1 is video, 0 is pad.
-#     """
-#     if image_type_ids is not None:
-#         image_type_ids = image_type_ids[image_type_ids >= 0]  # remove padding
-#         # placeholder before conv3d
-#         video_images_with_placeholder = image_type_ids[image_type_ids != IMAGETYPES_2_ID["image"]]
-#         if video_images_with_placeholder.shape[0] != 0:
-#             video_images_with_placeholder = video_images_with_placeholder == IMAGETYPES_2_ID["video"]
-#             video_images_with_placeholder = video_images_with_placeholder.astype("int64")
-#         else:
-#             video_images_with_placeholder = None
-
-#         # image_is_video the type of visual feature to extract video and image from visual feature
-#         # 1 is video, 0 is image
-#         image_is_video = image_type_ids[image_type_ids != IMAGETYPES_2_ID["padded_image"]]
-
-#         assert image_is_video.shape[0] != 0, f"image_is_video is 0 shape, {image_is_video.shape}"
-
-#         image_is_video = image_is_video == IMAGETYPES_2_ID["video"]
-#         image_is_video = image_is_video.astype("int64")
-
-#     else:
-#         video_images_with_placeholder = None
-#         image_is_video = None
-
-#     # compressed_image_indices is type id after compressed visual feature，0 is image，1 is video after conv3d
-#     compressed_image_indices = token_type_ids[image_mask]
-#     compressed_image_indices = compressed_image_indices == TokenType.video
-#     compressed_image_indices = compressed_image_indices.astype("int64")
-
-#     return image_is_video, compressed_image_indices, video_images_with_placeholder
-
-
 class VariableResolutionResamplerModel(nn.Layer):
     """
     VariableResolutionResamplerModel, support variable resolution
@@ -350,7 +301,6 @@ class VariableResolutionResamplerModel(nn.Layer):
         image_type_ids:  [B_image]
         grid_thw: [B_image, 3]
         """
-        # assert image_type_ids is not None
 
         def fwd_spatial(x):
             """
