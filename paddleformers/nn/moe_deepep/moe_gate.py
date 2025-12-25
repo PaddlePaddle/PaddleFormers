@@ -405,7 +405,6 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         self.transpose_gate_weight = transpose_gate_weight
 
         self.scoring_func = moe_config.get("gate_activation", "softmax")
-        self.moe_expert_capacity_factor = moe_config.get("moe_expert_capacity_factor", 0.0)
         self.group = moe_config.get("group", None)
         self.global_aux_loss = moe_config.get("global_aux_loss", False)
         self.use_rts = moe_config.get("use_rts", True)
