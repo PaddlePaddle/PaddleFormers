@@ -14,22 +14,19 @@
 
 set -exo pipefail
 
-source PaddleFleet/.venv/bin/activate
+source ../PaddleFleet/.venv/bin/activate
 
-export root_dir=$(pwd)
-cd $root_dir/PaddleFormers/examples/experiments/paddlefleet
+export root_dir=/workspace
 
-config_json="qwen_single_card.json"
+export CACHE_DIR=/root/.cache
+config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_pt.yaml
 
-jq --arg cache "$CACHE_DIR" \
-   '.save_steps = 100
-    | .input_dir = "1.0 \($cache)/glm45/data/pre-training/llama_openwebtext_100k"
-    | .model_name_or_path = "\($cache)/qwen/Qwen3-30B-A3B-Base"' \
-   $config_json > $config_json.tmp
-mv $config_json.tmp $config_json
+yq eval '
+  .save_steps = 100 |
+  .input_dir = "1.0 '"${CACHE_DIR}"'/glm45/data/pre-training/llama_openwebtext_100k" |
+  .model_name_or_path = "'"${CACHE_DIR}"'/qwen/Qwen3-30B-A3B-Base"
+' "$config_yaml" -i
 
-ls -lah $CACHE_DIR/qwen/Qwen3-30B-A3B-Base
-cat $config_json
 
 rm -rf checkpoint/
 rm -rf outputs/
@@ -44,7 +41,8 @@ export FLAGS_use_stride_compute_kernel=False
 unset http_proxy https_proxy
 
 set +e
-coverage run run_pretrain.py $config_json 2>&1 | tee ./qwen3_single_card.log
+# coverage run run_pretrain.py $config_json 2>&1 | tee ./qwen3_single_card.log
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./qwen3_single_card.log
 
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
