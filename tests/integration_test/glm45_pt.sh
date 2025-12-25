@@ -55,7 +55,7 @@ yq eval '.train_dataset_path = strenv(cur_dir) + "/data/pre-training/train.jsonl
     | .eval_dataset_path = strenv(cur_dir) + "/data/pre-training/eval.jsonl"
     | .model_name_or_path = strenv(cur_dir) + "/GLM-4.5-Air"
     | .logging_dir = strenv(cur_dir) + "/vdl_log"
-    | .output_dir = strenv(cur_dir) + "/checkpoints"' \
+    | .output_dir = strenv(cur_dir) + "/checkpoints/pretrain"' \
    $config_yaml > ${config_yaml}.tmp
 mv ${config_yaml}.tmp $config_yaml
 

@@ -23,19 +23,19 @@ export cur_dir=$(pwd)
 config_sft_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_sft.yaml
 config_lora_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
 
-config_json=$CACHE_DIR/glm45/GLM-4.5-Air/config.json
 
 yq '.train_dataset_path = strenv(cur_dir) + "/data/sft/train.jsonl"
     | .eval_dataset_path = strenv(cur_dir) + "/data/sft/dev.jsonl"
-    | .model_name_or_path = strenv(CACHE_DIR) + "/glm45/GLM-4.5-Air"
+    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/pretrain"
     | .logging_dir = strenv(cur_dir) + "/glm_full_pp_vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
    $config_sft_yaml > ${config_sft_yaml}.tmp
 mv ${config_sft_yaml}.tmp $config_sft_yaml
 
+
 yq '.train_dataset_path = strenv(cur_dir) + "/data/sft/train.jsonl"
     | .eval_dataset_path = strenv(cur_dir) + "/data/sft/dev.jsonl"
-    | .model_name_or_path = strenv(CACHE_DIR) + "/glm45/GLM-4.5-Air"
+    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
     | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"' \
    $config_lora_yaml > ${config_lora_yaml}.tmp
