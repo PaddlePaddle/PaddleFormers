@@ -48,8 +48,6 @@ from paddle import framework
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 
-from paddleformers.transformers.gpt_provider import GPTModel
-
 try:
     from paddle.distributed.flex_checkpoint.dcp.sharded_weight import ShardedWeight
 except:
@@ -72,6 +70,8 @@ if is_paddlefleet_available():
     from paddlefleet.models.gpt import GPTModel as FleetGPTModel
     from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
+
+    from paddleformers.transformers.gpt_provider import GPTModel
 else:
     paddlefleet_dist_model = None
     FleetGPTModel = None

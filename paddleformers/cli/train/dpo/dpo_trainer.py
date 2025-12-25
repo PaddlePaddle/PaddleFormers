@@ -20,7 +20,6 @@ from paddle.distributed import fleet
 from paddleformers.nn.criterion import CriterionLayer
 from paddleformers.peft.lora.lora_model import AVAILABLE_LAYERS
 from paddleformers.trainer import Trainer
-from paddleformers.transformers.gpt_provider import GPTModel
 from paddleformers.transformers.model_utils import unwrap_model
 from paddleformers.utils import infohub
 from paddleformers.utils.import_utils import is_paddlefleet_available
@@ -30,6 +29,8 @@ if is_paddlefleet_available():
     import paddlefleet.distributed.model as paddlefleet_dist_model
     from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
+
+    from paddleformers.transformers.gpt_provider import GPTModel
 
 DPO_INFO_KEYS = [
     "reference_chosen_logps",
