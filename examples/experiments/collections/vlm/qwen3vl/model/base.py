@@ -166,6 +166,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     position_embedding_type: str = "rope"
     use_qk_norm: bool = True
     specific_layer: type = Qwen3VLTextTransformerLayer
+    max_sequence_length: int = 262144
 
 
 def qwen3vl_data_step(dataloader_iter) -> dict[str, paddle.Tensor]:
@@ -230,7 +231,7 @@ class Qwen3VLVisionProvider(TransformerConfig):
     attention_dropout: float = 0.0
     intermediate_size: int = 4304
     initializer_range: float = 0.02
-    gated_linear_unit: bool = True
+    gated_linear_unit: bool = False
     activation_func: Callable = F.gelu
     num_key_value_heads: int = 16
     layernorm_zero_centered_gamma: bool = False
@@ -383,7 +384,8 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
         vision_transformer_config = config.vision_transformer_config
         # vision_projection_config = config.vision_projection_config
         self.model_version = vision_transformer_config.model_version
-        assert self.model_version is not None     
+        self._language_max_sequence_length = language_transformer_config.max_sequence_length
+        assert self.model_version is not None
 
         self.config = config
         self.pre_process = pre_process
@@ -657,8 +659,9 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
             # MultiModal Token indices are assumed to be values
             input_ids_text[input_ids_text < 0] = 0
 
-            language_embeddings = self.language_model.embedding(
-                input_ids=input_ids_text, position_ids=None
+            # print(self.language_model.layers[0])
+            language_embeddings = self.language_model.run_function[0](
+                {"input_ids": input_ids_text, "position_ids": None}
             )  # [decoder_seq_len, b, h_language]
 
             language_embeddings = language_embeddings.transpose(1, 0).contiguous()  # [b, decoder_seq_len, h_language]

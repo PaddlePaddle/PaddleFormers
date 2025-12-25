@@ -3,6 +3,7 @@ import os
 import re
 
 import paddle
+import pynvml
 
 from paddleformers.transformers import AutoTokenizer, AutoConfig, AutoProcessor, process_vision_info
 from paddleformers.transformers.qwen3_vl.modeling import Qwen3VLForConditionalGeneration
@@ -11,10 +12,13 @@ from vlm.qwen3vl.model import Qwen3VLModel, Qwen3VLProvider2B
 
 model_path = f"{os.environ['HOME']}/Qwen3VL-2B-Instruct/weights"
 
+pynvml.nvmlInit()
+handler = pynvml.nvmlDeviceGetHandleByIndex(0)
+
 formars_config = AutoConfig.from_pretrained(model_path)
 formars_config.fuse_attention_qkv = True
 formers_model = Qwen3VLForConditionalGeneration.from_pretrained(
-    model_path, convert_from_hf=True, fuse_attention_qkv=True, fuse_attention_ffn=True,
+    model_path, fuse_attention_qkv=True, fuse_attention_ffn=True, load_checkpoint_format="flex_checkpoint",
 ).eval()
 
 
@@ -75,13 +79,13 @@ def map_layer_name(original_name):
 
 fleet_state_dict = {}
 for name, param in fleet_model.named_parameters():
-    print("fleet ", name, param.name, param.shape, sep="\t")
+    # print("fleet ", name, param.name, param.shape, sep="\t")
     fleet_state_dict[name]=param
 
 
 language_depth = 0
 for name, param in formers_model.named_parameters():
-    print("formers ", name, param.name, param.shape)
+    # print("formers ", name, param.name, param.shape)
     fleet_name, layer_index = map_layer_name(name)
     language_depth = max(language_depth, layer_index)
     if "language_model.norm" in name:
@@ -103,7 +107,6 @@ for name, param in formers_model.named_parameters():
         print(f"name {name} correspond {fleet_name} not equal")
 
 processor = AutoProcessor.from_pretrained(model_path)
-print("hehe")
 messages = [
     {
         "role": "user",
@@ -127,7 +130,7 @@ inputs = processor(
     padding=True,
     return_tensors="pd",
 )
-print(inputs)
+# print(inputs)
 
 # paddle.seed(42)
 # with paddle.no_grad():

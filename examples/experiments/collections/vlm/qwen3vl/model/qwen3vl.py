@@ -41,11 +41,32 @@ class Qwen3VLTextProvider8B(Qwen3VLTextProvider):
     num_attention_heads: int = 48
     intermediate_size: int = 12288
 
-class Qwen3VLTextProvider32B(TransformerConfig):
+@dataclass
+class Qwen3VLTextProvider32B(Qwen3VLTextProvider):
     num_hidden_layers: int = 64
     num_attention_heads: int = 64
     intermediate_size: int = 25600
     hidden_size: int = 5120
+
+
+@dataclass
+class Qwen3VLTextProvider30BA3B(Qwen3VLTextProvider):
+    num_hidden_layers: int = 48
+    num_attention_heads: int = 32
+    n_routed_experts: int = 128
+    num_experts_per_tok: int = 8
+    intermediate_size: int = 6144
+    hidden_size: int = 2048
+
+
+@dataclass
+class Qwen3VLTextProvider235BA22B(Qwen3VLTextProvider):
+    num_hidden_layers: int = 94
+    num_attention_heads: int = 64
+    n_toute_experts: int = 128
+    num_experts_per_tok: int = 8
+    intermediate_size: int = 12288
+    hidden_size: int = 4096
 
 
 @dataclass
@@ -64,7 +85,7 @@ class Qwen3VLProvider2B(Qwen3VLProvider):
 @dataclass
 class Qwen3VLProvider4B(Qwen3VLProvider):
     language_transformer_config: TransformerConfig = field(
-        default_factory=lambda: Qwen3VLProvider4B()
+        default_factory=lambda: Qwen3VLTextProvider4B()
     )
     vision_transformer_config: TransformerConfig | PretrainedConfig = field(
         default_factory=lambda: Qwen3VLVisionProvider(
@@ -77,7 +98,7 @@ class Qwen3VLProvider4B(Qwen3VLProvider):
 @dataclass
 class Qwen3VLProvider8B(Qwen3VLProvider):
     language_transformer_config: TransformerConfig = field(
-        default_factory=lambda: Qwen3VLProvider8B()
+        default_factory=lambda: Qwen3VLTextProvider8B()
     )
     vision_transformer_config: TransformerConfig | PretrainedConfig = field(
         default_factory=lambda: Qwen3VLVisionProvider(
@@ -89,7 +110,7 @@ class Qwen3VLProvider8B(Qwen3VLProvider):
 @dataclass
 class Qwen3VLProvider32B(Qwen3VLProvider):
     language_transformer_config: TransformerConfig = field(
-        default_factory=lambda: Qwen3VLProvider32B()
+        default_factory=lambda: Qwen3VLTextProvider32B()
     )
     vision_transformer_config: TransformerConfig | PretrainedConfig = field(
         default_factory=lambda: Qwen3VLVisionProvider(

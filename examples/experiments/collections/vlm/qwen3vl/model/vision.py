@@ -196,8 +196,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                 deepstack_feature_lists = []
                 for l_no, layer in enumerate(self.layers):
                     packed_seq_params_now = packed_seq_params
-                    
-                    hidden_states, context = layer(
+                    output = layer(
                         hidden_states=hidden_states,
                         attention_mask=attention_mask,
                         context=context,
@@ -208,7 +207,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                         attention_bias=attention_bias,
                         packed_seq_params=packed_seq_params_now,
                     )
-                    
+                    hidden_states, context = output["hidden_states"], output["context"]
                     if (
                         paddle.is_grad_enabled()
                         and self.config.cpu_offloading
@@ -217,14 +216,14 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                         hidden_states = self.group_prefetch_offload_commit_async(hidden_states)
                     
                     if l_no in self.deepstack_visual_indexes:
-                        deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(l_no)](hidden_states)
+                        deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(l_no)](hidden_states.squeeze(0))
                         deepstack_feature_lists.append(deepstack_feature)
                     print(f"fleet vision {l_no} hidden_states", hidden_states._md5sum())
         
         if self.norm is not None:
             hidden_states = self.norm(hidden_states)
         
-        hidden_states = self.merger(hidden_states)
+        hidden_states = self.merger(hidden_states.squeeze(0))
         
         return hidden_states, deepstack_feature_lists
     
@@ -383,43 +382,38 @@ class Qwen3VisionModel(VisionLayer):
         )
     
     @jit_fuser
-    def rot_pos_emb(self, grid_thw: paddle.Tensor) -> paddle.Tensor:
-        merge_size = self.spatial_merge_size
-        
-        max_hw = int(grid_thw[:, 1:].max().item())
-        freq_table = self.rotary_pos_emb(max_hw)
-        
-        total_tokens = int(paddle.prod(grid_thw, dim=1).sum().item())
-        pos_ids = paddle.empty((total_tokens, 2), dtype=paddle.int32)
-        
-        offset = 0
-        for num_frames, height, width in grid_thw:
-            merged_h, merged_w = height // merge_size, width // merge_size
+    def rot_pos_emb(self, grid_thw):
+        pos_ids = []
+        for t, h, w in grid_thw:
+            hpos_ids = paddle.arange(h).unsqueeze(1).expand([-1, w])
+            hpos_ids = hpos_ids.reshape(
+                [
+                    h // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                    w // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                ]
+            )
+            hpos_ids = hpos_ids.transpose(perm=[0, 2, 1, 3])
+            hpos_ids = hpos_ids.flatten()
 
-            block_rows = paddle.arange(merged_h)  # block row indices
-            block_cols = paddle.arange(merged_w)  # block col indices
-            intra_row = paddle.arange(merge_size)  # intra-block row offsets
-            intra_col = paddle.arange(merge_size)  # intra-block col offsets
-
-            # Compute full-resolution positions
-            row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
-            col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
-
-            row_idx = row_idx.expand([merged_h, merged_w, merge_size, merge_size]).reshape(-1)
-            col_idx = col_idx.expand([merged_h, merged_w, merge_size, merge_size]).reshape(-1)
-
-            coords = paddle.stack((row_idx, col_idx), dim=-1)
-
-            if num_frames > 1:
-                coords = coords.repeat(num_frames, 1)
-
-            num_tokens = coords.shape[0]
-            pos_ids[offset : offset + num_tokens] = coords
-            offset += num_tokens
-
-        embeddings = freq_table[pos_ids]  # lookup rotary embeddings
-        embeddings = embeddings.flatten(1)
-        return embeddings
+            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, -1])
+            wpos_ids = wpos_ids.reshape(
+                [
+                    h // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                    w // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                ]
+            )
+            wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
+            wpos_ids = wpos_ids.flatten()
+            pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
+        pos_ids = paddle.cat(x=pos_ids, axis=0)
+        max_grid_size = grid_thw[:, 1:].max()
+        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
+        rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(start_axis=1)
+        return rotary_pos_emb
     
     def fast_pos_embed_interpolate(self, grid_thw):
         grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
@@ -511,15 +505,17 @@ class Qwen3VisionModel(VisionLayer):
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
         hidden_states = hidden_states + pos_embeds
         
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
-        
         seq_len, _ = hidden_states.size()
         hidden_states = hidden_states.reshape([seq_len, -1])
+        hidden_states = hidden_states.unsqueeze(0)
+
+        rotary_pos_emb = self.rot_pos_emb(grid_thw)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         rotary_pos_cos = rotary_pos_emb.cos()
         rotary_pos_sin = rotary_pos_emb.sin()
         rotary_pos_emb = rotary_pos_emb[:, None, None, :]
+        rotary_pos_emb = rotary_pos_emb.transpose([1, 0])
         
         packed_seq_params = self.get_packed_seq_params(grid_thw)
         
@@ -531,5 +527,5 @@ class Qwen3VisionModel(VisionLayer):
             rotary_pos_sin=rotary_pos_sin,
             packed_seq_params=packed_seq_params,
         )
-        hidden_states = hidden_states.sequeeze(1).view(-1, self.merge_hidden_size)
+        # hidden_states = hidden_states.sequeeze(1).view(-1, self.merge_hidden_size)
         return hidden_states
