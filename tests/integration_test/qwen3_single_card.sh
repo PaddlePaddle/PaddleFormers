@@ -17,25 +17,23 @@ set -exo pipefail
 source PaddleFleet/.venv/bin/activate
 
 export root_dir=$(pwd)
-cd $root_dir/PaddleFormers/examples/experiments/paddlefleet
-
-config_json="qwen_single_card.json"
-
-jq --arg cache "$CACHE_DIR" \
-   '.save_steps = 100
-    | .input_dir = "1.0 \($cache)/glm45/data/pre-training/llama_openwebtext_100k"
-    | .model_name_or_path = "\($cache)/qwen/Qwen3-30B-A3B-Base"' \
-   $config_json > $config_json.tmp
-mv $config_json.tmp $config_json
 
 ls -lah $CACHE_DIR/qwen/Qwen3-30B-A3B-Base
-cat $config_json
+
+config_sft_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen_single.yaml
+
+yq '.train_dataset_path = strenv(cur_dir) + "/data/sft/train.jsonl"
+    | .eval_dataset_path = strenv(cur_dir) + "/data/sft/dev.jsonl"
+    | .model_name_or_path = strenv(CACHE_DIR) + "/glm45/GLM-4.5-Air"
+    | .logging_dir = strenv(cur_dir) + "/glm_full_pp_vdl_log"
+    | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
+   $config_sft_yaml > ${config_sft_yaml}.tmp
+mv ${config_sft_yaml}.tmp $config_sft_yaml
 
 rm -rf checkpoint/
 rm -rf outputs/
 master=$(hostname -i)
 port=36677
-
 
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
@@ -44,7 +42,7 @@ export FLAGS_use_stride_compute_kernel=False
 unset http_proxy https_proxy
 
 set +e
-coverage run run_pretrain.py $config_json 2>&1 | tee ./qwen3_single_card.log
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_lora_yaml 2>&1 | tee ./qwen3_single_card.log
 
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
@@ -60,7 +58,6 @@ if [ $exit_code -ne 0 ]; then
 else
       echo "Test passed."
 fi
-
 
 set -e
 echo "
