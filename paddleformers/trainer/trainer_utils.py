@@ -1727,36 +1727,81 @@ class EMAStateAssembler:
         self.num_splits = moe_sharding_group.nranks
         self.shard_idx = moe_sharding_rank
         self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
+        self.latest_processed_checkpoint_step = -1
 
     def run(self):
-        latest_step, latest_ckpt_dir = self._find_latest_checkpoint()
-
         if self.save_hf_steps < 0:
             logger.info("[EMAStateAssembler] save_hf_steps is negative. Skipping.")
             return
 
-        if latest_ckpt_dir is None:
-            logger.info(f"[EMAStateAssembler] No checkpoint found in {self.output_dir}. Skipping.")
+        next_step, next_ckpt_dir = self._find_next_checkpoint()
+        if next_step is None:
+            next_step = -1
+        next_steps = []
+        dist.all_gather_object(next_steps, next_step)
+        if -1 in next_steps:
+            # At this point, some trainers no longer have any checkpoints to process. Each trainer checks whether it has any checkpoints left to process.
+            if next_step != -1 and next_ckpt_dir is not None:
+                # There are still checkpoints available locally for processing.
+                if self._is_already_handled(next_ckpt_dir):
+                    # Already processed, skip. It may enter here during the first warm start.
+                    self.latest_processed_checkpoint_step = next_step
+                    logger.info(
+                        f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
+                        "already been handled. Skipping."
+                    )
+                    return
+                # Not yet processed, check if EMA state needs to be merged.
+                is_hf_save_step = next_step % self.save_hf_steps == 0
+                if not is_hf_save_step:
+                    self._handle_naive_checkpoint(next_step, next_ckpt_dir)
+                    return
+            logger.info(
+                f"[EMAStateAssembler][Rank {self.rank}] No unprocessed checkpoint found in {self.output_dir} "
+                f"in current training step. Latest processed checkpoint step is {self.latest_processed_checkpoint_step}. Skipping."
+            )
             return
 
-        if self._is_already_handled(latest_ckpt_dir):
+        # At this point, each trainer has a checkpoint to process, but the step counts are not consistent.
+        if len(set(next_steps)) != 1:
+            # If the checkpoint does not need to be used for merging EMA state, then try to process it.
+            is_hf_save_step = next_step % self.save_hf_steps == 0
+            if not is_hf_save_step and next_ckpt_dir is not None:
+                if self._is_already_handled(next_ckpt_dir):
+                    self.latest_processed_checkpoint_step = next_step
+                    logger.info(
+                        f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
+                        "already been handled. Skipping."
+                    )
+                    return
+                self._handle_naive_checkpoint(next_step, next_ckpt_dir)
+                return
+
+            logger.warning(
+                f"[EMAStateAssembler][Rank {self.rank}] Multiple checkpoints detected. "
+                f"Selected checkpoint path: {next_ckpt_dir}. Skipping processing for this checkpoint."
+            )
+            return
+        # If the checkpoint has already been processed, skip it.
+        if self._is_already_handled(next_ckpt_dir):
+            self.latest_processed_checkpoint_step = next_step
             logger.info(
-                f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {latest_step} has "
+                f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
                 "already been handled. Skipping."
             )
             return
 
-        is_hf_save_step = latest_step % self.save_hf_steps == 0
+        is_hf_save_step = next_step % self.save_hf_steps == 0
 
         if is_hf_save_step:
-            self._handle_checkpoint_with_ema(latest_step, latest_ckpt_dir)
+            self._handle_checkpoint_with_ema(next_step, next_ckpt_dir)
         else:
-            self._handle_naive_checkpoint(latest_ckpt_dir)
+            self._handle_naive_checkpoint(next_step, next_ckpt_dir)
 
-    def _find_latest_checkpoint(self) -> Tuple[Optional[int], Optional[Path]]:
+    def _find_next_checkpoint(self) -> Tuple[Optional[int], Optional[Path]]:
         pattern = re.compile(_re_checkpoint)
-        latest_step = -1
-        latest_ckpt_path = None
+        min_step = None
+        min_ckpt_path = None
 
         if not self.output_dir.is_dir():
             return None, None
@@ -1766,11 +1811,12 @@ class EMAStateAssembler:
                 match = pattern.match(item.name)
                 if match:
                     step = int(match.group(1))
-                    if step > latest_step:
-                        latest_step = step
-                        latest_ckpt_path = item
+                    if step > self.latest_processed_checkpoint_step:
+                        if min_step is None or step < min_step:
+                            min_step = step
+                            min_ckpt_path = item
 
-        return latest_step, latest_ckpt_path
+        return min_step, min_ckpt_path
 
     def _is_already_handled(self, checkpoint_dir: Path) -> bool:
         final_signal_file = checkpoint_dir / f"saved_signal_{self.rank}"
@@ -1787,7 +1833,7 @@ class EMAStateAssembler:
         all_ranks_saved = flag_tensor.item() == self.world_size
         return all_ranks_saved
 
-    def _mark_as_handled(self, checkpoint_dir: Path):
+    def _mark_as_handled(self, checkpoint_dir: Path, step: int):
         final_signal_file = checkpoint_dir / f"saved_signal_{self.rank}"
         with open(final_signal_file, "w") as f:
             f.write("1")
@@ -1798,6 +1844,7 @@ class EMAStateAssembler:
                 temp_signal_file.unlink()
             except OSError as e:
                 logger.warning(f"[EMAStateAssembler] Failed to remove temp signal file {temp_signal_file}: {e}")
+        self.latest_processed_checkpoint_step = step
 
     def _handle_checkpoint_with_ema(self, step: int, checkpoint_dir: Path):
         if self._check_all_ranks_saved(checkpoint_dir):
@@ -1806,13 +1853,13 @@ class EMAStateAssembler:
             )
             ema_state_path = self._get_ema_state_path(checkpoint_dir)
             if not ema_state_path.exists():
-                self._mark_as_handled(checkpoint_dir)
+                self._mark_as_handled(checkpoint_dir, step)
                 logger.warning(
                     f"[EMAStateAssembler] [Rank {self.rank}] EMA state file not found at {ema_state_path}, skipping and updating signal. "
                 )
                 return
             ema_sharded_state_dict = self._build_ema_sharded_state_dict(ema_state_path)
-            self._mark_as_handled(checkpoint_dir)
+            self._mark_as_handled(checkpoint_dir, step)
             self._save_full_ema_states(step, ema_sharded_state_dict)
             del ema_sharded_state_dict
             logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Finished merging EMA states and updated signal.")
@@ -1821,7 +1868,7 @@ class EMAStateAssembler:
                 f"[EMAStateAssembler] [Rank {self.rank}] Waiting for other ranks to finish saving checkpoint at step {step}."
             )
 
-    def _handle_naive_checkpoint(self, checkpoint_dir: Path):
+    def _handle_naive_checkpoint(self, step: int, checkpoint_dir: Path):
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Processing a no need merge EMA checkpoint.")
         temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
 
@@ -1831,7 +1878,7 @@ class EMAStateAssembler:
             )
             return
 
-        self._mark_as_handled(checkpoint_dir)
+        self._mark_as_handled(checkpoint_dir, step)
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Marked naive checkpoint as handled and updated signal.")
 
     def _get_ema_state_path(self, checkpoint_dir: Path) -> Path:
