@@ -53,7 +53,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         self.use_rts = kwargs.pop("use_rts", True)
         self.top2_2nd_expert_sampling = kwargs.pop("top2_2nd_expert_sampling", True)
 
-        self.drop_policy = kwargs.pop("drop_policy", "probs")
+        self.moe_token_drop_policy = kwargs.pop("moe_token_drop_policy", "probs")
         # Qwen2MoE: greedy
         # DeepSeekV2&V3: group_limited_greedy for training, and noaux_tc for inference
         self.topk_method = kwargs.pop("topk_method", "greedy")
@@ -182,7 +182,6 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             logits += self.gumbel_rsample(logits.shape)
 
         gates = self.gate_score_func(logits=logits)
-        capacity = self._capacity(gates, self.moe_expert_capacity_factor)
 
         # Create a mask for 1st's expert per token
         # noisy gating
@@ -210,6 +209,8 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
                 )  # Calculate the maximum value among expert processes
             # Make sure the capacity value does not exceed the number of tokens.
             capacity = int(min(new_capacity, paddle.tensor(mask1.size(0))))
+        else:
+            capacity = self._capacity(gates, self.moe_expert_capacity_factor)
 
         l_aux = self._cal_aux_loss(gates, mask1)
         l_zloss = self._cal_z_loss(logits)
@@ -400,15 +401,15 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             )
 
             # update mask and locations by capacity
-            if self.drop_policy == "probs":
+            if self.moe_token_drop_policy == "probs":
                 topk_masked_gates = paddle.zeros_like(gates).put_along_axis(top_idx, top_gate, axis=1)
                 capacity_probs, capacity_indices = paddle.topk(topk_masked_gates, k=capacity, axis=0, sorted=False)
                 token_priority = self._priority(capacity_indices, capacity)
 
-            elif self.drop_policy == "position":
+            elif self.moe_token_drop_policy == "position":
                 token_priority = self._priority(top_idx, capacity)
             else:
-                raise ValueError(f"Invalid drop_policy: {self.drop_policy}")
+                raise ValueError(f"Invalid moe_token_drop_policy: {self.moe_token_drop_policy}")
         else:
             # Do not drop tokens - set capacity according to current expert assignments
             local_capacity = paddle.max(exp_counts)
