@@ -1084,24 +1084,6 @@ class GLM4VPlugin(Qwen2VLPlugin):
         return mm_inputs
 
 
-def _get_gemma3_token_type_ids(batch_ids, processor):
-    r"""Get gemma3 token type ids for computing loss.
-
-    Returns:
-        batch_token_type_ids: shape (batch_size, seq_length)
-
-    """
-    image_token_id: int = getattr(processor, "image_token_id")
-    batch_token_type_ids = []
-    for token_ids in batch_ids:
-        token_ids = np.array(token_ids)
-        token_type_ids = np.zeros_like(token_ids)
-        token_type_ids[token_ids == image_token_id] = 1
-        batch_token_type_ids.append(token_type_ids.tolist())
-
-    return batch_token_type_ids
-
-
 @dataclass
 class Gemma3Plugin(BasePlugin):
     @override
@@ -1157,7 +1139,6 @@ class Gemma3Plugin(BasePlugin):
         self._validate_input(processor, images, videos, audios)
         mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
         mm_inputs.pop("num_crops", None)
-        mm_inputs["token_type_ids"] = _get_gemma3_token_type_ids(batch_ids, processor)
         return mm_inputs
 
 

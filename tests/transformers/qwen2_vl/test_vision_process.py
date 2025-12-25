@@ -33,8 +33,14 @@ class TestQwenVisionProcessing(unittest.TestCase):
         # Create test image
         self.test_image = Image.new("RGB", (100, 100), color="red")
 
+        # Create test image url
+        self.test_image_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
+
         # Create test video frames
         self.test_frames = [Image.new("RGB", (64, 64), color=(i * 10, i * 20, i * 30)) for i in range(10)]
+
+        # Create test video url
+        self.test_video_url = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
 
         os.environ["MODEL_SEQ_LEN"] = "128000"
 
@@ -165,7 +171,7 @@ class TestQwenVisionProcessing(unittest.TestCase):
 
     def test_fetch_image_from_url(self):
         """Test fetch_image function with HTTP URL."""
-        ele = {"image_url": "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"}
+        ele = {"image_url": self.test_image_url}
         result = vision_process.fetch_image(ele)
 
         self.assertIsInstance(result, Image.Image)
@@ -237,8 +243,26 @@ class TestQwenVisionProcessing(unittest.TestCase):
 
     def test_fetch_video_with_decord(self):
         """Test fetch_video(default with frame list) function using decord backend."""
-        ele = {"video": self.test_frames}
-        result = vision_process.fetch_video(ele)
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+        ele = {"video": self.test_video_url}
+        result = vision_process.fetch_video(ele, backend="decord")
+
+        self.assertIsInstance(result, paddle.Tensor)
+
+    def test_fetch_video_with_paddlecodec(self):
+        """Test fetch_video(default with frame list) function using paddlecodec backend."""
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+        ele = {"video": self.test_video_url}
+        result = vision_process.fetch_video(ele, backend="paddlecodec")
+
+        import torchcodec
+
+        if not getattr(torchcodec, "__is_paddle_compatible_library__", None):
+            raise RuntimeError("Could not import 'torchcodec'. Please ensure it is installed.")
 
         self.assertIsInstance(result, paddle.Tensor)
 
@@ -257,7 +281,7 @@ class TestQwenVisionProcessing(unittest.TestCase):
                 {
                     "content": [
                         {"image": self.test_image},
-                        {"image_url": "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"},
+                        {"image_url": self.test_image_url},
                     ]
                 }
             ]

@@ -188,9 +188,16 @@ class DPODataSet(IterableDataset):
     def _preprocess_dpo_example(self, example):
 
         chosen_m, rejected_m = deepcopy(example["messages"]), deepcopy(example["messages"])
-        session_start_index = (
-            len(example["messages"]) if example["messages"][0]["role"] != "system" else len(example["messages"]) - 1
-        )
+        if self.template_backend == "jinja":
+            # The Jinja backend will concatenate the "system" separately and place it at the beginning.
+            session_start_index = (
+                len(example["messages"])
+                if example["messages"][0]["role"] != "system"
+                else len(example["messages"]) - 1
+            )
+        else:
+            # Custom backends will concatenate the "system" message and the first "user" message together.
+            session_start_index = len(example["messages"])
         chosen_m.extend(example["chosen_response"])
         rejected_m.extend(example["rejected_response"])
 
@@ -232,13 +239,10 @@ class DPODataSet(IterableDataset):
             rejected_messages = self.template.mm_plugin.process_messages(
                 example["rejected"]["messages"], images, videos, audios, mm_inputs, self.processor
             )
-            prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
-            _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)
-
-            chosen_encoded_messages = []
-            rejected_encoded_messages = []
-            chosen_encoded_messages.append([prompt_ids, chosen_ids])
-            rejected_encoded_messages.append([prompt_ids, rejected_ids])
+            chosen_encoded_messages = self.template.encode_multiturn(self.tokenizer, chosen_messages, system, tools)
+            rejected_encoded_messages = self.template.encode_multiturn(
+                self.tokenizer, rejected_messages, system, tools
+            )
 
         # chosen/rejected response
         response_token_ids_list = []
@@ -318,6 +322,8 @@ class DPODataSet(IterableDataset):
         )
 
     def _postprocess_sequence(self, example):
+        if self.template_backend == "jinja" and example.get("system", None):
+            example["messages"].insert(0, {"role": "system", "content": example["system"]})
         example = self._preprocess_dpo_example(example)
         # sequence: system + knowledge_tokens + prompt + chosen + reject
         (

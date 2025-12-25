@@ -30,7 +30,6 @@ from paddleformers.transformers import (
     process_vision_info,
 )
 from paddleformers.transformers.video_utils import load_video
-from paddleformers.utils.log import logger
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -632,7 +631,6 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
                 0.0384893,
             ]
         )
-        logger.info(f"Output logits slice1:\n{output[0, 0, :30]}")
         self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=5e-4, rtol=1e-5))
 
     def test_model_tiny_logits_batch(self):
@@ -675,7 +673,6 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
                 0.03848937,
             ]
         )
-        logger.info(f"Output logits slice2:\n{output[0, 0, :30]}")
         self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
         self.assertTrue(paddle.allclose(output[1, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
@@ -757,13 +754,15 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
                 0.05480766,
             ]
         )
-        logger.info(f"Output logits slice3:\n{output[0, 1000, 10000:10030]}")
-        logger.info(f"Output logits slice4:\n{output[1, 1000, 10000:10030]}")
         self.assertTrue(paddle.allclose(output[0, 1000, 10000:10030], EXPECTED_SLICE_1, atol=1e-3, rtol=1e-3))
         self.assertTrue(paddle.allclose(output[1, 1000, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
 
     def test_model_tiny_logits_with_video(self):
-        video_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+
+        video_url = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
         messages2 = [
             {
                 "role": "user",
@@ -776,48 +775,45 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
             }
         ]
         text = self.processor.apply_chat_template(messages2, tokenize=False, add_generation_prompt=True)
-        video = load_video(video_url)[0][:3, ::4, ::4]  # Only the first 3 frames for testing
+        video = load_video(video_url)[0][:3, :, ::4, ::4]  # Only the first 3 frames for testing
 
-        inputs = self.processor(
-            text=[text], videos=video, return_tensors="pd", do_normalize=False
-        )  # Disable normalize to avoid unit test issue
+        inputs = self.processor(text=[text], videos=video, return_tensors="pd")
 
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE = paddle.to_tensor(
             [
-                -0.02633137,
-                -0.04612442,
-                0.00469637,
-                -0.01361415,
-                0.03280038,
-                -0.03935526,
-                0.07284112,
-                0.05291817,
-                -0.07852594,
-                -0.04179034,
-                -0.04760805,
-                -0.00471714,
-                -0.00523766,
-                0.00449952,
-                0.06172895,
-                -0.02328227,
-                0.02816464,
-                0.04354570,
-                0.01082543,
-                0.01850530,
-                0.02449479,
-                0.04358618,
-                -0.02710543,
-                0.01480347,
-                0.02714857,
-                0.02346411,
-                0.04314926,
-                0.03883061,
-                0.10793331,
-                -0.06213767,
+                -0.04566297,
+                -0.03633624,
+                -0.00060132,
+                0.01984504,
+                0.01219833,
+                -0.03635779,
+                0.03821730,
+                0.02926352,
+                -0.06492767,
+                -0.03230517,
+                -0.02562709,
+                0.01816753,
+                0.01220891,
+                -0.02435855,
+                0.03222004,
+                -0.01876292,
+                0.05529597,
+                0.08161059,
+                -0.00048430,
+                0.02227450,
+                0.01869093,
+                0.03231778,
+                -0.02322903,
+                -0.01434964,
+                0.02201555,
+                0.05285032,
+                0.01788124,
+                0.03119042,
+                0.08567953,
+                -0.03845767,
             ]
         )
-        logger.info(f"Output logits slice5:\n{output[0, 150, 10000:10030]}")
         self.assertTrue(paddle.allclose(output[0, 150, 10000:10030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
 

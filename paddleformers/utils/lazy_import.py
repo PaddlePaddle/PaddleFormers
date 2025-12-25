@@ -99,6 +99,10 @@ class _LazyModule(ModuleType):
     def _get_module(self, module_name: str):
         """Internal helper for safely importing submodules."""
         try:
+            import transformers.utils.import_utils as import_utils_hf
+
+            if hasattr(import_utils_hf, "_torchcodec_available"):
+                import_utils_hf._torchcodec_available = False
             return importlib.import_module(f".{module_name}", self.__name__)
         except Exception as e:
             raise e

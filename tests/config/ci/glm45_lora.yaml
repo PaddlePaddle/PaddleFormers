@@ -1,0 +1,67 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ../data/sft/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ../data/sft/dev.jsonl
+eval_dataset_prob: "1.0"
+max_seq_len: 8192
+packing: false
+mix_strategy: concat
+
+### model
+model_name_or_path: ../zai-org/GLM-4.5-Air
+attn_impl: flashmask
+lora: true
+lora_rank: 8
+
+### finetuning
+# base
+stage: SFT
+fine_tuning: lora
+seed: 23
+do_train: true
+do_eval: true
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 100
+eval_steps: 1000
+evaluation_strategy: steps
+save_steps: 50
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 4
+logging_dir: ./glm_full_single_lora_log
+output_dir: ./checkpoints/glm_single_lora_ckps
+disable_tqdm: true
+eval_accumulation_steps: 16
+
+# train
+warmup_steps: 20
+learning_rate: 1.0e-4
+
+# performance
+fuse_attention_qkv: true
+fuse_attention_ffn: true
+moe_token_dispatcher_type: "deepep"
+gated_linear_unit: true
+tensor_model_parallel_size: 4
+pipeline_model_parallel_size: 2
+expert_model_parallel_size: 4
+use_expert_parallel: true
+sequence_parallel: true
+moe_group: mp
+sharding: stage1
+amp_master_grad: true
+recompute: false
+recompute_granularity: ""
+bf16: true
+fp16_opt_level: O2
+save_to_hf: true
+unified_checkpoint: true
+load_checkpoint_format: flex_checkpoint
+save_checkpoint_format: flex_checkpoint
+
+moe_router_force_load_balancing: true
+num_hidden_layers: 4
