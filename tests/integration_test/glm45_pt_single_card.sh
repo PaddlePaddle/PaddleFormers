@@ -17,16 +17,16 @@ set -exo pipefail
 source PaddleFleet/.venv/bin/activate
 
 export root_dir=$(pwd)
-cd $root_dir/PaddleFormers/examples/experiments/paddlefleet
+# cd $root_dir/PaddleFormers/examples/experiments/paddlefleet
 
-config_json="glm45_single_card.json"
+# config_json="glm45_single_card.json"
 
-jq --arg cache "$CACHE_DIR" \
-   '.save_steps = 100
-    | .input_dir = "1.0 \($cache)/glm45/data/pre-training/llama_openwebtext_100k"
-    | .model_name_or_path = "\($cache)/glm45/GLM-4.5-Air"' \
-   $config_json > $config_json.tmp
-mv $config_json.tmp $config_json
+# jq --arg cache "$CACHE_DIR" \
+#    '.save_steps = 100
+#     | .input_dir = "1.0 \($cache)/glm45/data/pre-training/llama_openwebtext_100k"
+#     | .model_name_or_path = "\($cache)/glm45/GLM-4.5-Air"' \
+#    $config_json > $config_json.tmp
+# mv $config_json.tmp $config_json
 
 
 rm -rf checkpoint/
@@ -40,7 +40,7 @@ export FLAGS_use_stride_compute_kernel=False
 unset http_proxy https_proxy
 
 set +e
-NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $root_dir/PaddleFormers/tests/config/ci/glm45_single_pt.yaml 2>&1 | tee ./glm45_single_card.log
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $root_dir/PaddleFormers/tests/config/ci/glm45_single_pt-test.yaml 2>&1 | tee ./glm45_single_card.log
 
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
