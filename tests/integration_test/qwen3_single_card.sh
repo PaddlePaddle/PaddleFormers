@@ -76,6 +76,6 @@ echo "
 10 10.52686119
 " > ./qwen3_single_card_gt_loss.txt
 
-python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
+python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --log_file ./qwen3_single_card.log \
    --gt_file ./qwen3_single_card_gt_loss.txt

@@ -75,7 +75,7 @@ echo "
 10 9.01230431
 " > ./glm45_sft_multi_card_gt_loss.txt
 
-python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
+python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 10 \
    --log_file ./glm45_sft.log \
    --gt_file ./glm45_sft_multi_card_gt_loss.txt
@@ -105,7 +105,7 @@ echo "
 100 6.82817125
 " > ./glm45_lora_multi_card_gt_loss.txt
 
-python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
+python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 100 \
    --log_file ./glm45_lora.log \
    --gt_file ./glm45_lora_multi_card_gt_loss.txt
