@@ -1848,20 +1848,49 @@ class EMAStateAssembler:
         next_steps = []
         dist.all_gather_object(next_steps, next_step)
         if -1 in next_steps:
-            logger.warning(f"[EMAStateAssembler] [Rank {self.rank}] No checkpoints found. Skipping.")
+            # At this point, some trainers no longer have any checkpoints to process. Each trainer checks whether it has any checkpoints left to process.
+            if next_step != -1 and next_ckpt_dir is not None:
+                # There are still checkpoints available locally for processing.
+                if self._is_already_handled(next_ckpt_dir):
+                    # Already processed, skip. It may enter here during the first warm start.
+                    self.latest_processed_checkpoint_step = next_step
+                    logger.info(
+                        f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
+                        "already been handled. Skipping."
+                    )
+                    return
+                # Not yet processed, check if EMA state needs to be merged.
+                is_hf_save_step = next_step % self.save_hf_steps == 0
+                if not is_hf_save_step:
+                    self._handle_naive_checkpoint(next_step, next_ckpt_dir)
+                    return
+            logger.info(
+                f"[EMAStateAssembler][Rank {self.rank}] No unprocessed checkpoint found in {self.output_dir} "
+                f"in current training step. Latest processed checkpoint step is {self.latest_processed_checkpoint_step}. Skipping."
+            )
             return
 
+        # At this point, each trainer has a checkpoint to process, but the step counts are not consistent.
         if len(set(next_steps)) != 1:
+            # If the checkpoint does not need to be used for merging EMA state, then try to process it.
+            is_hf_save_step = next_step % self.save_hf_steps == 0
+            if not is_hf_save_step and next_ckpt_dir is not None:
+                if self._is_already_handled(next_ckpt_dir):
+                    self.latest_processed_checkpoint_step = next_step
+                    logger.info(
+                        f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
+                        "already been handled. Skipping."
+                    )
+                    return
+                self._handle_naive_checkpoint(next_step, next_ckpt_dir)
+                return
+
             logger.warning(
                 f"[EMAStateAssembler][Rank {self.rank}] Multiple checkpoints detected. "
                 f"Selected checkpoint path: {next_ckpt_dir}. Skipping processing for this checkpoint."
             )
             return
-
-        if next_ckpt_dir is None:
-            logger.info(f"[EMAStateAssembler] No checkpoint found in {self.output_dir}. Skipping.")
-            return
-
+        # If the checkpoint has already been processed, skip it.
         if self._is_already_handled(next_ckpt_dir):
             self.latest_processed_checkpoint_step = next_step
             logger.info(
