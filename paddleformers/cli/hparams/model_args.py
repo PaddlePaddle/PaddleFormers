@@ -25,15 +25,12 @@ class VisionArguments:
     hidden_act: str = field(default="quick_gelu", metadata={"help": "Hidden activation function"})
     hidden_size: int = field(default=1280, metadata={"help": "Hidden size"})
     in_channels: int = field(default=3, metadata={"help": "Input channels"})
-    in_chans: int = field(default=3, metadata={"help": "Input channels (alias)"})
     mlp_ratio: int = field(default=4, metadata={"help": "MLP ratio"})
     model_type: str = field(default="DFNRope_vision_transformer", metadata={"help": "Vision model type"})
     num_heads: int = field(default=16, metadata={"help": "Number of attention heads"})
     patch_size: int = field(default=14, metadata={"help": "Patch size"})
     spatial_merge_size: int = field(default=2, metadata={"help": "Spatial merge size"})
-    spatial_patch_size: int = field(default=14, metadata={"help": "Spatial patch size"})
     tensor_model_parallel_size: int = field(default=4, metadata={"help": "Tensor parallel degree"})
-    use_recompute: bool = field(default=True, metadata={"help": "Whether to use recompute"})
     vit_num_recompute_layers: int = field(default=10000, metadata={"help": "Number of recompute layers"})
 
 
@@ -63,7 +60,6 @@ class ModelArguments:
         metadata={"help": "The type of training, including SFT, DPO, VL-SFT."},
     )
     use_mem_eff_attn: Optional[bool] = field(default=True, metadata={"help": "use use_mem_eff_attn"})
-    use_flash_attn_with_mask: Optional[bool] = field(default=True, metadata={"help": "use use_flash_attn_with_mask"})
     use_attn_mask_startend_row_indices: bool = field(
         default=True,
         metadata={"help": "Whether to use attn_mask_start_row_indices in flash attention."},
@@ -114,10 +110,7 @@ class ModelArguments:
         default="v2-alltoall-unpad",
         metadata={"help": "moe dispatch use unpad allgather strategy."},
     )
-    use_recompute_moe: Optional[bool] = field(
-        default=False,
-        metadata={"help": "Whether to apply recompute to MoE layers."},
-    )
+
     moe_group_experts: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to apply group-wise processing to expert gate logits."},
@@ -149,7 +142,6 @@ class ModelArguments:
             "of traditional auxiliary loss for MoE."
         },
     )
-    moe_with_send_router_loss: bool = field(default=False, metadata={"help": "use send router loss"})
 
     # LoRA
     fine_tuning: str = field(default="LoRA", metadata={"help": "The checkpoint type."})
@@ -202,12 +194,51 @@ class ModelArguments:
     eos_token_id: int = field(default=1, metadata={"help": "End of sentence token ID"})
     max_position_embeddings: int = field(default=4096, metadata={"help": "Maximum position embeddings"})
     moe_gate: str = field(default="top2_fused", metadata={"help": "MoE gate type"})
-    use_recompute_loss_fn: bool = field(default=True, metadata={"help": "Whether to recompute loss function"})
     loss_subbatch_seqlen: int = field(default=32768, metadata={"help": "Sub batch size for loss calculation"})
 
     num_hidden_layers: Optional[int] = field(
         default=None,
         metadata={"help": "num_hidden_layers."},
+    )
+
+    num_attention_heads: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_attention_heads."},
+    )
+
+    num_key_value_heads: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_key_value_heads."},
+    )
+
+    num_experts_per_tok: Optional[int] = field(
+        default=None,
+        metadata={"help": "num_experts_per_tok."},
+    )
+
+    hidden_size: Optional[int] = field(
+        default=None,
+        metadata={"help": "hidden_size."},
+    )
+
+    intermediate_size: Optional[int] = field(
+        default=None,
+        metadata={"help": "intermediate_size."},
+    )
+
+    n_routed_experts: Optional[int] = field(
+        default=None,
+        metadata={"help": "n_routed_experts."},
+    )
+
+    use_qk_norm: Optional[bool] = field(
+        default=None,
+        metadata={"help": "use_qk_norm."},
+    )
+
+    tie_word_embeddings: Optional[bool] = field(
+        default=None,
+        metadata={"help": "tie_word_embeddings."},
     )
 
     def __post_init__(self):

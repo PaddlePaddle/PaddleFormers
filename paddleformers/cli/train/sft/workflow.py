@@ -231,7 +231,7 @@ def run_sft(
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
         any(architecture in str(model_config.architectures) for architecture in architectures_to_check)
-        and training_args.data_parallel_degree > 1
+        and training_args.data_parallel_size > 1
         and not training_args.use_expert_parallel
     ):
         raise ValueError("Please set use_expert_parallel to true in expert parallel mode.")
@@ -259,6 +259,20 @@ def run_sft(
     model_config.seq_length = data_args.max_seq_len
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args.attn_impl
+
+    def set_attr_func(config, key, value):
+        if value is not None:
+            setattr(config, key, value)
+
+    set_attr_func(model_config, "num_hidden_layers", model_args.num_hidden_layers)
+    set_attr_func(model_config, "num_attention_heads", model_args.num_attention_heads)
+    set_attr_func(model_config, "num_key_value_heads", model_args.num_key_value_heads)
+    set_attr_func(model_config, "num_experts_per_tok", model_args.num_experts_per_tok)
+    set_attr_func(model_config, "hidden_size", model_args.hidden_size)
+    set_attr_func(model_config, "intermediate_size", model_args.intermediate_size)
+    set_attr_func(model_config, "n_routed_experts", model_args.n_routed_experts)
+    set_attr_func(model_config, "use_qk_norm", model_args.use_qk_norm)
+    set_attr_func(model_config, "tie_word_embeddings", model_args.tie_word_embeddings)
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
@@ -319,9 +333,7 @@ def run_sft(
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = None
-    if model_args.stage == "VL-SFT":
-        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
 
     dataset_config = {
         "tokenizer": tokenizer,
@@ -342,7 +354,6 @@ def run_sft(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
-        "pre_shift_one": data_args.pre_shift_one,
     }
 
     dataset_config.update(
@@ -350,7 +361,6 @@ def run_sft(
             "template": data_args.template,
             "tool_format": None,
             "default_system": None,
-            "enable_thinking": True,
         }
     )
 
@@ -414,6 +424,7 @@ def run_sft(
                 model_args=model_args,
                 max_seq_len=max_seq_len,
                 padding_free=data_args.padding_free,
+                model=model,
             )
         else:
             data_collator = partial(
@@ -535,9 +546,9 @@ def run_sft(
 
 def create_peft_model(model_args, training_args, dtype, model):
     if model_args.lora:
-        if training_args.sharding_parallel_degree > 1:
+        if training_args.sharding_parallel_size > 1:
             assert (
-                "enable_stage1_overlap" not in training_args.sharding_parallel_config
+                not training_args.stage1_overlap
             ), "Currently not support enabling sharding_stage1_overlap in lora mode."
         if model_args.lora_path is None:
             target_modules = get_lora_target_modules(model)

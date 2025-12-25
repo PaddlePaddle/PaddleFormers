@@ -518,7 +518,11 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             loss: text-only CE loss
             loss_sum. text-only CE loss_sum
         """
-        if self.config.use_recompute_loss_fn and self.config.use_fused_head_and_loss_fn:
+        if (
+            self.config.recompute_modules is not None
+            and "loss_fn" in self.config.recompute_modules
+            and self.config.use_fused_head_and_loss_fn
+        ):
             with paddle.no_grad():
                 if token_type_ids_shifted.unique().shape[0] > 1:
                     labels, token_type_ids_shifted = TensorBalanceByTokenType.apply(
@@ -530,7 +534,11 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
                     labels = ScatterOp.apply(labels, axis=-1)
 
         if self.use_one_head:
-            if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+            if (
+                self.config.recompute_modules is not None
+                and "loss_fn" in self.config.recompute_modules
+                or self.config.use_sparse_head_and_loss_fn
+            ):
                 loss, loss_sum = super().forward((scores_text.unsqueeze(0), lm_weight, lm_bias), labels.unsqueeze(0))
             else:
                 loss, loss_sum = super().forward(scores_text.unsqueeze(0), labels.unsqueeze(0))
@@ -545,7 +553,11 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
         if scores_text is not None:
             labels_text = labels[text_pos_shifted]
             assert labels_text.size > 0, labels
-            if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+            if (
+                self.config.recompute_modules is not None
+                and "loss_fn" in self.config.recompute_modules
+                or self.config.use_sparse_head_and_loss_fn
+            ):
                 assert lm_weight is not None and mm_weight is not None
                 loss, loss_sum = super().forward(
                     (scores_text.unsqueeze(0), lm_weight, lm_bias),
@@ -565,7 +577,11 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             labels_image = paddle.where(
                 labels_image >= 0, labels_image - self.max_text_id, labels_image
             )  # do not move ignored-index
-            if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+            if (
+                self.config.recompute_modules is not None
+                and "loss_fn" in self.config.recompute_modules
+                or self.config.use_sparse_head_and_loss_fn
+            ):
                 assert mm_weight is not None and mm_bias is not None
                 loss_image, _ = super().forward(
                     (scores_image.unsqueeze(0), mm_weight, mm_bias),
@@ -622,7 +638,11 @@ def calc_multimodal_logits(
     # TODO: Pass token-type-ids from reader
     # token_type_ids_shifted = paddle.concat([token_type_ids[:, 1:], token_type_ids[:, -1:]], 1)  #
 
-    if config.use_recompute_loss_fn and config.use_fused_head_and_loss_fn:
+    if (
+        config.recompute_modules is not None
+        and "loss_fn" in config.recompute_modules
+        and config.use_fused_head_and_loss_fn
+    ):
         if config.sequence_parallel:
             if token_type_ids_shifted.unique().shape[0] > 1:  # Multimodal data
                 last_hidden_state, token_type_ids_shifted = TensorBalanceByTokenType.apply(
@@ -652,7 +672,11 @@ def calc_multimodal_logits(
     )
 
     if mm_head_weight is None:
-        if config.use_recompute_loss_fn or config.use_sparse_head_and_loss_fn:
+        if (
+            config.recompute_modules is not None
+            and "loss_fn" in config.recompute_modules
+            or config.use_sparse_head_and_loss_fn
+        ):
             return last_hidden_state, None, None
         score_text = parallel_matmul_tp(
             last_hidden_state,
@@ -666,7 +690,11 @@ def calc_multimodal_logits(
     text_pos_shifted = token_type_ids_shifted == TokenType.text
 
     if text_pos_shifted.any().item() > 0:
-        if config.use_recompute_loss_fn or config.use_sparse_head_and_loss_fn:
+        if (
+            config.recompute_modules is not None
+            and "loss_fn" in config.recompute_modules
+            or config.use_sparse_head_and_loss_fn
+        ):
             score_text = last_hidden_state[text_pos_shifted]
         else:
             score_text = parallel_matmul_tp(last_hidden_state[text_pos_shifted], lm_head_weight, lm_head_bias)
@@ -674,7 +702,11 @@ def calc_multimodal_logits(
         score_text = None
 
     if mm_head_weight is not None and image_mask_shifted.any().item() > 0:
-        if config.use_recompute_loss_fn or config.use_sparse_head_and_loss_fn:
+        if (
+            config.recompute_modules is not None
+            and "loss_fn" in config.recompute_modules
+            or config.use_sparse_head_and_loss_fn
+        ):
             score_image = last_hidden_state[image_mask_shifted]
         else:
             score_image = parallel_matmul_tp(last_hidden_state[image_mask_shifted], mm_head_weight, mm_head_bias)
@@ -1089,6 +1121,236 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         # image_token_norm = image_features.norm(axis=-1).mean()
         # image_features /= paddle.sqrt(image_token_norm / text_token_norm)
         return inputs_embeds
+
+    def get_rope_index(
+        self,
+        input_ids: Optional[paddle.Tensor] = None,
+        image_grid_thw: Optional[paddle.Tensor] = None,
+        video_grid_thw: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
+        """
+        Calculate the 3D rope index based on image and video's temporal, height and width in LLM.
+
+        Explanation:
+            Each embedding sequence contains vision embedding and text embedding or just contains text embedding.
+
+            For pure text embedding sequence, the rotary position embedding has no difference with mordern LLMs.
+            Examples:
+                input_ids: [T T T T T], here T is for text.
+                temporal position_ids: [0, 1, 2, 3, 4]
+                height position_ids: [0, 1, 2, 3, 4]
+                width position_ids: [0, 1, 2, 3, 4]
+
+            For vision and text embedding sequence, we calculate 3D rotary position embedding for vision part
+            and 1D rotary position embeddin for text part.
+            Examples:
+                Assume we have a video input with 3 temporal patches, 2 height patches and 2 width patches.
+                input_ids: [V V V V V V V V V V V V T T T T T], here V is for vision.
+                vision temporal position_ids: [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2]
+                vision height position_ids: [0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1]
+                vision width position_ids: [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
+                text temporal position_ids: [3, 4, 5, 6, 7]
+                text height position_ids: [3, 4, 5, 6, 7]
+                text width position_ids: [3, 4, 5, 6, 7]
+                Here we calculate the text start position_ids as the max vision position_ids plus 1.
+
+        Args:
+            input_ids (`np.Array` of shape `(batch_size, sequence_length)`):
+                Indices of input sequence tokens in the vocabulary. Padding will be ignored by
+                default should you provide it.
+            image_grid_thw (`np.Array` of shape `(num_images, 3)`, *optional*):
+                The temporal, height and width of feature shape of each image in LLM.
+            video_grid_thw (`np.Array` of shape `(num_videos, 3)`, *optional*):
+                The temporal, height and width of feature shape of each video in LLM.
+            attention_mask (`np.Array` of shape `(batch_size, sequence_length)`, *optional*):
+                Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
+
+                - 1 for tokens that are **not masked**,
+                - 0 for tokens that are **masked**.
+
+        Returns:
+            position_ids (`np.Array` of shape `(3, batch_size, sequence_length)`)
+            mrope_position_deltas (`np.Array` of shape `(batch_size)`)
+        """
+        spatial_merge_size = self.config.vision_config.spatial_merge_size
+        image_start_token_id = self.config.image_start_token_id
+        video_start_token_id = self.config.video_start_token_id
+        mrope_position_deltas = []
+        if input_ids is not None and (image_grid_thw is not None or video_grid_thw is not None):
+            total_input_ids = input_ids
+            if attention_mask is None:
+                attention_mask = paddle.ones_like(total_input_ids)
+            position_ids = paddle.ones(
+                3, input_ids.shape[0], input_ids.shape[1], dtype=input_ids.dtype, device=input_ids.device
+            )
+            image_index, video_index = 0, 0
+            for i, input_ids in enumerate(total_input_ids):
+                input_ids = input_ids[attention_mask[i].to(input_ids.device) == 1]
+                image_start_indices = paddle.nonzero(input_ids == image_start_token_id).squeeze(1)
+                video_start_indices = paddle.nonzero(input_ids == video_start_token_id).squeeze(1)
+                image_nums = len(image_start_indices)
+                video_nums = len(video_start_indices)
+                input_tokens = input_ids.tolist()
+                llm_pos_ids_list: list = []
+                st = 0
+                remain_images, remain_videos = image_nums, video_nums
+                for _ in range(image_nums + video_nums):
+                    if image_start_token_id in input_tokens and remain_images > 0:
+                        ed_image = input_tokens.index(image_start_token_id, st) + 1
+                    else:
+                        ed_image = len(input_tokens) + 1
+                    if video_start_token_id in input_tokens and remain_videos > 0:
+                        ed_video = input_tokens.index(video_start_token_id, st) + 1
+                    else:
+                        ed_video = len(input_tokens) + 1
+                    if ed_image < ed_video:
+                        t, h, w = (
+                            image_grid_thw[image_index][0],
+                            image_grid_thw[image_index][1],
+                            image_grid_thw[image_index][2],
+                        )
+                        image_index += 1
+                        remain_images -= 1
+                        ed = ed_image
+                    else:
+                        t, h, w = (
+                            video_grid_thw[video_index][0],
+                            video_grid_thw[video_index][1],
+                            video_grid_thw[video_index][2],
+                        )
+                        video_index += 1
+                        remain_videos -= 1
+                        ed = ed_video
+                    llm_grid_t, llm_grid_h, llm_grid_w = (
+                        t.item(),
+                        h.item() // spatial_merge_size,
+                        w.item() // spatial_merge_size,
+                    )
+                    text_len = ed - st
+
+                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
+                    llm_pos_ids_list.append(paddle.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
+
+                    t_index = paddle.arange(llm_grid_t).view(-1, 1).expand(-1, llm_grid_h * llm_grid_w).flatten()
+                    h_index = paddle.arange(llm_grid_h).view(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
+                    w_index = paddle.arange(llm_grid_w).view(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
+                    llm_pos_ids_list.append(paddle.stack([t_index, h_index, w_index]) + text_len + st_idx)
+                    st = ed + llm_grid_t * llm_grid_h * llm_grid_w
+
+                if st < len(input_tokens):
+                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
+                    text_len = len(input_tokens) - st
+                    llm_pos_ids_list.append(paddle.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
+
+                llm_positions = paddle.concat(llm_pos_ids_list, axis=1).reshape(3, -1)
+                position_ids[..., i, attention_mask[i] == 1] = llm_positions.to(position_ids.device)
+                mrope_position_deltas.append(llm_positions.max() + 1 - len(total_input_ids[i]))
+            mrope_position_deltas = paddle.to_tensor(mrope_position_deltas).unsqueeze(1)
+            return position_ids, mrope_position_deltas
+        else:
+            if attention_mask is not None:
+                position_ids = attention_mask.long().cumsum(-1) - 1
+                position_ids.masked_fill_(attention_mask == 0, 1)
+                position_ids = position_ids.unsqueeze(0).expand(3, -1, -1).to(attention_mask.device)
+                max_position_ids = position_ids.max(0, keepdim=False)[0].max(-1, keepdim=True)[0]
+                mrope_position_deltas = max_position_ids + 1 - attention_mask.shape[-1]
+            else:
+                position_ids = (
+                    paddle.arange(input_ids.shape[1], device=input_ids.device)
+                    .view(1, 1, -1)
+                    .expand(3, input_ids.shape[0], -1)
+                )
+                mrope_position_deltas = paddle.zeros(
+                    [input_ids.shape[0], 1],
+                    device=input_ids.device,
+                    dtype=input_ids.dtype,
+                )
+
+            return position_ids, mrope_position_deltas
+
+    def get_token_type_ids(
+        self,
+        input_ids: Optional[paddle.Tensor] = None,
+        pixel_values: Optional[paddle.Tensor] = None,
+        image_grid_thw: Optional[paddle.Tensor] = None,
+        video_pixel_values: Optional[paddle.Tensor] = None,
+        video_grid_thw: Optional[paddle.Tensor] = None,
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+        IDS_TYPE_FLAG = {"text": 0, "image": 1, "video": 2}
+        spatial_merge_size = self.config.vision_config.spatial_merge_size
+        image_start_token_id = self.config.image_start_token_id
+        video_start_token_id = self.config.video_start_token_id
+
+        token_type_ids = []
+        images, grid_thw = [], []
+
+        total_input_ids = input_ids
+        image_index, video_index = 0, 0
+        for i, input_ids in enumerate(total_input_ids):
+            image_start_indices = paddle.nonzero(input_ids == image_start_token_id).squeeze(1)
+            video_start_indices = paddle.nonzero(input_ids == video_start_token_id).squeeze(1)
+            image_nums = len(image_start_indices)
+            video_nums = len(video_start_indices)
+            input_tokens = input_ids.tolist()
+            llm_token_type_ids: list = []
+            st = 0
+            remain_images, remain_videos = image_nums, video_nums
+            for _ in range(image_nums + video_nums):
+                if image_start_token_id in input_tokens and remain_images > 0:
+                    ed_image = input_tokens.index(image_start_token_id, st)
+                else:
+                    ed_image = len(input_tokens) + 1
+                if video_start_token_id in input_tokens and remain_videos > 0:
+                    ed_video = input_tokens.index(video_start_token_id, st)
+                else:
+                    ed_video = len(input_tokens) + 1
+                if ed_image < ed_video:
+                    t, h, w = (
+                        image_grid_thw[image_index][0],
+                        image_grid_thw[image_index][1],
+                        image_grid_thw[image_index][2],
+                    )
+                    images.append(pixel_values[image_index])
+                    grid_thw.append(image_grid_thw[image_index])
+                    image_index += 1
+                    remain_images -= 1
+                    ed = ed_image
+                    vision_type = "image"
+                else:
+                    t, h, w = (
+                        video_grid_thw[video_index][0],
+                        video_grid_thw[video_index][1],
+                        video_grid_thw[video_index][2],
+                    )
+                    images.append(video_pixel_values[video_index])
+                    grid_thw.append(video_grid_thw[video_index])
+                    video_index += 1
+                    remain_videos -= 1
+                    ed = ed_video
+                    vision_type = "video"
+                llm_grid_t, llm_grid_h, llm_grid_w = (
+                    t.item(),
+                    h.item() // spatial_merge_size,
+                    w.item() // spatial_merge_size,
+                )
+                text_len = ed - st
+
+                llm_token_type_ids.extend([IDS_TYPE_FLAG["text"]] * text_len)
+                llm_token_type_ids.extend([IDS_TYPE_FLAG["image"]])
+                llm_token_type_ids.extend([IDS_TYPE_FLAG[vision_type]] * llm_grid_t * llm_grid_h * llm_grid_w)
+                llm_token_type_ids.extend([IDS_TYPE_FLAG["image"]])
+                st = ed + llm_grid_t * llm_grid_h * llm_grid_w + 1
+
+            if st < len(input_tokens):
+                text_len = len(input_tokens) - st
+                llm_token_type_ids.extend([IDS_TYPE_FLAG["text"]] * text_len)
+
+            token_type_ids.append(llm_token_type_ids)
+
+        images = paddle.concat(images, axis=0)
+
+        return token_type_ids, images, grid_thw
 
     def prepare_inputs_for_generation(
         self,

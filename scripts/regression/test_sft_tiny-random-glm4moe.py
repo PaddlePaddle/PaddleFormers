@@ -47,8 +47,8 @@ SFT_LORA_TP_PP_EXCEPTED_LOSS = 11.929121
 SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.929088
 SFT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
-SFT_FC_EXCEPTED_LOSS = 12.859675
-SFT_FC_RESUME_EXCEPTED_LOSS = 12.863781
+SFT_FC_EXCEPTED_LOSS = 12.760524
+SFT_FC_RESUME_EXCEPTED_LOSS = 12.76108
 SFT_FC_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
@@ -64,6 +64,7 @@ class SFTTrainTester(unittest.TestCase):
         config.update(updates)
 
         os.makedirs(tmp_dir, exist_ok=True)
+        os.makedirs(LOG_PATH, exist_ok=True)
         updated_yaml_path = os.path.join(tmp_dir, f"updated_{os.path.basename(yaml_path)}")
         with open(updated_yaml_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config, f, indent=4, allow_unicode=True, sort_keys=False)
