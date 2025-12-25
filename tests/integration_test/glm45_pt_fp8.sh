@@ -60,7 +60,7 @@ coverage run -m paddle.distributed.launch \
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
    echo "Training failed with exit code $exit_cod, see ./glm45_fp8.log for details."
-   python $root_dir/PaddleFleet/ci/check_log_for_exitcode.py ./glm45_fp8.log
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_fp8.log
    check_result=$?
    if [ $check_result -ne 0 ]; then
        echo "Failed to find 'Training completed' in log file."
@@ -77,7 +77,7 @@ echo "
 20 10.30022049
 " > ./glm45_multi_cards_fp8_gt_loss.txt
 
-python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
+python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 20 \
    --log_file ./glm45_fp8.log \
    --gt_file ./glm45_multi_cards_fp8_gt_loss.txt

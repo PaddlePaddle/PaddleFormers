@@ -80,7 +80,7 @@ exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
     echo "Test failed with exit code $exit_code, check the log: ./glm45_pt_a100.log"
-    python $root_dir/PaddleFleet/ci/check_log_for_exitcode.py ./glm45_pt_a100.log
+    python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_pt_a100.log
     check_log_exit_code=$?
     if [ $check_log_exit_code -ne 0 ]; then
         echo "Failed to find 'Training completed' in log file."
@@ -98,7 +98,7 @@ echo "
 10 12.65529728
 " > ./glm45_pt_multi_card_gt_loss.txt
 
-python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
+python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 10 \
    --log_file ./glm45_pt_a100.log \
    --gt_file ./glm45_pt_multi_card_gt_loss.txt
