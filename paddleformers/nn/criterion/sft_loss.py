@@ -159,7 +159,7 @@ def sft_loss_forward(
 
     masked_lm_labels = labels
     # bsz,seq_len,hidden_size or seq_len,hidden_size
-    if self.config.recompute:
+    if self.config.recompute_granularity is not None:
         loss = recompute(
             sft_calculate_loss,
             self,

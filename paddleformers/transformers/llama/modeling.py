@@ -619,7 +619,12 @@ class LlamaMLP(nn.Layer):
             RowParallelLinear = linear_utils.RowSequenceParallelLinear
 
             # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-            if config.recompute and not config.recompute_use_reentrant:
+            if (
+                config.recompute_granularity == "full"
+                and config.recompute_method == "uniform"
+                and config.recompute_num_layers == 1
+                and not config.recompute_use_reentrant
+            ):
                 if skip_recompute_ops.get("mlp_column_ln", False):
                     ColumnParallelLinear = RRColumnSequenceParallelLinear
                 if skip_recompute_ops.get("mlp_row_ln", False):
@@ -629,7 +634,12 @@ class LlamaMLP(nn.Layer):
             RowParallelLinear = linear_utils.RowParallelLinear
 
             # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-            if config.recompute and not config.recompute_use_reentrant:
+            if (
+                config.recompute_granularity == "full"
+                and config.recompute_method == "uniform"
+                and config.recompute_num_layers == 1
+                and not config.recompute_use_reentrant
+            ):
                 if skip_recompute_ops.get("mlp_column_ln", False):
                     ColumnParallelLinear = RRColumnParallelLinear
                 if skip_recompute_ops.get("mlp_row_ln", False):
@@ -749,7 +759,12 @@ class LlamaAttention(nn.Layer):
             RowParallelLinear = linear_utils.RowSequenceParallelLinear
 
             # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-            if config.recompute and not config.recompute_use_reentrant:
+            if (
+                config.recompute_granularity == "full"
+                and config.recompute_method == "uniform"
+                and config.recompute_num_layers == 1
+                and not config.recompute_use_reentrant
+            ):
                 if skip_recompute_ops.get("attention_column_ln", False):
                     ColumnParallelLinear = RRColumnSequenceParallelLinear
                 if skip_recompute_ops.get("attention_row_ln", False):
@@ -758,7 +773,12 @@ class LlamaAttention(nn.Layer):
             ColumnParallelLinear = linear_utils.ColumnParallelLinear
             RowParallelLinear = linear_utils.RowParallelLinear
             # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-            if config.recompute and not config.recompute_use_reentrant:
+            if (
+                config.recompute_granularity == "full"
+                and config.recompute_method == "uniform"
+                and config.recompute_num_layers == 1
+                and not config.recompute_use_reentrant
+            ):
                 if skip_recompute_ops.get("attention_column_ln", False):
                     ColumnParallelLinear = RRColumnParallelLinear
                 if skip_recompute_ops.get("attention_row_ln", False):
@@ -863,7 +883,7 @@ class LlamaAttention(nn.Layer):
         self.attn_func = scaled_dot_product_attention
 
         # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-        if config.recompute and not config.recompute_use_reentrant and skip_recompute_ops.get("flash_attn", False):
+        if not config.recompute_use_reentrant and skip_recompute_ops.get("flash_attn", False):
             self.attn_func = partial(scaled_dot_product_attention, skip_recompute=True)
 
     def _init_rope(self):
@@ -1320,7 +1340,7 @@ class LlamaPretrainedModel(PretrainedModel):
             layer_num=self.config.num_hidden_layers,
             vocab_size=self.config.vocab_size,
             seq_length=seq_length,
-            recompute=self.config.recompute,
+            recompute=self.config.recompute_granularity is not None,
             recompute_granularity=self.config.recompute_granularity,
         )
 
@@ -1778,12 +1798,12 @@ class LlamaModel(LlamaPretrainedModel):
 
             has_gradient = not hidden_states.stop_gradient
             if (
-                self.enable_recompute
-                and idx not in self.no_recompute_layers
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
                 and has_gradient
-                and self.recompute_granularity == "full"
             ):
-                layer_outputs = self.recompute_training_full(
+                layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,
                     position_ids,
