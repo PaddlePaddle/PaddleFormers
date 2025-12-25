@@ -32,8 +32,8 @@ jobs:
     runs-on:
       group: Fleet-H-single-card
     env:
-      PIP_CACHE_DIR: /root/.cache/pip
-      CACHE_DIR: /root/.cache
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
       TASK: formers-fleet-CI-${{ github.event.pull_request.number }}-integration-test-single-card
     steps:
       - name: Determine the runner
@@ -52,8 +52,8 @@ jobs:
           docker run -d -t --name ${container_name} --gpus "\"device=${GPU_DEVICES}\"" --shm-size=32G \
             -v "/dev/shm:/dev/shm"  \
             -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
-            -v ${{ github.workspace }}/../../../proxy:/root/proxy \
-            -v /ssd1/paddle-1/action_cache:/root/.cache \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v /ssd1/paddle-1/action_cache:/home/.cache \
             -v ${{ github.workspace }}:/workspace \
             -e BRANCH \
             -e PR_ID \
@@ -86,7 +86,7 @@ jobs:
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          mkdir -p /root/.cache/pip
+          mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
           echo "Install uv"
@@ -94,10 +94,10 @@ jobs:
           echo "uv sync"
           git submodule update --init --recursive
           git log -1
-          export export UV_LOCK_TIMEOUT=600
+          export UV_LOCK_TIMEOUT=1200
           uv sync --group ci -v > /dev/null
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
-          uv pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
+          uv pip -n install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
           source .venv/bin/activate
           python -c "import paddle; print(paddle.version.commit)"
           '
@@ -171,7 +171,7 @@ jobs:
         if: ${{ always() }}
         run: |
           set +e
-          docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'uv cache prune; bash ci/clean_uv_cache.sh; rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}
 
 
@@ -180,8 +180,8 @@ jobs:
     runs-on:
       group: Fleet-H-multi-card
     env:
-      PIP_CACHE_DIR: /root/.cache/pip
-      CACHE_DIR: /root/.cache
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
       TASK: formers-fleet-CI-${{ github.event.pull_request.number }}-integration-test-multi-card
     steps:
       - name: Check docker image and run container
@@ -192,8 +192,8 @@ jobs:
           docker run -d -t --name ${container_name} --gpus all --shm-size=32G \
             -v "/dev/shm:/dev/shm"  \
             -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
-            -v ${{ github.workspace }}/../../../proxy:/root/proxy \
-            -v /ssd1/paddle-1/action_cache:/root/.cache \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v /ssd1/paddle-1/action_cache:/home/.cache \
             -v ${{ github.workspace }}:/workspace \
             -e BRANCH \
             -e PR_ID \
@@ -225,7 +225,7 @@ jobs:
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          mkdir -p /root/.cache/pip
+          mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
           echo "Install uv"
@@ -233,10 +233,10 @@ jobs:
           echo "uv sync"
           git submodule update --init --recursive
           git log -1
-          export export UV_LOCK_TIMEOUT=400
+          export UV_LOCK_TIMEOUT=1200
           uv sync --group ci -v > /dev/null
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
-          uv pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
+          uv pip -n install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
           source .venv/bin/activate
           python -c "import paddle; print(paddle.version.commit)"
           '
@@ -307,7 +307,7 @@ jobs:
         if: ${{ always() }}
         run: |
           set +e
-          docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'uv cache prune; bash ci/clean_uv_cache.sh; rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}
 
   integration-test-a100:
@@ -315,8 +315,8 @@ jobs:
     runs-on:
       group: Distribute
     env:
-      PIP_CACHE_DIR: /root/.cache/pip
-      CACHE_DIR: /root/.cache
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
       TASK: formers-fleet-CI-${{ github.event.pull_request.number }}-integration-test-A100
     steps:
       - name: Check docker image and run container
@@ -327,8 +327,8 @@ jobs:
           docker run -d -t --name ${container_name} --gpus all --shm-size=32G \
             -v "/dev/shm:/dev/shm"  \
             -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
-            -v ${{ github.workspace }}/../../../proxy:/root/proxy \
-            -v /ssd1/paddle-1/action_cache:/root/.cache \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v /ssd1/paddle-1/action_cache:/home/.cache \
             -v ${{ github.workspace }}:/workspace \
             -e BRANCH \
             -e PR_ID \
@@ -360,7 +360,7 @@ jobs:
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          mkdir -p /root/.cache/pip
+          mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
           echo "Install uv"
@@ -368,10 +368,10 @@ jobs:
           echo "uv sync"
           git submodule update --init --recursive
           git log -1
-          export export UV_LOCK_TIMEOUT=400
+          export UV_LOCK_TIMEOUT=1200
           uv sync --group ci > /dev/null
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
-          uv pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
+          uv pip -n install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
           source .venv/bin/activate
           python -c "import paddle; print(paddle.version.commit)"
           '
@@ -411,5 +411,5 @@ jobs:
         if: ${{ always() }}
         run: |
           set +e
-          docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'uv cache prune; bash PaddleFleet/ci/clean_uv_cache.sh; rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}
