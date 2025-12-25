@@ -173,17 +173,17 @@ def main():
         logger.warning("disabling `partial_send_recv` when using sequence parallel")
         config.trainer_args.partial_send_recv = False
 
-    if getattr(config.trainer_args, "bf16", False) and not config.trainer_args.pp_delay_scale_loss:
+    if getattr(config.trainer_args, "bf16", False) and not getattr(config.trainer_args, "pp_delay_scale_loss", False):
         logger.warning(
             "It is recommended to enable pp_delay_scale_loss for better performance "
             "of precision when using bf16 in training"
         )
         config.trainer_args.pp_delay_scale_loss = True
 
-    if config.trainer_args.dp_comm_overlap:
+    if getattr(config.trainer_args, "dp_comm_overlap", False):
         logger.warning("Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at " "the same time.")
 
-    if config.trainer_args.timer:
+    if getattr(config.trainer_args, "timer", False):
         from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
             PipelineParallel,
         )
