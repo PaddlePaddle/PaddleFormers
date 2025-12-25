@@ -49,7 +49,7 @@ coverage run run_pretrain.py $config_json 2>&1 | tee ./qwen3_single_card.log
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
       echo "Qwen3-30B-A3B single card training failed, try to check the log ./qwen3_single_card.log"
-      python $root_dir/PaddleFleet/ci/check_log_for_exitcode.py ./qwen3_single_card.log
+      python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./qwen3_single_card.log
       check_exit_code=$?
       if [ $check_exit_code -ne 0 ]; then
          echo "Log check failed."
