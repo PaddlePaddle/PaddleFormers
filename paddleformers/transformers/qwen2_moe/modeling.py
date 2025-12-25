@@ -36,7 +36,7 @@ from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
-from ..model_utils import PretrainedModel, register_base_model
+from ..model_utils import PretrainedModel, dtype_guard, register_base_model
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen2MoeConfig
 
@@ -270,7 +270,10 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
             config.sequence_parallel = False
 
         # gating
-        self.gate = GeneralLinear.create(config.hidden_size, config.num_experts, has_bias=False, linear_type="default")
+        with dtype_guard("float32"):
+            self.gate = GeneralLinear.create(
+                config.hidden_size, config.num_experts, has_bias=False, linear_type="default"
+            )
         self.experts = nn.LayerList(
             [
                 Qwen2MoeMLP(
@@ -616,7 +619,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_config = {
             "aoa_statements": [
-                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight",
+                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
                 f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
@@ -667,7 +670,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
     def _gen_inv_aoa_config(cls, config: Qwen2MoeConfig):
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_statements = [
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
             f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
