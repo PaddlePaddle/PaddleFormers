@@ -62,6 +62,7 @@ save_to_hf: true
 # unified_checkpoint: true
 load_checkpoint_format: flex_checkpoint
 save_checkpoint_format: flex_checkpoint
+fa_version: 3
 
 moe_router_force_load_balancing: true
 num_hidden_layers: 4
