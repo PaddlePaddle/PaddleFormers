@@ -15,6 +15,7 @@
 import atexit
 import inspect
 import os
+import sys
 import time
 import warnings
 from collections import namedtuple
@@ -54,9 +55,25 @@ def load_from_ppnlp(path, *args, **kwargs):
     new_path = os.path.split(path)[-1]
     new_path = os.path.join(ppnlp_path, "hf_datasets", new_path + ".py")
     if os.path.exists(new_path):
-        return origin_load_dataset(new_path, trust_remote_code=True, *args, **kwargs)
+        try:
+            torch_s = sys.modules["torch"]
+            del sys.modules["torch"]
+        except:
+            torch_s = None
+        res = origin_load_dataset(new_path, trust_remote_code=True, *args, **kwargs)
+        sys.modules["torch"] = torch_s
+        return res
     else:
-        return origin_load_dataset(path, trust_remote_code=True, *args, **kwargs)
+        try:
+
+            torch_s = sys.modules["torch"]
+            del sys.modules["torch"]
+        except:
+            torch_s = None
+
+        res = origin_load_dataset(path, trust_remote_code=True, *args, **kwargs)
+        sys.modules["torch"] = torch_s
+        return res
 
 
 datasets.load_dataset = load_from_ppnlp
