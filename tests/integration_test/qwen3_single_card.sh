@@ -26,12 +26,11 @@ yq eval '
   .model_name_or_path = "'"${CACHE_DIR}"'/qwen/Qwen3-30B-A3B-Base"
 ' "$config_yaml" -i
 
-
+cat $config_yaml
 rm -rf checkpoint/
 rm -rf outputs/
 master=$(hostname -i)
 port=36677
-
 
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
