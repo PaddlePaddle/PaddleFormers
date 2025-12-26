@@ -34,7 +34,7 @@ with open(outfile, 'w') as fout:
         pad = line[:len(line)-len(line.lstrip())]
         if line.lstrip().startswith('class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)') and next_line.strip().startswith('is_fleet'):
             fout.write(pad + 'class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)' + line.lstrip()[len('class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)'):])
-        elif line.lstrip().startswith('class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)') and next_line.strip().startswith('_tied_weights_keys'):
+        elif line.lstrip().startswith('class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)') and next_line.strip().startswith('enable_to_static_method'):
             fout.write(pad + 'class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)' + line.lstrip()[len('class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)'):])
         elif line.lstrip().startswith('class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel') and next_line.strip().startswith('is_fleet'):
             fout.write(pad + 'class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel' + line.lstrip()[len('class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel'):])
