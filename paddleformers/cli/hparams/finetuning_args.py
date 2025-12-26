@@ -19,7 +19,6 @@ from paddle.distributed import fleet
 
 from paddleformers.trainer import TrainingArguments
 from paddleformers.transformers.configuration_utils import llmmetaclass
-from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
 try:
@@ -298,7 +297,7 @@ class FinetuningArguments(
 
         self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
 
-        if is_paddlefleet_available() or self.pipeline_model_parallel_size > 1:
+        if self.pipeline_model_parallel_size > 1:
             self.per_device_eval_batch_size = self.per_device_train_batch_size * self.gradient_accumulation_steps
             logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
             user_defined_strategy = fleet.fleet._user_defined_strategy
