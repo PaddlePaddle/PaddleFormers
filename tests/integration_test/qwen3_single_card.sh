@@ -36,7 +36,7 @@ with open(outfile, 'w') as fout:
             fout.write(pad + 'class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)' + line.lstrip()[len('class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)'):])
         elif line.lstrip().startswith('class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)') and next_line.strip().startswith('_tied_weights_keys'):
             fout.write(pad + 'class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)' + line.lstrip()[len('class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)'):])
-        elif line.lstrip().startswith('class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel') and next_line.strip().startswith('is_fleet'):
+        elif line.lstrip().startswith('class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel') and next_line.strip().startswith('is_fleet'):
             fout.write(pad + 'class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel' + line.lstrip()[len('class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel'):])
         elif line.lstrip().startswith('class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe)') and next_line.strip().startswith('config_class'):
             fout.write(pad + 'class Qwen3MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe)' + line.lstrip()[len('class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe)'):])
