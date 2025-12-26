@@ -916,7 +916,6 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
         # 2. forward the torch  model
         import torch
-
         from transformers import Qwen3VLForConditionalGeneration
 
         torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
@@ -941,7 +940,6 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
             # 1. forward the torch  model
             import torch
-
             from transformers import Qwen3VLForConditionalGeneration
 
             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
@@ -980,7 +978,6 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
             # 1. forward the torch model
             import torch
-
             import transformers
 
             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
