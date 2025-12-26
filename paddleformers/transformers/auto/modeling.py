@@ -213,10 +213,10 @@ class _BaseAutoModelClass:
         class_name = cls._name_mapping[init_class]
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
         try:
-            model_class = getattr(import_class, init_class + "Fleet")
+            model_class = getattr(import_class, init_class)
             return model_class
         except AttributeError:
-            model_class = getattr(import_class, init_class)
+            model_class = getattr(import_class, init_class + "Fleet")
             return model_class
         except AttributeError as err:
             try:
