@@ -1823,7 +1823,7 @@ class EMAStateAssembler:
         return final_signal_file.exists()
 
     def _check_all_ranks_saved(self, checkpoint_dir: Path) -> bool:
-        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+        temp_signal_file = checkpoint_dir / f"_save_done_tmp_{self.rank}"
 
         local_rank_is_saved = temp_signal_file.exists()
 
@@ -1838,7 +1838,7 @@ class EMAStateAssembler:
         with open(final_signal_file, "w") as f:
             f.write("1")
 
-        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+        temp_signal_file = checkpoint_dir / f"_save_done_tmp_{self.rank}"
         if temp_signal_file.exists():
             try:
                 temp_signal_file.unlink()
@@ -1870,7 +1870,7 @@ class EMAStateAssembler:
 
     def _handle_naive_checkpoint(self, step: int, checkpoint_dir: Path):
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Processing a no need merge EMA checkpoint.")
-        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+        temp_signal_file = checkpoint_dir / f"_save_done_tmp_{self.rank}"
 
         if not temp_signal_file.exists():
             logger.warning(
