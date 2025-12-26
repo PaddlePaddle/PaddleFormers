@@ -18,8 +18,8 @@ source PaddleFleet/.venv/bin/activate
 
 export root_dir=$(pwd)
 
-config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt_fp8.yaml
-data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
+export config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt_fp8.yaml
+export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
 
 yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
