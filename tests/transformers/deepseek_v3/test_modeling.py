@@ -14,6 +14,7 @@
 # limitations under the License.
 from __future__ import annotations
 
+import sys
 import tempfile
 import unittest
 
@@ -476,6 +477,14 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
+        try:
+            sys.modules["torch"] = sys.modules["torch_save"]
+        except:
+            pass
+        try:
+            del sys.modules["transformers"]
+        except:
+            pass
         import torch
         from transformers import DeepseekV3Model
 
@@ -492,6 +501,12 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             )
         )
 
+        sys.modules["torch"] = None
+        try:
+            del sys.modules["transformers"]
+        except:
+            pass
+
     @require_package("transformers", "torch")
     def test_DeepseekV3_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
@@ -500,6 +515,14 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
+            try:
+                sys.modules["torch"] = sys.modules["torch_save"]
+            except:
+                pass
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
             import torch
             from transformers import DeepseekV3Model
 
@@ -523,6 +546,11 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+            sys.modules["torch"] = None
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
 
     @parameterized.expand([("DeepseekV3Model",), ("DeepseekV3ForCausalLM",)])
     @require_package("transformers", "torch")
@@ -534,6 +562,14 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
+            try:
+                sys.modules["torch"] = sys.modules["torch_save"]
+            except:
+                pass
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
             import torch
             import transformers
 
@@ -564,3 +600,8 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+            sys.modules["torch"] = None
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
