@@ -18,6 +18,29 @@ from contextlib import suppress
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from paddleformers.utils.log import logger
+
+try:
+    import torch
+
+    logger.warning(
+        """Due to potential compatibility issues between 'PaddlePaddle' and 'PyTorch' in 'PaddleFormers', 'PyTorch' is disabled by default in 'PaddleFormers'. If you need to use the 'PyTorch' or 'Transformers' library, please add "del sys.modules['torch']" before using them."""
+    )
+except:
+    pass
+
+
+try:
+    import torchvison
+
+    logger.warning(
+        """Due to potential compatibility issues between 'PaddlePaddle' and 'PyTorch' in 'PaddleFormers', 'torchvison' is disabled by default in 'PaddleFormers'. If you need to use the 'torchvison' library, please add "del sys.modules['torchvison']" before using them."""
+    )
+except:
+    pass
+sys.modules["torch_save"] = sys.modules["torch"]
+sys.modules["torch"] = None
+sys.modules["torchvison"] = None
 from .utils.lazy_import import _LazyModule
 
 PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
@@ -42,7 +65,6 @@ else:
 # [VERSION_INFO]
 
 if "datasets" in sys.modules.keys():
-    from paddleformers.utils.log import logger
 
     logger.warning(
         "Detected that datasets module was imported before paddleformers. "

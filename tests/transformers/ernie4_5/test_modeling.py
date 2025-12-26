@@ -470,6 +470,10 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
+        import sys
+
+        sys.modules["torch"] = sys.modules["torch_save"]
+        del sys.modules["transformers"]
         import torch
         from transformers import Ernie4_5Model
 
@@ -484,6 +488,8 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                 rtol=1e2,
             )
         )
+        sys.modules["torch"] = None
+        del sys.modules["transformers"]
 
     @require_package("transformers", "torch")
     def test_ernie4_5_converter_from_local_dir(self):
@@ -493,6 +499,10 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
+            import sys
+
+            sys.modules["torch"] = sys.modules["torch_save"]
+            del sys.modules["transformers"]
             import torch
             from transformers import Ernie4_5Model
 
@@ -515,6 +525,8 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                     rtol=1e2,
                 )
             )
+            sys.modules["torch"] = None
+            del sys.modules["transformers"]
 
     @parameterized.expand([("Ernie4_5Model",), ("Ernie4_5ForCausalLM",)])
     @require_package("transformers", "torch")
@@ -526,6 +538,10 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
+            import sys
+
+            sys.modules["torch"] = sys.modules["torch_save"]
+            del sys.modules["transformers"]
             import torch
             import transformers
 
@@ -555,6 +571,8 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                     atol=1e2,
                 )
             )
+            sys.modules["torch"] = None
+            del sys.modules["transformers"]
 
 
 if __name__ == "__main__":

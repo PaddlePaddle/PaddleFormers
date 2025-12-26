@@ -21,82 +21,84 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
-from paddleformers.transformers import GptOssConfig, GptOssForCausalLM, GptOssModel
+from paddleformers.transformers import Phi3Config, Phi3ForCausalLM, Phi3Model
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
+    GenerationD2STestMixin,
     ModelTesterMixin,
-    ModelTesterPretrainedMixin,
     ids_tensor,
     random_attention_mask,
 )
 
 
-class GptOssModelTester:
+class Phi3ModelTester:
     def __init__(
         self,
         parent,
-        vocab_size=32000,
-        hidden_size=1024,
-        head_dim=128,
-        num_hidden_layers=2,
-        num_attention_heads=8,
-        masked_softmax_fusion=True,
-        layer_norm_epsilon=1e-5,
-        initializer_range=0.02,
-        is_training=True,
-        use_cache=False,
-        bos_token_id=1,
-        eos_token_id=2,
-        apply_residual_connection_post_layernorm=False,
-        hidden_dropout=0.0,
+        vocab_size=100352,
+        hidden_size=5120,
+        intermediate_size=17920,
+        num_hidden_layers=1,
+        num_attention_heads=40,
+        num_key_value_heads=10,
+        resid_pdrop=0.0,
+        embd_pdrop=0.0,
         attention_dropout=0.0,
-        attention_softmax_in_fp32=False,
-        pretraining_tp=1,  # TP rank used when training with megatron
-        dtype="float32",
-        slow_but_exact=False,
-        batch_size: int = 2,
-        seq_length: int = 10,
+        hidden_act="silu",
+        max_position_embeddings=4096,
+        original_max_position_embeddings=4096,
+        initializer_range=0.02,
+        rms_norm_eps=1e-5,
+        use_cache=True,
+        tie_word_embeddings=False,
+        rope_theta=10000.0,
+        rope_scaling=None,
+        partial_rotary_factor=1.0,
+        bos_token_id=1,
+        eos_token_id=32000,
+        pad_token_id=32000,
+        sliding_window=None,
+        batch_size=2,
+        seq_length=10,
         type_sequence_label_size=2,
-        activation_function="gelu",
         num_labels=3,
         num_choices=4,
-        scope=None,
-        dropout=0.56,
         use_input_mask: bool = False,
         use_labels: bool = False,
         return_dict=False,
     ):
-        self.parent: GptOssModelTest = parent
+        self.parent = parent
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
-        self.head_dim = head_dim
+        self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
-        self.masked_softmax_fusion = masked_softmax_fusion
-        self.layer_norm_epsilon = layer_norm_epsilon
+        self.num_key_value_heads = num_key_value_heads
+        self.resid_pdrop = resid_pdrop
+        self.embd_pdrop = embd_pdrop
+        self.attention_dropout = attention_dropout
+        self.hidden_act = hidden_act
+        self.max_position_embeddings = max_position_embeddings
+        self.original_max_position_embeddings = original_max_position_embeddings
         self.initializer_range = initializer_range
-        self.is_training = is_training
+        self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
+        self.tie_word_embeddings = tie_word_embeddings
+        self.rope_theta = rope_theta
+        self.rope_scaling = rope_scaling
+        self.partial_rotary_factor = partial_rotary_factor
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
-        self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
-        self.hidden_dropout = hidden_dropout
-        self.attention_dropout = attention_dropout
-        self.attention_softmax_in_fp32 = attention_softmax_in_fp32
-        self.pretraining_tp = pretraining_tp
-        self.dtype = dtype
-        self.slow_but_exact = slow_but_exact
+        self.pad_token_id = pad_token_id
+        self.sliding_window = sliding_window
 
         self.batch_size = batch_size
         self.seq_length = seq_length
         self.type_sequence_label_size = type_sequence_label_size
-        self.activation_function = activation_function
         self.num_labels = num_labels
         self.num_choices = num_choices
-        self.scope = scope
-        self.dropout = dropout
 
         self.use_input_mask = use_input_mask
         self.use_labels = use_labels
@@ -120,41 +122,45 @@ class GptOssModelTester:
         config = self.get_config()
         return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
 
-    def get_config(self) -> GptOssConfig:
-        return GptOssConfig(
+    def get_config(self) -> Phi3Config:
+        return Phi3Config(
             vocab_size=self.vocab_size,
             hidden_size=self.hidden_size,
-            head_dim=self.head_dim,
+            intermediate_size=self.intermediate_size,
             num_hidden_layers=self.num_hidden_layers,
             num_attention_heads=self.num_attention_heads,
-            masked_softmax_fusion=self.masked_softmax_fusion,
-            layer_norm_epsilon=self.layer_norm_epsilon,
+            num_key_value_heads=self.num_key_value_heads,
+            resid_pdrop=self.resid_pdrop,
+            embd_pdrop=self.embd_pdrop,
+            attention_dropout=self.attention_dropout,
+            hidden_act=self.hidden_act,
+            max_position_embeddings=self.max_position_embeddings,
+            original_max_position_embeddings=self.original_max_position_embeddings,
             initializer_range=self.initializer_range,
+            rms_norm_eps=self.rms_norm_eps,
             use_cache=self.use_cache,
+            tie_word_embeddings=self.tie_word_embeddings,
+            rope_theta=self.rope_theta,
+            rope_scaling=self.rope_scaling,
+            partial_rotary_factor=self.partial_rotary_factor,
             bos_token_id=self.bos_token_id,
             eos_token_id=self.eos_token_id,
-            apply_residual_connection_post_layernorm=self.apply_residual_connection_post_layernorm,
-            hidden_dropout=self.hidden_dropout,
-            attention_dropout=self.attention_dropout,
-            attention_softmax_in_fp32=self.attention_softmax_in_fp32,
-            pretraining_tp=self.pretraining_tp,
-            dtype=self.dtype,
-            slow_but_exact=self.slow_but_exact,
-            activation_function=self.activation_function,
+            pad_token_id=self.pad_token_id,
+            sliding_window=self.sliding_window,
         )
 
     def create_and_check_model(
-        self, config: GptOssConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self, config: Phi3Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
     ):
-        model = GptOssModel(config)
+        model = Phi3Model(config)
         model.eval()
         result = model(input_ids)
         self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
 
     def create_and_check_model_attention_mask(
-        self, config: GptOssConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self, config: Phi3Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
     ):
-        model = GptOssModel(config)
+        model = Phi3Model(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
@@ -172,14 +178,14 @@ class GptOssModelTester:
 
     def create_and_check_model_past_large_inputs(
         self,
-        config: GptOssConfig,
+        config: Phi3Config,
         input_ids,
         input_mask,
         sequence_labels,
         token_labels,
         choice_labels,
     ):
-        model = GptOssModel(config)
+        model = Phi3Model(config)
         model.eval()
 
         # first forward pass
@@ -234,7 +240,7 @@ class GptOssModelTester:
         return config, inputs_dict
 
     def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
-        model = GptOssForCausalLM(config)
+        model = Phi3ForCausalLM(config)
         model.eval()
 
         result = model(
@@ -250,7 +256,7 @@ class GptOssModelTester:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
-        model = GptOssForCausalLM(config)
+        model = Phi3ForCausalLM(config)
         model.eval()
 
         result_no_position_id = model(
@@ -262,7 +268,7 @@ class GptOssModelTester:
         position_ids = paddle.arange(seq_len).expand((batch_size, seq_len))
         result_position_id = model(
             input_ids,
-            position_ids,
+            position_ids=position_ids,
             labels=input_ids if self.parent.use_labels else None,
             return_dict=self.parent.return_dict,
         )
@@ -272,7 +278,7 @@ class GptOssModelTester:
             self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
 
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
-        model = GptOssForCausalLM(config)
+        model = Phi3ForCausalLM(config)
         config.num_key_value_heads = 8  # gqa
         config.apply_rope_fusion = True
         model.eval()
@@ -290,19 +296,18 @@ class GptOssModelTester:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
 
-class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
-    base_model_class = GptOssModel
+class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+    base_model_class = Phi3Model
+    all_model_classes = (Phi3Model, Phi3ForCausalLM)
+    all_generative_model_classes = {Phi3ForCausalLM: (Phi3Model, "Phi4")}
+
     return_dict = False
     use_labels = False
 
-    all_model_classes = (GptOssModel, GptOssForCausalLM)
-    all_generative_model_classes = {GptOssForCausalLM: (GptOssModel, "GptOss")}
-
     def setUp(self):
         super().setUp()
-
-        self.model_tester = GptOssModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=GptOssConfig, vocab_size=256, hidden_size=24)
+        self.model_tester = Phi3ModelTester(self)
+        self.config_tester = ConfigTester(self, config_class=Phi3Config, vocab_size=256, hidden_size=24)
 
     def _get_input_ids_and_config(self):
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
@@ -319,33 +324,61 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
         return config, input_ids, attention_mask, max_length
 
     def test_model(self):
-        # pass
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model(*config_and_inputs)
 
     def test_model_attention_mask(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
-        # pass
 
     def test_model_position_ids(self):
-        # pass
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.check_model_position_ids(*config_and_inputs)
 
     def test_generate_without_input_ids(self):
-        # this requires 4-D attention mask logic, which is not supported yet
         pass
 
-    def test_GptOss_lm_head_model(self):
-        # pass
+    def test_phi3_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
 
-    def test_GptOss_gqa_model(self):
-        # pass
+    def test_phi3_gqa_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_gqa_model(*config_and_inputs)
+
+    def test_save_load(self):
+        for model_class in self.all_model_classes:
+            # test from_pretrained
+            model1 = model_class.from_pretrained(
+                "PaddleFormers/tiny-random-phi4", download_hub="aistudio", convert_from_hf=True
+            )
+
+            model2 = model_class.from_pretrained(
+                "PaddleFormers/tiny-random-phi4", download_hub="aistudio", load_checkpoint_format="flex_checkpoint"
+            )
+
+            model_state_1 = model1.state_dict()
+            model_state_2 = model2.state_dict()
+
+            for k, v in model_state_1.items():
+                md51 = v._md5sum()
+                md52 = model_state_2[k]._md5sum()
+                assert md51 == md52
+
+            # test save_pretrained
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
+                model_state_3 = model3.state_dict()
+
+                for k, v in model_state_3.items():
+                    md53 = v._md5sum()
+                    md52 = model_state_2[k]._md5sum()
+                    if k.endswith(".mlp.gate_up_proj.weight"):
+                        md52 = model_state_2[k].cast("bfloat16")._md5sum()
+                        md53 = model_state_3[k].cast("bfloat16")._md5sum()
+                    print(k)
+                    assert md52 == md53
 
     def test_attention_outputs(self):
         pass
@@ -371,94 +404,98 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
     def test_model_name_list(self):
         pass
 
-    def test_save_load(self):
-        pass
-
     def test_hidden_states_output(self):
         pass
 
 
-class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
-    base_model_class = GptOssModel
+class Phi3IntegrationTest(unittest.TestCase):
+    def test_model_tiny_logits(self):
+        input_ids = [[1, 306, 4658, 278, 6593, 310, 2834, 338]]
 
-    def test_inference_no_attention(self):
-        model = GptOssModel.from_pretrained(
-            "PaddleFormers/tiny-random-gptoss", download_hub="aistudio", convert_from_hf=True
+        model = Phi3ForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-phi4", download_hub="aistudio", dtype="float32", convert_from_hf=True
         )
-        model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+
+        input_ids = paddle.to_tensor(input_ids)
         with paddle.no_grad():
-            output = model(input_ids, attention_mask=attention_mask)[0]
-        expected_shape = [1, 11, 16]
-        self.assertEqual(output.shape, expected_shape)
-        expected_slice = paddle.to_tensor(
+            out = model(input_ids, return_dict=True).logits
+
+        # Expected mean on dim = -1
+        EXPECTED_MEAN = paddle.to_tensor(
+            [[-0.00011489, 0.00058047, -0.00060976, -0.00023598, 0.00015398, -0.00014828, 0.00031586, 0.00036044]]
+        )
+        self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
+
+        # slicing logits[0, 0, 0:30]
+        EXPECTED_SLICE = paddle.to_tensor(
             [
-                [
-                    [-1.29414248, -2.16081142, 1.12413347],
-                    [-0.15411879, 0.49254864, 0.03585127],
-                    [-0.96914506, -0.94086194, 0.72755915],
-                ]
+                -0.02324827,
+                -0.02726699,
+                -0.08814652,
+                0.00653408,
+                -0.04648581,
+                0.04860921,
+                -0.02443087,
+                0.00239104,
+                0.03467777,
+                -0.01582086,
+                -0.05872551,
+                0.05706415,
+                0.11532584,
+                -0.07243908,
+                0.00748794,
+                -0.02105580,
+                0.01975052,
+                0.23326975,
+                0.02717321,
+                0.04710620,
+                0.14497876,
+                -0.02641426,
+                0.06328714,
+                0.01425896,
+                0.00643350,
+                -0.11734577,
+                -0.00358012,
+                -0.00397540,
+                -0.08387793,
+                0.01058182,
             ]
         )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
-
-    def test_inference_with_attention(self):
-        model = GptOssModel.from_pretrained(
-            "PaddleFormers/tiny-random-gptoss", download_hub="aistudio", convert_from_hf=True
-        )
-        model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-        attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-        with paddle.no_grad():
-            output = model(input_ids, attention_mask=attention_mask)[0]
-        expected_shape = [1, 11, 16]
-        self.assertEqual(output.shape, expected_shape)
-        expected_slice = paddle.to_tensor(
-            [
-                [
-                    [-1.29414248, -2.16081142, 1.12413347],
-                    [-0.15411879, 0.49254864, 0.03585127],
-                    [-0.96914506, -0.94086194, 0.72755915],
-                ]
-            ]
-        )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
+        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
 
-class GptOssCompatibilityTest(unittest.TestCase):
+class Phi3GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
+    internal_testing_model = "PaddleFormers/tiny-random-phi4"
+
+
+class Phi3CompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
-        from transformers import GptOssConfig, GptOssForCausalLM
+        from transformers import Phi3Config, Phi3ForCausalLM
 
-        # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = GptOssConfig(hidden_size=16, num_hidden_layers=8, num_attention_heads=8)
-        model = GptOssForCausalLM(config)
+        config = Phi3Config(hidden_size=16, num_hidden_layers=8, num_attention_heads=8)
+        model = Phi3ForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
 
     @require_package("transformers", "torch")
-    def test_GptOss_converter(self):
-        # 1. create common input
+    def test_Phi3_converter(self):
         input_ids = np.random.randint(100, 200, [1, 20])
 
-        # 2. forward the paddle model
-        from paddleformers.transformers import GptOssModel
+        from paddleformers.transformers import Phi3Model
 
-        paddle_model = GptOssModel.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
+        paddle_model = Phi3Model.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-        # 3. forward the torch  model
         import sys
 
         sys.modules["torch"] = sys.modules["torch_save"]
         del sys.modules["transformers"]
         import torch
-        from transformers import GptOssModel
+        from transformers import Phi3Model
 
-        torch_model = GptOssModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = Phi3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -473,29 +510,25 @@ class GptOssCompatibilityTest(unittest.TestCase):
         del sys.modules["transformers"]
 
     @require_package("transformers", "torch")
-    def test_GptOss_converter_from_local_dir(self):
+    def test_Phi3_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
-
-            # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
             import sys
 
             sys.modules["torch"] = sys.modules["torch_save"]
             del sys.modules["transformers"]
             import torch
-            from transformers import GptOssModel
+            from transformers import Phi3Model
 
-            torch_model = GptOssModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Phi3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            # 2. forward the paddle model
-            from paddleformers.transformers import GptOssModel
+            from paddleformers.transformers import Phi3Model
 
-            paddle_model = GptOssModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Phi3Model.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -509,20 +542,17 @@ class GptOssCompatibilityTest(unittest.TestCase):
             sys.modules["torch"] = None
             del sys.modules["transformers"]
 
-    @parameterized.expand([("GptOssModel",), ("GptOssForCausalLM",)])
+    @parameterized.expand([("Phi3Model",), ("Phi3ForCausalLM",)])
     @require_package("transformers", "torch")
-    def test_GptOss_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
+    def test_Phi3_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
         pytorch_class_name = pytorch_class_name or class_name
         with tempfile.TemporaryDirectory() as tempdir:
-
-            # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
-
-            # 2. forward the torch model
             import sys
 
             sys.modules["torch"] = sys.modules["torch_save"]
             del sys.modules["transformers"]
+
             import torch
             import transformers
 
@@ -533,14 +563,13 @@ class GptOssCompatibilityTest(unittest.TestCase):
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            # 3. forward the paddle model
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
             paddle_model.eval()
 
-            if class_name == "GptOssModel":
+            if class_name == "Phi3Model":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits

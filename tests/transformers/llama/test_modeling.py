@@ -479,9 +479,15 @@ class LlamaGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 #             # 1. create common input
 #             input_ids = np.random.randint(100, 200, [1, 20])
 
-#             # 2. forward the torch model
-#             import torch
-#             import transformers
+# 2. forward the torch model
+# try:
+#     import sys
+#
+#     del sys.modules["torch"]
+# except:
+#     pass
+# import torch
+# import transformers
 
 #             torch_model_class = getattr(transformers, pytorch_class_name)
 #             torch_model = torch_model_class.from_pretrained(self.torch_model_path)

@@ -34,6 +34,9 @@ class SerializationTest(TestCase):
     )
     @require_package("torch")
     def test_simple_load(self, dtype: str):
+        import sys
+
+        sys.modules["torch"] = sys.modules["torch_save"]
         import torch
 
         # torch "normal_kernel_cpu" not implemented for 'Char', 'Int', 'Long', so only support float
@@ -63,3 +66,4 @@ class SerializationTest(TestCase):
                     paddle.to_tensor(arr).cast("float32").cpu().numpy(),
                     torch_data[key].detach().cpu().to(torch.float32).numpy(),
                 )
+        sys.modules["torch"] = None
