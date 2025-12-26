@@ -4,11 +4,11 @@
 dataset_type: "pretrain"
 max_seq_len: 8192
 mix_strategy: concat
-input_dir: "1.0 /home/.cache/glm45/data/pre-training/llama_openwebtext_100k"
+input_dir: "1.0 /root/.cache/glm45/data/pre-training/llama_openwebtext_100k"
 split: "998,1,1"
 
 ### modelv
-model_name_or_path: /home/.cache/glm45/GLM-4.5-Air
+model_name_or_path: /root/.cache/glm45/GLM-4.5-Air
 attn_impl: flashmask
 
 ### finetuning
@@ -57,8 +57,8 @@ moe_router_force_load_balancing: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 num_hidden_layers: 2
-apply_rope_fusion: true
-moe_router_fusion: true
+apply_rope_fusion: False
+moe_router_fusion: False
 router_aux_loss_coef: 1e-4
 
 num_attention_heads: 8

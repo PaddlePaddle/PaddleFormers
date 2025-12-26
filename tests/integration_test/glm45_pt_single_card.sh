@@ -44,8 +44,7 @@ with open(outfile, 'w') as fout:
 "
 mv $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
 
-
-config_json=$root_dir/PaddleFormers/tests/config/ci/glm45_single_pt.yaml
+config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_single_pt-test.yaml 
 
 
 rm -rf checkpoint/
@@ -60,7 +59,7 @@ unset http_proxy https_proxy
 
 set +e
 # coverage run run_pretrain.py $config_json 2>&1 | tee ./glm45_single_card.log
-NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $root_dir/PaddleFormers/tests/config/ci/glm45_single_pt-test.yaml 2>&1 | tee ./glm45_single_card.log
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./glm45_single_card.log
 
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
@@ -80,16 +79,16 @@ fi
 
 set -e
 echo "
-1 12.10431099
-2 12.05327988
-3 12.03885174
-4 12.03460503
-5 12.02089691
-6 12.00885010
-7 11.95639896
-8 11.96551323
-9 11.97876358
-10 11.97223091
+1 12.02153301
+2 12.02295017
+3 11.97608376
+4 11.96826267
+5 11.88944244
+6 11.87821770
+7 11.87568092
+8 11.83939743
+9 11.83881569
+10 11.86441040
 " > ./glm45_single_card_gt_loss.txt
 
 export FLAGS_use_stride_compute_kernel=False

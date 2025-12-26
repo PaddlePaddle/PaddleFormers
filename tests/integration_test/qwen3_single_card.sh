@@ -44,10 +44,7 @@ with open(outfile, 'w') as fout:
             fout.write(line)
         i += 1
 "
-mv $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
-
-
-config_json=$root_dir/PaddleFormers/tests/config/ci/glm45_single_pt.yaml
+mv $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py
 
 
 config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_pt.yaml
