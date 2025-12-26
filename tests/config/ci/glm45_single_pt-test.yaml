@@ -4,7 +4,7 @@
 dataset_type: "pretrain"
 max_seq_len: 8192
 mix_strategy: concat
-input_dir: "1.0 /home/.cache/data/glm45/pre-training/llama_openwebtext_100k"
+input_dir: "1.0 /root/.cache/glm45/data/pre-training/llama_openwebtext_100k"
 split: "998,1,1"
 
 ### modelv
