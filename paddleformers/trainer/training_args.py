@@ -29,9 +29,10 @@ from typing import Any, Dict, List, Optional
 
 import paddle
 import paddle.distributed as dist
-from paddle.distributed import fleet
+from paddle.distributed import fleet, in_auto_parallel_align_mode
 
 from ..utils.env import PREFIX_CHECKPOINT_DIR
+from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import FLASH_DEVICE
 from .trainer_utils import (
@@ -42,19 +43,6 @@ from .trainer_utils import (
     init_nccl_config,
     split_parallel_config,
 )
-
-try:
-    from paddle.distributed import in_auto_parallel_align_mode
-except Exception:
-
-    def in_auto_parallel_align_mode():
-        """
-        hack for paddleformers develop branch.
-        """
-        return False
-
-
-from ..utils.import_utils import is_paddlefleet_available
 
 # Conditionally import paddlefleet modules
 if paddle.device.is_compiled_with_cuda() and is_paddlefleet_available():

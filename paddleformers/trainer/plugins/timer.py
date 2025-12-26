@@ -16,13 +16,9 @@
 import time
 
 import paddle
+from paddle.distributed.fleet.utils.timer_helper import _GPUEventTimer
 
 from ...utils.log import logger
-
-try:
-    from paddle.distributed.fleet.utils.timer_helper import _GPUEventTimer
-except ImportError:
-    _GPUEventTimer = None
 
 
 class _Timer:

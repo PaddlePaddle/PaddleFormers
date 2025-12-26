@@ -32,17 +32,9 @@ from paddleformers.utils.log import logger
 if paddle.device.is_compiled_with_custom_device("npu"):
     from .npu_fusion_ops import npu_cal_aux_loss_func as cal_aux_loss
 else:
-    try:
-        from paddle.incubate.nn.functional import cal_aux_loss
-    except ImportError:
-        logger.warning_once("Fail to import cal_aux_loss.")
-        cal_aux_loss = None
+    from paddle.incubate.nn.functional import cal_aux_loss
 
-try:
-    from paddle.incubate.nn.functional import int_bincount
-except ImportError:
-    logger.warning_once("Fail to import int_bincount.")
-    int_bincount = None
+from paddle.incubate.nn.functional import int_bincount
 
 
 def masked_fill(x, mask, value):
