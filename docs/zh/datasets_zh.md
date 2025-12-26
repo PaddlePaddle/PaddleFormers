@@ -49,7 +49,7 @@ train_dataset_prob: "0.8,0.2"
 
 # 3. 数据 packing 策略
 
-`packing` 是一种优化批处理的技术，将多个短输入序列输入大语言模型（LLM）之前，先将它们合并成一个更长的序列，这能减少填充开销，并提高硬件利用率（例如，提升GPU/TPU的效率）。
+`packing` 是一种优化批处理的技术，将多个短输入序列输入大语言模型（LLM）之前，先将它们合并成一个更长的序列，这能减少填充开销，并提高硬件利用率（例如，提升 GPU/TPU 的效率）。
 
 `The greedy intokens strategy` 是一种`token`级别的优化方法，在批量处理过程中，以贪婪的方式优先填满可用的 `token budget`（例如，最大序列长度）。该策略确保模型在约束条件下生成尽可能多的`token`，最大程度减少容量浪费。
 
@@ -59,7 +59,7 @@ train_dataset_prob: "0.8,0.2"
 | true  | false | 开`packing`，但不使用贪心策略|
 | true  | true  | 开`packing`，同时使用贪心策略 |
 
-- 补充：在线预训练数据流中另外支持了`truncate_packing`的策略，支持将数据进行截断，有效降低padding token，`truncate_packing`设置为`True`即可使用，具体如下图所示：
+- 补充：在线预训练数据流中另外支持了`truncate_packing`的策略，支持将数据进行截断，有效降低 padding token，`truncate_packing`设置为`True`即可使用，具体如下图所示：
 
 <div align="center">
 <img src="https://github.com/user-attachments/assets/f7ec5b76-aee7-4f64-8331-ca00cac5339a">
@@ -67,18 +67,18 @@ train_dataset_prob: "0.8,0.2"
 
 # 4. Padding Free
 
-`padding_free` 将一个batch中的数据进行展平而避免数据padding，从而降低显存占用并加快训练（同一batch的不同序列之间依旧是不可见的）。默认为False。
+`padding_free` 将一个 batch 中的数据进行展平而避免数据 padding，从而降低显存占用并加快训练（同一 batch 的不同序列之间依旧是不可见的）。默认为 False。
 
 相较于`packing`，`padding_free`不需要额外的预处理时间，但`packing`的训练速度更快且显存占用更稳定。
 
 # 5. Attention Mask
 
-数据流默认会传入一个因果的Attention Mask，在packing情况下，当`use_global_causal_attn`为true的时候，对应下图所示的`Causal Attention`，一个`Sequence`内的不同sample是可见的，当`use_global_causal_attn`为false的时候，对应下图所示的`Causal Document Attention`，一个`Sequence`内的不同sample是不可见的
+数据流默认会传入一个因果的 Attention Mask，在 packing 情况下，当`use_global_causal_attn`为 true 的时候，对应下图所示的`Causal Attention`，一个`Sequence`内的不同 sample 是可见的，当`use_global_causal_attn`为 false 的时候，对应下图所示的`Causal Document Attention`，一个`Sequence`内的不同 sample 是不可见的
 
 <div align="center" style="display: flex; justify-content: center; gap: 20px;">
   <div>
-    <img 
-      src="https://github.com/user-attachments/assets/57c414e3-6783-4a40-a5bf-eb67c6129b06" 
+    <img
+      src="https://github.com/user-attachments/assets/57c414e3-6783-4a40-a5bf-eb67c6129b06"
       width="200px"
       alt="Causal Attention"
     >
@@ -86,8 +86,8 @@ train_dataset_prob: "0.8,0.2"
     <em>Causal Attention</em>
   </div>
   <div>
-    <img 
-      src="https://github.com/user-attachments/assets/ffd61730-32f0-4d25-8558-086d2d43aa1f" 
+    <img
+      src="https://github.com/user-attachments/assets/ffd61730-32f0-4d25-8558-086d2d43aa1f"
       width="200px"
       alt="Causal Document Attention"
     >
