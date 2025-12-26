@@ -34,9 +34,10 @@ import_structure = {
     ],
     "model_utils": ["PretrainedModel", "register_base_model"],
     "tokenizer_utils": [
-        "PreTrainedTokenizer",
         "PretrainedTokenizer",
+        "PreTrainedTokenizer",
         "PreTrainedTokenizerBase",
+        "PreTrainedTokenizerFast",
         "BPETokenizer",
         "tokenize_chinese_chars",
         "is_chinese_char",
@@ -48,7 +49,6 @@ import_structure = {
     "attention_utils": ["create_bigbird_rand_mask_idx_list"],
     "tensor_parallel_utils": [],
     "configuration_utils": ["PretrainedConfig"],
-    "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
@@ -282,7 +282,9 @@ if TYPE_CHECKING:
     from .model_utils import PretrainedModel, register_base_model
     from .tokenizer_utils import (
         PretrainedTokenizer,
+        PreTrainedTokenizer,
         PreTrainedTokenizerBase,
+        PreTrainedTokenizerFast,
         BPETokenizer,
         tokenize_chinese_chars,
         is_chinese_char,
@@ -291,7 +293,6 @@ if TYPE_CHECKING:
         tokenize_special_chars,
         convert_to_unicode,
     )
-    from .tokenizer_utils_fast import PretrainedTokenizerFast
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor

@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
     "tokenizer": ["Qwen2Tokenizer"],
     "tokenizer_fast": ["Qwen2TokenizerFast"],
     "configuration": ["Qwen2Config"],
