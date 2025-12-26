@@ -128,8 +128,8 @@ class VideosKwargs(TypedDict, total=False):
             If set, will return tensors of a particular framework. Acceptable values are:
             - `'pd'`: Return Paddle `paddle.Tensor` objects.
             - `'np'`: Return NumPy `np.ndarray` objects.
-        backend (`str`, *optional*):
-            The backend to be used for video loading. Acceptable values are:
+        video_backend (`str`, *optional*):
+            The video_backend to be used for video loading. Acceptable values are:
             - `'decord'`: Use `decord` library.
             - `'paddlecodec'`: Use `paddlecodec` library.
     """
@@ -156,7 +156,7 @@ class VideosKwargs(TypedDict, total=False):
     num_frames: Annotated[Optional[int], positive_int()]
     return_metadata: Optional[bool]
     return_tensors: Annotated[Optional[Union[str, TensorType]], tensor_type_validator()]
-    backend: Optional[str]
+    video_backend: Optional[str]
 
 
 class ProcessingKwargs(ProcessingKwargs_hf):
