@@ -1283,7 +1283,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                     ed_grid_thw = video_grid_thw[video_index]
                     pixel_lenth = ed_grid_thw.prod().item()
                     images.append(video_pixel_values[last_video_pixel_index : last_video_pixel_index + pixel_lenth])
-                    grid_thw.append(video_grid_thw[ed_grid_thw])
+                    grid_thw.append(ed_grid_thw)
                     video_index += 1
                     remain_videos -= 1
                     ed = ed_video
