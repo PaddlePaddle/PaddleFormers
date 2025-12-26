@@ -1803,7 +1803,7 @@ class LlamaModel(LlamaPretrainedModel):
                 and self.config.recompute_num_layers == 1
                 and has_gradient
             ):
-                layer_outputs = self.recompute_training(
+                layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
                     position_ids,

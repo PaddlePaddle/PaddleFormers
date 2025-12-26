@@ -637,7 +637,7 @@ class Qwen2Model(Qwen2PretrainedModel):
                 and self.config.recompute_num_layers == 1
                 and has_gradient
             ):
-                hidden_states = self.recompute_training_full(
+                layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
                     causal_mask_mapping[decoder_layer.attention_type],

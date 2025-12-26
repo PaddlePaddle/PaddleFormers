@@ -1057,7 +1057,7 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
                 and self.config.recompute_num_layers == 1
                 and has_gradient
             ):
-                hidden_states = self.recompute_training_full(
+                layer_outputs = self.recompute_training_full(
                     layer_module=decoder_layer,
                     hidden_states=hidden_states,
                     attention_mask=causal_mask,
