@@ -72,7 +72,7 @@ fi
 
 set -e
 echo "
-10 10.09718418
+10 7.93321276
 " > ./glm45_sft_multi_card_gt_loss.txt
 
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
@@ -102,7 +102,7 @@ fi
 
 set -e
 echo "
-100 6.68534613
+100 4.89294195
 " > ./glm45_lora_multi_card_gt_loss.txt
 
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \

@@ -54,7 +54,7 @@ train_dataset_prob: "0.8,0.2"
 
 Currently, four data sampling strategies are supported: `random`, `concat`, `interleave_under`, `interleave_over`
 
-| Data Sampling Strategy | Applicable Scenarios	| Limitations | Description |
+| Data Sampling Strategy | Applicable Scenarios    | Limitations | Description |
 |------------------|-----------------|------------------|------------------|
 | `random`           | The dataset is extremely large and strict data proportioning is required | max_steps > 0 | In `random` mode, based on the input dataset probs, a fixed-size sample pool of `num_samples_each_epoch` is constructed, and the data loader randomly acquires data from this sample pool. |
 | `concat`           | Need to train all data in the datasets | None | In `concat` mode, the input dataset probs are not used. Instead, multiple datasets are directly concatenated. The size of the dataset is equal to the total size of the input multi-source datasets. When max_steps = -1, setting `num_train_epochs` allows for a complete traversal of the input datasets for `num_train_epochs` rounds. |
@@ -69,8 +69,8 @@ The data stream defaults to passing in a causal Attention Mask. In the packing c
 
 <div align="center" style="display: flex; justify-content: center; gap: 20px;">
   <div>
-    <img 
-      src="https://github.com/user-attachments/assets/57c414e3-6783-4a40-a5bf-eb67c6129b06" 
+    <img
+      src="https://github.com/user-attachments/assets/57c414e3-6783-4a40-a5bf-eb67c6129b06"
       width="200px"
       alt="Causal Attention"
     >
@@ -78,8 +78,8 @@ The data stream defaults to passing in a causal Attention Mask. In the packing c
     <em>Causal Attention</em>
   </div>
   <div>
-    <img 
-      src="https://github.com/user-attachments/assets/ffd61730-32f0-4d25-8558-086d2d43aa1f" 
+    <img
+      src="https://github.com/user-attachments/assets/ffd61730-32f0-4d25-8558-086d2d43aa1f"
       width="200px"
       alt="Causal Document Attention"
     >
