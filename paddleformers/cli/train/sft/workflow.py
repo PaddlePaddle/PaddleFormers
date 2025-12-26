@@ -273,6 +273,7 @@ def run_sft(
     set_attr_func(model_config, "n_routed_experts", model_args.n_routed_experts)
     set_attr_func(model_config, "use_qk_norm", model_args.use_qk_norm)
     set_attr_func(model_config, "tie_word_embeddings", model_args.tie_word_embeddings)
+    set_attr_func(model_config, "moe_group", model_args.moe_group)
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
