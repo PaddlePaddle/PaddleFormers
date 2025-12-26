@@ -365,6 +365,10 @@ def run_dpo(
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
         callbacks=callbacks,
     )
+    trainable_parameters = [
+        p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)
+    ]
+    trainer.set_optimizer_grouped_parameters(trainable_parameters)
 
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
