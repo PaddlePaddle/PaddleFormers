@@ -273,7 +273,6 @@ def run_sft(
     set_attr_func(model_config, "n_routed_experts", model_args.n_routed_experts)
     set_attr_func(model_config, "use_qk_norm", model_args.use_qk_norm)
     set_attr_func(model_config, "tie_word_embeddings", model_args.tie_word_embeddings)
-    set_attr_func(model_config, "moe_group", model_args.moe_group)
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
@@ -303,12 +302,6 @@ def run_sft(
         )
     else:
         model = model_class.from_config(model_config, dtype=dtype)
-
-    if finetuning_args.pp_need_data_degree:
-        try:
-            model.set_pp_need_data_degree(finetuning_args.pp_need_data_degree)
-        except:
-            pass
 
     if training_args.do_train and model_args.neftune:
         # Inspired by https://github.com/neelsjain/NEFTune

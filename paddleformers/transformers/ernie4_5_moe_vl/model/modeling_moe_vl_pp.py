@@ -1742,6 +1742,10 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         self._modality_param_mapping = None
         self.vision_model = DFNRopeVisionTransformerPipe(self.config)
 
+        pipeline_model_parallel_size = self.config.pipeline_model_parallel_size
+        if pipeline_model_parallel_size > 1:
+            self.set_pp_need_data_degree(pipeline_model_parallel_size)
+
     def add_vision_model(
         self,
         encoder: nn.Layer,
