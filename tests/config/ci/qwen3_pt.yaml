@@ -61,3 +61,4 @@ use_qk_norm: true
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
+moe_router_fusion: false
