@@ -1,5 +1,5 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 The Qwen team, Alibaba Group and The HuggingFace Inc. team. All rights reserved.
+# Copyright 2025 The ZhipuAI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -481,8 +481,7 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
     base_model_class = Glm4vMoeModel
     test_dtype = "float32"  # "bfloat16"
 
-    # model_path="PaddleFormers/tiny-random-glm4vmoe-bf16"
-    model_path = "/home/ssd2/gemma3/run_glm4vmoe/tiny-random-glm4vmoe-bf16"
+    model_path = "PaddleFormers/tiny-random-glm4vmoe-bf16"
     image_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
     video_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
 
@@ -490,8 +489,7 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
         self.model = Glm4vMoeForConditionalGeneration.from_pretrained(
             self.model_path, download_hub="aistudio", convert_from_hf=True, dtype=self.test_dtype
         )
-
-        self.processor = AutoProcessor.from_pretrained(self.model_path, use_fast=False)
+        self.processor = AutoProcessor.from_pretrained(self.model_path)
         self.messages = [
             {
                 "role": "user",
@@ -516,7 +514,9 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
                 ],
             }
         ]
-        self.video = load_video(self.video_url)[0][:3, ::4, ::4]  # Only the first 3 frames for testing
+        self.video = load_video(self.video_url, backend="decord")[0][
+            :3, ::4, ::4
+        ]  # Only the first 3 frames for testing
 
     def test_inference_no_attention(self):
         self.model.eval()

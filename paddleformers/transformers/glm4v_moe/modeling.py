@@ -1,4 +1,5 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright 2025 The ZhipuAI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -358,15 +359,6 @@ class Glm4vMoeTextAttention(nn.Layer):
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
         return attn_output, attn_weights
-
-
-# class Glm4vMoeTextMoE(Glm4MoeMoE):
-#     # TODO: intermediate_size is config.intermediate_size but not config.moe_intermediate_size
-#     def __init__(self, config):
-#         super().__init__(config)
-#         self.experts = nn.LayerList(
-#             [Glm4vMoeTextMLP(config, fuse_up_gate=config.fuse_attention_ffn) for _ in range(config.n_routed_experts)]
-#         )
 
 
 class Glm4vMoeTextDecoderLayer(nn.Layer):
@@ -1256,7 +1248,12 @@ class Glm4vMoeVisionModel(Glm4vMoePreTrainedModel):
 
         for blk in self.blocks:
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 hidden_states = self.recompute_training_full(
                     blk,
                     hidden_states,
@@ -1443,7 +1440,12 @@ class Glm4vMoeTextModel(Glm4vMoePreTrainedModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
@@ -1479,6 +1481,7 @@ class Glm4vMoeTextModel(Glm4vMoePreTrainedModel):
 
         if not return_dict:
             return tuple(v for v in [hidden_states, past_key_values] if v is not None)
+
         return MoeModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=past_key_values,
@@ -1945,12 +1948,17 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
         past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.FloatTensor] = None,
         labels: Optional[paddle.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         pixel_values: Optional[paddle.Tensor] = None,
         pixel_values_videos: Optional[paddle.FloatTensor] = None,
         image_grid_thw: Optional[paddle.LongTensor] = None,
         video_grid_thw: Optional[paddle.LongTensor] = None,
+        rope_deltas: Optional[paddle.Tensor] = None,
         cache_position: Optional[paddle.LongTensor] = None,
         logits_to_keep: Union[int, paddle.Tensor] = 0,
+        return_dict: Optional[bool] = True,
         **kwargs,
     ) -> Union[tuple, Glm4vMoeCausalLMOutputWithPast]:
         r"""
@@ -1993,17 +2001,25 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
         >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         "The image shows a street scene with a red stop sign in the foreground. In the background, there is a large red gate with Chinese characters ..."
         ```"""
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         outputs = self.model(
             input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_hidden_states=output_hidden_states,
             pixel_values=pixel_values,
             pixel_values_videos=pixel_values_videos,
             image_grid_thw=image_grid_thw,
             video_grid_thw=video_grid_thw,
-            position_ids=position_ids,
-            attention_mask=attention_mask,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
+            rope_deltas=rope_deltas,
             cache_position=cache_position,
+            return_dict=return_dict,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             **kwargs,
         )
 

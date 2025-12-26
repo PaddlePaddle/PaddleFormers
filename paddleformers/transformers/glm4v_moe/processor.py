@@ -1,6 +1,6 @@
 # coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
+# Copyright 2025 The ZhipuAI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
 # This code is based on EleutherAI's GPT-NeoX library and the GPT-NeoX
 # and OPT implementations in this library. It has been modified from its
@@ -72,8 +72,7 @@ class Glm4vProcessor(ProcessorMixin):
     attributes = ["image_processor", "tokenizer", "video_processor"]
     image_processor_class = "AutoImageProcessor"
     video_processor_class = "AutoVideoProcessor"
-    tokenizer_class = "AutoTokenizer"
-    # tokenizer_class = "PreTrainedTokenizer"
+    tokenizer_class = ("PreTrainedTokenizer", "PreTrainedTokenizerFast")
 
     def __init__(self, image_processor=None, tokenizer=None, video_processor=None, chat_template=None, **kwargs):
         super().__init__(image_processor, tokenizer, video_processor, chat_template=chat_template)

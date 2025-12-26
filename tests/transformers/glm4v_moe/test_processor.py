@@ -1,6 +1,6 @@
 # coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The ZhipuAI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,9 +29,7 @@ from tests.transformers.test_processing_common import ProcessorTesterMixin
 
 class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     processor_class = Glm4vProcessor
-
-    # model_path="PaddleFormers/tiny-random-glm4vmoe-bf16"
-    model_path = "/home/ssd2/gemma3/run_glm4vmoe/tiny-random-glm4vmoe-bf16"
+    model_path = "PaddleFormers/tiny-random-glm4vmoe-bf16"
 
     @classmethod
     def setUpClass(cls):
@@ -275,6 +273,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             tokenize=True,
             return_dict=True,
             fps=fps,
+            backend="decord",
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 16)
@@ -285,6 +284,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
+            backend="decord",
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 36)
@@ -303,6 +303,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             tokenize=True,
             return_dict=True,
             do_sample_frames=False,
+            backend="decord",
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 4)
@@ -318,6 +319,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
                 tokenize=True,
                 return_dict=True,
                 do_sample_frames=True,
+                backend="decord",
             )
 
     def test_kwargs_overrides_custom_image_processor_kwargs(self):
