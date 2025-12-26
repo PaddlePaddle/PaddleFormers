@@ -100,6 +100,7 @@ else
     echo "LORA Test passed."
 fi
 
+
 set -e
 echo "
 100 4.89507484
