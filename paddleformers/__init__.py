@@ -50,7 +50,7 @@ try:
         """Due to potential compatibility issues between 'PaddlePaddle' and 'PyTorch' in 'PaddleFormers', 'PyTorch' is disabled by default in 'PaddleFormers'. If you need to use the 'PyTorch' or 'Transformers' library, please add "del sys.modules['torch']" before using them."""
     )
 except:
-    pass
+    sys.modules["torch"] = None
 
 
 try:
