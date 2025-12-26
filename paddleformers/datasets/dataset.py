@@ -20,7 +20,6 @@ import time
 import warnings
 from collections import namedtuple
 from itertools import islice
-import sys
 
 # Add this for extremely slow connection to hf sever even for local dataset.
 os.environ["HF_UPDATE_DOWNLOAD_COUNTS"] = "False"
@@ -455,12 +454,14 @@ class IterDataset(IterableDataset):
         else:
             if inspect.isgenerator(self.data):
                 warnings.warn("Receiving generator as data source, data can only be iterated once")
+            sys.modules["torch"] = sys.modules["torch_save"]
             for example in self.data:
                 if (not self._filter_pipline or self._filter(self._filter_pipline)) and self._shard_filter(
                     num_samples=num_samples
                 ):
                     yield self._transform(example) if self._transform_pipline else example
                 num_samples += 1
+            sys.modules["torch"] = None
 
     def skip(self, n):
         if inspect.isfunction(self.data):
