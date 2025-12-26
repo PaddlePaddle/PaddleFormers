@@ -31,11 +31,19 @@ except ImportError:
 
 import paddle
 import paddle.distributed as dist
+
+from ..utils.import_utils import is_paddlefleet_available
+
+# This module requires paddlefleet to be installed
+if not is_paddlefleet_available():
+    raise ImportError(
+        "paddlefleet is required for model_provider. "
+        "Please install paddlefleet to use this module. "
+        "You can install it with: pip install paddlefleet"
+    )
+
 from paddlefleet import parallel_state, tensor_parallel
 from paddlefleet.transformer.enums import ModelType
-
-# TODO(pkuzyc): Support model_parallel_cuda_manual_seed for PaddleFleet
-# from paddlefleet.tensor_parallel.random import model_parallel_cuda_manual_seed
 from paddlefleet.transformer.layer import FleetLayer
 from paddlefleet.utils import get_model_config
 
@@ -43,7 +51,6 @@ try:
     from paddlefleet.fp8_utils import correct_amax_history_if_needed
 except ImportError:
     correct_amax_history_if_needed = None
-
 
 ModelT = TypeVar("ModelT", bound=FleetLayer)
 

@@ -174,6 +174,28 @@ def get_lora_target_modules(model):
             # alinger
             "model.visual.merger.mlp\.[02].*",
         ]
+    elif model.config.model_type == "qwen3_vl":
+        target_modules = [
+            # Language Model
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_proj.*",
+            "model.language_model.*up_proj.*",
+            "model.language_model.*down_proj.*",
+            # Vision
+            "model.visual.blocks.*attn.qkv.*",
+            "model.visual.blocks.*attn.proj.*",
+            "model.visual.blocks.*mlp.linear_fc1.*",
+            "model.visual.blocks.*mlp.linear_fc2.*",
+            # Merger
+            "model.visual.merger.linear_fc1.*",
+            "model.visual.merger.linear_fc2.*",
+            # DeepStack Merger
+            "model.visual.deepstack_merger_list.*.linear_fc1.*",
+            "model.visual.deepstack_merger_list.*.linear_fc2.*",
+        ]
     elif model.config.model_type == "qwen2_moe":
         target_modules = [
             ".*qkv_proj.*",
@@ -267,8 +289,10 @@ def get_lora_target_modules(model):
             ".*mlp.up_proj.*",
             ".*mlp.down_proj.*",
         ]
-    elif model.config.model_type == "ernie4_5":
+    elif model.config.model_type in {"ernie4_5", "ernie4_5_moe"}:
         target_modules = [
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
@@ -280,6 +304,27 @@ def get_lora_target_modules(model):
             ".*spatial_linear.2.*",
             ".*temporal_linear.0.*",
             ".*temporal_linear.2.*",
+        ]
+    elif model.config.model_type == "paddleocr_vl":
+        target_modules = [
+            # Language Model
+            ".*model.*q_proj.*",
+            ".*model.*k_proj.*",
+            ".*model.*v_proj.*",
+            ".*model.*o_proj.*",
+            ".*model.*gate_proj.*",
+            ".*model.*up_proj.*",
+            ".*model.*down_proj.*",
+            # Vision Encoder
+            ".*visual.*q_proj.*",
+            ".*visual.*k_proj.*",
+            ".*visual.*v_proj.*",
+            ".*visual.*out_proj.*",
+            ".*visual.*fc1.*",
+            ".*visual.*fc2.*",
+            # Projector
+            ".*mlp_AR.*linear_1.*",
+            ".*mlp_AR.*linear_2.*",
         ]
     elif model.config.model_type == "phi3":
         target_modules = [

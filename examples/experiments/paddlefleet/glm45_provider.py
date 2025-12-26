@@ -40,7 +40,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     init_method_std: int = 0.02
     hidden_dropout_prob: float = 0.0
     vocab_size: int = 151552
-    share_embeddings_and_output_weights: Optional[bool] = False
+    tie_word_embeddings: Optional[bool] = False
     rms_norm_eps: float = 1e-5
     autocast_dtype: paddle.dtype = paddle.bfloat16
     params_dtype: paddle.dtype = paddle.bfloat16
@@ -64,7 +64,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     moe_router_load_balancing_type: str = "seq_aux_loss"
     router_aux_loss_coef: float = 1e-3
     moe_router_pre_softmax: bool = False
-    moe_grouped_gemm: bool = True
+    moe_grouped_gemm: bool = False
     scoring_func: str = "sigmoid"
     moe_permute_fusion: bool = True
     moe_router_dtype: str = "fp32"

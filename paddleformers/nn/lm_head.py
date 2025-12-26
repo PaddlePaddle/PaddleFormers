@@ -84,7 +84,7 @@ class LMHead(nn.Layer):
         Returns:
             Union[
                 Tuple[paddle.Tensor, paddle.Tensor, Optional[paddle.Tensor]]:
-                    # When use_recompute_loss_fn or use_sparse_head_and_loss_fn
+                    # When recompute loss_fn or use_sparse_head_and_loss_fn
                     - hidden_states: Original input
                     - weight: Projection weights
                     - bias: Optional bias term

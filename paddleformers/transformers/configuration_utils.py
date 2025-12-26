@@ -246,7 +246,13 @@ class LlmMetaConfig:
         ("tensor_parallel_output", bool, True, "tensor_parallel_output"),
         # pipeline_parallel
         ("pipeline_model_parallel_size", int, 1, "pipeline_model_parallel_size"),
+        ("num_empty_layers_add_in_head", int, 0, "num_empty_layers_add_in_head"),
+        ("num_empty_layers_add_in_tail", int, 0, "num_empty_layers_add_in_tail"),
         ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
+        # expert_parallel
+        ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
+        # context_parallel
+        ("context_parallel_size", int, 1, "context_parallel_size"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         (
@@ -257,29 +263,20 @@ class LlmMetaConfig:
         ),
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
-        ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
+        ("sep_parallel_size", int, 1, "sep_parallel_size"),
         ("context_parallel_size", int, 1, "context_parallel_size"),
+        ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
     ]
 
     recompute_attributes = [
-        ("recompute", bool, False, "recompute"),
         (
             "recompute_granularity",
             str,
-            "full",
+            None,
             "Recompute granularity, Choose among ['full', 'core_attn', 'full_attn']",
         ),
-        ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
-        # refined_recompute attributes
-        (
-            "refined_recompute",
-            str,
-            "",
-            "refined_recompute, Choose from 'mlp_row_ln', 'mlp_column_ln', 'attention_row_ln', 'attention_column_ln', 'flash_attn']",
-        ),
-        ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
         ("recompute_method", str, None, "Determines which transformer layers will be recomputed."),
         (
             "recompute_num_layers",
@@ -287,15 +284,12 @@ class LlmMetaConfig:
             None,
             "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
         ),
-        ("recompute_modules", str, None, "List of module names to apply recomputation."),
-        (
-            "recompute_mtp_granularity",
-            str,
-            "none",
-            "Recomputation granularity for MTP (Mixture of Token-Parallel) layers.",
-        ),
-        ("recompute_mtp_method", str, "none", "Recomputation method for MTP layers."),
+        ("recompute_modules", Optional[List[str]], None, "List of module names to apply recomputation."),
+        ("recompute_mtp_granularity", str, None, "Recomputation granularity for MTP layers."),
+        ("recompute_mtp_method", str, None, "Recomputation method for MTP layers."),
         ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
+        ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
+        ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
     ]
 
     loss_attributes = [
@@ -328,13 +322,13 @@ class LlmMetaConfig:
         (
             "moe_deepep_num_sms",
             bool,
-            False,
+            None,
             "Whether to enable DeepEP (Deep Expert Pruning) with SMS (Sub-Model Selection) for MoE. Defaults to False.",
         ),
         (
             "moe_token_dispatcher_type",
             str,
-            None,
+            "deepep",
             "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
         ),
         (
@@ -345,38 +339,32 @@ class LlmMetaConfig:
         ),
         (
             "moe_token_drop_policy",
-            bool,
-            False,
-            "Whether to enable token dropping policy for MoE (discard low-importance tokens). Defaults to False.",
+            str,
+            "probs",
+            "Defines the policy for token dropping. It can be set to either 'probs' or 'position'. If set to 'probs', tokens with the lowest probabilities will be dropped. If set to 'position', tokens from the end of each batch will be dropped. Defaults to 'probs'.",
         ),
         (
             "moe_expert_capacity_factor",
             float,
             0.0,
-            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (use default capacity).",
+            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (no dropping tokens).",
         ),
         (
             "router_aux_loss_coef",
             float,
-            0.0,
+            None,
             "Coefficient for MoE router auxiliary loss (encourages balanced expert usage). Defaults to 0.0 (disable auxiliary loss).",
         ),
         (
             "router_z_loss_coef",
             float,
-            0.0,
+            None,
             "Coefficient for MoE router Z-loss (regularizes router logits to avoid extreme values). Defaults to 0.0 (disable Z-loss).",
-        ),
-        (
-            "moe_router_enable_expert_bias",
-            bool,
-            False,
-            "Whether to enable expert-specific bias terms in the MoE router. Fine-tunes router preference for individual experts. Defaults to False (simplifies computation and avoids overfitting).",
         ),
         (
             "moe_router_force_load_balancing",
             bool,
-            True,
+            False,
             "Whether to enforce load balancing across MoE experts. Prevents overutilization of a small subset of experts. Defaults to True (critical optimization for MoE stability and efficiency).",
         ),
         ("moe_router_load_balancing_type", str, "seq_aux_loss", "Strategy for MoE expert load balancing."),
@@ -389,7 +377,7 @@ class LlmMetaConfig:
         (
             "moe_shared_expert_overlap",
             bool,
-            False,
+            True,
             "Whether to allow shared experts to be reused across layers/modules. Reduces memory footprint but may limit model expressivity. Defaults to False (prioritizes model capacity).",
         ),
         (
@@ -402,7 +390,7 @@ class LlmMetaConfig:
             "moe_expert_fusion",
             bool,
             True,
-            "Whether to enable operator fusion for MoE expert layers (e.g., Linear + Activation fusion). Improves training/inference throughput by reducing kernel launch overhead. Defaults to True.",
+            "Whether to fuse experts. Default to True.",
         ),
         (
             "moe_router_fusion",
@@ -413,14 +401,20 @@ class LlmMetaConfig:
         (
             "moe_subbatch_token_num_after_dispatch",
             int,
-            4096,
+            None,
             "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
         ),
         (
             "moe_grouped_gemm",
             bool,
-            True,
+            False,
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
+        ),
+        (
+            "moe_deep_gemm",
+            bool,
+            True,
+            "Whether to enable deep GEMM for MoE experts. Defaults to True. Effective only after the moe_grouped_gemm is set. ",
         ),
     ]
 
@@ -437,14 +431,14 @@ class LlmMetaConfig:
     fp8_attributes = [
         (
             "fp8",
-            bool,
-            False,
+            str,
+            None,
             "Whether to enable FP8 mixed-precision training/inference. Reduces memory usage and accelerates computation (requires hardware support). Defaults to False (enable only for Ampere+/Hopper GPUs with FP8 support).",
         ),
         (
             "fp8_wgrad",
             bool,
-            False,
+            True,
             "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
         ),
     ]
@@ -471,7 +465,7 @@ class LlmMetaConfig:
         (
             "gated_linear_unit",
             bool,
-            False,
+            True,
             "Whether to use Gated Linear Units (GLU) instead of standard Linear layers. Enhances model expressivity (common in SwiGLU). Defaults to False (compatible with basic transformer architectures).",
         ),
         ("normalization", str, "RMSNorm", "Type of normalization layer. Defaults to RMSNorm."),
@@ -568,7 +562,10 @@ class LlmMetaConfig:
     @classmethod
     def set_llm_config(cls, config, args):
         for key, value in cls._get_defaults().items():
-            setattr(config, key, getattr(args, key, value))
+            value = getattr(args, key, value)
+            if value is None:
+                continue
+            setattr(config, key, value)
 
 
 class PretrainedConfig:
@@ -822,7 +819,7 @@ class PretrainedConfig:
         self.use_single_model_implementation = kwargs.pop("use_single_model_implementation", False)
         if self.use_single_model_implementation:
             self.tensor_model_parallel_size = 1
-            self.sep_parallel_degree = 1
+            self.sep_parallel_size = 1
             self.context_parallel_size = 1
 
         # for transformers fuse
@@ -878,7 +875,6 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.moe_subbatch_token_num_before_dispatch = kwargs.pop("moe_subbatch_token_num_before_dispatch", 0)
         self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.using_fake_gate = kwargs.pop("using_fake_gate", False)

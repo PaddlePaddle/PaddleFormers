@@ -453,7 +453,7 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
         vit_num_recompute_layers = getattr(self.config, "vit_num_recompute_layers", self.config.depth)
 
         for idx, blk in enumerate(self.blocks):
-            if self.config.recompute and self.training and idx < vit_num_recompute_layers:
+            if self.config.recompute_granularity is not None and self.training and idx < vit_num_recompute_layers:
                 hidden_states = recompute(blk, hidden_states, startend_row_indices, rotary_pos_emb, attn_sep)
             else:
                 hidden_states = blk(

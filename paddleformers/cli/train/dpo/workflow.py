@@ -37,6 +37,7 @@ from paddleformers.trainer import (
     MoeExpertsGradScaleCallback,
     MoEGateSpGradSyncCallBack,
     get_last_checkpoint,
+    set_random_seed,
     set_seed,
 )
 from paddleformers.transformers import (
@@ -69,6 +70,7 @@ def run_dpo(
 ):
     """main"""
     paddle.set_device(training_args.device)
+    set_random_seed(seed_=training_args.seed)
     set_seed(training_args.seed)
 
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
@@ -87,15 +89,13 @@ def run_dpo(
         )
     if training_args.pipeline_model_parallel_size > 1:
         assert (
-            hasattr(training_args, "pipeline_parallel_config")
-            and "enable_clear_every_step_cache" in training_args.pipeline_parallel_config
-        ), "Should set '--pipeline_parallel_config enable_clear_every_step_cache' in bash script for pp."
+            hasattr(training_args, "clear_every_step_cache") and training_args.clear_every_step_cache
+        ), "Should set '--clear_every_step_cache True' in bash script for pp."
     if training_args.sequence_parallel:
         if training_args.pipeline_model_parallel_size > 1:
             assert (
-                hasattr(training_args, "pipeline_parallel_config")
-                and "disable_partial_send_recv" in training_args.pipeline_parallel_config
-            ), "Should set '--pipeline_parallel_config disable_partial_send_recv' in bash script for pp with sp."
+                hasattr(training_args, "partial_send_recv") and not training_args.partial_send_recv
+            ), "Should set '--partial_send_recv False' in bash script for pp with sp."
         if training_args.tensor_model_parallel_size <= 1:
             training_args.sequence_parallel = False
             logger.info("tensor_model_parallel_size = 1. Set sequence_parallel to False.")
@@ -206,16 +206,14 @@ def run_dpo(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = None
-    if model_args.stage == "VL-DPO":
-        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
 
     logger.info("Loading model & tokenizer successfully !")
 
     if model_args.lora:
-        if training_args.sharding_parallel_degree > 1:
+        if training_args.sharding_parallel_size > 1:
             assert (
-                "enable_stage1_overlap" not in training_args.sharding_parallel_config
+                not training_args.stage1_overlap
             ), "Currently not support enabling sharding_stage1_overlap in lora mode."
         if model_args.lora_path is None:
             target_modules = get_lora_target_modules(model)
@@ -292,7 +290,7 @@ def run_dpo(
                 "Random mixing requires a fixed number of training steps to properly sample data."
             )
         if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
-            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, config=model.config)
+            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, dataset_config)
 
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()
@@ -359,7 +357,9 @@ def run_dpo(
         data_collator=partial(
             collate_fn,
             tokenizer=tokenizer,
+            training_args=training_args,
             max_seq_len=max_seq_len,
+            padding_free=data_args.padding_free,
             use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
         ),
@@ -367,6 +367,10 @@ def run_dpo(
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
         callbacks=callbacks,
     )
+    trainable_parameters = [
+        p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)
+    ]
+    trainer.set_optimizer_grouped_parameters(trainable_parameters)
 
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=last_checkpoint)

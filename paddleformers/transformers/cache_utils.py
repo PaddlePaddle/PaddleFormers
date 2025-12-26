@@ -236,9 +236,18 @@ class Cache:
                 layer_idx = self.is_sliding.index(False)
         else:
             layer_idx = layer_idx if layer_idx < len(self.layers) else 0
+        # in case it's already on cpu
+        is_cpu = False
+        if self.prefetch_stream is not None and hasattr(self.prefetch_stream, "device"):
 
-        # Prefetch
-        with paddle.device.stream_guard(self.prefetch_stream):
+            is_cpu = isinstance(self.prefetch_stream.device, paddle.CPUPlace)
+
+        use_stream = self.prefetch_stream is not None and not is_cpu
+
+        if use_stream:
+            with paddle.device.stream_guard(self.prefetch_stream):
+                self.layers[layer_idx].prefetch()
+        else:
             self.layers[layer_idx].prefetch()
 
     def offload(self, layer_idx: int, only_non_sliding: bool = True):
