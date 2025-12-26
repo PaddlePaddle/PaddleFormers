@@ -67,3 +67,5 @@ apply_rope_fusion: true
 moe_router_fusion: true
 router_aux_loss_coef: 0.001
 fp8: "e4m3"
+fuse_attention_qkv: true
+fuse_attention_ffn: true
