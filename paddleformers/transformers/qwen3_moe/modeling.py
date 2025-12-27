@@ -1241,6 +1241,12 @@ class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
         model_provider_class = Qwen3MoEModelProvider
         model_provider = model_provider_class.from_config(config)
         gpt_model = model_provider.provide()

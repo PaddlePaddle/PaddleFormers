@@ -1,10 +1,10 @@
 # 当前文件格式支持
 
-当前支持json、jsonl、parquet三种格式，需保证文件名后缀和文件内容保持一致
+当前支持 json、jsonl、parquet 三种格式，需保证文件名后缀和文件内容保持一致
 
 # 新增文件格式支持
 
-在paddleformers/datasets/reader/io.py里面实现各种类型文件的读取函数，例如parquet文件：
+在 paddleformers/datasets/reader/io.py 里面实现各种类型文件的读取函数，例如 parquet 文件：
 ```python
 def load_parquet(file_path):
     try:
@@ -15,7 +15,7 @@ def load_parquet(file_path):
         raise ValueError(f"file {file_path} load failed")
 ```
 
-然后在paddleformers/datasets/reader/file_reader.py中BaseReader的self.loader_map中进行注册：
+然后在 paddleformers/datasets/reader/file_reader.py 中BaseReader 的self.loader_map 中进行注册：
 ```python
 self.loader_map = {
     ".json": load_json,
@@ -28,11 +28,11 @@ self.loader_map = {
 
 # 当前数据格式支持
 
-当前支持erniekit和messages两种格式的数据
+当前支持 erniekit 和messages 两种格式的数据
 
 # 新增数据格式支持
 
-在paddleformers/datasets/reader/convertor.py里面实现各种格式的转换函数，统一转换成messages格式，例如erniekit格式转messages格式：
+在 paddleformers/datasets/reader/convertor.py 里面实现各种格式的转换函数，统一转换成 messages 格式，例如 erniekit 格式转 messages 格式：
 ```python
 def erniekit_convertor(item):
     # erniekit dpo data
@@ -51,7 +51,7 @@ def erniekit_convertor(item):
 ```
 
 
-然后在paddleformers/datasets/reader/file_reader.py中BaseReader的self.convertor_map中进行注册：
+然后在 paddleformers/datasets/reader/file_reader.py 中BaseReader 的self.convertor_map 中进行注册：
 ```python
 self.convertor_map = {
     "erniekit": erniekit_convertor,
