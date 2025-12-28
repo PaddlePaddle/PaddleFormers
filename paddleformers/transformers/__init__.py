@@ -214,6 +214,13 @@ import_structure = {
     ],
     "qwen3_vl.processor": ["Qwen3VLProcessor"],
     "qwen3_vl.video_processor": ["Qwen3VLVideoProcessor"],
+    "qwen3_vl_moe.configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
+    "qwen3_vl_moe.modeling": [
+        "Qwen3VLMoeForConditionalGeneration",
+        "Qwen3VLMoeModel",
+        "Qwen3VLMoePretrainedModel",
+        "Qwen3VLMoeTextModel",
+    ],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -263,6 +270,7 @@ import_structure = {
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
     "qwen3_vl": [],
+    "qwen3_vl_moe": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
@@ -337,6 +345,7 @@ if TYPE_CHECKING:
     from .qwen3_moe import *
     from .qwen3_next import *
     from .qwen3_vl import *
+    from .qwen3_vl_moe import *
     from .glm4_moe import *
     from .gpt_oss import *
     from .phi3 import *
