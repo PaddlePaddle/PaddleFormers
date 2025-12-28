@@ -231,6 +231,11 @@ class ModelArguments:
         metadata={"help": "n_routed_experts."},
     )
 
+    use_qk_norm: Optional[bool] = field(
+        default=None,
+        metadata={"help": "use_qk_norm."},
+    )
+
     tie_word_embeddings: Optional[bool] = field(
         default=None,
         metadata={"help": "tie_word_embeddings."},

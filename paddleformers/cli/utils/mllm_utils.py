@@ -26,6 +26,7 @@ _ALL_MODULES = ["vision", "aligner", "llm"]
 
 class MLLMModelMapping:
     qwen2_5_vl = "qwen2_5_vl"
+    qwen3_vl = "qwen3_vl"
 
     ernie4_5_moe_vl = "ernie4_5_moe_vl"
 

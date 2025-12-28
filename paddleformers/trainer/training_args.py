@@ -54,13 +54,19 @@ except Exception:
         return False
 
 
-if paddle.device.is_compiled_with_cuda():
+from ..utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if paddle.device.is_compiled_with_cuda() and is_paddlefleet_available():
     from paddlefleet.parallel_state import get_tensor_model_parallel_group
     from paddlefleet.training import initialize_fleet
-
-    HAS_PADDLEFLEET = True
 else:
-    HAS_PADDLEFLEET = False
+
+    def get_tensor_model_parallel_group(*args, **kwargs):
+        return None
+
+    def initialize_fleet(*args, **kwargs):
+        pass
 
 
 __all__ = [
@@ -1087,14 +1093,6 @@ class TrainingArguments:
         default=0.0001,
         metadata={"help": "MoE (Mixture of Experts) Auxiliary loss weight coefficient"},
     )
-    expert_max_capacity: Optional[int] = field(
-        default=pow(2, 32),
-        metadata={"help": "Enable MoE (Mixture of Experts) expert max token capacity"},
-    )
-    expert_min_capacity: Optional[int] = field(
-        default=1,
-        metadata={"help": "Enable MoE (Mixture of Experts) expert min token capacity"},
-    )
     release_grads: Optional[bool] = field(
         default=False, metadata={"help": "Whether to release gradients during training. Default is `False`."}
     )
@@ -1719,7 +1717,7 @@ class TrainingArguments:
             if not paddle.distributed.parallel.parallel_helper._is_parallel_ctx_initialized():
                 strategy = fleet.DistributedStrategy()
                 assert self.data_parallel_config == "", "data_parallle_config is not supported in hybrid parallel"
-                if self.pipeline_model_parallel_size > 1 or HAS_PADDLEFLEET:
+                if self.pipeline_model_parallel_size > 1 or is_paddlefleet_available():
                     pipeline_parallel_config = split_parallel_config(self.pipeline_parallel_config)
                     for x in pipeline_parallel_config:
                         if len(x) > 0:
@@ -2107,7 +2105,11 @@ class TrainingArguments:
                 fleet.init(is_collective=True, strategy=strategy)
 
                 # In PaddleFleet, we should use the following code to initialize.
-                if HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
+                if (
+                    is_paddlefleet_available()
+                    and get_tensor_model_parallel_group is not None
+                    and get_tensor_model_parallel_group(False) is None
+                ):
                     initialize_fleet(strategy)
                 logger.info(strategy)
 
@@ -2377,7 +2379,12 @@ class TrainingArguments:
                         fleet.init(is_collective=True, strategy=strategy)
                     else:
                         paddle.distributed.init_parallel_env()
-            if world_size == 1 and HAS_PADDLEFLEET and get_tensor_model_parallel_group(False) is None:
+            if (
+                world_size == 1
+                and is_paddlefleet_available()
+                and get_tensor_model_parallel_group is not None
+                and get_tensor_model_parallel_group(False) is None
+            ):
                 single_card_strategy = fleet.DistributedStrategy()
                 single_card_strategy.hybrid_configs = {
                     "dp_degree": 1,

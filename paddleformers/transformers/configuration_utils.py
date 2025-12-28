@@ -265,6 +265,7 @@ class LlmMetaConfig:
         # sep_parallel
         ("sep_parallel_size", int, 1, "sep_parallel_size"),
         ("context_parallel_size", int, 1, "context_parallel_size"),
+        ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
     ]
@@ -338,15 +339,15 @@ class LlmMetaConfig:
         ),
         (
             "moe_token_drop_policy",
-            bool,
-            False,
-            "Whether to enable token dropping policy for MoE (discard low-importance tokens). Defaults to False.",
+            str,
+            "probs",
+            "Defines the policy for token dropping. It can be set to either 'probs' or 'position'. If set to 'probs', tokens with the lowest probabilities will be dropped. If set to 'position', tokens from the end of each batch will be dropped. Defaults to 'probs'.",
         ),
         (
             "moe_expert_capacity_factor",
             float,
             0.0,
-            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (use default capacity).",
+            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (no dropping tokens).",
         ),
         (
             "router_aux_loss_coef",
@@ -389,7 +390,7 @@ class LlmMetaConfig:
             "moe_expert_fusion",
             bool,
             True,
-            "Whether to enable operator fusion for MoE expert layers (e.g., Linear + Activation fusion). Improves training/inference throughput by reducing kernel launch overhead. Defaults to True.",
+            "Whether to fuse experts. Default to True.",
         ),
         (
             "moe_router_fusion",
@@ -408,6 +409,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
+        ),
+        (
+            "moe_deep_gemm",
+            bool,
+            True,
+            "Whether to enable deep GEMM for MoE experts. Defaults to True. Effective only after the moe_grouped_gemm is set. ",
         ),
     ]
 

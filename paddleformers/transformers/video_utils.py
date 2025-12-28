@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import os
+import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, fields
 from io import BytesIO
@@ -25,6 +26,7 @@ import paddle
 import PIL
 
 from ..utils import is_decord_available
+from ..utils.log import logger
 from .image_transforms import PaddingMode, to_channel_dimension_format
 from .image_utils import (
     ChannelDimension,
@@ -304,9 +306,14 @@ def read_video_decord(
             - Numpy array of frames in RGB (shape: [num_frames, height, width, 3]).
             - `VideoMetadata` object.
     """
-    # Lazy import from decord
+    if not is_decord_available():
+        raise ImportError(
+            "Backend=decord for loading the video but the required library is not found in your environment."
+            "Make sure to install 'decord' before loading the video."
+        )
     from decord import VideoReader, cpu
 
+    logger.info("Loading video with decord backend.")
     vr = VideoReader(uri=video_path, ctx=cpu(0))  # decord has problems with gpu
     video_fps = vr.get_avg_fps()
     total_num_frames = len(vr)
@@ -331,8 +338,85 @@ def read_video_decord(
     return video, metadata
 
 
+def read_video_paddlecodec(
+    video_path: Union["URL", "Path"],
+    sample_indices_fn: Callable,
+    **kwargs,
+):
+    """
+    Decode the video with torchcodec decoder.
+
+    Args:
+        video_path (`str`):
+            Path to the video file.
+        sample_indices_fn (`Callable`):
+            A callable function that will return indices at which the video should be sampled. If the video has to be loaded using
+            by a different sampling technique than provided by `num_frames` or `fps` arguments, one should provide their own `sample_indices_fn`.
+            If not provided, simple uniform sampling with fps is performed.
+            Example:
+            def sample_indices_fn(metadata, **kwargs):
+                return np.linspace(0, metadata.total_num_frames - 1, num_frames, dtype=int)
+
+    Returns:
+        Tuple[`paddle.Tensor`, `VideoMetadata`]: A tuple containing:
+            - Paddle tensor of frames in RGB (shape: [num_frames, height, width, 3]).
+            - `VideoMetadata` object.
+    """
+    try:
+        paddle.compat.enable_torch_proxy(scope={"torchcodec"})
+        from torchcodec.decoders import VideoDecoder
+    except (ImportError, RuntimeError) as e:
+        logger.error(
+            f"Failed to load 'torchcodec' backend via Paddle proxy.\n"
+            f"  - Common Causes:\n"
+            f"    1. Conflict with official 'torch' or 'torchcodec' packages.\n"
+            f"    2. Missing FFmpeg libraries or System library mismatch (CXXABI).\n"
+            f"  - Recommended Fix Steps:\n"
+            f"    1. Install dependencies: `conda install ffmpeg -c conda-forge` or `apt-get update && apt-get install ffmpeg` \n"
+            f"    2. Uninstall conflicts: `pip uninstall torchcodec paddlecodec -y`\n"
+            f"    3. Reinstall packages: `pip install paddlecodec --force-reinstall`\n"
+            f"  - If you encounter 'CXXABI' or 'libstdc++' errors, your system libraries might be outdated.\n"
+            f"    Try prioritizing Conda libraries by running: `LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH python your_script.py`\n"
+            f"  - Original Error: {e}"
+        )
+
+    logger.info("Loading video with paddlecodec backend.")
+    PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 0))
+    logger.info(
+        f"set PADDLECODEC_NUM_THREADS: {PADDLECODEC_NUM_THREADS if PADDLECODEC_NUM_THREADS != 0 else '0 (Auto)'}"
+    )
+    st = time.time()
+    # VideoDecoder expects a string for device, default to "cpu" if None
+    decoder = VideoDecoder(
+        video_path,
+        # Interestingly `exact` mode takes less than approximate when we load the whole video
+        seek_mode="exact",
+        # Allow FFmpeg decide on the number of threads for efficiency
+        num_ffmpeg_threads=PADDLECODEC_NUM_THREADS,
+        device=kwargs.get("device", "cpu"),
+    )
+    total_num_frames = decoder.metadata.num_frames
+    video_fps = decoder.metadata.average_fps
+    metadata = VideoMetadata(
+        total_num_frames=total_num_frames,
+        fps=video_fps,
+        duration=decoder.metadata.duration_seconds,
+        video_backend="paddlecodec",
+        height=decoder.metadata.height,
+        width=decoder.metadata.width,
+    )
+
+    indices = sample_indices_fn(metadata=metadata, **kwargs)
+    video = decoder.get_frames_at(indices=indices).data.contiguous().to("cuda")
+    logger.info(f"paddlecodec:  {video_path=}, {total_num_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
+    paddle.compat.disable_torch_proxy()
+    metadata.frames_indices = indices
+    return video, metadata
+
+
 VIDEO_DECODERS = {
     "decord": read_video_decord,
+    "paddlecodec": read_video_paddlecodec,
 }
 
 
@@ -340,7 +424,7 @@ def load_video(
     video: VideoInput,
     num_frames: Optional[int] = None,
     fps: Optional[Union[int, float]] = None,
-    backend: str = "decord",
+    backend: str = "paddlecodec",
     sample_indices_fn: Optional[Callable] = None,
     **kwargs,
 ) -> np.ndarray:
@@ -355,8 +439,8 @@ def load_video(
         fps (`int` or `float`, *optional*):
             Number of frames to sample per second. Should be passed only when `num_frames=None`.
             If not specified and `num_frames==None`, all frames are sampled.
-        backend (`str`, *optional*, defaults to `"decord"`):
-            The backend to use when loading the video. Can be any of ["decord"]. Defaults to "decord".
+        backend (`str`, *optional*, defaults to `"paddlecodec"`):
+            The backend to use when loading the video. Can be any of ["paddlecodec", "decord"]. Defaults to "paddlecodec".
         sample_indices_fn (`Callable`, *optional*):
             A callable function that will return indices at which the video should be sampled. If the video has to be loaded using
             by a different sampling technique than provided by `num_frames` or `fps` arguments, one should provide their own `sample_indices_fn`.

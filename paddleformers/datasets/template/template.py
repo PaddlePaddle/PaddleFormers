@@ -489,7 +489,6 @@ def get_template_and_fix_tokenizer(dataset_config) -> "Template":
     if dataset_config["default_system"] is not None:
         template.default_system = dataset_config["default_system"]
 
-    template.enable_thinking = dataset_config["enable_thinking"]
     template.fix_special_tokens(tokenizer)
     return template
 
@@ -531,6 +530,37 @@ register_template(
     format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
     chat_sep="<|end_of_sentence|>",
     stop_words=["<|end_of_sentence|>"],
+)
+
+register_template(
+    name="ernie_vl",
+    format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["{{content}}\n"]),
+    format_function=FunctionFormatter(slots=["{{content}}\n"], tool_format="ernie"),
+    format_observation=StringFormatter(slots=["User: <tool_output>\n{{content}}\n</tool_output>\n\nAssistant: "]),
+    format_tools=ToolFormatter(tool_format="ernie"),
+    format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
+    chat_sep="<|end_of_sentence|>",
+    stop_words=["<|end_of_sentence|>"],
+    replace_eos=True,
+    mm_plugin=get_mm_plugin(name="ernie_vl", image_token="<|IMAGE_PLACEHOLDER|>", video_token="<|IMAGE_PLACEHOLDER|>"),
+    template_class=ReasoningTemplate,
+    thought_words=("\n<think>\n", "\n</think>\n\n"),
+)
+
+register_template(
+    name="ernie_vl_nothink",
+    format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["{{content}}\n"]),
+    format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
+    chat_sep="<|end_of_sentence|>",
+    stop_words=["<|end_of_sentence|>"],
+    replace_eos=True,
+    mm_plugin=get_mm_plugin(name="ernie_vl", image_token="<|IMAGE_PLACEHOLDER|>", video_token="<|IMAGE_PLACEHOLDER|>"),
+    template_class=ReasoningTemplate,
+    thought_words=("<think>\n", "\n</think>\n\n"),
 )
 
 register_template(
@@ -787,35 +817,4 @@ register_template(
     stop_words=["<|im_end|>"],
     chat_sep="<|im_end|>",
     replace_eos=True,
-)
-
-register_template(
-    name="ernie4_5_moe_vl",
-    format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
-    format_assistant=StringFormatter(slots=["{{content}}"]),
-    format_system=StringFormatter(slots=["{{content}}\n"]),
-    format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
-    chat_sep="<|end_of_sentence|>",
-    stop_words=["<|end_of_sentence|>"],
-    replace_eos=True,
-    mm_plugin=get_mm_plugin(name="ernie_vl", image_token="<|IMAGE_PLACEHOLDER|>", video_token="<|IMAGE_PLACEHOLDER|>"),
-    template_class=ReasoningTemplate,
-    thought_words=("<think>\n", "\n</think>\n\n"),
-)
-
-register_template(
-    name="ernie4_5_moe_vl_thinking",
-    format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
-    format_assistant=StringFormatter(slots=["{{content}}"]),
-    format_system=StringFormatter(slots=["{{content}}\n"]),
-    format_function=FunctionFormatter(slots=["{{content}}\n"], tool_format="ernie"),
-    format_observation=StringFormatter(slots=["User: <tool_output>\n{{content}}\n</tool_output>\n\nAssistant: "]),
-    format_tools=ToolFormatter(tool_format="ernie"),
-    format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
-    chat_sep="<|end_of_sentence|>",
-    stop_words=["<|end_of_sentence|>"],
-    replace_eos=True,
-    mm_plugin=get_mm_plugin(name="ernie_vl", image_token="<|IMAGE_PLACEHOLDER|>", video_token="<|IMAGE_PLACEHOLDER|>"),
-    template_class=ReasoningTemplate,
-    thought_words=("\n<think>\n", "\n</think>\n\n"),
 )

@@ -62,15 +62,21 @@ try:
     from paddle.base import core
 except:
     core = None
-try:
+from ..utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
     import paddlefleet.distributed.model as paddlefleet_dist_model
     from paddlefleet.models.gpt import GPTModel as FleetGPTModel
     from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
-    HAS_PADDLEFLEET = True
-except:
-    HAS_PADDLEFLEET = False
+    from paddleformers.transformers.gpt_provider import GPTModel
+else:
+    paddlefleet_dist_model = None
+    FleetGPTModel = None
+    PaddleFleetParallelBase = None
+    PaddleFleetPipelineLayer = None
 
 from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
@@ -121,9 +127,12 @@ try:
     )
 except:
     pass
-try:
-    from paddlefleet.utils import get_batch_on_this_cp_rank
-except:
+if is_paddlefleet_available():
+    try:
+        from paddlefleet.utils import get_batch_on_this_cp_rank
+    except ImportError:
+        get_batch_on_this_cp_rank = None
+else:
     get_batch_on_this_cp_rank = None
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
@@ -484,7 +493,7 @@ class Trainer:
             )
 
         if self.args.pipeline_model_parallel_size > 1 and self.args.use_hybrid_parallel:
-            if HAS_PADDLEFLEET:
+            if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
                 assert (
                     isinstance(model, LoRAModel) and isinstance(model.model, (PaddleFleetPipelineLayer, PipelineLayer))
                 ) or isinstance(
@@ -1230,7 +1239,11 @@ class Trainer:
 
             self._load_scheduler(resume_from_checkpoint)
 
-        logger.debug(f"sharded_model_from_ema = {self.args.sharded_model_from_ema}")
+        enable_bf16_opt = (
+            not isinstance(self.model, LoRAModel) and self.args.enable_zero_cost_checkpoint and self.args.bf16
+        )
+        logger.debug(f"sharded_model_from_ema: {self.args.sharded_model_from_ema}")
+        logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
         if self.args.sharded_model_from_ema:
             ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
@@ -1250,17 +1263,18 @@ class Trainer:
                     new_state_dict[k] = v
                 return new_state_dict
 
-            fp32_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
+            if enable_bf16_opt:
+                model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
 
             dist.load_state_dict(
-                fp32_sharded_state_dict,
+                model_sharded_state_dict,
                 model_states_path,
                 aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
                 comm_method=self.args.flex_ckpt_comm_method,
             )
 
-        if self.args.bf16 and (not self.args.ignore_load_lr_and_optim):
+        if enable_bf16_opt and (not self.args.ignore_load_lr_and_optim):
             opt_state_dict = self.optimizer.state_dict()
 
             def recover_params_from_master_weight(opt_state_dict, group):
@@ -1816,7 +1830,10 @@ class Trainer:
             if (
                 self.args.use_hybrid_parallel
                 and self.args.context_parallel_size > 1
+                and is_paddlefleet_available()
+                and FleetGPTModel is not None
                 and isinstance(self.model, FleetGPTModel)
+                and get_batch_on_this_cp_rank is not None
             ):
                 inputs = get_batch_on_this_cp_rank(inputs)
 
@@ -2696,7 +2713,9 @@ class Trainer:
                 drop_last=False,
             )
         else:
-            if self.args.pipeline_model_parallel_size > 1:
+            if (
+                is_paddlefleet_available() and isinstance(self.model, PaddleFleetPipelineLayer)
+            ) or self.args.pipeline_model_parallel_size > 1:
                 # In pipeline parallelism, batch size will be strictly checked
                 # Use LastBatchPaddingSampler to pad the last batch with the first batch
                 from .trainer_utils import LastBatchPaddingSampler
@@ -3169,7 +3188,11 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
-        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+        if (
+            is_paddlefleet_available()
+            and PaddleFleetPipelineLayer is not None
+            and isinstance(model, PaddleFleetPipelineLayer)
+        ):
             in_pipeline_parallel_mode = True
         else:
             in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
@@ -3212,7 +3235,12 @@ class Trainer:
             )
             if isinstance(model, LoRAModel):
                 model = model.model
-            if HAS_PADDLEFLEET and isinstance(model, PaddleFleetPipelineLayer):
+            if (
+                is_paddlefleet_available()
+                and paddlefleet_dist_model is not None
+                and PaddleFleetPipelineLayer is not None
+                and isinstance(model, PaddleFleetPipelineLayer)
+            ):
                 model = paddlefleet_dist_model.distributed_model(model)
             else:
                 model = fleet.distributed_model(model)
@@ -3238,7 +3266,11 @@ class Trainer:
 
                     keys = list(inputs[0].keys())
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
-                    if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
+                    if (
+                        is_paddlefleet_available()
+                        and PaddleFleetParallelBase is not None
+                        and isinstance(model, PaddleFleetParallelBase)
+                    ):
                         first_stage_inputs_batch = inputs_batch
                         last_stage_inputs = first_stage_inputs_batch.pop("labels")
                         outputs = (
@@ -3513,7 +3545,11 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if HAS_PADDLEFLEET and isinstance(model, PaddleFleetParallelBase):
+        if (
+            is_paddlefleet_available()
+            and PaddleFleetParallelBase is not None
+            and isinstance(model, PaddleFleetParallelBase)
+        ):
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_model_parallel_size > 1:
@@ -4441,6 +4477,8 @@ class Trainer:
             model = self.model_wrapped
             if _prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
+        elif is_paddlefleet_available() and isinstance(self.model, GPTModel):
+            model = self.model_wrapped
         else:
             model = self.model
 
