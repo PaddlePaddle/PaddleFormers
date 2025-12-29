@@ -30,7 +30,7 @@ num_train_epochs: 1
 #use_attn_mask_startend_row_indices: false
 use_attn_mask_startend_row_indices: true
 #tensor_model_parallel_size: 2
-max_steps: 1
+max_steps: 10
 eval_steps: 100000
 evaluation_strategy: steps
 #pipeline_model_parallel_size: 1

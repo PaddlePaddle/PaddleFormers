@@ -66,8 +66,8 @@ fi
 
 set -e
 echo "
-10 7.93576813
-" > ./glm45_sft_multi_card_gt_loss.txt
+10 0.4665958
+" > ./glm45_dpo_multi_card_gt_loss.txt
 
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 10 \
