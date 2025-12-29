@@ -32,7 +32,7 @@ image = Image.open(requests.get(url, stream=True).raw).convert("RGB")
 inputs = processor(text=text, images=image, return_tensors="pd")   # return Paddle Tensor
 ```
 
-- 示例 2：处理对话式输入（聊天格式的多模态消息）:
+- 示例 2：处理对话式输入（聊天格式的多模态消息[image]）:
 
 ```python
 
@@ -58,6 +58,41 @@ text = processor.apply_chat_template(
     messages, tokenize=False, add_generation_prompt=True
 )
 image_inputs, video_inputs = process_vision_info(messages)
+inputs = processor(
+    text=[text],
+    images=image_inputs,
+    videos=video_inputs,
+    padding=True,
+    return_tensors="pd",
+)
+```
+
+- 示例 3：处理对话式输入（聊天格式的多模态消息[video]）:
+
+```python
+
+from paddleformers.transformers import AutoProcessor
+from paddleformers.transformers import process_vision_info  # Processing functions for QwenVL models
+
+processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "video",
+                "video": "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4",
+            },
+            {"type": "text", "text": "Describe this video."},
+        ],
+    }
+]
+
+text = processor.apply_chat_template(
+    messages, tokenize=False, add_generation_prompt=True
+)
+image_inputs, video_inputs = process_vision_info(messages, backend="paddlecodec")    # load_video backend支持: ["paddlecodec"、"decord"], 默认"paddlecodec"
 inputs = processor(
     text=[text],
     images=image_inputs,

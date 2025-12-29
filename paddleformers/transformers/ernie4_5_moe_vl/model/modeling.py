@@ -935,7 +935,7 @@ class Ernie4_5_Attention(nn.Layer):
         k = paddle.repeat_interleave(k, replicate, axis=1)
         v = paddle.repeat_interleave(v, replicate, axis=1)
 
-        scale_qk_coeff = self.config.scale_qk_coeff * self.head_dim**0.5
+        scale_qk_coeff = self.config.get("scale_qk_coeff", 1.0) * self.head_dim**0.5
         attention_mask = paddle.where(
             attention_mask,
             paddle.to_tensor(0.0, dtype=q.dtype),

@@ -45,7 +45,7 @@ from ..masking_utils import (
     create_sliding_window_causal_mask_and_row_indices,
 )
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
-from ..model_utils import PretrainedModel, register_base_model
+from ..model_utils import PretrainedModel, dtype_guard, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen3MoeConfig
@@ -332,7 +332,10 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
             config.sequence_parallel = False
 
         # gating
-        self.gate = GeneralLinear.create(config.hidden_size, config.num_experts, has_bias=False, linear_type="default")
+        with dtype_guard("float32"):
+            self.gate = GeneralLinear.create(
+                config.hidden_size, config.num_experts, has_bias=False, linear_type="default"
+            )
         self.experts = nn.LayerList(
             [
                 Qwen3MoeMLP(
@@ -1238,6 +1241,12 @@ class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
         model_provider_class = Qwen3MoEModelProvider
         model_provider = model_provider_class.from_config(config)
         gpt_model = model_provider.provide()

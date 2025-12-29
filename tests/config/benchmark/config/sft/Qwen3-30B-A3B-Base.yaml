@@ -49,36 +49,33 @@ warmup_steps: 20
 learning_rate: 1.0e-5
 
 # performance
-sharding_parallel_size: 32
+recompute_granularity: ""
+apply_rope_fusion: true
+moe_router_fusion: false
+moe_router_force_load_balancing: true
+moe_grouped_gemm: true
+
+sharding: "stage1"
+split_param: true
 tensor_model_parallel_size: 1
-pipeline_model_parallel_size: 1
-expert_model_parallel_size: 8
-sequence_parallel: false
-sharding: stage1
-#3 offload
-# offload: true,
-offload_optim: false
-use_fused_head_and_loss_fn: true
-# use_filtered_label_loss: true
-optim: adamw_custom
-tensorwise_offload_optimizer: false
-recompute_granularity: full
-recompute_method: uniform
-recompute_num_layers: 1
-# recompute_use_reentrant: true
-# unified_checkpoint_config: ignore_merge_optimizer
+sequence_parallel: true
+pipeline_model_parallel_size: 2
 use_expert_parallel: true
+expert_model_parallel_size: 8
+
+optim: adamw
 bf16: true
 fp16_opt_level: O2
-unified_checkpoint: true
-
-# sharding_parallel_config
-split_param: true
-
 amp_master_grad: true
+fuse_attention_qkv: true
+fuse_attention_ffn: true
+fuse_swiglu: true
+fuse_rms_norm: true
+fuse_linear: true
+use_paddlefleet: true
 
-save_checkpoint_format : "flex_checkpoint"
-load_checkpoint_format : "flex_checkpoint"
-save_to_hf: true
+# unified_checkpoint: false
+save_checkpoint_format: "flex_checkpoint"
+load_checkpoint_format: "flex_checkpoint"
 
 benchmark: true

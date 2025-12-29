@@ -64,3 +64,6 @@ load_checkpoint_format: flex_checkpoint
 save_to_hf: true
 
 benchmark: true
+num_empty_layers_add_in_head: 1
+num_empty_layers_add_in_tail: 1
+continue_training: false

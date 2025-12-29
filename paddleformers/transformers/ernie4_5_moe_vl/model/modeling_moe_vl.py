@@ -215,55 +215,6 @@ class ModalityDetach(PyLayer):
         return input_embeds_grad
 
 
-@paddle.no_grad()
-def construct_types_for_video(image_mask, token_type_ids, image_type_ids):
-    """
-    construct_types_for_video,
-    Args:
-        image_mask: [B], 1 if is `im_patch_id` else 0
-        token_type_ids: [B], see `IDTYPES_2_ID`
-        image_type_ids: [B], see `IMAGETYPES_2_ID`
-    Returns:
-        image_is_video: shape as[image_B,], image_B is batch size of image_features.
-                        Value is 0/1, 1 is video, 0 is image.
-        compressed_image_indices: shape as [image_seq,],
-                        image_seq the num of image_placeholder in input_ids.
-                        Value is 0/1, 1 is video, 0 is image.
-        video_images_with_placeholder: shape as [padded_video_b,],
-                        padded_video_b is padding num of video, as batch size before temporal_linear.
-                        Value is 0/1, 1 is video, 0 is pad.
-    """
-    if image_type_ids is not None:
-        image_type_ids = image_type_ids[image_type_ids >= 0]  # remove padding
-        # placeholder before conv3d
-        video_images_with_placeholder = image_type_ids[image_type_ids != IMAGETYPES_2_ID["image"]]
-        if video_images_with_placeholder.shape[0] != 0:
-            video_images_with_placeholder = video_images_with_placeholder == IMAGETYPES_2_ID["video"]
-            video_images_with_placeholder = video_images_with_placeholder.astype("int64")
-        else:
-            video_images_with_placeholder = None
-
-        # image_is_video the type of visual feature to extract video and image from visual feature
-        # 1 is video, 0 is image
-        image_is_video = image_type_ids[image_type_ids != IMAGETYPES_2_ID["padded_image"]]
-
-        assert image_is_video.shape[0] != 0, f"image_is_video is 0 shape, {image_is_video.shape}"
-
-        image_is_video = image_is_video == IMAGETYPES_2_ID["video"]
-        image_is_video = image_is_video.astype("int64")
-
-    else:
-        video_images_with_placeholder = None
-        image_is_video = None
-
-    # compressed_image_indices is type id after compressed visual feature，0 is image，1 is video after conv3d
-    compressed_image_indices = token_type_ids[image_mask]
-    compressed_image_indices = compressed_image_indices == TokenType.video
-    compressed_image_indices = compressed_image_indices.astype("int64")
-
-    return image_is_video, compressed_image_indices, video_images_with_placeholder
-
-
 class VariableResolutionResamplerModel(nn.Layer):
     """
     VariableResolutionResamplerModel, support variable resolution
@@ -350,7 +301,6 @@ class VariableResolutionResamplerModel(nn.Layer):
         image_type_ids:  [B_image]
         grid_thw: [B_image, 3]
         """
-        assert image_type_ids is not None
 
         def fwd_spatial(x):
             """
@@ -832,7 +782,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         self._modality_param_mapping = None
         self.image_preprocess = None
         self.lm_head = Ernie4_5_MoeVLHead(config)
-        self.vision_model = DFNRopeVisionTransformerPretrainedModel(config=config.vision_config)
+        self.vision_model = DFNRopeVisionTransformerPretrainedModel(config=config)
 
         self.tie_weights()  # maybe weight share
 
@@ -1173,6 +1123,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
             position_ids (`np.Array` of shape `(3, batch_size, sequence_length)`)
             mrope_position_deltas (`np.Array` of shape `(batch_size)`)
         """
+        temporal_conv_size = self.config.temporal_conv_size
         spatial_merge_size = self.config.vision_config.spatial_merge_size
         image_start_token_id = self.config.image_start_token_id
         video_start_token_id = self.config.video_start_token_id
@@ -1223,7 +1174,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                         remain_videos -= 1
                         ed = ed_video
                     llm_grid_t, llm_grid_h, llm_grid_w = (
-                        t.item(),
+                        t.item() if t.item() == 1 else t.item() // temporal_conv_size,
                         h.item() // spatial_merge_size,
                         w.item() // spatial_merge_size,
                     )
@@ -1278,6 +1229,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
         video_grid_thw: Optional[paddle.Tensor] = None,
     ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         IDS_TYPE_FLAG = {"text": 0, "image": 1, "video": 2}
+        temporal_conv_size = self.config.temporal_conv_size
         spatial_merge_size = self.config.vision_config.spatial_merge_size
         image_start_token_id = self.config.image_start_token_id
         video_start_token_id = self.config.video_start_token_id
@@ -1287,6 +1239,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
 
         total_input_ids = input_ids
         image_index, video_index = 0, 0
+        last_image_pixel_index = 0
+        last_video_pixel_index = 0
         for i, input_ids in enumerate(total_input_ids):
             image_start_indices = paddle.nonzero(input_ids == image_start_token_id).squeeze(1)
             video_start_indices = paddle.nonzero(input_ids == video_start_token_id).squeeze(1)
@@ -1311,11 +1265,14 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                         image_grid_thw[image_index][1],
                         image_grid_thw[image_index][2],
                     )
-                    images.append(pixel_values[image_index])
-                    grid_thw.append(image_grid_thw[image_index])
+                    ed_grid_thw = image_grid_thw[image_index]
+                    pixel_lenth = ed_grid_thw.prod().item()
+                    images.append(pixel_values[last_image_pixel_index : last_image_pixel_index + pixel_lenth])
+                    grid_thw.append(ed_grid_thw)
                     image_index += 1
                     remain_images -= 1
                     ed = ed_image
+                    last_image_pixel_index += pixel_lenth
                     vision_type = "image"
                 else:
                     t, h, w = (
@@ -1323,14 +1280,17 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                         video_grid_thw[video_index][1],
                         video_grid_thw[video_index][2],
                     )
-                    images.append(video_pixel_values[video_index])
-                    grid_thw.append(video_grid_thw[video_index])
+                    ed_grid_thw = video_grid_thw[video_index]
+                    pixel_lenth = ed_grid_thw.prod().item()
+                    images.append(video_pixel_values[last_video_pixel_index : last_video_pixel_index + pixel_lenth])
+                    grid_thw.append(ed_grid_thw)
                     video_index += 1
                     remain_videos -= 1
                     ed = ed_video
+                    last_video_pixel_index += pixel_lenth
                     vision_type = "video"
                 llm_grid_t, llm_grid_h, llm_grid_w = (
-                    t.item(),
+                    t.item() if t.item() == 1 else t.item() // temporal_conv_size,
                     h.item() // spatial_merge_size,
                     w.item() // spatial_merge_size,
                 )
@@ -1340,11 +1300,13 @@ class Ernie4_5_VLMoeForConditionalGeneration(Ernie4_5_MoeForCausalLM):
                 llm_token_type_ids.extend([IDS_TYPE_FLAG["image"]])
                 llm_token_type_ids.extend([IDS_TYPE_FLAG[vision_type]] * llm_grid_t * llm_grid_h * llm_grid_w)
                 llm_token_type_ids.extend([IDS_TYPE_FLAG["image"]])
-                st = ed + llm_grid_t * llm_grid_h * llm_grid_w + 1
+                st = ed + llm_grid_t * llm_grid_h * llm_grid_w + 2
 
             if st < len(input_tokens):
                 text_len = len(input_tokens) - st
                 llm_token_type_ids.extend([IDS_TYPE_FLAG["text"]] * text_len)
+            # add 1 eos token for token_type_ids_label
+            llm_token_type_ids.extend([IDS_TYPE_FLAG["text"]])
 
             token_type_ids.append(llm_token_type_ids)
 

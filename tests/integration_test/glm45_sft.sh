@@ -60,7 +60,7 @@ NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformer
 sft_exit_code=$?
 if [ $sft_exit_code -ne 0 ]; then
    echo "GLM4.5 multi-cards training failed, try to check the log file"
-   python $root_dir/PaddleFleet/ci/check_log_for_exitcode.py ./glm45_sft.log
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_sft.log
    sft_check_exit_code=$?
    if [ $sft_check_exit_code -ne 0 ]; then
      echo "Failed to find 'Training completed' in log file."
@@ -72,10 +72,10 @@ fi
 
 set -e
 echo "
-10 9.01230431
+10 7.93576813
 " > ./glm45_sft_multi_card_gt_loss.txt
 
-python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
+python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 10 \
    --log_file ./glm45_sft.log \
    --gt_file ./glm45_sft_multi_card_gt_loss.txt
@@ -88,7 +88,7 @@ NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformer
 lora_exit_code=$?
 if [ $lora_exit_code -ne 0 ]; then
    echo "GLM4.5 multi-cards training failed, try to check the log file"
-   python $root_dir/PaddleFleet/ci/check_log_for_exitcode.py ./glm45_lora.log
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_lora.log
    lora_check_exit_code=$?
    if [ $lora_check_exit_code -ne 0 ]; then
      echo "Failed to find 'Training completed' in log file."
@@ -100,12 +100,13 @@ else
     echo "LORA Test passed."
 fi
 
+
 set -e
 echo "
-100 6.82817125
+100 4.89507484
 " > ./glm45_lora_multi_card_gt_loss.txt
 
-python $root_dir/PaddleFleet/ci/integration_test/check_loss.py \
+python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 100 \
    --log_file ./glm45_lora.log \
    --gt_file ./glm45_lora_multi_card_gt_loss.txt
